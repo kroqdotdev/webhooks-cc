@@ -106,6 +106,29 @@ func TestForwardedRequestReturnsTheEvent(t *testing.T) {
 	}
 }
 
+func TestForwardedJSONReturnsTheBody(t *testing.T) {
+	t.Parallel()
+	vector := forwardingVectorNamed(t, "your own JSON")
+	now := WithNow(time.UnixMilli(int64(vector.Now)))
+	body, err := ForwardedJSON([]byte(vector.Body), Map(vector.Headers), vector.Secret, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invoice struct {
+		Invoice string `json:"invoice"`
+		Amount  int    `json:"amount"`
+	}
+	if err := json.Unmarshal(body, &invoice); err != nil || invoice.Invoice != "in_1Q" || invoice.Amount != 4200 {
+		t.Errorf("body %s read as %+v, %v", body, invoice, err)
+	}
+
+	lone := forwardingVectorNamed(t, "your own JSON, a body that is a lone JSON value")
+	body, err = ForwardedJSON([]byte(lone.Body), Map(lone.Headers), lone.Secret, WithNow(time.UnixMilli(int64(lone.Now))))
+	if err != nil || string(body) != "4200" {
+		t.Errorf("a lone value: %s, %v", body, err)
+	}
+}
+
 func TestForwardedToleranceIsAdjustable(t *testing.T) {
 	t.Parallel()
 	vector := forwardingVectorNamed(t, "forwarded email, timestamp more than 300 seconds old")
@@ -199,6 +222,7 @@ func TestMisuseIsAnError(t *testing.T) {
 	for _, check := range []func() error{
 		func() error { _, err := ForwardedEmail(nil, Map{}, ""); return err },
 		func() error { _, err := ForwardedRequest(nil, Map{}, ""); return err },
+		func() error { _, err := ForwardedJSON(nil, Map{}, ""); return err },
 		func() error { _, err := RelayedRequest(nil, Map{}, ""); return err },
 	} {
 		err := check()

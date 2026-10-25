@@ -914,6 +914,7 @@ export interface SDKDescription {
   requests: Record<string, OperationDescription>;
   emails: Record<string, OperationDescription>;
   forwarding: Record<string, OperationDescription>;
+  destinations: Record<string, OperationDescription>;
   teams: Record<string, OperationDescription>;
 }
 
@@ -1011,7 +1012,7 @@ export interface SenderTime {
 }
 
 /** How a delivery went out. */
-export type DeliveryFormat = "as_received" | "json" | "chat";
+export type DeliveryFormat = "as_received" | "json" | "chat" | "template";
 
 /** Result of `forwarding.test()`: one delivery of the newest request (or a sample) to the saved URL. */
 export interface ForwardingTestResult {
@@ -1051,11 +1052,23 @@ export interface DeliveryAttempt {
 }
 
 /** One delivery of a captured request or email, with every try. */
+/** The destination a delivery went to, as the log names it. */
+export interface DeliveryDestinationRef {
+  id: string;
+  /** Its name, or null to name it by host */
+  name: string | null;
+  /** Its URL (scheme and host only for team members) */
+  url: string;
+}
+
 export interface ForwardingDelivery {
   id: string;
   requestId: string;
   kind?: "http" | "email";
-  status: "pending" | "succeeded" | "failed";
+  /** "skipped": the destination's filter turned the request down */
+  status: "pending" | "succeeded" | "failed" | "skipped";
+  /** Null for deliveries from before destinations, or once the destination is removed */
+  destination?: DeliveryDestinationRef | null;
   attempts: number;
   createdAt: number;
   finishedAt: number | null;
@@ -1079,6 +1092,7 @@ export interface DeliveryLogEntry {
   requestId: string;
   kind?: "http" | "email";
   status: ForwardingDelivery["status"];
+  destination?: DeliveryDestinationRef | null;
   attempts: number;
   createdAt: number;
   finishedAt?: number | null;
@@ -1106,10 +1120,140 @@ export interface DeliveryLogEntry {
 export interface ListDeliveriesOptions {
   /** 1 to 100 (default: 5) */
   limit?: number;
-  /** "all" (default), "pending" (queued or retrying) or "failed" */
-  status?: "all" | "pending" | "failed";
+  /** "all" (default), "pending" (queued or retrying), "failed" or "skipped" (filtered out) */
+  status?: "all" | "pending" | "failed" | "skipped";
   /** A row's `cursor`: list the rows after it */
   before?: string;
+  /** Only one destination's deliveries */
+  destinationId?: string;
+}
+
+/** How a destination sends: "auto" picks from the URL (chat for Slack and Discord, else as received for HTTP and signed JSON for email). */
+export type DestinationFormat = "auto" | "as_received" | "json" | "chat" | "template";
+
+/** Which captured requests a destination gets; null or no conditions: all of them. */
+export interface DestinationFilter {
+  logic?: "and" | "or";
+  /** Response rule conditions plus kind, email (subject, from, to, text, tag), spam_score, email_auth and signature */
+  conditions: Condition[];
+}
+
+/**
+ * Where an endpoint's captures go. An endpoint has up to 10 destinations;
+ * every capture is queued once for each one that is on and takes its kind,
+ * and the destination's filter decides whether it is sent.
+ */
+export interface Destination {
+  id: string;
+  /** Place in the list (also the order captures are queued in) */
+  position: number;
+  name: string | null;
+  enabled: boolean;
+  url: string;
+  /** Whether it has a signing secret (`destinations.secret()` reveals it) */
+  hasSecret: boolean;
+  /** Takes HTTP requests */
+  http: boolean;
+  /** Takes emails */
+  email: boolean;
+  format: DestinationFormat;
+  filter: DestinationFilter | null;
+  /** For format "template": the JSON body, with {{ placeholders }} filled in per request */
+  bodyTemplate: unknown;
+  /** For format "chat": the message text with {{ placeholders }}; null sends the standard message */
+  messageTemplate: string | null;
+  /** Names and masked values */
+  headers: { name: string; value: string }[];
+  /** Append the captured path to the URL (as received) */
+  appendPath: boolean;
+  /** 0 (one try), 3600 or 86400 */
+  retrySeconds: number;
+  /** One delivery at a time, in capture order */
+  keepOrder: boolean;
+  /** A JSON body field with the sender's own timestamp */
+  sentField: string | null;
+  /** At most one delivery every N seconds (0: every capture); the rest are not sent */
+  throttleSeconds: number;
+  /** Seconds after the capture before the first try, like a callback */
+  delaySeconds: number;
+  /** "forward": what the endpoint's forward* fields stand for; "notify": its notificationUrl */
+  role: "forward" | "notify" | null;
+  createdAt: number;
+  updatedAt: number;
+  /** With `list(slug, { summary: true })`: the last 24 hours and what is waiting */
+  summary?: {
+    last24h: { delivered: number; failed: number; skipped: number };
+    pending: number;
+  };
+}
+
+/** Fields to create or change a destination with; `url` is needed to create one. */
+export interface DestinationInput {
+  url?: string;
+  name?: string | null;
+  enabled?: boolean;
+  http?: boolean;
+  email?: boolean;
+  format?: DestinationFormat;
+  filter?: DestinationFilter | null;
+  bodyTemplate?: unknown;
+  messageTemplate?: string | null;
+  /** The whole set; a null value keeps the stored value of that name */
+  headers?: ForwardHeaderInput[];
+  appendPath?: boolean;
+  retrySeconds?: 0 | 3600 | 86400;
+  keepOrder?: boolean;
+  sentField?: string | null;
+  /** 0 to 3600 */
+  throttleSeconds?: number;
+  /** 0 to 3600 */
+  delaySeconds?: number;
+  /** Place in the list */
+  position?: number;
+}
+
+/** Options for `destinations.preview()`. */
+export interface PreviewDestinationOptions {
+  /** A saved destination to start from */
+  destinationId?: string;
+  /** Unsaved fields, on top of the saved destination or on their own (then with a url) */
+  destination?: DestinationInput;
+  /** A captured request (default: the newest of the kind the destination takes, or a sample) */
+  requestId?: string;
+}
+
+/** Result of `destinations.preview()`: what would be sent, without sending it. */
+export interface DestinationPreview {
+  request: {
+    id: string | null;
+    kind: "http" | "email";
+    method: string;
+    path: string;
+    subject: string | null;
+    receivedAt: number;
+    sample: boolean;
+  };
+  /** Whether the destination takes this kind at all */
+  takesKind: boolean;
+  /** Whether its filter lets the request through */
+  filterPasses: boolean;
+  format: DeliveryFormat;
+  /** The request it would send (stored header values stay masked), or null */
+  delivery: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body: string | null;
+    bodyBase64: string | null;
+  } | null;
+  /** Why nothing would be sent (a template that cannot be filled in, a path that escapes) */
+  error: string | null;
+}
+
+/** Result of `destinations.test()`. */
+export interface DestinationTestResult extends ForwardingTestResult {
+  /** Whether the destination's filter would have let it through (a test sends either way) */
+  filterPasses: boolean;
 }
 
 /** Result of `forwarding.summary()`. Each count stops at 100,000. */

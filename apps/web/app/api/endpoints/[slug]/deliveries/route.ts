@@ -7,12 +7,13 @@ import {
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { reportError } from "@/lib/observability";
 
-const STATUS_FILTERS: readonly DeliveryStatusFilter[] = ["all", "pending", "failed"];
+const STATUS_FILTERS: readonly DeliveryStatusFilter[] = ["all", "pending", "failed", "skipped"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The endpoint's deliveries, newest first, for its owner: `limit` (up to
- * 100), `status` (all, pending or failed) and `before` (a row's cursor, for
- * older rows).
+ * 100), `status` (all, pending, failed or skipped), `destination` (one
+ * destination's id) and `before` (a row's cursor, for older rows).
  */
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -26,7 +27,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   const limit = Number(search.get("limit") ?? "5");
   const status = (search.get("status") ?? "all") as DeliveryStatusFilter;
   if (!STATUS_FILTERS.includes(status)) {
-    return Response.json({ error: "status must be all, pending or failed" }, { status: 400 });
+    return Response.json(
+      { error: "status must be all, pending, failed or skipped" },
+      { status: 400 }
+    );
+  }
+  const destinationId = search.get("destination");
+  if (destinationId !== null && !UUID.test(destinationId)) {
+    return Response.json({ error: "Invalid destination" }, { status: 400 });
   }
   const before = search.get("before");
   if (before !== null && !isDeliveryCursor(before)) {
@@ -38,6 +46,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         limit: Number.isFinite(limit) ? Math.trunc(limit) : 5,
         status,
         before,
+        destinationId,
       })
     );
   } catch (error) {

@@ -325,36 +325,47 @@ no network code, so it fits in a browser bundle.
 
 ## Forwarding
 
-Forwarding sends every HTTP request and email an endpoint captures to your server or a Slack or
-Discord channel, queued, retried and logged. HTTP requests go as received (same method, headers and
-body bytes) or as signed JSON, emails as signed JSON, and either as a chat message for Slack and
-Discord URLs. Only the endpoint's owner can manage it.
+Forwarding sends what an endpoint captures to up to 10 destinations: your servers, Slack or Discord
+channels, or tools such as Zapier and n8n. Each destination has its own kinds, conditions, format
+(as received, signed JSON, your own JSON with `{{ placeholders }}`, or a chat message), throttle,
+delay and signing secret, and is queued, retried and logged. Only the endpoint's owner can manage
+it.
 
 ```typescript
-await client.forwarding.configure(endpoint.slug, {
-  url: "https://example.com/hooks",
-  http: true,
-  email: true,
-  sentField: "publishedAt", // the sender's own timestamp in the JSON body, for timing
+// Only paid invoices, as the JSON your tool wants.
+const zap = await client.destinations.create(endpoint.slug, {
+  url: "https://hooks.zapier.com/hooks/catch/123/abc",
+  email: false,
+  filter: { conditions: [{ field: "body_path", op: "eq", path: "type", value: "invoice.paid" }] },
+  format: "template",
+  bodyTemplate: {
+    invoice: "{{ json.data.object.id }}",
+    amount: "{{ json.data.object.amount_paid }}",
+  },
 });
-const secret = await client.forwarding.secret(endpoint.slug); // "whsec_..."
 
-const test = await client.forwarding.test(endpoint.slug); // sends the newest request or a sample once
-console.log(test.delivered, test.status, test.excerpt);
+// What it would send for the newest request, without sending it.
+const preview = await client.destinations.preview(endpoint.slug, { destinationId: zap.id });
+console.log(preview.filterPasses, preview.delivery?.body);
 
-await client.forwarding.configure(endpoint.slug, { enabled: true });
+// Send one for real, and read its signing secret for your handler.
+const test = await client.destinations.test(endpoint.slug, zap.id);
+const secret = await client.destinations.secret(endpoint.slug, zap.id); // "whsec_..."
 ```
 
-`configure()` also takes `format` (`"auto"`, `"as_received"`, `"json"`, `"chat"`), `headers` (your
-own, at most 10), `appendPath`, `retrySeconds` (0, 3600 or 86400) and `keepOrder`.
-`client.forwarding` also has `rotateSecret(slug)`, `deliveries(slug, { limit, status, before })`
-(the delivery log), `summary(slug)`, `requestDeliveries(requestId)` (every try of one request),
-`redeliver(requestId)` and `redeliverFailed(slug)`. `configure({ url: null })` removes the URL once
-forwarding is off.
+`client.destinations` also has `list(slug, { summary })`, `get`, `update` (only the fields you
+pass), `delete`, `reorder` and `rotateSecret`. A Slack or Discord destination with
+`format: "chat"` takes an optional `messageTemplate`, and `throttleSeconds: 1` makes it a heads-up;
+`delaySeconds` (up to an hour) makes any destination a callback that arrives later.
+
+`client.forwarding` manages the endpoint's primary destination with `configure()`, `secret()`,
+`rotateSecret()` and `test()`, and reads the log of all of them: `deliveries(slug, { limit, status,
+destinationId, before })`, `summary(slug)`, `requestDeliveries(requestId)` (every try of one
+request), `redeliver(requestId, { destinationId })` and `redeliverFailed(slug, { destinationId })`.
 
 In your handler, verify relayed requests with `verifyRelayedRequest()` (the
-`webhooks-cc-signature` header) and signed JSON with `verifyForwardedRequest()` or
-`verifyForwardedEmail()`. For a forwarded email, `verifyForwardedEmail()` checks the Standard Webhooks
+`webhooks-cc-signature` header), signed JSON with `verifyForwardedRequest()` or
+`verifyForwardedEmail()`, and your own JSON with `verifyForwardedJson()`. For a forwarded email, `verifyForwardedEmail()` checks the Standard Webhooks
 signature and that the timestamp is within five minutes, then returns the typed event. Pass the raw
 body (string, `Uint8Array`/`Buffer` or `ArrayBuffer`) and the headers as a Fetch `Headers`, a plain
 object such as Express's `req.headers`, or name and value pairs:

@@ -40,8 +40,6 @@ const MAX_SUBJECT: usize = 4 * 1024;
 const MAX_SHORT: usize = 1024;
 const MAX_REFERENCES: usize = 50;
 const MAX_ATTACHMENTS: usize = 100;
-/// Characters of text used for the notification preview.
-const PREVIEW_CHARS: usize = 400;
 
 pub struct ParsedEmail {
     /// Root headers, lowercase names, values unfolded; repeated headers (such
@@ -49,9 +47,6 @@ pub struct ParsedEmail {
     pub headers: HashMap<String, String>,
     /// The parsed document; the handler adds the per-recipient fields.
     pub doc: Map<String, Value>,
-    pub subject: Option<String>,
-    /// Start of the text part, for the notification preview.
-    pub preview: String,
 }
 
 pub struct StoredBody {
@@ -74,8 +69,6 @@ pub fn parse_message(raw: &[u8]) -> ParsedEmail {
         return ParsedEmail {
             headers: HashMap::new(),
             doc,
-            subject: None,
-            preview: String::new(),
         };
     };
 
@@ -147,13 +140,9 @@ pub fn parse_message(raw: &[u8]) -> ParsedEmail {
         Value::Bool(message.attachment_count() > MAX_ATTACHMENTS),
     );
 
-    let preview: String = text.chars().take(PREVIEW_CHARS).collect();
-
     ParsedEmail {
         headers,
         doc,
-        subject,
-        preview,
     }
 }
 
@@ -438,7 +427,6 @@ Your code is 123456.\r\n";
     #[test]
     fn parses_a_plain_message() {
         let parsed = parse_message(SIMPLE.as_bytes());
-        assert_eq!(parsed.subject.as_deref(), Some("Welcome aboard"));
         assert_eq!(parsed.doc["subject"], "Welcome aboard");
         assert_eq!(parsed.doc["from"][0]["address"], "alice@example.com");
         assert_eq!(parsed.doc["from"][0]["name"], "Alice");
@@ -456,7 +444,6 @@ Your code is 123456.\r\n";
         assert_eq!(parsed.doc["attachments"], json!([]));
         assert_eq!(parsed.doc["parse_error"], false);
         assert_eq!(parsed.headers["subject"], "Welcome aboard");
-        assert!(parsed.preview.contains("123456"));
     }
 
     #[test]
@@ -543,7 +530,6 @@ Subject: x\r\n\r\nbody\r\n";
         assert_eq!(parsed.doc["to"].as_array().unwrap().len(), MAX_ADDRESSES);
         assert_eq!(parsed.doc["addresses_truncated"], true);
         assert_eq!(parsed.doc["subject"].as_str().unwrap().len(), MAX_SUBJECT);
-        assert_eq!(parsed.subject.unwrap().len(), MAX_SUBJECT);
     }
 
     #[test]

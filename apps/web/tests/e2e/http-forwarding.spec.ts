@@ -11,14 +11,15 @@ import {
 
 /**
  * Forwarding HTTP requests end to end against a local server standing in
- * for the owner's: the Forwarding settings (format picked from the URL, a
- * header masked after saving, a test delivery), a captured request relayed
- * by the dev server's worker and its Deliveries tab with the journey (and a
- * Sent stop read from the body field the owner named), the delivery log with
- * its filters, a failed delivery sent again with "Redeliver all failed", and
- * a team member who can read deliveries but not redeliver. Needs the dev
- * server started with FORWARDING_ALLOW_PRIVATE_TARGETS=true (as in
- * .env.local) so it may post to 127.0.0.1.
+ * for the owner's: a destination added from "Your server" (format picked
+ * from the URL, a header masked after saving, the preview, a test
+ * delivery), a captured request relayed by the dev server's worker and its
+ * Deliveries tab with the journey (and a Sent stop read from the body field
+ * the owner named), the delivery log with its filters, a failed delivery
+ * sent again with "Redeliver all failed", and a team member who can read
+ * deliveries but not redeliver. Needs the dev server started with
+ * FORWARDING_ALLOW_PRIVATE_TARGETS=true (as in .env.local) so it may post to
+ * 127.0.0.1.
  */
 
 test.describe.configure({ mode: "serial" });
@@ -73,7 +74,10 @@ test.afterAll(async () => {
   server?.close();
   if (teamId) await admin.from("teams").delete().eq("id", teamId);
   if (endpointId) {
-    await admin.from("endpoints").update({ forward_enabled: false }).eq("id", endpointId);
+    await admin
+      .from("endpoint_destinations")
+      .update({ enabled: false })
+      .eq("endpoint_id", endpointId);
     await admin.from("requests").delete().eq("endpoint_id", endpointId);
     await admin.from("endpoints").delete().eq("id", endpointId);
   }
@@ -104,9 +108,14 @@ async function openSettings(page: Page) {
   return section;
 }
 
-async function saveSection(section: Locator) {
-  await section.getByRole("button", { name: "Save changes" }).click();
+async function saveDestination(section: Locator) {
+  await section.getByRole("button", { name: "Save destination" }).click();
   await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
+}
+
+/** Opens the destination's editor from its row. */
+async function openDestination(section: Locator) {
+  await section.getByRole("button", { name: /^Open 127\.0\.0\.1/ }).click();
 }
 
 /** Captures an HTTP request the way the receiver does, through the stored procedure. */
@@ -132,47 +141,48 @@ async function captureRequest(path: string, body: Record<string, unknown>) {
   return (data as { request_id: string }).request_id;
 }
 
-test("set up forwarding to a server: format from the URL, a masked header, a test delivery", async ({
+test("add a destination for a server: format from the URL, a masked header, a test delivery", async ({
   page,
 }) => {
   const section = await openSettings(page);
 
-  // The switch waits for a saved URL.
-  const toggle = section.getByRole("switch", { name: "Forward captured requests" });
-  await expect(toggle).toBeDisabled();
+  // With nothing forwarded yet, the section asks where captures should go.
+  await expect(
+    section.getByText("Nothing is forwarded yet. Where should captures go?")
+  ).toBeVisible();
+  await section.getByRole("button", { name: /^Your server/ }).click();
   await section.getByLabel("Send to").fill(hookUrl);
-  await expect(section.getByText("URL changed.")).toBeVisible();
-  // Both kinds are proposed until a URL is saved.
   await expect(section.getByLabel("HTTP requests")).toBeChecked();
   await expect(section.getByLabel("Emails")).toBeChecked();
-  await section.getByLabel("HTTP requests").check();
   await section.getByLabel("Emails").uncheck();
-  await expect(section.getByText("URL and what to forward changed.")).toBeVisible();
 
   // A server URL picks "As received", and says so.
-  const format = section.getByRole("radiogroup", { name: "Format" });
-  await expect(format.getByRole("radio", { name: "As received" })).toHaveAttribute(
+  const format = section.getByRole("radiogroup", { name: "How it is sent" });
+  await expect(format.getByRole("radio", { name: "Pick from the URL" })).toHaveAttribute(
     "aria-checked",
     "true"
   );
-  await expect(section.getByText("Picked from the URL: a server URL")).toBeVisible();
-  await expect(section.getByText("Five headers on every as-received delivery")).toBeVisible();
+  await expect(section.getByText(/^From the URL: as received\./)).toBeVisible();
   await expect(section.getByText("webhooks-cc-attempt")).toBeVisible();
 
-  // A header, typed once and masked after saving.
+  // A header, typed once; the preview shows the request that would go out.
   await section.getByRole("button", { name: "Add header" }).click();
   await expect(section.getByLabel("Header 1 name")).toBeFocused();
   await section.getByLabel("Header 1 name").fill("Authorization");
   await section.getByLabel("Header 1 value").fill("Bearer e2e-secret-token-9876");
-  await expect(section.getByText("Forwarding changed.")).toBeVisible();
-  await saveSection(section);
+  await expect(section.getByText("This is what goes out")).toBeVisible({ timeout: 15000 });
+  await expect(section.getByText(/^POST http:\/\/127\.0\.0\.1:\d+\/hooks\/inbound/)).toBeVisible();
+
+  await section.getByRole("button", { name: "Add destination" }).click();
+  // The new destination's row opens with its editor; the header is masked now.
   await expect(section.getByLabel("Header 1 value, hidden after saving")).toHaveValue(
-    "Bearer ••••9876"
+    "Bearer ••••9876",
+    { timeout: 10000 }
   );
   await expect(section.getByRole("button", { name: "Replace" })).toBeVisible();
-  await expect(toggle).toBeEnabled();
+  await expect(section.getByText("HTTP requests.", { exact: true })).toBeVisible();
 
-  // The secret exists before forwarding is on.
+  // The secret exists from the start.
   await section.getByRole("button", { name: "Reveal" }).click();
   await expect(section.locator("code", { hasText: /^whsec_/ })).toHaveText(
     /^whsec_[A-Za-z0-9+/]{32}$/
@@ -188,27 +198,22 @@ test("set up forwarding to a server: format from the URL, a masked header, a tes
   expect(sample.headers["webhooks-cc-endpoint"]).toBe(endpointSlug);
   expect(sample.headers["webhooks-cc-signature"]).toMatch(/^v1,/);
 
-  // The sent time field, then on.
+  // The sent time field.
   await section.getByText("Advanced", { exact: true }).click();
   await section.getByLabel("Sent time field").fill("publishedAt");
-  await expect(section.getByText("sent time from publishedAt")).toBeVisible();
-  await toggle.click();
-  await expect(section.getByText("Forwarding changed.")).toBeVisible();
-  await saveSection(section);
-  await expect(
-    section.getByText("On. Every HTTP request captured here is sent to the URL below.")
-  ).toBeVisible();
+  await expect(section.getByText(/sent time from publishedAt/)).toBeVisible();
+  await saveDestination(section);
   const { data } = await admin
-    .from("endpoints")
-    .select("forward_enabled, forward_url, forward_http, forward_email, forward_sent_field")
-    .eq("id", endpointId)
+    .from("endpoint_destinations")
+    .select("enabled, url, http, email, sent_field")
+    .eq("endpoint_id", endpointId)
     .single();
   expect(data).toEqual({
-    forward_enabled: true,
-    forward_url: hookUrl,
-    forward_http: true,
-    forward_email: false,
-    forward_sent_field: "publishedAt",
+    enabled: true,
+    url: hookUrl,
+    http: true,
+    email: false,
+    sent_field: "publishedAt",
   });
 });
 
@@ -289,13 +294,14 @@ test("the delivery log lists it, with live counts, and opens the request", async
 test("a failed delivery is sent again with Redeliver all failed", async ({ page }) => {
   // Retries off, so one 503 marks the delivery failed at once.
   const section = await openSettings(page);
+  await openDestination(section);
   await section.getByText("Advanced", { exact: true }).click();
   await section
     .getByRole("radiogroup", { name: "Retry failed deliveries" })
     .getByRole("radio", { name: "Never" })
     .click();
-  await expect(section.getByText("never retried")).toBeVisible();
-  await saveSection(section);
+  await expect(section.getByText(/never retried/)).toBeVisible();
+  await saveDestination(section);
 
   answerWith = 503;
   const before = received.length;
@@ -317,6 +323,11 @@ test("a failed delivery is sent again with Redeliver all failed", async ({ page 
   answerWith = 200;
 
   const log = page.getByRole("region", { name: "Deliveries" });
+  // The log refreshes while it is on screen.
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Deliveries" })
+    .click();
   const filters = log.getByRole("radiogroup", { name: "Show" });
   await expect(filters.getByRole("radio", { name: /^Failed 1$/ })).toBeVisible({ timeout: 15000 });
   await filters.getByRole("radio", { name: /^Failed 1$/ }).click();
@@ -327,7 +338,7 @@ test("a failed delivery is sent again with Redeliver all failed", async ({ page 
 
   await log.getByRole("button", { name: "Redeliver all failed" }).click();
   await expect(
-    log.getByText("Send the 1 failed delivery again with the current URL, format and headers?")
+    log.getByText("Send the 1 failed delivery again with each destination's current settings?")
   ).toBeVisible();
   const beforeRedelivery = received.length;
   await log.getByRole("button", { name: "Send them again" }).click();
@@ -343,7 +354,12 @@ test("a failed delivery is sent again with Redeliver all failed", async ({ page 
   await expect(filters.getByRole("radio", { name: /^Retrying 0$/ })).toBeVisible({
     timeout: 15000,
   });
-  await expect(section.getByText("1 failed")).toBeVisible();
+  // The destination's row counts it too (refreshed while on screen).
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Forwarding" })
+    .click();
+  await expect(section.getByText("1 failed")).toBeVisible({ timeout: 20000 });
 });
 
 test("a team member reads deliveries but cannot redeliver", async ({ page }) => {

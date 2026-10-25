@@ -12,8 +12,8 @@ export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
 
 // Privacy policy, terms, and the subprocessor list usually change together.
 const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
-// The privacy policy alone: share links (retention of shared copies).
-const PRIVACY_UPDATED = new Date("2026-10-23T00:00:00.000Z");
+// The privacy policy alone: forwarding destinations and their delivery log.
+const PRIVACY_UPDATED = new Date("2026-10-25T00:00:00.000Z");
 
 // Email capture and forwarding: the two email pages.
 const EMAIL_PAGES_UPDATED = new Date("2026-10-08T00:00:00.000Z");

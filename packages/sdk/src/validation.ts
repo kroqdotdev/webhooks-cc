@@ -1,4 +1,10 @@
-import { conditionIssues, MAX_CONDITIONS, MAX_PATTERN_CHARS, type ValidateOptions } from "./rules";
+import {
+  conditionIssues,
+  conditionsIssues,
+  MAX_CONDITIONS,
+  MAX_PATTERN_CHARS,
+  type ValidateOptions,
+} from "./rules";
 import type { MockResponse, ResponseRule } from "./types";
 
 export const MOCK_RESPONSE_STATUS_MIN = 100;
@@ -93,4 +99,18 @@ export function validateResponseRules(
 
     validateMockResponse(rule.response, `${prefix}.response`);
   }
+}
+
+/** Checks a destination's filter conditions the way the API does (regular expressions excepted). */
+export function validateDestinationInput(input: { filter?: unknown }): void {
+  if (input.filter === undefined || input.filter === null) return;
+  if (typeof input.filter !== "object" || Array.isArray(input.filter)) {
+    throw new Error("filter must be { logic, conditions } or null");
+  }
+  const filter = input.filter as { logic?: unknown; conditions?: unknown };
+  if (filter.logic !== undefined && filter.logic !== "and" && filter.logic !== "or") {
+    throw new Error('filter.logic must be "and" or "or"');
+  }
+  const issues = conditionsIssues(filter.conditions, { use: "filter" }, "filter.conditions");
+  if (issues.length > 0) throw new Error(issues[0]);
 }

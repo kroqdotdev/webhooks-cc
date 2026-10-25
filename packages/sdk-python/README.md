@@ -94,7 +94,7 @@ valid = verify_signature(
 
 Twilio, Square and HubSpot also need `url`; HubSpot also `method`. Discord takes `public_key`. One function per provider is in `webhooks_cc.verify`.
 
-When webhooks.cc forwards requests or email to your server, check that they came from it with the endpoint's forwarding secret (`client.forwarding.secret(slug)`):
+When webhooks.cc forwards requests or email to your server, check that they came from it with the destination's signing secret (`client.destinations.secret(slug, destination_id)`, or `client.forwarding.secret(slug)` for the endpoint's primary destination):
 
 ```python
 from webhooks_cc import WebhookVerificationError, verify_forwarded_email
@@ -106,7 +106,31 @@ except WebhookVerificationError as error:
 print(event["data"]["subject"])
 ```
 
-`verify_forwarded_request()` checks a request forwarded as JSON, and `verify_relayed_request()` one relayed as it was received.
+`verify_forwarded_request()` checks a request forwarded as JSON, `verify_forwarded_json()` a destination's own JSON (it returns the parsed body, whatever its shape), and `verify_relayed_request()` one relayed as it was received.
+
+## Forwarding destinations
+
+An endpoint forwards what it captures to up to 10 destinations, each with its own kinds, filter, format, headers, retries, throttle, delay and signing secret:
+
+```python
+destination = client.destinations.create(
+    endpoint.slug,
+    url="https://hooks.example.com/invoices",
+    email=False,
+    filter={
+        "conditions": [{"field": "body_path", "path": "type", "op": "eq", "value": "invoice.paid"}]
+    },
+    format="template",
+    body_template={
+        "invoice": "{{ json.data.object.id }}",
+        "amount": "{{ json.data.object.amount_paid }}",
+    },
+)
+preview = client.destinations.preview(endpoint.slug, destination_id=destination.id)
+print(preview.filter_passes, preview.delivery.body if preview.delivery else preview.error)
+```
+
+Filters take the conditions of response rules, plus `kind`, `email` (with `name` `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (with `name` `spf`, `dkim` or `dmarc`) and `signature`. `preview()` is a dry run: pass a saved `destination_id`, unsaved fields in `destination` (the names `create()` takes), or both. `update()` changes only the arguments you pass, `test()` sends one delivery now and reports the answer, and `list()` (with `summary=True` for the last 24 hours), `get()`, `delete()`, `reorder()`, `secret()` and `rotate_secret()` do what they say.
 
 ## Mock responses and response rules
 

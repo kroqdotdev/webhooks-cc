@@ -73,6 +73,25 @@ preview, err := client.Endpoints.PreviewResponse(ctx, endpoint.Slug, webhookscc.
 
 It runs against the endpoint's newest HTTP request unless you set `RequestID`, and uses the saved settings unless you set `MockResponse` or `ResponseRules` (`webhookscc.Null` tries none at all). `Endpoints.Update` saves them.
 
+## Forwarding destinations
+
+An endpoint forwards what it captures to up to 10 destinations, each with its own kinds, filter, format, headers, retries, throttle, delay and signing secret:
+
+```go
+destination, err := client.Destinations.Create(ctx, endpoint.Slug, webhookscc.DestinationInput{
+	URL:   webhookscc.Value("https://hooks.example.com/invoices"),
+	Email: webhookscc.Value(false),
+	Filter: webhookscc.Value(webhookscc.DestinationFilter{
+		Conditions: []webhookscc.ResponseRuleCondition{{Field: "body_path", Path: "type", Op: "eq", Value: "invoice.paid"}},
+	}),
+	Format:       webhookscc.Value(webhookscc.FormatTemplate),
+	BodyTemplate: webhookscc.Value(json.RawMessage(`{"invoice":"{{ json.data.object.id }}"}`)),
+})
+preview, err := client.Destinations.Preview(ctx, endpoint.Slug, webhookscc.PreviewDestinationOptions{DestinationID: destination.ID})
+```
+
+Filters take the conditions of response rules, plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`. `Preview` is a dry run: whether the filter lets a captured request through and the exact request the destination would send. `Update` changes only the fields set with `Value` or `Null`, `Test` sends one delivery now, and `List`, `Get`, `Delete`, `Reorder`, `Secret` and `RotateSecret` do what they say.
+
 ## Verify signatures
 
 ```go
@@ -80,6 +99,7 @@ import "webhooks.cc/go/verify"
 
 valid, err := verify.Signature("stripe", body, r.Header, verify.Options{Secret: secret})
 event, err := verify.ForwardedEmail(body, r.Header, forwardingSecret)
+paid, err := verify.ForwardedJSON(body, r.Header, destinationSecret) // a destination's own JSON
 ```
 
 The `verify` package needs no client or API key, so it fits production handlers too.

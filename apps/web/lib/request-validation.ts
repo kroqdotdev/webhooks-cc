@@ -10,14 +10,17 @@ import {
   MAX_RESPONSE_RULES,
   MAX_RULE_NAME_LEN,
 } from "@webhooks-cc/sdk";
+import { checkForwardUrl } from "./forwarding/target";
 import { conditionProblems } from "./rules";
 
 /**
- * Validate a notificationUrl field from a request body.
- * Accepts undefined/null (skip), empty string (allowed), or a valid http/https URL (max 2048).
+ * Validate a notificationUrl field from a request body: undefined or null
+ * (skip), empty (clears it), or a URL a destination may send to (max 2048):
+ * the URL becomes the endpoint's Notifications destination.
  */
 export function validateNotificationUrl(
-  value: unknown
+  value: unknown,
+  options: { allowPrivate: boolean } = { allowPrivate: false }
 ): { valid: true } | { valid: false; response: Response } {
   if (value === undefined || value === null) {
     return { valid: true };
@@ -29,21 +32,11 @@ export function validateNotificationUrl(
     };
   }
   if (value.length > 0) {
-    try {
-      const parsed = new URL(value);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: "notificationUrl must use http or https" },
-            { status: 400 }
-          ),
-        };
-      }
-    } catch {
+    const check = checkForwardUrl(value, options);
+    if (!check.ok) {
       return {
         valid: false,
-        response: Response.json({ error: "Invalid notificationUrl format" }, { status: 400 }),
+        response: Response.json({ error: `notificationUrl: ${check.reason}` }, { status: 400 }),
       };
     }
   }

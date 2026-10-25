@@ -196,8 +196,7 @@ Open the **Settings** tab under the endpoint name. Each section has its own **Sa
 
 - **Receiving**: rename the endpoint, copy its HTTP URL and email address, and choose whether codes and links found in emails are shown
 - **Responses**: what webhook senders get back (status, headers, a body that can echo fields of the request, a delay), [response rules](/docs/mock-responses#conditional-response-rules) checked from the top, and a preview against captured requests
-- **Forwarding**: send every HTTP request and email the endpoint receives to your server, Slack or Discord, retried and logged with its timing. See [Forwarding](/docs/forwarding)
-- **Notifications**: get alerted in Slack, Discord, or any URL when a request arrives. See the [notification webhooks guide](/docs/notification-webhooks) for setup and payload details
+- **Forwarding**: send what the endpoint receives to up to 10 destinations (your servers, Slack or Discord, a JSON body of your own for Zapier or n8n), each with its own conditions, format and timing, retried and logged. Notifications are a Slack or Discord destination sending at most one message a second. See [Forwarding](/docs/forwarding) and [Notification Webhooks](/docs/notification-webhooks)
 - **Team sharing**: share the endpoint with your teams
 - **Signature verification**: verify every incoming webhook against a signing secret (below)
 - **Delete endpoint**: delete the endpoint and everything it captured

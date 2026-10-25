@@ -33,6 +33,8 @@
 //		return
 //	}
 //
-// A *Error says why a delivery was refused; any other error means the call
-// itself was wrong, such as an empty secret.
+// ForwardedRequest checks a request forwarded as signed JSON, ForwardedJSON
+// a destination's own JSON (format "template"), and RelayedRequest a request
+// relayed as it was received. A *Error says why a delivery was refused; any
+// other error means the call itself was wrong, such as an empty secret.
 package verify

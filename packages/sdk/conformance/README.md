@@ -2,15 +2,15 @@
 
 Test data every webhooks.cc SDK must pass. The TypeScript SDK in this package is the reference: `src/__tests__/conformance.test.ts` builds these files from it, checks that it gives the expected answer for every case, and fails when a file here is out of date. The SDKs in other languages run the same files in their own test suites, so a port either behaves like the TypeScript SDK or its CI fails.
 
-| File                | What a port must do                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `signing.json`      | Build signed requests (`sendTo`, `buildRequest`): the same signature headers and the same body.                                                                          |
-| `verify.json`       | Check provider signatures (`verifySignature`) and reach the same verdict, valid or not.                                                                                  |
-| `forwarding.json`   | Verify what webhooks.cc forwards (`verifyForwardedEmail`, `verifyForwardedRequest`, `verifyRelayedRequest`), with the same error codes, and refuse a secret with no key. |
-| `matchers.json`     | Match captured requests (`matchHeader`, `matchBodyPath`, `matchEmail`, ...), as `waitFor` does.                                                                          |
-| `durations.json`    | Read timeouts and poll intervals given as `"30s"`, `"5m"` or milliseconds. Only for ports that take durations that way (Go does not).                                    |
-| `rules.json`        | Evaluate conditions of response rules and forwarding filters. The receiver runs these (Rust); a port needs them only if it evaluates conditions itself.                  |
-| `placeholders.json` | Fill in `{{ ... }}` placeholders in mock responses. The receiver runs these (Rust); a port needs them only if it renders templates itself.                               |
+| File                | What a port must do                                                                                                                                                                             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signing.json`      | Build signed requests (`sendTo`, `buildRequest`): the same signature headers and the same body.                                                                                                 |
+| `verify.json`       | Check provider signatures (`verifySignature`) and reach the same verdict, valid or not.                                                                                                         |
+| `forwarding.json`   | Verify what webhooks.cc forwards (`verifyForwardedEmail`, `verifyForwardedRequest`, `verifyForwardedJson`, `verifyRelayedRequest`), with the same error codes, and refuse a secret with no key. |
+| `matchers.json`     | Match captured requests (`matchHeader`, `matchBodyPath`, `matchEmail`, ...), as `waitFor` does.                                                                                                 |
+| `durations.json`    | Read timeouts and poll intervals given as `"30s"`, `"5m"` or milliseconds. Only for ports that take durations that way (Go does not).                                                           |
+| `rules.json`        | Evaluate conditions of response rules and forwarding filters. The receiver runs these (Rust); a port needs them only if it evaluates conditions itself.                                         |
+| `placeholders.json` | Fill in `{{ ... }}` placeholders in mock responses. The receiver runs these (Rust); a port needs them only if it renders templates itself.                                                      |
 
 Each file has a `version` (raised when the format changes), a `description` that says how to run one vector, and the `vectors`. `rules.json` and `placeholders.json` are written by `src/__tests__/rules-conformance.test.ts` (regenerate with `pnpm --filter @webhooks-cc/sdk exec vitest run rules-conformance -u`). Codes and links found in emails are not here: the API returns them with each email when asked (`extracts=true` on the request routes), so ports read them instead of reimplementing the extraction.
 

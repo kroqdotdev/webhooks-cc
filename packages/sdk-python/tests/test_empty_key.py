@@ -15,6 +15,7 @@ import pytest
 from webhooks_cc import (
     build_template_request,
     verify_forwarded_email,
+    verify_forwarded_json,
     verify_forwarded_request,
     verify_relayed_request,
     verify_signature,
@@ -55,6 +56,8 @@ def test_forwarding_checks_refuse_an_empty_key(secret: str) -> None:
     with pytest.raises(ValueError, match="empty key"):
         verify_forwarded_request(BODY, HEADERS, secret, now=1767225600000)
     with pytest.raises(ValueError, match="empty key"):
+        verify_forwarded_json(BODY, HEADERS, secret, now=1767225600000)
+    with pytest.raises(ValueError, match="empty key"):
         verify_relayed_request(BODY, HEADERS, secret)
 
 
@@ -86,6 +89,8 @@ def test_an_empty_key_is_reported_before_the_headers_are_checked(
         verify_forwarded_email(BODY, headers, "whsec_", now=1767225600000)
     with pytest.raises(ValueError, match="empty key"):
         verify_forwarded_request(BODY, headers, "whsec_", now=1767225600000)
+    with pytest.raises(ValueError, match="empty key"):
+        verify_forwarded_json(BODY, headers, "whsec_", now=1767225600000)
     with pytest.raises(ValueError, match="empty key"):
         verify_relayed_request(BODY, headers, "whsec_")
     with pytest.raises(ValueError, match="empty key"):

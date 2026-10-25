@@ -68,8 +68,31 @@ function isLocalName(host: string): boolean {
 
 export type UrlCheck = { ok: true; url: URL } | { ok: false; reason: string };
 
+/** Host and port, the way two URLs compare: lower case, no final dot, the default port spelled out. */
+function origin(url: URL): string {
+  const port = url.port || (url.protocol === "https:" ? "443" : "80");
+  return `${url.hostname.toLowerCase().replace(/\.$/, "")}:${port}`;
+}
+
+/**
+ * Whether a URL points at the receiver itself. Each delivery would be
+ * captured again and queued again, by every destination of every endpoint
+ * on the way, until the quota runs out; refused when saved and when sent.
+ */
+function isOwnReceiver(url: URL, receiverUrl: string | undefined): boolean {
+  if (!receiverUrl) return false;
+  try {
+    return origin(url) === origin(new URL(receiverUrl));
+  } catch {
+    return false;
+  }
+}
+
 /** The checks that need no DNS: scheme, host and port. */
-export function checkForwardUrl(raw: string, options: { allowPrivate: boolean }): UrlCheck {
+export function checkForwardUrl(
+  raw: string,
+  options: { allowPrivate: boolean; receiverUrl?: string }
+): UrlCheck {
   let url: URL;
   try {
     url = new URL(raw);
@@ -90,6 +113,13 @@ export function checkForwardUrl(raw: string, options: { allowPrivate: boolean })
   const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
   if (BLOCKED_PORTS.has(port)) {
     return { ok: false, reason: `Port ${port} is not allowed.` };
+  }
+  if (isOwnReceiver(url, options.receiverUrl ?? process.env.NEXT_PUBLIC_WEBHOOK_URL)) {
+    return {
+      ok: false,
+      reason:
+        "That is a webhooks.cc capture URL: each delivery would be captured and forwarded again. Use your own server's URL.",
+    };
   }
   return { ok: true, url };
 }

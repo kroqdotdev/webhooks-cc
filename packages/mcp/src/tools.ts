@@ -130,6 +130,81 @@ function conditionSchema(use: "response" | "filter") {
 
 const ruleConditionSchema = conditionSchema("response");
 
+const destinationFields = {
+  name: z.string().max(100).nullable().optional().describe("A name for the list and the log"),
+  enabled: z.boolean().optional().describe("Send to it (default true)"),
+  http: z.boolean().optional().describe("Takes HTTP requests (default true)"),
+  email: z.boolean().optional().describe("Takes emails (default true)"),
+  filter: z
+    .object({
+      logic: z.enum(["and", "or"]).optional().describe("and (default): every condition; or: any"),
+      conditions: z.array(conditionSchema("filter")).max(10),
+    })
+    .nullable()
+    .optional()
+    .describe(
+      "Send only captures that match (null: everything it takes). Conditions like response rules plus kind, email (name: subject, from, to, text, tag), spam_score, email_auth (name: spf, dkim, dmarc) and signature (verified, failed, missing)"
+    ),
+  format: z
+    .enum(["auto", "as_received", "json", "template", "chat"])
+    .optional()
+    .describe(
+      "auto (pick from the URL), as_received (relay HTTP requests unchanged; emails as signed JSON), json (signed JSON envelope), template (your bodyTemplate, signed like json), chat (Slack or Discord message)"
+    ),
+  bodyTemplate: z
+    .unknown()
+    .optional()
+    .describe(
+      'For format template: any JSON value whose strings hold {{ placeholders }}, e.g. {"event": "{{ json.type }}", "amount": "{{ json.data.amount }}", "code": "{{ codes.0 }}"}. A string that is only a placeholder keeps the value\'s type; a missing field becomes null. HTTP requests read method, path, query.x, headers.x, body, json.path, id, receivedAt, signature; emails read the email.received fields (subject, from.address, to, text, codes, links, auth, spam, tag)'
+    ),
+  messageTemplate: z
+    .string()
+    .max(4000)
+    .nullable()
+    .optional()
+    .describe(
+      "For format chat: the message text with {{ placeholders }}; null sends the standard message"
+    ),
+  headers: z
+    .array(
+      z.object({
+        name: z.string().describe("Header name, e.g. Authorization"),
+        value: z.string().nullable().describe("Value, or null to keep the stored one"),
+      })
+    )
+    .max(10)
+    .optional()
+    .describe("Your own headers for every delivery (not chat). Replaces the whole list"),
+  appendPath: z.boolean().optional().describe("Append the captured path to the URL (as_received)"),
+  retrySeconds: z
+    .union([z.literal(0), z.literal(3600), z.literal(86400)])
+    .optional()
+    .describe("Retry failed deliveries for 86400 (default), 3600 or 0 seconds"),
+  keepOrder: z.boolean().optional().describe("One delivery at a time, in capture order"),
+  sentField: z
+    .string()
+    .max(128)
+    .nullable()
+    .optional()
+    .describe("JSON body field with the sender's own timestamp"),
+  throttleSeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(3600)
+    .optional()
+    .describe(
+      "At most one delivery every N seconds; the rest are not sent (1 makes a heads-up channel)"
+    ),
+  delaySeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(3600)
+    .optional()
+    .describe("Wait this long after the capture before sending, like a callback"),
+};
+
 const responseRuleSchema = z.object({
   name: z
     .string()
@@ -1808,8 +1883,89 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   );
 
   server.tool(
+    "list_destinations",
+    "List where an endpoint's captures go: its destinations (up to 10) with their URL, kinds, filter, format, templates and timing, and with summary: true their last 24 hours. Owner only.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      summary: z.boolean().default(true).describe("Add each destination's last 24 hours"),
+    },
+    withErrorHandling(async ({ slug, summary }) => {
+      return jsonContent(await client.destinations.list(slug, { summary }));
+    })
+  );
+
+  server.tool(
+    "add_destination",
+    "Add a destination for an endpoint's captures: your server (as received or signed JSON), a Slack or Discord channel (chat, optionally your own messageTemplate, throttleSeconds 1 for a heads-up), or a JSON body you shape with bodyTemplate (for Zapier, n8n or your API). filter sends only matching captures; delaySeconds makes it a callback. Each destination gets its own signing secret. Check it with preview_destination before relying on it. Owner only.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      url: httpUrlSchema.describe("https URL on a public host name, or a Slack or Discord webhook"),
+      ...destinationFields,
+    },
+    withErrorHandling(async ({ slug, ...input }) => {
+      return jsonContent(await client.destinations.create(slug, input));
+    })
+  );
+
+  server.tool(
+    "update_destination",
+    "Change a destination: any of its fields; only the ones you pass change. Owner only.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      destinationId: z.string().describe("The destination's id (from list_destinations)"),
+      url: httpUrlSchema.optional().describe("A new URL"),
+      ...destinationFields,
+    },
+    withErrorHandling(async ({ slug, destinationId, ...input }) => {
+      return jsonContent(await client.destinations.update(slug, destinationId, input));
+    })
+  );
+
+  server.tool(
+    "remove_destination",
+    "Remove a destination. Deliveries still waiting for it are marked failed; its log stays. Owner only.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      destinationId: z.string().describe("The destination's id"),
+    },
+    withErrorHandling(async ({ slug, destinationId }) => {
+      await client.destinations.delete(slug, destinationId);
+      return textContent(`Destination ${destinationId} removed.`);
+    })
+  );
+
+  server.tool(
+    "preview_destination",
+    "Dry run of a destination against a captured request: whether its filter lets the request through and the exact request it would send (method, URL, headers, body with placeholders filled in). Nothing is sent. Use destinationId for a saved destination, destination for unsaved fields (on top of the saved ones, or with a url on their own), or both.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      destinationId: z.string().optional().describe("A saved destination"),
+      destination: z
+        .object({ url: httpUrlSchema.optional(), ...destinationFields })
+        .optional()
+        .describe("Unsaved fields to try"),
+      requestId: z
+        .string()
+        .optional()
+        .describe("A captured request (default: the newest of the kind it takes, or a sample)"),
+    },
+    withErrorHandling(async ({ slug, destinationId, destination, requestId }) => {
+      if (!destinationId && !destination?.url) {
+        throw new Error("Pass destinationId, or a destination with a url");
+      }
+      return jsonContent(
+        await client.destinations.preview(slug, {
+          ...(destinationId ? { destinationId } : {}),
+          ...(destination ? { destination } : {}),
+          ...(requestId ? { requestId } : {}),
+        })
+      );
+    })
+  );
+
+  server.tool(
     "configure_forwarding",
-    "Change an endpoint's forwarding: the URL, on or off, which kinds (HTTP requests, emails), the format, your own headers, and the advanced options. Only the arguments you pass change. Owner only. Saving the first URL creates the signing secret. A Slack or Discord webhook URL gets a chat message automatically.",
+    "Change an endpoint's primary forwarding destination (the one the endpoint's forward* fields stand for): the URL, on or off, which kinds, the format, your own headers, and the advanced options. Only the arguments you pass change. Owner only. For several destinations, filters, templates, throttling or delays, use add_destination and update_destination.",
     {
       slug: z.string().describe("The endpoint slug"),
       url: httpUrlSchema
@@ -1888,32 +2044,51 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     "Read (or with rotate: true, replace) the whsec_ secret forwarded deliveries are signed with. Owner only. Treat the value as a credential: put it in the handler's environment, not in code.",
     {
       slug: z.string().describe("The endpoint slug"),
+      destinationId: z
+        .string()
+        .optional()
+        .describe("A destination (default: the endpoint's primary destination)"),
       rotate: z
         .boolean()
         .default(false)
         .describe("Replace the secret; every delivery from now on uses the new one"),
     },
-    withErrorHandling(async ({ slug, rotate }) => {
-      const secret = rotate
-        ? await client.forwarding.rotateSecret(slug)
-        : await client.forwarding.secret(slug);
+    withErrorHandling(async ({ slug, destinationId, rotate }) => {
+      const secret = destinationId
+        ? rotate
+          ? await client.destinations.rotateSecret(slug, destinationId)
+          : await client.destinations.secret(slug, destinationId)
+        : rotate
+          ? await client.forwarding.rotateSecret(slug)
+          : await client.forwarding.secret(slug);
       return jsonContent({ secret, rotated: rotate });
     })
   );
 
   server.tool(
     "test_forwarding",
-    "Send the endpoint's newest captured request of a kind (or a sample) to its forwarding URL once, exactly as a delivery would go out, and report the answer. Works with forwarding on or off; nothing is retried or logged.",
+    "Send the endpoint's newest captured request of a kind (or a sample, or requestId) to a destination once, exactly as a delivery would go out, and report the answer. Works whether it is on or off, and whatever its filter says; nothing is retried or logged.",
     {
       slug: z.string().describe("The endpoint slug"),
+      destinationId: z
+        .string()
+        .optional()
+        .describe("A destination (default: the endpoint's primary destination)"),
       kind: z
         .enum(["http", "email"])
         .optional()
-        .describe(
-          "Which kind to send (default: http when HTTP requests are forwarded, else email)"
-        ),
+        .describe("Which kind to send (default: http when the destination takes HTTP requests)"),
+      requestId: z.string().optional().describe("With destinationId: a captured request to send"),
     },
-    withErrorHandling(async ({ slug, kind }) => {
+    withErrorHandling(async ({ slug, destinationId, kind, requestId }) => {
+      if (destinationId) {
+        return jsonContent(
+          await client.destinations.test(slug, destinationId, {
+            ...(kind ? { kind } : {}),
+            ...(requestId ? { requestId } : {}),
+          })
+        );
+      }
       return jsonContent(await client.forwarding.test(slug, kind ? { kind } : {}));
     })
   );
@@ -1926,22 +2101,30 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       requestId: z.string().optional().describe("List every delivery and try of this request"),
       limit: z.number().int().min(1).max(100).default(20).describe("With endpointSlug: max rows"),
       status: z
-        .enum(["all", "pending", "failed"])
+        .enum(["all", "pending", "failed", "skipped"])
         .default("all")
-        .describe("With endpointSlug: all, pending (queued or retrying) or failed"),
+        .describe(
+          "With endpointSlug: all, pending (queued or retrying), failed or skipped (filtered out)"
+        ),
+      destinationId: z.string().optional().describe("With endpointSlug: only this destination"),
       before: z
         .string()
         .optional()
         .describe("With endpointSlug: a row's cursor, to list older rows"),
     },
-    withErrorHandling(async ({ endpointSlug, requestId, limit, status, before }) => {
+    withErrorHandling(async ({ endpointSlug, requestId, limit, status, destinationId, before }) => {
       if ((requestId === undefined) === (endpointSlug === undefined)) {
         throw new Error("Pass exactly one of endpointSlug or requestId");
       }
       if (requestId) return jsonContent(await client.forwarding.requestDeliveries(requestId));
       const [summary, deliveries] = await Promise.all([
         client.forwarding.summary(endpointSlug!),
-        client.forwarding.deliveries(endpointSlug!, { limit, status, before }),
+        client.forwarding.deliveries(endpointSlug!, {
+          limit,
+          status,
+          before,
+          ...(destinationId ? { destinationId } : {}),
+        }),
       ]);
       return jsonContent({
         summary,
@@ -1954,22 +2137,24 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "redeliver",
-    "Forward again with the endpoint's current settings: one captured request or email (requestId; it also sends one that was never forwarded), or every request whose latest delivery failed (endpointSlug, oldest first, up to 1,000 at a time). Owner only; fails while forwarding is off.",
+    "Forward again with the current settings: one captured request or email (requestId; to every destination that takes it, or with destinationId to that one whatever its filter says), or every request whose latest delivery failed (endpointSlug, optionally only destinationId, oldest first, up to 1,000 at a time per destination). Owner only.",
     {
       requestId: z.string().optional().describe("The request or email to send again"),
       endpointSlug: z
         .string()
         .optional()
         .describe("Send every failed delivery of this endpoint again"),
+      destinationId: z.string().optional().describe("Only this destination"),
     },
-    withErrorHandling(async ({ requestId, endpointSlug }) => {
+    withErrorHandling(async ({ requestId, endpointSlug, destinationId }) => {
       if ((requestId === undefined) === (endpointSlug === undefined)) {
         throw new Error("Pass exactly one of requestId or endpointSlug");
       }
+      const options = destinationId ? { destinationId } : {};
       return jsonContent(
         requestId
-          ? await client.forwarding.redeliver(requestId)
-          : await client.forwarding.redeliverFailed(endpointSlug!)
+          ? await client.forwarding.redeliver(requestId, options)
+          : await client.forwarding.redeliverFailed(endpointSlug!, options)
       );
     })
   );

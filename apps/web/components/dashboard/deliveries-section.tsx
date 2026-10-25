@@ -7,7 +7,9 @@ import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   ForwardingOffError,
   fetchDeliveryLog,
+  fetchDestinations,
   redeliverAllFailed,
+  type DashboardDestination,
   type DashboardEndpoint,
   type DeliveryLogFilter,
   type LogDelivery,
@@ -54,10 +56,22 @@ function DeliveredAfter({ row, now }: { row: LogDelivery; now: number }) {
   );
 }
 
+/** A delivery's destination as the log names it: its name, or its host. */
+function destinationLabel(destination: LogDelivery["destination"]): string {
+  if (!destination) return "";
+  if (destination.name) return destination.name;
+  try {
+    return new URL(destination.url).host;
+  } catch {
+    return destination.url;
+  }
+}
+
 /**
  * The endpoint's delivery log: every forwarded request, newest first, with
- * a filter for those retrying or failed, older pages on request, and a way
- * to queue every failed delivery again. Updates while it is on screen.
+ * filters for those retrying, failed or filtered out and for one
+ * destination, older pages on request, and a way to queue every failed
+ * delivery again. Updates while it is on screen.
  */
 export function DeliveriesSection({
   endpoint,
@@ -80,6 +94,14 @@ export function DeliveriesSection({
   );
 
   const [filter, setFilter] = useState<DeliveryLogFilter>("all");
+  const [destinationId, setDestinationId] = useState("");
+  const [destinations, setDestinations] = useState<DashboardDestination[]>([]);
+  useEffect(() => {
+    if (!accessToken) return;
+    fetchDestinations(accessToken, endpoint.slug)
+      .then(setDestinations)
+      .catch(() => setDestinations([]));
+  }, [accessToken, endpoint.slug]);
   const [rows, setRows] = useState<LogDelivery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -95,6 +117,7 @@ export function DeliveriesSection({
       const fresh = await fetchDeliveryLog(accessToken, endpoint.slug, {
         limit: PAGE_SIZE,
         status: filter,
+        destinationId: destinationId || null,
       });
       setRows((prev) => (prev && loadedOlder.current ? mergeRows(fresh, prev) : fresh));
       if (!loadedOlder.current) setExhausted(fresh.length < PAGE_SIZE);
@@ -103,7 +126,7 @@ export function DeliveriesSection({
       setError(err instanceof Error ? err.message : "Deliveries could not be loaded.");
     }
     setNow(Date.now());
-  }, [accessToken, endpoint.slug, filter]);
+  }, [accessToken, endpoint.slug, filter, destinationId]);
 
   // A new filter starts over.
   useEffect(() => {
@@ -128,6 +151,7 @@ export function DeliveriesSection({
         limit: PAGE_SIZE,
         status: filter,
         before: rows[rows.length - 1].cursor,
+        destinationId: destinationId || null,
       });
       loadedOlder.current = true;
       setOlderLoaded(true);
@@ -149,7 +173,11 @@ export function DeliveriesSection({
     if (!accessToken || queuing) return;
     setQueuing(true);
     try {
-      const { queued } = await redeliverAllFailed(accessToken, endpoint.slug);
+      const { queued } = await redeliverAllFailed(
+        accessToken,
+        endpoint.slug,
+        destinationId || null
+      );
       setResult({
         text:
           queued === 0
@@ -176,16 +204,30 @@ export function DeliveriesSection({
   useEffect(() => {
     setConfirming(false);
     setResult(null);
-  }, [filter]);
+  }, [filter, destinationId]);
 
   const showSentColumn = useMemo(() => rows?.some((row) => row.senderAt !== null) ?? false, [rows]);
-  const total =
-    filter === "all" ? summary?.total : filter === "pending" ? summary?.pending : summary?.failed;
-  const forwardingOn = endpoint.forwardEnabled === true;
+  // The endpoint-wide counts do not fit one destination or the filtered-out rows.
+  const total = destinationId
+    ? undefined
+    : filter === "all"
+      ? summary?.total
+      : filter === "pending"
+        ? summary?.pending
+        : filter === "failed"
+          ? summary?.failed
+          : undefined;
+  const forwardingOn =
+    destinations.length > 0
+      ? destinations.some((d) => d.enabled && (!destinationId || d.id === destinationId))
+      : endpoint.forwardEnabled === true;
+  const showDestination =
+    destinations.length > 1 || (rows?.some((row) => row.destination !== null) ?? false);
 
   const empty = (() => {
     if (filter === "pending") return "Nothing is retrying.";
     if (filter === "failed") return "Nothing has failed among the kept deliveries.";
+    if (filter === "skipped") return "Nothing was filtered out.";
     if (!forwardingOn) {
       return "Forwarding is off. Deliveries from before stay here as long as their requests.";
     }
@@ -201,23 +243,41 @@ export function DeliveriesSection({
       id="deliveries"
       sectionRef={sectionRef}
       title="Deliveries"
-      description="Every request forwarded from this endpoint, newest first. Kept as long as the request itself. Open one for every try and to redeliver."
+      description="Every delivery to this endpoint's destinations, newest first. Kept as long as the request itself. Open one for every try and to redeliver."
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Segmented
-          name="Show"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "All" },
-            {
-              value: "pending",
-              label: "Retrying",
-              count: formatCappedCount(summary?.pending ?? 0),
-            },
-            { value: "failed", label: "Failed", count: formatCappedCount(summary?.failed ?? 0) },
-          ]}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented
+            name="Show"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "all", label: "All" },
+              {
+                value: "pending",
+                label: "Retrying",
+                count: formatCappedCount(summary?.pending ?? 0),
+              },
+              { value: "failed", label: "Failed", count: formatCappedCount(summary?.failed ?? 0) },
+              { value: "skipped", label: "Filtered out" },
+            ]}
+          />
+          {destinations.length > 1 && (
+            <select
+              aria-label="Destination"
+              value={destinationId}
+              onChange={(e) => setDestinationId(e.target.value)}
+              className="ui-input text-[13px] py-1.5! px-2! min-w-0 max-w-[16rem]"
+            >
+              <option value="">Every destination</option>
+              {destinations.map((destination) => (
+                <option key={destination.id} value={destination.id}>
+                  {destinationLabel({ ...destination, name: destination.name })}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground">Updates as deliveries happen.</span>
       </div>
 
@@ -227,8 +287,8 @@ export function DeliveriesSection({
             <>
               <span>
                 Send the {formatCappedCount(failedCount)} failed{" "}
-                {failedCount === 1 ? "delivery" : "deliveries"} again with the current URL, format
-                and headers?
+                {failedCount === 1 ? "delivery" : "deliveries"} again with each destination&apos;s
+                current settings?
               </span>
               <button
                 type="button"
@@ -289,6 +349,11 @@ export function DeliveriesSection({
                   <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
                     Request
                   </th>
+                  {showDestination && (
+                    <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
+                      To
+                    </th>
+                  )}
                   {showSentColumn && (
                     <th
                       scope="col"
@@ -369,6 +434,16 @@ export function DeliveriesSection({
                           {name}
                         </span>
                       </td>
+                      {showDestination && (
+                        <td
+                          className={cn(cell, "text-xs max-w-[140px] truncate")}
+                          title={
+                            row.destination?.url ? destinationLabel(row.destination) : undefined
+                          }
+                        >
+                          {destinationLabel(row.destination)}
+                        </td>
+                      )}
                       {showSentColumn && (
                         <td
                           className={cn(num, behind && "text-destructive")}

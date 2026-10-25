@@ -37,8 +37,7 @@ use super::parse::{self, ParsedEmail, StoredBody};
 use crate::AppState;
 use crate::handlers::log_throttle::LogThrottle;
 use crate::handlers::webhook::{
-    DbFailure, NOTIFICATION_PREVIEW_LEN, NotificationInfo, classify_db_error, notification_time,
-    resolve_billing_key, sanitize_ip, spawn_notification, sqlstate_of, strip_nul, truncate_preview,
+    DbFailure, classify_db_error, resolve_billing_key, sanitize_ip, sqlstate_of, strip_nul,
 };
 use crate::metrics;
 
@@ -127,7 +126,6 @@ struct DeliverResponse {
 struct EmailCapture {
     status: String,
     request_id: Option<String>,
-    notification_url: Option<String>,
     billing_key: Option<String>,
 }
 
@@ -579,31 +577,6 @@ async fn capture_for_slug(
     match capture.status.as_str() {
         "ok" => {
             metrics::mail_ingest("captured");
-            if let Some(url) = capture
-                .notification_url
-                .as_deref()
-                .filter(|u| !u.is_empty())
-            {
-                spawn_notification(NotificationInfo {
-                    limiter: state.notification_limiter.clone(),
-                    redis: state.redis.clone(),
-                    url: url.to_string(),
-                    slug: slug.to_string(),
-                    method: "EMAIL".to_string(),
-                    path: path.clone(),
-                    ip: input.client_ip.to_string(),
-                    preview: notification_preview(&input.prepared.parsed),
-                    body: notification_preview(&input.prepared.parsed),
-                    received_at: notification_time(input.received_at),
-                    proxy_url: state.config.notify_proxy_url.clone(),
-                    proxy_secret: state.config.notify_secret.clone(),
-                    cooldown: Duration::from_secs(state.config.notification_cooldown_secs),
-                    exempt: state
-                        .config
-                        .notification_cooldown_exempt(slug, capture.billing_key.as_deref()),
-                    timeout_secs: state.config.notification_timeout_secs,
-                });
-            }
             ("captured", capture.request_id)
         }
         "duplicate" => {
@@ -662,13 +635,6 @@ fn clamp_received_at(sent: Option<DateTime<Utc>>, now: DateTime<Utc>) -> DateTim
     }
 }
 
-fn notification_preview(parsed: &ParsedEmail) -> String {
-    let preview = match &parsed.subject {
-        Some(subject) if !subject.is_empty() => format!("{subject}\n{}", parsed.preview),
-        _ => parsed.preview.clone(),
-    };
-    truncate_preview(&preview, NOTIFICATION_PREVIEW_LEN)
-}
 
 /// HELO names, reverse DNS and envelope senders: NUL-free and length-capped.
 fn short_text(s: &str) -> String {
@@ -693,7 +659,6 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::handlers::capture_limiter::CaptureLimiter;
-    use crate::handlers::webhook::new_notification_limiter;
     use axum::http::HeaderValue;
     use std::sync::Arc;
 
@@ -714,9 +679,7 @@ mod tests {
                 .connect_lazy("postgres://nobody@127.0.0.1:1/none")
                 .unwrap(),
             config,
-            notification_limiter: new_notification_limiter(),
             capture_limiter: Arc::new(CaptureLimiter::new(4)),
-            redis: None,
             mail_deliver_slots: Arc::new(tokio::sync::Semaphore::new(DELIVER_CONCURRENCY)),
         }
     }
@@ -967,14 +930,6 @@ mod tests {
         assert_eq!(short_text("  mail.example.com "), "mail.example.com");
         assert_eq!(short_text(&"h".repeat(1000)).len(), MAX_TEXT_FIELD);
         assert!(!short_text("a\0b").contains('\0'));
-    }
-
-    #[test]
-    fn prefixes_the_preview_with_the_subject() {
-        let parsed = parse::parse_message(b"Subject: Hello\r\n\r\nBody text\r\n");
-        let preview = notification_preview(&parsed);
-        assert!(preview.starts_with("Hello\nBody text"));
-        assert!(preview.chars().count() <= NOTIFICATION_PREVIEW_LEN);
     }
 
     #[test]

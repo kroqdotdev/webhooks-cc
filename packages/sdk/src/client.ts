@@ -27,6 +27,11 @@ import type {
   UpdateEndpointOptions,
   PreviewResponseOptions,
   ResponsePreview,
+  Destination,
+  DestinationInput,
+  DestinationPreview,
+  DestinationTestResult,
+  PreviewDestinationOptions,
   SendOptions,
   SendTemplateOptions,
   SendToOptions,
@@ -76,7 +81,11 @@ import { parseSSE, type SSEFrame } from "./sse";
 import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from "./templates";
 import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
-import { validateMockResponse, validateResponseRules } from "./validation";
+import {
+  validateDestinationInput,
+  validateMockResponse,
+  validateResponseRules,
+} from "./validation";
 import {
   registerAnonymous,
   registerWithEmail,
@@ -1265,11 +1274,70 @@ export class WebhooksCC {
         },
         redeliver: {
           description: "Send a request or email again with the current settings",
-          params: { requestId: "string" },
+          params: {
+            requestId: "string",
+            destinationId: "string? (only this destination, whatever its filter says)",
+          },
         },
         redeliverFailed: {
           description: "Send every request whose latest delivery failed again, oldest first",
-          params: { endpointSlug: "string" },
+          params: { endpointSlug: "string", destinationId: "string? (only this destination)" },
+        },
+      },
+      destinations: {
+        list: {
+          description:
+            "List where an endpoint's captures go (up to 10 destinations), in order; summary adds the last 24 hours",
+          params: { endpointSlug: "string", summary: "boolean?" },
+        },
+        get: {
+          description: "Get one destination",
+          params: { endpointSlug: "string", destinationId: "string" },
+        },
+        create: {
+          description:
+            "Add a destination: url, name, http/email (kinds), filter ({ logic, conditions } like response rules plus kind, email, spam_score, email_auth, signature), format (auto, as_received, json, template, chat), bodyTemplate (JSON with {{ placeholders }}), messageTemplate (chat text), headers, retrySeconds, keepOrder, throttleSeconds, delaySeconds",
+          params: { endpointSlug: "string", input: "DestinationInput (url required)" },
+        },
+        update: {
+          description: "Change a destination; only the fields you pass change",
+          params: { endpointSlug: "string", destinationId: "string", input: "DestinationInput" },
+        },
+        delete: {
+          description: "Remove a destination; what is still waiting for it is marked failed",
+          params: { endpointSlug: "string", destinationId: "string" },
+        },
+        reorder: {
+          description: "Put the destinations in this order",
+          params: { endpointSlug: "string", destinationIds: "string[]" },
+        },
+        secret: {
+          description: "The destination's signing secret (whsec_...)",
+          params: { endpointSlug: "string", destinationId: "string" },
+        },
+        rotateSecret: {
+          description: "Replace the destination's signing secret",
+          params: { endpointSlug: "string", destinationId: "string" },
+        },
+        test: {
+          description:
+            "Send one delivery to the destination now (the newest request it would get, or a sample); the filter is reported, not applied",
+          params: {
+            endpointSlug: "string",
+            destinationId: "string",
+            kind: '"http"|"email"?',
+            requestId: "string?",
+          },
+        },
+        preview: {
+          description:
+            "Dry run: whether the filter lets a captured request through and the exact request a destination would send. Nothing is sent.",
+          params: {
+            endpointSlug: "string",
+            destinationId: "string? (a saved destination)",
+            destination: "DestinationInput? (unsaved fields)",
+            requestId: "string?",
+          },
         },
       },
       teams: {
@@ -1768,6 +1836,7 @@ export class WebhooksCC {
       if (options.limit !== undefined) params.set("limit", String(options.limit));
       if (options.status !== undefined) params.set("status", options.status);
       if (options.before !== undefined) params.set("before", options.before);
+      if (options.destinationId !== undefined) params.set("destination", options.destinationId);
       const query = params.toString() ? `?${params.toString()}` : "";
       return this.request<DeliveryLogEntry[]>(
         "GET",
@@ -1794,12 +1863,20 @@ export class WebhooksCC {
 
     /**
      * Send a captured request or email again with the current settings (it
-     * also sends one that was never forwarded). Fails with 409 when
-     * forwarding of its kind is off.
+     * also sends one that was never forwarded): to every destination that
+     * takes its kind, or with `destinationId` to that one, whatever its
+     * filter says. Fails with 409 when no destination takes it.
      */
-    redeliver: async (requestId: string): Promise<{ id: string }> => {
+    redeliver: async (
+      requestId: string,
+      options: { destinationId?: string } = {}
+    ): Promise<{ id: string }> => {
       validatePathSegment(requestId, "requestId");
-      return this.request<{ id: string }>("POST", `/requests/${requestId}/deliveries`);
+      return this.request<{ id: string }>(
+        "POST",
+        `/requests/${requestId}/deliveries`,
+        options.destinationId ? { destinationId: options.destinationId } : undefined
+      );
     },
 
     /**
@@ -1808,11 +1885,148 @@ export class WebhooksCC {
      * `queued` can be lower than the failed count. Fails with 409 when
      * forwarding is off.
      */
-    redeliverFailed: async (endpointSlug: string): Promise<{ queued: number }> => {
+    redeliverFailed: async (
+      endpointSlug: string,
+      options: { destinationId?: string } = {}
+    ): Promise<{ queued: number }> => {
       validatePathSegment(endpointSlug, "endpointSlug");
+      const query = options.destinationId
+        ? `?destination=${encodeURIComponent(options.destinationId)}`
+        : "";
       return this.request<{ queued: number }>(
         "POST",
-        `/endpoints/${endpointSlug}/deliveries/redeliver-failed`
+        `/endpoints/${endpointSlug}/deliveries/redeliver-failed${query}`
+      );
+    },
+  };
+
+  /**
+   * Destinations: where an endpoint's captures go. Each one has its own URL,
+   * what it gets (HTTP requests, emails, and a filter of conditions), how it
+   * is sent (as received, signed JSON, a JSON template with {{ placeholders }},
+   * or a chat message), its own signing secret and headers, retries, order,
+   * and optional throttling and delay. `forwarding.*` keeps working on the
+   * endpoint's primary destination. Only the endpoint's owner can manage them.
+   */
+  destinations = {
+    /** The endpoint's destinations in order; `summary: true` adds the last 24 hours to each. */
+    list: async (
+      endpointSlug: string,
+      options: { summary?: boolean } = {}
+    ): Promise<Destination[]> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      return this.request<Destination[]>(
+        "GET",
+        `/endpoints/${endpointSlug}/destinations${options.summary ? "?summary=true" : ""}`
+      );
+    },
+
+    get: async (endpointSlug: string, destinationId: string): Promise<Destination> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      validatePathSegment(destinationId, "destinationId");
+      return this.request<Destination>(
+        "GET",
+        `/endpoints/${endpointSlug}/destinations/${destinationId}`
+      );
+    },
+
+    /** Add a destination (up to 10 per endpoint); it gets a signing secret of its own. */
+    create: async (
+      endpointSlug: string,
+      input: DestinationInput & { url: string }
+    ): Promise<Destination> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      validateDestinationInput(input);
+      return this.request<Destination>("POST", `/endpoints/${endpointSlug}/destinations`, input);
+    },
+
+    /** Change a destination; only the fields you pass change. */
+    update: async (
+      endpointSlug: string,
+      destinationId: string,
+      input: DestinationInput
+    ): Promise<Destination> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      validatePathSegment(destinationId, "destinationId");
+      validateDestinationInput(input);
+      return this.request<Destination>(
+        "PATCH",
+        `/endpoints/${endpointSlug}/destinations/${destinationId}`,
+        input
+      );
+    },
+
+    /** Remove a destination. What of it is still waiting is marked failed; its log stays. */
+    delete: async (endpointSlug: string, destinationId: string): Promise<void> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      validatePathSegment(destinationId, "destinationId");
+      await this.request("DELETE", `/endpoints/${endpointSlug}/destinations/${destinationId}`);
+    },
+
+    /** Put the destinations in this order; returns them. */
+    reorder: async (endpointSlug: string, destinationIds: string[]): Promise<Destination[]> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      return this.request<Destination[]>("PUT", `/endpoints/${endpointSlug}/destinations/order`, {
+        ids: destinationIds,
+      });
+    },
+
+    /** The destination's signing secret (`whsec_...`). */
+    secret: async (endpointSlug: string, destinationId: string): Promise<string> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      validatePathSegment(destinationId, "destinationId");
+      const response = await this.request<{ secret: string }>(
+        "GET",
+        `/endpoints/${endpointSlug}/destinations/${destinationId}/secret`
+      );
+      return response.secret;
+    },
+
+    /** Replace the destination's signing secret; deliveries use the new one at once. */
+    rotateSecret: async (endpointSlug: string, destinationId: string): Promise<string> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      validatePathSegment(destinationId, "destinationId");
+      const response = await this.request<{ secret: string }>(
+        "POST",
+        `/endpoints/${endpointSlug}/destinations/${destinationId}/secret`
+      );
+      return response.secret;
+    },
+
+    /**
+     * Send one delivery to the destination now, as a real one would go out:
+     * `requestId`, or the newest request of `kind`, or a sample. The filter
+     * is reported (`filterPasses`), not applied. Nothing is queued.
+     */
+    test: async (
+      endpointSlug: string,
+      destinationId: string,
+      options: { kind?: "http" | "email"; requestId?: string } = {}
+    ): Promise<DestinationTestResult> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      validatePathSegment(destinationId, "destinationId");
+      return this.request<DestinationTestResult>(
+        "POST",
+        `/endpoints/${endpointSlug}/destinations/${destinationId}/test`,
+        options
+      );
+    },
+
+    /**
+     * A dry run: whether the destination's filter lets a captured request
+     * through and the exact request it would send, for a saved destination,
+     * unsaved changes, or both. Nothing is sent.
+     */
+    preview: async (
+      endpointSlug: string,
+      options: PreviewDestinationOptions
+    ): Promise<DestinationPreview> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      if (options.destination) validateDestinationInput(options.destination);
+      return this.request<DestinationPreview>(
+        "POST",
+        `/endpoints/${endpointSlug}/destinations/preview`,
+        options
       );
     },
   };

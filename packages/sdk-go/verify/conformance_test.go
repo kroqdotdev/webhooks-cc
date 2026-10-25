@@ -63,7 +63,7 @@ func loadForwardingVectors(t *testing.T) []forwardingVector {
 	t.Helper()
 	var file forwardingFile
 	conformance.Load(t, "forwarding.json", &file)
-	if file.Version != 2 {
+	if file.Version != 3 {
 		t.Fatalf("forwarding.json is format version %d; update the port", file.Version)
 	}
 	return file.Vectors
@@ -136,6 +136,8 @@ func runForwarding(vector forwardingVector) (string, error) {
 		_, err = ForwardedEmail(body, headers, vector.Secret, now)
 	case "verifyForwardedRequest":
 		_, err = ForwardedRequest(body, headers, vector.Secret, now)
+	case "verifyForwardedJson":
+		_, err = ForwardedJSON(body, headers, vector.Secret, now)
 	case "verifyRelayedRequest":
 		_, err = RelayedRequest(body, headers, vector.Secret)
 	default:

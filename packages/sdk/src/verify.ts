@@ -1392,6 +1392,26 @@ export async function verifyForwardedRequest(
   return parsed;
 }
 
+/**
+ * Verifies a delivery of a destination that sends your own JSON (the "Your
+ * JSON" format, `format: "template"`) and returns its body: the same
+ * Standard Webhooks checks as `verifyForwardedRequest()`, but the body is
+ * whatever the template produced, so only its being JSON is checked. Pass a
+ * type for the shape your template makes.
+ *
+ * @throws WebhookVerificationError with `code` "missing_headers",
+ *   "timestamp_out_of_range", "invalid_signature" or "invalid_payload"
+ * @throws Error when the secret decodes to an empty key, such as "whsec_"
+ */
+export async function verifyForwardedJson<T = unknown>(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string,
+  options: VerifyForwardedEmailOptions = {}
+): Promise<T> {
+  return (await verifySignedForward(body, headers, secret, options, "verifyForwardedJson")) as T;
+}
+
 async function hmacSha256(key: Uint8Array, parts: Uint8Array[]): Promise<Uint8Array> {
   if (!globalThis.crypto?.subtle) {
     throw new Error("crypto.subtle is required for signature verification");

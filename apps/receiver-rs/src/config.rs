@@ -16,16 +16,7 @@ pub struct Config {
     /// serialize on the account's quota row, so more only hold connections
     /// other accounts need.
     pub capture_max_inflight_per_account: usize,
-    pub notify_proxy_url: Option<String>,
-    pub notify_secret: Option<String>,
-    pub redis_url: Option<String>,
     pub max_body_size: usize,
-    pub notification_cooldown_secs: u64,
-    /// Endpoint slugs and billing keys (`team:<id>`, `user:<id>`) whose
-    /// notifications skip the cooldown. An escape hatch for one customer's
-    /// burst tests, set in the environment and removed again afterwards.
-    pub notification_cooldown_exempt: Vec<String>,
-    pub notification_timeout_secs: u64,
     /// AES-256-GCM key for decrypting signing secrets (base64-decoded, 32 bytes).
     /// Optional: when absent, signature verification is silently skipped.
     pub signing_secret_key: Option<[u8; 32]>,
@@ -57,22 +48,7 @@ impl std::fmt::Debug for Config {
                 "capture_max_inflight_per_account",
                 &self.capture_max_inflight_per_account,
             )
-            .field("notify_proxy_url", &self.notify_proxy_url)
-            .field(
-                "notify_secret",
-                &self.notify_secret.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("redis_url", &self.redis_url.as_ref().map(|_| "[REDACTED]"))
             .field("max_body_size", &self.max_body_size)
-            .field(
-                "notification_cooldown_secs",
-                &self.notification_cooldown_secs,
-            )
-            .field(
-                "notification_cooldown_exempt",
-                &self.notification_cooldown_exempt,
-            )
-            .field("notification_timeout_secs", &self.notification_timeout_secs)
             .field(
                 "signing_secret_key",
                 &self.signing_secret_key.as_ref().map(|_| "[REDACTED]"),
@@ -116,16 +92,9 @@ impl Config {
             }
             v => v,
         };
-        let notify_proxy_url = env::var("NOTIFY_PROXY_URL").ok().filter(|v| !v.is_empty());
-        let notify_secret = env::var("NOTIFY_SECRET").ok().filter(|v| !v.is_empty());
-        let redis_url = env::var("REDIS_URL").ok().filter(|v| !v.is_empty());
         let max_body_size: usize = parse_env_or("RECEIVER_MAX_BODY_SIZE", 1_048_576).max(1024);
-        let notification_cooldown_secs: u64 = parse_env_or("NOTIFICATION_COOLDOWN_SECS", 1).max(1);
-        let notification_cooldown_exempt =
-            parse_list(&env::var("NOTIFICATION_COOLDOWN_EXEMPT").unwrap_or_default());
         let capture_max_inflight_per_account: usize =
             parse_env_or("CAPTURE_MAX_INFLIGHT_PER_ACCOUNT", 4);
-        let notification_timeout_secs: u64 = parse_env_or("NOTIFICATION_TIMEOUT_SECS", 5).max(2);
         let signing_secret_key = env::var("SIGNING_SECRET_KEY")
             .ok()
             .filter(|v| !v.is_empty())
@@ -165,13 +134,7 @@ impl Config {
             pool_max,
             pg_acquire_timeout_secs,
             capture_max_inflight_per_account,
-            notify_proxy_url,
-            notify_secret,
-            redis_url,
             max_body_size,
-            notification_cooldown_secs,
-            notification_cooldown_exempt,
-            notification_timeout_secs,
             signing_secret_key,
             webhook_base_url,
             mail_ingest_addr,
@@ -195,13 +158,7 @@ impl Config {
             pool_max: 1,
             pg_acquire_timeout_secs: 1,
             capture_max_inflight_per_account: 4,
-            notify_proxy_url: None,
-            notify_secret: None,
-            redis_url: None,
             max_body_size: 1_048_576,
-            notification_cooldown_secs: 1,
-            notification_cooldown_exempt: Vec::new(),
-            notification_timeout_secs: 5,
             signing_secret_key: None,
             webhook_base_url: None,
             mail_ingest_addr: None,
@@ -209,23 +166,6 @@ impl Config {
             mail_domains: vec!["mailhooks.cc".into()],
         }
     }
-}
-
-impl Config {
-    /// True when notifications for this endpoint skip the cooldown.
-    pub fn notification_cooldown_exempt(&self, slug: &str, billing_key: Option<&str>) -> bool {
-        self.notification_cooldown_exempt
-            .iter()
-            .any(|entry| entry == slug || Some(entry.as_str()) == billing_key)
-    }
-}
-
-/// Comma-separated list, trimmed, without empty entries.
-fn parse_list(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(|entry| entry.trim().to_string())
-        .filter(|entry| !entry.is_empty())
-        .collect()
 }
 
 /// Comma-separated domain list, trimmed, lowercased, without trailing dots.
@@ -238,22 +178,7 @@ fn parse_mail_domains(raw: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, parse_list, parse_mail_domains};
-
-    #[test]
-    fn cooldown_exemptions_match_a_slug_or_a_billing_key() {
-        let mut config = Config::for_tests();
-        config.notification_cooldown_exempt = parse_list(" team:abc , demo4slug1,, ");
-        assert_eq!(
-            config.notification_cooldown_exempt,
-            vec!["team:abc", "demo4slug1"]
-        );
-        assert!(config.notification_cooldown_exempt("other", Some("team:abc")));
-        assert!(config.notification_cooldown_exempt("demo4slug1", None));
-        assert!(!config.notification_cooldown_exempt("other", Some("team:abd")));
-        assert!(!config.notification_cooldown_exempt("other", None));
-        assert!(!Config::for_tests().notification_cooldown_exempt("demo4slug1", Some("team:abc")));
-    }
+    use super::parse_mail_domains;
 
     #[test]
     fn mail_domains_are_normalised() {

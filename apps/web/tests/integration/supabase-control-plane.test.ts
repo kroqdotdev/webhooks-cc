@@ -186,15 +186,20 @@ describe("Supabase Control Plane Integration", () => {
 
     expect(created.notificationUrl).toBe("https://hooks.slack.com/services/T00/B00/xxx");
 
-    // Verify it's persisted in the database
+    // Persisted as the endpoint's Notifications destination (migration 00063)
     const { data: row, error } = await admin
-      .from("endpoints")
-      .select("notification_url")
-      .eq("id", created.id)
+      .from("endpoint_destinations")
+      .select("url, format, throttle_seconds")
+      .eq("endpoint_id", created.id)
+      .eq("legacy_role", "notify")
       .single();
 
     expect(error).toBeNull();
-    expect(row?.notification_url).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+    expect(row).toMatchObject({
+      url: "https://hooks.slack.com/services/T00/B00/xxx",
+      format: "chat",
+      throttle_seconds: 1,
+    });
 
     // Fetch via helper — should round-trip
     const fetched = await getEndpointBySlugForUser(testUserId, created.slug);
@@ -218,14 +223,13 @@ describe("Supabase Control Plane Integration", () => {
 
     expect(cleared?.notificationUrl).toBeNull();
 
-    // Verify DB is null
-    const { data: clearedRow } = await admin
-      .from("endpoints")
-      .select("notification_url")
-      .eq("id", created.id)
-      .single();
+    // The destination is gone
+    const { data: clearedRows } = await admin
+      .from("endpoint_destinations")
+      .select("id")
+      .eq("endpoint_id", created.id);
 
-    expect(clearedRow?.notification_url).toBeNull();
+    expect(clearedRows).toEqual([]);
 
     // Cleanup
     await deleteEndpointBySlugForUser(testUserId, created.slug);

@@ -1,10 +1,12 @@
 import { customAlphabet } from "nanoid";
-import {
-  decryptOwnerHeaders,
-  encryptOwnerHeaders,
-  maskOwnerHeaders,
-} from "@/lib/forwarding/owner-headers";
+import { decryptOwnerHeaders, maskOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { createAdminClient } from "./admin";
+import {
+  applyLegacyForwarding,
+  applyLegacyNotificationUrl,
+  notificationDestination,
+  primaryDestination,
+} from "./destinations";
 import { serverEnv } from "../env";
 import type { Database, Json } from "./database";
 import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
@@ -23,7 +25,6 @@ type SelectedEndpointRow = Pick<
   | "name"
   | "mock_response"
   | "response_rules"
-  | "notification_url"
   | "is_ephemeral"
   | "expires_at"
   | "created_at"
@@ -32,22 +33,31 @@ type SelectedEndpointRow = Pick<
   signing_secret_encrypted?: string | null;
   signing_header?: string | null;
   show_email_extracts?: boolean;
-  forward_enabled?: boolean;
-  forward_url?: string | null;
-  forward_secret_encrypted?: string | null;
-  forward_http?: boolean;
-  forward_email?: boolean;
-  forward_format?: "as_received" | "json" | "chat" | null;
-  forward_headers_encrypted?: string | null;
-  forward_append_path?: boolean;
-  forward_retry_seconds?: number;
-  forward_keep_order?: boolean;
-  forward_sent_field?: string | null;
+  /** Embedded: the old forward* fields and notificationUrl read from these (migration 00063). */
+  endpoint_destinations?: EmbeddedDestination[];
 };
+type EmbeddedDestination = Pick<
+  Database["public"]["Tables"]["endpoint_destinations"]["Row"],
+  | "id"
+  | "position"
+  | "created_at"
+  | "legacy_role"
+  | "enabled"
+  | "url"
+  | "http"
+  | "email"
+  | "format"
+  | "headers_encrypted"
+  | "append_path"
+  | "retry_seconds"
+  | "keep_order"
+  | "sent_field"
+  | "secret_encrypted"
+>;
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 const ENDPOINT_COLUMNS =
-  "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, forward_enabled, forward_url, forward_secret_encrypted, forward_http, forward_email, forward_format, forward_headers_encrypted, forward_append_path, forward_retry_seconds, forward_keep_order, forward_sent_field";
+  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -104,6 +114,8 @@ export interface EndpointRecord {
   forwardHeaders: { name: string; value: string }[];
   /** The JSON body field holding when the sender sent a request (dots for nesting). */
   forwardSentField: string | null;
+  /** How many destinations captures go to (lib/supabase/destinations.ts). */
+  destinationCount: number;
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
@@ -122,7 +134,7 @@ export interface ForwardHeaderInput {
 }
 
 /** Thrown when a submitted header keeps a value (null) that is not stored under its name. */
-export class ForwardHeaderValueMissingError extends Error {}
+export { DestinationHeaderValueMissingError as ForwardHeaderValueMissingError } from "./destinations";
 
 /** Thrown when a temporary endpoint cannot be created because the guest pool is full. */
 export class EphemeralCapacityError extends Error {
@@ -197,6 +209,11 @@ function normalizeMockHeaders(value: unknown): Record<string, string> {
 }
 
 function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
+  const destinations = [...(row.endpoint_destinations ?? [])]
+    .sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at))
+    .map((destination) => ({ ...destination, role: destination.legacy_role }));
+  const primary = primaryDestination(destinations);
+  const notify = notificationDestination(destinations);
   const mockResponse =
     row.mock_response && typeof row.mock_response === "object" && !Array.isArray(row.mock_response)
       ? row.mock_response
@@ -225,7 +242,7 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
       Array.isArray(row.response_rules) && row.response_rules.length > 0
         ? (row.response_rules as unknown[])
         : undefined,
-    notificationUrl: row.notification_url ?? null,
+    notificationUrl: notify?.url ?? null,
     isEphemeral: row.is_ephemeral || undefined,
     expiresAt: parseMillis(row.expires_at),
     createdAt: parseMillis(row.created_at) ?? Date.now(),
@@ -234,17 +251,19 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     signingHeader: row.signing_header ?? null,
     emailAddress: emailAddress(row.slug, row.user_id),
     showEmailExtracts: row.show_email_extracts ?? true,
-    forwardEnabled: row.forward_enabled ?? false,
-    forwardUrl: row.forward_url ?? null,
-    hasForwardSecret: !!row.forward_secret_encrypted,
-    forwardHttp: row.forward_http ?? false,
-    forwardEmail: row.forward_email ?? true,
-    forwardFormat: row.forward_format ?? "auto",
-    forwardAppendPath: row.forward_append_path ?? true,
-    forwardRetrySeconds: row.forward_retry_seconds ?? 86400,
-    forwardKeepOrder: row.forward_keep_order ?? false,
-    forwardHeaders: maskedForwardHeaders(row.forward_headers_encrypted),
-    forwardSentField: row.forward_sent_field ?? null,
+    forwardEnabled: primary?.enabled ?? false,
+    forwardUrl: primary?.url ?? null,
+    hasForwardSecret: !!primary?.secret_encrypted,
+    forwardHttp: primary?.http ?? false,
+    forwardEmail: primary?.email ?? true,
+    // A template is newer than this field; older clients see the URL's pick.
+    forwardFormat: !primary?.format || primary.format === "template" ? "auto" : primary.format,
+    forwardAppendPath: primary?.append_path ?? true,
+    forwardRetrySeconds: primary?.retry_seconds ?? 86400,
+    forwardKeepOrder: primary?.keep_order ?? false,
+    forwardHeaders: maskedForwardHeaders(primary?.headers_encrypted),
+    forwardSentField: primary?.sent_field ?? null,
+    destinationCount: destinations.length,
   };
 }
 
@@ -392,7 +411,6 @@ export async function createEndpointForUser({
     name: name ?? null,
     mock_response: (mockResponse as Json | undefined) ?? null,
     response_rules: (responseRules as Json | undefined) ?? null,
-    notification_url: notificationUrl ?? null,
     is_ephemeral: ephemeral,
     expires_at: expiresAtIso,
   };
@@ -406,6 +424,20 @@ export async function createEndpointForUser({
 
   if (error) {
     throw error;
+  }
+
+  // A notification URL is a chat destination (lib/supabase/destinations.ts).
+  if (notificationUrl && userId) {
+    const created = data as SelectedEndpointRow;
+    await applyLegacyNotificationUrl(created.id, notificationUrl);
+    const { data: reread, error: rereadError } = await admin
+      .from("endpoints")
+      .select(ENDPOINT_COLUMNS)
+      .eq("id", created.id)
+      .returns<SelectedEndpointRow>()
+      .single();
+    if (rereadError) throw rereadError;
+    return normalizeEndpoint(reread);
   }
 
   return normalizeEndpoint(data);
@@ -499,29 +531,6 @@ export async function updateEndpointBySlugForUser({
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
-  // Forwarding: on needs a URL. The secret is made with the first URL, so it
-  // can go into the receiving handler (and be tested) before forwarding is on.
-  let newForwardSecret: string | null = null;
-  if (forwardEnabled !== undefined || forwardUrl !== undefined) {
-    const { data, error } = await admin
-      .from("endpoints")
-      .select("forward_enabled, forward_url, forward_secret_encrypted")
-      .eq("user_id", userId)
-      .eq("slug", slug.toLowerCase())
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return null;
-    const nextEnabled = forwardEnabled ?? data.forward_enabled;
-    const nextUrl = forwardUrl === undefined ? data.forward_url : forwardUrl;
-    if (nextEnabled && !nextUrl) {
-      throw new Error("Add a URL before turning forwarding on.");
-    }
-    if ((nextEnabled || nextUrl) && !data.forward_secret_encrypted) {
-      const { generateForwardSecret } = await import("@/lib/forwarding/sign");
-      newForwardSecret = generateForwardSecret();
-    }
-  }
-
   let existingSigningProvider: string | null = null;
   let existingSigningSecretEncrypted: string | null = null;
   let existingSigningHeader: string | null = null;
@@ -592,57 +601,8 @@ export async function updateEndpointBySlugForUser({
   if (responseRules !== undefined) {
     updates.response_rules = responseRules as Json | null;
   }
-  if (notificationUrl !== undefined) {
-    updates.notification_url = notificationUrl;
-  }
   if (showEmailExtracts !== undefined) {
     updates.show_email_extracts = showEmailExtracts;
-  }
-  if (forwardEnabled !== undefined) {
-    updates.forward_enabled = forwardEnabled;
-  }
-  if (forwardUrl !== undefined) {
-    updates.forward_url = forwardUrl;
-  }
-  if (forwardHttp !== undefined) updates.forward_http = forwardHttp;
-  if (forwardEmail !== undefined) updates.forward_email = forwardEmail;
-  if (forwardFormat !== undefined) {
-    updates.forward_format = forwardFormat === "auto" ? null : forwardFormat;
-  }
-  if (forwardAppendPath !== undefined) updates.forward_append_path = forwardAppendPath;
-  if (forwardRetrySeconds !== undefined) updates.forward_retry_seconds = forwardRetrySeconds;
-  if (forwardKeepOrder !== undefined) updates.forward_keep_order = forwardKeepOrder;
-  if (forwardSentField !== undefined) updates.forward_sent_field = forwardSentField;
-  if (forwardHeaders !== undefined) {
-    // Values the client left null keep what is stored under that name.
-    const { data, error } = await admin
-      .from("endpoints")
-      .select("forward_headers_encrypted")
-      .eq("user_id", userId)
-      .eq("slug", slug.toLowerCase())
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return null;
-    const stored = new Map(
-      (data.forward_headers_encrypted
-        ? decryptOwnerHeaders(byteaToBuffer(data.forward_headers_encrypted))
-        : []
-      ).map(([name, value]) => [name.toLowerCase(), value])
-    );
-    const next: [string, string][] = [];
-    for (const header of forwardHeaders) {
-      const value = header.value ?? stored.get(header.name.toLowerCase());
-      if (value === undefined) {
-        throw new ForwardHeaderValueMissingError(`Enter a value for ${header.name}.`);
-      }
-      next.push([header.name, value]);
-    }
-    const encrypted = encryptOwnerHeaders(next);
-    updates.forward_headers_encrypted = encrypted ? `\\x${encrypted.toString("hex")}` : null;
-  }
-  if (newForwardSecret) {
-    const { encryptSigningSecret } = await import("@/lib/crypto");
-    updates.forward_secret_encrypted = `\\x${encryptSigningSecret(newForwardSecret).toString("hex")}`;
   }
   // Handle signing config
   if (signingProvider !== undefined) {
@@ -684,21 +644,48 @@ export async function updateEndpointBySlugForUser({
     }
   }
 
-  const { data, error } = await admin
-    .from("endpoints")
-    .update(updates)
-    .eq("user_id", userId)
-    .eq("slug", slug.toLowerCase())
-    .select(ENDPOINT_COLUMNS)
-    .returns<SelectedEndpointRow>()
-    .maybeSingle();
+  const forwarding = {
+    forwardEnabled,
+    forwardUrl,
+    forwardHttp,
+    forwardEmail,
+    forwardFormat,
+    forwardAppendPath,
+    forwardRetrySeconds,
+    forwardKeepOrder,
+    forwardHeaders,
+    forwardSentField,
+  };
+  const forwardingTouched = Object.values(forwarding).some((value) => value !== undefined);
+  if (forwardingTouched || notificationUrl !== undefined) {
+    const owned = await findOwnedEndpoint(userId, slug);
+    if (!owned) return null;
+    // The old fields stand for destinations now (lib/supabase/destinations.ts).
+    if (forwardingTouched) await applyLegacyForwarding(owned.id, forwarding);
+    if (notificationUrl !== undefined) await applyLegacyNotificationUrl(owned.id, notificationUrl);
+  }
+
+  const { data, error } =
+    Object.keys(updates).length > 0
+      ? await admin
+          .from("endpoints")
+          .update(updates)
+          .eq("user_id", userId)
+          .eq("slug", slug.toLowerCase())
+          .select(ENDPOINT_COLUMNS)
+          .returns<SelectedEndpointRow>()
+          .maybeSingle()
+      : await admin
+          .from("endpoints")
+          .select(ENDPOINT_COLUMNS)
+          .eq("user_id", userId)
+          .eq("slug", slug.toLowerCase())
+          .returns<SelectedEndpointRow>()
+          .maybeSingle();
 
   if (error) {
     throw error;
   }
-
-  // Turning forwarding off fails what is still waiting in the same
-  // transaction (trigger endpoints_forwarding_off, migration 00050).
 
   return data ? normalizeEndpoint(data) : null;
 }

@@ -1,9 +1,9 @@
 ---
 title: "Forwarding"
-description: "Forward every HTTP request and email an endpoint captures to your own server, or to Slack or Discord: relayed as received or as signed JSON, retried, logged, with the timing of each delivery."
+description: "Send what an endpoint captures to your servers and chat channels: each destination with its own conditions, format (as received, signed JSON, your own JSON or a chat message), timing and log. Retried, logged and timed."
 section: dashboard
 order: 5
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-25
 schema: none
 keywords:
   [
@@ -15,24 +15,33 @@ keywords:
     "inbound email webhook",
     "email to JSON",
     "Standard Webhooks",
+    "webhook transformation",
+    "webhook filter",
+    "webhook fan out",
+    "email parser to webhook",
   ]
 seo:
-  ogTitle: "Forwarding: Relay Webhooks and Emails to Your Server, Slack or Discord"
-  ogDescription: "Forward every request an endpoint captures: relayed as received so provider signatures still verify, or as signed JSON, or as a chat message. Retried, logged, and timed."
+  ogTitle: "Forwarding: Route Webhooks and Emails to Your Servers, Slack or Discord"
+  ogDescription: "Send captures to several destinations, each with its own conditions and format: relayed as received, signed JSON, a JSON body you shape with placeholders, or a chat message. Retried, logged, and timed."
 ---
 
-Forwarding sends every request an endpoint captures on to a URL of yours: your server, or a Slack or Discord channel. Each one is queued the moment it is captured, delivered within a second or two, retried when your server does not accept it, and logged with its timing, so you can see when the sender sent it, when webhooks.cc received it, and when your server took it.
+Forwarding sends what an endpoint captures on to URLs of yours: your servers, Slack or Discord channels, or a no-code tool such as Zapier, Make or n8n. An endpoint can send to up to 10 **destinations**, and each one decides for itself:
 
-Pick what to forward: HTTP requests, [emails](/docs/email-capture), or both. Only the endpoint's owner can change forwarding, and it is available on every plan.
+- **What it gets**: HTTP requests, [emails](/docs/email-capture), or both, and optionally only the ones that match its [conditions](#send-only-some-captures).
+- **How it is sent**: [as received](#as-received), as [signed JSON](#signed-json), as [your own JSON](#your-own-json) with fields of the request filled in, or as a [chat message](#chat-messages).
+- **When**: right away, at most one every few seconds (a [heads-up channel](#a-heads-up-channel)), or after a [delay](#callbacks-send-it-later), like a service calling back.
+
+Every delivery is queued the moment the request is captured, sent within a second or two, retried when the destination does not accept it, and logged with its timing, so you can see when the sender sent it, when webhooks.cc received it, and when your server took it. Only the endpoint's owner can change forwarding, and it is available on every plan.
 
 ## Set it up
 
 1. Open the endpoint's **Settings** tab and find **Forwarding**.
-2. Enter the URL under **Send to**, pick what to forward, and save. For a server URL, a signing secret is created; copy it into your handler.
-3. Click **Send test delivery** to send the newest captured request (or a sample, if none has arrived yet) once and see what came back.
-4. Turn on **Forward captured requests** and save.
+2. Pick what the destination is for: **Your server**, **Slack or Discord**, or **Your own JSON**.
+3. Enter the URL, choose what it gets and how it is sent. **Preview with** shows the exact request it would send for a request this endpoint captured, before you save.
+4. Click **Add destination**. It is on at once, and it has a signing secret of its own; copy it into your handler.
+5. **Send test delivery** sends the newest captured request (or a sample) once and shows what came back.
 
-From then on every request of the kinds you picked is forwarded. Requests captured while forwarding was off are not sent later; use **Redeliver** on one of them to send it.
+Requests captured before a destination was added or switched on are not sent to it later; use **Deliver now** on one of them in its **Deliveries** tab.
 
 ## Formats
 
@@ -42,7 +51,8 @@ The format is picked from the URL, and you can change it:
 | ---------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | **As received**  | HTTP requests to a server URL (the default)      | The request as it arrived: same method, headers and body bytes. Emails have no request to relay, so they go as signed JSON.           |
 | **Signed JSON**  | Emails to a server URL (the default), or both    | A JSON envelope with the request or email inside, signed with [Standard Webhooks](https://www.standardwebhooks.com) headers.         |
-| **Chat message** | Slack and Discord incoming webhooks (the default) | A readable message: the endpoint, method and path, when it arrived, and up to 3,000 characters of the body.                          |
+| **Your JSON**    | Any URL that wants its own shape                 | The JSON you write, with `{{ placeholders }}` filled in from each request, signed like Signed JSON. See [Your own JSON](#your-own-json). |
+| **Chat message** | Slack and Discord incoming webhooks (the default) | A readable message: the endpoint, method and path, when it arrived, and up to 3,000 characters of the body; or your own text.        |
 
 Slack and Discord reject anything but their own JSON, so a URL on `hooks.slack.com` or `discord.com` gets a chat message unless you pick otherwise.
 
@@ -278,6 +288,39 @@ Every copy of one request has the same `webhook-id`, so a handler that saw it be
 
 **Rotate** the secret in Settings if it leaks. Deliveries are signed with the new secret at once, both formats, so update your handler right away.
 
+## Your own JSON
+
+Pick **Your JSON** and write the body you want. Every string can hold `{{ placeholders }}`, filled in from each request, so you send only the fields your tool needs, named the way it wants them:
+
+```json
+{
+  "event": "{{ json.type }}",
+  "customer": "{{ json.data.object.customer }}",
+  "amount": "{{ json.data.object.amount_paid }}",
+  "received": "{{ receivedAt }}"
+}
+```
+
+A string that is only a placeholder keeps the value's own type, so `"{{ json.data.object.amount_paid }}"` becomes the number `4200`, and a field the request does not have becomes `null`. Placeholders inside longer text are written as text. The body is signed with [Standard Webhooks](#verify-the-signature) headers like the Signed JSON format, so `verifyForwardedJson()` from the SDK [checks it](/docs/sdk/signatures#forwarded-requests) and returns the body, and your own headers are added.
+
+An HTTP request reads `method`, `path`, `query.page`, `headers.user-agent` (any case), `body` (the text), `json.data.id` (a field of the JSON or form body), `contentType`, `ip`, `size`, `id`, `receivedAt`, `endpoint.slug` and `signature` (`verified`, `failed` or `missing`). An email reads the fields of its [email JSON](#an-email): `subject`, `from.address`, `from.name`, `to.0.address`, `text`, `html`, `tag`, `codes.0` and `links.0.url` (when the endpoint shows codes and links), `auth.spf`, `spam.score` and the rest. Both read `uuid` (new for each delivery) and `now`. Filters work as in [mock responses](/docs/mock-responses#placeholders): `| default: "none"`, `| upper`, `| lower`, `| truncate: 80` and `| json`.
+
+**Insert field** next to the template lists what the destination's kinds can read, and the editor refuses a placeholder neither kind has. Use it to send only part of an email: a template with the subject, the sender and the first code sends nothing else.
+
+## Send only some captures
+
+Add conditions under **What it gets** to send only the requests that match, with **all** or **any** of them. They work like [response rule conditions](/docs/mock-responses#what-a-condition-can-check) (method, path, a header, a query parameter, a body field, body text, content type, size), and also read:
+
+| Field            | Reads                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| **Kind**         | `http` or `email`                                                                          |
+| **Email**        | its subject, sender, recipients (To and Cc, any of them), text or tag                       |
+| **Spam score**   | the rspamd score, as a number                                                              |
+| **Sender check** | the SPF, DKIM or DMARC result: `pass`, `fail`, `softfail`, `neutral`, `none`, ...          |
+| **Signature**    | the endpoint's [signature check](/docs/signature-verification): `verified`, `failed` or `missing` |
+
+A request the conditions turn down is not sent, and the log lists it as **Filtered out**. A condition on the signature waits up to 30 seconds for the check to finish before deciding. Forwarding only verified requests to your server, or only emails whose subject contains "invoice" to your accounting tool, is one condition each.
+
 ## Chat messages
 
 For a Slack or Discord incoming webhook, each request becomes a message like this:
@@ -288,9 +331,17 @@ Received 2026-10-11T09:30:01.882Z (UTC), 197 ms after publishedAt
 {"id":"evt_1Q...","type":"payment_intent.succeeded", ...}
 ```
 
-The body follows in a code block, up to 3,000 characters in Slack and as much as fits in Discord's 2,000. An email reads "New email to ..." with its subject and text. The message is the one [notifications](/docs/notification-webhooks) send; the difference is that forwarding posts every request and retries, where a notification is a quick heads-up at most once a second.
+The body follows in a code block, up to 3,000 characters in Slack and as much as fits in Discord's 2,000. An email reads "New email to ..." with its subject and text. Write your own **Message** instead, with placeholders: `Invoice {{ json.data.object.id }} paid by {{ json.data.object.customer_email }}`. It is escaped for Slack, and `@everyone` in a payload pings nobody on Discord.
 
 Slack takes about one message a second per webhook and Discord a few every two seconds, so messages to one of them are spaced out to stay under that, and when either answers `429` nothing more goes to it until the time it asked for. Messages arrive in capture order only with **Keep order** on (see [Delivery and retries](#delivery-and-retries)).
+
+### A heads-up channel
+
+Under **Advanced**, **At most one every** limits a destination to one delivery every so many seconds; the requests in between are not sent. With conditions, only the requests that match count, so a request they turn down never takes the place of one they would send. A destination that also does not retry is a heads-up: a delivery that could not go out within a minute (while the destination was answering slowly, say) is dropped and logged as **Filtered out**, rather than arriving late in a burst. At 1 second, a Slack or Discord destination becomes a heads-up that something arrived, which is what [notifications](/docs/notification-webhooks) are: an endpoint's notification URL is a chat destination like this, named Notifications.
+
+## Callbacks: send it later
+
+**Wait before sending**, under **Advanced**, holds each delivery for up to an hour after the request arrives. With your own JSON it makes a destination behave like a service that answers at once and calls back later: answer the sender with a [mock response](/docs/mock-responses), and post the result to the callback URL 30 seconds after.
 
 ## Your own headers
 
@@ -315,15 +366,16 @@ The time between the sender's clock and ours includes the network and any queue 
 - Answer with any `2xx` status to accept a delivery. Redirects are not followed and count as failures.
 - Your server has 15 seconds to answer.
 - A failed delivery is tried again after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours, about a day in all, and then marked failed. Under **Advanced**, **Retry failed deliveries** can stop after an hour (the first four retries) or send each request only once. A `429` waits at least as long as its `Retry-After` asks, up to an hour, and counts as a try like any other failure.
-- Deliveries are at least once. Without **Keep order**, up to two requests of an endpoint are delivered at a time, so a slow answer does not hold the rest back, but two may overtake each other; `webhooks-cc-received-at` gives the capture order. With **Keep order** on, one request is delivered at a time, in the order captured, and a request waiting for its retry holds back the ones after it.
-- A retry goes to the URL and uses the settings saved at that moment, so fixing a wrong URL or header also fixes the deliveries still waiting. Turning forwarding, or one kind of it, off marks its waiting deliveries as failed.
-- At most 1,000 deliveries of an endpoint wait at a time. A request captured while 1,000 are waiting (a destination down for long under heavy traffic) is not forwarded, and the log says so; redeliver it once the queue has drained.
+- Deliveries are at least once. Without **Keep order**, up to two requests are delivered to a destination at a time, so a slow answer does not hold the rest back, but two may overtake each other; `webhooks-cc-received-at` gives the capture order. With **Keep order** on, one request is delivered at a time, in the order captured, and a request waiting for its retry holds back the ones after it.
+- Each destination has its own queue, retries and settings: a destination that is down never holds back another.
+- A retry goes to the URL and uses the settings saved at that moment, so fixing a wrong URL or header also fixes the deliveries still waiting. Switching a destination off, taking a kind away from it, or removing it marks its waiting deliveries as failed.
+- At most 1,000 deliveries wait for a destination at a time. A request captured while 1,000 are waiting (a destination down for long under heavy traffic) is not sent to it, and the log says so; redeliver it once the queue has drained.
 
 ## The delivery log
 
-**Settings**, **Deliveries** lists every delivery of the endpoint, newest first, with its status, your server's answer, how long after capture it was delivered, how long your server took, and the sender-to-receipt time when the request has one. Filter it to the deliveries still retrying or the ones that failed; **Redeliver all failed** sends every failed request again, oldest first, with the current settings, up to 1,000 at a time. The Forwarding section shows the last 24 hours at a glance.
+**Settings**, **Deliveries** lists every delivery of the endpoint, newest first, with its destination, status, your server's answer, how long after capture it was delivered, how long your server took, and the sender-to-receipt time when the request has one. Filter it to one destination, to the deliveries still retrying, the ones that failed, or the ones its conditions filtered out; **Redeliver all failed** sends every failed request again, oldest first, with each destination's current settings, up to 1,000 at a time per destination. Each destination's row in **Forwarding** shows its last 24 hours.
 
-Open a delivery for its request's **Deliveries** tab: every try with the status, the duration, the error or the start of the response, and **Redeliver**, which sends the request again with the current URL, format and headers. Team members can see a request's deliveries; only the owner can redeliver and change forwarding. Deliveries are kept as long as the request itself (your plan's [retention](/docs/plans-limits#data-retention)).
+Open a delivery for its request's **Deliveries** tab: each destination with every try (the status, the duration, the error or the start of the response) and **Redeliver**, which sends the request to that destination again with its current settings. On a request its conditions filtered out, **Send anyway** sends it once regardless. Team members can see a request's deliveries, with the destination's host but not its path; only the owner can redeliver and change forwarding. Deliveries are kept as long as the request itself (your plan's [retention](/docs/plans-limits#data-retention)).
 
 ## Test an email handler locally
 
@@ -352,7 +404,7 @@ To test the deployed handler through webhooks.cc instead, use **Send test delive
 
 ## Manage forwarding from code
 
-The SDK's `client.forwarding` methods do everything the **Forwarding** and **Deliveries** sections of Settings do, and the [MCP server](/docs/mcp/tools#configure_forwarding) has the same as tools. Like the dashboard, they are for the endpoint's owner only: for anyone else they throw `NotFoundError`, and a team member's `configure()` fails with a 403.
+The SDK's `client.destinations` methods do everything the **Forwarding** section does, `client.forwarding` the **Deliveries** log, and the [MCP server](/docs/mcp/tools#add_destination) has the same as tools, so an agent can set up and check forwarding for you. They are for the endpoint's owner only: for anyone else they throw `NotFoundError`.
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";
@@ -360,45 +412,51 @@ import { WebhooksCC } from "@webhooks-cc/sdk";
 const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
 const slug = "my-endpoint";
 
-// Save the URL and what to forward. The first URL creates the signing secret.
-await client.forwarding.configure(slug, {
+// Your server: every request as received, with a token.
+const server = await client.destinations.create(slug, {
   url: "https://example.com/hooks",
-  http: true,
-  email: true,
   headers: [{ name: "Authorization", value: `Bearer ${process.env.HOOK_TOKEN}` }],
   sentField: "publishedAt",
-  keepOrder: true,
 });
-const secret = await client.forwarding.secret(slug); // "whsec_...", for your handler
+const secret = await client.destinations.secret(slug, server.id); // "whsec_...", for your handler
 
-// Send the newest request (or a sample) once and see what your server answered
-const result = await client.forwarding.test(slug, { kind: "http" });
+// Only paid invoices, as your own JSON, to an automation tool.
+const zap = await client.destinations.create(slug, {
+  url: "https://hooks.zapier.com/hooks/catch/123/abc",
+  http: true,
+  email: false,
+  filter: { conditions: [{ field: "body_path", op: "eq", path: "type", value: "invoice.paid" }] },
+  format: "template",
+  bodyTemplate: { invoice: "{{ json.data.object.id }}", amount: "{{ json.data.object.amount_paid }}" },
+});
+
+// What would it send for the newest request? Nothing is sent.
+const preview = await client.destinations.preview(slug, { destinationId: zap.id });
+console.log(preview.filterPasses, preview.delivery?.body);
+
+// Send the newest request (or a sample) once and see what the server answered.
+const result = await client.destinations.test(slug, server.id, { kind: "http" });
 console.log(result.delivered, result.status, result.excerpt);
 
-// Turn forwarding on
-await client.forwarding.configure(slug, { enabled: true });
-
-// The log, its counts, every try of one request, and redeliveries
-const failed = await client.forwarding.deliveries(slug, { status: "failed", limit: 50 });
-const { last24h, pending } = await client.forwarding.summary(slug);
-if (failed.length > 0) {
-  const tries = await client.forwarding.requestDeliveries(failed[0].requestId);
-  await client.forwarding.redeliver(failed[0].requestId);
-}
+// The log, by destination, and redeliveries.
+const failed = await client.forwarding.deliveries(slug, { status: "failed", destinationId: server.id });
+if (failed.length > 0) await client.forwarding.redeliver(failed[0].requestId, { destinationId: server.id });
 await client.forwarding.redeliverFailed(slug);
 
-// Replace a leaked secret; deliveries from now on are signed with the new one
-const newSecret = await client.forwarding.rotateSecret(slug);
+// Off, then gone.
+await client.destinations.update(slug, zap.id, { enabled: false });
+await client.destinations.delete(slug, zap.id);
 ```
 
-`configure()` changes only the options you pass. `configure({ enabled: false })` turns forwarding off and fails the deliveries still waiting; `configure({ url: null })` then removes the URL. `secret()` throws `NotFoundError` until a URL has been saved, and the redelivery methods fail with a 409 while forwarding is off. In your handler, `verifyRelayedRequest()`, `verifyForwardedRequest()` and `verifyForwardedEmail()` check deliveries ([Forwarded requests](/docs/sdk/signatures#forwarded-requests)). See the [SDK reference](/docs/sdk/api#forwarding) for every method and type.
+`update()` changes only the fields you pass. `client.forwarding.configure()`, `secret()` and `test()` still work on the endpoint's primary destination, the one its `forwardUrl` stands for. In your handler, `verifyRelayedRequest()`, `verifyForwardedRequest()` and `verifyForwardedEmail()` check deliveries ([Forwarded requests](/docs/sdk/signatures#forwarded-requests)); `verifyForwardedJson()` checks a delivery of your own JSON and returns its body. See the [SDK reference](/docs/sdk/api#destinations) for every method and type.
 
 ## Limits
 
 - The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. On webhooks.cc, deliveries come from Cloudflare's network, not from a fixed address (a self-hosted copy without the notify proxy sends from its own server), so do not allowlist IPs; check the signature instead.
+- An endpoint has at most 10 destinations, and none of them can be a webhooks.cc capture URL (`go.webhooks.cc`): each delivery would be captured and forwarded again.
 - Forwarding does not use your request quota: each request already counted once when it arrived.
 - A request or email whose delivery would be larger than 10 MB is not forwarded. Email text and HTML are kept up to 256 KB each, so real mail stays far below that.
 
-## Forwarding or notifications?
+## Notifications
 
-[Notifications](/docs/notification-webhooks) are a heads-up: at most one message a second per endpoint, sent at once, never retried or logged. Forwarding is every request, queued, retried and logged. Use notifications to glance at activity in a channel, and forwarding when every request has to arrive, in your channel or on your server. Both can be on at once; when they point at the same channel, every request that also triggers a notification arrives there twice.
+[Notifications](/docs/notification-webhooks) are a destination now: a chat message, at most one a second, not retried, and logged like any other. Set a notification URL through the API and it appears in **Forwarding** as a destination named Notifications; change it there like any other.

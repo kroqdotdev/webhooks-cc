@@ -207,6 +207,70 @@ describe("WebhooksCC", () => {
     });
   });
 
+  describe("destinations", () => {
+    it("creates a destination with a filter and a template", async () => {
+      const destination = { id: "d1", url: "https://api.example.com/in", format: "template" };
+      const fetchMock = mockFetch({ body: destination });
+      globalThis.fetch = fetchMock;
+      const client = createClient();
+      const input = {
+        url: "https://api.example.com/in",
+        format: "template" as const,
+        bodyTemplate: { event: "{{ json.type }}" },
+        filter: {
+          conditions: [
+            { field: "body_path" as const, op: "eq" as const, path: "type", value: "x" },
+          ],
+        },
+      };
+      await client.destinations.create("abc123", input);
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/endpoints/abc123/destinations`);
+      expect(opts.method).toBe("POST");
+      expect(JSON.parse(opts.body)).toEqual(input);
+    });
+
+    it("refuses a filter condition the API would refuse", async () => {
+      const fetchMock = mockFetch({ body: {} });
+      globalThis.fetch = fetchMock;
+      await expect(
+        createClient().destinations.update("abc123", "d1", {
+          filter: { conditions: [{ field: "spam_score", op: "eq", value: "1" }] },
+        })
+      ).rejects.toThrow('op "eq" is not valid for field "spam_score"');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("previews and tests a destination, and filters the log by it", async () => {
+      const fetchMock = mockFetch({ body: {} });
+      globalThis.fetch = fetchMock;
+      const client = createClient();
+      await client.destinations.preview("abc123", { destinationId: "d1", requestId: "r1" });
+      await client.destinations.test("abc123", "d1", { kind: "email" });
+      await client.forwarding.deliveries("abc123", { destinationId: "d1", status: "skipped" });
+      await client.forwarding.redeliver("r1", { destinationId: "d1" });
+      const calls = fetchMock.mock.calls.map(([url, opts]) => [url, opts.method, opts.body]);
+      expect(calls).toEqual([
+        [
+          `${BASE_URL}/api/endpoints/abc123/destinations/preview`,
+          "POST",
+          JSON.stringify({ destinationId: "d1", requestId: "r1" }),
+        ],
+        [
+          `${BASE_URL}/api/endpoints/abc123/destinations/d1/test`,
+          "POST",
+          JSON.stringify({ kind: "email" }),
+        ],
+        [
+          `${BASE_URL}/api/endpoints/abc123/deliveries?status=skipped&destination=d1`,
+          "GET",
+          undefined,
+        ],
+        [`${BASE_URL}/api/requests/r1/deliveries`, "POST", JSON.stringify({ destinationId: "d1" })],
+      ]);
+    });
+  });
+
   describe("endpoints.previewResponse", () => {
     it("posts unsaved rules and returns the preview", async () => {
       const preview = {
@@ -1629,6 +1693,7 @@ describe("WebhooksCC", () => {
       expect(description.teams.share.params).toEqual({ teamId: "string", slug: "string" });
       expect(Object.keys(description.emails)).toHaveLength(8);
       expect(Object.keys(description.forwarding)).toHaveLength(9);
+      expect(Object.keys(description.destinations)).toHaveLength(10);
       expect(description.requests.list.params.kind).toBe('"http"|"email"?');
     });
   });

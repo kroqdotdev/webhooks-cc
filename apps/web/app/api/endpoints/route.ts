@@ -1,4 +1,5 @@
 import { auditUserAction } from "@/lib/audit";
+import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
@@ -100,7 +101,9 @@ export async function POST(request: Request) {
   const mockCheck = validateMockResponseField(body.mockResponse);
   if (!mockCheck.valid) return mockCheck.response;
 
-  const notifCheck = validateNotificationUrl(body.notificationUrl);
+  const notifCheck = validateNotificationUrl(body.notificationUrl, {
+    allowPrivate: allowPrivateTargets(),
+  });
   if (!notifCheck.valid) return notifCheck.response;
 
   const rulesCheck = validateResponseRules(body.responseRules);

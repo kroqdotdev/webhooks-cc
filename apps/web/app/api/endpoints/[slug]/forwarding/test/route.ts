@@ -1,26 +1,22 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { serverEnv } from "@/lib/env";
-import { sendOptions } from "@/lib/forwarding/config";
-import { sampleEmailSource, sampleHttpRequest } from "@/lib/forwarding/sample";
-import { isDelivered, sendForward } from "@/lib/forwarding/send";
-import { outgoingFor } from "@/lib/forwarding/worker";
+import { pickRequest, prepareDelivery, sendPrepared } from "@/lib/forwarding/destination-delivery";
+import { ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
-import { getEndpointBySlugForUser } from "@/lib/supabase/endpoints";
 import {
-  getForwardOwnerHeaders,
-  getForwardSecret,
-  getNewestRequestId,
-} from "@/lib/supabase/forwarding";
-import { getRequestsByIds, type RequestRecord } from "@/lib/supabase/requests";
-import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
+  getDestinationHeaders,
+  getDestinationSecret,
+  listDestinations,
+  primaryDestination,
+} from "@/lib/supabase/destinations";
 import { reportError } from "@/lib/observability";
 
 /**
- * Sends one delivery to the saved forwarding URL now, exactly as a real one
- * would go out, and reports what came back: the endpoint's newest request of
- * the chosen kind (`{ kind: "http" | "email" }`, by default whichever the
- * endpoint forwards), or a sample when it has none yet. Nothing is queued or
- * retried.
+ * Sends one delivery to the primary destination (what the endpoint's old
+ * forwardUrl field stands for) now, exactly as a real one would go out, and
+ * reports what came back: the endpoint's newest request of the chosen kind
+ * (`{ kind: "http" | "email" }`, by default whichever the destination takes),
+ * or a sample when it has none yet. Nothing is queued or retried. Each
+ * destination has a test of its own at /destinations/{id}/test.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -31,9 +27,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(Response.json(body, { status }), rateLimit);
-
-  const access = await resolveEndpointAccess(auth.userId, slug);
-  if (!access?.isOwner) return reply({ error: "Endpoint not found" }, 404);
 
   let requested: unknown;
   try {
@@ -47,71 +40,38 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   }
 
   try {
-    const endpoint = await getEndpointBySlugForUser(auth.userId, slug);
+    const endpoint = await ownedEndpoint(auth.userId, slug);
     if (!endpoint) return reply({ error: "Endpoint not found" }, 404);
-    const secret = await getForwardSecret(auth.userId, slug);
-    if (!endpoint.forwardUrl || !secret) {
-      return reply({ error: "Save a forwarding URL first." }, 400);
-    }
-    const kind: "http" | "email" =
-      (requested as "http" | "email" | undefined) ??
-      (endpoint.forwardHttp || !endpoint.forwardEmail ? "http" : "email");
-
-    const newestId = await getNewestRequestId(endpoint.id, kind);
-    const [newest] = newestId ? await getRequestsByIds([newestId]) : [];
-    let source: RequestRecord;
-    if (newest) {
-      source = newest;
-    } else if (kind === "http") {
-      source = sampleHttpRequest(endpoint.id);
-    } else {
-      const sample = sampleEmailSource(`${endpoint.slug}@${serverEnv().EMAIL_CAPTURE_DOMAIN}`);
-      source = {
-        id: sample.id,
-        endpointId: endpoint.id,
-        method: "EMAIL",
-        path: sample.path,
-        headers: sample.headers,
-        queryParams: {},
-        ip: "127.0.0.1",
-        size: sample.size,
-        receivedAt: sample.receivedAt,
-        kind: "email",
-        email: sample.email,
-      };
-    }
-
-    const prepared = outgoingFor(source, {
-      url: endpoint.forwardUrl,
-      format: endpoint.forwardFormat === "auto" ? null : endpoint.forwardFormat,
-      appendPath: endpoint.forwardAppendPath,
-      slug: endpoint.slug,
-      name: endpoint.name ?? null,
-      showEmailExtracts: endpoint.showEmailExtracts,
-      ownerHeaders: await getForwardOwnerHeaders(auth.userId, slug),
-      attempt: 1,
-      secret,
-      sentField: endpoint.forwardSentField,
+    const destination = primaryDestination(await listDestinations(endpoint.id));
+    if (!destination) return reply({ error: "Save a forwarding URL first." }, 400);
+    const picked = await pickRequest(endpoint, {
+      kind: (requested as "http" | "email" | undefined) ?? null,
+      destination,
     });
-    if ("reason" in prepared) return reply({ error: prepared.reason }, 400);
-    const result = await sendForward(prepared.outgoing, sendOptions());
-    const { facts } = prepared;
+    if ("error" in picked) return reply({ error: picked.error }, picked.status);
+    const prepared = prepareDelivery(
+      endpoint,
+      destination,
+      picked.request,
+      (await getDestinationSecret(endpoint.id, destination.id)) ?? "",
+      await getDestinationHeaders(endpoint.id, destination.id)
+    );
+    const sent = await sendPrepared(prepared);
+    if (!sent.sent) return reply({ error: sent.reason }, 400);
     return reply({
-      ...result,
-      delivered: isDelivered(result),
-      sample: !newest,
-      kind,
-      format: facts.format,
-      url: prepared.outgoing.url,
-      target: facts.target,
+      ...sent.result,
+      sample: picked.sample,
+      kind: picked.request.kind,
+      format: prepared.format,
+      target: prepared.facts.target,
       // What was sent, for the result sentence.
       request: {
-        method: source.method,
-        path: source.path,
-        subject: source.email?.subject ?? null,
-        receivedAt: source.receivedAt,
+        method: picked.request.method,
+        path: picked.request.path,
+        subject: picked.request.email?.subject ?? null,
+        receivedAt: picked.request.receivedAt,
       },
-      sender: facts.sent,
+      sender: prepared.facts.sent,
     });
   } catch (error) {
     reportError("Test delivery failed", error);

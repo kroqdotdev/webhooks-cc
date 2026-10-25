@@ -4,6 +4,7 @@ import type { RequestRecord } from "@/lib/supabase/requests";
 import {
   deliveryTarget,
   holdChat,
+  isStaleHeadsUp,
   nextRetry,
   outgoingFor,
   reserveChatSlot,
@@ -125,6 +126,28 @@ describe("nextRetry", () => {
     expect(nextRetry(8, queuedAt, 86_400, 0, 1)).toBe(43_200);
     expect(nextRetry(9, queuedAt, 86_400, 0, 1)).toBeNull();
     expect(nextRetry(1, queuedAt, 0, 0, 2)).toBeNull();
+  });
+});
+
+describe("isStaleHeadsUp", () => {
+  const queuedAt = "2026-10-25T12:00:00.000Z";
+  const at = (seconds: number) => Date.parse(queuedAt) + seconds * 1000;
+  const headsUp = {
+    throttle_seconds: 1,
+    forward_retry_seconds: 0,
+    queued_at: queuedAt,
+    bypass_filter: false,
+  };
+
+  it("drops a heads-up that could not go out within a minute", () => {
+    expect(isStaleHeadsUp(headsUp, at(59))).toBe(false);
+    expect(isStaleHeadsUp(headsUp, at(61))).toBe(true);
+  });
+
+  it("keeps whatever retries, is not throttled, or was asked for by hand", () => {
+    expect(isStaleHeadsUp({ ...headsUp, forward_retry_seconds: 3600 }, at(600))).toBe(false);
+    expect(isStaleHeadsUp({ ...headsUp, throttle_seconds: 0 }, at(600))).toBe(false);
+    expect(isStaleHeadsUp({ ...headsUp, bypass_filter: true }, at(600))).toBe(false);
   });
 });
 

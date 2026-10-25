@@ -65,7 +65,10 @@ afterAll(async () => {
   server?.closeAllConnections();
   server?.close();
   for (const endpoint of endpoints) {
-    await admin.from("endpoints").update({ forward_enabled: false }).eq("id", endpoint.id);
+    await admin
+      .from("endpoint_destinations")
+      .update({ enabled: false })
+      .eq("endpoint_id", endpoint.id);
     await admin.from("requests").delete().eq("endpoint_id", endpoint.id);
     await admin.from("endpoints").update({ request_count: 0 }).eq("id", endpoint.id);
     await admin.from("endpoints").delete().eq("id", endpoint.id);
@@ -248,16 +251,22 @@ describe("forwarding HTTP requests", () => {
     const [settled] = await deliveries(endpoint.id);
     expect(settled).toMatchObject({
       status: "failed",
-      last_error: "Forwarding of HTTP requests was turned off.",
+      last_error: "The destination no longer takes HTTP requests.",
     });
   });
 
   it("records a capture as not sent past the pending cap", async () => {
     const endpoint = await forwardingEndpoint("/in");
     const first = await capture(endpoint.slug);
-    const { data, error } = await admin.rpc("queue_capture_delivery", {
+    const { data: destination } = await admin
+      .from("endpoint_destinations")
+      .select("id")
+      .eq("endpoint_id", endpoint.id)
+      .single();
+    const { data, error } = await admin.rpc("queue_destination_delivery", {
       p_request_id: first,
       p_endpoint_id: endpoint.id,
+      p_destination_id: destination!.id,
       p_kind: "http",
       p_max_pending: 1,
     });

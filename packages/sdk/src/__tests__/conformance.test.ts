@@ -32,14 +32,15 @@ import type { EmailCriteria, Request, TemplateProvider, VerifySignatureOptions }
 import { parseDuration } from "../utils";
 import {
   verifyForwardedEmail,
+  verifyForwardedJson,
   verifyForwardedRequest,
   verifyRelayedRequest,
   verifySignature,
 } from "../verify";
 
 const FORMAT_VERSION = 1;
-/** forwarding.json is at 2: version 2 added expected.invalidSecret. */
-const FORWARDING_FORMAT_VERSION = 2;
+/** forwarding.json is at 3: version 2 added expected.invalidSecret, version 3 verifyForwardedJson. */
+const FORWARDING_FORMAT_VERSION = 3;
 const GENERATED_BY = "packages/sdk/src/__tests__/conformance.test.ts";
 
 /** 2026-01-01T00:00:00Z, in seconds. */
@@ -636,7 +637,11 @@ async function runVerify(vector: VerifyVector): Promise<boolean> {
 // Forwarding (webhooks.cc's own signatures)
 // ---------------------------------------------------------------------------
 
-type ForwardFunction = "verifyForwardedEmail" | "verifyForwardedRequest" | "verifyRelayedRequest";
+type ForwardFunction =
+  | "verifyForwardedEmail"
+  | "verifyForwardedRequest"
+  | "verifyForwardedJson"
+  | "verifyRelayedRequest";
 
 interface ForwardingVector {
   name: string;
@@ -676,6 +681,14 @@ const REQUEST_EVENT = JSON.stringify({
     headers: { "content-type": "application/json" },
     body: '{"ok":true}',
   },
+});
+
+/** A destination's own JSON: whatever its template made, types kept. */
+const TEMPLATE_BODY = JSON.stringify({
+  invoice: "in_1Q",
+  amount: 4200,
+  paid: true,
+  customer: null,
 });
 
 /** What anyone can sign with: a secret that decodes to no key at all. */
@@ -804,6 +817,60 @@ function buildForwardingVectors(): ForwardingVector[] {
       headers: standardHeaders(REQUEST_EVENT, TIMESTAMP, EMPTY_KEY),
       expected: { invalidSecret: true },
     },
+    {
+      name: "your own JSON",
+      function: "verifyForwardedJson",
+      secret: FORWARD_SECRET,
+      now: NOW,
+      body: TEMPLATE_BODY,
+      headers: standardHeaders(TEMPLATE_BODY),
+      expected: { ok: true },
+    },
+    {
+      name: "your own JSON, a body that is a lone JSON value",
+      function: "verifyForwardedJson",
+      secret: FORWARD_SECRET,
+      now: NOW,
+      body: "4200",
+      headers: standardHeaders("4200"),
+      expected: { ok: true },
+    },
+    {
+      name: "your own JSON, changed body",
+      function: "verifyForwardedJson",
+      secret: FORWARD_SECRET,
+      now: NOW,
+      body: TEMPLATE_BODY.replace("4200", "9999"),
+      headers: standardHeaders(TEMPLATE_BODY),
+      expected: { error: "invalid_signature" },
+    },
+    {
+      name: "your own JSON, signed more than five minutes ago",
+      function: "verifyForwardedJson",
+      secret: FORWARD_SECRET,
+      now: (TIMESTAMP + 301) * 1000,
+      body: TEMPLATE_BODY,
+      headers: standardHeaders(TEMPLATE_BODY),
+      expected: { error: "timestamp_out_of_range" },
+    },
+    {
+      name: "your own JSON, a signed body that is not JSON",
+      function: "verifyForwardedJson",
+      secret: FORWARD_SECRET,
+      now: NOW,
+      body: "invoice 4200",
+      headers: standardHeaders("invoice 4200"),
+      expected: { error: "invalid_payload" },
+    },
+    {
+      name: "your own JSON, a secret that decodes to an empty key",
+      function: "verifyForwardedJson",
+      secret: "whsec_",
+      now: NOW,
+      body: TEMPLATE_BODY,
+      headers: standardHeaders(TEMPLATE_BODY, TIMESTAMP, EMPTY_KEY),
+      expected: { invalidSecret: true },
+    },
     relayed("relayed request", {}),
     relayed("relayed request, no age limit: a week later still verifies", {
       now: (TIMESTAMP + 7 * 86_400) * 1000,
@@ -850,6 +917,8 @@ async function runForwarding(vector: ForwardingVector): Promise<ForwardingVector
       await verifyForwardedEmail(body, vector.headers, vector.secret, { now: vector.now });
     } else if (vector.function === "verifyForwardedRequest") {
       await verifyForwardedRequest(body, vector.headers, vector.secret, { now: vector.now });
+    } else if (vector.function === "verifyForwardedJson") {
+      await verifyForwardedJson(body, vector.headers, vector.secret, { now: vector.now });
     } else {
       await verifyRelayedRequest(body, vector.headers, vector.secret);
     }
@@ -1509,7 +1578,7 @@ describe("conformance vectors", () => {
     }
     await expect(
       file(
-        "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event or the relay metadata; expected.error is the error code it raises. expected.invalidSecret means it refuses the secret itself, whatever the request carries, with the error the language uses for a bad argument rather than a verification error: the secret decodes to an empty key, and an HMAC keyed with nothing is one anyone can compute.",
+        "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event, the parsed body (verifyForwardedJson, for a destination's own JSON, which can be any JSON value) or the relay metadata; expected.error is the error code it raises. expected.invalidSecret means it refuses the secret itself, whatever the request carries, with the error the language uses for a bad argument rather than a verification error: the secret decodes to an empty key, and an HMAC keyed with nothing is one anyone can compute.",
         vectors,
         FORWARDING_FORMAT_VERSION
       )

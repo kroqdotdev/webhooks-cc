@@ -2,11 +2,10 @@ import { describeSenderLag, type SenderTime } from "./timing";
 
 /**
  * The chat message a forwarded request becomes when the destination is a
- * Slack or Discord incoming webhook: the same JSON the receiver's
- * notifications send (apps/receiver-rs/src/handlers/notification_payload.rs),
- * so a forward to Slack reads like a notification but is retried and logged.
- * Both implementations are checked against one set of vectors
- * (notification_vectors.json next to the Rust file); change them together.
+ * Slack or Discord incoming webhook, or the destination asks for a chat
+ * message. Notifications used to be sent by the receiver with the same JSON;
+ * they are chat destinations now (migration 00063), and chat-vectors.json,
+ * which pinned the two builders together, pins this one.
  *
  * A forwarded message may also say how long after the sender's own
  * timestamp the request arrived (`sent`, timing.ts); notifications never
@@ -156,5 +155,19 @@ export function chatPayload(fields: ChatFields): Record<string, unknown> {
     content: discordContent(fields),
   };
   if (isDiscordUrl(fields.targetUrl)) payload.allowed_mentions = { parse: [] };
+  return payload;
+}
+
+/**
+ * A chat message with the owner's own text (a destination's message
+ * template, already filled in): `text` for Slack, escaped, and `content` for
+ * Discord, cut below its limit, with mentions kept silent.
+ */
+export function customChatPayload(message: string, targetUrl: string): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    text: slackEscape(message),
+    content: shorten(message, CONTENT_MAX_CHARS),
+  };
+  if (isDiscordUrl(targetUrl)) payload.allowed_mentions = { parse: [] };
   return payload;
 }

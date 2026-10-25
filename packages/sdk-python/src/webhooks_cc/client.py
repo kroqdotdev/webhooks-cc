@@ -50,6 +50,11 @@ from .errors import (
 from .matchers import Matcher, is_email_request, match_email
 from .models import (
     BuiltRequest,
+    Destination,
+    DestinationFilter,
+    DestinationFormat,
+    DestinationPreview,
+    DestinationTestResult,
     Endpoint,
     Request,
     RequestKind,
@@ -304,6 +309,7 @@ class WebhooksCC:
         self.requests = Requests(self)
         self.emails = Emails(self)
         self.forwarding = Forwarding(self)
+        self.destinations = Destinations(self)
 
     def __enter__(self) -> WebhooksCC:
         return self
@@ -1103,7 +1109,11 @@ class Emails:
 
 
 class Forwarding:
-    """The signing secret of an endpoint's forwarding, for verifying what it delivers."""
+    """The signing secret of an endpoint's forwarding, for verifying what it delivers.
+
+    It is the secret of the endpoint's primary destination; :class:`Destinations`
+    reads and rotates each destination's own.
+    """
 
     def __init__(self, client: WebhooksCC) -> None:
         self._client = client
@@ -1123,6 +1133,324 @@ class Forwarding:
         """
         _validate_segment(slug, "endpoint slug")
         return str(self._client._api("POST", f"/endpoints/{slug}/forwarding")["secret"])
+
+
+# The keyword arguments of Destinations.create() and update(), and the JSON fields they set.
+_DESTINATION_FIELDS = {
+    "url": "url",
+    "name": "name",
+    "enabled": "enabled",
+    "http": "http",
+    "email": "email",
+    "format": "format",
+    "filter": "filter",
+    "body_template": "bodyTemplate",
+    "message_template": "messageTemplate",
+    "headers": "headers",
+    "append_path": "appendPath",
+    "retry_seconds": "retrySeconds",
+    "keep_order": "keepOrder",
+    "sent_field": "sentField",
+    "throttle_seconds": "throttleSeconds",
+    "delay_seconds": "delaySeconds",
+    "position": "position",
+}
+
+
+def _destination_filter(value: Any) -> dict[str, Any] | None:
+    """A filter as the API takes it. Its conditions are checked by the API."""
+    if value is None:
+        return None
+    if isinstance(value, DestinationFilter):
+        return {"logic": value.logic, "conditions": [dict(item) for item in value.conditions]}
+    if not isinstance(value, Mapping):
+        raise ValueError("filter must be {'logic': ..., 'conditions': [...]} or None")
+    logic = value.get("logic")
+    if logic is not None and logic not in ("and", "or"):
+        raise ValueError('filter logic must be "and" or "or"')
+    conditions = value.get("conditions")
+    if not isinstance(conditions, (list, tuple)) or not all(
+        isinstance(item, Mapping) for item in conditions
+    ):
+        raise ValueError("filter conditions must be a list of dicts")
+    out: dict[str, Any] = {"conditions": [dict(item) for item in conditions]}
+    if logic is not None:
+        out["logic"] = logic
+    return out
+
+
+def _destination_body(fields: Mapping[str, Any]) -> dict[str, Any]:
+    """The JSON a destination's fields are sent as: those given, in camelCase."""
+    body: dict[str, Any] = {}
+    for key, value in fields.items():
+        if value is UNSET:
+            continue
+        wire = _DESTINATION_FIELDS.get(key)
+        if wire is None:
+            raise ValueError(f'Unknown destination field "{key}"')
+        if key == "filter":
+            value = _destination_filter(value)
+        elif key == "headers" and value is not None:
+            value = [dict(header) for header in value]
+        body[wire] = value
+    return body
+
+
+class Destinations:
+    """Where an endpoint's captures go: up to 10 destinations per endpoint.
+
+    Each one has its own URL, what it gets (HTTP requests, emails, and a filter
+    of conditions), how it is sent (as received, signed JSON, a JSON template
+    with ``{{ placeholders }}``, or a chat message), its own signing secret and
+    headers, retries, order, and optional throttling and delay. Only the
+    endpoint's owner can manage them.
+
+    .. code-block:: python
+
+        destination = client.destinations.create(
+            endpoint.slug,
+            url="https://hooks.example.com/invoices",
+            email=False,
+            filter={
+                "conditions": [
+                    {"field": "body_path", "path": "type", "op": "eq", "value": "invoice.paid"}
+                ]
+            },
+            format="template",
+            body_template={"invoice": "{{ json.data.object.id }}"},
+        )
+        preview = client.destinations.preview(endpoint.slug, destination_id=destination.id)
+        print(preview.filter_passes, preview.delivery)
+    """
+
+    def __init__(self, client: WebhooksCC) -> None:
+        self._client = client
+
+    def list(self, slug: str, *, summary: bool = False) -> builtins.list[Destination]:
+        """The endpoint's destinations in order, header values masked.
+
+        ``summary=True`` adds each one's deliveries of the last 24 hours and what is waiting.
+        """
+        _validate_segment(slug, "endpoint slug")
+        params = {"summary": "true"} if summary else None
+        items = self._client._api("GET", f"/endpoints/{slug}/destinations", params=params)
+        return [Destination.from_dict(item) for item in items or [] if isinstance(item, Mapping)]
+
+    def get(self, slug: str, destination_id: str) -> Destination:
+        _validate_segment(slug, "endpoint slug")
+        _validate_segment(destination_id, "destination id")
+        return Destination.from_dict(
+            self._client._api("GET", f"/endpoints/{slug}/destinations/{destination_id}")
+        )
+
+    def create(
+        self,
+        slug: str,
+        *,
+        url: str,
+        name: str | None = UNSET,
+        enabled: bool = UNSET,
+        http: bool = UNSET,
+        email: bool = UNSET,
+        format: DestinationFormat = UNSET,
+        filter: Mapping[str, Any] | DestinationFilter | None = UNSET,
+        body_template: Any = UNSET,
+        message_template: str | None = UNSET,
+        headers: Sequence[Mapping[str, str | None]] = UNSET,
+        append_path: bool = UNSET,
+        retry_seconds: Literal[0, 3600, 86400] = UNSET,
+        keep_order: bool = UNSET,
+        sent_field: str | None = UNSET,
+        throttle_seconds: int = UNSET,
+        delay_seconds: int = UNSET,
+        position: int = UNSET,
+    ) -> Destination:
+        """Add a destination; it is on unless ``enabled=False`` and gets a signing secret.
+
+        - ``url``: an https URL on a public host name, or a Slack or Discord webhook.
+        - ``http`` and ``email``: which kinds it takes (default both).
+        - ``filter``: ``{"logic": "and" | "or", "conditions": [...]}``, sends only the
+          captures that match; see :class:`~webhooks_cc.models.DestinationFilter`.
+        - ``format``: ``"auto"`` (default), ``"as_received"``, ``"json"``, ``"template"``
+          (``body_template``: the JSON to send, its strings holding ``{{ placeholders }}``)
+          or ``"chat"`` (``message_template``: your own message text).
+        - ``headers``: your own headers, at most 10, as ``{"name": ..., "value": ...}``.
+        - ``retry_seconds``: retry failed deliveries for 86400 (default), 3600 or 0 seconds.
+        - ``throttle_seconds``: at most one delivery every so many seconds (0 to 3600).
+        - ``delay_seconds``: wait this long after the capture before sending (0 to 3600).
+        - ``append_path``, ``keep_order``, ``sent_field`` and ``position`` work as for
+          forwarding.
+        """
+        _validate_segment(slug, "endpoint slug")
+        body = _destination_body(
+            {
+                "url": url,
+                "name": name,
+                "enabled": enabled,
+                "http": http,
+                "email": email,
+                "format": format,
+                "filter": filter,
+                "body_template": body_template,
+                "message_template": message_template,
+                "headers": headers,
+                "append_path": append_path,
+                "retry_seconds": retry_seconds,
+                "keep_order": keep_order,
+                "sent_field": sent_field,
+                "throttle_seconds": throttle_seconds,
+                "delay_seconds": delay_seconds,
+                "position": position,
+            }
+        )
+        return Destination.from_dict(
+            self._client._api("POST", f"/endpoints/{slug}/destinations", body=body)
+        )
+
+    def update(
+        self,
+        slug: str,
+        destination_id: str,
+        *,
+        url: str = UNSET,
+        name: str | None = UNSET,
+        enabled: bool = UNSET,
+        http: bool = UNSET,
+        email: bool = UNSET,
+        format: DestinationFormat = UNSET,
+        filter: Mapping[str, Any] | DestinationFilter | None = UNSET,
+        body_template: Any = UNSET,
+        message_template: str | None = UNSET,
+        headers: Sequence[Mapping[str, str | None]] = UNSET,
+        append_path: bool = UNSET,
+        retry_seconds: Literal[0, 3600, 86400] = UNSET,
+        keep_order: bool = UNSET,
+        sent_field: str | None = UNSET,
+        throttle_seconds: int = UNSET,
+        delay_seconds: int = UNSET,
+        position: int = UNSET,
+    ) -> Destination:
+        """Change a destination; only the arguments you pass change.
+
+        ``None`` clears ``name``, ``filter``, ``body_template``, ``message_template``
+        and ``sent_field``. ``headers`` replaces the whole list; a ``None`` value
+        keeps the value stored under that name. Switching it off or taking a kind
+        away marks what is waiting for it as failed.
+        """
+        _validate_segment(slug, "endpoint slug")
+        _validate_segment(destination_id, "destination id")
+        body = _destination_body(
+            {
+                "url": url,
+                "name": name,
+                "enabled": enabled,
+                "http": http,
+                "email": email,
+                "format": format,
+                "filter": filter,
+                "body_template": body_template,
+                "message_template": message_template,
+                "headers": headers,
+                "append_path": append_path,
+                "retry_seconds": retry_seconds,
+                "keep_order": keep_order,
+                "sent_field": sent_field,
+                "throttle_seconds": throttle_seconds,
+                "delay_seconds": delay_seconds,
+                "position": position,
+            }
+        )
+        return Destination.from_dict(
+            self._client._api(
+                "PATCH", f"/endpoints/{slug}/destinations/{destination_id}", body=body
+            )
+        )
+
+    def delete(self, slug: str, destination_id: str) -> None:
+        """Remove a destination. What is still waiting for it is marked failed; its log stays."""
+        _validate_segment(slug, "endpoint slug")
+        _validate_segment(destination_id, "destination id")
+        self._client._api("DELETE", f"/endpoints/{slug}/destinations/{destination_id}")
+
+    def reorder(self, slug: str, destination_ids: Sequence[str]) -> builtins.list[Destination]:
+        """Put the destinations in this order (every id, once) and return them."""
+        _validate_segment(slug, "endpoint slug")
+        if isinstance(destination_ids, str):
+            raise ValueError("destination_ids must be a list of destination ids")
+        items = self._client._api(
+            "PUT", f"/endpoints/{slug}/destinations/order", body={"ids": list(destination_ids)}
+        )
+        return [Destination.from_dict(item) for item in items or [] if isinstance(item, Mapping)]
+
+    def secret(self, slug: str, destination_id: str) -> str:
+        """The destination's ``whsec_`` signing secret."""
+        _validate_segment(slug, "endpoint slug")
+        _validate_segment(destination_id, "destination id")
+        path = f"/endpoints/{slug}/destinations/{destination_id}/secret"
+        return str(self._client._api("GET", path)["secret"])
+
+    def rotate_secret(self, slug: str, destination_id: str) -> str:
+        """Replace the destination's signing secret; deliveries use the new one at once."""
+        _validate_segment(slug, "endpoint slug")
+        _validate_segment(destination_id, "destination id")
+        path = f"/endpoints/{slug}/destinations/{destination_id}/secret"
+        return str(self._client._api("POST", path)["secret"])
+
+    def test(
+        self,
+        slug: str,
+        destination_id: str,
+        *,
+        kind: RequestKind | None = None,
+        request_id: str | None = None,
+    ) -> DestinationTestResult:
+        """Send one delivery to the destination now, as a real one would go out.
+
+        It sends ``request_id``, or the newest request of ``kind``, or a sample
+        when none has arrived. The filter is reported (``filter_passes``), not
+        applied; nothing is queued or retried.
+        """
+        _validate_segment(slug, "endpoint slug")
+        _validate_segment(destination_id, "destination id")
+        body: dict[str, Any] = {}
+        if kind is not None:
+            body["kind"] = kind
+        if request_id is not None:
+            body["requestId"] = request_id
+        return DestinationTestResult.from_dict(
+            self._client._api(
+                "POST", f"/endpoints/{slug}/destinations/{destination_id}/test", body=body
+            )
+        )
+
+    def preview(
+        self,
+        slug: str,
+        *,
+        destination_id: str | None = None,
+        destination: Mapping[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> DestinationPreview:
+        """A dry run: whether a destination's filter lets a captured request through,
+        and the exact request it would send. Nothing is sent.
+
+        ``destination_id`` starts from a saved destination; ``destination`` holds
+        unsaved fields, with the names :meth:`create` takes (on top of the saved
+        destination, or on their own with a ``url``). It runs against
+        ``request_id``, or the newest request of a kind the destination takes, or
+        a sample.
+        """
+        _validate_segment(slug, "endpoint slug")
+        body: dict[str, Any] = {}
+        if destination_id is not None:
+            body["destinationId"] = destination_id
+        if destination is not None:
+            body["destination"] = _destination_body(destination)
+        if request_id is not None:
+            body["requestId"] = request_id
+        return DestinationPreview.from_dict(
+            self._client._api("POST", f"/endpoints/{slug}/destinations/preview", body=body)
+        )
 
 
 # --- waiting ---------------------------------------------------------------------------

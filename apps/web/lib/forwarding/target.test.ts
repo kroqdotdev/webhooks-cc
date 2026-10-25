@@ -69,6 +69,25 @@ describe("checkForwardUrl", () => {
   it("allows http and local addresses only when told to", () => {
     expect(checkForwardUrl("http://127.0.0.1:4000/hook", { allowPrivate: true }).ok).toBe(true);
   });
+
+  it("refuses the receiver itself, however the host is spelled", () => {
+    const receiver = { allowPrivate: false, receiverUrl: "https://go.example.com" };
+    for (const url of [
+      "https://go.example.com/w/acme-orders",
+      "https://GO.example.com./w/acme-orders",
+      "https://go.example.com:443/w/acme-orders/stripe",
+    ]) {
+      expect(checkForwardUrl(url, receiver), url).toMatchObject({
+        ok: false,
+        reason: expect.stringContaining("capture URL"),
+      });
+    }
+    expect(checkForwardUrl("https://example.com/w/acme-orders", receiver).ok).toBe(true);
+    expect(checkForwardUrl("https://go.example.com:8443/w/x", receiver).ok).toBe(true);
+    const local = { allowPrivate: true, receiverUrl: "http://localhost:3001" };
+    expect(checkForwardUrl("http://localhost:3001/w/acme-orders", local).ok).toBe(false);
+    expect(checkForwardUrl("http://localhost:4000/hook", local).ok).toBe(true);
+  });
 });
 
 describe("resolveForwardTarget", () => {

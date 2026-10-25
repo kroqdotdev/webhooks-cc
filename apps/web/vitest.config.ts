@@ -14,6 +14,15 @@ process.env.SIGNING_SECRET_KEY ??= Buffer.alloc(32, 7).toString("base64");
 // signals too, so the Realtime suite runs on its own after them.
 const REALTIME_SUITE = "tests/integration/supabase-realtime.test.ts";
 
+// The forwarding suites run the worker in their own process and assert on
+// what it claims, but the queue is one table: run side by side, one suite's
+// worker sends the other's deliveries. They run after the rest, one at a time.
+const FORWARDING_SUITES = [
+  "tests/integration/destinations.test.ts",
+  "tests/integration/email-forwarding.test.ts",
+  "tests/integration/http-forwarding.test.ts",
+];
+
 export default defineConfig({
   test: {
     testTimeout: 30_000,
@@ -24,8 +33,17 @@ export default defineConfig({
         test: {
           name: "integration",
           include: ["tests/integration/**/*.test.ts"],
-          exclude: [REALTIME_SUITE],
+          exclude: [REALTIME_SUITE, ...FORWARDING_SUITES],
           sequence: { groupOrder: 0 },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "forwarding",
+          include: FORWARDING_SUITES,
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
         },
       },
       {
@@ -33,7 +51,7 @@ export default defineConfig({
         test: {
           name: "realtime",
           include: [REALTIME_SUITE],
-          sequence: { groupOrder: 1 },
+          sequence: { groupOrder: 2 },
         },
       },
     ],

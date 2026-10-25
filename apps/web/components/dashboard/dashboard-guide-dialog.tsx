@@ -334,8 +334,10 @@ const SECTIONS: Section[] = [
             against captured requests
           </li>
           <li>
-            <strong>Notifications</strong>: POST a JSON summary to Slack, Discord, or any URL when a
-            request arrives
+            <strong>Forwarding</strong>: send captures to your servers and chat channels, each
+            destination with its own conditions, format (as received, signed JSON, your own JSON or
+            a chat message), timing and log; a Slack or Discord heads-up is a destination that sends
+            at most one message a second
           </li>
           <li>
             <strong>Team sharing</strong>: share the endpoint with your teams (needs an active Teams

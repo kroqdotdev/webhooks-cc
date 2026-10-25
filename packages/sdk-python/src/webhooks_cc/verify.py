@@ -62,6 +62,7 @@ __all__ = [
     "verify_discord_signature",
     "verify_docusign_signature",
     "verify_forwarded_email",
+    "verify_forwarded_json",
     "verify_forwarded_request",
     "verify_github_signature",
     "verify_gitlab_signature",
@@ -1088,6 +1089,26 @@ def verify_forwarded_request(
         )
     result: dict[str, Any] = parsed
     return result
+
+
+def verify_forwarded_json(
+    body: BodyInput,
+    headers: HeadersInput,
+    secret: str,
+    *,
+    tolerance_seconds: float = 300,
+    now: float | None = None,
+) -> Any:
+    """Verify a delivery of a destination that sends your own JSON; returns its parsed body.
+
+    The same checks as :func:`verify_forwarded_request`, with the destination's
+    ``whsec_`` secret, but the body is whatever the destination's template made
+    (format ``"template"``), so it can be any JSON value and only its being JSON
+    is checked: ``invalid_payload`` means it is not.
+    """
+    return _verify_signed_forward(
+        body, headers, secret, tolerance_seconds, now, "verify_forwarded_json"
+    )
 
 
 def verify_relayed_request(

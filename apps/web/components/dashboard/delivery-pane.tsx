@@ -6,8 +6,10 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   ForwardingOffError,
+  fetchDestinations,
   fetchRequestDeliveries,
   redeliverRequest,
+  type DashboardDestination,
   type DeliveryAttempt,
   type DeliveryFormat,
   type ForwardFormatSetting,
@@ -54,7 +56,7 @@ const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
 const TRIES_SHOWN = 3;
 const TIMEOUT_SECONDS = FORWARD_TIMEOUT_SECONDS;
 
-export type ChipStatus = "succeeded" | "pending" | "failed" | "queued";
+export type ChipStatus = "succeeded" | "pending" | "failed" | "queued" | "skipped";
 
 const CHIP: Record<ChipStatus, { label: string; className: string }> = {
   succeeded: {
@@ -72,6 +74,10 @@ const CHIP: Record<ChipStatus, { label: string; className: string }> = {
   },
   queued: {
     label: "Queued",
+    className: "bg-muted text-muted-foreground",
+  },
+  skipped: {
+    label: "Filtered out",
     className: "bg-muted text-muted-foreground",
   },
 };
@@ -295,8 +301,36 @@ function journeyFor(
       note = "Not retried, as set under Advanced. Redeliver sends it again now.";
     } else {
       note =
-        "Marked failed after the last retry. Redeliver sends it again with the current URL, format and headers.";
+        "Marked failed after the last retry. Redeliver sends it again with the destination's current settings.";
     }
+  } else if (delivery.status === "skipped") {
+    const at = delivery.finishedAt ?? delivery.createdAt;
+    // The filter, or the throttle: "Not sent: ..." says which.
+    const reason = delivery.lastError?.replace(/^Not sent: /, "") ?? null;
+    const byFilter = !reason || reason.includes("filter did not match");
+    received.segment = { label: byFilter ? "checked against the filter" : "held back" };
+    stops.push(received, {
+      key: "out",
+      name: "Filtered out",
+      time: clock(at),
+      tone: "queued",
+      sub: "not sent",
+    });
+    label += byFilter
+      ? `Received at ${clock(receivedAt)}. The destination's filter did not match, so it was not sent.`
+      : `Received at ${clock(receivedAt)}. Not sent: ${reason}`;
+    meta = "not sent";
+    note = byFilter ? (
+      <>
+        The destination&apos;s conditions did not match this request. Send anyway delivers it once;
+        change the conditions in {settingsLink}.
+      </>
+    ) : (
+      <>
+        Not sent: {reason} Send anyway delivers it once; change the timing under Advanced in{" "}
+        {settingsLink}.
+      </>
+    );
   } else if (attempts === 0 || !latest) {
     received.segment = { label: "delivering", dashed: true };
     stops.push(received, {
@@ -470,11 +504,45 @@ function DeliveryCard({
   );
 }
 
+/** A destination's settings in the shape the journey reads. */
+function asDeliveryEndpoint(slug: string, destination: DashboardDestination): DeliveryEndpoint {
+  return {
+    slug,
+    forwardEnabled: destination.enabled,
+    forwardUrl: destination.url,
+    hasForwardSecret: destination.hasSecret,
+    forwardHttp: destination.http,
+    forwardEmail: destination.email,
+    forwardFormat: destination.format === "template" ? "auto" : destination.format,
+    forwardAppendPath: destination.appendPath,
+    forwardRetrySeconds: destination.retrySeconds,
+    forwardSentField: destination.sentField,
+  };
+}
+
+function labelOf(destination: { name: string | null; url: string } | null): string {
+  if (!destination) return "Forwarding";
+  if (destination.name) return destination.name;
+  try {
+    return new URL(destination.url).host;
+  } catch {
+    return destination.url;
+  }
+}
+
+interface DeliveryGroup {
+  key: string;
+  label: string;
+  /** The destination's settings (owner only), null when it is gone or unknown. */
+  destination: DashboardDestination | null;
+  deliveries: RequestDelivery[];
+}
+
 /**
- * The Deliveries tab of a captured request: every copy forwarded, each with
- * its journey and tries, a Local time / UTC toggle, and Redeliver (or Deliver
- * now for a request that was never forwarded). Shared by the HTTP and email
- * detail views.
+ * The Deliveries tab of a captured request: for each destination, every
+ * copy sent there, each with its journey and tries, and Redeliver (or
+ * Deliver now, or Send anyway for one its filter turned down). A Local time
+ * / UTC toggle. Shared by the HTTP and email detail views.
  */
 export function DeliveriesPane({
   request,
@@ -493,9 +561,10 @@ export function DeliveriesPane({
   const requestId = "id" in request ? request.id : request._id;
   const kind = request.kind ?? "http";
   const [deliveries, setDeliveries] = useState<RequestDelivery[] | null>(null);
+  const [destinations, setDestinations] = useState<DashboardDestination[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
-  const [queuing, setQueuing] = useState(false);
+  const [queuing, setQueuing] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [utc, setUtc] = useUtcPreference();
 
@@ -514,6 +583,13 @@ export function DeliveriesPane({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!accessToken || !canRedeliver) return;
+    fetchDestinations(accessToken, endpoint.slug)
+      .then(setDestinations)
+      .catch(() => setDestinations([]));
+  }, [accessToken, canRedeliver, endpoint.slug]);
+
   // Watch a delivery that is still being tried, and keep "next in 8 min" current.
   const active = deliveries?.some((delivery) => delivery.status === "pending") ?? false;
   useEffect(() => {
@@ -524,36 +600,58 @@ export function DeliveriesPane({
     return () => clearInterval(timer);
   }, [active, load]);
 
-  const kindOn = kind === "email" ? endpoint.forwardEmail !== false : endpoint.forwardHttp === true;
-  const forwardingOn = endpoint.forwardEnabled === true && kindOn;
+  const takesKind = (destination: DashboardDestination) =>
+    destination.enabled && (kind === "email" ? destination.email : destination.http);
 
-  const redeliver = async () => {
+  const groups = useMemo(() => {
+    const list: DeliveryGroup[] = [];
+    const seen = new Set<string>();
+    for (const destination of destinations ?? []) {
+      const own = (deliveries ?? []).filter((d) => d.destination?.id === destination.id);
+      if (own.length === 0 && !takesKind(destination)) continue;
+      seen.add(destination.id);
+      list.push({ key: destination.id, label: labelOf(destination), destination, deliveries: own });
+    }
+    // Deliveries to destinations that are gone (or, for team members, all of them).
+    const rest = new Map<string, DeliveryGroup>();
+    for (const delivery of deliveries ?? []) {
+      const id = delivery.destination?.id ?? "earlier";
+      if (seen.has(id)) continue;
+      const group = rest.get(id) ?? {
+        key: id,
+        label: delivery.destination ? labelOf(delivery.destination) : "Forwarding",
+        destination: null,
+        deliveries: [],
+      };
+      group.deliveries.push(delivery);
+      rest.set(id, group);
+    }
+    return [...list, ...rest.values()];
+    // takesKind reads kind, which the deps cover through request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destinations, deliveries, kind]);
+
+  const redeliver = async (group: DeliveryGroup) => {
     if (!accessToken || queuing) return;
-    setQueuing(true);
+    setQueuing(group.key);
     setStatus(null);
     try {
-      await redeliverRequest(accessToken, requestId);
+      await redeliverRequest(accessToken, requestId, group.destination?.id ?? null);
       setStatus({ text: "Queued. The result shows here within a few seconds.", error: false });
       await load();
     } catch (err) {
       setStatus({
         text:
           err instanceof ForwardingOffError
-            ? "Turn forwarding on first."
+            ? err.message
             : "The request could not be queued again.",
         error: true,
       });
     } finally {
-      setQueuing(false);
+      setQueuing(null);
     }
   };
 
-  // The lead line: what was actually used, or why nothing was sent.
-  const newest = deliveries?.[0] ?? null;
-  const settingFormat = endpoint.forwardFormat === "auto" ? null : (endpoint.forwardFormat ?? null);
-  const format: DeliveryFormat =
-    newest?.format ?? resolveFormat(kind, settingFormat, endpoint.forwardUrl ?? "");
-  const target = newest?.target ?? fallbackTarget(request, endpoint, format);
   const settingsLink =
     canRedeliver && onOpenForwarding ? (
       <button
@@ -567,70 +665,40 @@ export function DeliveriesPane({
       "Settings"
     );
 
-  // No verdict until the deliveries are in: "Not forwarded" must not flash first.
+  const what = kind === "email" ? "emails" : "HTTP requests";
   let lead: React.ReactNode = null;
-  if (deliveries === null) {
+  if (deliveries === null || (canRedeliver && destinations === null)) {
     lead = null;
-  } else if (deliveries.length > 0) {
-    lead = (
-      <>
-        {leadVerb(format)}{" "}
-        {target ? (
-          <span className="font-mono text-foreground [overflow-wrap:anywhere]">{target}</span>
-        ) : (
-          "the forwarding URL"
-        )}
-        .
-      </>
-    );
-  } else if (!kindOn && endpoint.forwardEnabled) {
-    lead = (
-      <>
-        Not forwarded. {kind === "email" ? "Emails" : "HTTP requests"} are not included; change what
-        is forwarded in {settingsLink}.
-      </>
-    );
-  } else if (!endpoint.forwardEnabled) {
-    lead = "Not forwarded. Forwarding is off for this endpoint.";
-  } else if (request.size > MAX_FORWARD_BYTES) {
+  } else if (groups.length === 0) {
+    lead =
+      (destinations?.length ?? 0) > 0 ? (
+        <>
+          Not forwarded. No destination that is on takes {what}; change that in {settingsLink}.
+        </>
+      ) : (
+        <>Not forwarded. This endpoint has no destinations; add one in {settingsLink}.</>
+      );
+  } else if (request.size > MAX_FORWARD_BYTES && deliveries.length === 0) {
     lead = "Not forwarded. The body is larger than 10 MB.";
   } else {
-    lead = "Not forwarded. It arrived before forwarding was turned on.";
+    lead =
+      groups.length === 1
+        ? null
+        : `Sent to ${groups.length} destinations. Each has its own deliveries below.`;
   }
 
-  const oldestId =
-    deliveries && deliveries.length > 0 ? deliveries[deliveries.length - 1].id : null;
-  const never = deliveries !== null && deliveries.length === 0;
-
   return (
-    <div className="max-w-[860px] space-y-3">
+    <div className="max-w-[860px] space-y-4">
       <div className="flex flex-col md:flex-row md:items-start gap-3">
         <p className="flex-1 text-sm text-muted-foreground">{lead}</p>
-        <div className="flex items-center justify-between md:justify-start gap-2.5 shrink-0">
-          <button
-            type="button"
-            aria-pressed={utc}
-            onClick={() => setUtc(!utc)}
-            className="text-xs text-muted-foreground underline underline-offset-2 cursor-pointer hover:text-foreground"
-          >
-            {utc ? "UTC. Show local time" : "Local time. Show UTC"}
-          </button>
-          {canRedeliver && (
-            <button
-              type="button"
-              onClick={() => void redeliver()}
-              disabled={queuing || !forwardingOn || deliveries === null}
-              title={!forwardingOn ? "Turn forwarding on to redeliver." : undefined}
-              className={cn(
-                "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0",
-                (queuing || !forwardingOn || deliveries === null) && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              <RefreshCw className={cn("h-3 w-3", queuing && "animate-spin")} />
-              {queuing ? "Queuing..." : never ? "Deliver now" : "Redeliver"}
-            </button>
-          )}
-        </div>
+        <button
+          type="button"
+          aria-pressed={utc}
+          onClick={() => setUtc(!utc)}
+          className="self-start text-xs text-muted-foreground underline underline-offset-2 cursor-pointer hover:text-foreground"
+        >
+          {utc ? "UTC. Show local time" : "Local time. Show UTC"}
+        </button>
       </div>
       {status && (
         <p
@@ -641,26 +709,85 @@ export function DeliveriesPane({
           {status.text}
         </p>
       )}
-      {never && canRedeliver && forwardingOn && target && (
-        <p className="text-xs text-muted-foreground max-w-[62ch]">
-          Deliver now sends it to <span className="font-mono text-foreground">{target}</span> with
-          the current settings, once, and logs it like any delivery.
-        </p>
-      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
       {deliveries === null && !error && <p className="text-sm text-muted-foreground">Loading...</p>}
-      {deliveries?.map((delivery) => (
-        <DeliveryCard
-          key={delivery.id}
-          delivery={delivery}
-          request={request}
-          endpoint={endpoint}
-          utc={utc}
-          now={now}
-          isRedelivery={delivery.id !== oldestId}
-          settingsLink={settingsLink}
-        />
-      ))}
+      {groups.map((group) => {
+        const settings = group.destination
+          ? asDeliveryEndpoint(endpoint.slug, group.destination)
+          : endpoint;
+        const newest = group.deliveries[0] ?? null;
+        const settingFormat =
+          group.destination?.format === "auto" ? null : (group.destination?.format ?? null);
+        const format: DeliveryFormat =
+          newest?.format ??
+          resolveFormat(kind, settingFormat, group.destination?.url ?? endpoint.forwardUrl ?? "");
+        const target = newest?.target ?? fallbackTarget(request, settings, format);
+        const oldestId =
+          group.deliveries.length > 0 ? group.deliveries[group.deliveries.length - 1].id : null;
+        const canSend = canRedeliver && !!group.destination && group.destination.enabled;
+        const takes = group.destination ? takesKind(group.destination) : false;
+        const button =
+          group.deliveries.length === 0
+            ? "Deliver now"
+            : newest?.status === "skipped"
+              ? "Send anyway"
+              : "Redeliver";
+        return (
+          <section key={group.key} aria-label={group.label} className="space-y-2.5">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h3 className="text-sm font-semibold">{group.label}</h3>
+              <p className="flex-1 min-w-0 text-xs text-muted-foreground">
+                {group.deliveries.length > 0 || takes ? (
+                  <>
+                    {leadVerb(format)}{" "}
+                    {target ? (
+                      <span className="font-mono text-foreground [overflow-wrap:anywhere]">
+                        {target}
+                      </span>
+                    ) : (
+                      "its URL"
+                    )}
+                    {group.deliveries.length === 0 ? ": not sent yet." : "."}
+                  </>
+                ) : null}
+              </p>
+              {canSend && (takes || group.deliveries.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => void redeliver(group)}
+                  disabled={queuing !== null || !takes}
+                  title={!takes ? `This destination does not take ${what} now.` : undefined}
+                  className={cn(
+                    "ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5 shrink-0",
+                    (queuing !== null || !takes) && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <RefreshCw className={cn("h-3 w-3", queuing === group.key && "animate-spin")} />
+                  {queuing === group.key ? "Queuing..." : button}
+                </button>
+              )}
+            </div>
+            {group.deliveries.length === 0 && canSend && takes && (
+              <p className="text-xs text-muted-foreground max-w-[62ch]">
+                It arrived before this destination was added or switched on. Deliver now sends it
+                with the current settings, once, and logs it like any delivery.
+              </p>
+            )}
+            {group.deliveries.map((delivery) => (
+              <DeliveryCard
+                key={delivery.id}
+                delivery={delivery}
+                request={request}
+                endpoint={settings}
+                utc={utc}
+                now={now}
+                isRedelivery={delivery.id !== oldestId}
+                settingsLink={settingsLink}
+              />
+            ))}
+          </section>
+        );
+      })}
     </div>
   );
 }

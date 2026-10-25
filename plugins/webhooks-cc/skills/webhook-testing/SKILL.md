@@ -1,6 +1,6 @@
 ---
 name: webhook-testing
-description: Test webhook handlers and email flows against real, correctly signed traffic with webhooks.cc instead of guessing payloads or disabling signature checks. Use when writing, changing, or debugging code that receives webhooks (Stripe, GitHub, Shopify, Clerk, Twilio, Slack, Paddle and 27 more providers, or any HTTP callback), when you need the exact shape of a provider's payload or types for it, when a test must verify a webhook signature or a retry path, or when a test has to read a signup, magic-link, or one-time-code email.
+description: Test webhook handlers and email flows against real, correctly signed traffic with webhooks.cc instead of guessing payloads or disabling signature checks. Use when writing, changing, or debugging code that receives webhooks (Stripe, GitHub, Shopify, Clerk, Twilio, Slack, Paddle and 27 more providers, or any HTTP callback), when you need the exact shape of a provider's payload or types for it, when a test must verify a webhook signature or a retry path, when a test has to read a signup, magic-link, or one-time-code email, or when captured webhooks or emails should be forwarded, filtered or reshaped for another server, a Slack or Discord channel, or a tool such as Zapier.
 ---
 
 # Webhook testing with webhooks.cc
@@ -106,6 +106,42 @@ server would:
    the exact body. A placeholder listed in `unknownPlaceholders` is a typo.
 4. Clear them afterwards with `update_endpoint` and `mockResponse: null` (or
    `responseRules: null`).
+5. For a service that answers at once and calls back later, also add a
+   destination with `delaySeconds` that posts a `bodyTemplate` to the app's
+   callback URL (see the next workflow).
+
+### Send captures on to a server, a channel or a tool
+
+When the developer wants captured webhooks or emails delivered somewhere
+(a staging server, a Slack or Discord channel, Zapier or n8n), add a
+destination instead of writing a relay. An endpoint takes up to 10, each
+with its own signing secret, retries and log.
+
+1. `add_destination` with the `url`, the kinds it takes (`http`, `email`),
+   and what it needs:
+   - `filter` to send only some captures: the response rule conditions plus
+     `kind`, `email` (`name`: subject, from, to, text or tag), `spam_score`,
+     `email_auth` (`name`: spf, dkim or dmarc) and `signature` (`verified`
+     sends only requests whose signature checked out).
+   - `format: "template"` and a `bodyTemplate` to send only the fields the
+     tool wants, under its names:
+     `{"invoice": "{{ json.data.object.id }}", "code": "{{ codes.0 }}"}`.
+     A string that is only a placeholder keeps the value's type.
+   - `format: "chat"` for Slack or Discord, `messageTemplate` for your own
+     text, and `throttleSeconds: 1` for a heads-up rather than a message per
+     request.
+   - `delaySeconds` (up to 3600) to send it later, like a callback.
+2. `preview_destination` with a captured `requestId` shows whether the filter
+   lets it through and the exact request it would send. Fix anything listed
+   in `unknownPlaceholders`.
+3. `test_forwarding` with the `destinationId` sends one now and reports the
+   answer. `get_forwarding_secret` with the `destinationId` returns the
+   `whsec_` secret a handler verifies deliveries with; put it in the
+   handler's environment, never in code.
+4. `list_deliveries` with `endpointSlug` (`status: "failed"`, or `"skipped"`
+   for what the filter turned down) shows what went out, and `redeliver`
+   sends one again. `update_destination` changes it, `remove_destination`
+   removes it, `list_destinations` lists them.
 
 ### Read signup, magic-link and code emails
 
@@ -133,6 +169,8 @@ changed between a working and a failing delivery, and `replay_request` with
   templates for fixture payloads.
 - Delete endpoints you created only for a task with `delete_endpoint`, unless
   the developer wants to keep them. Prefer `ephemeral: true`.
+- Forwarding sends real traffic to real URLs. Add a destination only to a URL
+  the developer named, and remove the ones you added for a task.
 - The free plan captures 50 requests a day. Send what the task needs, not
   loops of retries. On a `429`, stop and tell the developer when the quota
   resets.

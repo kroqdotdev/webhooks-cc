@@ -21,6 +21,11 @@ const EXPECTED_TOOLS = [
   "get_endpoint",
   "update_endpoint",
   "preview_response",
+  "list_destinations",
+  "add_destination",
+  "update_destination",
+  "remove_destination",
+  "preview_destination",
   "delete_endpoint",
   "create_endpoints",
   "delete_endpoints",
@@ -219,7 +224,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(40);
+    expect(Object.keys(tools)).toHaveLength(45);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -276,6 +281,37 @@ describe("registerTools", () => {
     ];
     await tools.preview_response.handler({ slug: "acme", responseRules: rules });
     expect(previewResponse).toHaveBeenCalledWith("acme", { responseRules: rules });
+  });
+
+  it("adds a destination with a filter and a template", async () => {
+    const create = vi.fn().mockResolvedValue({ id: "d1" });
+    const tools = getRegisteredTools(
+      createMockClient({ destinations: { create } } as unknown as Partial<WebhooksCC>)
+    );
+    const schema = z.object(tools.add_destination.schema as z.ZodRawShape);
+    const args = schema.parse({
+      slug: "acme",
+      url: "https://api.example.com/in",
+      format: "template",
+      bodyTemplate: { event: "{{ json.type }}" },
+      filter: { conditions: [{ field: "email", op: "contains", name: "subject", value: "code" }] },
+      throttleSeconds: 1,
+    });
+    await tools.add_destination.handler(args);
+    expect(create).toHaveBeenCalledWith("acme", {
+      url: "https://api.example.com/in",
+      format: "template",
+      bodyTemplate: { event: "{{ json.type }}" },
+      filter: { conditions: [{ field: "email", op: "contains", name: "subject", value: "code" }] },
+      throttleSeconds: 1,
+    });
+    expect(
+      schema.safeParse({
+        slug: "acme",
+        url: "https://api.example.com/in",
+        filter: { conditions: [{ field: "email", op: "contains", name: "body", value: "x" }] },
+      }).success
+    ).toBe(false);
   });
 
   it("checks rule conditions with the SDK's rule language", () => {
