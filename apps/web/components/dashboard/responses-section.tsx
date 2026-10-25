@@ -204,7 +204,12 @@ function PreviewPanel({
 
   const settingsJson = JSON.stringify(settings);
   useEffect(() => {
-    if (!accessToken || blocked) return;
+    if (blocked) {
+      // No preview shows, so no row answers it.
+      onResult(null);
+      return;
+    }
+    if (!accessToken) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
@@ -275,7 +280,12 @@ function PreviewPanel({
           ))}
         </select>
       </div>
-      <div role="status" aria-live="polite" aria-busy={loading} className="space-y-2 text-sm">
+      <div
+        role="status"
+        aria-live="polite"
+        aria-busy={loading && !blocked}
+        className="space-y-2 text-sm"
+      >
         {blocked ? (
           <p className="text-muted-foreground">{blocked}</p>
         ) : error ? (

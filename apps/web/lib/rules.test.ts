@@ -36,6 +36,24 @@ describe("conditions with RE2", () => {
     expect(regexProblem("a".repeat(501))).toMatch(/longer than 500/);
   });
 
+  it("matches a glob at the length limit, though its regex is longer", () => {
+    const glob = "-*".repeat(250);
+    expect(conditionProblems([{ field: "path", op: "matches", value: glob }], "filter")).toEqual(
+      []
+    );
+    const subject = {
+      method: "POST",
+      path: "-".repeat(250),
+      headers: {},
+      query: {},
+      body: "",
+      kind: "http",
+    } as RuleSubject;
+    expect(
+      conditionsHold({ conditions: [{ field: "path", op: "matches", value: glob }] }, subject)
+    ).toBe(true);
+  });
+
   it("reports regex problems with the condition's position", () => {
     expect(
       conditionProblems([{ field: "path", op: "regex", value: "(" }], "response", "rules[0]")

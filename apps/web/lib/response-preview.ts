@@ -33,6 +33,12 @@ export interface ResponsePreview {
 const MAX_FILLED_BODY_BYTES = 1024 * 1024;
 const MAX_HEADER_VALUE_BYTES = 8192;
 
+const encoder = new TextEncoder();
+
+function utf8Bytes(text: string): number {
+  return encoder.encode(text).length;
+}
+
 function fill(
   mock: MockResponse,
   context: Record<string, unknown>,
@@ -45,8 +51,8 @@ function fill(
       mode: "text",
       maxBytes: MAX_HEADER_VALUE_BYTES + 1,
     });
-    // The receiver drops headers that end up too long or hold a line break.
-    if (filled.length > MAX_HEADER_VALUE_BYTES || /[\r\n]/.test(filled)) continue;
+    // The receiver drops headers that end up too long (in UTF-8 bytes) or hold a line break.
+    if (utf8Bytes(filled) > MAX_HEADER_VALUE_BYTES || /[\r\n]/.test(filled)) continue;
     headers[name] = filled;
   }
   return {

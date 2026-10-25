@@ -89,6 +89,16 @@ const REQUESTS: Record<string, VectorRequest> = {
     contentType: null,
     size: 70,
   },
+  // Integers beyond 2^53, which JSON.parse rounds to the nearest double.
+  bigIntegers: {
+    method: "POST",
+    path: "/n",
+    headers: {},
+    query: {},
+    body: '{"id":12345678901234567890,"pow":1152921504606846976,"neg":-9007199254740993}',
+    contentType: null,
+    size: 77,
+  },
 };
 
 interface ConditionVector {
@@ -294,6 +304,12 @@ const CONDITION_VECTORS: ConditionVector[] = [
   one("integer-valued decimal", "numbers", c("body_path", "eq", { path: "n", value: "1" }), true),
   one("large number", "numbers", c("body_path", "eq", { path: "big", value: "1e+22" }), true),
   one("small number", "numbers", c("body_path", "eq", { path: "small", value: "1e-7" }), true),
+  one(
+    "integer beyond 2^53",
+    "bigIntegers",
+    c("body_path", "eq", { path: "id", value: "12345678901234567000" }),
+    true
+  ),
   one("negative decimal", "numbers", c("body_path", "lt", { path: "neg", value: "0" }), true),
   one(
     "numeric text compares as a number",
@@ -608,6 +624,12 @@ const PLACEHOLDER_VECTORS: PlaceholderVector[] = [
     "numbers",
     "{{ json }}",
     '{"n":1,"big":1e+22,"small":1e-7,"neg":-0.5,"int":42,"text":"42"}'
+  ),
+  p(
+    "integers beyond 2^53 as JavaScript prints them",
+    "bigIntegers",
+    "{{ json.id }}|{{ json.pow }}|{{ json.neg }}|{{ json }}",
+    '12345678901234567000|1152921504606847000|-9007199254740992|{"id":12345678901234567000,"pow":1152921504606847000,"neg":-9007199254740992}'
   ),
   p("output cap", "order", "{{ body }}", '{"type":"o', "text", 10),
   p(

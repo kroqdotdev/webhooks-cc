@@ -2,6 +2,7 @@ import { RE2JS } from "re2js";
 import {
   conditionsIssues,
   evaluateConditions,
+  globToRegexSource,
   MAX_PATTERN_CHARS,
   type ConditionGroup,
   type RegexTester,
@@ -20,8 +21,15 @@ import {
 const compiledPatterns = new Map<string, RE2JS | null>();
 const MAX_COMPILED = 512;
 
+/**
+ * The longest source compiled. Patterns are held to MAX_PATTERN_CHARS when
+ * saved and evaluated, but a glob reaches the tester as the regex it
+ * expands to (each `*` becomes `[^/]*`), up to five times as long.
+ */
+const MAX_SOURCE_CHARS = MAX_PATTERN_CHARS * 5 + 8;
+
 function compile(pattern: string): RE2JS | null {
-  if (pattern.length > MAX_PATTERN_CHARS) return null;
+  if (pattern.length > MAX_SOURCE_CHARS) return null;
   const cached = compiledPatterns.get(pattern);
   if (cached !== undefined) return cached;
   let compiled: RE2JS | null = null;
@@ -44,8 +52,18 @@ export const re2Tester: RegexTester = (pattern, text) => {
 /** Why a pattern is not valid RE2, or null when it is. */
 export function regexProblem(pattern: string): string | null {
   if (pattern.length > MAX_PATTERN_CHARS) return `longer than ${MAX_PATTERN_CHARS} characters`;
+  return sourceProblem(pattern);
+}
+
+/** Why a glob cannot run as the regex it expands to, or null when it can. */
+export function globProblem(glob: string): string | null {
+  return sourceProblem(`(?s)${globToRegexSource(glob)}`);
+}
+
+function sourceProblem(source: string): string | null {
+  if (source.length > MAX_SOURCE_CHARS) return `longer than ${MAX_PATTERN_CHARS} characters`;
   try {
-    RE2JS.compile(pattern);
+    RE2JS.compile(source);
     return null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -64,5 +82,9 @@ export function conditionProblems(
   use: "response" | "filter",
   prefix = "conditions"
 ): string[] {
-  return conditionsIssues(conditions, { use, checkRegex: regexProblem }, prefix);
+  return conditionsIssues(
+    conditions,
+    { use, checkRegex: regexProblem, checkGlob: globProblem },
+    prefix
+  );
 }

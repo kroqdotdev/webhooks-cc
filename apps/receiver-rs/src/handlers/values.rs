@@ -164,13 +164,18 @@ impl<'a> LazyBody<'a> {
     }
 }
 
+/// Integers JavaScript holds exactly (2^53 - 1).
+const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
+
 /// A number as JavaScript's `String(n)` writes it: integers without `.0`,
 /// exponents from 1e21 up and below 1e-6, with a sign on positive exponents.
+/// Integers beyond 2^53 are read as the double JavaScript's `JSON.parse`
+/// makes of them, so `12345678901234567890` is written `12345678901234567000`.
 pub(crate) fn format_number(n: &Number) -> String {
-    if let Some(i) = n.as_i64() {
+    if let Some(i) = n.as_i64().filter(|i| i.unsigned_abs() <= MAX_SAFE_INTEGER) {
         return i.to_string();
     }
-    if let Some(u) = n.as_u64() {
+    if let Some(u) = n.as_u64().filter(|u| *u <= MAX_SAFE_INTEGER) {
         return u.to_string();
     }
     let Some(f) = n.as_f64() else {
@@ -188,9 +193,7 @@ fn format_f64(f: f64) -> String {
     }
     let abs = f.abs();
     if (1e-6..1e21).contains(&abs) {
-        if f.fract() == 0.0 {
-            return format!("{f:.0}");
-        }
+        // Shortest round-trip digits, padded with zeros: JavaScript's digits.
         return format!("{f}");
     }
     // Shortest digits in exponent form, as JavaScript writes them (1e+22, 1.5e-7).
@@ -278,6 +281,12 @@ pub(crate) fn compiled(pattern: &str) -> Option<Arc<Regex>> {
     if pattern.chars().count() > MAX_PATTERN_CHARS {
         return None;
     }
+    compiled_unchecked(pattern)
+}
+
+/// `compiled` without the length check, for sources built from a bounded
+/// glob (which expand to several times the glob's length).
+fn compiled_unchecked(pattern: &str) -> Option<Arc<Regex>> {
     REGEX_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         if let Some(found) = cache.get(pattern) {
@@ -334,7 +343,7 @@ pub(crate) fn glob_match(pattern: &str, input: &str) -> bool {
     if pattern.chars().count() > MAX_PATTERN_CHARS {
         return false;
     }
-    compiled(&glob_to_regex(pattern)).is_some_and(|re| re.is_match(input))
+    compiled_unchecked(&glob_to_regex(pattern)).is_some_and(|re| re.is_match(input))
 }
 
 /// Whether the pattern finds a match anywhere in `input`.
@@ -405,6 +414,11 @@ mod tests {
         assert!(!glob_match("/a?c", "/a/c"));
         assert!(glob_match("/a.(b)+", "/a.(b)+"));
         assert!(!glob_match("/a.b", "/axb"));
+        // A glob at the length limit matches though its regex is longer.
+        let long = "-*".repeat(MAX_PATTERN_CHARS / 2);
+        assert!(glob_to_regex(&long).chars().count() > MAX_PATTERN_CHARS);
+        assert!(glob_match(&long, &"-".repeat(MAX_PATTERN_CHARS / 2)));
+        assert!(!glob_match(&format!("{long}-"), "-"));
     }
 
     #[test]

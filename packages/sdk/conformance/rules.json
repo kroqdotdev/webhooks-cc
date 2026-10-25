@@ -59,6 +59,15 @@
       "body": "{\"n\":1.0,\"big\":1e22,\"small\":0.0000001,\"neg\":-0.5,\"int\":42,\"text\":\"42\"}",
       "contentType": null,
       "size": 70
+    },
+    "bigIntegers": {
+      "method": "POST",
+      "path": "/n",
+      "headers": {},
+      "query": {},
+      "body": "{\"id\":12345678901234567890,\"pow\":1152921504606846976,\"neg\":-9007199254740993}",
+      "contentType": null,
+      "size": 77
     }
   },
   "vectors": [
@@ -1027,6 +1036,21 @@
             "op": "eq",
             "path": "small",
             "value": "1e-7"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "integer beyond 2^53",
+      "request": "bigIntegers",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "id",
+            "value": "12345678901234567000"
           }
         ]
       },

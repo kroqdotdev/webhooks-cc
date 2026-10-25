@@ -612,6 +612,8 @@ export interface ValidateOptions {
   use: ConditionUse;
   /** Checks a regular expression's syntax; returns an error message or null. */
   checkRegex?: (pattern: string) => string | null;
+  /** Checks that a glob's regex (`globToRegexSource`) can run; an error message or null. */
+  checkGlob?: (glob: string) => string | null;
 }
 
 /** Problems with one condition, in words for the person who wrote it; [] when it is fine. */
@@ -671,6 +673,9 @@ export function conditionIssues(condition: unknown, options: ValidateOptions): s
   } else if (op === "regex" && options.checkRegex) {
     const problem = options.checkRegex(value);
     if (problem) issues.push(`regex: ${problem}`);
+  } else if (op === "matches" && options.checkGlob) {
+    const problem = options.checkGlob(value);
+    if (problem) issues.push(`glob: ${problem}`);
   }
   if (NUMBER_OPS.includes(op) && toNumber(value) === null) {
     issues.push(`value must be a number for "${op}"`);

@@ -58,6 +58,23 @@ describe("previewResponse", () => {
     });
   });
 
+  it("drops a header over 8192 bytes in UTF-8, as the receiver does", () => {
+    const preview = previewResponse(
+      {
+        mockResponse: {
+          status: 200,
+          body: "",
+          headers: { "x-fits": "\u00e9".repeat(4096), "x-long": "\u00e9".repeat(4097) },
+        },
+        responseRules: null,
+      },
+      request,
+      endpoint,
+      generated
+    );
+    expect(Object.keys(preview.response?.headers ?? {})).toEqual(["x-fits"]);
+  });
+
   it("skips rules that are off or have no conditions", () => {
     const preview = previewResponse(
       {
