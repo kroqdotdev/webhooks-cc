@@ -1,0 +1,1278 @@
+{
+  "version": 1,
+  "generatedBy": "packages/sdk/src/__tests__/rules-conformance.test.ts",
+  "description": "Conditions of response rules and forwarding filters. Evaluate group (logic and conditions) against requests[request] and compare with expected. The receiver runs these for response rules.",
+  "requests": {
+    "order": {
+      "method": "POST",
+      "path": "/orders/123/items",
+      "headers": {
+        "content-type": "application/json",
+        "x-event": "order.paid",
+        "x-count": "15",
+        "x-note": "say \"hi\"\t<b>&</b>"
+      },
+      "query": {
+        "page": "2",
+        "q": "blue shoes"
+      },
+      "body": "{\"type\":\"order.paid\",\"data\":{\"id\":\"ord_1\",\"amount\":2000,\"rate\":1.5,\"items\":[{\"sku\":\"a-1\"},{\"sku\":\"b-2\"}],\"flag\":true,\"none\":null,\"odd.key\":\"dot\"}}",
+      "contentType": "application/json",
+      "size": 150
+    },
+    "form": {
+      "method": "POST",
+      "path": "/form",
+      "headers": {
+        "content-type": "application/x-www-form-urlencoded; charset=utf-8"
+      },
+      "query": {},
+      "body": "name=Ada+Lovelace&email=ada%40example.com&tag=a&tag=b",
+      "contentType": "application/x-www-form-urlencoded; charset=utf-8",
+      "size": 52
+    },
+    "empty": {
+      "method": "GET",
+      "path": "/",
+      "headers": {},
+      "query": {},
+      "body": "",
+      "contentType": null,
+      "size": 0
+    },
+    "text": {
+      "method": "PUT",
+      "path": "/a/b",
+      "headers": {
+        "content-type": "text/plain"
+      },
+      "query": {},
+      "body": "line one\nline two café",
+      "contentType": "text/plain",
+      "size": 23
+    },
+    "numbers": {
+      "method": "POST",
+      "path": "/n",
+      "headers": {},
+      "query": {},
+      "body": "{\"n\":1.0,\"big\":1e22,\"small\":0.0000001,\"neg\":-0.5,\"int\":42,\"text\":\"42\"}",
+      "contentType": null,
+      "size": 70
+    },
+    "bigIntegers": {
+      "method": "POST",
+      "path": "/n",
+      "headers": {},
+      "query": {},
+      "body": "{\"id\":12345678901234567890,\"pow\":1152921504606846976,\"neg\":-9007199254740993}",
+      "contentType": null,
+      "size": 77
+    }
+  },
+  "vectors": [
+    {
+      "name": "method eq ignores case",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "method",
+            "op": "eq",
+            "value": "post"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "method neq",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "method",
+            "op": "neq",
+            "value": "GET"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "method neq same",
+      "request": "empty",
+      "group": {
+        "conditions": [
+          {
+            "field": "method",
+            "op": "neq",
+            "value": "get"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "path eq",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "eq",
+            "value": "/orders/123/items"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path contains",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "contains",
+            "value": "123"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path not_contains",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "not_contains",
+            "value": "admin"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path starts_with",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "starts_with",
+            "value": "/orders"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path ends_with",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "ends_with",
+            "value": "/items"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "glob star",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/orders/*/items"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "glob star stops at slash",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/orders/*"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "glob double star",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/orders/**"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "glob double star in the middle",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/orders/**/items"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "glob double star takes its slash",
+      "request": "text",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/a/**/b"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "glob question mark is one character",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/orders/12?/items"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "glob question mark is not a slash",
+      "request": "text",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/a?b"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "glob is anchored",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "orders"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "glob dot is literal",
+      "request": "text",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "matches",
+            "value": "/a.b"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "path regex",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "regex",
+            "value": "^/orders/[0-9]+/"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "regex inline case flag",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "regex",
+            "value": "(?i)^/ORDERS"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "regex is a search",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "regex",
+            "value": "items"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "regex miss",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "path",
+            "op": "regex",
+            "value": "^items"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "header exists in any case",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "exists",
+            "name": "X-EVENT"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header not_exists",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "not_exists",
+            "name": "x-missing"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header eq",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "eq",
+            "name": "x-event",
+            "value": "order.paid"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header eq is case-sensitive",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "eq",
+            "name": "x-event",
+            "value": "Order.Paid"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "header neq when absent",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "neq",
+            "name": "x-missing",
+            "value": "x"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header contains when absent",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "contains",
+            "name": "x-missing",
+            "value": "x"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "header not_contains when absent",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "not_contains",
+            "name": "x-missing",
+            "value": "x"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header regex",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "regex",
+            "name": "x-event",
+            "value": "^order\\."
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header gt",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "gt",
+            "name": "x-count",
+            "value": "10"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header lte",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "lte",
+            "name": "x-count",
+            "value": "15"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "number op on text",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "header",
+            "op": "gt",
+            "name": "x-event",
+            "value": "1"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "query eq",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "query",
+            "op": "eq",
+            "name": "page",
+            "value": "2"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "query contains",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "query",
+            "op": "contains",
+            "name": "q",
+            "value": "shoes"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "query names are case-sensitive",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "query",
+            "op": "exists",
+            "name": "Page"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body contains",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body",
+            "op": "contains",
+            "value": "ord_1"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body not_contains",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body",
+            "op": "not_contains",
+            "value": "nope"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body regex",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body",
+            "op": "regex",
+            "value": "\"amount\":\\s*2000"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "legacy body_contains",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_contains",
+            "op": "contains",
+            "value": "order.paid"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "dot does not match a line break",
+      "request": "text",
+      "group": {
+        "conditions": [
+          {
+            "field": "body",
+            "op": "regex",
+            "value": "one.line"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "s flag lets dot match a line break",
+      "request": "text",
+      "group": {
+        "conditions": [
+          {
+            "field": "body",
+            "op": "regex",
+            "value": "(?s)one.line"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path string",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.id",
+            "value": "ord_1"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path integer",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.amount",
+            "value": "2000"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path gt",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "gt",
+            "path": "data.amount",
+            "value": "1999"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path gte",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "gte",
+            "path": "data.amount",
+            "value": "2000"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path lt",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "lt",
+            "path": "data.amount",
+            "value": "2000"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body_path decimal",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.rate",
+            "value": "1.5"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path array index",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.items.1.sku",
+            "value": "b-2"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path bracket index",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.items[0].sku",
+            "value": "a-1"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path quoted key",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data[\"odd.key\"]",
+            "value": "dot"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path boolean",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.flag",
+            "value": "true"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path null reads null",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.none",
+            "value": "null"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path null exists",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "exists",
+            "path": "data.none"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path missing",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "not_exists",
+            "path": "data.missing"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path index past the end",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "exists",
+            "path": "data.items.5"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body_path object as compact JSON",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data.items.0",
+            "value": "{\"sku\":\"a-1\"}"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path neq when absent",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "neq",
+            "path": "data.missing",
+            "value": "x"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path glob",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "matches",
+            "path": "data.items.0.sku",
+            "value": "a-*"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path empty segments are skipped",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "data..id",
+            "value": "ord_1"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "form field",
+      "request": "form",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "name",
+            "value": "Ada Lovelace"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "form field is decoded",
+      "request": "form",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "email",
+            "value": "ada@example.com"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "form field repeated keeps the last",
+      "request": "form",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "tag",
+            "value": "b"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body_path on an empty body",
+      "request": "empty",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "exists",
+            "path": "a"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body_path on text",
+      "request": "text",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "exists",
+            "path": "line"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "integer-valued decimal",
+      "request": "numbers",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "n",
+            "value": "1"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "large number",
+      "request": "numbers",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "big",
+            "value": "1e+22"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "small number",
+      "request": "numbers",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "small",
+            "value": "1e-7"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "integer beyond 2^53",
+      "request": "bigIntegers",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "eq",
+            "path": "id",
+            "value": "12345678901234567000"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "negative decimal",
+      "request": "numbers",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "lt",
+            "path": "neg",
+            "value": "0"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "numeric text compares as a number",
+      "request": "numbers",
+      "group": {
+        "conditions": [
+          {
+            "field": "body_path",
+            "op": "gte",
+            "path": "text",
+            "value": "41.5"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content_type contains",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "content_type",
+            "op": "contains",
+            "value": "json"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content_type ignores case",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "content_type",
+            "op": "eq",
+            "value": "APPLICATION/JSON"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content_type starts_with",
+      "request": "form",
+      "group": {
+        "conditions": [
+          {
+            "field": "content_type",
+            "op": "starts_with",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content_type absent",
+      "request": "empty",
+      "group": {
+        "conditions": [
+          {
+            "field": "content_type",
+            "op": "eq",
+            "value": ""
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "content_type not_contains when absent",
+      "request": "empty",
+      "group": {
+        "conditions": [
+          {
+            "field": "content_type",
+            "op": "not_contains",
+            "value": "json"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "size gt",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "size",
+            "op": "gt",
+            "value": "100"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "size eq",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "size",
+            "op": "eq",
+            "value": "150"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "size lt",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "size",
+            "op": "lt",
+            "value": "10"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "or: any condition",
+      "request": "order",
+      "group": {
+        "logic": "or",
+        "conditions": [
+          {
+            "field": "method",
+            "op": "eq",
+            "value": "GET"
+          },
+          {
+            "field": "path",
+            "op": "contains",
+            "value": "items"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "and: every condition",
+      "request": "order",
+      "group": {
+        "logic": "and",
+        "conditions": [
+          {
+            "field": "method",
+            "op": "eq",
+            "value": "GET"
+          },
+          {
+            "field": "path",
+            "op": "contains",
+            "value": "items"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "no conditions",
+      "request": "order",
+      "group": {
+        "conditions": []
+      },
+      "expected": true
+    },
+    {
+      "name": "unknown field never holds",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "nope",
+            "op": "eq",
+            "value": "x"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "operator the field does not take",
+      "request": "order",
+      "group": {
+        "conditions": [
+          {
+            "field": "method",
+            "op": "contains",
+            "value": "PO"
+          }
+        ]
+      },
+      "expected": false
+    }
+  ]
+}

@@ -1,15 +1,10 @@
 "use client";
 
+import type { Condition, MockResponse } from "@webhooks-cc/sdk";
 import type { EmailCapture } from "@/lib/email-capture";
 import type { ClickHouseRequest, Request } from "@/types/request";
 
-export interface ResponseRuleCondition {
-  field: "method" | "path" | "header" | "body_contains" | "body_path" | "query";
-  op: "eq" | "contains" | "starts_with" | "matches" | "exists";
-  value?: string;
-  name?: string;
-  path?: string;
-}
+export type ResponseRuleCondition = Condition;
 
 export interface ResponseRule {
   id?: string;
@@ -262,6 +257,51 @@ export interface ForwardTestResult {
 
 const endpointPath = (slug: string) => `/api/endpoints/${encodeURIComponent(slug)}`;
 
+export interface ResponsePreviewResult {
+  rule: { index: number; name: string | null } | null;
+  response: { status: number; headers: Record<string, string>; body: string; delay: number } | null;
+  unknownPlaceholders: string[];
+  email: boolean;
+  request: {
+    id: string | null;
+    method: string;
+    path: string;
+    receivedAt: number;
+    sample: boolean;
+  };
+}
+
+/**
+ * What a sender would get back for a captured request (the newest HTTP
+ * request when `requestId` is left out), with the given unsaved settings or
+ * the saved ones.
+ */
+export async function previewResponses(
+  accessToken: string,
+  slug: string,
+  settings: {
+    requestId?: string | null;
+    mockResponse?: MockResponse | null;
+    responseRules?: ResponseRule[] | null;
+  },
+  signal?: AbortSignal
+): Promise<ResponsePreviewResult> {
+  const response = await fetch(
+    `${endpointPath(slug)}/responses/preview`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(settings.requestId ? { requestId: settings.requestId } : {}),
+        ...("mockResponse" in settings ? { mockResponse: settings.mockResponse } : {}),
+        ...("responseRules" in settings ? { responseRules: settings.responseRules } : {}),
+      }),
+      signal,
+    })
+  );
+  return readJson<ResponsePreviewResult>(response);
+}
+
 export async function fetchForwardSecret(accessToken: string, slug: string): Promise<string> {
   const response = await fetch(`${endpointPath(slug)}/forwarding`, withAuthHeaders(accessToken));
   return (await readJson<{ secret: string }>(response)).secret;
@@ -502,10 +542,11 @@ export async function deleteDashboardEndpoint(accessToken: string, slug: string)
 export async function fetchDashboardRequests(
   accessToken: string,
   slug: string,
-  limit: number = 50
+  limit: number = 50,
+  kind?: "http" | "email"
 ): Promise<Request[]> {
   const response = await fetch(
-    `/api/endpoints/${encodeURIComponent(slug)}/requests?limit=${limit}`,
+    `/api/endpoints/${encodeURIComponent(slug)}/requests?limit=${limit}${kind ? `&kind=${kind}` : ""}`,
     withAuthHeaders(accessToken)
   );
   const records = await readJson<

@@ -76,17 +76,17 @@ describe("validateResponseRules", () => {
           conditions: [{ field: "invalid" as never, op: "eq", value: "x" }],
         }),
       ])
-    ).toThrow('invalid field "invalid"');
+    ).toThrow('unknown field "invalid"');
   });
 
   it("rejects invalid condition op", () => {
     expect(() =>
       validateResponseRules([
         makeRule({
-          conditions: [{ field: "method", op: "regex" as never, value: ".*" }],
+          conditions: [{ field: "method", op: "regex", value: ".*" }],
         }),
       ])
-    ).toThrow('invalid op "regex"');
+    ).toThrow('op "regex" is not valid for field "method"');
   });
 
   it("rejects invalid op for field (method + contains)", () => {
@@ -99,14 +99,54 @@ describe("validateResponseRules", () => {
     ).toThrow('op "contains" is not valid for field "method"');
   });
 
-  it("rejects invalid op for field (query + matches)", () => {
+  it("rejects invalid op for field (body + eq)", () => {
     expect(() =>
       validateResponseRules([
         makeRule({
-          conditions: [{ field: "query", op: "matches" as never, name: "q", value: "*" }],
+          conditions: [{ field: "body", op: "eq", value: "x" }],
         }),
       ])
-    ).toThrow('op "matches" is not valid for field "query"');
+    ).toThrow('op "eq" is not valid for field "body"');
+  });
+
+  it("accepts the newer operators", () => {
+    expect(() =>
+      validateResponseRules([
+        makeRule({
+          conditions: [
+            { field: "query", op: "matches", name: "q", value: "a*" },
+            { field: "header", op: "not_exists", name: "x-test" },
+            { field: "body_path", op: "gte", path: "data.amount", value: "100" },
+            { field: "path", op: "regex", value: "^/v[0-9]+/" },
+            { field: "content_type", op: "contains", value: "json" },
+            { field: "size", op: "lt", value: "1024" },
+          ],
+        }),
+      ])
+    ).not.toThrow();
+  });
+
+  it("refuses filter-only fields in response rules", () => {
+    expect(() =>
+      validateResponseRules([
+        makeRule({ conditions: [{ field: "kind", op: "eq", value: "email" }] }),
+      ])
+    ).toThrow("forwarding filter");
+  });
+
+  it("refuses a number operator with text", () => {
+    expect(() =>
+      validateResponseRules([makeRule({ conditions: [{ field: "size", op: "gt", value: "big" }] })])
+    ).toThrow("must be a number");
+  });
+
+  it("checks regular expressions when given a checker", () => {
+    expect(() =>
+      validateResponseRules(
+        [makeRule({ conditions: [{ field: "path", op: "regex", value: "(" }] })],
+        { checkRegex: (pattern) => (pattern === "(" ? "missing )" : null) }
+      )
+    ).toThrow("regex: missing )");
   });
 
   it("rejects invalid logic value", () => {

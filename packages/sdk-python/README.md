@@ -29,7 +29,7 @@ with WebhooksCC() as client:
 
 Durations take `"500ms"`, `"30s"`, `"5m"`, `"2h"`, `"7d"`, a `timedelta`, or a number of milliseconds (the unit every webhooks.cc SDK uses, so prefer a string where you mean seconds). Times such as `since` and `Request.received_at` are milliseconds since the epoch.
 
-Matchers combine with `match_all()` and `match_any()`, and any function that takes a `Request` and returns a bool works too: `match_method`, `match_path` (globs with `*` and `**`), `match_header`, `match_query_param`, `match_body_path`, `match_body_subset`, `match_content_type`, `match_verified`, `match_unverified` and `match_email`.
+Matchers combine with `match_all()` and `match_any()`, and any function that takes a `Request` and returns a bool works too: `match_method`, `match_path` (globs: `*` within a segment, `**` across segments, `?` for one character), `match_header`, `match_query_param`, `match_body_path`, `match_body_subset`, `match_content_type`, `match_verified`, `match_unverified` and `match_email`.
 
 ## pytest
 
@@ -107,6 +107,25 @@ print(event["data"]["subject"])
 ```
 
 `verify_forwarded_request()` checks a request forwarded as JSON, and `verify_relayed_request()` one relayed as it was received.
+
+## Mock responses and response rules
+
+An endpoint answers with `mock_response` instead of a plain 200 OK, or with the first of its `response_rules` whose conditions match the request (method, path, header, query, body, body_path, content_type or size). Bodies and header values may hold `{{ placeholders }}` filled in from each request, such as `{{ json.id }}`. Check what a sender would get back without sending anything:
+
+```python
+preview = client.endpoints.preview_response(
+    endpoint.slug,
+    response_rules=[
+        {
+            "conditions": [{"field": "body_path", "path": "type", "op": "eq", "value": "ping"}],
+            "response": {"status": 202, "body": '{"pong": "{{ json.id }}"}', "headers": {}},
+        }
+    ],
+)
+print(preview.rule, preview.response.status if preview.response else 200)
+```
+
+It runs against the endpoint's newest HTTP request unless you pass `request_id`, and uses the saved settings unless you pass `mock_response` or `response_rules` (`None` tries none at all). `client.endpoints.update(slug, response_rules=[...])` saves them.
 
 ## Stream requests as they arrive
 

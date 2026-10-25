@@ -328,9 +328,10 @@ const SECTIONS: Section[] = [
             and choose whether codes and links found in emails are shown
           </li>
           <li>
-            <strong>HTTP responses</strong>: the status code, body and delay senders get back, plus
-            response rules that answer differently by method, path, headers or body (see Response
-            Rules)
+            <strong>Responses</strong>: what senders get back (status, headers, body and delay),
+            rules checked from the top that answer differently by method, path, headers or body
+            fields, placeholders such as {"{{ json.id }}"} that echo the request, and a preview
+            against captured requests
           </li>
           <li>
             <strong>Notifications</strong>: POST a JSON summary to Slack, Discord, or any URL when a
@@ -391,30 +392,31 @@ const SECTIONS: Section[] = [
     content: (
       <div className="space-y-3">
         <p>
-          Return different responses based on the incoming request. Define rules with conditions and
-          responses — first matching rule wins, then falls back to the default mock.
+          Return different responses based on the incoming request. Rules are checked from the top,
+          the first that matches answers, and Otherwise answers the rest.
         </p>
         <ul className="space-y-1.5 text-sm">
           <li>
-            Open the <strong>Settings</strong> tab and click <strong>Add Rule</strong> under HTTP
-            responses
+            Open the <strong>Settings</strong> tab and click <strong>Add rule</strong> under
+            Responses
           </li>
           <li>
-            Each rule has <strong>conditions</strong> (method, path, header, body content, JSON
-            path, query param) and a <strong>response</strong> (status + body)
+            Each rule has <strong>conditions</strong> (method, path, a header, a query parameter, a
+            body field, body text, content type or size, compared with is, contains, a pattern, a
+            regex or a number) and an <strong>answer</strong> (status, headers, body, delay)
           </li>
           <li>
-            Choose <strong>ALL (AND)</strong> or <strong>ANY (OR)</strong> logic for combining
-            conditions
+            Choose whether <strong>all</strong> or <strong>any</strong> of a rule&apos;s conditions
+            must match
           </li>
           <li>
-            <strong>Reorder</strong> rules with the arrow buttons — rules are evaluated top to
-            bottom, first match wins
+            Move rules with <strong>Check earlier</strong> and <strong>Check later</strong>, and
+            switch one off without deleting it
           </li>
           <li>
-            <strong>Disable</strong> a rule temporarily with the checkbox toggle
+            <strong>Preview with</strong> a captured request to see which rule answers and what it
+            sends
           </li>
-          <li>When no rule matches, the status code and body set above the rules are sent</li>
         </ul>
         <p className="text-xs text-muted-foreground">
           Example: Route Stripe webhooks to a 201 response and GitHub webhooks to a 200 response,

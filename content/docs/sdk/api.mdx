@@ -92,7 +92,7 @@ get(slug: string): Promise<Endpoint>
 
 <ApiMethod method="PATCH" path="/endpoints/:slug" title="client.endpoints.update">
 
-Update an endpoint's name or mock response configuration.
+Update an endpoint's name, mock response or response rules.
 
 ```ts
 update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
@@ -100,14 +100,52 @@ update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
 
 <ParamTable>
 
-| Param             | Type                   | Required | Description                                                 |
-| ----------------- | ---------------------- | -------- | ----------------------------------------------------------- |
-| `slug`            | `string`               | yes      | Endpoint slug                                               |
-| `name`            | `string`               | no       | New display name                                            |
-| `mockResponse`    | `MockResponse \| null` | no       | Mock response config (see fields above), or `null` to clear |
-| `notificationUrl` | `string \| null`       | no       | Notification webhook URL, or `null` to clear                |
+| Param             | Type                     | Required | Description                                                                         |
+| ----------------- | ------------------------ | -------- | ----------------------------------------------------------------------------------- |
+| `slug`            | `string`                 | yes      | Endpoint slug                                                                       |
+| `name`            | `string`                 | no       | New display name                                                                    |
+| `mockResponse`    | `MockResponse \| null`   | no       | Default response (see fields above), or `null` to clear                             |
+| `responseRules`   | `ResponseRule[] \| null` | no       | [Response rules](/docs/mock-responses#conditional-response-rules), or `null` to clear |
+| `notificationUrl` | `string \| null`         | no       | Notification webhook URL, or `null` to clear                                        |
 
 </ParamTable>
+
+Mock response bodies and header values can hold [placeholders](/docs/mock-responses#placeholders) such as `{{ json.id }}`, filled in from each request.
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/responses/preview" title="client.endpoints.previewResponse">
+
+A dry run: which response rule answers a captured request, and the response with its placeholders filled in, exactly as the receiver would send it. Nothing is sent.
+
+```ts
+previewResponse(slug: string, options?: PreviewResponseOptions): Promise<ResponsePreview>
+```
+
+<ParamTable>
+
+| Param           | Type                     | Required | Description                                                               |
+| --------------- | ------------------------ | -------- | ------------------------------------------------------------------------- |
+| `slug`          | `string`                 | yes      | Endpoint slug                                                             |
+| `requestId`     | `string`                 | no       | A captured request on the endpoint (default: the newest HTTP request)     |
+| `mockResponse`  | `MockResponse \| null`   | no       | Try an unsaved default response; left out, the saved one applies          |
+| `responseRules` | `ResponseRule[] \| null` | no       | Try unsaved rules; left out, the saved ones apply                         |
+
+</ParamTable>
+
+Returns `rule` (`{ index, name }` of the rule that answers, or `null` for the default response), `response` (`{ status, headers, body, delay }`, or `null` for the plain `200 OK`), `unknownPlaceholders` (sent as written), `email` (true when the request is an email, which never gets a mock response) and `request` (the request it ran against; `sample` when none was captured yet).
+
+```ts
+const preview = await client.endpoints.previewResponse("payments", {
+  responseRules: [
+    {
+      conditions: [{ field: "body_path", op: "gt", path: "data.amount", value: "10000" }],
+      response: { status: 422, body: '{"amount": {{ json.data.amount }}}', headers: {} },
+    },
+  ],
+});
+```
+
+The SDK also exports the rule language itself: `evaluateConditions(group, subject)` checks conditions against a request and `renderTemplate(template, context)` fills in placeholders, with the same results as the receiver.
 </ApiMethod>
 
 <ApiMethod method="DELETE" path="/endpoints/:slug" title="client.endpoints.delete">

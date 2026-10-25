@@ -1,3 +1,4 @@
+import type { Condition } from "./rules";
 import type { EmailCapture, RequestKind } from "./email/types";
 
 /**
@@ -89,19 +90,13 @@ export interface ForwardHeaderInput {
   value: string | null;
 }
 
-/** A single condition within a response rule. */
-export interface ResponseRuleCondition {
-  /** Field to match: method, path, header, body_contains, body_path, query */
-  field: "method" | "path" | "header" | "body_contains" | "body_path" | "query";
-  /** Comparison operator */
-  op: "eq" | "contains" | "starts_with" | "matches" | "exists";
-  /** Value to compare against (not required for "exists") */
-  value?: string;
-  /** Header name or query param name (required for header/query conditions) */
-  name?: string;
-  /** JSON dot-notation path (required for body_path conditions) */
-  path?: string;
-}
+/**
+ * A single condition within a response rule or a forwarding filter. See
+ * `CONDITION_FIELDS` for the operators each field takes; response rules can
+ * read the HTTP request only (method, path, header, query, body,
+ * body_contains, body_path, content_type, size).
+ */
+export type ResponseRuleCondition = Condition;
 
 /** A conditional response rule: when conditions match, return this response. */
 export interface ResponseRule {
@@ -119,13 +114,48 @@ export interface ResponseRule {
   response: MockResponse;
 }
 
+/** Options for `endpoints.previewResponse`. */
+export interface PreviewResponseOptions {
+  /** A captured request on the endpoint; default the newest HTTP request (a sample when none). */
+  requestId?: string;
+  /** Try an unsaved default response (null: none). Left out, the saved one applies. */
+  mockResponse?: MockResponse | null;
+  /** Try unsaved rules (null: none). Left out, the saved ones apply. */
+  responseRules?: ResponseRule[] | null;
+}
+
+/** What `endpoints.previewResponse` reports. */
+export interface ResponsePreview {
+  /** The rule that answers (its position from 0), or null when the default response does. */
+  rule: { index: number; name: string | null } | null;
+  /** The response with placeholders filled in; null means the receiver's plain 200 OK. */
+  response: { status: number; headers: Record<string, string>; body: string; delay: number } | null;
+  /** Placeholders the request has no field for; they are sent as written. */
+  unknownPlaceholders: string[];
+  /** True for an email: emails get a standard mail-server reply, never a mock response. */
+  email: boolean;
+  /** The request the preview ran against. */
+  request: {
+    id: string | null;
+    method: string;
+    path: string;
+    receivedAt: number;
+    /** No request was captured yet, so a sample was used. */
+    sample: boolean;
+  };
+}
+
 /** Mock response returned by the receiver instead of the default 200 OK. */
 export interface MockResponse {
   /** HTTP status code (100-599) */
   status: number;
-  /** Raw response body */
+  /**
+   * Response body. `{{ ... }}` placeholders are filled in from the request:
+   * `{{ json.id }}`, `{{ headers.user-agent }}`, `{{ uuid }}`. See
+   * https://webhooks.cc/docs/mock-responses#placeholders.
+   */
   body: string;
-  /** Response headers */
+  /** Response headers; values can hold placeholders too. */
   headers: Record<string, string>;
   /** Response delay in milliseconds (0-30000). The receiver caps at 30s. */
   delay?: number;

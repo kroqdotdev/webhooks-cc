@@ -16,7 +16,7 @@ import pytest
 from webhooks_cc import errors
 from webhooks_cc.client import RetryOptions, WebhooksCC
 from webhooks_cc.email import email_address, extract_code, extract_link, is_valid_email_tag
-from webhooks_cc.matchers import match_body_path, match_email
+from webhooks_cc.matchers import match_body_path, match_email, match_path
 from webhooks_cc.models import Endpoint, Request
 from webhooks_cc.testing import capture_during, temporary_endpoint
 from webhooks_cc.verify import verify_signature
@@ -150,6 +150,104 @@ def test_update_sends_only_given_fields() -> None:
 
     make_client(handler).endpoints.update("acme", name="renamed", forward_url=None)
     assert bodies == [{"name": "renamed", "forwardUrl": None}]
+
+
+def test_preview_response_sends_only_given_settings() -> None:
+    calls: list[tuple[str, str, Any]] = []
+    preview = {
+        "rule": {"index": 1, "name": "pings"},
+        "response": {
+            "status": 202,
+            "headers": {"x-id": "evt_1"},
+            "body": '{"id":"evt_1"}',
+            "delay": 250,
+        },
+        "unknownPlaceholders": ["json.nope"],
+        "email": False,
+        "request": {
+            "id": "4f0e7c1a-0000-4000-8000-000000000002",
+            "method": "POST",
+            "path": "/hooks",
+            "receivedAt": NOW_MS,
+            "sample": False,
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, json.loads(request.content)))
+        return httpx.Response(200, json=preview)
+
+    client = make_client(handler)
+    result = client.endpoints.preview_response("acme")
+    assert calls[-1] == ("POST", "/api/endpoints/acme/responses/preview", {})
+    assert result.rule is not None and result.rule.index == 1 and result.rule.name == "pings"
+    assert result.response is not None
+    assert result.response.status == 202
+    assert result.response.headers == {"x-id": "evt_1"}
+    assert result.response.body == '{"id":"evt_1"}'
+    assert result.response.delay == 250
+    assert result.unknown_placeholders == ["json.nope"]
+    assert result.email is False
+    assert result.request.id == "4f0e7c1a-0000-4000-8000-000000000002"
+    assert result.request.path == "/hooks"
+    assert result.request.received_at == NOW_MS
+    assert result.request.sample is False
+
+    rule = {
+        "conditions": [{"field": "size", "op": "gt", "value": "1024"}],
+        "response": {"status": 413, "body": "", "headers": {}},
+    }
+    client.endpoints.preview_response(
+        "acme",
+        request_id="4f0e7c1a-0000-4000-8000-000000000002",
+        mock_response=None,
+        response_rules=[rule],
+    )
+    assert calls[-1][2] == {
+        "requestId": "4f0e7c1a-0000-4000-8000-000000000002",
+        "mockResponse": None,
+        "responseRules": [rule],
+    }
+
+    client.endpoints.preview_response("acme", response_rules=None)
+    assert calls[-1][2] == {"responseRules": None}
+
+    with pytest.raises(ValueError, match="slug"):
+        client.endpoints.preview_response("../admin")
+    assert len(calls) == 3
+
+
+def test_preview_response_reads_a_sample_and_the_plain_200() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "rule": None,
+                "response": None,
+                "unknownPlaceholders": [],
+                "email": False,
+                "request": {
+                    "id": None,
+                    "method": "POST",
+                    "path": "/",
+                    "receivedAt": 1,
+                    "sample": True,
+                },
+            },
+        )
+
+    result = make_client(handler).endpoints.preview_response("acme")
+    assert result.rule is None
+    assert result.response is None
+    assert result.request.id is None
+    assert result.request.sample is True
+
+
+def test_path_globs_cross_line_breaks() -> None:
+    request = Request.from_dict(captured("r1", path="/a/b\nc/d"))
+    assert match_path("/a/**")(request) is True
+    assert match_path("/a/*/d")(request) is True
+    assert match_path("/a/b?c/d")(request) is True
 
 
 def test_slugs_are_validated() -> None:

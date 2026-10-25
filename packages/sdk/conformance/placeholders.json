@@ -1,0 +1,529 @@
+{
+  "version": 1,
+  "generatedBy": "packages/sdk/src/__tests__/rules-conformance.test.ts",
+  "description": "Placeholders in mock responses. Build the template context from requests[request] with id req_<request>, ip 203.0.113.7, receivedAt 2026-01-01T00:00:00.123Z, endpoint slug acme-orders and name Acme orders (null for empty), uuid 00000000-0000-4000-8000-000000000000 and now 2026-01-01T00:00:00.000Z; render template in mode, stopping at maxBytes when given, and compare with expected. modes: the mode a mock response body gets from its body and headers.",
+  "requests": {
+    "order": {
+      "method": "POST",
+      "path": "/orders/123/items",
+      "headers": {
+        "content-type": "application/json",
+        "x-event": "order.paid",
+        "x-count": "15",
+        "x-note": "say \"hi\"\t<b>&</b>"
+      },
+      "query": {
+        "page": "2",
+        "q": "blue shoes"
+      },
+      "body": "{\"type\":\"order.paid\",\"data\":{\"id\":\"ord_1\",\"amount\":2000,\"rate\":1.5,\"items\":[{\"sku\":\"a-1\"},{\"sku\":\"b-2\"}],\"flag\":true,\"none\":null,\"odd.key\":\"dot\"}}",
+      "contentType": "application/json",
+      "size": 150
+    },
+    "form": {
+      "method": "POST",
+      "path": "/form",
+      "headers": {
+        "content-type": "application/x-www-form-urlencoded; charset=utf-8"
+      },
+      "query": {},
+      "body": "name=Ada+Lovelace&email=ada%40example.com&tag=a&tag=b",
+      "contentType": "application/x-www-form-urlencoded; charset=utf-8",
+      "size": 52
+    },
+    "empty": {
+      "method": "GET",
+      "path": "/",
+      "headers": {},
+      "query": {},
+      "body": "",
+      "contentType": null,
+      "size": 0
+    },
+    "text": {
+      "method": "PUT",
+      "path": "/a/b",
+      "headers": {
+        "content-type": "text/plain"
+      },
+      "query": {},
+      "body": "line one\nline two café",
+      "contentType": "text/plain",
+      "size": 23
+    },
+    "numbers": {
+      "method": "POST",
+      "path": "/n",
+      "headers": {},
+      "query": {},
+      "body": "{\"n\":1.0,\"big\":1e22,\"small\":0.0000001,\"neg\":-0.5,\"int\":42,\"text\":\"42\"}",
+      "contentType": null,
+      "size": 70
+    },
+    "bigIntegers": {
+      "method": "POST",
+      "path": "/n",
+      "headers": {},
+      "query": {},
+      "body": "{\"id\":12345678901234567890,\"pow\":1152921504606846976,\"neg\":-9007199254740993}",
+      "contentType": null,
+      "size": 77
+    }
+  },
+  "vectors": [
+    {
+      "name": "no placeholders",
+      "request": "order",
+      "template": "plain text",
+      "mode": "text",
+      "expected": "plain text"
+    },
+    {
+      "name": "body field",
+      "request": "order",
+      "template": "Order {{ json.data.id }}",
+      "mode": "text",
+      "expected": "Order ord_1"
+    },
+    {
+      "name": "method and path",
+      "request": "order",
+      "template": "{{ method }} {{ path }}",
+      "mode": "text",
+      "expected": "POST /orders/123/items"
+    },
+    {
+      "name": "spaces are optional",
+      "request": "order",
+      "template": "{{method}}",
+      "mode": "text",
+      "expected": "POST"
+    },
+    {
+      "name": "header in any case",
+      "request": "order",
+      "template": "{{ headers.X-Event }}",
+      "mode": "text",
+      "expected": "order.paid"
+    },
+    {
+      "name": "query parameter",
+      "request": "order",
+      "template": "{{ query.page }}",
+      "mode": "text",
+      "expected": "2"
+    },
+    {
+      "name": "integer",
+      "request": "order",
+      "template": "{{ json.data.amount }}",
+      "mode": "text",
+      "expected": "2000"
+    },
+    {
+      "name": "decimal",
+      "request": "order",
+      "template": "{{ json.data.rate }}",
+      "mode": "text",
+      "expected": "1.5"
+    },
+    {
+      "name": "boolean",
+      "request": "order",
+      "template": "{{ json.data.flag }}",
+      "mode": "text",
+      "expected": "true"
+    },
+    {
+      "name": "null is empty in text",
+      "request": "order",
+      "template": "[{{ json.data.none }}]",
+      "mode": "text",
+      "expected": "[]"
+    },
+    {
+      "name": "array as JSON",
+      "request": "order",
+      "template": "{{ json.data.items }}",
+      "mode": "text",
+      "expected": "[{\"sku\":\"a-1\"},{\"sku\":\"b-2\"}]"
+    },
+    {
+      "name": "missing is empty",
+      "request": "order",
+      "template": "[{{ json.data.missing }}]",
+      "mode": "text",
+      "expected": "[]"
+    },
+    {
+      "name": "default",
+      "request": "order",
+      "template": "{{ json.data.missing | default: \"none\" }}",
+      "mode": "text",
+      "expected": "none"
+    },
+    {
+      "name": "default keeps a value",
+      "request": "order",
+      "template": "{{ json.data.id | default: \"none\" }}",
+      "mode": "text",
+      "expected": "ord_1"
+    },
+    {
+      "name": "default replaces null",
+      "request": "order",
+      "template": "{{ json.data.none | default: \"-\" }}",
+      "mode": "text",
+      "expected": "-"
+    },
+    {
+      "name": "default with a number",
+      "request": "order",
+      "template": "{{ json.data.missing | default: 0 }}",
+      "mode": "text",
+      "expected": "0"
+    },
+    {
+      "name": "unknown root stays",
+      "request": "order",
+      "template": "Hello {{ name }}!",
+      "mode": "text",
+      "expected": "Hello {{ name }}!"
+    },
+    {
+      "name": "upper",
+      "request": "order",
+      "template": "{{ json.data.id | upper }}",
+      "mode": "text",
+      "expected": "ORD_1"
+    },
+    {
+      "name": "lower",
+      "request": "order",
+      "template": "{{ method | lower }}",
+      "mode": "text",
+      "expected": "post"
+    },
+    {
+      "name": "filters chain",
+      "request": "order",
+      "template": "{{ json.data.missing | default: \"None\" | upper }}",
+      "mode": "text",
+      "expected": "NONE"
+    },
+    {
+      "name": "json filter in text",
+      "request": "order",
+      "template": "{{ json.data.id | json }}",
+      "mode": "text",
+      "expected": "\"ord_1\""
+    },
+    {
+      "name": "json filter on missing",
+      "request": "order",
+      "template": "{{ json.data.missing | json }}",
+      "mode": "text",
+      "expected": "null"
+    },
+    {
+      "name": "truncate",
+      "request": "order",
+      "template": "{{ body | truncate: 10 }}",
+      "mode": "text",
+      "expected": "{\"type\":\"…"
+    },
+    {
+      "name": "truncate shorter text",
+      "request": "order",
+      "template": "{{ method | truncate: 10 }}",
+      "mode": "text",
+      "expected": "POST"
+    },
+    {
+      "name": "json mode escapes strings",
+      "request": "order",
+      "template": "{\"note\": \"{{ headers.x-note }}\", \"id\": \"{{ json.data.id }}\"}",
+      "mode": "json",
+      "expected": "{\"note\": \"say \\\"hi\\\"\\t<b>&</b>\", \"id\": \"ord_1\"}"
+    },
+    {
+      "name": "json mode writes other values as JSON",
+      "request": "order",
+      "template": "{\"amount\": {{ json.data.amount }}, \"items\": {{ json.data.items }}, \"none\": {{ json.data.none }}, \"flag\": {{ json.data.flag }}}",
+      "mode": "json",
+      "expected": "{\"amount\": 2000, \"items\": [{\"sku\":\"a-1\"},{\"sku\":\"b-2\"}], \"none\": null, \"flag\": true}"
+    },
+    {
+      "name": "json mode missing is empty",
+      "request": "order",
+      "template": "{\"x\": \"{{ json.data.missing }}\"}",
+      "mode": "json",
+      "expected": "{\"x\": \"\"}"
+    },
+    {
+      "name": "json mode json filter is not escaped again",
+      "request": "order",
+      "template": "{\"id\": {{ json.data.id | json }}}",
+      "mode": "json",
+      "expected": "{\"id\": \"ord_1\"}"
+    },
+    {
+      "name": "html mode escapes",
+      "request": "order",
+      "template": "<p>{{ headers.x-note }}</p>",
+      "mode": "html",
+      "expected": "<p>say &quot;hi&quot;\t&lt;b&gt;&amp;&lt;/b&gt;</p>"
+    },
+    {
+      "name": "generated values",
+      "request": "order",
+      "template": "{{ uuid }} {{ now }}",
+      "mode": "text",
+      "expected": "00000000-0000-4000-8000-000000000000 2026-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "one uuid per render",
+      "request": "order",
+      "template": "{{ uuid }}={{ uuid }}",
+      "mode": "text",
+      "expected": "00000000-0000-4000-8000-000000000000=00000000-0000-4000-8000-000000000000"
+    },
+    {
+      "name": "request facts",
+      "request": "order",
+      "template": "{{ id }} {{ kind }} {{ ip }} {{ size }} {{ receivedAt }} {{ contentType }}",
+      "mode": "text",
+      "expected": "req_order http 203.0.113.7 150 2026-01-01T00:00:00.123Z application/json"
+    },
+    {
+      "name": "endpoint",
+      "request": "order",
+      "template": "{{ endpoint.slug }} / {{ endpoint.name }}",
+      "mode": "text",
+      "expected": "acme-orders / Acme orders"
+    },
+    {
+      "name": "endpoint without a name",
+      "request": "empty",
+      "template": "[{{ endpoint.name }}]",
+      "mode": "text",
+      "expected": "[]"
+    },
+    {
+      "name": "whole body",
+      "request": "text",
+      "template": "{{ body }}",
+      "mode": "text",
+      "expected": "line one\nline two café"
+    },
+    {
+      "name": "form field",
+      "request": "form",
+      "template": "{{ json.name }} <{{ json.email }}>",
+      "mode": "text",
+      "expected": "Ada Lovelace <ada@example.com>"
+    },
+    {
+      "name": "json of a text body is empty",
+      "request": "text",
+      "template": "[{{ json.line }}]",
+      "mode": "text",
+      "expected": "[]"
+    },
+    {
+      "name": "json of an empty body is empty",
+      "request": "empty",
+      "template": "[{{ json }}]",
+      "mode": "text",
+      "expected": "[]"
+    },
+    {
+      "name": "quoted key",
+      "request": "order",
+      "template": "{{ json.data[\"odd.key\"] }}",
+      "mode": "text",
+      "expected": "dot"
+    },
+    {
+      "name": "bracket index",
+      "request": "order",
+      "template": "{{ json.data.items[1].sku }}",
+      "mode": "text",
+      "expected": "b-2"
+    },
+    {
+      "name": "empty braces stay",
+      "request": "order",
+      "template": "{{ }}",
+      "mode": "text",
+      "expected": "{{ }}"
+    },
+    {
+      "name": "unknown filter stays",
+      "request": "order",
+      "template": "{{ method | nope }}",
+      "mode": "text",
+      "expected": "{{ method | nope }}"
+    },
+    {
+      "name": "filter without its argument stays",
+      "request": "order",
+      "template": "{{ body | truncate }}",
+      "mode": "text",
+      "expected": "{{ body | truncate }}"
+    },
+    {
+      "name": "argument on a filter that takes none stays",
+      "request": "order",
+      "template": "{{ method | upper: 1 }}",
+      "mode": "text",
+      "expected": "{{ method | upper: 1 }}"
+    },
+    {
+      "name": "two words stay",
+      "request": "order",
+      "template": "{{ method path }}",
+      "mode": "text",
+      "expected": "{{ method path }}"
+    },
+    {
+      "name": "unclosed stays",
+      "request": "order",
+      "template": "{{ method",
+      "mode": "text",
+      "expected": "{{ method"
+    },
+    {
+      "name": "triple braces",
+      "request": "order",
+      "template": "{{{ method }}}",
+      "mode": "text",
+      "expected": "{POST}"
+    },
+    {
+      "name": "single braces are text",
+      "request": "order",
+      "template": "{ {{ method }} }",
+      "mode": "text",
+      "expected": "{ POST }"
+    },
+    {
+      "name": "path with a space stays",
+      "request": "order",
+      "template": "{{ json.data id }}",
+      "mode": "text",
+      "expected": "{{ json.data id }}"
+    },
+    {
+      "name": "numbers as JavaScript prints them",
+      "request": "numbers",
+      "template": "{{ json.n }}|{{ json.big }}|{{ json.small }}|{{ json.neg }}|{{ json.int }}",
+      "mode": "text",
+      "expected": "1|1e+22|1e-7|-0.5|42"
+    },
+    {
+      "name": "numbers inside JSON",
+      "request": "numbers",
+      "template": "{{ json }}",
+      "mode": "text",
+      "expected": "{\"n\":1,\"big\":1e+22,\"small\":1e-7,\"neg\":-0.5,\"int\":42,\"text\":\"42\"}"
+    },
+    {
+      "name": "integers beyond 2^53 as JavaScript prints them",
+      "request": "bigIntegers",
+      "template": "{{ json.id }}|{{ json.pow }}|{{ json.neg }}|{{ json }}",
+      "mode": "text",
+      "expected": "12345678901234567000|1152921504606847000|-9007199254740992|{\"id\":12345678901234567000,\"pow\":1152921504606847000,\"neg\":-9007199254740992}"
+    },
+    {
+      "name": "output cap",
+      "request": "order",
+      "template": "{{ body }}",
+      "mode": "text",
+      "maxBytes": 10,
+      "expected": "{\"type\":\"o"
+    },
+    {
+      "name": "output cap keeps characters whole",
+      "request": "text",
+      "template": "{{ body }}{{ body }}",
+      "mode": "text",
+      "maxBytes": 22,
+      "expected": "line one\nline two caf"
+    },
+    {
+      "name": "output cap applies to text too",
+      "request": "order",
+      "template": "abcdef{{ method }}",
+      "mode": "text",
+      "maxBytes": 4,
+      "expected": "abcd"
+    }
+  ],
+  "modes": [
+    {
+      "name": "JSON content type",
+      "body": "ok",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "expected": "json"
+    },
+    {
+      "name": "JSON suffix",
+      "body": "ok",
+      "headers": {
+        "content-type": "application/problem+json; charset=utf-8"
+      },
+      "expected": "json"
+    },
+    {
+      "name": "HTML",
+      "body": "{}",
+      "headers": {
+        "content-type": "text/html"
+      },
+      "expected": "html"
+    },
+    {
+      "name": "XML",
+      "body": "<a/>",
+      "headers": {
+        "content-type": "application/xml"
+      },
+      "expected": "html"
+    },
+    {
+      "name": "plain text",
+      "body": "{}",
+      "headers": {
+        "content-type": "text/plain"
+      },
+      "expected": "text"
+    },
+    {
+      "name": "object without a type",
+      "body": "  {\"ok\": true}",
+      "headers": {},
+      "expected": "json"
+    },
+    {
+      "name": "array without a type",
+      "body": "[1]",
+      "headers": {},
+      "expected": "json"
+    },
+    {
+      "name": "text without a type",
+      "body": "ok",
+      "headers": {},
+      "expected": "text"
+    },
+    {
+      "name": "empty without a type",
+      "body": "",
+      "headers": {},
+      "expected": "text"
+    }
+  ]
+}

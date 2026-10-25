@@ -81,6 +81,19 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `signingHeader`     | `string`  | no       | Custom header name (only for `generic-hmac`), or `null` to clear              |
 | `showEmailExtracts` | `boolean` | no       | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
 
+### preview_response
+
+A dry run of the endpoint's responses: which response rule answers a captured request, and the response with its `{{ placeholders }}` filled in, exactly as the receiver would send it. Nothing is sent. Pass `mockResponse` or `responseRules` to try settings before saving them with `update_endpoint`.
+
+| Parameter       | Type     | Required | Description                                                                  |
+| --------------- | -------- | -------- | ---------------------------------------------------------------------------- |
+| `slug`          | `string` | yes      | Endpoint slug                                                                |
+| `requestId`     | `string` | no       | A captured request on the endpoint (default: the newest HTTP request)        |
+| `mockResponse`  | `object` | no       | A default response to try instead of the saved one, or `null` for none       |
+| `responseRules` | `array`  | no       | Rules to try instead of the saved ones, or `null` for none                   |
+
+Returns the rule that answered (`rule.index`, from 0, or `null` for the default response), the `response` (status, headers, body, delay; `null` means the plain `200 OK`), any `unknownPlaceholders`, and the `request` it ran against.
+
 ### delete_endpoint
 
 Delete an endpoint and all its captured requests.

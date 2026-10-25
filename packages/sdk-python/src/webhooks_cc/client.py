@@ -54,6 +54,7 @@ from .models import (
     Request,
     RequestKind,
     RequestPage,
+    ResponsePreview,
     SendTestEmailResult,
     UsageInfo,
 )
@@ -516,7 +517,40 @@ class Endpoints:
         notification_url: str | None = None,
         response_rules: Sequence[Mapping[str, Any]] | None = None,
     ) -> Endpoint:
-        """Create an endpoint. ``expires_in`` (or ``ephemeral=True``) makes it temporary."""
+        """Create an endpoint. ``expires_in`` (or ``ephemeral=True``) makes it temporary.
+
+        ``mock_response`` is what the endpoint answers instead of a plain 200 OK:
+        ``{"status": 201, "body": "...", "headers": {...}, "delay": 0}``, the delay
+        in milliseconds. Its body and header values may hold ``{{ placeholders }}``
+        the receiver fills in from each request, such as ``{{ json.id }}`` or
+        ``{{ headers.user-agent }}``; see
+        https://webhooks.cc/docs/mock-responses#placeholders.
+
+        ``response_rules`` are ordered rules, first match wins (at most 50). Each
+        has ``conditions`` (1 to 10, all of them by default, any with
+        ``"logic": "or"``), a ``response`` shaped like ``mock_response``, and
+        optionally ``name`` and ``enabled``. A condition is a dict with ``field``,
+        ``op`` and, for every op but ``exists`` and ``not_exists``, a string
+        ``value``:
+
+        - ``method``: ``eq``, ``neq``.
+        - ``path``: ``eq``, ``neq``, ``contains``, ``not_contains``,
+          ``starts_with``, ``ends_with``, ``matches`` (a glob, as in
+          :func:`~webhooks_cc.matchers.match_path`) and ``regex`` (RE2 syntax).
+        - ``header`` and ``query`` (with ``name``), ``body_path`` (with ``path``,
+          a dot path such as ``data.items.0.id``): ``exists``, ``not_exists``,
+          the ``path`` ops, and ``gt``, ``gte``, ``lt``, ``lte``.
+        - ``body``: ``contains``, ``not_contains``, ``regex``. ``body_contains``:
+          ``contains``.
+        - ``content_type``: ``eq``, ``neq``, ``contains``, ``not_contains``,
+          ``starts_with``, ``regex``.
+        - ``size`` (bytes): ``eq``, ``neq``, ``gt``, ``gte``, ``lt``, ``lte``.
+
+        ``gt``, ``gte``, ``lt`` and ``lte`` compare numbers, so their value must be
+        one; ``matches`` and ``regex`` patterns are at most 500 characters. The API
+        refuses rules that break these limits. Try rules before saving them with
+        :meth:`preview_response`.
+        """
         body: dict[str, Any] = {}
         if name is not None:
             body["name"] = name
@@ -565,6 +599,7 @@ class Endpoints:
         """Change an endpoint's settings.
 
         Only the arguments you pass change; ``None`` clears a setting.
+        ``mock_response`` and ``response_rules`` take what :meth:`create` takes.
         """
         _validate_segment(slug, "slug")
         fields: dict[str, Any] = {
@@ -585,6 +620,51 @@ class Endpoints:
         }
         body = {key: value for key, value in fields.items() if value is not UNSET}
         return Endpoint.from_dict(self._client._api("PATCH", f"/endpoints/{slug}", body=body))
+
+    def preview_response(
+        self,
+        slug: str,
+        *,
+        request_id: str | None = None,
+        mock_response: Mapping[str, Any] | None = UNSET,
+        response_rules: Sequence[Mapping[str, Any]] | None = UNSET,
+    ) -> ResponsePreview:
+        """What a sender would get back for a captured request, without sending anything.
+
+        Runs the response rules against the request ``request_id`` (by default the
+        endpoint's newest HTTP request, or a sample when it has none) and fills in
+        the placeholders. ``mock_response`` and ``response_rules`` try settings you
+        have not saved, in the form :meth:`create` takes; ``None`` tries none at
+        all, and leaving them out uses the saved ones.
+
+        .. code-block:: python
+
+            preview = client.endpoints.preview_response(
+                endpoint.slug,
+                response_rules=[
+                    {
+                        "conditions": [
+                            {"field": "header", "name": "x-event", "op": "eq", "value": "ping"}
+                        ],
+                        "response": {"status": 202, "body": "{{ json.id }}", "headers": {}},
+                    }
+                ],
+            )
+            print(preview.rule, preview.response)
+        """
+        _validate_segment(slug, "slug")
+        body: dict[str, Any] = {}
+        if request_id is not None:
+            body["requestId"] = request_id
+        if mock_response is not UNSET:
+            body["mockResponse"] = dict(mock_response) if mock_response is not None else None
+        if response_rules is not UNSET:
+            body["responseRules"] = (
+                [dict(rule) for rule in response_rules] if response_rules is not None else None
+            )
+        return ResponsePreview.from_dict(
+            self._client._api("POST", f"/endpoints/{slug}/responses/preview", body=body)
+        )
 
     def delete(self, slug: str) -> None:
         """Delete an endpoint and everything it captured."""

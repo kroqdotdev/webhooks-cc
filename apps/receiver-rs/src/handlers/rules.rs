@@ -1,22 +1,33 @@
 //! Conditional response rule evaluation engine.
 //!
-//! Evaluates an ordered list of rules against an incoming request.
-//! First matching rule wins. Returns `None` if no rules match (caller
-//! falls back to the default mock_response or 200 OK).
+//! Evaluates an ordered list of rules against an incoming request. First
+//! matching rule wins. Returns `None` if no rules match (caller falls back to
+//! the default mock_response or 200 OK).
+//!
+//! The condition language is shared with forwarding filters, which the web
+//! app evaluates with the SDK (`packages/sdk/src/rules.ts`). Both run the
+//! vectors in `packages/sdk/conformance/rules.json`; change them together.
+//! Response rules read the HTTP request only: fields that need the email or
+//! the signature check (kind, email, spam_score, email_auth, signature)
+//! never hold here.
 
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::HashMap;
 
+use super::values::{self, LazyBody};
 use super::webhook::MockResponse;
 
 /// A single condition within a response rule.
 #[derive(Debug, Deserialize, Clone)]
 pub struct RuleCondition {
-    /// Field to match against: method, path, header, body_contains, body_path, query
+    /// Field to match against: method, path, header, query, body,
+    /// body_contains, body_path, content_type, size
     pub field: String,
-    /// Operator: eq, contains, starts_with, matches, exists
+    /// Operator: eq, neq, contains, not_contains, starts_with, ends_with,
+    /// matches, regex, exists, not_exists, gt, gte, lt, lte
     pub op: String,
-    /// Value to compare against (not required for "exists")
+    /// Value to compare against (not required for exists and not_exists)
     #[serde(default)]
     pub value: Option<String>,
     /// Header name or query param name
@@ -65,277 +76,226 @@ pub struct RequestContext<'a> {
     pub headers: &'a HashMap<String, String>,
     pub body: &'a str,
     pub query: &'a HashMap<String, String>,
+    pub content_type: Option<&'a str>,
+    pub size: Option<u64>,
 }
 
 /// Evaluate rules in order. Returns the response from the first matching rule,
 /// or `None` if no rules match.
+#[cfg(test)]
 pub fn evaluate_rules(rules: &[ResponseRule], ctx: &RequestContext<'_>) -> Option<MockResponse> {
-    // Lazily parse body as JSON only when a body_path condition needs it
-    let mut parsed_body: Option<serde_json::Value> = None;
+    let body = LazyBody::new(ctx.body, ctx.content_type);
+    evaluate_rules_with(rules, ctx, &body)
+}
 
+/// `evaluate_rules` with a body the caller parses at most once (the
+/// placeholders of the chosen response read it too).
+pub(crate) fn evaluate_rules_with(
+    rules: &[ResponseRule],
+    ctx: &RequestContext<'_>,
+    body: &LazyBody<'_>,
+) -> Option<MockResponse> {
     for rule in rules {
         if !rule.enabled || rule.conditions.is_empty() {
             continue;
         }
-
-        let is_or = rule.logic == "or";
-        let matched = if is_or {
-            rule.conditions
-                .iter()
-                .any(|c| evaluate_condition(c, ctx, &mut parsed_body))
-        } else {
-            rule.conditions
-                .iter()
-                .all(|c| evaluate_condition(c, ctx, &mut parsed_body))
-        };
-
-        if matched {
+        if conditions_hold(&rule.logic, &rule.conditions, ctx, body) {
             return Some(rule.response.clone());
         }
     }
-
     None
 }
 
-/// Evaluate a single condition against the request context.
+/// Whether the conditions hold together: every one ("and") or any ("or").
+/// No conditions hold.
+pub(crate) fn conditions_hold(
+    logic: &str,
+    conditions: &[RuleCondition],
+    ctx: &RequestContext<'_>,
+    body: &LazyBody<'_>,
+) -> bool {
+    if conditions.is_empty() {
+        return true;
+    }
+    if logic == "or" {
+        conditions.iter().any(|c| evaluate_condition(c, ctx, body))
+    } else {
+        conditions.iter().all(|c| evaluate_condition(c, ctx, body))
+    }
+}
+
+/// What a condition reads: a value, or nothing when it is absent.
+enum Resolved<'v> {
+    Text(String),
+    Json(&'v Value),
+    Number(u64),
+    Absent,
+}
+
+const STRING_OPS: &[&str] = &[
+    "eq",
+    "neq",
+    "contains",
+    "not_contains",
+    "starts_with",
+    "ends_with",
+    "matches",
+    "regex",
+];
+const PRESENCE_OPS: &[&str] = &["exists", "not_exists"];
+const NUMBER_OPS: &[&str] = &["gt", "gte", "lt", "lte"];
+
+/// Whether `field` takes `op` (the SDK's CONDITION_FIELDS, response fields only).
+fn op_allowed(field: &str, op: &str) -> bool {
+    let any = |lists: &[&[&str]]| lists.iter().any(|list| list.contains(&op));
+    match field {
+        "method" => matches!(op, "eq" | "neq"),
+        "path" => STRING_OPS.contains(&op),
+        "header" | "query" | "body_path" => any(&[PRESENCE_OPS, STRING_OPS, NUMBER_OPS]),
+        "body" => matches!(op, "contains" | "not_contains" | "regex"),
+        "body_contains" => op == "contains",
+        "content_type" => matches!(
+            op,
+            "eq" | "neq" | "contains" | "not_contains" | "starts_with" | "regex"
+        ),
+        "size" => matches!(op, "eq" | "neq") || NUMBER_OPS.contains(&op),
+        _ => false,
+    }
+}
+
+fn resolve<'v>(
+    condition: &RuleCondition,
+    ctx: &RequestContext<'_>,
+    body: &'v LazyBody<'_>,
+) -> Resolved<'v> {
+    let text = |s: &str| Resolved::Text(s.to_string());
+    match condition.field.as_str() {
+        "method" => text(ctx.method),
+        "path" => text(ctx.path),
+        "header" => {
+            let Some(name) = condition.name.as_deref() else {
+                return Resolved::Absent;
+            };
+            let name = name.to_lowercase();
+            ctx.headers
+                .iter()
+                .find(|(key, _)| key.to_lowercase() == name)
+                .map_or(Resolved::Absent, |(_, value)| text(value))
+        }
+        "query" => condition
+            .name
+            .as_deref()
+            .and_then(|name| ctx.query.get(name))
+            .map_or(Resolved::Absent, |value| text(value)),
+        "body" | "body_contains" => text(ctx.body),
+        "body_path" => {
+            let Some(keys) = condition
+                .path
+                .as_deref()
+                .and_then(|path| values::parse_path(path, false))
+            else {
+                return Resolved::Absent;
+            };
+            body.get()
+                .and_then(|root| values::walk(root, &keys))
+                .map_or(Resolved::Absent, Resolved::Json)
+        }
+        "content_type" => ctx.content_type.map_or(Resolved::Absent, text),
+        "size" => ctx.size.map_or(Resolved::Absent, Resolved::Number),
+        _ => Resolved::Absent,
+    }
+}
+
+fn to_number(text: &str) -> Option<f64> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // JavaScript's Number(): decimal and exponent forms (hex and the like
+    // never come up in rule values, which validation keeps to numbers).
+    let n: f64 = trimmed.parse().ok()?;
+    n.is_finite().then_some(n)
+}
+
+/// A positive comparison against one present value.
+fn compare(op: &str, field: &str, actual: &Resolved<'_>, expected: &str) -> bool {
+    let (comparable, number) = match actual {
+        Resolved::Text(s) => (s.clone(), to_number(s)),
+        Resolved::Json(value) => {
+            let number = match value {
+                Value::Number(n) => n.as_f64(),
+                Value::String(s) => to_number(s),
+                _ => None,
+            };
+            (values::comparable(value), number)
+        }
+        Resolved::Number(n) => (n.to_string(), Some(*n as f64)),
+        Resolved::Absent => return false,
+    };
+    let caseless = matches!(field, "method" | "content_type");
+    let (text, target) = if caseless {
+        (comparable.to_lowercase(), expected.to_lowercase())
+    } else {
+        (comparable.clone(), expected.to_string())
+    };
+    match op {
+        "eq" => text == target,
+        "contains" => text.contains(&target),
+        "starts_with" => text.starts_with(&target),
+        "ends_with" => text.ends_with(&target),
+        "matches" => values::glob_match(expected, &comparable),
+        "regex" => values::regex_search(expected, &comparable),
+        "gt" | "gte" | "lt" | "lte" => {
+            let (Some(a), Some(b)) = (number, to_number(expected)) else {
+                return false;
+            };
+            match op {
+                "gt" => a > b,
+                "gte" => a >= b,
+                "lt" => a < b,
+                _ => a <= b,
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Evaluate a single condition against the request context. Unknown fields
+/// and operators a field does not take never hold.
 fn evaluate_condition(
     condition: &RuleCondition,
     ctx: &RequestContext<'_>,
-    parsed_body: &mut Option<serde_json::Value>,
+    body: &LazyBody<'_>,
 ) -> bool {
-    match condition.field.as_str() {
-        "method" => eval_method(condition, ctx.method),
-        "path" => eval_path(condition, ctx.path),
-        "header" => eval_header(condition, ctx.headers),
-        "body_contains" => eval_body_contains(condition, ctx.body),
-        "body_path" => eval_body_path(condition, ctx.body, parsed_body),
-        "query" => eval_query(condition, ctx.query),
-        _ => false, // Unknown field type — skip
-    }
-}
-
-fn eval_method(condition: &RuleCondition, method: &str) -> bool {
-    let value = match &condition.value {
-        Some(v) => v,
-        None => return false,
-    };
-    match condition.op.as_str() {
-        "eq" => method.eq_ignore_ascii_case(value),
-        _ => false,
-    }
-}
-
-fn eval_path(condition: &RuleCondition, path: &str) -> bool {
-    let value = match &condition.value {
-        Some(v) => v,
-        None => return condition.op == "exists",
-    };
-    match condition.op.as_str() {
-        "eq" => path == value.as_str(),
-        "contains" => path.contains(value.as_str()),
-        "starts_with" => path.starts_with(value.as_str()),
-        "matches" => glob_match(value, path),
-        _ => false,
-    }
-}
-
-fn eval_header(condition: &RuleCondition, headers: &HashMap<String, String>) -> bool {
-    let name = match &condition.name {
-        Some(n) => n.to_lowercase(),
-        None => return false,
-    };
-    // Case-insensitive header lookup
-    let header_value = headers
-        .iter()
-        .find(|(k, _)| k.to_lowercase() == name)
-        .map(|(_, v)| v.as_str());
-
-    match condition.op.as_str() {
-        "exists" => header_value.is_some(),
-        "eq" => {
-            let value = match &condition.value {
-                Some(v) => v,
-                None => return false,
-            };
-            header_value.is_some_and(|hv| hv == value.as_str())
-        }
-        "contains" => {
-            let value = match &condition.value {
-                Some(v) => v,
-                None => return false,
-            };
-            header_value.is_some_and(|hv| hv.contains(value.as_str()))
-        }
-        _ => false,
-    }
-}
-
-fn eval_body_contains(condition: &RuleCondition, body: &str) -> bool {
-    let value = match &condition.value {
-        Some(v) => v,
-        None => return false,
-    };
-    match condition.op.as_str() {
-        "contains" => body.contains(value.as_str()),
-        _ => false,
-    }
-}
-
-fn eval_body_path(
-    condition: &RuleCondition,
-    body: &str,
-    parsed_body: &mut Option<serde_json::Value>,
-) -> bool {
-    let json_path = match &condition.path {
-        Some(p) => p,
-        None => return false,
-    };
-
-    // Lazily parse body JSON
-    if parsed_body.is_none() {
-        *parsed_body = serde_json::from_str(body).ok();
-    }
-
-    let root = match parsed_body {
-        Some(v) => v,
-        None => return false, // Body is not valid JSON
-    };
-
-    let leaf = walk_json_path(root, json_path);
-
-    match condition.op.as_str() {
-        "exists" => leaf.is_some(),
-        "eq" => {
-            let value = match &condition.value {
-                Some(v) => v,
-                None => return false,
-            };
-            leaf.is_some_and(|v| json_value_to_string(v) == *value)
-        }
-        "contains" => {
-            let value = match &condition.value {
-                Some(v) => v,
-                None => return false,
-            };
-            leaf.is_some_and(|v| json_value_to_string(v).contains(value.as_str()))
-        }
-        _ => false,
-    }
-}
-
-fn eval_query(condition: &RuleCondition, query: &HashMap<String, String>) -> bool {
-    let name = match &condition.name {
-        Some(n) => n,
-        None => return false,
-    };
-    let param_value = query.get(name.as_str());
-
-    match condition.op.as_str() {
-        "exists" => param_value.is_some(),
-        "eq" => {
-            let value = match &condition.value {
-                Some(v) => v,
-                None => return false,
-            };
-            param_value.is_some_and(|pv| pv == value.as_str())
-        }
-        _ => false,
-    }
-}
-
-/// Walk a dot-notation JSON path like "data.object.type" and return the leaf value.
-/// Supports array index access via numeric segments (e.g. "items.0.name").
-fn walk_json_path<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
-    let mut current = root;
-    for segment in path.split('.') {
-        if segment.is_empty() {
-            continue;
-        }
-        match current {
-            serde_json::Value::Object(map) => {
-                current = map.get(segment)?;
-            }
-            serde_json::Value::Array(arr) => {
-                let idx: usize = segment.parse().ok()?;
-                current = arr.get(idx)?;
-            }
-            _ => return None,
-        }
-    }
-    Some(current)
-}
-
-/// Convert a JSON value to its string representation for comparison.
-/// Strings are returned without quotes; other types use their JSON representation.
-fn json_value_to_string(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::Bool(b) => b.to_string(),
-        serde_json::Value::Null => "null".to_string(),
-        other => other.to_string(),
-    }
-}
-
-/// Maximum glob pattern length to prevent excessive regex compilation cost.
-const MAX_GLOB_PATTERN_LEN: usize = 500;
-
-/// Simple glob pattern matching.
-/// Supports `*` (any characters except `/`) and `**` (any characters including `/`).
-fn glob_match(pattern: &str, input: &str) -> bool {
-    if pattern.len() > MAX_GLOB_PATTERN_LEN {
-        tracing::warn!(
-            len = pattern.len(),
-            max = MAX_GLOB_PATTERN_LEN,
-            "glob pattern exceeds max length, skipping"
-        );
+    let field = condition.field.as_str();
+    let op = condition.op.as_str();
+    if !op_allowed(field, op) {
         return false;
     }
-    let regex_str = glob_to_regex(pattern);
-    match regex_lite::Regex::new(&regex_str) {
-        Ok(re) => re.is_match(input),
-        Err(_) => {
-            tracing::debug!(pattern, "glob pattern failed to compile as regex");
-            false
-        }
+    let resolved = resolve(condition, ctx, body);
+    if op == "exists" || op == "not_exists" {
+        let present = !matches!(resolved, Resolved::Absent);
+        return (op == "exists") == present;
     }
-}
-
-/// Convert a glob pattern to a regex string.
-fn glob_to_regex(pattern: &str) -> String {
-    let mut regex = String::from("^");
-    let chars: Vec<char> = pattern.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '*' && i + 1 < chars.len() && chars[i + 1] == '*' {
-            regex.push_str(".*");
-            i += 2;
-            // Skip trailing slash after **
-            if i < chars.len() && chars[i] == '/' {
-                i += 1;
-            }
-        } else if chars[i] == '*' {
-            regex.push_str("[^/]*");
-            i += 1;
-        } else if chars[i] == '?' {
-            regex.push_str("[^/]");
-            i += 1;
-        } else {
-            // Escape regex special characters
-            if "\\^$.|+()[]{}".contains(chars[i]) {
-                regex.push('\\');
-            }
-            regex.push(chars[i]);
-            i += 1;
-        }
-    }
-    regex.push('$');
-    regex
+    let Some(expected) = condition.value.as_deref() else {
+        return false;
+    };
+    let (positive, negate) = match op {
+        "neq" => ("eq", true),
+        "not_contains" => ("contains", true),
+        other => (other, false),
+    };
+    compare(positive, field, &resolved, expected) != negate
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handlers::values::glob_match;
+
+    fn walk_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
+        values::walk(root, &values::parse_path(path, false)?)
+    }
 
     fn make_ctx<'a>(
         method: &'a str,
@@ -350,6 +310,8 @@ mod tests {
             headers,
             body,
             query,
+            content_type: None,
+            size: None,
         }
     }
 
@@ -1125,5 +1087,68 @@ mod tests {
         ];
 
         assert!(evaluate_rules(&rules, &ctx).is_none());
+    }
+
+    // ── Shared vectors (packages/sdk/conformance/rules.json) ─────────
+
+    #[derive(Deserialize)]
+    struct VectorRequest {
+        method: String,
+        path: String,
+        headers: HashMap<String, String>,
+        query: HashMap<String, String>,
+        body: String,
+        #[serde(rename = "contentType")]
+        content_type: Option<String>,
+        size: u64,
+    }
+
+    #[derive(Deserialize)]
+    struct VectorGroup {
+        #[serde(default = "default_and")]
+        logic: String,
+        conditions: Vec<RuleCondition>,
+    }
+
+    #[derive(Deserialize)]
+    struct Vector {
+        name: String,
+        request: String,
+        group: VectorGroup,
+        expected: bool,
+    }
+
+    #[derive(Deserialize)]
+    struct Vectors {
+        requests: HashMap<String, VectorRequest>,
+        vectors: Vec<Vector>,
+    }
+
+    #[test]
+    fn shared_vectors() {
+        let file: Vectors = serde_json::from_str(include_str!(
+            "../../../../packages/sdk/conformance/rules.json"
+        ))
+        .unwrap();
+        assert!(file.vectors.len() > 50);
+        for vector in &file.vectors {
+            let request = &file.requests[&vector.request];
+            let ctx = RequestContext {
+                method: &request.method,
+                path: &request.path,
+                headers: &request.headers,
+                body: &request.body,
+                query: &request.query,
+                content_type: request.content_type.as_deref(),
+                size: Some(request.size),
+            };
+            let body = LazyBody::new(ctx.body, ctx.content_type);
+            assert_eq!(
+                conditions_hold(&vector.group.logic, &vector.group.conditions, &ctx, &body),
+                vector.expected,
+                "{}",
+                vector.name
+            );
+        }
     }
 }

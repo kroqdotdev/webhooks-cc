@@ -20,6 +20,7 @@ const EXPECTED_TOOLS = [
   "list_endpoints",
   "get_endpoint",
   "update_endpoint",
+  "preview_response",
   "delete_endpoint",
   "create_endpoints",
   "delete_endpoints",
@@ -218,7 +219,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(39);
+    expect(Object.keys(tools)).toHaveLength(40);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -260,6 +261,53 @@ describe("registerTools", () => {
       hint: "Use list_endpoints to see available endpoints",
       retryAfter: null,
     });
+  });
+
+  it("previews a response with unsaved rules", async () => {
+    const previewResponse = vi.fn().mockResolvedValue({ rule: { index: 0, name: null } });
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { previewResponse } as unknown as WebhooksCC["endpoints"] })
+    );
+    const rules = [
+      {
+        conditions: [{ field: "path", op: "regex", value: "^/v[0-9]+/" }],
+        response: { status: 202, body: '{"id": "{{ uuid }}"}', headers: {} },
+      },
+    ];
+    await tools.preview_response.handler({ slug: "acme", responseRules: rules });
+    expect(previewResponse).toHaveBeenCalledWith("acme", { responseRules: rules });
+  });
+
+  it("checks rule conditions with the SDK's rule language", () => {
+    const tools = getRegisteredTools(createMockClient());
+    const schema = z.object(tools.update_endpoint.schema as z.ZodRawShape);
+    const ok = schema.safeParse({
+      slug: "acme",
+      responseRules: [
+        {
+          conditions: [{ field: "body_path", op: "gte", path: "data.amount", value: "100" }],
+          response: { status: 200 },
+        },
+      ],
+    });
+    expect(ok.success).toBe(true);
+    const filterOnly = schema.safeParse({
+      slug: "acme",
+      responseRules: [
+        {
+          conditions: [{ field: "signature", op: "eq", value: "verified" }],
+          response: { status: 200 },
+        },
+      ],
+    });
+    expect(filterOnly.success).toBe(false);
+    const notANumber = schema.safeParse({
+      slug: "acme",
+      responseRules: [
+        { conditions: [{ field: "size", op: "gt", value: "big" }], response: { status: 200 } },
+      ],
+    });
+    expect(notANumber.success).toBe(false);
   });
 
   it("returns structured rate limit errors with retryAfter", async () => {

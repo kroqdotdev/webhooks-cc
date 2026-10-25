@@ -75,7 +75,21 @@ match := webhookscc.MatchAll(
 request, err := client.Requests.WaitFor(ctx, endpoint.Slug, webhookscc.WaitOptions{Match: match})
 ```
 
-Available: `MatchMethod`, `MatchPath` (globs: `*` within a segment, `**` across segments), `MatchHeader` and `MatchHeaderPresent`, `MatchQueryParam` and `MatchQueryParamPresent`, `MatchBodyPath`, `MatchBodySubset`, `MatchContentType`, `MatchVerified`, `MatchUnverified` and `MatchEmail`. See [Matchers & Helpers](/docs/sdk/matchers) for what each one matches.
+Available: `MatchMethod`, `MatchPath` (globs: `*` within a segment, `**` across segments, `?` one character), `MatchHeader` and `MatchHeaderPresent`, `MatchQueryParam` and `MatchQueryParamPresent`, `MatchBodyPath`, `MatchBodySubset`, `MatchContentType`, `MatchVerified`, `MatchUnverified` and `MatchEmail`. See [Matchers & Helpers](/docs/sdk/matchers) for what each one matches.
+
+## Preview a response
+
+`Endpoints.PreviewResponse` shows what a captured request would get back from the endpoint's [response rules](/docs/mock-responses#conditional-response-rules), with [placeholders](/docs/mock-responses#placeholders) filled in, without sending anything. `ResponseRules` and `MockResponse` take `Value` to try unsaved settings and `Null` to try none; left unset, the saved ones apply.
+
+```go
+preview, err := client.Endpoints.PreviewResponse(ctx, endpoint.Slug, webhookscc.PreviewResponseOptions{})
+if err != nil {
+	return err
+}
+if preview.Rule != nil {
+	fmt.Println("rule", preview.Rule.Index, "answers")
+}
+```
 
 ## Capture what your code sends
 

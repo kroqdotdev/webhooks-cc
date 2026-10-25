@@ -65,7 +65,7 @@ matchHeader("x-github-event", "push");
 
 ### matchPath
 
-Match request paths using glob-style wildcards. `*` matches a single path segment, `**` matches multiple segments.
+Match request paths using glob-style wildcards, the same globs response rules use: `*` matches within a single path segment, `**` matches across segments, and `?` matches one character other than `/`.
 
 ```ts
 matchPath(pattern: string): (request: Request) => boolean
@@ -75,6 +75,7 @@ matchPath(pattern: string): (request: Request) => boolean
 matchPath("/webhooks/*"); // matches /webhooks/stripe, not /webhooks/stripe/events
 matchPath("/webhooks/**"); // matches /webhooks/stripe/events/123
 matchPath("/api/*/webhooks"); // matches /api/v1/webhooks
+matchPath("/api/v?/webhooks"); // matches /api/v1/webhooks and /api/v2/webhooks
 ```
 
 ### matchQueryParam
