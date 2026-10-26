@@ -6,6 +6,7 @@ import {
   getWebhookProviderPage,
   getWebhookProvidersLastModified,
   indefiniteArticle,
+  RELATED_LINKS_CHANGED,
   WEBHOOK_PROVIDER_CATEGORIES,
   WEBHOOK_PROVIDER_SLUGS,
 } from "./webhook-provider-pages";
@@ -66,23 +67,17 @@ describe("webhook provider pages", () => {
     }
   });
 
-  it("dates new and changed pages by their change, and the hub by the newest page", () => {
-    expect(getWebhookProviderPage("zapier")?.lastModified.toISOString()).toBe(
-      "2026-10-02T00:00:00.000Z"
-    );
-    // Pages with the CI test snippet changed when it arrived on 23 October.
-    expect(getWebhookProviderPage("resend")?.lastModified.toISOString()).toBe(
-      "2026-10-23T00:00:00.000Z"
-    );
-    expect(getWebhookProviderPage("bigcommerce")?.lastModified.toISOString()).toBe(
-      "2026-09-29T00:00:00.000Z"
-    );
-    // #446 changed the FAQ wording ("an") on vowel-initial pages on 3 October.
-    for (const slug of ["airtable", "auth0", "aws-sns", "okta"]) {
-      expect(getWebhookProviderPage(slug)?.lastModified.toISOString(), slug).toBe(
-        "2026-10-03T00:00:00.000Z"
+  it("dates pages by their newest change, and the hub by the newest page", () => {
+    // The related-links change on 26 October touched every page, so it is the
+    // floor; an edit of a page's own content after it moves that page on.
+    for (const page of pages) {
+      expect(page.lastModified.toISOString().slice(0, 10) >= RELATED_LINKS_CHANGED, page.slug).toBe(
+        true
       );
     }
+    expect(getWebhookProviderPage("zapier")?.lastModified.toISOString()).toBe(
+      `${RELATED_LINKS_CHANGED}T00:00:00.000Z`
+    );
     const newest = Math.max(...pages.map((page) => page.lastModified.getTime()));
     expect(getWebhookProvidersLastModified().getTime()).toBe(newest);
   });

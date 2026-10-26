@@ -90,7 +90,7 @@ test("checkout sends a checkout.completed webhook", async ({ page, whk, webhookE
   await expect(page.getByText("Order confirmed")).toBeVisible();
 
   const request = await whk.requests.waitFor(webhookEndpoint.slug, {
-    timeout: "30s",
+    timeout: "15s",
     match: matchAll(matchMethod("POST"), matchJsonField("event", "checkout.completed")),
   });
 
@@ -155,6 +155,9 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   fullyParallel: true,
+  // Room for the clicks before a webhook wait plus the wait itself; the
+  // default of 30 seconds can run out first.
+  timeout: 60_000,
   use: { baseURL: "http://localhost:3000" },
   webServer: {
     command: "npm run start",
@@ -182,5 +185,6 @@ Each captured webhook counts toward your plan's request quota; `sendTo` calls go
 
 - **One endpoint per test.** The fixture above does this; a shared endpoint makes parallel tests pick up each other's webhooks.
 - **Match the exact webhook.** An app may send several webhooks for one action. Match on the event field rather than taking the first request that arrives.
+- **Keep the test timeout above the webhook wait.** Playwright's timeout covers the fixture, every click, and the wait, so a 30-second `waitFor` in a 30-second test can never finish.
 - **Wait for the page first.** Assert on the UI state that follows the action before waiting for the webhook, so a failing click fails with a clear message instead of a webhook timeout.
 - **Testing emails too?** The same endpoint receives email. [Test signup and login emails in Playwright](/docs/guides/test-signup-emails-playwright) reads confirmation codes and magic links in the same kind of test.

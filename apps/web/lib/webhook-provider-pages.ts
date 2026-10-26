@@ -1282,6 +1282,18 @@ export const WEBHOOK_PROVIDER_SLUGS: readonly string[] = [
 // load and serve lookups from a Map.
 let pagesBySlug: ReadonlyMap<string, WebhookProviderPage> | null = null;
 
+/**
+ * Every page's "More providers" links changed on this day, from the first
+ * three of the category to the next three (and Stripe and Standard Webhooks
+ * gained a comparison link), so no page is dated earlier.
+ */
+export const RELATED_LINKS_CHANGED = "2026-10-26";
+
+/** The latest of several YYYY-MM-DD days. */
+function latestDay(...days: string[]): string {
+  return days.reduce((latest, day) => (day > latest ? day : latest));
+}
+
 function getPagesBySlug(): ReadonlyMap<string, WebhookProviderPage> {
   if (!pagesBySlug) {
     pagesBySlug = new Map([
@@ -1332,10 +1344,11 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     secretRequired: meta.secretRequired,
     defaultTemplate,
   });
-  const updated =
-    showsSnippet && PROVIDER_TEST_SNIPPET_ADDED > editorial.updated
-      ? PROVIDER_TEST_SNIPPET_ADDED
-      : editorial.updated;
+  const updated = latestDay(
+    editorial.updated,
+    showsSnippet ? PROVIDER_TEST_SNIPPET_ADDED : editorial.updated,
+    RELATED_LINKS_CHANGED
+  );
 
   return {
     slug: provider,
@@ -1379,7 +1392,7 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
     signatureNote: provider.signatureNote,
     inSdk: false,
     signatureOptional: provider.signatureOptional ?? false,
-    lastModified: new Date(`${provider.updated}T00:00:00.000Z`),
+    lastModified: new Date(`${latestDay(provider.updated, RELATED_LINKS_CHANGED)}T00:00:00.000Z`),
     seo: PROVIDER_SEO[slug] ?? null,
   };
 }

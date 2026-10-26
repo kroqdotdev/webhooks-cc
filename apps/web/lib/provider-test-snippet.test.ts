@@ -135,9 +135,5 @@ describe("provider test snippet", () => {
       const day = page.lastModified.toISOString().slice(0, 10);
       expect(day >= PROVIDER_TEST_SNIPPET_ADDED, `${page.slug}: ${day}`).toBe(true);
     }
-    // Pages untouched since the snippet arrived carry exactly its date.
-    expect(getWebhookProviderPage("stripe")!.lastModified.toISOString().slice(0, 10)).toBe(
-      PROVIDER_TEST_SNIPPET_ADDED
-    );
   });
 });

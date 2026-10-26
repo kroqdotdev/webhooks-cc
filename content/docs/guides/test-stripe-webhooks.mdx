@@ -186,6 +186,8 @@ In **Stripe Dashboard > Developers > Webhooks**, add an endpoint with your tunne
 
 Every delivery shows up in the [dashboard](/dashboard) and in your terminal. The tunnel passes the body and the `stripe-signature` header through unchanged, so your handler verifies the event exactly as it would in production.
 
+Stripe gets its answer from webhooks.cc, not from your handler: the endpoint's [mock response](/docs/mock-responses), 200 by default. A handler that rejects an event shows the failure in your terminal, but Stripe sees a success and does not retry. To assert on your handler's own status code, send the event with `sendTo` as shown above; to see how Stripe retries, set the mock response to a 500.
+
 </Step>
 <Step title="Verify against the raw body">
 
