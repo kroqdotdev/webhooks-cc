@@ -3,7 +3,7 @@ title: "Webhook Testing in CI/CD"
 description: "Run webhook integration tests in GitHub Actions, GitLab CI, and other CI environments. Use deterministic, signed payloads for repeatable assertions in your pipeline."
 section: guides
 order: 6
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-26
 schema: howto
 keywords:
   [
@@ -11,10 +11,12 @@ keywords:
     "webhook integration testing",
     "webhook GitHub Actions",
     "automated webhook testing",
+    "webhook testing typescript",
+    "webhook integration tests vitest",
   ]
 seo:
-  ogTitle: "Webhook Testing in CI/CD"
-  ogDescription: "Run webhook integration tests in GitHub Actions, GitLab CI, and other CI environments. Use deterministic, signed payloads for repeatable assertions in your pipeline."
+  ogTitle: "Webhook Testing in CI/CD: GitHub Actions and GitLab CI"
+  ogDescription: "Webhook integration tests that run in GitHub Actions or GitLab CI: signed payloads, captured requests, matchers, payload diffs, and endpoints that clean themselves up."
 ---
 
 Webhook handlers are integration points. They receive external HTTP requests, verify signatures, parse payloads, and trigger business logic. Testing them locally is straightforward, but testing them in CI/CD adds three challenges: you need real-looking payloads with valid signatures, you need to wait for asynchronous processing, and you need deterministic cleanup so parallel pipelines do not collide.
@@ -171,6 +173,46 @@ assertRequest(requests[1], {
 `captureDuring` creates a temporary endpoint, runs your action, polls until `count` matching requests arrive, and cleans up the endpoint. Requests are returned sorted by timestamp.
 
 </Step>
+<Step title="Match the exact webhook you expect">
+
+An endpoint can receive several requests during one test, such as a provider's ping before the real event. Matchers pick the one you care about. Combine them with `matchAll` (every condition) or `matchAny` (at least one), and pass the result as `match` to `waitFor`, `captureDuring`, or `withEndpoint`'s waits:
+
+```ts
+import {
+  matchAll,
+  matchMethod,
+  matchHeader,
+  matchPath,
+  matchBodyPath,
+  matchBodySubset,
+  matchContentType,
+} from "@webhooks-cc/sdk";
+
+// A signed Stripe invoice.paid event
+const invoicePaid = matchAll(
+  matchMethod("POST"),
+  matchHeader("stripe-signature"),
+  matchBodyPath("type", "invoice.paid")
+);
+
+// JSON sent to one path of the endpoint
+const billingJson = matchAll(matchPath("/webhooks/billing"), matchContentType("application/json"));
+
+// A body that contains this shape, whatever else it carries
+const paidCheckout = matchBodySubset({
+  type: "checkout.session.completed",
+  data: { object: { payment_status: "paid" } },
+});
+
+const request = await client.requests.waitFor(endpoint.slug, {
+  timeout: "30s",
+  match: invoicePaid,
+});
+```
+
+See [Matchers & Helpers](/docs/sdk/matchers) for every matcher and the provider detection helpers.
+
+</Step>
 <Step title="Configure GitHub Actions">
 
 Add your API key and webhook secrets as repository secrets. Start your application server before running tests.
@@ -190,7 +232,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - name: Start application server
         run: npm run dev &
@@ -213,7 +255,7 @@ The same pattern works in GitLab CI. Set `WHK_API_KEY` as a masked CI/CD variabl
 ```yaml
 # .gitlab-ci.yml
 webhook-tests:
-  image: node:20
+  image: node:22
   variables:
     WHK_API_KEY: $WHK_API_KEY
     STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET
@@ -254,6 +296,43 @@ When `bodyJson` is used, `assertRequest` performs a partial match. Only the fiel
 </Step>
 </Steps>
 
+## Catch payload drift with diffRequests
+
+A webhook your app sends can change without any test failing: someone renames a field and every consumer quietly stops reading it. Keep one known-good capture of each outgoing webhook as a fixture, built from fixed test data, and compare every new capture against it:
+
+```ts
+import { diffRequests } from "@webhooks-cc/sdk";
+import knownGood from "./fixtures/order-shipped.json";
+
+const diff = diffRequests(knownGood, request, {
+  ignoreHeaders: ["date", "x-request-id"],
+});
+
+// On failure the assertion prints what changed: headers added, removed or
+// changed, and each changed JSON field by its path, such as "data.items.0.sku"
+expect(diff.differences).toEqual({});
+```
+
+`diffRequests` compares method, path, headers, and body. Leave out headers that change on every delivery, and keep values that vary per run (ids, timestamps) out of the fixture's test data.
+
+## Run the whole cycle with the flow builder
+
+When a test only needs to prove that signing, capture, and verification work together, the flow builder chains the steps and cleans up after itself:
+
+```ts
+const result = await client
+  .flow()
+  .createEndpoint({ expiresIn: "1h" })
+  .sendTemplate({ provider: "github", template: "push", secret: "github_test_secret" })
+  .waitForCapture({ timeout: "15s" })
+  .verifySignature({ provider: "github", secret: "github_test_secret" })
+  .cleanup()
+  .run();
+
+expect(result.verification?.valid).toBe(true);
+expect(result.cleanedUp).toBe(true);
+```
+
 ## How it works
 
 The SDK provides four testing primitives that handle the complexity of async webhook flows:
@@ -285,13 +364,21 @@ const endpoint = await client.endpoints.create({
 });
 ```
 
-**Increase timeouts in CI.** Network latency in CI environments is higher than localhost. Use `timeout: "15s"` or `timeout: "30s"` instead of the 5-second default:
+**Set timeouts for the slowest sender.** `waitFor` waits 30 seconds by default. A webhook your own app sends usually arrives in a second or two, so a shorter timeout makes a broken test fail fast; a real provider event in test mode can need the full 30 seconds or more:
 
 ```ts
 const request = await client.requests.waitFor(endpoint.slug, {
   timeout: "15s",
 });
 ```
+
+**Give manually created endpoints an expiry.** `withEndpoint` and `captureDuring` always clean up, but an endpoint you create yourself is left behind if the test process crashes before the cleanup runs. Pass `expiresIn` so it deletes itself anyway:
+
+```ts
+const endpoint = await client.endpoints.create({ name: "stripe-checkout-test", expiresIn: "10m" });
+```
+
+Ten minutes is long enough for a slow CI run and short enough that leaked endpoints never pile up.
 
 **Start your server before tests and wait for it.** The most common CI failure is tests running before the server is ready. Use a health check endpoint and `wait-on` or a similar tool.
 
@@ -311,11 +398,12 @@ Your server is not running or not ready when tests start. Start it in the backgr
 
 **"Timeout waiting for request"**
 
-Three possible causes:
+`waitFor` throws a `TimeoutError` when no matching request arrives in time. Four possible causes:
 
 1. Your server did not start successfully. Check the server startup logs.
 2. Network latency exceeded the timeout. Increase `timeout` to `"15s"` or `"30s"`.
 3. Your handler threw an error and did not forward the webhook. Check handler logs for exceptions.
+4. The request arrived but your matcher rejected it. Open the endpoint in the dashboard to see what was captured, then loosen the matcher.
 
 **"Tests pass locally but fail in CI"**
 

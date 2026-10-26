@@ -130,11 +130,14 @@ describe("provider test snippet", () => {
     expect(snippet).not.toContain("template:");
   });
 
-  it("dates the pages that show it from when it arrived", () => {
+  it("dates the pages that show it from when it arrived, or a later change of their own", () => {
     for (const page of withSnippet) {
-      expect(page.lastModified.toISOString().slice(0, 10), page.slug).toBe(
-        PROVIDER_TEST_SNIPPET_ADDED
-      );
+      const day = page.lastModified.toISOString().slice(0, 10);
+      expect(day >= PROVIDER_TEST_SNIPPET_ADDED, `${page.slug}: ${day}`).toBe(true);
     }
+    // Pages untouched since the snippet arrived carry exactly its date.
+    expect(getWebhookProviderPage("stripe")!.lastModified.toISOString().slice(0, 10)).toBe(
+      PROVIDER_TEST_SNIPPET_ADDED
+    );
   });
 });

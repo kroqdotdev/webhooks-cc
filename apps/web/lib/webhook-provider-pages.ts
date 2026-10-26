@@ -139,7 +139,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Razorpay sends webhooks for payments, orders, settlements, refunds, and subscription events.",
     configHint: "Razorpay Dashboard → Account & Settings → Webhooks",
     category: "Payments & billing",
-    updated: "2026-08-21",
+    updated: "2026-10-26",
   },
   cal: {
     blurb:
@@ -1207,6 +1207,42 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       },
     ],
   },
+  razorpay: {
+    title: "Razorpay Webhooks: X-Razorpay-Signature, Events & Tester",
+    description:
+      "Test Razorpay webhooks (payment.captured, order.paid, refund.processed), verify the X-Razorpay-Signature HMAC-SHA256 header over the raw body, and replay deliveries.",
+    reference: {
+      heading: "Common Razorpay webhook events",
+      intro:
+        "Razorpay sends an HTTP POST with a JSON payload for each event you subscribe to, with separate webhook URLs for Live and Test mode. Every delivery carries an x-razorpay-event-id header that is unique per event.",
+      columns: ["Event", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["payment.authorized", "A payment is authorised"],
+        ["payment.captured", "A payment is successfully captured"],
+        ["payment.failed", "A payment fails"],
+        ["order.paid", "An order is successfully paid"],
+        ["refund.processed", "A refund is successfully processed"],
+        ["refund.failed", "Razorpay could not process a refund"],
+      ],
+      source: {
+        label: "Razorpay webhooks documentation",
+        href: "https://razorpay.com/docs/webhooks/",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify the X-Razorpay-Signature header?",
+        answer:
+          "Razorpay computes a hex HMAC-SHA256 of the raw request body, keyed with the secret you set on the webhook, and sends it in X-Razorpay-Signature. Recompute it over the unparsed body and compare in constant time: Razorpay's docs warn against parsing or casting the body first. After you change the secret, retries of older events are still signed with the old one.",
+      },
+      {
+        question: "Why does Razorpay retry or disable my webhook?",
+        answer:
+          "A non-2xx response, or no response within 5 seconds, is a failed delivery. Razorpay retries with exponential backoff for 24 hours after the event was created, and disables the webhook if deliveries keep failing for those 24 hours; you re-enable it in the Dashboard once it is fixed. Delivery is at least once, so deduplicate on x-razorpay-event-id.",
+      },
+    ],
+  },
 };
 
 export interface WebhookProviderPage {
@@ -1358,6 +1394,23 @@ export function indefiniteArticle(label: string): "a" | "an" {
 
 export function getAllWebhookProviderPages(): readonly WebhookProviderPage[] {
   return [...getPagesBySlug().values()];
+}
+
+/**
+ * The providers listed after this one in its category, wrapping around, so
+ * every page is linked from the same number of siblings. Taking the first few
+ * of the category gave three pages every link and left most with none.
+ */
+export function getRelatedProviderPages(slug: string, count = 3): WebhookProviderPage[] {
+  const page = getWebhookProviderPage(slug);
+  if (!page) return [];
+  const siblings = getAllWebhookProviderPages().filter((p) => p.category === page.category);
+  const position = siblings.findIndex((p) => p.slug === slug);
+  const related: WebhookProviderPage[] = [];
+  for (let step = 1; step < siblings.length && related.length < count; step++) {
+    related.push(siblings[(position + step) % siblings.length]);
+  }
+  return related;
 }
 
 /** Newest provider page change: the /webhooks hub lists them all, so it changes with them. */

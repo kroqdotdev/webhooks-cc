@@ -13,7 +13,7 @@ import { highlightCode } from "@/lib/highlight";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
 import { providerSecretEnv, providerTestSnippet } from "@/lib/provider-test-snippet";
 import {
-  getAllWebhookProviderPages,
+  getRelatedProviderPages,
   getWebhookProviderPage,
   indefiniteArticle,
   WEBHOOK_PROVIDER_SLUGS,
@@ -34,6 +34,12 @@ const GUIDE_BY_PROVIDER: Partial<Record<string, { href: string; label: string }>
   stripe: { href: "/docs/guides/test-stripe-webhooks", label: "Test Stripe webhooks locally" },
   github: { href: "/docs/guides/test-github-webhooks", label: "Test GitHub webhooks locally" },
   shopify: { href: "/docs/guides/test-shopify-webhooks", label: "Test Shopify webhooks locally" },
+};
+
+// Providers whose own tooling people compare us with.
+const COMPARISON_BY_PROVIDER: Partial<Record<string, { href: string; label: string }>> = {
+  stripe: { href: "/compare/stripe-cli", label: "webhooks.cc vs the Stripe CLI" },
+  "standard-webhooks": { href: "/compare/svix", label: "webhooks.cc vs Svix" },
 };
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -118,12 +124,11 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
 
   const icon = getWebProviderInfo(page.slug)?.icon;
   const guide = GUIDE_BY_PROVIDER[page.slug];
+  const comparison = COMPARISON_BY_PROVIDER[page.slug];
   const faqItems = buildFaq(page);
   const reference = page.seo?.reference;
   const testSnippet = providerTestSnippet(page);
-  const related = getAllWebhookProviderPages()
-    .filter((p) => p.category === page.category && p.slug !== page.slug)
-    .slice(0, 3);
+  const related = getRelatedProviderPages(page.slug);
 
   const howToSteps = [
     {
@@ -206,6 +211,16 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               {guide ? guide.label : "local webhook testing guide"}
             </Link>
             .
+            {comparison && (
+              <>
+                {" "}
+                Weighing the alternatives? See{" "}
+                <Link href={comparison.href} className="text-primary font-bold hover:underline">
+                  {comparison.label}
+                </Link>
+                .
+              </>
+            )}
           </p>
         </div>
 

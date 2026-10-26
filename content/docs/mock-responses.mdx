@@ -3,7 +3,7 @@ title: "Mock Responses"
 description: "Control what your endpoint returns to the sender. Set status codes, headers, bodies with placeholders from the request, delays, and conditional response rules, and preview them against captured requests."
 section: dashboard
 order: 4
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-26
 schema: none
 keywords:
   [
@@ -21,8 +21,8 @@ keywords:
     "response template",
   ]
 seo:
-  ogTitle: "Webhook Mock Responses & Conditional Rules"
-  ogDescription: "Configure status codes, headers, bodies with request placeholders, delays, and conditional response rules for webhook endpoints. Return different responses based on method, path, headers, or body fields."
+  ogTitle: "Mock Webhook Responses: Status Codes, Bodies & Delays"
+  ogDescription: "Choose what your webhook endpoint answers: any status code, headers, a body filled from the request, a delay to test timeouts, and rules that answer differently by path, header, or body."
 ---
 
 ## How it works
@@ -196,7 +196,7 @@ Agents use the `update_endpoint` and `preview_response` tools of the MCP server 
 ## Use cases
 
 - **Simulate success**: return 200 with a JSON body to satisfy senders that expect a confirmation.
-- **Test error handling**: return 500 or 503 to check that your sender retries.
+- **Test error handling**: return 500 or 503 to check that your sender retries. [Mock webhook responses to test retry logic](/blog/mock-webhook-responses-retry-error-testing) walks through how Stripe, Shopify, and GitHub retry after each kind of failure.
 - **Test timeouts**: add a delay to check that your sender handles slow answers.
 - **Echo what arrived**: return `{{ body }}` or a field such as `{{ json.id }}` so the sender can match the answer to its request.
 - **Mint ids**: answer `201` with `{"id": "{{ uuid }}"}`, like a real API creating a resource.

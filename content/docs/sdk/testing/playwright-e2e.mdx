@@ -1,41 +1,186 @@
 ---
 title: "Playwright E2E"
-description: "Combine Playwright browser automation with webhook assertions for end-to-end checkout or onboarding flows. Verify both the UI and the webhook."
+description: "Drive your app in a real browser with Playwright and assert on the webhooks that flow in and out: what your app sends after a click, and how the UI reacts when a provider's webhook arrives."
 section: sdk
 order: 7
-lastUpdated: 2026-03-10
-schema: none
-keywords: ["playwright webhooks", "E2E webhook testing", "browser webhook testing"]
+lastUpdated: 2026-10-26
+schema: howto
+keywords:
+  [
+    "playwright webhooks",
+    "E2E webhook testing",
+    "browser webhook testing",
+    "playwright webhook fixture",
+    "playwright stripe webhook",
+  ]
 seo:
   ogTitle: "E2E Webhook Testing with Playwright"
-  ogDescription: "Run full browser-to-backend webhook tests with Playwright and assert captured webhook events, payloads, and headers using @webhooks-cc/sdk."
+  ogDescription: "Playwright tests that click through your app and assert on webhooks: a per-test endpoint fixture, outgoing webhook assertions, signed provider events that complete a checkout, and CI setup."
 ---
 
-Combine browser automation with webhook assertions for end-to-end checkout or onboarding flows.
+Unit tests check a webhook handler on its own. A Playwright test checks the whole path: a person clicks through your app, a webhook goes out or comes in, and the page shows the result. The SDK covers both directions:
+
+- **Webhooks your app sends.** Point your app at a temporary webhooks.cc endpoint, click through the flow, and wait for the webhook to be captured.
+- **Webhooks your app receives.** Play the provider: send a correctly signed event to your handler with `sendTo`, then check that the page updates, without a real Stripe checkout in the test.
+
+## Setup
+
+<Steps>
+<Step title="Install the SDK and set the API key">
+
+```bash
+npm install --save-dev @webhooks-cc/sdk @playwright/test
+```
+
+Create an API key on your [API keys page](/account/api-keys) and expose it to the tests as `WHK_API_KEY`.
+
+</Step>
+<Step title="Add an endpoint fixture">
+
+A fixture gives every test its own endpoint and deletes it afterwards, so tests running in parallel never read each other's webhooks. `expiresIn` removes the endpoint even if a worker crashes before the cleanup runs.
 
 ```ts
-import { test, expect } from "@playwright/test";
-import { WebhooksCC, matchJsonField } from "@webhooks-cc/sdk";
+// tests/fixtures.ts
+import { test as base, expect } from "@playwright/test";
+import { WebhooksCC, type Endpoint } from "@webhooks-cc/sdk";
 
-const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const whk = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
 
-test("checkout triggers webhook", async ({ page }) => {
-  const endpoint = await client.endpoints.create({ name: "playwright-e2e" });
-  try {
-    await page.goto(process.env.APP_URL!);
-    await page.fill("[name=email]", "qa@example.com");
-    await page.click("button[data-testid=checkout]");
-
-    const req = await client.requests.waitFor(endpoint.slug, {
-      timeout: "45s",
-      match: matchJsonField("event", "checkout.completed"),
+export const test = base.extend<{ whk: WebhooksCC; webhookEndpoint: Endpoint }>({
+  whk: async ({}, use) => {
+    await use(whk);
+  },
+  webhookEndpoint: async ({}, use, testInfo) => {
+    const endpoint = await whk.endpoints.create({
+      name: `pw-${testInfo.parallelIndex}-${Date.now()}`,
+      expiresIn: "15m",
     });
+    try {
+      await use(endpoint);
+    } finally {
+      await whk.endpoints.delete(endpoint.slug);
+    }
+  },
+});
 
-    expect(req.method).toBe("POST");
-  } finally {
-    await client.endpoints.delete(endpoint.slug);
-  }
+export { expect };
+```
+
+</Step>
+</Steps>
+
+## Assert on a webhook your app sends
+
+This test configures the app's outgoing webhook URL through its own settings page, completes a checkout, and waits for the `checkout.completed` webhook:
+
+```ts
+// tests/checkout-webhook.spec.ts
+import { matchAll, matchMethod, matchJsonField } from "@webhooks-cc/sdk";
+import { assertRequest } from "@webhooks-cc/sdk/testing";
+import { test, expect } from "./fixtures";
+
+test("checkout sends a checkout.completed webhook", async ({ page, whk, webhookEndpoint }) => {
+  await page.goto("/settings/webhooks");
+  await page.getByLabel("Webhook URL").fill(webhookEndpoint.url!);
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await page.goto("/checkout");
+  await page.getByLabel("Email").fill("qa@example.com");
+  await page.getByRole("button", { name: "Pay" }).click();
+  await expect(page.getByText("Order confirmed")).toBeVisible();
+
+  const request = await whk.requests.waitFor(webhookEndpoint.slug, {
+    timeout: "30s",
+    match: matchAll(matchMethod("POST"), matchJsonField("event", "checkout.completed")),
+  });
+
+  assertRequest(
+    request,
+    {
+      method: "POST",
+      bodyJson: { event: "checkout.completed", data: { email: "qa@example.com" } },
+    },
+    { throwOnFailure: true }
+  );
 });
 ```
 
-Tip: keep endpoint creation/deletion inside each test for parallel-safe runs.
+`bodyJson` is a partial match: only the fields you list are compared, so the test keeps passing when the payload gains fields. When the assertion fails, the error lists every field that differs.
+
+## Complete a flow with a signed provider event
+
+Many flows finish only when a provider's webhook arrives: the order page says "Waiting for payment" until Stripe sends `checkout.session.completed`. Instead of paying through Stripe's hosted page in the test, send the event yourself, signed with the same secret your handler checks:
+
+```ts
+// tests/payment-confirmed.spec.ts
+import { test, expect } from "./fixtures";
+
+test("order page turns paid when Stripe confirms", async ({ page, whk }) => {
+  await page.goto("/checkout");
+  await page.getByRole("button", { name: "Pay" }).click();
+  await expect(page.getByText("Waiting for payment")).toBeVisible();
+
+  const orderId = new URL(page.url()).searchParams.get("order")!;
+
+  const res = await whk.sendTo("http://localhost:3000/api/webhooks/stripe", {
+    provider: "stripe",
+    secret: process.env.STRIPE_WEBHOOK_SECRET!,
+    body: {
+      id: `evt_e2e_${orderId}`,
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: `cs_test_${orderId}`,
+          payment_status: "paid",
+          metadata: { orderId },
+        },
+      },
+    },
+  });
+  expect(res.status).toBe(200);
+
+  await expect(page.getByText("Payment received")).toBeVisible();
+});
+```
+
+`sendTo` computes the `stripe-signature` header, so your handler's `constructEvent` call runs unchanged. The same works for the other [signed providers](/docs/sdk/signatures); for Standard Webhooks senders such as Polar, see [Polar + Playwright](/docs/sdk/testing/polar-playwright).
+
+## Run it in CI
+
+Let Playwright start the app and pass the secrets through the environment:
+
+```ts
+// playwright.config.ts
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  fullyParallel: true,
+  use: { baseURL: "http://localhost:3000" },
+  webServer: {
+    command: "npm run start",
+    url: "http://localhost:3000",
+    reuseExistingServer: !process.env.CI,
+  },
+});
+```
+
+```yaml
+# .github/workflows/e2e.yml (excerpt)
+env:
+  WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
+  STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+steps:
+  - uses: actions/checkout@v4
+  - run: npm ci
+  - run: npx playwright install --with-deps
+  - run: npx playwright test
+```
+
+Each captured webhook counts toward your plan's request quota; `sendTo` calls go straight to your app and do not. See [Plans & Limits](/docs/plans-limits).
+
+## Tips
+
+- **One endpoint per test.** The fixture above does this; a shared endpoint makes parallel tests pick up each other's webhooks.
+- **Match the exact webhook.** An app may send several webhooks for one action. Match on the event field rather than taking the first request that arrives.
+- **Wait for the page first.** Assert on the UI state that follows the action before waiting for the webhook, so a failing click fails with a clear message instead of a webhook timeout.
+- **Testing emails too?** The same endpoint receives email. [Test signup and login emails in Playwright](/docs/guides/test-signup-emails-playwright) reads confirmation codes and magic links in the same kind of test.

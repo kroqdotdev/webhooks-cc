@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TEMPLATE_PROVIDERS } from "@webhooks-cc/sdk";
 import {
   getAllWebhookProviderPages,
+  getRelatedProviderPages,
   getWebhookProviderPage,
   getWebhookProvidersLastModified,
   indefiniteArticle,
@@ -101,6 +102,7 @@ describe("webhook provider pages", () => {
       "linear",
       "mux",
       "paddle",
+      "razorpay",
       "sendgrid",
       "square",
     ]);
@@ -117,9 +119,33 @@ describe("webhook provider pages", () => {
       ].join(" ");
       expect(copy, page.slug).not.toContain(String.fromCharCode(0x2014));
       expect(
-        ["2026-10-13T00:00:00.000Z", "2026-10-20T00:00:00.000Z", "2026-10-23T00:00:00.000Z"],
+        [
+          "2026-10-13T00:00:00.000Z",
+          "2026-10-20T00:00:00.000Z",
+          "2026-10-23T00:00:00.000Z",
+          "2026-10-26T00:00:00.000Z",
+        ],
         page.slug
       ).toContain(page.lastModified.toISOString());
+    }
+  });
+
+  it("links every page from its siblings, three each, within the category", () => {
+    const inbound = new Map<string, number>();
+    for (const page of pages) {
+      const related = getRelatedProviderPages(page.slug);
+      const siblings = pages.filter((p) => p.category === page.category).length;
+      expect(related).toHaveLength(Math.min(3, siblings - 1));
+      expect(new Set(related.map((p) => p.slug)).size).toBe(related.length);
+      for (const other of related) {
+        expect(other.slug).not.toBe(page.slug);
+        expect(other.category).toBe(page.category);
+        inbound.set(other.slug, (inbound.get(other.slug) ?? 0) + 1);
+      }
+    }
+    for (const page of pages) {
+      const siblings = pages.filter((p) => p.category === page.category).length;
+      expect(inbound.get(page.slug) ?? 0, page.slug).toBe(Math.min(3, siblings - 1));
     }
   });
 });
