@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { TEMPLATE_PROVIDERS } from "@webhooks-cc/sdk";
 import {
   getAllWebhookProviderPages,
+  getRelatedProviderPages,
   getWebhookProviderPage,
   getWebhookProvidersLastModified,
   indefiniteArticle,
+  RELATED_LINKS_CHANGED,
   WEBHOOK_PROVIDER_CATEGORIES,
   WEBHOOK_PROVIDER_SLUGS,
 } from "./webhook-provider-pages";
@@ -65,23 +67,17 @@ describe("webhook provider pages", () => {
     }
   });
 
-  it("dates new and changed pages by their change, and the hub by the newest page", () => {
-    expect(getWebhookProviderPage("zapier")?.lastModified.toISOString()).toBe(
-      "2026-10-02T00:00:00.000Z"
-    );
-    // Pages with the CI test snippet changed when it arrived on 23 October.
-    expect(getWebhookProviderPage("resend")?.lastModified.toISOString()).toBe(
-      "2026-10-23T00:00:00.000Z"
-    );
-    expect(getWebhookProviderPage("bigcommerce")?.lastModified.toISOString()).toBe(
-      "2026-09-29T00:00:00.000Z"
-    );
-    // #446 changed the FAQ wording ("an") on vowel-initial pages on 3 October.
-    for (const slug of ["airtable", "auth0", "aws-sns", "okta"]) {
-      expect(getWebhookProviderPage(slug)?.lastModified.toISOString(), slug).toBe(
-        "2026-10-03T00:00:00.000Z"
+  it("dates pages by their newest change, and the hub by the newest page", () => {
+    // The related-links change on 26 October touched every page, so it is the
+    // floor; an edit of a page's own content after it moves that page on.
+    for (const page of pages) {
+      expect(page.lastModified.toISOString().slice(0, 10) >= RELATED_LINKS_CHANGED, page.slug).toBe(
+        true
       );
     }
+    expect(getWebhookProviderPage("zapier")?.lastModified.toISOString()).toBe(
+      `${RELATED_LINKS_CHANGED}T00:00:00.000Z`
+    );
     const newest = Math.max(...pages.map((page) => page.lastModified.getTime()));
     expect(getWebhookProvidersLastModified().getTime()).toBe(newest);
   });
@@ -101,6 +97,7 @@ describe("webhook provider pages", () => {
       "linear",
       "mux",
       "paddle",
+      "razorpay",
       "sendgrid",
       "square",
     ]);
@@ -117,9 +114,33 @@ describe("webhook provider pages", () => {
       ].join(" ");
       expect(copy, page.slug).not.toContain(String.fromCharCode(0x2014));
       expect(
-        ["2026-10-13T00:00:00.000Z", "2026-10-20T00:00:00.000Z", "2026-10-23T00:00:00.000Z"],
+        [
+          "2026-10-13T00:00:00.000Z",
+          "2026-10-20T00:00:00.000Z",
+          "2026-10-23T00:00:00.000Z",
+          "2026-10-26T00:00:00.000Z",
+        ],
         page.slug
       ).toContain(page.lastModified.toISOString());
+    }
+  });
+
+  it("links every page from its siblings, three each, within the category", () => {
+    const inbound = new Map<string, number>();
+    for (const page of pages) {
+      const related = getRelatedProviderPages(page.slug);
+      const siblings = pages.filter((p) => p.category === page.category).length;
+      expect(related).toHaveLength(Math.min(3, siblings - 1));
+      expect(new Set(related.map((p) => p.slug)).size).toBe(related.length);
+      for (const other of related) {
+        expect(other.slug).not.toBe(page.slug);
+        expect(other.category).toBe(page.category);
+        inbound.set(other.slug, (inbound.get(other.slug) ?? 0) + 1);
+      }
+    }
+    for (const page of pages) {
+      const siblings = pages.filter((p) => p.category === page.category).length;
+      expect(inbound.get(page.slug) ?? 0, page.slug).toBe(Math.min(3, siblings - 1));
     }
   });
 });

@@ -1,9 +1,9 @@
 ---
 title: "How to Test Stripe Webhooks"
-description: "Test Stripe webhook handlers with signed checkout, invoice, and payment payloads. Verify Stripe signature verification end-to-end — no Stripe CLI dependency needed."
+description: "Test Stripe webhook handlers on localhost and in CI: send signed checkout, invoice, and payment events, forward live test-mode events with the CLI, and verify signatures end to end."
 section: guides
 order: 2
-lastUpdated: 2026-03-10
+lastUpdated: 2026-10-26
 schema: howto
 keywords:
   [
@@ -11,10 +11,12 @@ keywords:
     "stripe webhook testing",
     "stripe signature verification",
     "stripe webhook localhost",
+    "test stripe webhooks locally",
+    "stripe webhook tunnel",
   ]
 seo:
-  ogTitle: "How to Test Stripe Webhooks"
-  ogDescription: "Test Stripe webhook handlers with signed checkout, invoice, and payment payloads. Verify Stripe signature verification end-to-end — no Stripe CLI dependency needed."
+  ogTitle: "How to Test Stripe Webhooks Locally and in CI"
+  ogDescription: "Send signed Stripe events to localhost, forward live test-mode events with one CLI command, verify stripe-signature, and run the same tests in CI. No Stripe CLI needed."
 ---
 
 Stripe sends webhooks for payments, subscriptions, invoices, and disputes. Every webhook carries a `stripe-signature` header with an HMAC-SHA256 hash that your handler must verify before processing. If the signature check fails, you reject the request. This means you cannot test your webhook handler with plain HTTP requests -- you need properly signed payloads. webhooks.cc sends Stripe webhooks with valid signatures computed from your webhook secret, captures real Stripe events for replay, and provides templates for common event types.
@@ -154,6 +156,78 @@ it("rejects invalid stripe signatures", async () => {
 </Step>
 </Steps>
 
+## Forward live Stripe test-mode events to localhost
+
+Signed sample events cover most tests. To see what Stripe itself sends (a real Checkout Session, a real invoice), give Stripe a public URL that the CLI forwards to your machine.
+
+<Steps>
+<Step title="Install the CLI and log in">
+
+```bash
+brew install kroqdotdev/tap/whk
+whk auth login
+```
+
+`whk auth login` opens your browser to confirm a device code. See [Installation](/installation) for the shell script and other platforms.
+
+</Step>
+<Step title="Start a tunnel">
+
+```bash
+whk tunnel 3000
+```
+
+The CLI creates an endpoint, prints its URL (for example `https://go.webhooks.cc/w/abc123`), and forwards every request it receives to `localhost:3000`. The path after the slug is kept, so `https://go.webhooks.cc/w/abc123/api/webhooks/stripe` reaches `http://localhost:3000/api/webhooks/stripe`. To keep the same URL across restarts, create the endpoint once and run `whk tunnel 3000 --endpoint <slug>`.
+
+</Step>
+<Step title="Point Stripe at the tunnel">
+
+In **Stripe Dashboard > Developers > Webhooks**, add an endpoint with your tunnel URL plus your handler's path, and select the events you handle. Copy that endpoint's signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
+
+Every delivery shows up in the [dashboard](/dashboard) and in your terminal. The tunnel passes the body and the `stripe-signature` header through unchanged, so your handler verifies the event exactly as it would in production.
+
+Stripe gets its answer from webhooks.cc, not from your handler: the endpoint's [mock response](/docs/mock-responses), 200 by default. A handler that rejects an event shows the failure in your terminal, but Stripe sees a success and does not retry. To assert on your handler's own status code, send the event with `sendTo` as shown above; to see how Stripe retries, set the mock response to a 500.
+
+</Step>
+<Step title="Verify against the raw body">
+
+`constructEvent` needs the unparsed body. In Express, give the webhook route a raw body parser:
+
+```ts
+import express from "express";
+import Stripe from "stripe";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const app = express();
+
+app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), (req, res) => {
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      req.headers["stripe-signature"] as string,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+  } catch {
+    return res.status(400).send("Invalid signature");
+  }
+
+  if (event.type === "checkout.session.completed") {
+    // fulfil the order
+  }
+  res.json({ received: true });
+});
+
+app.listen(3000);
+```
+
+In the Next.js App Router, read `await request.text()` instead.
+
+</Step>
+</Steps>
+
+If your server is down when an event arrives, the request is still captured. Start the server again and click **Replay** on the request in the dashboard to send it once more.
+
 ## Capture and verify real Stripe events
 
 When you want to test with payloads from Stripe's actual infrastructure, capture real events through a webhooks.cc endpoint, then verify the signature and inspect the payload.
@@ -240,6 +314,29 @@ await withEndpoint(client, async (endpoint) => {
 
 </Step>
 </Steps>
+
+## Run the whole cycle with the flow builder
+
+To prove that signing, capture, and verification work together in one test, the flow builder chains every step and cleans up:
+
+```ts
+const result = await client
+  .flow()
+  .createEndpoint({ expiresIn: "1h" })
+  .sendTemplate({
+    provider: "stripe",
+    template: "checkout.session.completed",
+    secret: "whsec_test_123",
+  })
+  .waitForCapture({ timeout: "15s" })
+  .verifySignature({ provider: "stripe", secret: "whsec_test_123" })
+  .cleanup()
+  .run();
+
+expect(result.verification?.valid).toBe(true);
+```
+
+`sendTemplate` builds and signs the payload, so you never compute the `t=...,v1=...` header yourself.
 
 ## How Stripe webhook signing works
 
@@ -419,7 +516,17 @@ Yes. The SDK generates signed payloads locally using whatever secret you provide
 </FAQItem>
 <FAQItem question="What's the difference between sendTo and the Stripe CLI?">
 
-`sendTo` sends any payload you specify, with a valid signature, directly to your handler. You control the exact event type, fields, and values. The Stripe CLI (`stripe listen --forward-to`) forwards real events from Stripe's test mode servers. Use `sendTo` for deterministic, repeatable tests in CI. Use the Stripe CLI for exploratory testing with real Stripe-generated events.
+`sendTo` sends any payload you specify, with a valid signature, directly to your handler. You control the exact event type, fields, and values. The Stripe CLI (`stripe listen --forward-to`) forwards real events from Stripe's test mode servers. Use `sendTo` for deterministic, repeatable tests in CI. Use the Stripe CLI, or `whk tunnel`, for exploratory testing with real Stripe-generated events. [webhooks.cc vs the Stripe CLI](/compare/stripe-cli) compares the two side by side.
+
+</FAQItem>
+<FAQItem question="Does the tunnel URL change every time I restart?">
+
+`whk tunnel 3000` creates a new endpoint each time it starts. Create one endpoint and pass `--endpoint <slug>` to keep the same URL, so the endpoint registered in Stripe never has to change. Add `-e` instead when you want a throwaway endpoint that is deleted when the tunnel exits.
+
+</FAQItem>
+<FAQItem question="Does this work with Stripe test mode?">
+
+Yes. Use your test-mode webhook signing secret. Signed samples from the SDK need no Stripe account at all, and the tunnel forwards test-mode and live-mode events the same way.
 
 </FAQItem>
 <FAQItem question="Does this work in CI?">
@@ -440,7 +547,13 @@ Yes. Set `WHK_API_KEY` and `STRIPE_WEBHOOK_SECRET` as CI secrets. The `sendTo` m
 <LinkCard
   href="/docs/sdk/signatures"
   title="Signature Verification"
-  description="Verify Stripe and 8 other provider signatures with the SDK."
+  description="Verify Stripe and 31 other providers' signatures with the SDK."
+/>
+
+<LinkCard
+  href="/compare/stripe-cli"
+  title="webhooks.cc vs the Stripe CLI"
+  description="When stripe listen is enough, and when you need captured history, other providers, or CI assertions."
 />
 
 <LinkCard

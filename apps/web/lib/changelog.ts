@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.45.0";
+export const APP_VERSION = "0.45.1";
 export const CLI_VERSION = "1.5.0";
 export const SDK_VERSION = "1.18.0";
 export const PYTHON_SDK_VERSION = "0.2.0";
@@ -26,6 +26,17 @@ export const MCP_VERSION = "1.14.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.45.1",
+    date: "2026-10-26",
+    title: "Better Linked Guides and Fewer Overlapping Pages",
+    track: "web",
+    items: [
+      "Blog posts suggest posts on the same topics instead of always the two newest, and every provider page links its neighbours in the category, so no page is left linked from a hub alone",
+      "The CI/CD and Stripe guides take in the blog posts that covered the same ground (matchers, payload diffs, the flow builder, tunnelling live Stripe events); the old post URLs and the three docs comparison guides redirect to the pages that replaced them",
+      "A full Playwright E2E guide, Razorpay events and FAQs, and clearer titles for the SDK testing, tunnel and mock response docs",
+    ],
+  },
   {
     version: "0.45.0",
     date: "2026-10-25",

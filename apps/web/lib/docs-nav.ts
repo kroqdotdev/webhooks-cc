@@ -110,13 +110,13 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "Comparisons",
     id: "comparisons",
     items: [
-      { title: "ngrok vs webhooks.cc", href: "/docs/guides/ngrok-vs-webhooks-cc" },
-      {
-        title: "Webhook.site vs webhooks.cc",
-        href: "/docs/guides/webhook-site-vs-webhooks-cc",
-        isNew: true,
-      },
-      { title: "Webhook Testing Tools", href: "/docs/guides/webhook-testing-tools" },
+      // The /compare pages, not the docs guides they replaced: those redirect
+      // there now, and linking them from every docs page kept them indexed.
+      { title: "Webhook Testing Tools", href: "/compare" },
+      { title: "ngrok vs webhooks.cc", href: "/compare/ngrok" },
+      { title: "Webhook.site vs webhooks.cc", href: "/compare/webhook-site" },
+      { title: "Stripe CLI vs webhooks.cc", href: "/compare/stripe-cli", isNew: true },
+      { title: "Svix vs webhooks.cc", href: "/compare/svix", isNew: true },
     ],
   },
 ];

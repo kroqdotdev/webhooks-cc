@@ -112,6 +112,34 @@ const nextConfig: NextConfig = {
         destination: "/compare/webhook-site",
         permanent: true,
       },
+      {
+        // Docs guides folded into the /compare pages, which cover the same ground.
+        source: "/docs/guides/ngrok-vs-webhooks-cc",
+        destination: "/compare/ngrok",
+        permanent: true,
+      },
+      {
+        source: "/docs/guides/webhook-site-vs-webhooks-cc",
+        destination: "/compare/webhook-site",
+        permanent: true,
+      },
+      {
+        source: "/docs/guides/webhook-testing-tools",
+        destination: "/compare",
+        permanent: true,
+      },
+      {
+        // Blog posts merged into the docs guides on the same topic. Their rows
+        // are unpublished, so they also leave /blog and the sitemap.
+        source: "/blog/webhook-testing-cicd-typescript",
+        destination: "/docs/guides/webhook-testing-ci-cd",
+        permanent: true,
+      },
+      {
+        source: "/blog/test-stripe-webhooks-locally-2026",
+        destination: "/docs/guides/test-stripe-webhooks",
+        permanent: true,
+      },
     ];
   },
 };

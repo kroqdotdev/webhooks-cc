@@ -1,14 +1,14 @@
 ---
-title: "Testing"
+title: "Testing with the SDK"
 description: "Use the SDK in your test suite to verify webhook integrations and emails end-to-end. Create temporary endpoints, trigger your application, and assert on the captured requests and emails."
 section: sdk
 order: 3
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-26
 schema: howto
-keywords: ["webhook testing", "CI/CD webhooks", "webhook assertions", "integration testing"]
+keywords: ["webhook testing sdk", "webhook assertions", "waitFor", "webhook integration testing", "vitest webhooks"]
 seo:
-  ogTitle: "Webhook Testing in CI with SDK"
-  ogDescription: "Use the webhooks.cc TypeScript SDK in CI/CD to verify webhook integrations end-to-end with deterministic wait, match, and assertion flows."
+  ogTitle: "Testing with @webhooks-cc/sdk: waitFor, Helpers & Examples"
+  ogDescription: "Test webhooks and emails with the TypeScript SDK: the create, trigger, assert and clean up pattern, waitFor, the testing helpers, and Vitest, Jest and Playwright examples."
 ---
 
 ## Pattern: test, assert, cleanup
@@ -56,7 +56,7 @@ describe("payment webhooks", () => {
 
 ## CI/CD integration
 
-Add your API key as a secret in your CI environment. Example GitHub Actions config:
+Add your API key as a secret in your CI environment. Example GitHub Actions config (the [CI/CD guide](/docs/guides/webhook-testing-ci-cd) covers starting your server, GitLab CI, and payload drift checks):
 
 ```yaml
 # .github/workflows/test.yml

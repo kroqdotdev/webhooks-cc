@@ -2,6 +2,7 @@ import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { compileBlogMDX } from "@/lib/blog-mdx";
+import { pickRelatedPosts } from "@/lib/blog-related";
 import { createDynamicBlogPostMetadata } from "@/lib/seo";
 import { BlogPostShell, type BlogPostData } from "@/components/blog/blog-post-shell";
 import { extractHowToSteps } from "@/lib/mdx-schema-extract";
@@ -34,10 +35,11 @@ export default async function BlogPostPage({ params }: PageProps) {
     listPublishedBlogPosts(),
   ]);
 
-  const relatedPosts = allPosts
-    .filter((p) => p.slug !== post.slug)
-    .slice(0, 2)
-    .map((p) => ({ slug: p.slug, title: p.title, description: p.description }));
+  const relatedPosts = pickRelatedPosts(post, allPosts).map((p) => ({
+    slug: p.slug,
+    title: p.title,
+    description: p.description,
+  }));
 
   const howToSteps = post.schemaType === "howto" ? extractHowToSteps(post.content) : undefined;
 
