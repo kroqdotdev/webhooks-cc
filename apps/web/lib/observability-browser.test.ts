@@ -59,6 +59,12 @@ describe("isNoise", () => {
     expect(isNoise(exception("TypeError", "boom", [ours, "moz-extension://x/a.js"]))).toBe(true);
   });
 
+  it("drops the rejection a Microsoft link scanner's browser raises", () => {
+    const value =
+      "Non-Error promise rejection captured with value: Object Not Found Matching Id:2, MethodName:update, ParamCount:4";
+    expect(isNoise(exception("UnhandledRejection", value, []))).toBe(true);
+  });
+
   it("keeps an error without frames", () => {
     expect(isNoise(exception("Error", "Non-Error promise rejection", []))).toBe(false);
   });

@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.45.1";
+export const APP_VERSION = "0.45.2";
 export const CLI_VERSION = "1.5.0";
 export const SDK_VERSION = "1.18.0";
 export const PYTHON_SDK_VERSION = "0.2.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.14.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.45.2",
+    date: "2026-10-26",
+    title: "Quieter Browser Error Reports",
+    track: "web",
+    items: [
+      "Error reports from the browser leave out the error Microsoft's link scanners raise in their own browser when they open a link to webhooks.cc, so it no longer shows up as a crash of ours",
+    ],
+  },
   {
     version: "0.45.1",
     date: "2026-10-26",
