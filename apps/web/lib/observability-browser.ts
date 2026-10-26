@@ -12,8 +12,8 @@ import { redactEvent } from "./observability-redact";
  *
  * What is sent loses query strings and fragments (a guest endpoint's slug or
  * a token can ride in one) and email addresses. Errors that are not ours
- * (browser extensions, cross-origin scripts, a dropped connection, a stale
- * tab after a deploy) are dropped.
+ * (browser extensions, cross-origin scripts, a link scanner's browser, a
+ * dropped connection, a stale tab after a deploy) are dropped.
  */
 
 /** Messages that say the network, the browser or a stale tab failed, not our code. */
@@ -26,6 +26,9 @@ const NOISE = [
   /^The operation was aborted\.?$/,
   /^Loading (CSS )?chunk [\w-]+ failed/,
   /the module factory is not available/,
+  // Microsoft's link scanners (Outlook Safe Links, Bing) open pages in a
+  // CefSharp browser whose own .NET bridge rejects with this string.
+  /Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+/,
 ];
 const NOISE_TYPES = new Set(["AbortError", "ChunkLoadError"]);
 const EXTENSION = /^(chrome|moz|safari|safari-web|ms-browser)-extension:\/\//;
