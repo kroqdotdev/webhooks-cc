@@ -42,7 +42,7 @@ export function AppHeader({
   };
 
   return (
-    <header className="border-b-strong border-line shrink-0 bg-background sticky top-0 z-50 relative">
+    <header className="border-b-strong border-line shrink-0 bg-background clean:bg-card sticky top-0 z-50 relative">
       <div className="container mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="font-bold text-lg">

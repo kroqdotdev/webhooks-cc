@@ -242,7 +242,7 @@ export default async function Home() {
       <JsonLd data={videoObjectSchema()} />
 
       {/* Navigation — solid app header, same chrome as the real dashboard */}
-      <header className="border-b-strong border-line bg-background sticky top-[var(--ann-h,0px)] z-50">
+      <header className="border-b-strong border-line bg-background clean:bg-card sticky top-[var(--ann-h,0px)] z-50">
         <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <Link href="/" className="font-bold text-lg tracking-tight shrink-0">

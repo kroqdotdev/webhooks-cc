@@ -191,103 +191,113 @@ html {
   }
 
   :root[data-style="clean"] {
-    /* Clean light: zinc neutrals, emerald kept as the brand accent */
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* Clean light: paper and ink. A cool paper canvas with white surfaces on
+       it, hairlines instead of shadows, and one pine green (the brand mint
+       pulled down to ink) for buttons, links and selection alike. */
+    --background: 216 24% 97.5%;
+    --foreground: 218 18% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 218 18% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 163 94% 24%;
+    --popover-foreground: 218 18% 11%;
+    --primary: 164 76% 24%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 161 94% 30%;
-    --radius: 0.625rem;
-    --shadow-color: 240 10% 3.9%;
+    --secondary: 216 18% 93%;
+    --secondary-foreground: 218 18% 14%;
+    --muted: 216 20% 94.5%;
+    --muted-foreground: 218 10% 42%;
+    --accent: 216 20% 93%;
+    --accent-foreground: 218 18% 11%;
+    --destructive: 2 70% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 216 16% 88%;
+    --input: 216 14% 82%;
+    --ring: 164 76% 30%;
+    --radius: 0.5rem;
+    --shadow-color: 218 30% 10%;
 
     --line: var(--border);
     --line-width: 1px;
-    --action: 240 5.9% 10%;
-    --action-foreground: 0 0% 98%;
-    --selected: 240 5.9% 90%;
-    --selected-foreground: 240 10% 3.9%;
+    --action: var(--primary);
+    --action-foreground: var(--primary-foreground);
+    /* Active tab, toggle segment and list row: a mint wash with pine text */
+    --selected: 164 45% 91%;
+    --selected-foreground: 164 80% 17%;
     --caps-transform: none;
     --caps-tracking: normal;
     --caps-tracking-wide: normal;
     --press: 0px;
-    --elevation-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --elevation: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-    --elevation-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+    /* Resting surfaces carry no shadow; only floating layers (menus,
+       dialogs, the docs navbar) lift, with a shadow tinted to the ink */
+    --elevation-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.04);
+    --elevation:
+      0 1px 2px 0 hsl(var(--shadow-color) / 0.06), 0 8px 24px -8px hsl(var(--shadow-color) / 0.14);
+    --elevation-lg:
+      0 2px 4px 0 hsl(var(--shadow-color) / 0.06), 0 16px 40px -12px hsl(var(--shadow-color) / 0.2);
     --page-pattern: none;
 
-    --syntax-key: 163 94% 24%;
-    --syntax-string: 26 90% 37%;
-    --syntax-number: 262 83% 58%;
-    --syntax-punctuation: 240 3.8% 46.1%;
+    --syntax-key: 164 76% 24%;
+    --syntax-string: 28 80% 36%;
+    --syntax-number: 262 60% 48%;
+    --syntax-punctuation: 218 10% 42%;
 
-    --method-get: 163 94% 24%;
-    --method-post: 26 90% 37%;
-    --method-put: 263 70% 50%;
-    --method-delete: 0 74% 42%;
-    --kind-email: 221 83% 45%;
-    --kind-email-ink: 221 83% 45%;
+    --method-get: 164 76% 24%;
+    --method-post: 28 80% 36%;
+    --method-put: 262 60% 48%;
+    --method-delete: 2 70% 46%;
+    --kind-email: 222 70% 45%;
+    --kind-email-ink: 222 70% 45%;
 
-    /* Bold renders as semibold; Geist at 700 is heavier than the look calls for */
+    /* Bold renders as semibold; Plex at 700 is heavier than the look calls for */
     --font-weight-bold: 600;
-    --app-font-sans: var(--font-geist), system-ui, sans-serif;
+    --app-font-sans: var(--font-plex-sans), system-ui, sans-serif;
+    --app-font-mono: var(--font-plex-mono), monospace;
   }
 
   :root[data-style="clean"].dark {
-    /* Clean dark */
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 5% 6.5%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 5% 6.5%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 158 64% 52%;
-    --primary-foreground: 240 10% 3.9%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 158 64% 52%;
+    /* Clean dark: the same ink and paper inverted, with the mint as the accent */
+    --background: 222 18% 7%;
+    --foreground: 216 16% 92%;
+    --card: 222 16% 10%;
+    --card-foreground: 216 16% 92%;
+    --popover: 222 16% 11%;
+    --popover-foreground: 216 16% 92%;
+    --primary: 160 60% 52%;
+    --primary-foreground: 222 30% 6%;
+    --secondary: 222 12% 16%;
+    --secondary-foreground: 216 16% 92%;
+    --muted: 222 12% 13%;
+    --muted-foreground: 218 10% 64%;
+    --accent: 222 12% 16%;
+    --accent-foreground: 216 16% 92%;
+    --destructive: 2 70% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 12% 18%;
+    --input: 222 12% 24%;
+    --ring: 160 60% 52%;
     --shadow-color: 0 0% 0%;
 
-    --action: 0 0% 98%;
-    --action-foreground: 240 5.9% 10%;
-    --selected: 240 5.2% 26%;
-    --selected-foreground: 0 0% 98%;
-    --elevation-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-    --elevation: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.3);
-    --elevation-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.35);
+    --action: var(--primary);
+    --action-foreground: var(--primary-foreground);
+    --selected: 162 40% 16%;
+    --selected-foreground: 160 60% 72%;
+    --elevation-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.3);
+    --elevation:
+      0 1px 2px 0 hsl(var(--shadow-color) / 0.4), 0 8px 24px -8px hsl(var(--shadow-color) / 0.5);
+    --elevation-lg:
+      0 2px 4px 0 hsl(var(--shadow-color) / 0.4), 0 16px 40px -12px hsl(var(--shadow-color) / 0.6);
 
-    --syntax-key: 158 64% 52%;
-    --syntax-string: 43 96% 56%;
-    --syntax-number: 255 92% 76%;
-    --syntax-punctuation: 240 5% 64.9%;
+    --syntax-key: 160 60% 52%;
+    --syntax-string: 40 85% 62%;
+    --syntax-number: 258 85% 76%;
+    --syntax-punctuation: 218 10% 64%;
 
-    --method-get: 158 64% 52%;
-    --method-post: 43 96% 56%;
-    --method-put: 255 92% 76%;
-    --method-delete: 0 91% 71%;
-    --kind-email: 213 94% 68%;
-    --kind-email-ink: 213 94% 68%;
+    --method-get: 160 60% 52%;
+    --method-post: 38 85% 60%;
+    --method-put: 258 85% 76%;
+    --method-delete: 2 85% 68%;
+    --kind-email: 213 90% 70%;
+    --kind-email-ink: 213 90% 70%;
   }
 }
 
@@ -303,6 +313,13 @@ html {
     /* Ben-Day dots in classic, nothing in clean */
     background-image: var(--page-pattern);
     background-size: 8px 8px;
+  }
+  /* Plex Sans wants a little less air at display sizes; tracking-* utilities still win */
+  [data-style="clean"] :is(h1, h2) {
+    letter-spacing: -0.02em;
+  }
+  [data-style="clean"] h3 {
+    letter-spacing: -0.01em;
   }
 }
 
@@ -420,14 +437,17 @@ html {
      classic rules so equal-specificity :hover and :active rules lose. */
   [data-style="clean"] .ui-card {
     box-shadow: var(--elevation-sm);
+    transition: border-color 150ms;
   }
 
+  /* A card that can be clicked darkens its hairline instead of lifting */
   [data-style="clean"] .ui-card:hover {
-    box-shadow: var(--elevation);
+    box-shadow: var(--elevation-sm);
+    border-color: hsl(var(--foreground) / 0.22);
   }
 
   [data-style="clean"] .ui-card-static:hover {
-    box-shadow: var(--elevation-sm);
+    border-color: hsl(var(--line));
   }
 
   [data-style="clean"] :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline) {
@@ -445,19 +465,24 @@ html {
   }
 
   [data-style="clean"] .ui-btn-primary {
-    border-color: hsl(var(--action));
+    border-color: transparent;
   }
 
   [data-style="clean"] .ui-btn-primary:hover {
-    background-color: hsl(var(--action) / 0.9);
+    background-color: color-mix(in oklab, hsl(var(--action)), black 12%);
   }
 
   [data-style="clean"] .ui-btn-secondary {
     border-color: transparent;
+    box-shadow: none;
   }
 
   [data-style="clean"] .ui-btn-secondary:hover {
-    background-color: hsl(var(--secondary) / 0.8);
+    background-color: color-mix(in oklab, hsl(var(--secondary)), hsl(var(--foreground)) 6%);
+  }
+
+  [data-style="clean"] :is(.ui-btn, .ui-btn-outline) {
+    background-color: hsl(var(--card));
   }
 
   [data-style="clean"] :is(.ui-btn, .ui-btn-outline):hover {
@@ -471,8 +496,9 @@ html {
 
   [data-style="clean"] .ui-input {
     padding: 0.5rem 0.75rem;
+    background-color: hsl(var(--card));
     border-color: hsl(var(--input));
-    box-shadow: var(--elevation-sm);
+    box-shadow: none;
     transition:
       border-color 150ms,
       box-shadow 150ms;
@@ -480,7 +506,7 @@ html {
 
   [data-style="clean"] .ui-input:focus {
     border-color: hsl(var(--ring));
-    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.2);
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.18);
     transform: none;
   }
 }
