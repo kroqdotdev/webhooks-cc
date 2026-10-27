@@ -2461,10 +2461,34 @@ components:
       properties:
         used:
           type: integer
+          description: Requests used of the period's allowance (limit)
         limit:
           type: integer
+          description: The period's allowance, the plan's requests plus monthly blocks
         remaining:
           type: integer
+          description: >-
+            Requests still accepted this period: what is left of limit, plus one-time blocks,
+            plus overage up to its maximum
+        blockRequests:
+          type: integer
+          description: Requests monthly blocks add to limit this period
+        creditRequests:
+          type: integer
+          description: One-time blocks left, in requests, used once the allowance is gone
+        overage:
+          type: object
+          required: [active, used, max]
+          properties:
+            active:
+              type: boolean
+              description: Whether overage is counting (a live overage subscription on a paid plan)
+            used:
+              type: integer
+              description: Overage requests counted this period
+            max:
+              type: integer
+              description: The customer's overage maximum per period, in requests
         plan:
           type: string
           enum: [free, pro]

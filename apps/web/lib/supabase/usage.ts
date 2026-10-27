@@ -1,12 +1,25 @@
+import { isCapacityExhausted, periodOverageUsed, remainingCapacity } from "@/lib/capacity";
 import { createAdminClient } from "./admin";
 import type { UserPlan } from "./api-keys";
 import { reportError } from "@/lib/observability";
 import { getQuotaRejections, NO_QUOTA_REJECTIONS, type QuotaRejections } from "./quota-rejections";
 
 export interface UsageInfo {
+  /** Requests used of the period's allowance. */
   used: number;
+  /** The period's allowance: the plan's requests plus monthly blocks. */
   limit: number;
+  /**
+   * Requests still accepted this period: what is left of the allowance, plus
+   * one-time blocks, plus overage up to its maximum.
+   */
   remaining: number;
+  /** Requests monthly blocks add to `limit` this period. */
+  blockRequests: number;
+  /** One-time blocks left, in requests; used once the allowance is gone. */
+  creditRequests: number;
+  /** Metered overage: counted this period, up to `max`, while `active`. */
+  overage: { active: boolean; used: number; max: number };
   plan: UserPlan;
   periodEnd: number | null;
   /**
@@ -28,7 +41,7 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
   const { data: user, error } = await admin
     .from("users")
     .select(
-      "plan, requests_used, request_limit, period_start, period_end, emails_used, emails_period_start"
+      "plan, requests_used, request_limit, period_start, period_end, emails_used, emails_period_start, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start"
     )
     .eq("id", userId)
     .maybeSingle();
@@ -58,7 +71,8 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
   const emails =
     user.period_start && user.emails_period_start === user.period_start ? user.emails_used : 0;
 
-  const exhausted = periodActive && user.request_limit > 0 && used >= user.request_limit;
+  const capacity = { ...user, requests_used: used };
+  const exhausted = isCapacityExhausted(capacity, now);
   // The counts are extra detail: if they cannot be read (e.g. migration 00060
   // not applied yet), usage still returns rather than failing for the users
   // who most need it.
@@ -73,8 +87,15 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
 
   return {
     used,
-    limit: user.request_limit,
-    remaining: Math.max(0, user.request_limit - used),
+    limit: user.request_limit + user.block_requests,
+    remaining: remainingCapacity(capacity),
+    blockRequests: user.block_requests,
+    creditRequests: user.credit_requests,
+    overage: {
+      active: user.overage_active,
+      used: periodOverageUsed(user),
+      max: user.overage_max,
+    },
     plan: user.plan,
     periodEnd: periodActive ? periodEndMs : null,
     teamBilledEndpoints: teamBilledEndpoints ?? 0,

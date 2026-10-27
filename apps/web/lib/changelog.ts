@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.45.2";
+export const APP_VERSION = "0.46.0";
 export const CLI_VERSION = "1.5.0";
 export const SDK_VERSION = "1.18.0";
 export const PYTHON_SDK_VERSION = "0.2.0";
@@ -26,6 +26,17 @@ export const MCP_VERSION = "1.14.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.46.0",
+    date: "2026-10-27",
+    title: "Extra Requests: Monthly Blocks, One-Time Blocks and Overage",
+    track: "web",
+    items: [
+      "Pro accounts and team pools can go past the plan's requests in blocks of 25,000: monthly blocks ($2, renewed with the plan), one-time blocks ($3, kept until used) and overage ($4 per 25,000, billed at the end of the period, up to a maximum you set). They are used in that order once the plan's requests run out, so webhooks keep arriving instead of meeting a 429",
+      "Monthly blocks added mid-period count at once for the full monthly price and renew with the plan; fewer blocks take effect at the renewal. Cancelling the plan ends its monthly blocks and overage with it, and keeping the plan brings them back",
+      "The usage API counts monthly blocks in its limit and reports one-time blocks and overage, and its remaining figure is what the receiver will still accept this period",
+    ],
+  },
   {
     version: "0.45.2",
     date: "2026-10-26",

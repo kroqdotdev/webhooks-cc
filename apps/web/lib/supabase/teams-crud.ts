@@ -1,4 +1,5 @@
 import { createAdminClient } from "./admin";
+import { revokeAllAddons } from "./capacity-billing";
 import { revokeTeamSubscription } from "./team-billing";
 import type { Team, TeamRow } from "./teams-types";
 
@@ -59,6 +60,7 @@ export async function createTeam(userId: string, name: string): Promise<Team | {
     seats: 0,
     requestsUsed: 0,
     requestLimit: 0,
+    blockRequests: 0,
     periodEnd: null,
     cancelAtPeriodEnd: false,
     pendingSeats: null,
@@ -90,7 +92,7 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
   const { data: teamsData, error: teamsError } = await admin
     .from("teams")
     .select(
-      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, period_end, cancel_at_period_end, pending_seats"
+      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, block_requests, period_end, cancel_at_period_end, pending_seats"
     )
     .in("id", teamIds);
 
@@ -123,7 +125,10 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
     subscriptionStatus: team.subscription_status,
     seats: team.seats,
     requestsUsed: team.requests_used,
-    requestLimit: team.request_limit,
+    // The pool's allowance this period, monthly blocks included, so API
+    // clients that compute requestLimit - requestsUsed count them.
+    requestLimit: team.request_limit + team.block_requests,
+    blockRequests: team.block_requests,
     periodEnd: team.period_end ? parseMillis(team.period_end) : null,
     cancelAtPeriodEnd: team.cancel_at_period_end,
     pendingSeats: team.pending_seats,
@@ -194,6 +199,7 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
   // charging, with no stored id left to reconcile against. The inverse failure
   // (revoked subscription on a team that still exists) is recoverable in the
   // UI, so revoke-then-delete is the safe order.
+  await revokeAllAddons({ kind: "team", teamId });
   const subscriptionId = teamRow?.polar_subscription_id ?? null;
   if (subscriptionId) {
     await revokeTeamSubscription(subscriptionId);

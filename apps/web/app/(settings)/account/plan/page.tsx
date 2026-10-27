@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
 import { UpgradeButton } from "@/components/billing/upgrade-button";
@@ -152,6 +153,7 @@ export default function PlanPage() {
   const freePeriodExpired = isFree && Number.isFinite(periodEndMs) && periodEndMs <= nowMs;
   const used = freePeriodExpired ? 0 : profile.requests_used;
   const emails = freePeriodExpired ? 0 : Math.min(periodEmails ?? 0, used);
+  const allowance = profile.request_limit + profile.block_requests;
   const activeTeams = teams.filter((team) => !team.suspended);
 
   const caption = profile.period_end ? (
@@ -182,8 +184,29 @@ export default function PlanPage() {
           title={isFree ? "Requests today" : "Requests this period"}
           description="HTTP requests and emails both count. Requests to endpoints shared with an active team count against that team instead."
         >
-          <QuotaMeter used={used} limit={profile.request_limit} emails={emails} caption={caption} />
+          <QuotaMeter used={used} limit={allowance} emails={emails} caption={caption} />
+          {profile.block_requests > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Includes {profile.block_requests.toLocaleString()} from monthly blocks.
+            </p>
+          )}
         </Panel>
+
+        <CapacityPanel
+          accessToken={accessToken}
+          canManage
+          onChanged={refresh}
+          reloadKey={[
+            profile.plan,
+            profile.subscription_status,
+            profile.cancel_at_period_end,
+            profile.period_end,
+            profile.block_requests,
+            profile.credit_requests > 0,
+            profile.overage_active,
+            profile.overage_max,
+          ].join(":")}
+        />
 
         <Panel
           id="plan"

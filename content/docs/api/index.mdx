@@ -526,10 +526,15 @@ curl https://webhooks.cc/api/usage \
   "used": 12,
   "limit": 50,
   "remaining": 38,
+  "blockRequests": 0,
+  "creditRequests": 0,
+  "overage": { "active": false, "used": 0, "max": 0 },
   "plan": "free",
   "periodEnd": 1234567890000
 }
 ```
+
+`limit` is the period's quota including monthly blocks (`blockRequests`), and `used` counts against it. `remaining` is how many more requests are accepted this period: what is left of `limit`, plus one-time blocks (`creditRequests`), plus overage up to its maximum. See [Extra requests](/docs/plans-limits#extra-requests).
 
 ## Teams
 

@@ -40,7 +40,7 @@ interface BillingPeriodResetRow {
   renewed: number;
 }
 
-async function getBillingUser(userId: string): Promise<BillingUser> {
+export async function getBillingUser(userId: string): Promise<BillingUser> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("users")
@@ -71,6 +71,28 @@ async function updateUserById(
   }
 }
 
+/**
+ * Applies a terminal-transition patch only while the user still holds the
+ * subscription the event is about. With several subscriptions per customer
+ * (the request add-ons), and after a resubscribe, an event for another
+ * subscription must not touch the plan. Events without an id keep the old
+ * behaviour.
+ */
+async function updateUserForSubscription(
+  userId: string,
+  subscriptionId: string | null,
+  patch: Database["public"]["Tables"]["users"]["Update"]
+): Promise<void> {
+  const admin = createAdminClient();
+  let query = admin.from("users").update(patch).eq("id", userId);
+  if (subscriptionId) query = query.eq("polar_subscription_id", subscriptionId);
+  const { error } = await query;
+
+  if (error) {
+    throw error;
+  }
+}
+
 async function findUserIdByPolarCustomerId(customerId: string): Promise<string | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -86,7 +108,7 @@ async function findUserIdByPolarCustomerId(customerId: string): Promise<string |
   return data?.id ?? null;
 }
 
-async function ensurePolarCustomerId(user: BillingUser): Promise<string> {
+export async function ensurePolarCustomerId(user: BillingUser): Promise<string> {
   if (user.polar_customer_id) {
     return user.polar_customer_id;
   }
@@ -119,7 +141,7 @@ function extractCustomerUserId(data: Record<string, unknown>): string | null {
   return customer ? asNonEmptyString(customer.external_id) : null;
 }
 
-async function resolveWebhookUserId(data: Record<string, unknown>): Promise<string | null> {
+export async function resolveWebhookUserId(data: Record<string, unknown>): Promise<string | null> {
   const explicitUserId = extractCustomerUserId(data);
   if (explicitUserId) {
     return explicitUserId;
@@ -310,7 +332,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       const userId = await findUserIdByPolarCustomerId(customerId);
       if (!userId) return;
 
-      await updateUserById(userId, {
+      await updateUserForSubscription(userId, asNonEmptyString(data.id), {
         cancel_at_period_end: true,
         subscription_status: "canceled",
       });
@@ -324,7 +346,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       const userId = await findUserIdByPolarCustomerId(customerId);
       if (!userId) return;
 
-      await updateUserById(userId, {
+      await updateUserForSubscription(userId, asNonEmptyString(data.id), {
         cancel_at_period_end: false,
         subscription_status: normalizeStoredSubscriptionStatus(data.status) ?? "active",
       });
@@ -338,7 +360,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       const userId = await findUserIdByPolarCustomerId(customerId);
       if (!userId) return;
 
-      await updateUserById(userId, {
+      await updateUserForSubscription(userId, asNonEmptyString(data.id), {
         plan: "free",
         subscription_status: null,
         request_limit: FREE_REQUEST_LIMIT,
@@ -347,6 +369,9 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         period_start: null,
         period_end: null,
         polar_subscription_id: null,
+        // Recurring blocks and overage need the plan; one-time blocks stay.
+        block_requests: 0,
+        overage_active: false,
       });
       return;
     }
@@ -358,7 +383,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       const userId = await findUserIdByPolarCustomerId(customerId);
       if (!userId) return;
 
-      await updateUserById(userId, {
+      await updateUserForSubscription(userId, asNonEmptyString(data.id), {
         subscription_status: "active",
       });
       return;

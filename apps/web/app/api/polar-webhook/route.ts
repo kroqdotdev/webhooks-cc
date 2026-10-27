@@ -1,9 +1,25 @@
 import { auditPolarEvent } from "@/lib/audit";
 import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/lib/polar";
-import { applyPolarWebhookEvent } from "@/lib/supabase/billing";
+import { applyPolarWebhookEvent, resolveWebhookUserId } from "@/lib/supabase/billing";
+import {
+  applyCapacityWebhookEvent,
+  capacityProductKind,
+  reconcileAddonsWithPlan,
+  webhookProductId,
+  type CapacityAccount,
+} from "@/lib/supabase/capacity-billing";
 import { applyTeamPolarWebhookEvent, extractTeamIdFromWebhook } from "@/lib/supabase/team-billing";
 import { webhooks } from "@polar-sh/sdk/2026-10";
 import { reportError } from "@/lib/observability";
+
+async function webhookAccount(
+  teamId: string | null,
+  data: Record<string, unknown>
+): Promise<CapacityAccount | null> {
+  if (teamId) return { kind: "team", teamId };
+  const userId = await resolveWebhookUserId(data);
+  return userId ? { kind: "user", userId } : null;
+}
 
 function toHeaderRecord(request: Request): Record<string, string> {
   return Object.fromEntries(
@@ -32,10 +48,32 @@ export async function POST(request: Request) {
     const data = event.data as unknown as Record<string, unknown>;
     const teamId = extractTeamIdFromWebhook(data);
     try {
-      if (teamId) {
-        await applyTeamPolarWebhookEvent(event.type, teamId, data);
+      // The add-on products (extra requests) have their own subscriptions and
+      // orders on the same customer; the plan handlers would read their events
+      // as the plan's.
+      const capacityKind = capacityProductKind(webhookProductId(data));
+      if (capacityKind) {
+        const account = await webhookAccount(teamId, data);
+        if (account) {
+          await applyCapacityWebhookEvent(event.type, account, capacityKind, data);
+        } else {
+          // Paid for, or charging, with no account to give it to.
+          reportError("[capacity] add-on event for a customer with no account", undefined, {
+            eventType: event.type,
+            id: typeof data.id === "string" ? data.id : null,
+          });
+        }
       } else {
-        await applyPolarWebhookEvent(event.type, event.data);
+        if (teamId) {
+          await applyTeamPolarWebhookEvent(event.type, teamId, data);
+        } else {
+          await applyPolarWebhookEvent(event.type, event.data);
+        }
+        // Add-ons follow the plan: they end with it and need it to count.
+        if (event.type.startsWith("subscription.")) {
+          const account = await webhookAccount(teamId, data);
+          if (account) await reconcileAddonsWithPlan(account);
+        }
       }
     } catch (applyError) {
       // Polar redelivers on a 5xx, so a failed apply shows up as an error row

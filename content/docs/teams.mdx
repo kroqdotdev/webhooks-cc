@@ -79,7 +79,8 @@ Sharing an endpoint with an active team moves its billing to that team:
 - **Retention is 31 days** for team-billed requests, whatever plan the endpoint owner is on
 - **One team per request** — if an endpoint is shared with several active teams, the oldest share is billed
 - **Suspended teams don't bill** — while a team has no active subscription, requests on its shared endpoints fall back to the endpoint owner's personal quota and retention
-- When the pool is exhausted the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset
+- **Extra requests**: the owner can add monthly blocks, one-time blocks, or overage to the pool in blocks of 25,000, the same as on Pro (see [Extra requests](/docs/plans-limits#extra-requests))
+- When the pool and its extra requests are exhausted the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset
 
 ## From the CLI, SDK, and MCP Server
 

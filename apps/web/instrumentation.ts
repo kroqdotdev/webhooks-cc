@@ -25,6 +25,11 @@ export async function register() {
       const { startForwardingWorker } = await import("./lib/forwarding/worker");
       startForwardingWorker();
     }
+
+    // Send counted overage to Polar's meter (lib/billing/overage-reporter.ts);
+    // starts only when the extra-request products are configured.
+    const { startOverageReporter } = await import("./lib/billing/overage-reporter");
+    startOverageReporter();
   }
 }
 

@@ -16,6 +16,7 @@ import {
 } from "@/components/settings/panel";
 import { QuotaMeter, seatSlotsFor } from "@/components/settings/quota-meter";
 import { useSettingsData } from "@/components/settings/settings-data";
+import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { TeamBillingPanel } from "@/components/teams/team-billing-panel";
 import {
   AlertDialog,
@@ -515,10 +516,30 @@ function TeamDetailContent() {
               seatsEndingFrom={seatsEndingFrom}
               caption={team.periodEnd ? `Resets ${longDate(team.periodEnd)}` : undefined}
             />
+            {team.blockRequests > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Includes {team.blockRequests.toLocaleString()} from monthly blocks.
+              </p>
+            )}
           </Panel>
         ) : (
           // Members already see the suspended notice above; only the owner can subscribe.
           isOwner && billing
+        )}
+
+        {subscribed && (
+          <CapacityPanel
+            accessToken={accessToken}
+            teamId={team.id}
+            canManage={isOwner}
+            onChanged={settings.refresh}
+            reloadKey={[
+              team.subscriptionStatus,
+              team.cancelAtPeriodEnd,
+              team.periodEnd,
+              team.blockRequests,
+            ].join(":")}
+          />
         )}
 
         <Panel
