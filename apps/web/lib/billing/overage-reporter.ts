@@ -29,10 +29,15 @@ export function overageEvent(report: OverageReport) {
   };
 }
 
-/** A 4xx other than 429: sending the same event again cannot succeed. */
+/**
+ * Polar refused this one event (an unknown customer, an invalid payload), so
+ * sending it again cannot succeed. Auth, timeout and conflict answers (401,
+ * 403, 408, 409, say from a rotated token) say nothing about the event and
+ * stay retryable, so no billable overage is set aside for them.
+ */
 function isPermanentRefusal(error: unknown): boolean {
   const status = (error as { statusCode?: unknown } | null)?.statusCode;
-  return typeof status === "number" && status >= 400 && status < 500 && status !== 429;
+  return status === 404 || status === 422;
 }
 
 /**

@@ -100,6 +100,16 @@ describe("reportOverage", () => {
     expect(mockFns.reportError).toHaveBeenCalled();
   });
 
+  it.each([401, 403])("keeps a range for a retry when Polar answers %i", async (statusCode) => {
+    claims([alice]);
+    mockFns.ingest
+      .mockRejectedValueOnce(Object.assign(new Error("refused"), { statusCode }))
+      .mockRejectedValueOnce(Object.assign(new Error("refused"), { statusCode }));
+
+    await expect(reportOverage()).resolves.toEqual({ sent: 0, failed: 1 });
+    expect(mockFns.rpc).not.toHaveBeenCalledWith("complete_overage_report", expect.anything());
+  });
+
   it("retries a range after a transient failure", async () => {
     claims([alice]);
     mockFns.ingest

@@ -399,6 +399,24 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     });
   });
 
+  it("leaves a duplicate live when its blocks cannot be granted, so the redelivery tries again", async () => {
+    mockFns.subscriptionsGet.mockResolvedValue({
+      id: "sub_second",
+      status: "active",
+      units: 2,
+      current_period_start: "2026-10-27T00:00:00Z",
+      current_period_end: "2026-11-27T00:00:00Z",
+    });
+    mockFns.rpc
+      .mockResolvedValueOnce({ data: { status: "duplicate" }, error: null })
+      .mockResolvedValueOnce({ data: null, error: new Error("connection reset") });
+
+    await expect(
+      applyCapacityWebhookEvent("subscription.created", USER, "monthly", { id: "sub_second" })
+    ).rejects.toThrow("connection reset");
+    expect(mockFns.subscriptionsRevoke).not.toHaveBeenCalled();
+  });
+
   it("ignores a subscription still waiting for its first payment", async () => {
     mockFns.subscriptionsGet.mockResolvedValue({ id: "sub_pending", status: "incomplete" });
     await applyCapacityWebhookEvent("subscription.created", USER, "monthly", { id: "sub_pending" });
@@ -468,6 +486,17 @@ describe("reconcileAddonsWithPlan", () => {
       table: "capacity_subscriptions",
       patch: expect.objectContaining({ cancel_at_period_end: true, canceled_with_plan: false }),
     });
+  });
+
+  it("grants paid blocks before ending them, so a failed grant is retried", async () => {
+    tables.users = proAccount({ plan: "free", subscription_status: null });
+    tables.capacity_subscriptions = [blocksRow()];
+    mockFns.rpc
+      .mockResolvedValueOnce({ data: null, error: null }) // sync_capacity_account
+      .mockResolvedValueOnce({ data: null, error: new Error("connection reset") });
+
+    await expect(reconcileAddonsWithPlan(USER)).rejects.toThrow("connection reset");
+    expect(mockFns.subscriptionsRevoke).not.toHaveBeenCalled();
   });
 
   it("credits nothing for blocks that were ending with the plan or behind on payment", async () => {

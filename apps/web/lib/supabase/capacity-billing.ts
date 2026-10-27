@@ -710,17 +710,19 @@ async function settleDuplicate(
 ): Promise<void> {
   const subscriptionId = asNonEmptyString(subscription.id);
   if (!subscriptionId) return;
-  await revokeQuietly(subscriptionId);
-  if (kind === "overage") return;
-
+  // Grant before revoking: once revoked, a redelivery reads the subscription
+  // as ended and never comes back here. The grant is recorded once under the
+  // subscription's id, so a retry grants nothing twice.
   const units = typeof subscription.units === "number" ? subscription.units : 0;
-  if (units < 1) return;
-  await keepAsOneTimeBlocks(
-    account,
-    subscriptionId,
-    units,
-    typeof subscription.amount === "number" ? subscription.amount : null
-  );
+  if (kind === "blocks" && units >= 1) {
+    await keepAsOneTimeBlocks(
+      account,
+      subscriptionId,
+      units,
+      typeof subscription.amount === "number" ? subscription.amount : null
+    );
+  }
+  await revokeQuietly(subscriptionId);
 }
 
 async function applyPaidOrder(
@@ -935,16 +937,17 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
       // The plan is gone, not merely ending: a later plan is a new decision,
       // so nothing here is marked to come back with it.
       if (row.kind === "blocks") {
-        await revokeQuietly(row.polar_subscription_id);
-        await markEnded(account, row);
         // Paid-up blocks that were going to renew lost a period they paid
         // for (the plan was revoked mid-period, or they were bought just
         // after it ended): what was paid stays as one-time blocks. Blocks
         // ending with the plan at the same renewal lost nothing, and blocks
-        // behind on payment were not paid for.
+        // behind on payment were not paid for. Granted first, while the row
+        // is still live, so a failure here is retried with the webhook.
         if (!row.cancel_at_period_end && row.status === "active" && row.units > 0) {
           await keepAsOneTimeBlocks(account, row.polar_subscription_id, row.units);
         }
+        await revokeQuietly(row.polar_subscription_id);
+        await markEnded(account, row);
       } else if (!row.cancel_at_period_end) {
         await setAddonEnding(account, row, true, false);
       } else if (row.canceled_with_plan) {
