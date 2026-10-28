@@ -2,10 +2,10 @@
 @plugin "@tailwindcss/typography";
 
 /*
- * Two visual styles share one component tree. "classic" (neobrutalist) is the
- * default; "clean" is set by data-style="clean" on <html> (see ThemeProvider
- * and the inline script in app/layout.tsx). Light and dark mode are a separate
- * axis on the .dark class, so there are four token sets below.
+ * Two visual styles share one component tree. "clean" is the default, set by
+ * data-style="clean" on <html> (see ThemeProvider and the inline script from
+ * lib/ui-style.ts); "classic" (neobrutalist) is the other value. Light and dark
+ * mode are a separate axis on the .dark class, so there are four token sets below.
  *
  * Components never hardcode one style's look. Use the style-aware vocabulary:
  *   border-strong, border-{t,r,b,l,x,y}-strong   structural border width
@@ -136,6 +136,9 @@ html {
       hsl(var(--foreground) / 0.05) 2px,
       transparent 2px
     );
+    /* Scrollbar thumb at rest and under the pointer; the track is always clear */
+    --scrollbar-thumb: hsl(var(--foreground) / 0.55);
+    --scrollbar-thumb-hover: hsl(var(--foreground));
 
     --syntax-key: var(--primary);
     --syntax-string: 45 100% 35%;
@@ -185,6 +188,8 @@ html {
       hsl(var(--foreground) / 0.08) 2px,
       transparent 2px
     );
+    --scrollbar-thumb: hsl(var(--foreground) / 0.4);
+    --scrollbar-thumb-hover: hsl(var(--foreground) / 0.7);
     --syntax-string: var(--secondary);
     --kind-email: 211 100% 66%;
     --kind-email-ink: 211 100% 66%;
@@ -235,6 +240,8 @@ html {
     --elevation-lg:
       0 2px 4px 0 hsl(var(--shadow-color) / 0.06), 0 16px 40px -12px hsl(var(--shadow-color) / 0.2);
     --page-pattern: none;
+    --scrollbar-thumb: hsl(216 12% 78%);
+    --scrollbar-thumb-hover: hsl(216 10% 60%);
 
     --syntax-key: 164 76% 24%;
     --syntax-string: 28 80% 36%;
@@ -256,6 +263,8 @@ html {
 
   :root[data-style="clean"].dark {
     /* Clean dark: the same ink and paper inverted, with the mint as the accent */
+    --scrollbar-thumb: hsl(222 10% 26%);
+    --scrollbar-thumb-hover: hsl(222 10% 40%);
     --background: 222 18% 7%;
     --foreground: 216 16% 92%;
     --card: 222 16% 10%;
@@ -304,9 +313,28 @@ html {
 @layer base {
   * {
     @apply border-border;
+    scrollbar-width: thin;
   }
+  /* Scrollbars in the style's own colours. Browsers with the standard
+     properties use them and ignore the WebKit pseudo-elements, which only
+     older Safari still needs, so the two never fight. */
   html {
     scrollbar-gutter: stable;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: var(--radius);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
   }
   body {
     @apply bg-background text-foreground;
