@@ -90,7 +90,7 @@ export function EndpointSwitcher() {
 
   return (
     <Select value={defaultSlug} onValueChange={handleChange}>
-      <SelectTrigger className="w-[260px]">
+      <SelectTrigger className="min-w-0 flex-1 md:w-[260px] md:flex-none">
         <SelectValue placeholder="Select endpoint" />
       </SelectTrigger>
       <SelectContent>

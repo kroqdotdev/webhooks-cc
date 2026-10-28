@@ -11,6 +11,15 @@ function setAnnOffset(h: string) {
   document.documentElement.style.setProperty("--ann-h", h);
 }
 
+/** Browsers that block storage throw on access; treat that as not dismissed. */
+function wasDismissed(id: string): boolean {
+  try {
+    return Boolean(localStorage.getItem(id));
+  } catch {
+    return false;
+  }
+}
+
 export function AnnouncementBanner() {
   const announcement = ANNOUNCEMENTS[0];
   const announcementId = announcement?.id;
@@ -20,22 +29,21 @@ export function AnnouncementBanner() {
   const isDashboard = pathname.startsWith("/dashboard");
 
   useEffect(() => {
-    if (!announcementId || isDashboard) {
-      setAnnOffset("0px");
-      return;
-    }
-    if (!localStorage.getItem(announcementId)) {
-      setVisible(true);
-      setAnnOffset(BANNER_HEIGHT);
-    } else {
-      setAnnOffset("0px");
-    }
+    // Client navigation into the dashboard keeps this component mounted, so
+    // hide the banner there as well as dropping its offset.
+    const show = !!announcementId && !isDashboard && !wasDismissed(announcementId);
+    setVisible(show);
+    setAnnOffset(show ? BANNER_HEIGHT : "0px");
   }, [announcementId, isDashboard]);
 
   if (!visible || !announcement) return null;
 
   function dismiss() {
-    localStorage.setItem(announcement.id, "1");
+    try {
+      localStorage.setItem(announcement.id, "1");
+    } catch {
+      // Storage is blocked: the banner closes for this page view only.
+    }
     setVisible(false);
     setAnnOffset("0px");
   }

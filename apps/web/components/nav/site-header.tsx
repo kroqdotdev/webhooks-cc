@@ -20,7 +20,10 @@ const NAV_LINKS = [
 interface SiteHeaderProps {
   /** Page context beside the wordmark: the endpoint switcher, a back link, section links. */
   children?: React.ReactNode;
-  /** The dashboard is short on room, so it drops the blog link. */
+  /**
+   * The dashboard is short on room: it drops the blog link, and on phones its
+   * controls get a row of their own below the wordmark.
+   */
   compact?: boolean;
   /**
    * Where the header sticks. By default it clears the fixed banners; inside a
@@ -78,12 +81,25 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
       className="sticky z-50 shrink-0 border-b-strong border-line bg-background clean:bg-card"
       style={{ top: top ?? siteHeaderTop() }}
     >
-      <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
+      <div
+        className={cn(
+          "container mx-auto px-4 flex items-center justify-between gap-4",
+          compact ? "min-h-14 flex-wrap gap-y-2 py-2 md:h-14 md:flex-nowrap md:py-0" : "h-14"
+        )}
+      >
+        {/* In compact mode on phones this group dissolves (display: contents), so
+            the context can wrap onto its own full-width row under the wordmark. */}
+        <div className={cn("flex items-center gap-3 min-w-0", compact && "max-md:contents")}>
           <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
             webhooks.cc
           </Link>
-          {children}
+          {compact && children ? (
+            <div className="flex items-center gap-3 min-w-0 max-md:order-last max-md:w-full">
+              {children}
+            </div>
+          ) : (
+            children
+          )}
         </div>
 
         {/* Desktop */}

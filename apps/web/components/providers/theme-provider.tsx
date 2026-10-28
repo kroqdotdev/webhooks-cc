@@ -24,7 +24,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [uiStyle, setUiStyleState] = useState<UiStyle>(DEFAULT_UI_STYLE);
 
   useEffect(() => {
-    const stored = localStorage.getItem("theme") as Theme | null;
+    let stored: Theme | null = null;
+    try {
+      stored = localStorage.getItem("theme") as Theme | null;
+    } catch {
+      // Storage is blocked: follow the system.
+    }
     if (stored) {
       setTheme(stored);
     }
@@ -60,7 +65,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const handleSetTheme = (newTheme: Theme) => {
     setTheme(newTheme);
-    localStorage.setItem("theme", newTheme);
+    try {
+      localStorage.setItem("theme", newTheme);
+    } catch {
+      // Storage is blocked: the choice lasts for this page view.
+    }
   };
 
   const handleSetUiStyle = (style: UiStyle) => {
