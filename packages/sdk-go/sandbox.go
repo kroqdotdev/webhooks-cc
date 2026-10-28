@@ -222,8 +222,7 @@ func (s *Sandbox) Claim(ctx context.Context, email string) (*ClaimAttempt, error
 	case pending != nil && pending.email == email:
 		// A new code for the service_auth registration already started.
 		attempt, err := steps.StartClaim(ctx, pending.claimToken, email)
-		var refused *AgentAuthError
-		if errors.As(err, &refused) && refused.Status >= 400 && refused.Status < 500 {
+		if registrationOver(err) {
 			// Expired, out of attempts or revoked: start a new registration.
 			next, err = s.registerFor(ctx, steps, email)
 			if err != nil {
@@ -247,6 +246,22 @@ func (s *Sandbox) Claim(ctx context.Context, email string) (*ClaimAttempt, error
 	s.mu.Unlock()
 	attempt := next.attempt
 	return &attempt, nil
+}
+
+// registrationOver reports whether starting a claim failed because its
+// registration can take no more attempts. A rate limit passes, and
+// claimed_or_in_flight means the human already approved: WaitForClaim
+// still collects that, so neither starts a new registration.
+func registrationOver(err error) bool {
+	var refused *AgentAuthError
+	if !errors.As(err, &refused) {
+		return false
+	}
+	switch refused.Code {
+	case "claim_expired", "invalid_claim_token", "too_many_attempts":
+		return true
+	}
+	return false
 }
 
 // registerFor starts a service_auth registration for the human with this email.

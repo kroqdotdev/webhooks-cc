@@ -22,9 +22,10 @@ from webhooks_cc import (
     SandboxError,
     UnauthorizedError,
     WebhooksCC,
+    WebhooksCCError,
     agent,
 )
-from webhooks_cc.credentials import format_timestamp
+from webhooks_cc.credentials import AgentSlot, format_timestamp
 
 BASE = "https://agent.test"
 NOW_MS = int(time.time() * 1000)
@@ -440,6 +441,34 @@ def test_delete_and_revoke(agent_file: Path) -> None:
         sandbox.endpoints.delete("../etc")
 
 
+def test_sandbox_closed_removes_the_slot(agent_file: Path) -> None:
+    closed = httpx.Response(
+        403, json={"error": "sandbox_closed", "error_description": "This registration was claimed."}
+    )
+    server = Server({"GET /api/agent/sandbox/endpoints": [closed]})
+    write_file(
+        agent_file,
+        sandbox=saved_sandbox(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+        claimed=saved_claimed(),
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    with pytest.raises(SandboxError) as caught:
+        sandbox.endpoints.list()
+    assert (caught.value.code, caught.value.status_code) == ("sandbox_closed", 403)
+    assert set(read_file(agent_file)) == {"claimed"}
+
+    # Another process put its own sandbox in the slot since: that one stays.
+    write_file(
+        agent_file,
+        sandbox=saved_sandbox(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    write_file(agent_file, sandbox=saved_sandbox(registration_id="reg-other"))
+    with pytest.raises(SandboxError, match="claimed"):
+        sandbox.endpoints.list()
+    assert read_file(agent_file)["sandbox"]["registration_id"] == "reg-other"
+
+
 # --- claiming -------------------------------------------------------------------------
 
 
@@ -539,6 +568,196 @@ def test_claim_without_the_claim_token_registers_service_auth(agent_file: Path) 
     assert sandbox.endpoints.list() == []
 
 
+def service_auth(registration_id: str, code: str, **fields: Any) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "registration_id": registration_id,
+            "claim_token": f"clm_{registration_id}",
+            "claim_token_expires": later(hours=24),
+            "claim": attempt(code),
+            **fields,
+        },
+    )
+
+
+def claim_tokens(server: Server) -> list[str]:
+    return [
+        json.loads(request.content)["claim_token"]
+        for request in server.requests
+        if request.url.path == "/api/agent/identity/claim"
+    ]
+
+
+def login_hints(server: Server) -> list[str]:
+    return [
+        json.loads(request.content)["login_hint"]
+        for request in server.requests
+        if request.url.path == "/api/agent/identity"
+    ]
+
+
+def test_claim_normalises_the_email(agent_file: Path) -> None:
+    server = Server(
+        {
+            "POST /api/agent/identity/challenge": [httpx.Response(200, json=challenge("a"))],
+            "POST /api/agent/identity": [httpx.Response(200, json=registration())],
+            "POST /api/oauth2/token jwt-bearer": [token("whcc_sandbox")],
+            "POST /api/agent/identity/claim": [
+                httpx.Response(
+                    200, json={"registration_id": "reg-anon", "claim_attempt": attempt()}
+                )
+            ],
+            "POST /api/oauth2/token claim": [claimed()],
+        }
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    sandbox.claim("  Dev@Example.COM ")
+    started = next(r for r in server.requests if r.url.path == "/api/agent/identity/claim")
+    assert json.loads(started.content)["email"] == "dev@example.com"
+    sandbox.wait_for_claim()
+    assert read_file(agent_file)["claimed"]["email"] == "dev@example.com"
+
+
+def test_a_reused_sandbox_claims_one_address_however_it_was_typed(agent_file: Path) -> None:
+    write_file(
+        agent_file,
+        sandbox=saved_sandbox(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+    )
+    server = Server(
+        {
+            "POST /api/agent/identity": [service_auth("reg-service", "111111")],
+            "POST /api/agent/identity/claim": [
+                httpx.Response(
+                    200, json={"registration_id": "reg-service", "claim_attempt": attempt("222222")}
+                )
+            ],
+            "POST /api/oauth2/token claim": [claimed()],
+        }
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    assert sandbox.claim("Dev@Example.com").user_code == "111111"
+    # The same address in other letters: a new code for the same registration.
+    assert sandbox.claim(" dev@example.COM").user_code == "222222"
+    assert login_hints(server) == ["dev@example.com"]
+    assert claim_tokens(server) == ["clm_reg-service"]
+    sandbox.wait_for_claim()
+    assert read_file(agent_file)["claimed"]["email"] == "dev@example.com"
+
+
+def test_an_expired_service_auth_claim_registers_again(agent_file: Path) -> None:
+    write_file(
+        agent_file,
+        sandbox=saved_sandbox(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+    )
+    server = Server(
+        {
+            "POST /api/agent/identity": [
+                service_auth("reg-old", "111111", claim_token_expires=later(seconds=-1)),
+                service_auth("reg-new", "222222"),
+            ],
+        }
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    sandbox.claim("dev@example.com")
+    started = sandbox.claim("dev@example.com")
+    assert (started.user_code, started.registration_id) == ("222222", "reg-new")
+    assert claim_tokens(server) == []  # the expired claim token was never sent
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(410, "claim_expired"), (429, "too_many_attempts"), (401, "invalid_claim_token")],
+)
+def test_a_refused_service_auth_claim_registers_again(
+    agent_file: Path, status: int, code: str
+) -> None:
+    write_file(
+        agent_file,
+        sandbox=saved_sandbox(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+    )
+    server = Server(
+        {
+            "POST /api/agent/identity": [
+                service_auth("reg-old", "111111"),
+                service_auth("reg-new", "222222"),
+            ],
+            "POST /api/agent/identity/claim": [httpx.Response(status, json={"error": code})],
+            "POST /api/oauth2/token claim": [claimed()],
+        }
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    sandbox.claim("dev@example.com")
+    started = sandbox.claim("dev@example.com")
+    assert (started.user_code, started.registration_id) == ("222222", "reg-new")
+    assert claim_tokens(server) == ["clm_reg-old"]
+    sandbox.wait_for_claim()
+    poll = next(r for r in server.requests if r.url.path == "/api/oauth2/token")
+    assert parse_qs(poll.content.decode())["claim_token"] == ["clm_reg-new"]
+    assert read_file(agent_file)["claimed"]["registration_id"] == "reg-new"
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(429, "rate_limited"), (409, "claimed_or_in_flight"), (500, "server_error")],
+)
+def test_other_claim_refusals_are_raised(agent_file: Path, status: int, code: str) -> None:
+    write_file(
+        agent_file,
+        sandbox=saved_sandbox(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+    )
+    server = Server(
+        {
+            "POST /api/agent/identity": [service_auth("reg-old", "111111")],
+            "POST /api/agent/identity/claim": [httpx.Response(status, json={"error": code})],
+        }
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    sandbox.claim("dev@example.com")
+    with pytest.raises(AgentAuthError) as caught:
+        sandbox.claim("dev@example.com")
+    assert caught.value.code == code
+    assert login_hints(server) == ["dev@example.com"]  # no second registration
+
+
+def test_reprs_never_show_a_claim_token_or_a_secret(agent_file: Path) -> None:
+    server = Server(
+        {
+            "POST /api/agent/identity/challenge": [httpx.Response(200, json=challenge("a"))],
+            "POST /api/agent/identity": [httpx.Response(200, json=registration())],
+            "POST /api/oauth2/token jwt-bearer": [token("whcc_sandbox")],
+            "POST /api/agent/identity/claim": [
+                httpx.Response(
+                    200, json={"registration_id": "reg-anon", "claim_attempt": attempt()}
+                )
+            ],
+        }
+    )
+    sandbox = WebhooksCC.sandbox(base_url=BASE, http_client=server.http())
+    started = sandbox.claim("dev@example.com")
+    assert "reg-anon" in repr(sandbox._claim) and "clm_" not in repr(sandbox._claim)
+
+    now = datetime.now(timezone.utc)
+    access = agent.AccessToken(access_token="whcc_secret", scope="webhooks:read", expires_at=now)
+    values = (
+        sandbox,
+        started,
+        sandbox._tokens,
+        access,
+        agent.ClaimedAgent(token=access, identity_assertion="jwt-secret", assertion_expires=now),
+        agent.ServiceAuthRegistration(
+            registration_id="reg-service",
+            claim_token="clm_service",
+            claim_token_expires=now,
+            post_claim_scopes=[],
+            claim=agent.ClaimAttempt("123456", f"{BASE}/agent/claim", now, 5),
+        ),
+        AgentSlot.from_dict(saved_claimed(access_token="whcc_cached", identity_assertion="jwt-x")),
+    )
+    shown = " ".join(repr(value) for value in values)
+    assert "clm_" not in shown and "whcc_" not in shown and "jwt-" not in shown
+
+
 def test_wait_for_claim_needs_a_claim(agent_file: Path) -> None:
     sandbox = cached_sandbox(agent_file, Server({}))
     with pytest.raises(RuntimeError, match="claim"):
@@ -568,9 +787,9 @@ def test_connected_uses_the_cached_token(agent_file: Path) -> None:
     server = Server({"GET /api/usage": usage_route()})
     client = WebhooksCC.connected(base_url=f"{BASE}/", http_client=server.http())
     assert client is not None
-    assert server.calls == []
+    assert server.calls == ["GET /api/usage"]  # the check, with no exchange
     assert client.usage().used == 1
-    assert server.bearers("/api/usage") == ["Bearer whcc_cached"]
+    assert server.bearers("/api/usage") == ["Bearer whcc_cached", "Bearer whcc_cached"]
 
 
 def test_connected_exchanges_and_drops_a_disconnected_agent(agent_file: Path) -> None:
@@ -596,9 +815,49 @@ def test_connected_exchanges_and_drops_a_disconnected_agent(agent_file: Path) ->
     )
     client = WebhooksCC.connected(base_url=BASE, http_client=server.http())
     assert client is not None
-    client.usage()
     assert server.bearers("/api/usage") == ["Bearer whcc_new"]
     assert read_file(agent_file)["claimed"]["access_token"] == "whcc_new"
+
+
+def test_connected_drops_a_disconnected_agent_with_a_cached_token(agent_file: Path) -> None:
+    write_file(
+        agent_file,
+        claimed=saved_claimed(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+        sandbox=saved_sandbox(),
+    )
+    server = Server(
+        {
+            "GET /api/usage": [httpx.Response(401, json={"error": "Unauthorized"})],
+            "POST /api/oauth2/token jwt-bearer": [
+                httpx.Response(400, json={"error": "invalid_grant"})
+            ],
+        }
+    )
+    assert WebhooksCC.connected(base_url=BASE, http_client=server.http()) is None
+    assert server.bearers("/api/usage") == ["Bearer whcc_cached"]
+    assert set(read_file(agent_file)) == {"sandbox"}
+
+
+def test_connected_raises_other_errors(agent_file: Path) -> None:
+    write_file(
+        agent_file,
+        claimed=saved_claimed(access_token="whcc_cached", access_token_expires=later(minutes=30)),
+    )
+    server = Server({"GET /api/usage": [httpx.Response(500, text="Internal Server Error")]})
+    with pytest.raises(WebhooksCCError) as failed:
+        WebhooksCC.connected(base_url=BASE, http_client=server.http())
+    assert failed.value.status_code == 500
+
+    # A fresh token the API still refuses is no disconnection either.
+    server = Server(
+        {
+            "GET /api/usage": [httpx.Response(401, json={"error": "Unauthorized"})],
+            "POST /api/oauth2/token jwt-bearer": [token("whcc_new")],
+        }
+    )
+    with pytest.raises(UnauthorizedError):
+        WebhooksCC.connected(base_url=BASE, http_client=server.http())
+    assert read_file(agent_file)["claimed"]["registration_id"] == "reg-claimed"
 
 
 def test_client_without_a_key_falls_back_to_the_connected_agent(
@@ -636,7 +895,6 @@ def test_account_client_refreshes_a_token_close_to_expiry(
     )
     client = WebhooksCC.connected(base_url=BASE, http_client=server.http())
     assert client is not None
-    client.usage()
     assert server.bearers("/api/usage") == ["Bearer whcc_old"]
     monkeypatch.setattr(time, "time", lambda: datetime.now(timezone.utc).timestamp() + 60)
     client.usage()
@@ -706,8 +964,10 @@ def test_connect_waits_and_saves_the_connection(agent_file: Path) -> None:
             "GET /api/usage": usage_route(),
         }
     )
-    pending = WebhooksCC.connect("dev@example.com", base_url=BASE, http_client=server.http())
+    pending = WebhooksCC.connect(" Dev@Example.com ", base_url=BASE, http_client=server.http())
     assert pending.user_code == "111111"
+    registered = next(r for r in server.requests if r.url.path == "/api/agent/identity")
+    assert json.loads(registered.content)["login_hint"] == "dev@example.com"
     assert "clm_" not in repr(pending)
     with pytest.raises(AgentAuthError) as expired:
         pending.wait()
@@ -725,6 +985,7 @@ def test_connect_waits_and_saves_the_connection(agent_file: Path) -> None:
     assert server.bearers("/api/usage") == ["Bearer whcc_account"]
     saved = read_file(agent_file)["claimed"]
     assert saved["registration_id"] == "reg-connect"
+    assert saved["email"] == "dev@example.com"
     assert saved["client_name"] == "webhooks-cc-python"
     assert WebhooksCC.connected(base_url=BASE, http_client=server.http()) is not None
 
@@ -746,6 +1007,7 @@ def test_a_stream_401_exchanges_once_more(agent_file: Path) -> None:
                 ),
             ],
             "POST /api/oauth2/token jwt-bearer": [token("whcc_renewed")],
+            "GET /api/usage": usage_route(),
         }
     )
     client = WebhooksCC.connected(base_url=BASE, http_client=server.http())

@@ -164,12 +164,7 @@ impl ApiClient {
     }
 
     pub(crate) async fn headers_with(&self, refresh: bool) -> Result<HeaderMap> {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_str(&format!("whk-cli/{}", env!("WHK_VERSION")))?,
-        );
+        let mut headers = Self::anonymous_headers()?;
         let token = match &self.bearer {
             Bearer::None => None,
             Bearer::Token(token) => Some(token.clone()),
@@ -181,6 +176,19 @@ impl ApiClient {
                 HeaderValue::from_str(&format!("Bearer {token}"))?,
             );
         }
+        Ok(headers)
+    }
+
+    /// The headers without a bearer, for the routes that take none (the
+    /// device login), so a saved agent connection is never exchanged and a
+    /// revoked one cannot get in the way.
+    pub(crate) fn anonymous_headers() -> Result<HeaderMap> {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_str(&format!("whk-cli/{}", env!("WHK_VERSION")))?,
+        );
         Ok(headers)
     }
 

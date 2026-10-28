@@ -372,6 +372,19 @@ fn transient(error: &anyhow::Error) -> bool {
     }
 }
 
+/// How long the server asked to wait before the next try (`Retry-After`).
+fn retry_after(error: &anyhow::Error) -> Option<Duration> {
+    error
+        .downcast_ref::<AgentError>()
+        .and_then(|e| e.retry_after)
+        .map(Duration::from_secs)
+}
+
+/// An email as the server keeps it: trimmed and lowercased.
+fn normalize_email(email: &str) -> String {
+    email.trim().to_lowercase()
+}
+
 fn request_id(request: &Value) -> Option<String> {
     request
         .get("id")
@@ -405,6 +418,7 @@ pub async fn wait(
     }
 
     loop {
+        let mut pause = WAIT_POLL;
         match sandbox
             .list_requests(slug, Some(last_checked), Some(MAX_LIST))
             .await
@@ -429,7 +443,13 @@ pub async fn wait(
                     }
                 }
             }
-            Err(error) if transient(&error) => {}
+            // A rate limit (other processes share the registration's reads)
+            // is waited out before the next poll, as the server asks.
+            Err(error) if transient(&error) => {
+                if let Some(wait) = retry_after(&error) {
+                    pause = pause.max(wait);
+                }
+            }
             Err(error) => return Err(explain_gone(error)),
         }
         let left = deadline.saturating_duration_since(Instant::now());
@@ -439,7 +459,7 @@ pub async fn wait(
                 collected.len()
             );
         }
-        tokio::time::sleep(left.min(WAIT_POLL)).await;
+        tokio::time::sleep(left.min(pause)).await;
     }
 }
 
@@ -545,6 +565,12 @@ pub async fn connect(
     timeout: Option<&str>,
     json: bool,
 ) -> Result<()> {
+    // Sent, stored and compared as the server keeps it, like the SDKs do.
+    let email = normalize_email(email);
+    if email.is_empty() {
+        bail!("invalid_request: --email needs the address the human signs in with");
+    }
+    let email = email.as_str();
     let store = store_for(client);
     if let Some(slot) = store.load().claimed {
         if json {
@@ -552,12 +578,22 @@ pub async fn connect(
             line["status"] = "already_connected".into();
             print_json_line(&line);
         } else {
+            let saved = slot.info("email");
+            let same = saved.is_some_and(|saved| normalize_email(saved) == email);
+            let advice = if same {
+                String::new()
+            } else {
+                format!(
+                    " Run {} first to connect {} instead.",
+                    bold("whk sandbox forget --claimed"),
+                    bold(email)
+                )
+            };
             println!(
-                "  {} Already connected to {} (until {}). Run {} first to connect another account.",
+                "  {} Already connected to {} (until {}).{advice}",
                 green("●"),
-                bold(slot.info("email").unwrap_or("an account")),
+                bold(saved.unwrap_or("an account")),
                 slot.assertion_expires(),
-                bold("whk sandbox forget --claimed")
             );
         }
         return Ok(());
@@ -662,11 +698,8 @@ pub async fn connect(
                 break Outcome::Claimed;
             }
             Err(error) if transient(&error) => {
-                if let Some(seconds) = error
-                    .downcast_ref::<AgentError>()
-                    .and_then(|e| e.retry_after)
-                {
-                    interval = interval.max(Duration::from_secs(seconds));
+                if let Some(wait) = retry_after(&error) {
+                    interval = interval.max(wait);
                 }
             }
             Err(error) => return Err(error),

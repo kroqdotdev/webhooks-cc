@@ -476,7 +476,8 @@ class WebhooksCC:
         :meth:`connect`, :meth:`SandboxClient.wait_for_claim
         <webhooks_cc.sandbox.SandboxClient.wait_for_claim>` and the other
         webhooks.cc tools write. Returns ``None`` when there is none, or when the
-        human disconnected the agent (the slot is removed then).
+        human disconnected the agent (the slot is removed then), which one
+        :meth:`usage` call finds out. Other errors from that call are raised.
         """
         store = AgentCredentialStore.resolve(credentials_file)
         resolved_base = (base_url or os.environ.get(BASE_URL_ENV) or DEFAULT_BASE_URL).rstrip("/")
@@ -494,18 +495,16 @@ class WebhooksCC:
             email_domain=email_domain,
             http_client=http_client,
         )
-        tokens = client._tokens
-        if tokens is not None and tokens.peek() is None:
-            try:
-                tokens.get()
-            except AgentAuthError as error:
-                client.close()
-                if error.code == "invalid_grant":
-                    return None
-                raise
-            except BaseException:
-                client.close()
-                raise
+        try:
+            # The cheapest authenticated call. A disconnected agent's cached token gets a
+            # 401, and the exchange that follows answers invalid_grant.
+            client.usage()
+        except BaseException as error:
+            client.close()
+            revoked = client._tokens is not None and client._tokens.revoked
+            if revoked and isinstance(error, UnauthorizedError):
+                return None
+            raise
         return client
 
     @staticmethod

@@ -33,6 +33,11 @@ function challenge(error?: { code: string; description: string }): string {
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
+function clientIpOrNull(request: Request): string | null {
+  const ip = getClientIp(request);
+  return ip === "unknown" ? null : ip;
+}
+
 function rpcError(status: number, code: number, message: string): Response {
   return withCors(
     Response.json(
@@ -115,7 +120,8 @@ async function handle(request: Request): Promise<Response> {
       token,
       clientId: validation.agentRegistrationId ?? "api-key",
       scopes: POST_CLAIM_SCOPES,
-      extra: { clientIp: getClientIp(request), userId: validation.userId },
+      // Without a Cloudflare or proxy header (local runs) there is no address to pass on.
+      extra: { clientIp: clientIpOrNull(request), userId: validation.userId },
     },
   });
   return withCors(response);

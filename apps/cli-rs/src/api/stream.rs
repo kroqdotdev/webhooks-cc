@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::{ApiClient, extract_error};
+use crate::agent::AgentError;
 use crate::types::{CapturedRequest, SseEvent};
 
 const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MB
@@ -56,7 +57,9 @@ impl ApiClient {
     /// before each backoff wait.
     ///
     /// Returns `Ok(())` when the endpoint is deleted or the receiver is dropped,
-    /// and `Err` for terminal failures (not logged in, 401/403/404).
+    /// and `Err` for terminal failures (not logged in, 401/403/404, an agent
+    /// connection the token endpoint refused). A token endpoint that cannot
+    /// be reached or answers 408, 429 or 5xx goes through the backoff.
     pub async fn stream_requests(&self, slug: &str, tx: mpsc::Sender<SseEvent>) -> Result<()> {
         self.require_auth()?;
 
@@ -78,31 +81,38 @@ impl ApiClient {
                 return Ok(());
             }
 
-            let headers = self.headers_with(refresh).await?;
             let url = stream_url(&base_url, cursor.since());
             // Rotation age is measured from when the stream actually opened, so
             // connection setup latency cannot disguise an immediate rotation.
             let mut opened = std::time::Instant::now();
-            let outcome = match connect(&sse_client, &url, &headers, slug).await {
-                Ok(resp) => {
-                    refresh = false;
-                    opened = std::time::Instant::now();
-                    // Floor for the resume cursor: the server's clock (at or before
-                    // the connection start) or, without a Date header, the client
-                    // clock with a one-second margin for skew.
-                    cursor.set_floor_once(
-                        server_time_ms(resp.headers()).unwrap_or_else(|| now_ms() - 1_000),
-                    );
-                    read_stream(resp, &tx, &mut cursor, &mut attempt).await
+            let outcome = match self.headers_with(refresh).await {
+                // The token endpoint was unreachable or busy: back off and
+                // exchange again, as for a stream that failed to open.
+                Err(error) if is_transient_token_error(&error) => {
+                    StreamEnd::Failed(format!("could not get an access token: {error:#}"))
                 }
-                Err(ConnectError::Unauthorized(_)) if self.can_refresh() && !refresh => {
-                    refresh = true;
-                    continue;
-                }
-                Err(ConnectError::Terminal(msg) | ConnectError::Unauthorized(msg)) => {
-                    anyhow::bail!(msg)
-                }
-                Err(ConnectError::Transient(msg)) => StreamEnd::Failed(msg),
+                Err(error) => return Err(error),
+                Ok(headers) => match connect(&sse_client, &url, &headers, slug).await {
+                    Ok(resp) => {
+                        refresh = false;
+                        opened = std::time::Instant::now();
+                        // Floor for the resume cursor: the server's clock (at or before
+                        // the connection start) or, without a Date header, the client
+                        // clock with a one-second margin for skew.
+                        cursor.set_floor_once(
+                            server_time_ms(resp.headers()).unwrap_or_else(|| now_ms() - 1_000),
+                        );
+                        read_stream(resp, &tx, &mut cursor, &mut attempt).await
+                    }
+                    Err(ConnectError::Unauthorized(_)) if self.can_refresh() && !refresh => {
+                        refresh = true;
+                        continue;
+                    }
+                    Err(ConnectError::Terminal(msg) | ConnectError::Unauthorized(msg)) => {
+                        anyhow::bail!(msg)
+                    }
+                    Err(ConnectError::Transient(msg)) => StreamEnd::Failed(msg),
+                },
             };
 
             // A scheduled rotation normally arrives after 30 minutes. Two in a row
@@ -225,6 +235,19 @@ fn classify_http_rejection(status: StatusCode, slug: &str, detail: &str) -> Conn
         }
         s if s.is_client_error() => ConnectError::Terminal(format!("Stream rejected: {detail}")),
         s => ConnectError::Transient(format!("server returned {s}")),
+    }
+}
+
+/// True when getting an agent connection's access token failed for a reason
+/// a later attempt may not meet: the token endpoint could not be reached or
+/// answered 408, 429 or 5xx. Its refusals stay terminal, `invalid_grant`
+/// above all (the registration is gone and its slot was removed).
+fn is_transient_token_error(error: &anyhow::Error) -> bool {
+    match error.downcast_ref::<AgentError>() {
+        Some(refused) => matches!(refused.status, 408 | 429) || refused.status >= 500,
+        None => error
+            .chain()
+            .any(|cause| cause.downcast_ref::<reqwest::Error>().is_some()),
     }
 }
 
@@ -738,6 +761,10 @@ mod live_tests {
     async fn run_client(base: &str) -> (Vec<SseEvent>, Result<()>) {
         let mut client = ApiClient::new(Some(base), Some(base)).unwrap();
         client.set_token("test-token".into());
+        run(client).await
+    }
+
+    async fn run(client: ApiClient) -> (Vec<SseEvent>, Result<()>) {
         let (tx, mut rx) = mpsc::channel(64);
         let handle = tokio::spawn(async move { client.stream_requests("my-slug", tx).await });
         let mut events = Vec::new();
@@ -798,35 +825,43 @@ mod live_tests {
         assert_eq!(seen, vec![None, Some("1000".to_string())]);
     }
 
-    /// An agent connection's cached token was revoked: the 401 exchanges
-    /// the assertion once, and the stream reconnects with the new token.
-    #[tokio::test]
-    async fn an_agent_connection_exchanges_once_after_a_401() {
+    /// A stream server with a token endpoint, and a client acting through a
+    /// live claimed slot for it (with `cached` as its cached token).
+    struct AgentSetup {
+        client: ApiClient,
+        store: crate::agent::CredentialStore,
+        shared: Arc<Mutex<Shared>>,
+        exchanges: Arc<Mutex<u32>>,
+        dir: std::path::PathBuf,
+    }
+
+    /// The token endpoint gives the n-th exchange the n-th answer (the last
+    /// one repeats).
+    async fn agent_setup(
+        scripts: Vec<Script>,
+        answers: Vec<(u16, serde_json::Value)>,
+        cached: Option<&str>,
+    ) -> AgentSetup {
         use crate::agent::{CredentialStore, Slot, SlotKind};
         use axum::routing::post;
 
         let shared = Arc::new(Mutex::new(Shared {
-            scripts: vec![
-                Script::Status(401),
-                Script::Sse(vec![
-                    frame("connected", "{}"),
-                    frame("endpoint_deleted", "{}"),
-                ]),
-            ],
+            scripts,
             seen_since: Vec::new(),
         }));
         let exchanges = Arc::new(Mutex::new(0u32));
         let counted = exchanges.clone();
+        let answers = Arc::new(answers);
         let app = Router::new()
             .route("/api/stream/{slug}", get(handler))
             .with_state(shared.clone())
             .route(
                 "/api/oauth2/token",
                 post(move || async move {
-                    *counted.lock().unwrap() += 1;
-                    axum::Json(
-                        serde_json::json!({ "access_token": "whcc_fresh", "expires_in": 3600 }),
-                    )
+                    let mut n = counted.lock().unwrap();
+                    let (status, body) = answers[(*n as usize).min(answers.len() - 1)].clone();
+                    *n += 1;
+                    (AxStatus::from_u16(status).unwrap(), axum::Json(body)).into_response()
                 }),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -839,24 +874,123 @@ mod live_tests {
         let now = chrono::Utc::now().timestamp_millis();
         let expires = crate::agent::credentials::format_timestamp(now + 86_400_000);
         let mut slot = Slot::new("reg-1", "claimed-assert", &expires, &[]).unwrap();
-        slot.set_token("whcc_revoked", now + 3_600_000);
+        if let Some(token) = cached {
+            slot.set_token(token, now + 3_600_000);
+        }
         store.save(SlotKind::Claimed, &slot);
 
         let client =
-            ApiClient::with_credentials(Some(&base), Some(&base), None, Some(store)).unwrap();
-        let (tx, mut rx) = mpsc::channel(64);
-        let handle = tokio::spawn(async move { client.stream_requests("my-slug", tx).await });
-        let mut events = Vec::new();
-        while let Some(ev) = rx.recv().await {
-            events.push(ev);
+            ApiClient::with_credentials(Some(&base), Some(&base), None, Some(store.clone()))
+                .unwrap();
+        AgentSetup {
+            client,
+            store,
+            shared,
+            exchanges,
+            dir,
         }
-        let result = handle.await.unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn fresh_token() -> (u16, serde_json::Value) {
+        (
+            200,
+            serde_json::json!({ "access_token": "whcc_fresh", "expires_in": 3600 }),
+        )
+    }
+
+    /// An agent connection's cached token was revoked: the 401 exchanges
+    /// the assertion once, and the stream reconnects with the new token.
+    #[tokio::test]
+    async fn an_agent_connection_exchanges_once_after_a_401() {
+        let setup = agent_setup(
+            vec![
+                Script::Status(401),
+                Script::Sse(vec![
+                    frame("connected", "{}"),
+                    frame("endpoint_deleted", "{}"),
+                ]),
+            ],
+            vec![fresh_token()],
+            Some("whcc_revoked"),
+        )
+        .await;
+        let (events, result) = run(setup.client).await;
+        let _ = std::fs::remove_dir_all(&setup.dir);
 
         assert!(result.is_ok(), "{result:?}");
         assert_eq!(kinds(&events), vec!["connected", "endpoint_deleted"]);
-        assert_eq!(*exchanges.lock().unwrap(), 1);
-        assert_eq!(shared.lock().unwrap().seen_since.len(), 2);
+        assert_eq!(*setup.exchanges.lock().unwrap(), 1);
+        assert_eq!(setup.shared.lock().unwrap().seen_since.len(), 2);
+    }
+
+    /// The token endpoint is briefly down: the stream backs off and
+    /// exchanges again instead of ending for good.
+    #[tokio::test]
+    async fn a_transient_exchange_failure_backs_off_and_retries() {
+        let setup = agent_setup(
+            vec![Script::Sse(vec![
+                frame("connected", "{}"),
+                frame("endpoint_deleted", "{}"),
+            ])],
+            vec![
+                (
+                    503,
+                    serde_json::json!({ "error": "temporarily_unavailable" }),
+                ),
+                (429, serde_json::json!({ "error": "rate_limited" })),
+                fresh_token(),
+            ],
+            None,
+        )
+        .await;
+        let (events, result) = tokio::time::timeout(Duration::from_secs(10), run(setup.client))
+            .await
+            .expect("stream should finish");
+        let _ = std::fs::remove_dir_all(&setup.dir);
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(
+            kinds(&events),
+            vec![
+                "reconnecting:1",
+                "reconnecting:2",
+                "connected",
+                "endpoint_deleted"
+            ]
+        );
+        let SseEvent::Reconnecting { reason, .. } = &events[0] else {
+            panic!("expected a reconnect");
+        };
+        assert!(reason.contains("temporarily_unavailable"), "{reason}");
+        assert_eq!(*setup.exchanges.lock().unwrap(), 3);
+        assert_eq!(setup.shared.lock().unwrap().seen_since.len(), 1);
+    }
+
+    /// The human disconnected the agent: `invalid_grant` ends the stream at
+    /// once and the slot is gone from the file.
+    #[tokio::test]
+    async fn invalid_grant_from_the_exchange_is_terminal() {
+        let setup = agent_setup(
+            vec![],
+            vec![(400, serde_json::json!({ "error": "invalid_grant" }))],
+            None,
+        )
+        .await;
+        let (events, result) = tokio::time::timeout(Duration::from_secs(10), run(setup.client))
+            .await
+            .expect("stream should finish");
+        let removed = setup.store.load().claimed.is_none();
+        let _ = std::fs::remove_dir_all(&setup.dir);
+
+        assert!(removed, "the dead slot was removed");
+        let error = result.expect_err("invalid_grant must be terminal");
+        assert_eq!(
+            crate::agent::protocol::error_code(&error),
+            Some("invalid_grant")
+        );
+        assert!(events.is_empty(), "{:?}", kinds(&events));
+        assert_eq!(*setup.exchanges.lock().unwrap(), 1);
+        assert!(setup.shared.lock().unwrap().seen_since.is_empty());
     }
 
     #[tokio::test]

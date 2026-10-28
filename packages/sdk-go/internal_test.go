@@ -84,3 +84,20 @@ func TestConnectionNeverPrintsItsClaimToken(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyAFinishedRegistrationStartsANewOne(t *testing.T) {
+	for code, want := range map[string]bool{
+		"claim_expired":        true,
+		"invalid_claim_token":  true,
+		"too_many_attempts":    true,
+		"rate_limited":         false,
+		"claimed_or_in_flight": false,
+	} {
+		if got := registrationOver(&AgentAuthError{Code: code, Status: 400}); got != want {
+			t.Errorf("%s: got %v, want %v", code, got, want)
+		}
+	}
+	if registrationOver(errors.New("network")) {
+		t.Error("a network error must not start a new registration")
+	}
+}

@@ -54,7 +54,8 @@ def cached_token(slot: AgentSlot) -> AccessToken | None:
 class AgentTokens:
     """Exchanges the assertion on first use, again shortly before the token expires,
     and on demand after a 401. With a ``binding``, each new token is cached in the
-    credential file, and ``invalid_grant`` removes the slot before it is raised."""
+    credential file, and ``invalid_grant`` removes the slot before it is raised.
+    ``revoked`` is set once the server refused the assertion that way."""
 
     def __init__(
         self,
@@ -73,6 +74,7 @@ class AgentTokens:
         self._token = token
         self._binding = binding
         self._lock = threading.Lock()
+        self.revoked = False
 
     def get(self, force_refresh: bool = False) -> str:
         with self._lock:
@@ -93,8 +95,8 @@ class AgentTokens:
             except AgentAuthError as error:
                 if error.code == "invalid_grant":
                     self._token = None
-                    if self._binding is not None:
-                        self._binding.remove()
+                    self.revoked = True
+                    self._forget_slot()
                 raise
             self._token = token
             if self._binding is not None:
@@ -111,3 +113,14 @@ class AgentTokens:
             self._token = None
             if self._binding is not None:
                 self._binding.save_token(None)
+
+    def forget_slot(self) -> None:
+        """Remove the slot from the credential file (the registration is over), unless
+        another process has put another registration there since."""
+        with self._lock:
+            self._forget_slot()
+
+    def _forget_slot(self) -> None:
+        if self._binding is not None:
+            self._binding.remove()
+            self._binding = None

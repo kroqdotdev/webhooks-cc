@@ -15,7 +15,7 @@ from __future__ import annotations
 import builtins
 import json
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -83,7 +83,8 @@ class SandboxClaim(ClaimAttempt):
 
 @dataclass(frozen=True)
 class _Claim:
-    claim_token: str
+    claim_token: str = field(repr=False)
+    claim_token_expires: datetime
     registration_id: str
     email: str
     interval: int
@@ -92,6 +93,11 @@ class _Claim:
 
 def _now_iso() -> str:
     return format_timestamp(datetime.now(timezone.utc))
+
+
+def _normalize_email(email: str) -> str:
+    # As the server compares it: one address, however it was typed.
+    return email.strip().lower()
 
 
 def _claimed_slot(
@@ -129,6 +135,7 @@ class SandboxClient:
         shared_http: httpx.Client | None,
         slot: AgentSlot,
         claim_token: str | None,
+        claim_token_expires: datetime | None,
         client_name: str,
         store: AgentCredentialStore | None,
     ) -> None:
@@ -142,6 +149,7 @@ class SandboxClient:
         self._assertion = slot.identity_assertion
         self._expires_at = slot.assertion_expires
         self._claim_token = claim_token
+        self._claim_token_expires = claim_token_expires or self.expires_at
         self._client_name = client_name
         self._store = store
         self._claim: _Claim | None = None
@@ -233,8 +241,12 @@ class SandboxClient:
                 raise _map_error(429, "Rate limited", response.headers)
             if not response.is_success:
                 error = parsed if isinstance(parsed, dict) else {}
+                code = str(error.get("error") or f"http_{response.status_code}")
+                # Claimed, revoked or expired elsewhere: this registration is done.
+                if code == "sandbox_closed":
+                    self._tokens.forget_slot()
                 raise SandboxError(
-                    str(error.get("error") or f"http_{response.status_code}"),
+                    code,
                     response.status_code,
                     str(
                         error.get("error_description")
@@ -262,6 +274,7 @@ class SandboxClient:
         service_auth registration for ``email`` instead (``moves_endpoints`` is
         false), because the claim token never leaves the process that registered.
         """
+        email = _normalize_email(email)
         if self._claim_token is not None:
             attempt = start_claim(
                 self._claim_token,
@@ -270,32 +283,35 @@ class SandboxClient:
                 timeout=self._timeout_ms,
                 http_client=self._http,
             )
-            claim = _Claim(self._claim_token, self._registration_id, email, attempt.interval, True)
-        elif self._claim is not None and self._claim.email == email:
-            attempt = start_claim(
-                self._claim.claim_token,
-                email=email,
-                base_url=self._base_url,
-                timeout=self._timeout_ms,
-                http_client=self._http,
-            )
-            claim = replace(self._claim, interval=attempt.interval)
-        else:
-            registration = register_service_auth(
-                email,
-                client_name=self._client_name,
-                base_url=self._base_url,
-                timeout=self._timeout_ms,
-                http_client=self._http,
-            )
-            attempt = registration.claim
             claim = _Claim(
-                registration.claim_token,
-                registration.registration_id,
+                self._claim_token,
+                self._claim_token_expires,
+                self._registration_id,
                 email,
                 attempt.interval,
-                False,
+                True,
             )
+        else:
+            renewed = self._renew_claim(email)
+            if renewed is not None:
+                claim, attempt = renewed
+            else:
+                registration = register_service_auth(
+                    email,
+                    client_name=self._client_name,
+                    base_url=self._base_url,
+                    timeout=self._timeout_ms,
+                    http_client=self._http,
+                )
+                attempt = registration.claim
+                claim = _Claim(
+                    registration.claim_token,
+                    registration.claim_token_expires,
+                    registration.registration_id,
+                    email,
+                    attempt.interval,
+                    False,
+                )
         self._claim = claim
         return SandboxClaim(
             user_code=attempt.user_code,
@@ -305,6 +321,36 @@ class SandboxClient:
             registration_id=claim.registration_id,
             moves_endpoints=claim.moves_endpoints,
         )
+
+    def _renew_claim(self, email: str) -> tuple[_Claim, ClaimAttempt] | None:
+        """A new code for the service_auth registration already started for ``email``,
+        or ``None`` when there is none still usable."""
+        pending = self._claim
+        if (
+            pending is None
+            or pending.email != email
+            or pending.claim_token_expires <= datetime.now(timezone.utc)
+        ):
+            return None
+        try:
+            attempt = start_claim(
+                pending.claim_token,
+                email=email,
+                base_url=self._base_url,
+                timeout=self._timeout_ms,
+                http_client=self._http,
+            )
+        except AgentAuthError as error:
+            # Expired, out of attempts or revoked: the caller registers again. A rate
+            # limit passes, and so does a registration the human already approved,
+            # which wait_for_claim() still collects.
+            if not 400 <= error.status < 500 or error.code in (
+                "rate_limited",
+                "claimed_or_in_flight",
+            ):
+                raise
+            return None
+        return replace(pending, interval=attempt.interval), attempt
 
     def wait_for_claim(self, *, timeout: Duration = _DEFAULT_CLAIM_TIMEOUT_MS) -> WebhooksCC:
         """Wait until the human enters the code, then return a ``WebhooksCC`` client
@@ -483,7 +529,9 @@ def create_sandbox(
     owns_http = http_client is None
     http = http_client or httpx.Client(headers={"User-Agent": f"webhooks-cc-python/{__version__}"})
 
-    def client(slot: AgentSlot, claim_token: str | None) -> SandboxClient:
+    def client(
+        slot: AgentSlot, claim_token: str | None, claim_token_expires: datetime | None
+    ) -> SandboxClient:
         return SandboxClient(
             base_url=base,
             webhook_url=webhook,
@@ -493,6 +541,7 @@ def create_sandbox(
             shared_http=http_client,
             slot=slot,
             claim_token=claim_token,
+            claim_token_expires=claim_token_expires,
             client_name=name,
             store=store,
         )
@@ -500,7 +549,7 @@ def create_sandbox(
     try:
         saved = store.load(base).sandbox if store is not None else None
         if saved is not None:
-            reused = client(saved, None)
+            reused = client(saved, None, None)
             try:
                 # Fail early, with the server's reason, if the token cannot be had.
                 reused._tokens.get()
@@ -523,7 +572,7 @@ def create_sandbox(
         )
         if store is not None:
             store.save(base, "sandbox", slot)
-        fresh = client(slot, registration.claim_token)
+        fresh = client(slot, registration.claim_token, registration.claim_token_expires)
         fresh._tokens.get()
         return fresh
     except BaseException:
@@ -588,6 +637,7 @@ class PendingConnection:
         base = resolve_base_url(base_url)
         timeout_ms = parse_duration(timeout) if timeout is not None else _DEFAULT_TIMEOUT_MS
         name = client_name or DEFAULT_CLIENT_NAME
+        email = _normalize_email(email)
         registration = register_service_auth(
             email, client_name=name, base_url=base, timeout=timeout_ms, http_client=http_client
         )

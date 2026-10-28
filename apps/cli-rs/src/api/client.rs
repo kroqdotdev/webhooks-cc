@@ -31,6 +31,37 @@ impl ApiClient {
         self.send(Method::DELETE, path, None).await
     }
 
+    /// Perform a GET request without credentials, for a route that takes none.
+    pub async fn get_anonymous(&self, path: &str) -> Result<ApiResponse> {
+        self.send_anonymous(Method::GET, path, None).await
+    }
+
+    /// Perform a POST request with a JSON body and without credentials.
+    pub async fn post_anonymous(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+    ) -> Result<ApiResponse> {
+        let body = serde_json::to_vec(body).context("failed to encode request body")?;
+        self.send_anonymous(Method::POST, path, Some(body)).await
+    }
+
+    async fn send_anonymous(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<ApiResponse> {
+        let mut request = self
+            .http
+            .request(method, self.url(path))
+            .headers(Self::anonymous_headers()?);
+        if let Some(body) = body {
+            request = request.body(body);
+        }
+        read_response(request.send().await.context("request failed")?).await
+    }
+
     /// Sends a request. With an agent connection, a 401 (the cached token
     /// was revoked or ran out) is retried once with a newly exchanged token.
     async fn send(&self, method: Method, path: &str, body: Option<Vec<u8>>) -> Result<ApiResponse> {

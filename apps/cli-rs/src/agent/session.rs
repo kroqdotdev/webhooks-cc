@@ -81,7 +81,7 @@ impl AgentSession {
         match protocol::exchange(&self.http, &self.base_url, slot.identity_assertion()).await {
             Ok(token) => {
                 slot.set_token(&token.access_token, token.expires_at_ms);
-                self.write_back(slot);
+                self.store.update(self.kind, slot);
                 Ok(token.access_token)
             }
             Err(error) if protocol::error_code(&error) == Some("invalid_grant") => {
@@ -91,15 +91,6 @@ impl AgentSession {
                 Err(self.gone().into())
             }
             Err(error) => Err(error),
-        }
-    }
-
-    /// Stores the new token, unless the file meanwhile holds another
-    /// registration in this slot or none (another tool replaced it, or
-    /// `whk sandbox forget` removed it): a token must not bring it back.
-    fn write_back(&self, slot: &Slot) {
-        if self.store.holds(self.kind, slot.registration_id()) {
-            self.store.save(self.kind, slot);
         }
     }
 

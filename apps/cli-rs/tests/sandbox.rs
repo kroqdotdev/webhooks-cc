@@ -39,6 +39,11 @@ struct Fake {
     claim_polls: u32,
     /// The human entered the code.
     approved: bool,
+    /// The `login_hint` of each service_auth registration.
+    login_hints: Vec<String>,
+    /// Answer the next request list 429 with this `Retry-After`.
+    rate_limit_once: Option<u64>,
+    request_lists: u32,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -104,19 +109,23 @@ async fn identity(State(fake): State<Shared>, Json(body): Json<Value>) -> Respon
             }))
             .into_response()
         }
-        Some("service_auth") => Json(json!({
-            "registration_id": "reg-service",
-            "registration_type": "service_auth",
-            "claim_token": CLAIM_TOKEN,
-            "claim_token_expires": later(86_400),
-            "claim": {
-                "user_code": "123456",
-                "expires_in": 900,
-                "verification_uri": "http://example.test/agent/claim?attempt=cat_x",
-                "interval": 1,
-            },
-        }))
-        .into_response(),
+        Some("service_auth") => {
+            let hint = body["login_hint"].as_str().unwrap_or_default().to_string();
+            fake.login_hints.push(hint);
+            Json(json!({
+                "registration_id": "reg-service",
+                "registration_type": "service_auth",
+                "claim_token": CLAIM_TOKEN,
+                "claim_token_expires": later(86_400),
+                "claim": {
+                    "user_code": "123456",
+                    "expires_in": 900,
+                    "verification_uri": "http://example.test/agent/claim?attempt=cat_x",
+                    "interval": 1,
+                },
+            }))
+            .into_response()
+        }
         _ => oauth_error("invalid_request"),
     }
 }
@@ -216,9 +225,18 @@ async fn sandbox_requests(
     headers: HeaderMap,
     Path(slug): Path<String>,
 ) -> Response {
-    let fake = fake.lock().unwrap();
+    let mut fake = fake.lock().unwrap();
     if bearer(&fake, &headers).is_none() {
         return unauthorized();
+    }
+    fake.request_lists += 1;
+    if let Some(seconds) = fake.rate_limit_once.take() {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [("retry-after", seconds.to_string())],
+            Json(json!({ "error": "rate_limited", "error_description": "Slow down." })),
+        )
+            .into_response();
     }
     let now = chrono::Utc::now().timestamp_millis();
     Json(json!([{
@@ -440,8 +458,15 @@ async fn connect_prints_the_code_at_once_then_saves_the_claimed_slot() {
     let (base, fake) = start(Fake::default()).await;
     let env = Env::new(&base);
 
+    // Sent and stored as the server keeps it: trimmed and lowercased.
     let mut child = env
-        .command(&["sandbox", "connect", "--email", "dev@example.com", "--json"])
+        .command(&[
+            "sandbox",
+            "connect",
+            "--email",
+            " Dev@Example.COM ",
+            "--json",
+        ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -456,6 +481,8 @@ async fn connect_prints_the_code_at_once_then_saves_the_claimed_slot() {
         "http://example.test/agent/claim?attempt=cat_x"
     );
     assert!(first["expires_at"].as_str().unwrap().ends_with('Z'));
+    assert_eq!(first["email"], "dev@example.com");
+    assert_eq!(fake.lock().unwrap().login_hints, vec!["dev@example.com"]);
 
     // Still pending while the human has not entered the code.
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -486,6 +513,29 @@ async fn connect_prints_the_code_at_once_then_saves_the_claimed_slot() {
             .await,
     );
     assert_eq!(again["status"], "already_connected");
+    assert_eq!(fake.lock().unwrap().login_hints.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wait_waits_out_a_rate_limit_as_retry_after_asks() {
+    let (base, fake) = start(Fake::default()).await;
+    let env = Env::new(&base);
+    stdout_json(&env.run(&["sandbox", "create", "--json"]).await);
+    fake.lock().unwrap().rate_limit_once = Some(3);
+
+    let started = std::time::Instant::now();
+    let waited = stdout_json(
+        &env.run(&["sandbox", "wait", "sbx1", "--timeout", "10s", "--json"])
+            .await,
+    );
+    assert_eq!(waited["method"], "POST");
+    // A poll a second later (the usual pace) would have ended well before.
+    assert!(
+        started.elapsed() >= std::time::Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(fake.lock().unwrap().request_lists, 2);
 }
 
 #[tokio::test(flavor = "multi_thread")]

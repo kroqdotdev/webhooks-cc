@@ -345,18 +345,48 @@ pub fn read_slots(file: Option<&Value>, issuer: &str, now_ms: i64) -> Slots {
     }
 }
 
-/// One change to the file.
+/// One change to the file. With `if_registration`, it applies only while
+/// the slot still holds that registration: caching a token, or removing a
+/// slot after `invalid_grant` or `sandbox_closed`, must never overwrite or
+/// remove a slot another process has since replaced (or removed).
 #[derive(Debug, Clone)]
 pub enum WriteOp {
     /// Set a slot to exactly this value.
-    Set(SlotKind, Value),
-    Remove(SlotKind),
+    Set {
+        kind: SlotKind,
+        slot: Value,
+        if_registration: Option<String>,
+    },
+    Remove {
+        kind: SlotKind,
+        if_registration: Option<String>,
+    },
+}
+
+impl WriteOp {
+    fn kind(&self) -> SlotKind {
+        match self {
+            WriteOp::Set { kind, .. } | WriteOp::Remove { kind, .. } => *kind,
+        }
+    }
+
+    fn if_registration(&self) -> Option<&str> {
+        match self {
+            WriteOp::Set {
+                if_registration, ..
+            }
+            | WriteOp::Remove {
+                if_registration, ..
+            } => if_registration.as_deref(),
+        }
+    }
 }
 
 /// What a write does to the file.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WriteOutcome {
-    /// A newer format owns the file: leave it alone.
+    /// Nothing may be written: a newer format owns the file, or the slot no
+    /// longer holds the write's `if_registration`.
     Unchanged,
     /// Nothing is left: delete the file.
     Delete,
@@ -366,8 +396,10 @@ pub enum WriteOutcome {
 /// The file after a write. `before` is the parsed file (`None` when it is
 /// missing or not JSON). An object with a `version` other than 1 belongs to
 /// a newer tool and stays as it is; anything else that is not a version 1
-/// object is replaced. Every issuer's dead or malformed slots go, and so do
-/// issuers left empty or that are not objects.
+/// object is replaced. A conditional write checks its slot in this same
+/// `before`, so nothing another process wrote in between is undone. Every
+/// issuer's dead or malformed slots go, and so do issuers left empty or
+/// that are not objects.
 pub fn apply_write(
     before: Option<&Value>,
     issuer: &str,
@@ -398,11 +430,20 @@ pub fn apply_write(
         Some(Value::Object(map)) => map,
         _ => Map::new(),
     };
+    if let Some(wanted) = op.if_registration() {
+        let holds = entry
+            .get(op.kind().key())
+            .and_then(Slot::parse)
+            .is_some_and(|slot| slot.registration_id() == wanted);
+        if !holds {
+            return WriteOutcome::Unchanged;
+        }
+    }
     match op {
-        WriteOp::Set(kind, slot) => {
+        WriteOp::Set { kind, slot, .. } => {
             entry.insert(kind.key().into(), slot.clone());
         }
-        WriteOp::Remove(kind) => {
+        WriteOp::Remove { kind, .. } => {
             entry.remove(kind.key());
         }
     }
@@ -508,27 +549,40 @@ impl CredentialStore {
         )
     }
 
+    /// Saves a new registration, whatever the slot held before.
     pub fn save(&self, kind: SlotKind, slot: &Slot) {
-        self.write(WriteOp::Set(kind, slot.to_value()));
+        self.write(WriteOp::Set {
+            kind,
+            slot: slot.to_value(),
+            if_registration: None,
+        });
+    }
+
+    /// Rewrites the slot (a newly cached token) while the file's slot still
+    /// holds the same registration: another tool may have replaced it, or
+    /// `whk sandbox forget` removed it, and a token must not bring it back.
+    pub fn update(&self, kind: SlotKind, slot: &Slot) {
+        self.write(WriteOp::Set {
+            kind,
+            slot: slot.to_value(),
+            if_registration: Some(slot.registration_id().to_string()),
+        });
     }
 
     pub fn remove(&self, kind: SlotKind) {
-        self.write(WriteOp::Remove(kind));
-    }
-
-    /// True when the file's live slot of this kind holds this registration.
-    pub fn holds(&self, kind: SlotKind, registration_id: &str) -> bool {
-        self.load()
-            .get(kind)
-            .is_some_and(|slot| slot.registration_id() == registration_id)
+        self.write(WriteOp::Remove {
+            kind,
+            if_registration: None,
+        });
     }
 
     /// Removes the slot when it still holds this registration, so a
     /// registration another process saved meanwhile is left alone.
     pub fn remove_registration(&self, kind: SlotKind, registration_id: &str) {
-        if self.holds(kind, registration_id) {
-            self.remove(kind);
-        }
+        self.write(WriteOp::Remove {
+            kind,
+            if_registration: Some(registration_id.to_string()),
+        });
     }
 
     fn write(&self, op: WriteOp) {
@@ -538,9 +592,10 @@ impl CredentialStore {
         }
     }
 
-    /// Re-reads the file, applies the change and replaces the file
-    /// atomically: a new `agent.json.<random>.tmp` (mode 0600, created
-    /// exclusively), flushed to disk, then renamed over the file.
+    /// Re-reads the file, applies the change (a conditional one checks the
+    /// slot in what was just read) and replaces the file atomically: a new
+    /// `agent.json.<random>.tmp` (mode 0600, created exclusively), flushed
+    /// to disk, then renamed over the file.
     fn try_write(&self, path: &Path, op: &WriteOp) -> io::Result<()> {
         let before = self.read_raw()?;
         let next = apply_write(
@@ -715,9 +770,20 @@ mod tests {
             Some("sandbox") => SlotKind::Sandbox,
             other => panic!("unknown slot {other:?}"),
         };
+        let if_registration = op
+            .get("ifRegistration")
+            .and_then(Value::as_str)
+            .map(String::from);
         match (op.get("set"), op.get("remove")) {
-            (Some(name), _) => WriteOp::Set(kind(name), op["slot"].clone()),
-            (None, Some(name)) => WriteOp::Remove(kind(name)),
+            (Some(name), _) => WriteOp::Set {
+                kind: kind(name),
+                slot: op["slot"].clone(),
+                if_registration,
+            },
+            (None, Some(name)) => WriteOp::Remove {
+                kind: kind(name),
+                if_registration,
+            },
             _ => panic!("unknown op {op}"),
         }
     }
@@ -863,6 +929,110 @@ mod tests {
         store.save(SlotKind::Sandbox, &live_slot("local"));
         assert_eq!(fs::read_to_string(&path).unwrap(), newer);
         assert!(store.load().sandbox.is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn file_with(issuer: &str, kind: SlotKind, slot: &Slot) -> Value {
+        json!({ "version": 1, "issuers": { issuer: { kind.key(): slot.to_value() } } })
+    }
+
+    #[test]
+    fn a_conditional_set_applies_only_while_the_slot_holds_the_registration() {
+        let issuer = "https://webhooks.cc";
+        let now = Utc::now().timestamp_millis();
+        let mut refreshed = live_slot("reg-a");
+        refreshed.set_token("whcc_new", now + 3_600_000);
+        let op = WriteOp::Set {
+            kind: SlotKind::Claimed,
+            slot: refreshed.to_value(),
+            if_registration: Some("reg-a".into()),
+        };
+
+        let held = file_with(issuer, SlotKind::Claimed, &live_slot("reg-a"));
+        let WriteOutcome::Write(after) = apply_write(Some(&held), issuer, &op, now) else {
+            panic!("the slot still holds reg-a, so the token is written");
+        };
+        assert_eq!(
+            after["issuers"][issuer]["claimed"]["access_token"],
+            "whcc_new"
+        );
+
+        // Replaced by another process, removed, or no file at all.
+        let replaced = file_with(issuer, SlotKind::Claimed, &live_slot("reg-b"));
+        let removed = file_with(issuer, SlotKind::Sandbox, &live_slot("reg-a"));
+        for before in [Some(&replaced), Some(&removed), None] {
+            assert_eq!(
+                apply_write(before, issuer, &op, now),
+                WriteOutcome::Unchanged,
+                "{before:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_conditional_remove_applies_only_while_the_slot_holds_the_registration() {
+        let issuer = "https://webhooks.cc";
+        let now = Utc::now().timestamp_millis();
+        let op = WriteOp::Remove {
+            kind: SlotKind::Sandbox,
+            if_registration: Some("reg-a".into()),
+        };
+
+        let held = file_with(issuer, SlotKind::Sandbox, &live_slot("reg-a"));
+        assert_eq!(
+            apply_write(Some(&held), issuer, &op, now),
+            WriteOutcome::Delete
+        );
+
+        let replaced = file_with(issuer, SlotKind::Sandbox, &live_slot("reg-b"));
+        assert_eq!(
+            apply_write(Some(&replaced), issuer, &op, now),
+            WriteOutcome::Unchanged
+        );
+        // The claimed slot holding the same id is not the sandbox slot.
+        let other_kind = file_with(issuer, SlotKind::Claimed, &live_slot("reg-a"));
+        assert_eq!(
+            apply_write(Some(&other_kind), issuer, &op, now),
+            WriteOutcome::Unchanged
+        );
+    }
+
+    #[test]
+    fn conditional_writes_leave_what_another_process_saved_meanwhile() {
+        let root = temp_dir("conditional");
+        let path = root.join("agent.json");
+        let mine = CredentialStore::at(Some(path.clone()), "https://webhooks.cc");
+        let other = CredentialStore::at(Some(path.clone()), "https://webhooks.cc");
+
+        mine.save(SlotKind::Claimed, &live_slot("reg-a"));
+        // This process holds reg-a in memory; another one reconnects the agent.
+        let mut held = mine.load().claimed.unwrap();
+        other.save(SlotKind::Claimed, &live_slot("reg-b"));
+
+        held.set_token("whcc_stale", Utc::now().timestamp_millis() + 3_600_000);
+        mine.update(SlotKind::Claimed, &held);
+        mine.remove_registration(SlotKind::Claimed, "reg-a");
+        let slot = mine.load().claimed.unwrap();
+        assert_eq!(slot.registration_id(), "reg-b");
+        assert_eq!(slot.usable_token(Utc::now().timestamp_millis()), None);
+
+        // Forgotten meanwhile: a cached token must not bring it back.
+        other.remove(SlotKind::Claimed);
+        mine.update(SlotKind::Claimed, &held);
+        assert!(!path.exists());
+
+        // While it still holds the registration, both apply.
+        mine.save(SlotKind::Claimed, &live_slot("reg-a"));
+        mine.update(SlotKind::Claimed, &held);
+        assert_eq!(
+            mine.load()
+                .claimed
+                .unwrap()
+                .usable_token(Utc::now().timestamp_millis()),
+            Some("whcc_stale")
+        );
+        mine.remove_registration(SlotKind::Claimed, "reg-a");
+        assert!(!path.exists());
         let _ = fs::remove_dir_all(&root);
     }
 
