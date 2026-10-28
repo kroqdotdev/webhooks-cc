@@ -42,6 +42,8 @@ enum ConnectError {
     Terminal(String),
     /// Worth retrying (network error, 5xx, rate limit).
     Transient(String),
+    /// A 401: terminal, unless a new token can be exchanged.
+    Unauthorized(String),
 }
 
 impl ApiClient {
@@ -57,7 +59,6 @@ impl ApiClient {
     /// and `Err` for terminal failures (not logged in, 401/403/404).
     pub async fn stream_requests(&self, slug: &str, tx: mpsc::Sender<SseEvent>) -> Result<()> {
         self.require_auth()?;
-        let headers = self.auth_headers()?;
 
         let sse_client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
@@ -68,18 +69,23 @@ impl ApiClient {
         let mut cursor = ResumeCursor::default();
         let mut attempt: u32 = 0;
         let mut rapid_rotations: u32 = 0;
+        // An agent connection's token lives an hour, so each connection asks
+        // for a current one; after a 401 it asks for a new exchange, once.
+        let mut refresh = false;
 
         loop {
             if tx.is_closed() {
                 return Ok(());
             }
 
+            let headers = self.headers_with(refresh).await?;
             let url = stream_url(&base_url, cursor.since());
             // Rotation age is measured from when the stream actually opened, so
             // connection setup latency cannot disguise an immediate rotation.
             let mut opened = std::time::Instant::now();
             let outcome = match connect(&sse_client, &url, &headers, slug).await {
                 Ok(resp) => {
+                    refresh = false;
                     opened = std::time::Instant::now();
                     // Floor for the resume cursor: the server's clock (at or before
                     // the connection start) or, without a Date header, the client
@@ -89,7 +95,13 @@ impl ApiClient {
                     );
                     read_stream(resp, &tx, &mut cursor, &mut attempt).await
                 }
-                Err(ConnectError::Terminal(msg)) => anyhow::bail!(msg),
+                Err(ConnectError::Unauthorized(_)) if self.can_refresh() && !refresh => {
+                    refresh = true;
+                    continue;
+                }
+                Err(ConnectError::Terminal(msg) | ConnectError::Unauthorized(msg)) => {
+                    anyhow::bail!(msg)
+                }
                 Err(ConnectError::Transient(msg)) => StreamEnd::Failed(msg),
             };
 
@@ -191,7 +203,12 @@ async fn connect(
 
     let body = resp.text().await.unwrap_or_default();
     let detail = extract_error(status, &body);
-    Err(classify_http_rejection(status, slug, &detail))
+    match classify_http_rejection(status, slug, &detail) {
+        ConnectError::Terminal(msg) if status == StatusCode::UNAUTHORIZED => {
+            Err(ConnectError::Unauthorized(msg))
+        }
+        other => Err(other),
+    }
 }
 
 fn classify_http_rejection(status: StatusCode, slug: &str, detail: &str) -> ConnectError {
@@ -779,6 +796,67 @@ mod live_tests {
         );
         let seen = shared.lock().unwrap().seen_since.clone();
         assert_eq!(seen, vec![None, Some("1000".to_string())]);
+    }
+
+    /// An agent connection's cached token was revoked: the 401 exchanges
+    /// the assertion once, and the stream reconnects with the new token.
+    #[tokio::test]
+    async fn an_agent_connection_exchanges_once_after_a_401() {
+        use crate::agent::{CredentialStore, Slot, SlotKind};
+        use axum::routing::post;
+
+        let shared = Arc::new(Mutex::new(Shared {
+            scripts: vec![
+                Script::Status(401),
+                Script::Sse(vec![
+                    frame("connected", "{}"),
+                    frame("endpoint_deleted", "{}"),
+                ]),
+            ],
+            seen_since: Vec::new(),
+        }));
+        let exchanges = Arc::new(Mutex::new(0u32));
+        let counted = exchanges.clone();
+        let app = Router::new()
+            .route("/api/stream/{slug}", get(handler))
+            .with_state(shared.clone())
+            .route(
+                "/api/oauth2/token",
+                post(move || async move {
+                    *counted.lock().unwrap() += 1;
+                    axum::Json(
+                        serde_json::json!({ "access_token": "whcc_fresh", "expires_in": 3600 }),
+                    )
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let dir =
+            std::env::temp_dir().join(format!("whk-stream-agent-{:x}", rand::random::<u64>()));
+        let store = CredentialStore::at(Some(dir.join("agent.json")), &base);
+        let now = chrono::Utc::now().timestamp_millis();
+        let expires = crate::agent::credentials::format_timestamp(now + 86_400_000);
+        let mut slot = Slot::new("reg-1", "claimed-assert", &expires, &[]).unwrap();
+        slot.set_token("whcc_revoked", now + 3_600_000);
+        store.save(SlotKind::Claimed, &slot);
+
+        let client =
+            ApiClient::with_credentials(Some(&base), Some(&base), None, Some(store)).unwrap();
+        let (tx, mut rx) = mpsc::channel(64);
+        let handle = tokio::spawn(async move { client.stream_requests("my-slug", tx).await });
+        let mut events = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            events.push(ev);
+        }
+        let result = handle.await.unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(kinds(&events), vec!["connected", "endpoint_deleted"]);
+        assert_eq!(*exchanges.lock().unwrap(), 1);
+        assert_eq!(shared.lock().unwrap().seen_since.len(), 2);
     }
 
     #[tokio::test]
