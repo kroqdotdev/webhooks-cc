@@ -9,5 +9,6 @@ export default defineConfig({
   envPrefix: ["VITE_", "WHK_"],
   test: {
     globals: true,
+    setupFiles: ["./vitest.setup.ts"],
   },
 });
