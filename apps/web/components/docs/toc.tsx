@@ -41,7 +41,7 @@ export function TableOfContents({ headings }: { headings: TocItem[] }) {
   return (
     <>
       {/* Desktop: sticky sidebar */}
-      <aside className="hidden xl:block w-48 shrink-0 sticky top-24 self-start max-h-[calc(100vh-7rem)] overflow-y-auto">
+      <aside className="hidden xl:block w-48 shrink-0 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
         <p className="text-xs font-bold caps-wide text-muted-foreground mb-3">On this page</p>
         <nav aria-label="Table of contents">
           <ul className="space-y-1.5 text-sm">

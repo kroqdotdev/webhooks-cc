@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { trackUiStyleChanged } from "@/lib/analytics";
-import { readUiStyleState, storeChosenUiStyle, type UiStyle } from "@/lib/ui-style";
+import { DEFAULT_UI_STYLE, readUiStyle, storeChosenUiStyle, type UiStyle } from "@/lib/ui-style";
 
-type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark" | "system";
 
 export type { UiStyle };
 
@@ -21,16 +21,16 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");
-  const [uiStyle, setUiStyleState] = useState<UiStyle>("classic");
+  const [uiStyle, setUiStyleState] = useState<UiStyle>(DEFAULT_UI_STYLE);
 
   useEffect(() => {
     const stored = localStorage.getItem("theme") as Theme | null;
     if (stored) {
       setTheme(stored);
     }
-    // The inline script in app/layout.tsx already applied the stored style
-    // before paint, so only the toggle state needs to catch up here.
-    setUiStyleState(readUiStyleState().style);
+    // The inline script in app/layout.tsx already applied the style before
+    // paint, so only the settings page's control needs to catch up here.
+    setUiStyleState(readUiStyle());
   }, []);
 
   useEffect(() => {
@@ -64,17 +64,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleSetUiStyle = (style: UiStyle) => {
-    const previous = readUiStyleState();
+    const previous = readUiStyle();
     setUiStyleState(style);
     storeChosenUiStyle(style);
     document.documentElement.dataset.style = style;
-    if (style !== previous.style) {
-      trackUiStyleChanged({
-        from: previous.style,
-        to: style,
-        sourceBefore: previous.source,
-        assigned: previous.assigned,
-      });
+    if (style !== previous) {
+      trackUiStyleChanged({ from: previous, to: style });
     }
   };
 
@@ -95,14 +90,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 // Next renders `app/not-found.tsx` without the root layout, and so without
 // ThemeProvider, when it answers some requests itself (a POST with a
-// `Next-Action` header and a form body gets a 404 page that way). The header
-// on that page must not take the response down with it, so outside a provider
-// the toggle shows the defaults and does nothing.
+// `Next-Action` header and a form body gets a 404 page that way). Outside a
+// provider the hook hands back the defaults and the setters do nothing.
 const FALLBACK_THEME: ThemeContextType = {
   theme: "system",
   setTheme: () => {},
   resolvedTheme: "dark",
-  uiStyle: "classic",
+  uiStyle: DEFAULT_UI_STYLE,
   setUiStyle: () => {},
 };
 

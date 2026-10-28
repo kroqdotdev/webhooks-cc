@@ -2,11 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
-import { getMaintenanceTopOffset } from "@/lib/announcements";
 import { trackCliDeviceAuthorized } from "@/lib/analytics";
 
 export default function CliVerifyPage() {
@@ -76,26 +74,9 @@ function CliVerifyContent() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <nav
-        className="fixed left-4 right-4 z-50"
-        style={{ top: `calc(${getMaintenanceTopOffset()} + var(--ann-h, 0px))` }}
-      >
-        <div className="max-w-6xl mx-auto rounded-lg border-strong border-line bg-background shadow-raised">
-          <div className="px-6 h-16 flex items-center justify-between">
-            <Link href="/" className="font-bold text-xl tracking-tight">
-              webhooks.cc
-            </Link>
-            <div className="flex items-center gap-6">
-              <ThemeToggle />
-              <Link href="/dashboard" className="ui-btn-outline text-sm py-2 px-4 w-28 text-center">
-                Dashboard
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <SiteHeader />
 
-      <main className="flex-1 flex items-center justify-center px-4 pt-24">
+      <main className="flex-1 flex items-center justify-center px-4 pt-10">
         <div className="w-full max-w-sm">
           {status === "success" ? (
             <div className="text-center">

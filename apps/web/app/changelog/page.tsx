@@ -33,7 +33,7 @@ export default function ChangelogPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-4 pt-28 pb-16">
+      <div className="max-w-3xl mx-auto px-4 pt-10 pb-16">
         <div className="mb-8">
           <h1 className="text-4xl font-bold tracking-tight mb-4">Changelog</h1>
           <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">

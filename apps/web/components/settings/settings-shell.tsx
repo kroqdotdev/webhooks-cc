@@ -19,6 +19,7 @@ interface NavItem {
 
 const ACCOUNT_ITEMS: NavItem[] = [
   { href: "/account", label: "Profile", exact: true },
+  { href: "/account/appearance", label: "Appearance" },
   { href: "/account/plan", label: "Plan and usage" },
   { href: "/account/api-keys", label: "API keys" },
   { href: "/account/agents", label: "Connected agents" },

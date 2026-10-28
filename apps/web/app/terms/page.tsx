@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { SiteHeader } from "@/components/nav/site-header";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = createPageMetadata({
@@ -13,30 +13,7 @@ export const metadata: Metadata = createPageMetadata({
 export default function TermsPage() {
   return (
     <div className="min-h-screen">
-      <header className="border-b-strong border-line shrink-0 bg-background sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="font-bold text-lg">
-              webhooks.cc
-            </Link>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/docs"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Docs
-            </Link>
-            <Link
-              href="/dashboard"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Dashboard
-            </Link>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Terms of Service</h1>

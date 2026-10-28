@@ -24,14 +24,21 @@ export const ANNOUNCEMENTS: Announcement[] = [
 ];
 
 /**
- * Returns the base top offset for the maintenance banner only.
- * The announcement banner offset is handled via the `--ann-h` CSS variable,
- * which is set client-side by the AnnouncementBanner component and an inline
- * script in the root layout (so it responds to dismissal in real time).
+ * Height of the fixed maintenance banner, or none. The announcement banner's
+ * height travels as the `--ann-h` CSS variable instead, set client-side by
+ * the AnnouncementBanner component so it responds to dismissal at once.
  */
-export function getMaintenanceTopOffset(): string {
+export function getMaintenanceBannerHeight(): string {
   const maintenance =
     process.env.NEXT_PUBLIC_MAINTENANCE_BANNER_ENABLED === "true" &&
     !!process.env.NEXT_PUBLIC_MAINTENANCE_BANNER_TEXT;
-  return maintenance ? "3.5rem" : "1rem";
+  return maintenance ? "42px" : "0px";
+}
+
+/** The site header's height, for anything sticky that has to clear it. */
+export const SITE_HEADER_HEIGHT = "3.5rem";
+
+/** Offset of the site header's top edge: the fixed banners above it, when shown. */
+export function siteHeaderTop(): string {
+  return `calc(${getMaintenanceBannerHeight()} + var(--ann-h, 0px))`;
 }

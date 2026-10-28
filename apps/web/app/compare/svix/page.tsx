@@ -85,7 +85,7 @@ export const metadata = createPageMetadata({
 
 export default function CompareSvixPage() {
   return (
-    <main className="min-h-screen pt-32 pb-20 px-4">
+    <main className="min-h-screen pt-12 pb-20 px-4">
       <JsonLd
         data={breadcrumbSchema([
           { name: "Home", path: "/" },

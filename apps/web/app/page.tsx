@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AuthNav } from "@/components/nav/auth-nav";
+import { SiteHeader } from "@/components/nav/site-header";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import {
   Zap,
@@ -241,29 +241,22 @@ export default async function Home() {
       />
       <JsonLd data={videoObjectSchema()} />
 
-      {/* Navigation — solid app header, same chrome as the real dashboard */}
-      <header className="border-b-strong border-line bg-background clean:bg-card sticky top-[var(--ann-h,0px)] z-50">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
-              webhooks.cc
-            </Link>
-            {/* AuthNav already renders Docs/Blog/Install — only add what it lacks */}
-            <div className="hidden lg:flex items-center gap-4 text-sm font-bold">
-              <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
-                Providers
-              </Link>
-              <Link href="/compare" className="text-muted-foreground hover:text-foreground">
-                Compare
-              </Link>
-              <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
-                Pricing
-              </Link>
-            </div>
-          </div>
-          <AuthNav />
-        </div>
-      </header>
+      <SiteHeader>
+        <nav
+          aria-label="Sections"
+          className="hidden lg:flex items-center gap-4 text-sm font-medium"
+        >
+          <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
+            Providers
+          </Link>
+          <Link href="/compare" className="text-muted-foreground hover:text-foreground">
+            Compare
+          </Link>
+          <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
+            Pricing
+          </Link>
+        </nav>
+      </SiteHeader>
 
       {/* Hero — the landing screen IS the dashboard, webhook.site style */}
       <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">

@@ -16,7 +16,6 @@ import { AnnouncementBanner } from "@/components/announcement-banner";
 import { ANNOUNCEMENTS } from "@/lib/announcements";
 import { buildAuthMdUrl } from "@/lib/agent/metadata";
 import { appearanceBootstrapScript } from "@/lib/ui-style";
-import { publicEnv } from "@/lib/env";
 
 // Font variables live on <html> so globals.css can pick the face for the active style.
 const spaceGrotesk = Space_Grotesk({
@@ -128,7 +127,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: appearanceBootstrapScript(publicEnv().NEXT_PUBLIC_UI_STYLE_SPLIT),
+            __html: appearanceBootstrapScript(),
           }}
         />
         {ANNOUNCEMENTS.length > 0 && (

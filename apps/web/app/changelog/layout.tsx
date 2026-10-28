@@ -1,5 +1,4 @@
-import { FloatingNavbar } from "@/components/nav/floating-navbar";
-import { BackButton } from "@/components/nav/back-button";
+import { SiteHeader } from "@/components/nav/site-header";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
@@ -12,12 +11,7 @@ export const metadata = createPageMetadata({
 export default function ChangelogLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <FloatingNavbar>
-        <BackButton />
-        <span className="text-xs font-bold caps text-muted-foreground border-strong border-line rounded-md px-2 py-0.5">
-          Changelog
-        </span>
-      </FloatingNavbar>
+      <SiteHeader />
       {children}
     </>
   );

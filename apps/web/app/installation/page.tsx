@@ -4,8 +4,7 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
-import { FloatingNavbar } from "@/components/nav/floating-navbar";
-import { BackButton } from "@/components/nav/back-button";
+import { SiteHeader } from "@/components/nav/site-header";
 import { DocsSidebar } from "@/components/docs/sidebar";
 import { DocsBreadcrumbs } from "@/components/docs/breadcrumbs";
 import { AgentSkillInstall } from "@/components/docs/agent-skill-install";
@@ -50,12 +49,9 @@ export default function InstallationPage() {
 
   return (
     <div className="min-h-screen">
-      <FloatingNavbar>
-        <BackButton />
-      </FloatingNavbar>
+      <SiteHeader />
 
-      {/* Sidebar + Content - mx-4 matches navbar's left-4/right-4 */}
-      <div className="mx-4 pt-24">
+      <div className="px-4">
         <div className="max-w-6xl mx-auto flex">
           <DocsSidebar />
           <main className="flex-1 min-w-0 px-6 py-10 md:px-10">

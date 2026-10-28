@@ -27,7 +27,7 @@ export default async function BlogIndexPage() {
 
   if (posts.length === 0) {
     return (
-      <main className="min-h-screen pt-28 pb-20 px-4">
+      <main className="min-h-screen pt-10 pb-20 px-4">
         <JsonLd
           data={breadcrumbSchema([
             { name: "Home", path: "/" },
@@ -48,7 +48,7 @@ export default async function BlogIndexPage() {
   const remaining = rest.slice(2);
 
   return (
-    <main className="min-h-screen pt-28 pb-20 px-4">
+    <main className="min-h-screen pt-10 pb-20 px-4">
       <JsonLd
         data={breadcrumbSchema([
           { name: "Home", path: "/" },

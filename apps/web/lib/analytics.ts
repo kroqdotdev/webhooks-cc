@@ -1,6 +1,6 @@
 import posthog from "posthog-js";
 import { consumeSignupSignal } from "./signup-signal";
-import { readUiStyleState, UI_STYLE_FLAG_KEY, type UiStyle, type UiStyleSource } from "./ui-style";
+import type { UiStyle } from "./ui-style";
 
 /**
  * Track custom analytics events via PostHog.
@@ -21,83 +21,10 @@ export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq" | "c
   capture("landing_cta_clicked", { cta });
 }
 
-// ── Visual style experiment ────────────────────────────
-
-/**
- * PostHog experiments name their variants control and test, and its results
- * read those keys off $feature/<flag>. The readable style name rides along as
- * ui_style_assigned so raw events stay legible.
- */
-const POSTHOG_VARIANT: Record<UiStyle, "control" | "test"> = {
-  classic: "control",
-  clean: "test",
-};
-
-/**
- * Tells PostHog which arm of the style split this browser is in. The variant
- * stays the one the split assigned even after the visitor switches styles, so
- * a switch does not move their later events into the other arm.
- */
-export function registerStyleVariant(assigned: UiStyle) {
-  if (typeof window === "undefined") return;
-  try {
-    posthog.register({
-      [`$feature/${UI_STYLE_FLAG_KEY}`]: POSTHOG_VARIANT[assigned],
-      ui_style_assigned: assigned,
-    });
-  } catch {
-    // PostHog not initialized
-  }
-}
-
-/** Exposure event PostHog counts experiment participants from. */
-export function trackStyleExposure(assigned: UiStyle, active: UiStyle) {
-  capture("$feature_flag_called", {
-    $feature_flag: UI_STYLE_FLAG_KEY,
-    $feature_flag_response: POSTHOG_VARIANT[assigned],
-    ui_style_assigned: assigned,
-    ui_style_active: active,
-  });
-}
-
-const STYLE_EXPOSURE_SESSION_KEY = "ui-style-exposure-sent";
-
-/**
- * Puts the experiment metadata on the current PostHog identity: the variant as
- * a super property, and one exposure. Called after init and again after a
- * reset, which drops super properties and starts a new anonymous identity.
- * Browsers that were never assigned a style stay out of the experiment.
- */
-export function applyStyleExperiment() {
-  if (typeof window === "undefined") return;
-  const { style, assigned } = readUiStyleState();
-  if (!assigned) return;
-  registerStyleVariant(assigned);
-  try {
-    if (sessionStorage.getItem(STYLE_EXPOSURE_SESSION_KEY)) return;
-    sessionStorage.setItem(STYLE_EXPOSURE_SESSION_KEY, "1");
-  } catch {
-    // Blocked storage: skip the exposure rather than sending one per page view.
-    return;
-  }
-  trackStyleExposure(assigned, style);
-}
-
-/** The metric that moves fastest: how many people leave the style they landed on. */
-export function trackUiStyleChanged(params: {
-  from: UiStyle;
-  to: UiStyle;
-  sourceBefore: UiStyleSource | null;
-  assigned: UiStyle | null;
-}) {
-  capture("ui_style_changed", {
-    from: params.from,
-    to: params.to,
-    source_before: params.sourceBefore ?? "default",
-    assigned_variant: params.assigned ?? "none",
-    left_assigned_style: params.assigned != null && params.from === params.assigned,
-    $set: { ui_style: params.to },
-  });
+// ── Visual style ────────────────────────────────────────────────
+/** A pick on the Appearance page; the style itself also lands on the person. */
+export function trackUiStyleChanged(params: { from: UiStyle; to: UiStyle }) {
+  capture("ui_style_changed", { from: params.from, to: params.to, $set: { ui_style: params.to } });
 }
 
 // ── Auth ────────────────────────────────────────────────────────
@@ -349,12 +276,4 @@ export function resetUser() {
   } catch {
     // PostHog not initialized
   }
-  // reset() clears super properties and starts a new anonymous identity, so the
-  // variant has to go back on and that identity needs an exposure of its own.
-  try {
-    sessionStorage.removeItem(STYLE_EXPOSURE_SESSION_KEY);
-  } catch {
-    // Blocked storage: applyStyleExperiment skips the exposure below.
-  }
-  applyStyleExperiment();
 }

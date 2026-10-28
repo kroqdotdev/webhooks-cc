@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS } from "@/lib/docs-nav";
-import { getMaintenanceTopOffset } from "@/lib/announcements";
+import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
 
 const STORAGE_KEY = "docs-sidebar-sections";
 
@@ -122,15 +122,14 @@ function SidebarContent({
   );
 }
 
-// Sidebar offsets: base values shift by maintenance (server-known) + announcement (CSS var).
-// Base offset (no banners): 7rem for mobile toggle, 6rem for panels, 6rem for desktop.
+// Everything sticky or fixed here hangs off the header, which itself sits below
+// the fixed banners (see siteHeaderTop).
 function useSidebarStyles() {
-  const base = getMaintenanceTopOffset(); // "1rem" or "3.5rem"
-  // toggle sits below the navbar (navbar height ~4rem + gap)
-  const toggle = `calc(${base} + var(--ann-h, 0px) + 5rem)`;
-  const panel = `calc(${base} + var(--ann-h, 0px) + 4.5rem)`;
-  const desktop = `calc(${base} + var(--ann-h, 0px) + 4.5rem)`;
-  const maxH = `calc(100vh - ${base} - var(--ann-h, 0px) - 6rem)`;
+  const headerBottom = `calc(${siteHeaderTop()} + ${SITE_HEADER_HEIGHT})`;
+  const toggle = `calc(${headerBottom} + 1rem)`;
+  const panel = headerBottom;
+  const desktop = headerBottom;
+  const maxH = `calc(100vh - ${headerBottom})`;
   return { toggle, panel, desktop, maxH };
 }
 
@@ -180,7 +179,7 @@ export function DocsSidebar() {
         aria-label="Documentation navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "md:hidden fixed left-4 bottom-4 z-[35] w-64 rounded-lg border-strong border-line bg-background shadow-raised overflow-y-auto py-6 px-2 transition-transform",
+          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r-strong border-line bg-background clean:bg-card shadow-raised overflow-y-auto py-6 px-2 transition-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ top: s.panel }}
@@ -190,7 +189,7 @@ export function DocsSidebar() {
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:block w-64 shrink-0 sticky self-start rounded-lg border-strong border-line bg-background shadow-raised overflow-y-auto py-6 px-2"
+        className="hidden md:block w-64 shrink-0 sticky self-start border-r-strong border-line overflow-y-auto py-8 pr-4"
         style={{ top: s.desktop, maxHeight: s.maxH }}
       >
         <SidebarContent onSearchClick={handleSearchClick} />

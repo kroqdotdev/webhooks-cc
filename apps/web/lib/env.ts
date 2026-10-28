@@ -19,11 +19,6 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  // Percentage of brand-new visitors the clean style A/B split sends to clean;
-  // 0 stops the split. NEXT_PUBLIC_ on purpose: Next inlines it at build time in
-  // both prerendered and dynamic routes, so every page runs the same split, and
-  // changing it means a rebuild and restart rather than a restart alone.
-  NEXT_PUBLIC_UI_STYLE_SPLIT: z.coerce.number().int().min(0).max(100).default(0),
 });
 
 /** Blank values (an empty line in an env file) count as unset. */
@@ -184,7 +179,6 @@ export function publicEnv() {
       NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      NEXT_PUBLIC_UI_STYLE_SPLIT: process.env.NEXT_PUBLIC_UI_STYLE_SPLIT,
     });
   }
   return _publicEnv;
