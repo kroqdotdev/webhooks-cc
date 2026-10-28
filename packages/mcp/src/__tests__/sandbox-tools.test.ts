@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import { AgentAuthError, WebhooksCC, type SandboxClient } from "@webhooks-cc/sdk";
+import {
+  AgentAuthError,
+  AgentCredentialStore,
+  SandboxClient,
+  WebhooksCC,
+  type PendingConnection,
+} from "@webhooks-cc/sdk";
 import { createServer } from "../index";
 
 const BASE_URL = "https://webhooks.test";
@@ -61,8 +67,23 @@ function fakeSandbox() {
       get: vi.fn().mockResolvedValue(request),
       waitFor: vi.fn().mockResolvedValue(request),
     },
-    claim: vi.fn().mockResolvedValue(attempt),
+    claim: vi.fn().mockResolvedValue({ ...attempt, movesEndpoints: true }),
+    waitForClaim: vi.fn(),
   };
+}
+
+function fakePending(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    ...attempt,
+    registrationId: "reg_sa",
+    wait: vi.fn(),
+    restart: vi.fn(),
+    ...overrides,
+  };
+}
+
+function accountClient(token = "whcc_claimed"): WebhooksCC {
+  return new WebhooksCC({ baseUrl: BASE_URL, getAccessToken: async () => token });
 }
 
 async function connect() {
@@ -218,16 +239,11 @@ describe("sandbox tools (no API key)", () => {
   it("connect_account claims the sandbox, or registers for the human without one", async () => {
     const sandbox = fakeSandbox();
     vi.spyOn(WebhooksCC, "sandbox").mockResolvedValue(sandbox as unknown as SandboxClient);
-    const register = vi.spyOn(WebhooksCC.agent, "registerServiceAuth").mockResolvedValue({
-      registrationId: "reg_sa",
-      claimToken: "clm_sa",
-      claimTokenExpires: new Date(Date.now() + 86_400_000),
-      postClaimScopes: [],
-      claim: attempt,
-    });
-    const restart = vi
-      .spyOn(WebhooksCC.agent, "startClaim")
-      .mockResolvedValue({ ...attempt, userCode: "654321", registrationId: "reg_sa" });
+    const restarted = fakePending({ userCode: "654321" });
+    const pending = fakePending({ restart: vi.fn().mockResolvedValue(restarted) });
+    const connectSpy = vi
+      .spyOn(WebhooksCC, "connect")
+      .mockResolvedValue(pending as unknown as PendingConnection);
 
     // Without a sandbox: a service_auth registration, then a new code for it.
     const first = await connect();
@@ -237,13 +253,13 @@ describe("sandbox tools (no API key)", () => {
       verificationUri: attempt.verificationUri,
     });
     expect(started.body.tellTheHuman).toContain("sign in or sign up as dev@example.com");
-    expect(register).toHaveBeenCalledWith(
+    expect(connectSpy).toHaveBeenCalledWith(
       expect.objectContaining({ baseUrl: BASE_URL, email: "dev@example.com" })
     );
     const again = await first.call("connect_account", { email: "dev@example.com" });
     expect(again.body.userCode).toBe("654321");
-    expect(restart).toHaveBeenCalledWith(expect.objectContaining({ claimToken: "clm_sa" }));
-    expect(register).toHaveBeenCalledTimes(1);
+    expect(pending.restart).toHaveBeenCalledTimes(1);
+    expect(connectSpy).toHaveBeenCalledTimes(1);
 
     // With a sandbox: its own registration is claimed.
     const second = await connect();
@@ -251,18 +267,28 @@ describe("sandbox tools (no API key)", () => {
     const claimed = await second.call("connect_account", { email: "dev@example.com" });
     expect(sandbox.claim).toHaveBeenCalledWith({ email: "dev@example.com" });
     expect(claimed.body.endpoints).toContain("move into that account");
-    expect(register).toHaveBeenCalledTimes(1);
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("a sandbox from an earlier session is reused, and connecting leaves it in place", async () => {
+    const sandbox = fakeSandbox();
+    sandbox.claim.mockResolvedValue({ ...attempt, movesEndpoints: false });
+    const resume = vi
+      .spyOn(SandboxClient, "resume")
+      .mockResolvedValue(sandbox as unknown as SandboxClient);
+    const register = vi.spyOn(WebhooksCC, "sandbox");
+    const { call } = await connect();
+
+    expect((await call("list_endpoints")).body[0].slug).toBe("sbx1");
+    const claimed = await call("connect_account", { email: "dev@example.com" });
+    expect(claimed.body.endpoints).toContain("stay in the sandbox");
+    expect(resume).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: BASE_URL }));
+    expect(register).not.toHaveBeenCalled();
   });
 
   it("wait_for_connection reports waiting, expiry and refusal", async () => {
-    vi.spyOn(WebhooksCC.agent, "registerServiceAuth").mockResolvedValue({
-      registrationId: "reg_sa",
-      claimToken: "clm_sa",
-      claimTokenExpires: new Date(Date.now() + 86_400_000),
-      postClaimScopes: [],
-      claim: attempt,
-    });
-    const wait = vi.spyOn(WebhooksCC.agent, "waitForClaim");
+    const pending = fakePending();
+    vi.spyOn(WebhooksCC, "connect").mockResolvedValue(pending as unknown as PendingConnection);
     const { call, names } = await connect();
 
     const early = await call("wait_for_connection");
@@ -275,29 +301,18 @@ describe("sandbox tools (no API key)", () => {
       ["expired_token", "expired"],
       ["access_denied", "declined"],
     ] as const) {
-      wait.mockRejectedValueOnce(new AgentAuthError(code, 400));
+      pending.wait.mockRejectedValueOnce(new AgentAuthError(code, 400));
       const result = await call("wait_for_connection", { timeoutSeconds: 1 });
       expect(result.body).toMatchObject({ connected: false, status });
     }
-    expect(wait).toHaveBeenCalledWith(
-      expect.objectContaining({ claimToken: "clm_sa", interval: 5, timeout: 1000 })
-    );
+    expect(pending.wait).toHaveBeenCalledWith({ timeout: 1000 });
     expect(await names()).toEqual(SANDBOX_TOOLS);
   });
 
   it("swaps in the full tools for the account once the human connects", async () => {
     const sandbox = fakeSandbox();
+    sandbox.waitForClaim.mockResolvedValue(accountClient());
     vi.spyOn(WebhooksCC, "sandbox").mockResolvedValue(sandbox as unknown as SandboxClient);
-    vi.spyOn(WebhooksCC.agent, "waitForClaim").mockResolvedValue({
-      status: "claimed",
-      token: {
-        accessToken: "whcc_claimed",
-        scope: "webhooks:read webhooks:write",
-        expiresAt: new Date(Date.now() + 3_600_000),
-      },
-      identityAssertion: "ey.claimed.assertion",
-      assertionExpires: new Date(Date.now() + 90 * 86_400_000),
-    });
     const { call, names, changes } = await connect();
     await call("create_endpoint");
     await call("connect_account", { email: "dev@example.com" });
@@ -323,5 +338,36 @@ describe("sandbox tools (no API key)", () => {
     expect(listed.isError).toBe(false);
     const [, init] = fetchSpy.mock.calls[0];
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer whcc_claimed");
+  });
+
+  it("starts with the full tools for a saved connection, and falls back when it is revoked", async () => {
+    const file = process.env.WHK_AGENT_FILE!;
+    const store = new AgentCredentialStore(file);
+    store.save(BASE_URL, "claimed", {
+      registration_id: "reg_claimed",
+      identity_assertion: "ey.claimed.assertion",
+      assertion_expires: new Date(Date.now() + 86_400_000).toISOString(),
+      access_token: "whcc_saved",
+      access_token_expires: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    try {
+      const { call, names } = await connect();
+      expect(await names()).toHaveLength(46);
+
+      // The human disconnects the agent: the token dies and the assertion is refused.
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/api/oauth2/token") {
+          return Response.json({ error: "invalid_grant" }, { status: 400 });
+        }
+        return Response.json({ error: "Invalid token" }, { status: 401 });
+      });
+      const refused = await call("list_endpoints");
+      expect(refused.isError).toBe(true);
+      await vi.waitFor(async () => expect(await names()).toEqual(SANDBOX_TOOLS));
+      expect(store.load(BASE_URL).claimed).toBeNull();
+    } finally {
+      store.remove(BASE_URL, "claimed");
+    }
   });
 });

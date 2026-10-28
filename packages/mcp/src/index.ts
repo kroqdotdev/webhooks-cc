@@ -16,6 +16,12 @@ export interface CreateServerOptions {
   webhookUrl?: string;
   /** Custom API base URL (default: https://webhooks.cc) */
   baseUrl?: string;
+  /**
+   * Without an API key: the agent credential file that keeps the sandbox and
+   * a human's connection across restarts (default: WHK_AGENT_FILE, else
+   * ~/.config/whk/agent.json or the platform's equivalent); false for none.
+   */
+  credentialsFile?: string | false;
 }
 
 /**
@@ -42,11 +48,12 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
     { debouncedNotificationMethods: ["notifications/tools/list_changed"] }
   );
 
-  // No API key: the agent sandbox (auth.md v0.6). The endpoint and request
-  // tools work without an account, and connect_account / wait_for_connection
-  // swap in the full tools once a human connects the agent to their account.
+  // No API key: the account a human connected this agent to before (saved in
+  // the agent credential file), else the agent sandbox (auth.md v0.6). The
+  // endpoint and request tools work without an account, and connect_account /
+  // wait_for_connection swap in the full tools once a human connects it.
   if (!apiKey) {
-    registerSandboxTools(server, { baseUrl, webhookUrl });
+    registerSandboxTools(server, { baseUrl, webhookUrl, credentialsFile: options.credentialsFile });
     registerPrompts(server);
     return server;
   }
@@ -60,7 +67,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   return server;
 }
 
-export { registerTools } from "./tools";
+export { registerTools, REMOTE_MAX_WAIT_MS } from "./tools";
+export type { RegisterToolsOptions, RegisteredToolHandle, ToolServer } from "./tools";
 export { registerSandboxTools, registerAgentRegistrationTools } from "./sandbox-tools";
 export type { SandboxToolOptions } from "./sandbox-tools";
 export { registerPrompts } from "./prompts";

@@ -25,6 +25,10 @@ describe("server.json", () => {
     });
   });
 
+  it("lists the hosted server as a streamable HTTP remote", () => {
+    expect(server.remotes).toEqual([{ type: "streamable-http", url: "https://webhooks.cc/mcp" }]);
+  });
+
   it("keeps the description within the registry's 100 characters", () => {
     expect(server.description.length).toBeLessThanOrEqual(100);
   });

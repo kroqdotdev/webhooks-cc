@@ -9,25 +9,31 @@
     "subfolder": "packages/mcp"
   },
   "websiteUrl": "https://webhooks.cc/docs/mcp",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@webhooks-cc/mcp",
-      "version": "1.14.0",
+      "version": "1.15.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
           "name": "WHK_API_KEY",
-          "description": "webhooks.cc API key (whcc_...). Without one, the server offers the keyless agent sandbox.",
+          "description": "webhooks.cc API key (whcc_...). Without one, the server starts connected to the account the agent was connected to before, or in the keyless agent sandbox.",
           "isRequired": false,
           "isSecret": true,
           "format": "string"
         }
       ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://webhooks.cc/mcp"
     }
   ]
 }
