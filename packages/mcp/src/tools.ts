@@ -679,7 +679,10 @@ async function waitForMultipleRequests(
       }
     }
 
-    await sleep(Math.max(10, pollIntervalMs));
+    // Never sleep past the deadline.
+    await sleep(
+      Math.min(Math.max(10, pollIntervalMs), Math.max(0, timeoutMs - (Date.now() - startedAt)))
+    );
   }
 
   return {
@@ -1906,7 +1909,7 @@ export function registerTools(
         const flow = client
           .flow()
           .createEndpoint({ expiresIn: "1h" })
-          .waitForCapture({ timeout: "30s" });
+          .waitForCapture({ timeout: "30s", pollInterval: "1s" });
 
         if (mockStatus !== undefined) {
           flow.setMock({
@@ -2069,10 +2072,15 @@ export function registerTools(
       includeHtml: z.boolean().default(false).describe("Include the HTML part (default: false)"),
     },
     withErrorHandling(async ({ endpointSlug, tag, subject, from, timeout, since, includeHtml }) => {
-      const [email, view] = await Promise.all([
-        client.emails.waitFor(endpointSlug, { tag, subject, from, timeout, since }),
-        emailEndpointView(client, endpointSlug),
-      ]);
+      // The endpoint first: if it cannot be read, no wait is left polling.
+      const view = await emailEndpointView(client, endpointSlug);
+      const email = await client.emails.waitFor(endpointSlug, {
+        tag,
+        subject,
+        from,
+        timeout,
+        since,
+      });
       return jsonContent(emailDetail(client, email, view, includeHtml));
     })
   );

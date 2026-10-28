@@ -676,7 +676,8 @@ export async function collectMatchingRequests(
       }
     }
 
-    await sleep(safePollInterval);
+    // Never sleep past the deadline: a last poll would not come anyway.
+    await sleep(Math.max(0, Math.min(safePollInterval, timeout - (Date.now() - start))));
   }
 
   throw new TimeoutError(timeout);

@@ -140,6 +140,9 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
   const server = new McpServer(
     { name: "webhooks-cc", title: "webhooks.cc", version: APP_VERSION },
     {
+      // The tool list never changes within a request: no listChanged, so a
+      // subscriptions/listen stream completes at once instead of holding a slot.
+      capabilities: { tools: { listChanged: false } },
       instructions: INSTRUCTIONS,
       // Every caller sees the same tools; the list changes only with a deploy.
       cacheHints: { "tools/list": { ttlMs: 3_600_000, cacheScope: "public" } },

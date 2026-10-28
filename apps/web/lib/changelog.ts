@@ -1748,7 +1748,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "`WebhooksCC.sandbox()` keeps the sandbox in the agent credential file (~/.config/whk/agent.json, shared with the MCP server, the CLI and the other SDKs) and reuses it on the next run instead of registering again; `credentialsFile: false` keeps it in memory",
       "`sandbox.waitForClaim()` saves the account connection, and `WebhooksCC.connected()` returns a client for it later, or null once the human disconnects the agent; `WebhooksCC.connect({ email })` connects an account without a sandbox",
       "A sandbox read back from the file connects its human through a new registration (`movesEndpoints: false`), since only the process that registered holds the claim token",
-      "`fetch` option on the client, for proxies and tests",
+      "`fetch` option on the client, for proxies and tests; waits no longer sleep past their timeout",
       "The auth.md v0.1 helpers (`registerAnonymous`, `registerWithEmail`, `confirmEmailOtp`, `registerWithIdJag` and their `pollClaim`, `waitForClaim`) are deprecated and warn once; they go in the next major version",
     ],
   },
