@@ -1,6 +1,7 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { updateTeam, deleteTeam } from "@/lib/supabase/teams";
+import { loggablePolarError } from "@/lib/polar";
 import { reportError } from "@/lib/observability";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
@@ -61,7 +62,7 @@ export async function DELETE(
     }
     return new Response(null, { status: 204 });
   } catch (error) {
-    reportError("Failed to delete team", error);
+    reportError("Failed to delete team", loggablePolarError(error));
     await auditUserAction(request, auth.userId, { action: "team.deleted", status: 500, teamId });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }

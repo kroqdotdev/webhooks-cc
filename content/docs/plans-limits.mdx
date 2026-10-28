@@ -3,7 +3,7 @@ title: "Plans & Limits"
 description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free, pro, and teams plans side by side with exact numbers, billing periods, and upgrade paths."
 section: getting-started
 order: 4
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-27
 schema: faq
 keywords:
   [
@@ -14,6 +14,8 @@ keywords:
     "free plan",
     "pro plan",
     "teams plan",
+    "webhook overage",
+    "extra webhook requests",
   ]
 seo:
   ogTitle: "Plans & Limits"
@@ -60,6 +62,26 @@ Emails sent to an endpoint's address count against the same quota: one request p
   `sendTo` calls that send webhooks directly to your handler URL do not count toward your quota.
   Only requests routed through your webhooks.cc endpoint are counted.
 </Callout>
+
+## Extra requests
+
+Pro accounts and subscribed teams can go past the plan's quota in three ways, all in blocks of 25,000 requests. Manage them under **Account > Plan and usage > Extra requests**, or on the team's page (the owner).
+
+| Option          | Price                          | How it works                                                                                   |
+| --------------- | ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Monthly blocks  | $2 per 25,000 a month          | Raise the quota every period and renew together with the plan                                  |
+| One-time blocks | $3 per 25,000                  | Bought once, kept until used, and used only after the quota and monthly blocks run out          |
+| Overage         | $4 per 25,000 ($0.16 per 1,000) | Counted past everything else, up to a monthly maximum you set, billed at the end of the period |
+
+Requests are used in this order: the plan's quota, monthly blocks, one-time blocks, then overage. Only when all of them are used up does the receiver answer `429 Too Many Requests`.
+
+**Monthly blocks** renew on the plan's renewal date. Adding blocks mid-period charges the full monthly price for them at once and adds their requests at once; removing blocks takes effect at the renewal, so you keep what you paid for until then.
+
+**One-time blocks** never expire. They stay with the account when Pro ends, and a team keeps them while it is subscribed.
+
+**Overage** costs nothing until it is used. Polar asks for a card when you turn it on, and bills the requests counted in a period together with the plan at the end of that period, never more than your maximum. Turning overage off stops it at once; what was already used is billed at the period end.
+
+Monthly blocks and overage need the plan: if Pro or the team's subscription is canceled they end with it, and come back if you keep the plan after all.
 
 ## Data retention
 
@@ -153,6 +175,11 @@ On your first captured request, not when you sign up. The 24-hour window activat
 <FAQItem question="Whose quota do team-shared endpoints use?">
 
 The team's. An endpoint shared with a team that has an active Teams subscription bills its captured requests to that team's pooled quota — 100,000 requests per seat per 30 days — and those requests are kept for 31 days regardless of the endpoint owner's personal plan. Endpoints that are not shared with an active team still count against their owner's quota.
+
+</FAQItem>
+<FAQItem question="What happens when I need more than my plan's requests?">
+
+Add extra requests in blocks of 25,000: monthly blocks ($2 each, renewed with the plan), one-time blocks ($3 each, kept until used), or overage ($4 per 25,000, billed at the end of the period up to a maximum you set). They are used in that order once the plan's quota runs out. See [Extra requests](#extra-requests).
 
 </FAQItem>
 <FAQItem question="Do I need Pro to create a team?">

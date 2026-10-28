@@ -25,7 +25,10 @@ export interface Team {
   subscriptionStatus: "active" | "canceled" | "past_due" | null;
   seats: number;
   requestsUsed: number;
+  /** The pool's allowance this period: seats x 100,000 plus monthly blocks. */
   requestLimit: number;
+  /** Requests monthly blocks add to requestLimit this period (migration 00065). */
+  blockRequests: number;
   /** End of the current billing period in millis; null when unsubscribed. */
   periodEnd: number | null;
   cancelAtPeriodEnd: boolean;

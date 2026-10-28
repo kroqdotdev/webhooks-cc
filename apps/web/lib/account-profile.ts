@@ -11,10 +11,17 @@ export type AccountProfile = Pick<
   | "plan"
   | "requests_used"
   | "request_limit"
+  | "period_start"
   | "period_end"
   | "cancel_at_period_end"
   | "subscription_status"
+  | "block_requests"
+  | "credit_requests"
+  | "overage_active"
+  | "overage_max"
+  | "overage_used"
+  | "overage_period_start"
 >;
 
 export const ACCOUNT_PROFILE_SELECT =
-  "id, email, name, image, plan, requests_used, request_limit, period_end, cancel_at_period_end, subscription_status";
+  "id, email, name, image, plan, requests_used, request_limit, period_start, period_end, cancel_at_period_end, subscription_status, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start";

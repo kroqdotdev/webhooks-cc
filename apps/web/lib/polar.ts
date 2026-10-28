@@ -44,6 +44,39 @@ export function getPolarTeamsCheckoutConfig() {
   };
 }
 
+/** Polar products for extra request capacity (lib/capacity.ts). */
+export interface CapacityProductIds {
+  /** One-time blocks, unit-priced. */
+  oneTime: string;
+  /** Recurring blocks, a monthly unit-priced subscription. */
+  monthly: string;
+  /** Recurring blocks added mid-period: a one-time order at the monthly price. */
+  monthlyAdd: string;
+  /** Overage, a monthly subscription with only a metered price. */
+  overage: string;
+}
+
+/** Each add-on product id that is set, whether or not the others are. */
+export function configuredCapacityProductIds(): Partial<CapacityProductIds> {
+  return {
+    oneTime: process.env.POLAR_REQUEST_BLOCKS_PRODUCT_ID || undefined,
+    monthly: process.env.POLAR_MONTHLY_BLOCKS_PRODUCT_ID || undefined,
+    monthlyAdd: process.env.POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID || undefined,
+    overage: process.env.POLAR_OVERAGE_PRODUCT_ID || undefined,
+  };
+}
+
+/**
+ * The add-on products, or null while any of them is unset: extra capacity is
+ * offered only once all four exist, so the product never half-works. Webhook
+ * routing matches each set id on its own (configuredCapacityProductIds()).
+ */
+export function getCapacityProductIds(): CapacityProductIds | null {
+  const { oneTime, monthly, monthlyAdd, overage } = configuredCapacityProductIds();
+  if (!oneTime || !monthly || !monthlyAdd || !overage) return null;
+  return { oneTime, monthly, monthlyAdd, overage };
+}
+
 export function getPolarWebhookSecret(): string {
   return requireEnv("POLAR_WEBHOOK_SECRET");
 }
@@ -122,6 +155,23 @@ export function describePolarError(error: unknown): string | null {
 }
 
 export { PolarConfigError };
+
+/**
+ * True when Polar refused a change because the subscription has already
+ * ended: the change has nothing left to act on. A 404 is not taken as ended,
+ * because a misconfigured token would look the same while a real
+ * subscription keeps charging.
+ */
+export function isEndedSubscriptionError(error: unknown): boolean {
+  // Polar answers 403 with this code for a subscription that already ended.
+  if (polarErrorCode(error) === "AlreadyCanceledSubscription") return true;
+
+  // Fallback for other wordings, from the Polar detail and the message.
+  const haystack = [describePolarError(error), error instanceof Error ? error.message : null]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" ");
+  return /already[\s_-]?(canceled|cancelled|revoked)/i.test(haystack);
+}
 
 /**
  * Reduces a Polar SDK error to the parts that are safe to log. The message of

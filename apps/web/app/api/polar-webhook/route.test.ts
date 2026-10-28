@@ -3,7 +3,10 @@ import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 const mockFns = vi.hoisted(() => ({
   validateEvent: vi.fn(),
   applyPolarWebhookEvent: vi.fn(),
+  resolveWebhookUserId: vi.fn(),
   applyTeamPolarWebhookEvent: vi.fn(),
+  applyCapacityWebhookEvent: vi.fn(),
+  reconcileAddonsWithPlan: vi.fn(),
   auditPolarEvent: vi.fn(),
 }));
 
@@ -23,7 +26,30 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 
 vi.mock("@/lib/supabase/billing", () => ({
   applyPolarWebhookEvent: mockFns.applyPolarWebhookEvent,
+  resolveWebhookUserId: mockFns.resolveWebhookUserId,
 }));
+
+// Partial mock: product matching is real (it reads the product env vars set
+// below); applying events and reconciling add-ons are stubbed.
+vi.mock("@/lib/supabase/capacity-billing", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/supabase/capacity-billing")>();
+  return {
+    ...actual,
+    applyCapacityWebhookEvent: mockFns.applyCapacityWebhookEvent,
+    reconcileAddonsWithPlan: mockFns.reconcileAddonsWithPlan,
+  };
+});
+
+const CAPACITY_PRODUCTS = {
+  POLAR_REQUEST_BLOCKS_PRODUCT_ID: "prod_one_time",
+  POLAR_MONTHLY_BLOCKS_PRODUCT_ID: "prod_monthly",
+  POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: "prod_monthly_add",
+  POLAR_OVERAGE_PRODUCT_ID: "prod_overage",
+};
+const previousProducts = Object.fromEntries(
+  Object.keys(CAPACITY_PRODUCTS).map((key) => [key, process.env[key]])
+);
+Object.assign(process.env, CAPACITY_PRODUCTS);
 
 // Partial mock: the real `extractTeamIdFromWebhook` is pure (no DB/Polar access), so the
 // routing tests below exercise the actual payload-shape detection rather than a stub.
@@ -39,6 +65,10 @@ const previousSecret = process.env.POLAR_WEBHOOK_SECRET;
 process.env.POLAR_WEBHOOK_SECRET = "whsec_test";
 
 afterAll(() => {
+  for (const [key, value] of Object.entries(previousProducts)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   if (previousSecret === undefined) {
     delete process.env.POLAR_WEBHOOK_SECRET;
   } else {
@@ -60,6 +90,74 @@ describe("POST /api/polar-webhook", () => {
     vi.clearAllMocks();
     mockFns.applyPolarWebhookEvent.mockResolvedValue(undefined);
     mockFns.applyTeamPolarWebhookEvent.mockResolvedValue(undefined);
+    mockFns.applyCapacityWebhookEvent.mockResolvedValue(undefined);
+    mockFns.reconcileAddonsWithPlan.mockResolvedValue(undefined);
+    mockFns.resolveWebhookUserId.mockResolvedValue("user_9");
+  });
+
+  test("routes add-on subscriptions to the capacity handler, never the plan handlers", async () => {
+    const data = {
+      id: "sub_overage",
+      product_id: "prod_overage",
+      customer: { id: "cus_3", external_id: "user_9", metadata: {} },
+    };
+    mockFns.validateEvent.mockResolvedValue({ type: "subscription.revoked", data });
+
+    const { POST } = await import("./route");
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockFns.applyCapacityWebhookEvent).toHaveBeenCalledWith(
+      "subscription.revoked",
+      { kind: "user", userId: "user_9" },
+      "overage",
+      data
+    );
+    expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
+    expect(mockFns.reconcileAddonsWithPlan).not.toHaveBeenCalled();
+  });
+
+  test("routes a team's one-time block order to the capacity handler for the team", async () => {
+    const data = {
+      id: "ord_1",
+      product: { id: "prod_one_time" },
+      customer: { id: "cus_1", external_id: "team:team_7", metadata: { teamId: "team_7" } },
+    };
+    mockFns.validateEvent.mockResolvedValue({ type: "order.paid", data });
+
+    const { POST } = await import("./route");
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockFns.applyCapacityWebhookEvent).toHaveBeenCalledWith(
+      "order.paid",
+      { kind: "team", teamId: "team_7" },
+      "one_time",
+      data
+    );
+    expect(mockFns.applyTeamPolarWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  test("brings add-ons in line after a plan subscription event, not after other events", async () => {
+    const data = {
+      id: "sub_pro",
+      product_id: "prod_pro",
+      customer: { id: "cus_3", external_id: "user_9", metadata: {} },
+    };
+    mockFns.validateEvent.mockResolvedValueOnce({ type: "subscription.canceled", data });
+
+    const { POST } = await import("./route");
+    await POST(webhookRequest());
+    expect(mockFns.applyPolarWebhookEvent).toHaveBeenCalledWith("subscription.canceled", data);
+    expect(mockFns.reconcileAddonsWithPlan).toHaveBeenCalledWith({
+      kind: "user",
+      userId: "user_9",
+    });
+
+    mockFns.reconcileAddonsWithPlan.mockClear();
+    mockFns.validateEvent.mockResolvedValueOnce({ type: "order.paid", data });
+    await POST(webhookRequest());
+    expect(mockFns.reconcileAddonsWithPlan).not.toHaveBeenCalled();
   });
 
   test("routes customer metadata team events to the team handler", async () => {

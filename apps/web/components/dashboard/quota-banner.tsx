@@ -134,22 +134,36 @@ export function QuotaBanner() {
         <div className="flex-1 min-w-64 space-y-1">
           <p className="text-sm font-medium">
             <span className="font-bold">Request limit reached.</span> You have used all{" "}
-            {profile.request_limit.toLocaleString()} requests in this period. New webhooks to your
-            endpoints are rejected with HTTP 429 until {resetsAt}.
+            {(profile.request_limit + profile.block_requests).toLocaleString()} requests in this
+            period. New webhooks to your endpoints are rejected with HTTP 429 until {resetsAt}.
             {teamBilledEndpoints > 0 &&
               " Endpoints shared with a team use the team's quota and keep capturing."}
           </p>
           <QuotaRejectionDetail rejections={rejections} />
-          <p className="text-sm text-muted-foreground">
-            {isFree
-              ? "Pro raises the limit to 100,000 requests a month for $8/month. "
-              : "Your Pro quota is used up for this period. "}
-            Capturing for a company?{" "}
-            <Link href="/teams" className="underline font-medium text-foreground hover:opacity-80">
-              Start a team
-            </Link>{" "}
-            for a pooled quota of 100,000 requests per seat.
-          </p>
+          {isFree ? (
+            <p className="text-sm text-muted-foreground">
+              Pro raises the limit to 100,000 requests a month for $8/month. Capturing for a
+              company?{" "}
+              <Link
+                href="/teams"
+                className="underline font-medium text-foreground hover:opacity-80"
+              >
+                Start a team
+              </Link>{" "}
+              for a pooled quota of 100,000 requests per seat.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Keep capturing with{" "}
+              <Link
+                href="/account/plan#extra-requests"
+                className="underline font-medium text-foreground hover:opacity-80"
+              >
+                extra requests
+              </Link>
+              : blocks of 25,000 from $2, or overage billed at the end of the period.
+            </p>
+          )}
         </div>
         {isFree && <UpgradeButton accessToken={accessToken} />}
       </div>

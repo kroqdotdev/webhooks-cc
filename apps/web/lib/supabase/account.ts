@@ -1,5 +1,6 @@
 import { createAdminClient } from "./admin";
-import { createPolarClient, describePolarError, polarErrorCode } from "@/lib/polar";
+import { createPolarClient, isEndedSubscriptionError } from "@/lib/polar";
+import { revokeAllAddons } from "./capacity-billing";
 import { revokeTeamSubscription } from "./team-billing";
 
 /**
@@ -18,16 +19,7 @@ export class AccountDeletionBillingError extends Error {
 }
 
 function isAlreadyCanceledError(error: unknown): boolean {
-  // Polar answers 403 with this code for a subscription that already ended.
-  if (polarErrorCode(error) === "AlreadyCanceledSubscription") return true;
-
-  // Fallback for other wordings: match against both the Polar detail and the
-  // error message, since the detail can be present yet unrelated while the
-  // message carries the "already canceled" hint.
-  const haystack = [describePolarError(error), error instanceof Error ? error.message : null]
-    .filter((part): part is string => typeof part === "string" && part.length > 0)
-    .join(" ");
-  return /already[\s_-]?(canceled|cancelled|revoked)/i.test(haystack);
+  return isEndedSubscriptionError(error);
 }
 
 async function revokePersonalSubscription(polarSubscriptionId: string): Promise<void> {
@@ -94,6 +86,14 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
     if (teamsError) throw teamsError;
 
     for (const team of teams ?? []) {
+      try {
+        await revokeAllAddons({ kind: "team", teamId: team.id });
+      } catch (error) {
+        throw new AccountDeletionBillingError(
+          `Could not cancel the extra requests for team ${team.id}`,
+          { cause: error }
+        );
+      }
       if (!team.polar_subscription_id) continue;
       try {
         await revokeOwnedTeamSubscription(team.polar_subscription_id);
@@ -106,7 +106,15 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
     }
   }
 
-  // 2. Personal Pro subscription.
+  // 2. Personal Pro subscription, and its extra requests.
+  try {
+    await revokeAllAddons({ kind: "user", userId });
+  } catch (error) {
+    throw new AccountDeletionBillingError("Could not cancel the extra requests", {
+      cause: error,
+    });
+  }
+
   const { data: user, error: userError } = await admin
     .from("users")
     .select("polar_subscription_id")

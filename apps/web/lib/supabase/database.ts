@@ -516,6 +516,16 @@ export interface Database {
           quota_email_claimed_at: string | null;
           emails_used: number;
           emails_period_start: string | null;
+          block_requests: number;
+          credit_requests: number;
+          overage_active: boolean;
+          overage_max: number;
+          overage_used: number;
+          overage_period_start: string | null;
+          overage_total: number;
+          overage_reported: number;
+          overage_reporting_to: number | null;
+          overage_report_lease: string | null;
         };
         Insert: {
           id: string;
@@ -536,6 +546,16 @@ export interface Database {
           quota_email_claimed_at?: string | null;
           emails_used?: number;
           emails_period_start?: string | null;
+          block_requests?: number;
+          credit_requests?: number;
+          overage_active?: boolean;
+          overage_max?: number;
+          overage_used?: number;
+          overage_period_start?: string | null;
+          overage_total?: number;
+          overage_reported?: number;
+          overage_reporting_to?: number | null;
+          overage_report_lease?: string | null;
         };
         Update: {
           id?: string;
@@ -556,6 +576,16 @@ export interface Database {
           quota_email_claimed_at?: string | null;
           emails_used?: number;
           emails_period_start?: string | null;
+          block_requests?: number;
+          credit_requests?: number;
+          overage_active?: boolean;
+          overage_max?: number;
+          overage_used?: number;
+          overage_period_start?: string | null;
+          overage_total?: number;
+          overage_reported?: number;
+          overage_reporting_to?: number | null;
+          overage_report_lease?: string | null;
         };
         Relationships: [];
       };
@@ -658,6 +688,16 @@ export interface Database {
           pending_checkout: Json | null;
           pending_seats: number | null;
           pending_seats_as_of: string | null;
+          block_requests: number;
+          credit_requests: number;
+          overage_active: boolean;
+          overage_max: number;
+          overage_used: number;
+          overage_period_start: string | null;
+          overage_total: number;
+          overage_reported: number;
+          overage_reporting_to: number | null;
+          overage_report_lease: string | null;
         };
         Insert: {
           id?: string;
@@ -676,6 +716,16 @@ export interface Database {
           pending_checkout?: Json | null;
           pending_seats?: number | null;
           pending_seats_as_of?: string | null;
+          block_requests?: number;
+          credit_requests?: number;
+          overage_active?: boolean;
+          overage_max?: number;
+          overage_used?: number;
+          overage_period_start?: string | null;
+          overage_total?: number;
+          overage_reported?: number;
+          overage_reporting_to?: number | null;
+          overage_report_lease?: string | null;
         };
         Update: {
           id?: string;
@@ -694,6 +744,115 @@ export interface Database {
           pending_checkout?: Json | null;
           pending_seats?: number | null;
           pending_seats_as_of?: string | null;
+          block_requests?: number;
+          credit_requests?: number;
+          overage_active?: boolean;
+          overage_max?: number;
+          overage_used?: number;
+          overage_period_start?: string | null;
+          overage_total?: number;
+          overage_reported?: number;
+          overage_reporting_to?: number | null;
+          overage_report_lease?: string | null;
+        };
+        Relationships: [];
+      };
+      capacity_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          team_id: string | null;
+          kind: "blocks" | "overage";
+          polar_subscription_id: string;
+          status: "active" | "canceled" | "past_due" | null;
+          units: number;
+          pending_units: number | null;
+          cancel_at_period_end: boolean;
+          canceled_with_plan: boolean;
+          period_start: string | null;
+          period_end: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          kind: "blocks" | "overage";
+          polar_subscription_id: string;
+          status?: "active" | "canceled" | "past_due" | null;
+          units?: number;
+          pending_units?: number | null;
+          cancel_at_period_end?: boolean;
+          canceled_with_plan?: boolean;
+          period_start?: string | null;
+          period_end?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          kind?: "blocks" | "overage";
+          polar_subscription_id?: string;
+          status?: "active" | "canceled" | "past_due" | null;
+          units?: number;
+          pending_units?: number | null;
+          cancel_at_period_end?: boolean;
+          canceled_with_plan?: boolean;
+          period_start?: string | null;
+          period_end?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      capacity_purchases: {
+        Row: {
+          id: string;
+          polar_order_id: string;
+          user_id: string | null;
+          team_id: string | null;
+          kind: "credits" | "block_increase";
+          units: number;
+          requests: number;
+          amount: number | null;
+          polar_subscription_id: string | null;
+          target_units: number | null;
+          synced_at: string | null;
+          refunded_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          polar_order_id: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          kind: "credits" | "block_increase";
+          units: number;
+          requests: number;
+          amount?: number | null;
+          polar_subscription_id?: string | null;
+          target_units?: number | null;
+          synced_at?: string | null;
+          refunded_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          polar_order_id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          kind?: "credits" | "block_increase";
+          units?: number;
+          requests?: number;
+          amount?: number | null;
+          polar_subscription_id?: string | null;
+          target_units?: number | null;
+          synced_at?: string | null;
+          refunded_at?: string | null;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -1127,6 +1286,66 @@ export interface Database {
           p_seat_id?: string | null;
         };
         Returns: Json;
+      };
+      apply_capacity_subscription: {
+        Args: {
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_kind: "blocks" | "overage";
+          p_subscription_id: string;
+          p_status: "active" | "canceled" | "past_due" | null;
+          p_units: number;
+          p_pending_units: number | null;
+          p_cancel_at_period_end: boolean;
+          p_period_start: string | null;
+          p_period_end: string | null;
+        };
+        Returns: Json;
+      };
+      grant_capacity_purchase: {
+        Args: {
+          p_order_id: string;
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_kind: "credits" | "block_increase";
+          p_units: number;
+          p_amount: number | null;
+        };
+        Returns: Json;
+      };
+      refund_capacity_purchase: {
+        Args: {
+          p_order_id: string;
+        };
+        Returns: Json;
+      };
+      sync_capacity_account: {
+        Args: {
+          p_user_id: string | null;
+          p_team_id: string | null;
+        };
+        Returns: undefined;
+      };
+      claim_overage_reports: {
+        Args: {
+          p_limit?: number;
+          p_lease_seconds?: number;
+        };
+        Returns: {
+          account_kind: "user" | "team";
+          account_id: string;
+          polar_customer_id: string;
+          from_total: number;
+          to_total: number;
+        }[];
+      };
+      complete_overage_report: {
+        Args: {
+          p_account_kind: "user" | "team";
+          p_account_id: string;
+          p_to_total: number;
+        };
+        Returns: undefined;
       };
       update_team_seats: {
         Args: {

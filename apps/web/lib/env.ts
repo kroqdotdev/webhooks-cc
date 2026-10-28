@@ -77,6 +77,13 @@ const serverEnvSchema = z
     // Polar seat-based Teams product. Optional so deploys without Teams billing keep working;
     // getPolarTeamsCheckoutConfig() throws at call time when it is missing.
     POLAR_TEAMS_PRODUCT_ID: z.string().optional(),
+    // Extra request capacity (lib/capacity.ts): one-time blocks, monthly blocks,
+    // monthly blocks added mid-period, and metered overage. Offered only when all
+    // four are set (getCapacityProductIds()).
+    POLAR_REQUEST_BLOCKS_PRODUCT_ID: z.string().optional(),
+    POLAR_MONTHLY_BLOCKS_PRODUCT_ID: z.string().optional(),
+    POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: z.string().optional(),
+    POLAR_OVERAGE_PRODUCT_ID: z.string().optional(),
     // Agent auth (auth.md) — all optional with defaults so existing deploys are unaffected.
     RESEND_API_KEY: z.string().optional(),
     // SMTP transport for agent OTP email (used in production when SMTP_HOST is set;
@@ -210,6 +217,10 @@ export function serverEnv() {
       AGENT_SANDBOX_MAX_ENDPOINTS: process.env.AGENT_SANDBOX_MAX_ENDPOINTS,
       EPHEMERAL_TTL_HOURS: process.env.EPHEMERAL_TTL_HOURS,
       POLAR_TEAMS_PRODUCT_ID: process.env.POLAR_TEAMS_PRODUCT_ID,
+      POLAR_REQUEST_BLOCKS_PRODUCT_ID: process.env.POLAR_REQUEST_BLOCKS_PRODUCT_ID,
+      POLAR_MONTHLY_BLOCKS_PRODUCT_ID: process.env.POLAR_MONTHLY_BLOCKS_PRODUCT_ID,
+      POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: process.env.POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID,
+      POLAR_OVERAGE_PRODUCT_ID: process.env.POLAR_OVERAGE_PRODUCT_ID,
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       SMTP_HOST: process.env.SMTP_HOST,
       SMTP_PORT: process.env.SMTP_PORT,

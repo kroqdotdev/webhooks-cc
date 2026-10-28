@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   revokeTeamSubscription: vi.fn(),
+  revokeAllAddons: vi.fn(),
 }));
 
 vi.mock("./admin", () => ({
@@ -11,6 +12,10 @@ vi.mock("./admin", () => ({
 
 vi.mock("./team-billing", () => ({
   revokeTeamSubscription: mockFns.revokeTeamSubscription,
+}));
+
+vi.mock("./capacity-billing", () => ({
+  revokeAllAddons: mockFns.revokeAllAddons,
 }));
 
 import { createTeam, deleteTeam, listTeamsForUser } from "./teams-crud";
@@ -169,6 +174,7 @@ describe("listTeamsForUser", () => {
                 seats: 3,
                 requests_used: 42,
                 request_limit: 300_000,
+                block_requests: 50_000,
                 period_end: periodEnd,
                 cancel_at_period_end: true,
               },
@@ -186,7 +192,9 @@ describe("listTeamsForUser", () => {
       subscriptionStatus: "active",
       seats: 3,
       requestsUsed: 42,
-      requestLimit: 300_000,
+      // Monthly blocks count in the pool's allowance.
+      requestLimit: 350_000,
+      blockRequests: 50_000,
       periodEnd: Date.parse(periodEnd),
       cancelAtPeriodEnd: true,
     });
@@ -210,8 +218,24 @@ describe("deleteTeam", () => {
     });
 
     await expect(deleteTeam("user_1", "team_1")).resolves.toBe(true);
+    expect(mockFns.revokeAllAddons).toHaveBeenCalledWith({ kind: "team", teamId: "team_1" });
     expect(mockFns.revokeTeamSubscription).toHaveBeenCalledWith("sub_123");
     expect(recorded).toContain("teams:delete");
+  });
+
+  test("aborts the deletion when an add-on cannot be ended, so Polar never keeps charging", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [{ data: { polar_subscription_id: "sub_123" } }],
+        "teams:delete": [{ data: { id: "team_1" } }],
+      })
+    );
+    mockFns.revokeAllAddons.mockRejectedValueOnce(new Error("polar down"));
+
+    await expect(deleteTeam("user_1", "team_1")).rejects.toThrow("polar down");
+    expect(mockFns.revokeTeamSubscription).not.toHaveBeenCalled();
+    expect(recorded).not.toContain("teams:delete");
   });
 
   test("skips the revoke when the team never subscribed", async () => {

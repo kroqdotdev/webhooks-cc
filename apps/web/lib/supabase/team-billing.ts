@@ -75,7 +75,7 @@ async function updateTeamById(teamId: string, patch: TeamUpdate): Promise<void> 
   }
 }
 
-async function getTeamForOwner(userId: string, teamId: string): Promise<BillingTeam> {
+export async function getTeamForOwner(userId: string, teamId: string): Promise<BillingTeam> {
   const admin = createAdminClient();
   const { data: membership, error: memberError } = await admin
     .from("team_members")
@@ -125,7 +125,7 @@ async function getTeamSubscriptionId(teamId: string): Promise<string | null> {
   return data?.polar_subscription_id ?? null;
 }
 
-async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<string> {
+export async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<string> {
   if (team.polar_customer_id) {
     return team.polar_customer_id;
   }
@@ -1309,6 +1309,9 @@ export async function applyTeamPolarWebhookEvent(
         pending_checkout: null,
         pending_seats: null,
         pending_seats_as_of: null,
+        // Recurring blocks and overage need an active team; one-time blocks stay.
+        block_requests: 0,
+        overage_active: false,
       });
       return;
     }
