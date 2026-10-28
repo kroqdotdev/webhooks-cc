@@ -35,7 +35,9 @@ const (
 // WHK_API_KEY is not set and no WithAPIKey option is given.
 func Client(t testing.TB, opts ...webhookscc.Option) *webhookscc.Client {
 	t.Helper()
-	client, err := webhookscc.New(opts...)
+	// An API key only: a test suite never acts through an agent connection
+	// saved on the machine running it.
+	client, err := webhookscc.New(append([]webhookscc.Option{webhookscc.WithAgentFile("")}, opts...)...)
 	if errors.Is(err, webhookscc.ErrMissingAPIKey) {
 		t.Skipf("%s is not set", webhookscc.APIKeyEnv)
 	}

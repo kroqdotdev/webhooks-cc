@@ -18,6 +18,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"webhooks.cc/go/agent"
+	"webhooks.cc/go/internal/agentfile"
 	"webhooks.cc/go/internal/jsonx"
 	"webhooks.cc/go/internal/templates"
 	"webhooks.cc/go/internal/webtext"
@@ -31,6 +33,11 @@ const (
 	APIKeyEnv     = "WHK_API_KEY"
 	BaseURLEnv    = "WHK_BASE_URL"
 	WebhookURLEnv = "WHK_WEBHOOK_URL"
+	// AgentFileEnv names the agent credential file in full (see WithAgentFile).
+	AgentFileEnv = agentfile.Env
+
+	// DefaultClientName is the name agents register under without WithClientName.
+	DefaultClientName = "webhooks-cc-go"
 )
 
 const (
@@ -43,7 +50,15 @@ var allowedMethods = []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "
 
 // Client is a webhooks.cc API client. It is safe for concurrent use.
 type Client struct {
-	apiKey      string
+	apiKey string
+	// tokens, when set, authenticates as an agent instead of with apiKey.
+	tokens *tokenSource
+	// sandbox makes refusals SandboxErrors: the client behind a Sandbox.
+	sandbox      bool
+	clientName   string
+	agentFile    string
+	agentFileSet bool
+
 	baseURL     string
 	webhookURL  string
 	timeout     time.Duration
@@ -119,21 +134,53 @@ func WithEmailDomain(domain string) Option { return func(c *Client) { c.emailDom
 // signed request only reaches the host it was meant for.
 func WithHTTPClient(client *http.Client) Option { return func(c *Client) { c.http = client } }
 
-// New returns a client. Without WithAPIKey it reads WHK_API_KEY, and fails
-// when neither is set.
+// WithClientName sets the name an agent registers under, which the human
+// sees as self-reported when connecting it (default webhooks-cc-go, at most
+// 64 characters). Used by NewSandbox and Connect.
+func WithClientName(name string) Option { return func(c *Client) { c.clientName = name } }
+
+// WithAgentFile sets the agent credential file, shared with the webhooks.cc
+// MCP server, the whk CLI and the other SDKs (default: WHK_AGENT_FILE, or
+// whk/agent.json in the user's config directory). An empty path turns it
+// off: nothing is read or written, and a sandbox registers anew each time.
+func WithAgentFile(path string) Option {
+	return func(c *Client) { c.agentFile, c.agentFileSet = path, true }
+}
+
+// New returns a client. Without WithAPIKey it reads WHK_API_KEY. With
+// neither, it acts for the account an agent was connected to (see Connect
+// and Sandbox.WaitForClaim) when the agent credential file holds a live
+// connection for the base URL, and otherwise fails with ErrMissingAPIKey.
+// New reads that file but sends nothing; the first call exchanges the
+// connection's assertion for a token when no cached one is usable.
 func New(opts ...Option) (*Client, error) {
+	c, err := configure(opts)
+	if err != nil {
+		return nil, err
+	}
+	if c.apiKey == "" {
+		// An explicit API key always wins; only without one is the file read.
+		claimed := c.agentStore().Load(c.issuer(), time.Now()).Claimed
+		if claimed == nil {
+			return nil, ErrMissingAPIKey
+		}
+		c.tokens = c.newTokenSource(agentfile.Claimed, *claimed)
+	}
+	return c, nil
+}
+
+// configure applies the options and defaults, without checking credentials.
+func configure(opts []Option) (*Client, error) {
 	c := &Client{
 		apiKey:      os.Getenv(APIKeyEnv),
 		baseURL:     envOr(BaseURLEnv, DefaultBaseURL),
 		webhookURL:  envOr(WebhookURLEnv, DefaultWebhookURL),
 		timeout:     defaultTimeout,
 		emailDomain: DefaultEmailDomain,
+		clientName:  DefaultClientName,
 	}
 	for _, opt := range opts {
 		opt(c)
-	}
-	if c.apiKey == "" {
-		return nil, ErrMissingAPIKey
 	}
 	if c.timeout <= 0 {
 		return nil, errors.New("webhooks.cc: the timeout must be positive")
@@ -174,6 +221,29 @@ func envOr(name, fallback string) string {
 
 var userAgent = "webhooks-cc-go/" + Version
 
+// issuer is the base URL as the agent credential file keys it.
+func (c *Client) issuer() string { return agentfile.NormalizeIssuer(c.baseURL) }
+
+// agentStore is the agent credential file, or nil when it is turned off or
+// there is no config directory.
+func (c *Client) agentStore() *agentfile.Store {
+	return agentfile.Open(c.agentFile, !c.agentFileSet)
+}
+
+// agentSteps sends the registration steps with this client's settings.
+func (c *Client) agentSteps() *agent.Client {
+	return &agent.Client{BaseURL: c.baseURL, HTTPClient: c.http, Timeout: c.timeout, UserAgent: userAgent}
+}
+
+// bearer is the credential for the next call: the API key, or an agent's
+// access token.
+func (c *Client) bearer(ctx context.Context) (string, error) {
+	if c.tokens == nil {
+		return c.apiKey, nil
+	}
+	return c.tokens.token(ctx)
+}
+
 // api calls an API route and decodes the JSON response into out (when not nil).
 func (c *Client) api(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	return c.apiRetrying(ctx, method, path, query, body, out, idempotentMethods[method])
@@ -193,10 +263,16 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 			return err
 		}
 	}
+	refreshed := false
 	for attempt := 1; ; attempt++ {
 		backoff := backoffDelay(c.retry.Backoff, attempt)
 		more := attempt < c.retry.MaxAttempts
-		response, err := c.apiOnce(ctx, method, endpoint, payload)
+		// An agent token that cannot be had is never retried as a network error.
+		bearer, err := c.bearer(ctx)
+		if err != nil {
+			return err
+		}
+		response, err := c.apiOnce(ctx, method, endpoint, payload, bearer)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -208,6 +284,13 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 				continue
 			}
 			return err
+		}
+		// An agent token expired or was revoked: exchange once more, right away.
+		if response.status == http.StatusUnauthorized && c.tokens != nil && !refreshed {
+			refreshed = true
+			c.tokens.reject(bearer)
+			attempt--
+			continue
 		}
 		if response.status >= 300 {
 			apiErr := errorFromResponse(response)
@@ -221,6 +304,9 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 					return err
 				}
 				continue
+			}
+			if c.sandbox && response.status != http.StatusTooManyRequests {
+				return sandboxErrorFromResponse(response)
 			}
 			return apiErr
 		}
@@ -243,7 +329,7 @@ type apiResponse struct {
 	body   []byte
 }
 
-func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload []byte) (*apiResponse, error) {
+func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload []byte, bearer string) (*apiResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	var reader io.Reader
@@ -254,7 +340,7 @@ func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload [
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+c.apiKey)
+	request.Header.Set("Authorization", "Bearer "+bearer)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", userAgent)
 	response, err := c.http.Do(request)

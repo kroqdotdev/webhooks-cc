@@ -2,6 +2,7 @@ package webhookscc
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -68,6 +69,15 @@ func TestHeaderDigitsSkipJavaScriptWhitespace(t *testing.T) {
 		got, ok := headerDigits(header, "Retry-After")
 		if got != want || ok != (want != "") {
 			t.Errorf("headerDigits(%q) = %q, %v; want %q", value, got, ok, want)
+		}
+	}
+}
+
+func TestConnectionNeverPrintsItsClaimToken(t *testing.T) {
+	conn := &Connection{registrationID: "reg_1", claimToken: "clm_secret"}
+	for _, format := range []string{"%v", "%+v", "%#v", "%s"} {
+		if got := fmt.Sprintf(format, conn); strings.Contains(got, "clm_") {
+			t.Fatalf("%s printed the claim token: %s", format, got)
 		}
 	}
 }

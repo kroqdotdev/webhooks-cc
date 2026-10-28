@@ -8,7 +8,7 @@ Capture webhooks and email in your Go tests, wait for them, send signed webhooks
 go get webhooks.cc/go
 ```
 
-Go 1.25 or later. Create an API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/api-keys) and set `WHK_API_KEY`.
+Go 1.25 or later. Create an API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/api-keys) and set `WHK_API_KEY`, or, as an AI agent without an account, start in [the agent sandbox](#no-account-the-agent-sandbox).
 
 ## Wait for a webhook
 
@@ -118,6 +118,21 @@ preview, err := client.Destinations.Preview(ctx, endpoint.Slug, webhookscc.Previ
 ```
 
 Filters take the conditions of response rules, plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`. `Format` may also be an inbound mail provider's shape (`FormatPostmark`, `FormatSendGrid`, `FormatMailgun` or `FormatCloudMailin`): emails go out as that provider posts them and HTTP requests as received. `MailgunSigningKey` signs the Mailgun form; it is never returned, and `HasMailgunSigningKey` says whether one is saved. `Preview` is a dry run: whether the filter lets a captured request through and the exact request the destination would send. `Update` changes only the fields set with `Value` or `Null`, `Test` sends one delivery now, and `List`, `Get`, `Delete`, `Reorder`, `Secret` and `RotateSecret` do what they say.
+
+## No account: the agent sandbox
+
+An AI agent can capture webhooks before anyone signs up. `NewSandbox` registers through [auth.md](https://webhooks.cc/auth.md) with a few seconds of proof of work and gives it up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours:
+
+```go
+sandbox, err := webhookscc.NewSandbox(ctx, webhookscc.WithClientName("my-agent"))
+endpoint, err := sandbox.Endpoints.Create(ctx)
+request, err := sandbox.Requests.WaitFor(ctx, endpoint.Slug, webhookscc.WaitOptions{Timeout: time.Minute})
+
+attempt, err := sandbox.Claim(ctx, "dev@example.com") // show attempt.VerificationURI and attempt.UserCode
+client, err := sandbox.WaitForClaim(ctx)               // a *webhookscc.Client for that account
+```
+
+The registration and, once a human connects the agent, the connection are kept in the agent credential file the MCP server, the CLI and the other SDKs share (`WHK_AGENT_FILE`, or `whk/agent.json` in the config directory; `WithAgentFile("")` leaves it alone). The next `NewSandbox` reuses the sandbox, and without an API key `webhookscc.New()` and `webhookscc.Connected(ctx)` act for the connected account. `webhookscc.Connect(ctx, email)` connects an agent without a sandbox, and the `agent` package runs each protocol step on its own.
 
 ## Verify signatures
 

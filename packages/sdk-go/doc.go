@@ -22,9 +22,17 @@
 // is in the verify package, which has no dependency on the client; test
 // helpers built on testing.TB are in whktest.
 //
+// An AI agent without an account uses NewSandbox: a few seconds of proof of
+// work registers it (auth.md v0.6), and it may capture on up to 3 endpoints
+// for 24 hours. Sandbox.Claim, or Connect, asks a human to connect the agent
+// to their account; the connection is kept in the agent credential file the
+// webhooks.cc MCP server, the whk CLI and the other SDKs share, where New and
+// Connected find it when there is no API key. The agent package runs the
+// registration steps one by one.
+//
 // The package passes the TypeScript SDK's conformance vectors for signing,
 // verification and matchers, so it behaves like the other webhooks.cc SDKs.
 package webhookscc
 
 // Version is the SDK's version.
-const Version = "0.2.0"
+const Version = "0.3.0"
