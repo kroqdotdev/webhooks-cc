@@ -3,15 +3,26 @@ import { auditAgentEvent } from "@/lib/audit";
 import { NO_STORE_HEADERS, oauthError } from "@/lib/agent/errors";
 import { readAgentBody } from "@/lib/agent/http";
 import { revokeAgentToken } from "@/lib/agent/registrations";
+import { preflight, withCors } from "@/lib/oauth/cors";
+import { revokeRefreshToken } from "@/lib/oauth/tokens";
 import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/oauth2/revoke (RFC 7009): an agent drops one of its access
- * tokens. Only agent tokens are deleted here, never dashboard or device
- * keys, and the answer is 200 whether or not the token existed (RFC 7009
- * 2.2). The identity assertion stays valid for a new exchange.
+ * tokens, or an OAuth client its refresh token, which ends that grant with
+ * its access tokens. Only agent tokens are deleted here, never dashboard or
+ * device keys, and the answer is 200 whether or not the token existed
+ * (RFC 7009 2.2). An identity assertion stays valid for a new exchange.
  */
 export async function POST(request: Request) {
+  return withCors(await revokeToken(request));
+}
+
+export function OPTIONS() {
+  return preflight();
+}
+
+async function revokeToken(request: Request): Promise<Response> {
   const limit = await checkRateLimitWithInfo(request, "agent-revoke-token", 60, 60_000);
   if (limit.response) {
     return oauthError(429, "rate_limited", "Too many requests. Wait and retry.", {
@@ -25,7 +36,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const registrationId = await revokeAgentToken(body.token);
+    const registrationId = body.token.startsWith("whrt_")
+      ? await revokeRefreshToken(body.token)
+      : await revokeAgentToken(body.token);
     if (registrationId) {
       await auditAgentEvent(request, {
         action: "agent.token.revoked",

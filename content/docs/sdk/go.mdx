@@ -3,7 +3,7 @@ title: "Go SDK"
 description: "The webhooks.cc Go module captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes testing.TB helpers."
 section: sdk
 order: 7
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-28
 schema: none
 keywords: ["go webhook sdk", "golang webhooks", "webhook testing go", "verify webhook signature go", "webhooks.cc/go"]
 seo:
@@ -19,7 +19,7 @@ The `webhooks.cc/go` module brings the [TypeScript SDK](/docs/sdk)'s testing too
 go get webhooks.cc/go
 ```
 
-Go 1.25 or later. Create an API key on your [API keys page](/account/api-keys) and set `WHK_API_KEY`, or pass `webhookscc.WithAPIKey`. The package is named `webhookscc`.
+Go 1.25 or later. Create an API key on your [API keys page](/account/api-keys) and set `WHK_API_KEY`, or pass `webhookscc.WithAPIKey`. The package is named `webhookscc`. An AI agent without an account can start in [the agent sandbox](#no-account-the-agent-sandbox).
 
 ## Wait for a webhook
 
@@ -309,6 +309,64 @@ for request, err := range stream {
 
 The stream ends at `Timeout`, when the endpoint is deleted, or when you break out of the loop. With `Reconnect` it follows the server's 30-minute connection rotation and recovers from dropped connections without missing requests.
 
+## No account: the agent sandbox
+
+An AI agent can capture webhooks before anyone signs up. `webhookscc.NewSandbox` registers through [auth.md](/auth.md), solves a short proof of work (a few seconds of CPU) and returns a sandbox: up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. Sandbox endpoints only capture: no mock responses, forwarding or email. See [AI agents](/docs/agents) for the limits and how a person connects an agent.
+
+```go
+sandbox, err := webhookscc.NewSandbox(ctx, webhookscc.WithClientName("my-agent"))
+if err != nil {
+	return err
+}
+endpoint, err := sandbox.Endpoints.Create(ctx)
+if err != nil {
+	return err
+}
+triggerCheckout(endpoint.URL)
+request, err := sandbox.Requests.WaitFor(ctx, endpoint.Slug, webhookscc.WaitOptions{Timeout: time.Minute})
+
+// To keep the endpoints, a human connects the agent to their account.
+attempt, err := sandbox.Claim(ctx, "dev@example.com")
+if err != nil {
+	return err
+}
+fmt.Printf("Open %s and enter %s\n", attempt.VerificationURI, attempt.UserCode)
+client, err := sandbox.WaitForClaim(ctx) // a *webhookscc.Client for that account
+```
+
+The human opens the link, signs in (or signs up) as that email and types the code; the endpoints and what they captured move into their account, and the sandbox stops working. `WaitForClaim` fails with a `*webhookscc.AgentAuthError` whose `Code` is `expired_token` when the 15-minute code runs out (call `Claim` again) or `access_denied` when the human declines.
+
+The registration is saved in the agent credential file that the [MCP server](/docs/mcp), the TypeScript and Python SDKs and the [CLI](/docs/cli) share:
+
+| Platform | Path                                                                      |
+| -------- | ------------------------------------------------------------------------- |
+| Linux    | `~/.config/whk/agent.json`, or `$XDG_CONFIG_HOME/whk/agent.json` when set |
+| macOS    | `~/Library/Application Support/whk/agent.json`                            |
+| Windows  | `%APPDATA%\whk\agent.json`                                                |
+
+`WHK_AGENT_FILE` names another path. The next `NewSandbox`, in this process or another, reuses a live sandbox instead of registering again; pass `webhookscc.WithAgentFile("")` to leave the file alone, or a path to use another file. The claim token is never saved, so only the process that registered moves the sandbox endpoints into an account. A sandbox reused from the file starts a new code for the email instead (`attempt.MovesEndpoints` is `false`): the agent is connected to the account, and the sandbox endpoints stay where they are until they expire.
+
+A connection lasts 90 days, and every process picks it up:
+
+```go
+client, err := webhookscc.Connected(ctx) // webhookscc.ErrNotConnected when no agent is connected
+client, err := webhookscc.New()          // without WHK_API_KEY, acts for the connected account
+```
+
+To connect an agent without a sandbox, start with the human's email:
+
+```go
+connection, err := webhookscc.Connect(ctx, "dev@example.com", webhookscc.WithClientName("my-agent"))
+if err != nil {
+	return err
+}
+attempt := connection.Attempt()
+fmt.Printf("Open %s and enter %s\n", attempt.VerificationURI, attempt.UserCode)
+client, err := connection.Wait(ctx)
+```
+
+`connection.NewCode(ctx)` gets a new code when the old one ran out. An API key, passed or in `WHK_API_KEY`, always wins over the file. A refused sandbox call returns a `*webhookscc.SandboxError` with the server's `Code` (`sandbox_endpoint_limit`, `sandbox_full`, ...), and a rate limit an error matching `webhookscc.ErrRateLimited`. Each step of the protocol is a method of its own in the `webhooks.cc/go/agent` package.
+
 ## Errors
 
 API errors are a `*webhookscc.Error` with a `StatusCode`. Test them with `errors.Is`:
@@ -319,18 +377,21 @@ API errors are a `*webhookscc.Error` with a `StatusCode`. Test them with `errors
 | `webhookscc.ErrNotFound`      | 404: the endpoint, request or email does not exist           |
 | `webhookscc.ErrRateLimited`   | 429; the `*Error` carries `RetryAfter` when the server sends it |
 | `webhookscc.ErrTimeout`       | A request, wait or stream ran out of time                    |
-| `webhookscc.ErrMissingAPIKey` | `New` found no API key                                       |
+| `webhookscc.ErrMissingAPIKey` | `New` found no API key and no connected agent                |
+| `webhookscc.ErrNotConnected`  | `Connected` found no connected agent                         |
 
 Network failures return the `net/http` error. Retries are off unless you pass `webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 3})`. They repeat GET, PUT and DELETE calls after a network error, a timeout or a status in `RetryOn` (429, 500, 502, 503 and 504 by default), and any call after a 429; a POST or PATCH that failed any other way may have gone through, so it is not repeated, and neither is `Requests.Clear` without `Before`.
 
 ## Configuration
 
-| Option                    | Environment variable | Default                  |
-| ------------------------- | -------------------- | ------------------------ |
-| `WithAPIKey`              | `WHK_API_KEY`        | (required)               |
-| `WithBaseURL`             | `WHK_BASE_URL`       | `https://webhooks.cc`    |
-| `WithWebhookURL`          | `WHK_WEBHOOK_URL`    | `https://go.webhooks.cc` |
-| `WithTimeout`             |                      | 30 seconds per API call  |
-| `WithHTTPClient`          |                      | a new `http.Client`      |
+| Option           | Environment variable | Default                                  |
+| ---------------- | -------------------- | ---------------------------------------- |
+| `WithAPIKey`     | `WHK_API_KEY`        | required, unless an agent is connected   |
+| `WithBaseURL`    | `WHK_BASE_URL`       | `https://webhooks.cc`                    |
+| `WithWebhookURL` | `WHK_WEBHOOK_URL`    | `https://go.webhooks.cc`                 |
+| `WithTimeout`    |                      | 30 seconds per API call                  |
+| `WithHTTPClient` |                      | a new `http.Client`                      |
+| `WithAgentFile`  | `WHK_AGENT_FILE`     | `whk/agent.json` in the config directory |
+| `WithClientName` |                      | `webhooks-cc-go`                         |
 
 The source is in [`packages/sdk-go`](https://github.com/kroqdotdev/webhooks-cc/tree/main/packages/sdk-go), MIT licensed, and the API reference is on [pkg.go.dev](https://pkg.go.dev/webhooks.cc/go).

@@ -17,17 +17,25 @@ Usage:
   npx @webhooks-cc/mcp --help             Show this help
 
 Environment:
-  WHK_API_KEY        Your webhooks.cc API key (required)
+  WHK_API_KEY        Your webhooks.cc API key (optional; without it the server
+                     starts connected to the account your agent was connected
+                     to before, or in the keyless agent sandbox)
+  WHK_AGENT_FILE     Where the sandbox and the connection are saved (default:
+                     ~/.config/whk/agent.json, shared with the whk CLI and SDKs)
   WHK_WEBHOOK_URL    Custom webhook receiver URL (optional)
   WHK_BASE_URL       Custom API base URL (optional)
 
 Setup:
-  npx @webhooks-cc/mcp setup claude-code --api-key whcc_...
-  npx @webhooks-cc/mcp setup cursor --api-key whcc_...
-  npx @webhooks-cc/mcp setup vscode --api-key whcc_...
-  npx @webhooks-cc/mcp setup codex --api-key whcc_...
-  npx @webhooks-cc/mcp setup windsurf --api-key whcc_...
-  npx @webhooks-cc/mcp setup claude-desktop --api-key whcc_...
+  npx @webhooks-cc/mcp setup claude-code
+  npx @webhooks-cc/mcp setup cursor
+  npx @webhooks-cc/mcp setup vscode
+  npx @webhooks-cc/mcp setup codex
+  npx @webhooks-cc/mcp setup windsurf
+  npx @webhooks-cc/mcp setup claude-desktop
+  (add --api-key whcc_... to start with your account's tools)
+
+Hosted agents (claude.ai, ChatGPT): add https://webhooks.cc/mcp as a remote
+MCP server instead; you approve it once in your browser.
 
 Get your API key at https://webhooks.cc/account/api-keys
 `);

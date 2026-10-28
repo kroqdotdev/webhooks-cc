@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   diffRequests,
   extractJsonField,
+  parseDuration,
   MOCK_RESPONSE_DELAY_MAX,
   MOCK_RESPONSE_DELAY_MIN,
   MOCK_RESPONSE_STATUS_MAX,
@@ -679,7 +679,10 @@ async function waitForMultipleRequests(
       }
     }
 
-    await sleep(Math.max(10, pollIntervalMs));
+    // Never sleep past the deadline.
+    await sleep(
+      Math.min(Math.max(10, pollIntervalMs), Math.max(0, timeoutMs - (Date.now() - startedAt)))
+    );
   }
 
   return {
@@ -914,7 +917,124 @@ function emailDetail(
 }
 
 /** Register all webhook tools on an MCP server instance. */
-export function registerTools(server: McpServer, client: WebhooksCC): void {
+/**
+ * What registerTools needs from a server: the stdio server's McpServer has
+ * it, and the hosted server at webhooks.cc/mcp adapts its own to it, so both
+ * serve the same tools.
+ */
+export interface ToolServer {
+  tool<Shape extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    shape: Shape,
+    handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<ToolResult>
+  ): RegisteredToolHandle;
+}
+
+/** A registered tool, removable when the tool set is swapped. */
+export interface RegisteredToolHandle {
+  remove(): void;
+}
+
+export interface RegisterToolsOptions {
+  /**
+   * The hosted server (webhooks.cc/mcp): leave out the tools that send to a
+   * URL the caller names, which would run from webhooks.cc's network and
+   * could never reach the caller's machine anyway, refuse targetUrl on the
+   * others, and cap waits below the proxy's timeout.
+   */
+  remote?: boolean;
+}
+
+/** Tools that only make sense next to the caller: they post to a URL of the caller's choosing. */
+const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request"]);
+/** Tools whose optional targetUrl posts somewhere of the caller's choosing. */
+const TARGET_URL_TOOLS = new Set(["render_email", "test_webhook_flow"]);
+/** Longest wait on the hosted server; Cloudflare ends a request after 100 seconds. */
+export const REMOTE_MAX_WAIT_MS = 50_000;
+/** Shortest poll interval on the hosted server: each poll is an API request. */
+export const REMOTE_MIN_POLL_MS = 1_000;
+
+/** A duration argument in milliseconds, read as the SDK reads it; null when it is not one. */
+function durationMs(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== "string") return null;
+  try {
+    const ms = parseDuration(value);
+    return Number.isFinite(ms) && ms >= 0 ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The server registerTools writes to: records every tool for removal and,
+ * for the hosted server, applies the remote restrictions.
+ */
+function toolTarget(
+  target: ToolServer,
+  remote: boolean,
+  handles: RegisteredToolHandle[]
+): ToolServer {
+  return {
+    tool(name, description, shape, handler) {
+      if (remote && LOCAL_ONLY_TOOLS.has(name)) return { remove() {} };
+      const wrapped: typeof handler = remote
+        ? async (args) => {
+            const input = args as Record<string, unknown>;
+            if (TARGET_URL_TOOLS.has(name) && input.targetUrl !== undefined) {
+              return {
+                ...textContent(
+                  "targetUrl needs the local MCP server (npx -y @webhooks-cc/mcp): the hosted server cannot reach your machine. Leave it out here."
+                ),
+                isError: true,
+              };
+            }
+            // Waits poll the API: bound how long and how often, and poll no
+            // faster than once a second even when the caller leaves it out.
+            const bounded = { ...input };
+            if ("pollInterval" in shape && input.pollInterval === undefined) {
+              bounded.pollInterval = REMOTE_MIN_POLL_MS;
+            }
+            for (const [key, bound] of [
+              ["timeout", (ms: number) => Math.min(ms, REMOTE_MAX_WAIT_MS)],
+              [
+                "pollInterval",
+                (ms: number) => Math.min(Math.max(ms, REMOTE_MIN_POLL_MS), REMOTE_MAX_WAIT_MS),
+              ],
+            ] as const) {
+              if (bounded[key] === undefined) continue;
+              const ms = durationMs(bounded[key]);
+              if (ms === null) {
+                return {
+                  ...textContent(`${key} must be a duration such as "30s" or milliseconds.`),
+                  isError: true,
+                };
+              }
+              bounded[key] = bound(ms);
+            }
+            return handler(bounded as unknown as typeof args);
+          }
+        : handler;
+      const handle = target.tool(name, description, shape, wrapped);
+      handles.push(handle);
+      return handle;
+    },
+  };
+}
+
+/**
+ * Registers the webhooks.cc tools for an account client. Returns their
+ * handles, so a caller can swap the tool set later.
+ */
+export function registerTools(
+  target: ToolServer,
+  client: WebhooksCC,
+  options: RegisterToolsOptions = {}
+): RegisteredToolHandle[] {
+  const handles: RegisteredToolHandle[] = [];
+  const server = toolTarget(target, options.remote === true, handles);
+
   server.tool(
     "create_endpoint",
     "Create a webhook endpoint. Returns the endpoint slug, URL, and metadata.",
@@ -1789,7 +1909,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         const flow = client
           .flow()
           .createEndpoint({ expiresIn: "1h" })
-          .waitForCapture({ timeout: "30s" });
+          .waitForCapture({ timeout: "30s", pollInterval: "1s" });
 
         if (mockStatus !== undefined) {
           flow.setMock({
@@ -1952,10 +2072,15 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       includeHtml: z.boolean().default(false).describe("Include the HTML part (default: false)"),
     },
     withErrorHandling(async ({ endpointSlug, tag, subject, from, timeout, since, includeHtml }) => {
-      const [email, view] = await Promise.all([
-        client.emails.waitFor(endpointSlug, { tag, subject, from, timeout, since }),
-        emailEndpointView(client, endpointSlug),
-      ]);
+      // The endpoint first: if it cannot be read, no wait is left polling.
+      const view = await emailEndpointView(client, endpointSlug);
+      const email = await client.emails.waitFor(endpointSlug, {
+        tag,
+        subject,
+        from,
+        timeout,
+        since,
+      });
       return jsonContent(emailDetail(client, email, view, includeHtml));
     })
   );
@@ -2259,4 +2384,6 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       return jsonContent(description);
     })
   );
+
+  return handles;
 }

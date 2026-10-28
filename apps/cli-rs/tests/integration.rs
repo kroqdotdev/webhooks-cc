@@ -14,8 +14,15 @@ use std::collections::HashMap;
 /// Helper to create a client pointing at local dev
 fn make_client() -> whk::api::ApiClient {
     let base = std::env::var("WHK_API_URL").unwrap_or_else(|_| "https://webhooks.cc".into());
-    let webhook = std::env::var("WHK_WEBHOOK_URL").unwrap_or_else(|_| "https://go.webhooks.cc".into());
-    whk::api::ApiClient::new(Some(&base), Some(&webhook))
+    let webhook =
+        std::env::var("WHK_WEBHOOK_URL").unwrap_or_else(|_| "https://go.webhooks.cc".into());
+    // Only a `whk auth login` session runs these tests: an agent connection
+    // another tool saved in the shared credential file must not.
+    let token = whk::auth::load_token()
+        .ok()
+        .flatten()
+        .map(|t| t.access_token);
+    whk::api::ApiClient::with_credentials(Some(&base), Some(&webhook), token, None)
         .expect("failed to create API client")
 }
 
@@ -61,7 +68,10 @@ async fn test_endpoint_create_list_get_delete() {
     assert_eq!(got.id, ep.id);
 
     // Delete
-    client.delete_endpoint(&ep.slug).await.expect("delete failed");
+    client
+        .delete_endpoint(&ep.slug)
+        .await
+        .expect("delete failed");
 
     // Verify deleted
     let result = client.get_endpoint(&ep.slug).await;
@@ -97,7 +107,10 @@ async fn test_endpoint_update_mock_response() {
         signing_secret: None,
         signing_header: None,
     };
-    let updated = client.update_endpoint(&ep.slug, &update).await.expect("update failed");
+    let updated = client
+        .update_endpoint(&ep.slug, &update)
+        .await
+        .expect("update failed");
     assert_eq!(updated.name.as_deref(), Some("mock-test-updated"));
     assert!(updated.mock_response.is_some());
     assert_eq!(updated.mock_response.unwrap().status, 201);
@@ -137,21 +150,33 @@ async fn test_send_webhook_and_list_requests() {
     assert_eq!(send_resp.status, 200);
 
     // Poll for the request to be captured
-    let mut requests = client.list_requests(&ep.slug, Some(10), None).await.expect("list requests failed");
+    let mut requests = client
+        .list_requests(&ep.slug, Some(10), None)
+        .await
+        .expect("list requests failed");
     for _ in 0..10 {
         if !requests.requests.is_empty() {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        requests = client.list_requests(&ep.slug, Some(10), None).await.expect("list requests failed");
+        requests = client
+            .list_requests(&ep.slug, Some(10), None)
+            .await
+            .expect("list requests failed");
     }
-    assert!(!requests.requests.is_empty(), "should have at least 1 captured request");
+    assert!(
+        !requests.requests.is_empty(),
+        "should have at least 1 captured request"
+    );
 
     let captured = &requests.requests[0];
     assert_eq!(captured.method, "POST");
 
     // Get single request
-    let single = client.get_request(&captured.id).await.expect("get request failed");
+    let single = client
+        .get_request(&captured.id)
+        .await
+        .expect("get request failed");
     assert_eq!(single.id, captured.id);
     assert!(single.body.as_ref().unwrap().contains("integration"));
 
@@ -240,7 +265,9 @@ async fn test_delete_nonexistent_endpoint() {
 
 #[tokio::test]
 async fn test_unauthenticated_request() {
-    let client = whk::api::ApiClient::new(Some("https://webhooks.cc"), Some("https://go.webhooks.cc")).unwrap();
+    let client =
+        whk::api::ApiClient::new(Some("https://webhooks.cc"), Some("https://go.webhooks.cc"))
+            .unwrap();
     // This creates a client that reads the token from disk.
     // To test unauthenticated, we'd need a client with no token.
     // For now, just verify the client was created successfully.
@@ -277,7 +304,10 @@ async fn test_clear_requests() {
 
     // Poll until the request is captured before clearing
     for _ in 0..10 {
-        let list = client.list_requests(&ep.slug, Some(10), None).await.expect("list failed");
+        let list = client
+            .list_requests(&ep.slug, Some(10), None)
+            .await
+            .expect("list failed");
         if !list.requests.is_empty() {
             break;
         }
@@ -285,10 +315,16 @@ async fn test_clear_requests() {
     }
 
     // Clear
-    client.clear_requests(&ep.slug, None).await.expect("clear failed");
+    client
+        .clear_requests(&ep.slug, None)
+        .await
+        .expect("clear failed");
 
     // Verify empty
-    let requests = client.list_requests(&ep.slug, Some(10), None).await.expect("list failed");
+    let requests = client
+        .list_requests(&ep.slug, Some(10), None)
+        .await
+        .expect("list failed");
     assert!(requests.requests.is_empty(), "requests should be cleared");
 
     // Cleanup
@@ -366,7 +402,11 @@ async fn start_echo_server() -> (
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    (format!("http://127.0.0.1:{}", addr.port()), body_rx, shutdown_tx)
+    (
+        format!("http://127.0.0.1:{}", addr.port()),
+        body_rx,
+        shutdown_tx,
+    )
 }
 
 #[tokio::test]
@@ -424,7 +464,10 @@ async fn test_tunnel_skips_emails_without_email_options() {
     assert!(!tunnel.forward(&req).await.success);
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert!(body_rx.try_recv().is_err(), "nothing may reach the local server");
+    assert!(
+        body_rx.try_recv().is_err(),
+        "nothing may reach the local server"
+    );
 
     drop(shutdown_tx);
 }

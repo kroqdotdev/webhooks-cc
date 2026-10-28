@@ -6,8 +6,17 @@ info:
     REST API for webhooks.cc: capture, inspect, and test webhooks and email.
 
     **Authentication:** Most endpoints require a Bearer token in the `Authorization` header.
-    Use your API key (prefix `whcc_`) generated on the [API keys page](https://webhooks.cc/account/api-keys).
-    Public endpoints (`/api/stats`, `/api/health`) do not require authentication.
+    Use your API key (prefix `whcc_`) generated on the [API keys page](https://webhooks.cc/account/api-keys),
+    or an access token from OAuth 2.1 (authorization code with PKCE, for apps and MCP clients acting
+    for a signed-in user). Agents without a human at hand can register themselves (see
+    [auth.md](https://webhooks.cc/auth.md)) and exchange the identity assertion for access tokens.
+    Every access token is an ordinary `whcc_` bearer token and goes in the same header.
+    Public endpoints (`/api/stats`, `/api/health`, agent registration and the OAuth endpoints) do not
+    require authentication.
+
+    **MCP server:** The same API is available to AI agents as a remote MCP server (streamable
+    HTTP, not described here) at `https://webhooks.cc/mcp`, with the same bearer tokens; its
+    protected resource metadata is at `https://webhooks.cc/.well-known/oauth-protected-resource/mcp`.
 
     **Webhook receiver:** Send webhooks to `https://go.webhooks.cc/w/{slug}`. They are captured
     and available via the API and dashboard in real time.
@@ -33,6 +42,7 @@ servers:
 
 security:
   - BearerAuth: []
+  - OAuth2: [webhooks:read, webhooks:write]
 
 tags:
   - name: Endpoints
@@ -53,6 +63,15 @@ tags:
     description: Team management and endpoint sharing. Any account can create a team; the team needs its own Teams subscription before it can invite members or share endpoints.
   - name: Invites
     description: Team invitation management.
+  - name: Agents
+    description: |
+      Agent registration (auth.md v0.6, documented at https://webhooks.cc/auth.md) and the agent
+      sandbox. An agent registers without a human, works in a small sandbox with a pre-claim token,
+      and is later claimed into a human's account, after which it uses the normal API.
+  - name: OAuth
+    description: |
+      OAuth 2.1 token, revocation and dynamic client registration endpoints. Server metadata is
+      published at https://webhooks.cc/.well-known/oauth-authorization-server (RFC 8414).
 
 paths:
   # -- Endpoints ---------------------------------------------------------------
@@ -1542,6 +1561,626 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # -- Agents ------------------------------------------------------------------
+
+  /api/agent/identity/challenge:
+    post:
+      operationId: createAgentChallenge
+      tags: [Agents]
+      summary: Get a proof-of-work challenge
+      description: |
+        Issues a proof-of-work challenge for anonymous agent registration (scheme
+        `sha256-zero-bits`). No body and no credentials. Solve it by finding, for each sub-puzzle
+        `i` from `0` to `count - 1`, a decimal nonce such that SHA-256 of the UTF-8 string
+        `<challenge>.<i>.<nonce>` starts with `difficulty` zero bits, then send the nonces as
+        `proof_of_work` to `POST /api/agent/identity` before `expires_at`. Each challenge works
+        once. The SDKs ship a solver.
+
+        Rate limited to 30 requests per minute per IP.
+      security: []
+      responses:
+        "200":
+          description: A fresh challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PowChallenge"
+        "400":
+          description: Anonymous registration is turned off (`anonymous_not_enabled`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "429":
+          $ref: "#/components/responses/AgentRateLimited"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+        "503":
+          $ref: "#/components/responses/AgentUnavailable"
+
+  /api/agent/identity:
+    post:
+      operationId: registerAgent
+      tags: [Agents]
+      summary: Register an agent
+      description: |
+        Registers an agent (auth.md v0.6). `type` picks the kind of registration:
+
+        - `anonymous`: needs a solved proof-of-work challenge. Returns an identity assertion for
+          the sandbox (exchange it with the jwt-bearer grant for a `webhooks:sandbox` token) and a
+          claim token. Sent without `proof_of_work`, the answer is `400 proof_of_work_required`
+          carrying a fresh challenge, so an agent that skipped discovery registers in two calls.
+        - `service_auth`: the agent names its human's email as `login_hint` and gets a claim
+          attempt to show them. Nothing works until that human signs in and completes it; nothing
+          is emailed.
+        - `identity_assertion`: an ID-JAG from a trusted identity provider. Only available when
+          the deployment trusts one; production trusts none, so this answers `issuer_not_enabled`.
+
+        Errors are `{ error, error_description }` with auth.md's codes. Anonymous registration is
+        rate limited per IP and globally, and refused while too many unclaimed registrations are
+        live.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/AnonymousRegistrationRequest"
+                - $ref: "#/components/schemas/ServiceAuthRegistrationRequest"
+                - $ref: "#/components/schemas/IdJagRegistrationRequest"
+              discriminator:
+                propertyName: type
+                mapping:
+                  anonymous: "#/components/schemas/AnonymousRegistrationRequest"
+                  service_auth: "#/components/schemas/ServiceAuthRegistrationRequest"
+                  identity_assertion: "#/components/schemas/IdJagRegistrationRequest"
+      responses:
+        "200":
+          description: Registration created
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AnonymousRegistration"
+                  - $ref: "#/components/schemas/ServiceAuthRegistration"
+                  - $ref: "#/components/schemas/IdJagRegistration"
+                discriminator:
+                  propertyName: registration_type
+                  mapping:
+                    anonymous: "#/components/schemas/AnonymousRegistration"
+                    service_auth: "#/components/schemas/ServiceAuthRegistration"
+                    identity_assertion: "#/components/schemas/IdJagRegistration"
+        "400":
+          description: |
+            The registration was refused. Codes: `invalid_request`, `proof_of_work_required` and
+            `invalid_challenge` (both carry a fresh challenge to solve), `anonymous_not_enabled`,
+            `invalid_login_hint` (not one plain address, or an address at the capture domain),
+            `issuer_not_enabled`.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/ProofOfWorkRequiredError"
+                  - $ref: "#/components/schemas/AgentError"
+        "401":
+          description: |
+            ID-JAG only. `login_required` (with `max_age`): `auth_time` is missing or too old,
+            re-authenticate at the provider. `interaction_required`: the identity's email belongs
+            to an existing account; show the human the `claim` block and poll the claim grant.
+            Both carry a `WWW-Authenticate: AgentAuth` header.
+          headers:
+            WWW-Authenticate:
+              description: 'An `AgentAuth` challenge, for example `AgentAuth error="login_required", max_age="3600"`'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/IdJagInteractionRequired"
+                  - $ref: "#/components/schemas/AgentError"
+        "429":
+          $ref: "#/components/responses/AgentRateLimited"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+        "503":
+          $ref: "#/components/responses/AgentUnavailable"
+
+  /api/agent/identity/claim:
+    post:
+      operationId: startAgentClaim
+      tags: [Agents]
+      summary: Start a claim attempt
+      description: |
+        Starts a claim attempt (auth.md Step 4a): the agent asks a human to connect it to their
+        account. Send the `claim_token` from registration and `email`, the address of the one
+        person who may complete the claim. An anonymous registration must send `email`; a
+        `service_auth` registration keeps the email it registered with and may leave it out.
+
+        Show the human `claim_attempt.verification_uri` and `claim_attempt.user_code`. They sign
+        in (or sign up) with that email and type the code; meanwhile the agent polls the claim
+        grant at `POST /api/oauth2/token` every `interval` seconds. Calling this again replaces
+        the current attempt, and the old link stops working. A registration may start 10
+        attempts.
+
+        Rate limited to 20 requests per hour per IP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claim_token]
+              properties:
+                claim_token:
+                  type: string
+                  pattern: "^clm_"
+                  description: The claim token returned at registration
+                email:
+                  type: string
+                  format: email
+                  description: |
+                    The human's email address. Required for anonymous registrations. Addresses at
+                    the capture domain (`mailhooks.cc`) are refused.
+      responses:
+        "200":
+          description: Claim attempt started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimAttemptStarted"
+        "400":
+          description: "`invalid_request` or `invalid_login_hint`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "401":
+          description: "`invalid_claim_token`: unknown or revoked claim token. Register again."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "409":
+          description: "`claimed_or_in_flight`: already claimed. Poll the claim grant to collect it."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "410":
+          description: "`claim_expired`: the registration expired. Register again."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "429":
+          description: |
+            `rate_limited` (wait for `Retry-After`), or `too_many_attempts` (the registration used
+            all its claim attempts; register again)
+          headers:
+            Retry-After:
+              description: Seconds to wait (with `rate_limited`)
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+
+  /api/agent/sandbox/endpoints:
+    get:
+      operationId: listSandboxEndpoints
+      tags: [Agents]
+      summary: List sandbox endpoints
+      description: |
+        Lists the live sandbox endpoints of the registration behind the bearer token, newest
+        first. Takes the access token of an anonymous, unclaimed registration (scope
+        `webhooks:sandbox`); API keys and account tokens get `403 sandbox_only`. Reads are
+        limited to 120 per minute per registration.
+      security:
+        - BearerAuth: []
+        - OAuth2: [webhooks:sandbox]
+      responses:
+        "200":
+          description: Sandbox endpoints and the registration's limits
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [endpoints, sandbox]
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SandboxEndpoint"
+                  sandbox:
+                    $ref: "#/components/schemas/SandboxLimits"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SandboxForbidden"
+        "429":
+          $ref: "#/components/responses/AgentRateLimited"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+
+    post:
+      operationId: createSandboxEndpoint
+      tags: [Agents]
+      summary: Create sandbox endpoint
+      description: |
+        Creates a sandbox endpoint for the bearer's registration. It captures webhooks at
+        `https://go.webhooks.cc/w/{slug}` and lives as long as the registration (24 hours unless
+        claimed). It has no settings: no mock responses, notifications, signing, forwarding or
+        email, and any request body is ignored.
+
+        Limits: 3 live endpoints per registration, 25 captures per endpoint, 100 captures per
+        registration, and a pool shared by all registrations. Rate limited to 20 creates per hour
+        per registration. When a human claims the registration, its sandbox endpoints move into
+        their account.
+      security:
+        - BearerAuth: []
+        - OAuth2: [webhooks:sandbox]
+      responses:
+        "201":
+          description: Created sandbox endpoint
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxEndpoint"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SandboxForbidden"
+        "409":
+          description: "`sandbox_endpoint_limit`: the registration holds 3 endpoints. Delete one first."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "429":
+          $ref: "#/components/responses/AgentRateLimited"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+        "503":
+          description: "`sandbox_full`: the shared pool is full. Retry later, or ask a human to sign up."
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+
+  /api/agent/sandbox/endpoints/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: getSandboxEndpoint
+      tags: [Agents]
+      summary: Get sandbox endpoint
+      description: |
+        One sandbox endpoint of the bearer's registration. A slug of another registration, or of
+        any account, answers the same `404` as a missing one.
+      security:
+        - BearerAuth: []
+        - OAuth2: [webhooks:sandbox]
+      responses:
+        "200":
+          description: Sandbox endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxEndpoint"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SandboxForbidden"
+        "404":
+          $ref: "#/components/responses/SandboxNotFound"
+        "429":
+          $ref: "#/components/responses/AgentRateLimited"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+
+    delete:
+      operationId: deleteSandboxEndpoint
+      tags: [Agents]
+      summary: Delete sandbox endpoint
+      description: |
+        Deletes the sandbox endpoint and its captures, freeing a slot in the pool. The
+        registration's capture budget is not refunded.
+      security:
+        - BearerAuth: []
+        - OAuth2: [webhooks:sandbox]
+      responses:
+        "204":
+          description: Sandbox endpoint deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SandboxForbidden"
+        "404":
+          $ref: "#/components/responses/SandboxNotFound"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+
+  /api/agent/sandbox/endpoints/{slug}/requests:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: listSandboxRequests
+      tags: [Agents]
+      summary: List sandbox requests
+      description: |
+        Requests a sandbox endpoint captured, newest first, in the same shape as
+        `GET /api/endpoints/{slug}/requests`.
+      security:
+        - BearerAuth: []
+        - OAuth2: [webhooks:sandbox]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          description: Maximum number of requests to return (at most 100)
+        - name: since
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Only return requests received at or after this Unix timestamp (ms)
+      responses:
+        "200":
+          description: Array of captured requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Request"
+        "400":
+          description: "`invalid_request`: `limit` or `since` is not a valid number"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SandboxForbidden"
+        "404":
+          $ref: "#/components/responses/SandboxNotFound"
+        "429":
+          $ref: "#/components/responses/AgentRateLimited"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+
+  /api/agent/sandbox/requests/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: Request ID
+
+    get:
+      operationId: getSandboxRequest
+      tags: [Agents]
+      summary: Get sandbox request
+      description: |
+        One captured request, when one of the bearer's sandbox endpoints captured it. Any other
+        id answers `404`.
+      security:
+        - BearerAuth: []
+        - OAuth2: [webhooks:sandbox]
+      responses:
+        "200":
+          description: Request details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Request"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/SandboxForbidden"
+        "404":
+          $ref: "#/components/responses/SandboxNotFound"
+        "429":
+          $ref: "#/components/responses/AgentRateLimited"
+        "500":
+          $ref: "#/components/responses/AgentServerError"
+
+  # -- OAuth -------------------------------------------------------------------
+
+  /api/oauth2/token:
+    post:
+      operationId: issueToken
+      tags: [OAuth]
+      summary: Token endpoint
+      description: |
+        Issues access tokens (RFC 6749). The request is form-encoded
+        (`application/x-www-form-urlencoded`); JSON is accepted too. `grant_type` picks one of
+        four grants:
+
+        - `authorization_code`: redeems the code from `https://webhooks.cc/oauth/authorize` with
+          its PKCE `code_verifier`. Returns an access token and a refresh token.
+        - `refresh_token`: trades a refresh token for a new access token and a new refresh token.
+          Refresh tokens rotate. A client that lost the answer may retry with the old one within
+          60 seconds and gets a new pair; after that, the old one (or one a retry replaced) ends
+          the connection. A refresh token stops working after 90 days unused.
+        - `urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523, auth.md Step 5): exchanges a
+          registered agent's identity assertion for a one-hour access token. A pre-claim
+          assertion yields a `webhooks:sandbox` token (no user); a claimed one yields
+          `webhooks:read webhooks:write`. A registration keeps at most 5 live tokens; a new one
+          drops the oldest.
+        - `urn:workos:agent-auth:grant-type:claim` (auth.md Step 4c): the agent's poll during a
+          claim, in RFC 8628's vocabulary. Answers `authorization_pending` until the human enters
+          the code, then once returns account credentials and a claimed identity assertion; the
+          claim token is used up by that answer. Poll at most every 5 seconds or the answer is
+          `slow_down`.
+
+        Every access token is an ordinary `whcc_` bearer token. Answers carry
+        `Cache-Control: no-store` and `Pragma: no-cache`, and errors use the RFC 6749 section 5.2
+        envelope. Rate limited per IP: 600 requests per minute for `authorization_code` and
+        `refresh_token`, 60 for the jwt-bearer and claim grants.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/AuthorizationCodeGrant"
+                - $ref: "#/components/schemas/RefreshTokenGrant"
+                - $ref: "#/components/schemas/JwtBearerGrant"
+                - $ref: "#/components/schemas/ClaimGrant"
+              discriminator:
+                propertyName: grant_type
+                mapping:
+                  authorization_code: "#/components/schemas/AuthorizationCodeGrant"
+                  refresh_token: "#/components/schemas/RefreshTokenGrant"
+                  "urn:ietf:params:oauth:grant-type:jwt-bearer": "#/components/schemas/JwtBearerGrant"
+                  "urn:workos:agent-auth:grant-type:claim": "#/components/schemas/ClaimGrant"
+      responses:
+        "200":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: |
+            RFC 6749 error. Codes: `invalid_request`, `invalid_grant` (the code, refresh token or
+            assertion is invalid, expired, used or revoked, or was issued to another `client_id`
+            or redirect URI; for a registered agent, register again), `unsupported_grant_type`,
+            `invalid_target` (a `resource` this server does not serve). The claim grant adds RFC
+            8628's `authorization_pending`, `slow_down`, `expired_token` and `access_denied`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+        "429":
+          $ref: "#/components/responses/OAuthRateLimited"
+        "500":
+          $ref: "#/components/responses/OAuthServerError"
+        "503":
+          description: "`temporarily_unavailable`: token issuance is not configured on this server"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+
+  /api/oauth2/revoke:
+    post:
+      operationId: revokeToken
+      tags: [OAuth]
+      summary: Revoke a token
+      description: |
+        Revokes an access token or a refresh token (RFC 7009) issued by `POST /api/oauth2/token`.
+        API keys made on the dashboard are never revoked here. The answer is `200` with an empty
+        body whether or not the token existed. Revoking a registered agent's access token leaves
+        its identity assertion valid for a new exchange.
+
+        Rate limited to 60 requests per minute per IP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: The access token (`whcc_...`) or refresh token to revoke
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+                  description: Which kind of token `token` is. Optional; the server finds out itself.
+      responses:
+        "200":
+          description: Revoked, or the token was unknown. Empty body.
+        "400":
+          description: "`invalid_request`: `token` is missing"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+        "429":
+          $ref: "#/components/responses/OAuthRateLimited"
+        "500":
+          $ref: "#/components/responses/OAuthServerError"
+
+  /api/oauth2/register:
+    post:
+      operationId: registerOAuthClient
+      tags: [OAuth]
+      summary: Register an OAuth client
+      description: |
+        Dynamic client registration (RFC 7591) for OAuth clients that do not host a Client ID
+        Metadata Document. Clients are public: no client secret is issued, and the client is
+        registered with `token_endpoint_auth_method` `none` whatever it asked for (RFC 7591
+        section 3.2.1); it proves itself with PKCE. Use the returned `client_id` at
+        `https://webhooks.cc/oauth/authorize` and the token endpoint. Rate limited to 20
+        registrations per hour per IP; a client nobody uses is deleted after a day.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthClientMetadata"
+      responses:
+        "201":
+          description: Client registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthClient"
+        "400":
+          description: |
+            RFC 7591 error: `invalid_redirect_uri` (no redirect URIs, more than 10, more than 4096
+            characters together, or one that is not allowed: see `redirect_uris`) or
+            `invalid_client_metadata` (`grant_types` without `authorization_code`, or
+            `response_types` without `code`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+        "429":
+          $ref: "#/components/responses/OAuthRateLimited"
+        "500":
+          $ref: "#/components/responses/OAuthServerError"
+
   # -- Public ------------------------------------------------------------------
 
   /api/stats:
@@ -1616,6 +2255,50 @@ components:
       scheme: bearer
       description: |
         API key with `whcc_` prefix. Generate from https://webhooks.cc/account.
+
+        Access tokens issued by `POST /api/oauth2/token` (OAuth 2.1 clients and registered agents)
+        are `whcc_` bearer tokens too and go in the same header.
+
+    OAuth2:
+      type: oauth2
+      description: |
+        OAuth 2.1 for apps and MCP clients that act for a signed-in webhooks.cc user.
+
+        - **PKCE is required**, with `code_challenge_method=S256`. Plain challenges are refused.
+        - **Clients are public** (`token_endpoint_auth_method: none`): there is no client secret.
+        - **`client_id`** is either a Client ID Metadata Document URL (an https URL the client
+          hosts, which serves its metadata) or an id issued by dynamic client registration
+          (`POST /api/oauth2/register`, RFC 7591).
+        - The authorization endpoint (`https://webhooks.cc/oauth/authorize`) asks the user to sign
+          in and approve the client, then redirects to `redirect_uri` with `code`, `state` and
+          `iss` (RFC 9207). Check that `iss` is `https://webhooks.cc` before redeeming the code.
+        - Redeem the code at the token endpoint with the `code_verifier`. The answer carries an
+          access token and a refresh token. **Refresh tokens rotate**: each refresh returns a new
+          one and the old one stops working.
+        - Server metadata: `https://webhooks.cc/.well-known/oauth-authorization-server` (RFC 8414).
+
+        The access token is an ordinary `whcc_` bearer token, accepted on the whole API and on the
+        remote MCP server at `https://webhooks.cc/mcp`.
+
+        **Scopes are advisory.** Account tokens always carry `webhooks:read` and `webhooks:write`;
+        the routes decide what a token reaches. Tokens of an agent registration that no human has
+        claimed yet carry only `webhooks:sandbox`: they have no user, work only on the
+        `/api/agent/sandbox/*` routes, and get `403` on account routes.
+
+        Agents that register without a human (anonymous or with their human's email) follow
+        https://webhooks.cc/auth.md instead of this flow and use the jwt-bearer and claim grants
+        of the same token endpoint.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://webhooks.cc/oauth/authorize
+          tokenUrl: https://webhooks.cc/api/oauth2/token
+          refreshUrl: https://webhooks.cc/api/oauth2/token
+          scopes:
+            webhooks:read: Read endpoints, requests and usage
+            webhooks:write: Create, change and delete endpoints and requests
+            webhooks:sandbox: |
+              Pre-claim agent tokens: the agent sandbox only. Issued by the jwt-bearer grant to
+              anonymous agent registrations, never by this flow.
 
   parameters:
     extracts:
@@ -2589,6 +3272,561 @@ components:
         requestCount:
           type: integer
 
+    # -- Agents ----------------------------------------------------------------
+
+    AgentError:
+      type: object
+      required: [error, error_description]
+      description: |
+        Error envelope of the agent routes, with auth.md's codes. Some errors carry extra members
+        (a fresh proof-of-work challenge, `max_age`, a claim block).
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+        error_description:
+          type: string
+          description: Human-readable explanation and what to do next
+      additionalProperties: true
+
+    PowChallenge:
+      type: object
+      required: [challenge, algorithm, difficulty, count, expires_at]
+      properties:
+        challenge:
+          type: string
+          description: Opaque, signed challenge string (`pow1.<payload>.<mac>`). Send it back unchanged.
+        algorithm:
+          type: string
+          const: sha256-zero-bits
+        difficulty:
+          type: integer
+          description: Leading zero bits each hash must have
+        count:
+          type: integer
+          description: Number of sub-puzzles, and of nonces to send
+        expires_at:
+          type: string
+          format: date-time
+          description: The challenge is refused after this time
+
+    ProofOfWorkSolution:
+      type: object
+      required: [challenge, nonces]
+      properties:
+        challenge:
+          type: string
+          description: The challenge string, unchanged
+        nonces:
+          type: array
+          description: One decimal nonce per sub-puzzle, in order (`count` items)
+          items:
+            type: string
+            pattern: "^[0-9]{1,16}$"
+
+    ProofOfWorkRequiredError:
+      description: |
+        `proof_of_work_required` or `invalid_challenge`: the error plus a fresh challenge to solve
+      allOf:
+        - $ref: "#/components/schemas/AgentError"
+        - $ref: "#/components/schemas/PowChallenge"
+        - type: object
+          properties:
+            challenge_endpoint:
+              type: string
+              format: uri
+              description: Where to fetch further challenges
+
+    AnonymousRegistrationRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          const: anonymous
+        client_name:
+          type: string
+          maxLength: 64
+          description: Self-reported agent name, shown to humans labelled as self-reported
+        proof_of_work:
+          $ref: "#/components/schemas/ProofOfWorkSolution"
+
+    ServiceAuthRegistrationRequest:
+      type: object
+      required: [type, login_hint]
+      properties:
+        type:
+          type: string
+          const: service_auth
+        login_hint:
+          type: string
+          format: email
+          description: |
+            Email address of the human who will claim the agent. Addresses at the capture domain
+            (`mailhooks.cc`) are refused.
+        client_name:
+          type: string
+          maxLength: 64
+          description: Self-reported agent name, shown to humans labelled as self-reported
+
+    IdJagRegistrationRequest:
+      type: object
+      required: [type, assertion_type, assertion]
+      properties:
+        type:
+          type: string
+          const: identity_assertion
+        assertion_type:
+          type: string
+          const: urn:ietf:params:oauth:token-type:id-jag
+        assertion:
+          type: string
+          description: The ID-JAG issued by a trusted identity provider
+
+    ClaimAttemptBlock:
+      type: object
+      required: [user_code, expires_in, verification_uri, interval]
+      description: What the agent shows its human (RFC 8628 shape)
+      properties:
+        user_code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: Six-digit code the human types on the claim page
+        expires_in:
+          type: integer
+          description: Seconds until the code expires (15 minutes when issued)
+        verification_uri:
+          type: string
+          format: uri
+          description: Claim page the human opens while signed in
+        interval:
+          type: integer
+          description: Seconds to wait between polls of the claim grant
+
+    AnonymousRegistration:
+      type: object
+      required:
+        - registration_id
+        - registration_type
+        - identity_assertion
+        - assertion_expires
+        - pre_claim_scopes
+        - claim_url
+        - claim_token
+        - claim_token_expires
+        - post_claim_scopes
+        - sandbox
+      properties:
+        registration_id:
+          type: string
+        registration_type:
+          type: string
+          const: anonymous
+        identity_assertion:
+          type: string
+          description: Signed assertion to exchange at the token endpoint (jwt-bearer grant)
+        assertion_expires:
+          type: string
+          format: date-time
+        pre_claim_scopes:
+          type: array
+          items:
+            type: string
+          description: "`[webhooks:sandbox]`"
+        claim_url:
+          type: string
+          format: uri
+          description: "`POST` here with the claim token to start a claim"
+        claim_token:
+          type: string
+          description: "`clm_...`. Keep it secret; it starts claims and collects the claimed credentials."
+        claim_token_expires:
+          type: string
+          format: date-time
+        post_claim_scopes:
+          type: array
+          items:
+            type: string
+          description: "`[webhooks:read, webhooks:write]`"
+        sandbox:
+          type: object
+          required:
+            - status
+            - endpoints_url
+            - lifetime_seconds
+            - max_endpoints
+            - max_requests_per_endpoint
+            - max_requests
+          properties:
+            status:
+              type: string
+              enum: [available, full]
+            endpoints_url:
+              type: string
+              format: uri
+            lifetime_seconds:
+              type: integer
+            max_endpoints:
+              type: integer
+            max_requests_per_endpoint:
+              type: integer
+            max_requests:
+              type: integer
+        id:
+          type: string
+          description: Same as `registration_id` (auth.md v0.7 proposal shape)
+        type:
+          type: string
+          const: anonymous
+          description: Same as `registration_type` (auth.md v0.7 proposal shape)
+        identity:
+          type: object
+          description: The assertion again, in the auth.md v0.7 proposal shape
+          properties:
+            assertion:
+              type: string
+            expires_at:
+              type: string
+              format: date-time
+        claim:
+          type: object
+          description: The claim token again, in the auth.md v0.7 proposal shape
+          properties:
+            token:
+              type: string
+            expires_at:
+              type: string
+              format: date-time
+            url:
+              type: string
+              format: uri
+        scopes:
+          type: object
+          description: The scopes again, in the auth.md v0.7 proposal shape
+          properties:
+            pre_claim:
+              type: array
+              items:
+                type: string
+            post_claim:
+              type: array
+              items:
+                type: string
+
+    ServiceAuthRegistration:
+      type: object
+      required:
+        - registration_id
+        - registration_type
+        - claim_url
+        - claim_token
+        - claim_token_expires
+        - post_claim_scopes
+        - claim
+      properties:
+        registration_id:
+          type: string
+        registration_type:
+          type: string
+          const: service_auth
+        claim_url:
+          type: string
+          format: uri
+        claim_token:
+          type: string
+          description: "`clm_...`. Poll the claim grant with it."
+        claim_token_expires:
+          type: string
+          format: date-time
+        post_claim_scopes:
+          type: array
+          items:
+            type: string
+        claim:
+          $ref: "#/components/schemas/ClaimAttemptBlock"
+
+    IdJagRegistration:
+      type: object
+      required: [registration_id, registration_type, identity_assertion, assertion_expires, scopes]
+      properties:
+        registration_id:
+          type: string
+        registration_type:
+          type: string
+          const: identity_assertion
+        identity_assertion:
+          type: string
+          description: Assertion to exchange at the token endpoint (jwt-bearer grant)
+        assertion_expires:
+          type: string
+          format: date-time
+        scopes:
+          type: array
+          items:
+            type: string
+
+    IdJagInteractionRequired:
+      description: |
+        `interaction_required`: the claim ceremony runs first. Show the human the `claim` block,
+        then poll the claim grant with `claim_token`.
+      allOf:
+        - $ref: "#/components/schemas/AgentError"
+        - type: object
+          required:
+            - registration_id
+            - registration_type
+            - claim_url
+            - claim_token
+            - claim_token_expires
+            - post_claim_scopes
+            - claim
+          properties:
+            registration_id:
+              type: string
+            registration_type:
+              type: string
+              const: identity_assertion
+            claim_url:
+              type: string
+              format: uri
+            claim_token:
+              type: string
+              description: "`clm_...`. Poll the claim grant with it."
+            claim_token_expires:
+              type: string
+              format: date-time
+            post_claim_scopes:
+              type: array
+              items:
+                type: string
+            claim:
+              $ref: "#/components/schemas/ClaimAttemptBlock"
+
+    ClaimAttemptStarted:
+      type: object
+      required: [registration_id, claim_attempt_id, status, expires_at, claim_attempt]
+      properties:
+        registration_id:
+          type: string
+        claim_attempt_id:
+          type: string
+          description: "`cla_...`"
+        status:
+          type: string
+          const: initiated
+        expires_at:
+          type: string
+          format: date-time
+          description: When the code expires
+        claim_attempt:
+          $ref: "#/components/schemas/ClaimAttemptBlock"
+
+    SandboxLimits:
+      type: object
+      required: [expiresAt, maxEndpoints, requestLimit, budget]
+      properties:
+        expiresAt:
+          type: integer
+          description: Unix timestamp (ms) when the registration and its sandbox expire
+        maxEndpoints:
+          type: integer
+          description: Live endpoints a registration may hold
+        requestLimit:
+          type: integer
+          description: Captures per endpoint
+        budget:
+          type: object
+          required: [used, limit]
+          description: Captures across all of the registration's endpoints
+          properties:
+            used:
+              type: integer
+            limit:
+              type: integer
+
+    SandboxEndpoint:
+      allOf:
+        - $ref: "#/components/schemas/Endpoint"
+        - type: object
+          required: [requestCount, sandbox]
+          properties:
+            requestCount:
+              type: integer
+              description: Captures so far
+            sandbox:
+              $ref: "#/components/schemas/SandboxLimits"
+
+    # -- OAuth -----------------------------------------------------------------
+
+    OAuthError:
+      type: object
+      required: [error]
+      description: RFC 6749 section 5.2 error envelope (also used by RFC 7009 and RFC 7591)
+      properties:
+        error:
+          type: string
+          description: Error code, for example `invalid_grant`
+        error_description:
+          type: string
+          description: Human-readable explanation
+
+    AuthorizationCodeGrant:
+      type: object
+      required: [grant_type, code, code_verifier, redirect_uri, client_id]
+      properties:
+        grant_type:
+          type: string
+          const: authorization_code
+        code:
+          type: string
+          description: The code from the authorization response
+        code_verifier:
+          type: string
+          description: The PKCE verifier whose S256 hash was sent as `code_challenge`
+        redirect_uri:
+          type: string
+          format: uri
+          description: The same `redirect_uri` as in the authorization request
+        client_id:
+          type: string
+          description: Client ID Metadata Document URL or a dynamically registered id
+        resource:
+          type: string
+          format: uri
+          description: RFC 8707 resource indicator, for example `https://webhooks.cc/mcp`
+
+    RefreshTokenGrant:
+      type: object
+      required: [grant_type, refresh_token, client_id]
+      properties:
+        grant_type:
+          type: string
+          const: refresh_token
+        refresh_token:
+          type: string
+          description: The current refresh token. It stops working once this request succeeds.
+        client_id:
+          type: string
+          description: The client the refresh token was issued to
+        resource:
+          type: string
+          format: uri
+          description: RFC 8707 resource indicator
+
+    JwtBearerGrant:
+      type: object
+      required: [grant_type, assertion]
+      properties:
+        grant_type:
+          type: string
+          const: urn:ietf:params:oauth:grant-type:jwt-bearer
+        assertion:
+          type: string
+          description: The identity assertion from agent registration or from the claim grant
+        resource:
+          type: string
+          enum: [https://webhooks.cc/api/, https://webhooks.cc/mcp]
+          description: |
+            RFC 8707 resource indicator. Optional; the token is the same for both. Any other
+            value answers `invalid_target`.
+
+    ClaimGrant:
+      type: object
+      required: [grant_type, claim_token]
+      properties:
+        grant_type:
+          type: string
+          const: urn:workos:agent-auth:grant-type:claim
+        claim_token:
+          type: string
+          pattern: "^clm_"
+          maxLength: 64
+          description: The claim token from agent registration
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token:
+          type: string
+          description: "`whcc_...` bearer token"
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          description: Seconds until the access token expires
+        scope:
+          type: string
+          description: Space-separated scopes, for example `webhooks:read webhooks:write`
+        refresh_token:
+          type: string
+          description: |
+            Present for the `authorization_code` and `refresh_token` grants. Use it once; the next
+            refresh returns a new one.
+        identity_assertion:
+          type: string
+          description: |
+            Claim grant only: the claimed identity assertion. Exchange it with the jwt-bearer grant
+            for new access tokens until `assertion_expires`.
+        assertion_expires:
+          type: string
+          format: date-time
+          description: Claim grant only
+
+    OAuthClientMetadata:
+      type: object
+      required: [redirect_uris]
+      properties:
+        client_name:
+          type: string
+          description: Name shown to the user on the consent screen
+        redirect_uris:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uri
+          maxItems: 10
+          description: |
+            Redirect URIs, absolute and without a fragment or credentials: https (not on
+            webhooks.cc's own hosts), http on a loopback host (`http://127.0.0.1/...`,
+            `http://localhost/...`; any port matches, RFC 8252), or an app's own scheme
+            (`cursor:`, `vscode:`, `vscode-insiders:`, `vscodium:`, `windsurf:`, `claude:`,
+            `zed:`, `kiro:`, or a reverse-domain scheme such as `com.example.app:`).
+        client_uri:
+          type: string
+          format: uri
+        grant_types:
+          type: array
+          items:
+            type: string
+            enum: [authorization_code, refresh_token]
+        response_types:
+          type: array
+          items:
+            type: string
+            enum: [code]
+        token_endpoint_auth_method:
+          type: string
+          description: Ignored on input; the client is always registered as `none`.
+        application_type:
+          type: string
+          description: Echoed back when given (`web` or `native`)
+
+    OAuthClient:
+      description: The registered metadata, echoed, with the issued `client_id`
+      allOf:
+        - $ref: "#/components/schemas/OAuthClientMetadata"
+        - type: object
+          required: [client_id, client_id_issued_at]
+          properties:
+            client_id:
+              type: string
+            client_id_issued_at:
+              type: integer
+              description: Unix timestamp (seconds) when the id was issued
+
   responses:
     BadRequest:
       description: Validation error
@@ -2678,3 +3916,79 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+
+    # Agent and OAuth error responses (`{ error, error_description }`)
+    AgentRateLimited:
+      description: "`rate_limited`: wait for `Retry-After` seconds"
+      headers:
+        Retry-After:
+          description: Seconds until the rate limit window resets
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentError"
+
+    AgentServerError:
+      description: "`server_error`: retry later"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentError"
+
+    AgentUnavailable:
+      description: |
+        `temporarily_unavailable`: registration is not available right now (not configured, or
+        too many unclaimed registrations are live). Retry after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentError"
+
+    SandboxForbidden:
+      description: |
+        `sandbox_only`: the token is not the access token of an anonymous agent registration (API
+        keys and account tokens use `/api/endpoints`). `sandbox_closed`: the registration was
+        claimed, revoked or has expired; a claimed agent uses the normal API.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentError"
+
+    SandboxNotFound:
+      description: "`not_found`: not an endpoint or request of this registration's sandbox"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentError"
+
+    OAuthRateLimited:
+      description: "`rate_limited`: wait for `Retry-After` seconds"
+      headers:
+        Retry-After:
+          description: Seconds until the rate limit window resets
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OAuthError"
+
+    OAuthServerError:
+      description: "`server_error`: retry later"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OAuthError"

@@ -1,21 +1,12 @@
 /**
- * @fileoverview Agent self-registration on-ramp for the webhooks.cc auth.md
- * protocol. These helpers are UNAUTHENTICATED — they let an AI agent obtain its
- * own webhooks.cc API credential before it has one, so they are standalone
- * functions (and static methods on `WebhooksCC`) rather than instance methods
- * (the client constructor requires an apiKey).
+ * @fileoverview The auth.md v0.1 registration helpers, deprecated.
  *
- * Three flows, mirroring the hosted `/auth.md` document:
- *   - anonymous       — mint an unowned key immediately, then a human claims it
- *                       in-app (by claim link or short user_code). Poll for the
- *                       claim to complete.
- *   - verified_email  — receive a 6-digit OTP by email, confirm it to mint a key
- *                       bound to that verified address.
- *   - identity_assertion (ID-JAG) — present a verified assertion from a trusted
- *                       provider; a key is returned synchronously.
- *
- * Everything posts JSON to `${baseUrl}/api/agent/auth*`. The default baseUrl is
- * the production app. See `${baseUrl}/auth.md` for the canonical protocol doc.
+ * webhooks.cc moved to auth.md v0.6 (`./agent`, `./sandbox`). The v0.1
+ * routes under `/api/agent/auth` answer 410 `endpoint_moved`, except the
+ * verified_email flow (`registerWithEmail`, `confirmEmailOtp`), which works
+ * until 2026-11-30. Every helper here warns once per process and will be
+ * removed in the next major version. Use `WebhooksCC.sandbox()`,
+ * `WebhooksCC.connect()` or `WebhooksCC.agent.*` instead.
  */
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
@@ -139,6 +130,17 @@ async function postJson(
   }
 }
 
+let warned = false;
+
+/** One console warning per process for the deprecated helpers. */
+function warnDeprecated(name: string): void {
+  if (warned) return;
+  warned = true;
+  console.warn(
+    `@webhooks-cc/sdk: ${name}() uses auth.md v0.1, which webhooks.cc retired (the email flow stops on 2026-11-30). Use WebhooksCC.sandbox() or WebhooksCC.connect() instead; see https://webhooks.cc/auth.md.`
+  );
+}
+
 function resolve(opts: RegisterOptions | undefined) {
   return {
     baseUrl: opts?.baseUrl ?? DEFAULT_BASE_URL,
@@ -168,8 +170,11 @@ function requireString(json: Record<string, unknown>, key: string, status: numbe
  * in the bounded sandbox (create ephemeral endpoints, read its own requests).
  * Hand the returned `userCode` (or `claimUrl?token=claimToken`) to a human to
  * bind it to a webhooks.cc account; poll with `pollClaim`.
+ *
+ * @deprecated The server answers 410 `endpoint_moved`. Use `WebhooksCC.sandbox()`.
  */
 export async function registerAnonymous(opts?: RegisterOptions): Promise<AnonymousRegistration> {
+  warnDeprecated("registerAnonymous");
   const { baseUrl, clientName, timeout } = resolve(opts);
   const { status, json } = await postJson(
     baseUrl,
@@ -198,8 +203,11 @@ export async function registerAnonymous(opts?: RegisterOptions): Promise<Anonymo
 /**
  * Poll an anonymous claim by its `claimToken` to discover whether a human has
  * bound the key to an account yet. Returns coarse status only (no credential).
+ *
+ * @deprecated v0.1 claims are gone. Use `sandbox.waitForClaim()` or `WebhooksCC.agent.pollClaim()`.
  */
 export async function pollClaim(claimToken: string, opts?: RegisterOptions): Promise<ClaimPoll> {
+  warnDeprecated("pollClaim");
   const { baseUrl, timeout } = resolve(opts);
   const { status, json } = await postJson(
     baseUrl,
@@ -226,11 +234,14 @@ export async function pollClaim(claimToken: string, opts?: RegisterOptions): Pro
  * Poll until an anonymous claim reaches a terminal state (claimed / expired /
  * previously_claimed / invalid) or the deadline elapses. Resolves with the last
  * observed poll. Useful right after handing the user the claim code/link.
+ *
+ * @deprecated v0.1 claims are gone. Use `sandbox.waitForClaim()` or `WebhooksCC.agent.waitForClaim()`.
  */
 export async function waitForClaim(
   claimToken: string,
   opts?: RegisterOptions & { timeoutMs?: number; pollIntervalMs?: number }
 ): Promise<ClaimPoll> {
+  warnDeprecated("waitForClaim");
   const deadline = Date.now() + (opts?.timeoutMs ?? 5 * 60 * 1000);
   const interval = opts?.pollIntervalMs ?? 2000;
   let last: ClaimPoll = { status: "pending" };
@@ -245,11 +256,14 @@ export async function waitForClaim(
 /**
  * Verified-email flow, step 1: request a 6-digit OTP be emailed to `email`. No
  * credential is returned yet — confirm the OTP with `confirmEmailOtp`.
+ *
+ * @deprecated The verified_email flow stops on 2026-11-30. Use `WebhooksCC.connect({ email })`.
  */
 export async function registerWithEmail(
   email: string,
   opts?: RegisterOptions
 ): Promise<VerifiedEmailChallenge> {
+  warnDeprecated("registerWithEmail");
   const { baseUrl, clientName, timeout } = resolve(opts);
   const { status, json } = await postJson(
     baseUrl,
@@ -275,11 +289,14 @@ export async function registerWithEmail(
 /**
  * Verified-email flow, step 2: confirm the emailed OTP. On success the API key
  * (bound to the verified address) is returned.
+ *
+ * @deprecated The verified_email flow stops on 2026-11-30. Use `WebhooksCC.connect({ email })`.
  */
 export async function confirmEmailOtp(
   args: { claimToken: string; otp: string },
   opts?: RegisterOptions
 ): Promise<IssuedCredential> {
+  warnDeprecated("confirmEmailOtp");
   const { baseUrl, timeout } = resolve(opts);
   const { status, json } = await postJson(
     baseUrl,
@@ -299,11 +316,14 @@ export async function confirmEmailOtp(
 /**
  * Identity-assertion (ID-JAG) flow: present a verified assertion JWT from a
  * trusted provider. The credential is returned synchronously (no claim step).
+ *
+ * @deprecated The server answers 410 `endpoint_moved`. ID-JAG registration is `POST /api/agent/identity` (auth.md v0.6).
  */
 export async function registerWithIdJag(
   assertion: string,
   opts?: RegisterOptions
 ): Promise<IssuedCredential> {
+  warnDeprecated("registerWithIdJag");
   const { baseUrl, timeout } = resolve(opts);
   const { status, json } = await postJson(
     baseUrl,
@@ -348,7 +368,7 @@ export function describeRegistration(baseUrl: string = DEFAULT_BASE_URL): Regist
       },
       service_auth: {
         description:
-          "WebhooksCC.agent.registerServiceAuth({ email }) - register for a human you know by email; nothing works until they sign in and enter the code. Poll with WebhooksCC.agent.waitForClaim().",
+          "WebhooksCC.connect({ email }) - register for a human you know by email; nothing works until they sign in and enter the code, then pending.wait() returns a client for their account. WebhooksCC.connected() finds that connection again later (agent credential file).",
         method: `POST ${base}/api/agent/identity`,
       },
       identity_assertion: {

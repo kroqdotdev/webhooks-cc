@@ -1,7 +1,8 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use crate::api::ApiClient;
+use crate::agent::CredentialStore;
+use crate::api::{ApiClient, AuthSource};
 use crate::auth;
 use crate::cli::output::{bold, dim, green, red};
 use crate::types::Token;
@@ -78,13 +79,17 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
             serde_json::json!({ "status": "success", "email": claim.email })
         );
     } else {
-        println!("\n  {} Logged in as {}", green("Success!"), bold(&claim.email));
+        println!(
+            "\n  {} Logged in as {}",
+            green("Success!"),
+            bold(&claim.email)
+        );
     }
 
     Ok(())
 }
 
-pub async fn status(json: bool) -> Result<()> {
+pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
     match auth::load_token()? {
         Some(token) => {
             if json {
@@ -92,6 +97,7 @@ pub async fn status(json: bool) -> Result<()> {
                     "{}",
                     serde_json::json!({
                         "logged_in": true,
+                        "via": "login",
                         "email": token.email,
                         "user_id": token.user_id,
                     })
@@ -100,24 +106,73 @@ pub async fn status(json: bool) -> Result<()> {
                 println!("  {} Logged in as {}", green("●"), bold(&token.email));
             }
         }
-        None => {
-            if json {
-                println!("{}", serde_json::json!({ "logged_in": false }));
-            } else {
-                println!("  {} Not logged in", red("●"));
-                println!("  Run {} to authenticate.", bold("whk auth login"));
+        None => match client.auth_source() {
+            // No login, but an agent's account connection in the shared
+            // credential file: the commands act through it.
+            AuthSource::Agent(session) => {
+                let slot = session.slot().await;
+                let email = slot
+                    .as_ref()
+                    .and_then(|s| s.info("email").map(String::from));
+                let expires = slot.as_ref().map(|s| s.assertion_expires().to_string());
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "logged_in": true,
+                            "via": "agent",
+                            "email": email,
+                            "registration_id": session.registration_id(),
+                            "connection_expires": expires,
+                            "credential_file": session.store().path().map(|p| p.display().to_string()),
+                        })
+                    );
+                } else {
+                    println!(
+                        "  {} Acting through an agent connection to {}",
+                        green("●"),
+                        bold(email.as_deref().unwrap_or("an account"))
+                    );
+                    println!(
+                        "  {}",
+                        dim(
+                            "Not logged in with `whk auth login`; `whk sandbox status` shows the connection."
+                        )
+                    );
+                }
             }
-        }
+            _ => {
+                if json {
+                    println!("{}", serde_json::json!({ "logged_in": false }));
+                } else {
+                    println!("  {} Not logged in", red("●"));
+                    println!("  Run {} to authenticate.", bold("whk auth login"));
+                }
+            }
+        },
     }
     Ok(())
 }
 
-pub async fn logout(json: bool) -> Result<()> {
+pub async fn logout(client: &ApiClient, json: bool) -> Result<()> {
     auth::clear_token()?;
     if json {
         println!("{}", serde_json::json!({ "status": "logged_out" }));
     } else {
         println!("  Logged out.");
+        // The commands would go on acting through a saved agent connection.
+        if CredentialStore::locate(&client.base_url)
+            .load()
+            .claimed
+            .is_some()
+        {
+            println!(
+                "  {}",
+                dim(
+                    "An agent's account connection is still saved; `whk sandbox forget --claimed` removes it."
+                )
+            );
+        }
     }
     Ok(())
 }

@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use whk::api::ApiClient;
-use whk::cli::{self, AuthAction, Cli, Command, RequestsAction, TeamsAction};
+use whk::cli::{self, AuthAction, Cli, Command, RequestsAction, SandboxAction, TeamsAction};
 use whk::tui;
 
 #[tokio::main]
@@ -11,10 +11,7 @@ async fn main() -> Result<()> {
 
     cli::output::set_no_color(args.no_color || std::env::var("NO_COLOR").is_ok());
 
-    let mut client = ApiClient::new(
-        args.api_url.as_deref(),
-        args.webhook_url.as_deref(),
-    )?;
+    let mut client = ApiClient::new(args.api_url.as_deref(), args.webhook_url.as_deref())?;
 
     let nogui = args.nogui || std::env::var("WHK_NOGUI").is_ok();
 
@@ -30,12 +27,33 @@ async fn main() -> Result<()> {
 
         Some(Command::Auth { action }) => match action {
             AuthAction::Login => cli::auth::login(&mut client, args.json).await?,
-            AuthAction::Status => cli::auth::status(args.json).await?,
-            AuthAction::Logout => cli::auth::logout(args.json).await?,
+            AuthAction::Status => cli::auth::status(&client, args.json).await?,
+            AuthAction::Logout => cli::auth::logout(&client, args.json).await?,
         },
 
-        Some(Command::Create { name, ephemeral, expires_in, mock_status, mock_body, mock_headers, signing_provider, signing_secret }) => {
-            cli::endpoints::create(&client, name, ephemeral, expires_in, mock_status, mock_body, mock_headers, signing_provider, signing_secret, args.json).await?;
+        Some(Command::Create {
+            name,
+            ephemeral,
+            expires_in,
+            mock_status,
+            mock_body,
+            mock_headers,
+            signing_provider,
+            signing_secret,
+        }) => {
+            cli::endpoints::create(
+                &client,
+                name,
+                ephemeral,
+                expires_in,
+                mock_status,
+                mock_body,
+                mock_headers,
+                signing_provider,
+                signing_secret,
+                args.json,
+            )
+            .await?;
         }
 
         Some(Command::List { team }) => {
@@ -46,17 +64,53 @@ async fn main() -> Result<()> {
             cli::endpoints::get(&client, &slug, args.json).await?;
         }
 
-        Some(Command::UpdateEndpoint { slug, name, mock_status, mock_body, mock_headers, clear_mock }) => {
-            cli::endpoints::update_endpoint(&client, &slug, name, mock_status, mock_body, mock_headers, clear_mock, args.json).await?;
+        Some(Command::UpdateEndpoint {
+            slug,
+            name,
+            mock_status,
+            mock_body,
+            mock_headers,
+            clear_mock,
+        }) => {
+            cli::endpoints::update_endpoint(
+                &client,
+                &slug,
+                name,
+                mock_status,
+                mock_body,
+                mock_headers,
+                clear_mock,
+                args.json,
+            )
+            .await?;
         }
 
         Some(Command::Delete { slug, force }) => {
             cli::endpoints::delete(&client, &slug, force, args.json).await?;
         }
 
-        Some(Command::Tunnel { target, endpoint, ephemeral, headers, email_format, email_path, mailgun_signing_key, no_email }) => {
-            let emails = cli::tunnel::email_options(email_format, email_path, mailgun_signing_key, no_email);
-            cli::tunnel::run(&client, &target, endpoint.as_deref(), ephemeral, headers, emails, args.json).await?;
+        Some(Command::Tunnel {
+            target,
+            endpoint,
+            ephemeral,
+            headers,
+            email_format,
+            email_path,
+            mailgun_signing_key,
+            no_email,
+        }) => {
+            let emails =
+                cli::tunnel::email_options(email_format, email_path, mailgun_signing_key, no_email);
+            cli::tunnel::run(
+                &client,
+                &target,
+                endpoint.as_deref(),
+                ephemeral,
+                headers,
+                emails,
+                args.json,
+            )
+            .await?;
         }
 
         Some(Command::Listen { slug }) => {
@@ -67,44 +121,161 @@ async fn main() -> Result<()> {
             cli::replay::run(&client, &id, &to, args.json).await?;
         }
 
-        Some(Command::Send { slug, method, headers, data }) => {
-            cli::send::send_to_endpoint(&client, &slug, &method, headers, data.as_deref(), args.json).await?;
+        Some(Command::Send {
+            slug,
+            method,
+            headers,
+            data,
+        }) => {
+            cli::send::send_to_endpoint(
+                &client,
+                &slug,
+                &method,
+                headers,
+                data.as_deref(),
+                args.json,
+            )
+            .await?;
         }
 
-        Some(Command::SendTo { url, method, headers, data }) => {
-            cli::send::send_to_url(&client, &url, &method, headers, data.as_deref(), args.json).await?;
+        Some(Command::SendTo {
+            url,
+            method,
+            headers,
+            data,
+        }) => {
+            cli::send::send_to_url(&client, &url, &method, headers, data.as_deref(), args.json)
+                .await?;
         }
 
         Some(Command::Requests { action }) => match action {
-            RequestsAction::List { slug, limit, since, cursor } => {
+            RequestsAction::List {
+                slug,
+                limit,
+                since,
+                cursor,
+            } => {
                 cli::requests::list(&client, &slug, limit, since, cursor, args.json).await?;
             }
             RequestsAction::Get { id } => {
                 cli::requests::get(&client, &id, args.json).await?;
             }
-            RequestsAction::Search { slug, method, q, from, to, limit, offset, order } => {
-                cli::requests::search(&client, slug.as_deref(), method.as_deref(), q.as_deref(), from.as_deref(), to.as_deref(), limit, offset, &order, args.json).await?;
+            RequestsAction::Search {
+                slug,
+                method,
+                q,
+                from,
+                to,
+                limit,
+                offset,
+                order,
+            } => {
+                cli::requests::search(
+                    &client,
+                    slug.as_deref(),
+                    method.as_deref(),
+                    q.as_deref(),
+                    from.as_deref(),
+                    to.as_deref(),
+                    limit,
+                    offset,
+                    &order,
+                    args.json,
+                )
+                .await?;
             }
-            RequestsAction::Count { slug, method, q, from, to } => {
-                cli::requests::count(&client, slug.as_deref(), method.as_deref(), q.as_deref(), from.as_deref(), to.as_deref(), args.json).await?;
+            RequestsAction::Count {
+                slug,
+                method,
+                q,
+                from,
+                to,
+            } => {
+                cli::requests::count(
+                    &client,
+                    slug.as_deref(),
+                    method.as_deref(),
+                    q.as_deref(),
+                    from.as_deref(),
+                    to.as_deref(),
+                    args.json,
+                )
+                .await?;
             }
-            RequestsAction::Clear { slug, before, force } => {
+            RequestsAction::Clear {
+                slug,
+                before,
+                force,
+            } => {
                 cli::requests::clear(&client, &slug, before.as_deref(), force, args.json).await?;
             }
-            RequestsAction::Export { slug, format, limit, since, output } => {
-                cli::requests::export(&client, &slug, &format, limit, since, output.as_deref(), args.json).await?;
+            RequestsAction::Export {
+                slug,
+                format,
+                limit,
+                since,
+                output,
+            } => {
+                cli::requests::export(
+                    &client,
+                    &slug,
+                    &format,
+                    limit,
+                    since,
+                    output.as_deref(),
+                    args.json,
+                )
+                .await?;
             }
         },
 
         Some(Command::Teams { action }) => match action {
             TeamsAction::List => cli::teams::list(&client, args.json).await?,
             TeamsAction::Members { team } => cli::teams::members(&client, &team, args.json).await?,
-            TeamsAction::Share { slug, team } => cli::teams::share(&client, &slug, &team, args.json).await?,
-            TeamsAction::Unshare { slug, team } => cli::teams::unshare(&client, &slug, &team, args.json).await?,
-            TeamsAction::Invite { team, email } => cli::teams::invite(&client, &team, &email, args.json).await?,
+            TeamsAction::Share { slug, team } => {
+                cli::teams::share(&client, &slug, &team, args.json).await?
+            }
+            TeamsAction::Unshare { slug, team } => {
+                cli::teams::unshare(&client, &slug, &team, args.json).await?
+            }
+            TeamsAction::Invite { team, email } => {
+                cli::teams::invite(&client, &team, &email, args.json).await?
+            }
             TeamsAction::Invites => cli::teams::invites(&client, args.json).await?,
-            TeamsAction::Accept { invite_id } => cli::teams::accept(&client, &invite_id, args.json).await?,
-            TeamsAction::Decline { invite_id } => cli::teams::decline(&client, &invite_id, args.json).await?,
+            TeamsAction::Accept { invite_id } => {
+                cli::teams::accept(&client, &invite_id, args.json).await?
+            }
+            TeamsAction::Decline { invite_id } => {
+                cli::teams::decline(&client, &invite_id, args.json).await?
+            }
+        },
+
+        Some(Command::Sandbox { action }) => match action {
+            SandboxAction::Create => cli::sandbox::create(&client, args.json).await?,
+            SandboxAction::List => cli::sandbox::list(&client, args.json).await?,
+            SandboxAction::Get { slug } => cli::sandbox::get(&client, &slug, args.json).await?,
+            SandboxAction::Delete { slug } => {
+                cli::sandbox::delete(&client, &slug, args.json).await?
+            }
+            SandboxAction::Requests { slug, limit, since } => {
+                cli::sandbox::requests(&client, &slug, limit, since, args.json).await?
+            }
+            SandboxAction::Request { id } => cli::sandbox::request(&client, &id, args.json).await?,
+            SandboxAction::Wait {
+                slug,
+                timeout,
+                since,
+                count,
+            } => cli::sandbox::wait(&client, &slug, &timeout, since, count, args.json).await?,
+            SandboxAction::Status => cli::sandbox::status(&client, args.json).await?,
+            SandboxAction::Connect { email, timeout } => {
+                cli::sandbox::connect(&client, &email, timeout.as_deref(), args.json).await?
+            }
+            SandboxAction::Forget {
+                claimed,
+                sandbox,
+                all,
+            } => cli::sandbox::forget(&client, claimed || all, sandbox || all, args.json).await?,
         },
 
         Some(Command::Usage) => {

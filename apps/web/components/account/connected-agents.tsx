@@ -21,15 +21,15 @@ import { shortDate } from "@/components/settings/format";
 interface ConnectedAgent {
   id: string;
   clientName: string | null;
-  kind: "anonymous" | "service_auth" | "identity_assertion";
+  kind: "anonymous" | "service_auth" | "identity_assertion" | "oauth";
   connectedAt: number;
   lastUsedAt: number | null;
 }
 
 /**
- * Agents connected to the account through the auth.md claim ceremony, with
- * a one-click disconnect. Their tokens are not API keys and are not listed
- * with them.
+ * Agents connected to the account through the auth.md claim ceremony, and
+ * apps connected with OAuth (remote MCP clients), with a one-click
+ * disconnect. Their tokens are not API keys and are not listed with them.
  */
 export function ConnectedAgents({ accessToken }: { accessToken: string | null }) {
   const [agents, setAgents] = useState<ConnectedAgent[] | null>(null);
@@ -111,7 +111,14 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
                 className="flex items-center justify-between gap-4 border-b border-line/60 px-5 py-3 last:border-b-0"
               >
                 <div className="min-w-0 space-y-0.5">
-                  <p className="truncate text-sm font-medium">{name}</p>
+                  <p className="truncate text-sm font-medium">
+                    {name}
+                    {agent.kind === "oauth" && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        app, connected with OAuth
+                      </span>
+                    )}
+                  </p>
                   <dl className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
                     <div className="flex gap-1">
                       <dt>Connected</dt>

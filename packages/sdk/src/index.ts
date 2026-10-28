@@ -331,7 +331,18 @@ export type {
   ClaimPoll as AgentClaimPoll,
   ServiceAuthRegistration,
 } from "./agent";
-export { SandboxClient, SandboxError } from "./sandbox";
-export type { SandboxEndpoint, SandboxLimits, SandboxOptions } from "./sandbox";
+export { SandboxClient, SandboxError, PendingConnection } from "./sandbox";
+export type {
+  ConnectedOptions,
+  ConnectOptions,
+  CredentialFileOption,
+  SandboxClaimAttempt,
+  SandboxEndpoint,
+  SandboxLimits,
+  SandboxOptions,
+  SandboxRegistration,
+} from "./sandbox";
+export { AgentCredentialStore, agentCredentialsPath } from "./agent-credentials";
+export type { CredentialSlot, CredentialSlotName } from "./agent-credentials";
 export { solveChallenge, PowError, MAX_POW_WORK_BITS } from "./pow";
 export type { PowChallenge, SolveOptions } from "./pow";

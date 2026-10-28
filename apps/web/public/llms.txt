@@ -18,7 +18,9 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Mock responses: Configure status codes, headers, and response bodies per endpoint, with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins)
 - CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>`, no port forwarding or ngrok needed
 - TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming; `client.emails.waitFor()` and `extractCode()` for email tests, `client.forwarding` and `verifyForwardedEmail()` for email forwarding
-- MCP server: `@webhooks-cc/mcp` connects AI coding agents (Claude Code, Cursor, VS Code, Codex, Windsurf)
+- Python and Go SDKs: `webhooks-cc` on PyPI and `webhooks.cc/go`, with the same waits, signed sends and signature checks, plus pytest fixtures and Go test helpers
+- MCP server: `@webhooks-cc/mcp` connects AI coding agents (Claude Code, Cursor, VS Code, Codex, Windsurf), and the remote server at https://webhooks.cc/mcp connects hosted agents (claude.ai, ChatGPT) with one OAuth approval
+- Agent sandbox: AI agents capture webhooks without an account (3 endpoints for 24 hours) and connect to a human's account once; the connection is saved and shared by the MCP server, the SDKs and the CLI
 - Real-time streaming: Dashboard updates via Supabase Realtime Broadcast signals, CLI and SDK via Server-Sent Events
 - Request replay: Resend captured requests to any URL
 - Provider detection: Built-in helpers for Stripe, GitHub, Shopify, Slack, Twilio, Paddle, and Linear webhooks
@@ -43,7 +45,11 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - SDK docs: https://webhooks.cc/docs/sdk
 - SDK API reference: https://webhooks.cc/docs/sdk/api
 - SDK testing patterns: https://webhooks.cc/docs/sdk/testing
+- Python SDK: https://webhooks.cc/docs/sdk/python
+- Go SDK: https://webhooks.cc/docs/sdk/go
 - MCP server docs: https://webhooks.cc/docs/mcp
+- Remote MCP server: https://webhooks.cc/mcp (streamable HTTP, OAuth 2.1), setup at https://webhooks.cc/docs/mcp#remote-server
+- AI agents (start here, sandbox, connecting an account, OAuth apps, the credential file): https://webhooks.cc/docs/agents
 - Agent skill and Claude Code plugin: https://webhooks.cc/docs/mcp/skills, teaches coding agents to test webhook handlers with signed payloads and generate payload types from captures
 - Email capture: https://webhooks.cc/docs/email-capture
 - Email forwarding: https://webhooks.cc/docs/forwarding
@@ -52,13 +58,44 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - REST API: https://webhooks.cc/docs/api
 - OpenAPI spec: https://webhooks.cc/openapi.yaml
 - Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents get a sandbox and a credential without an account
+- Agent Skills discovery: https://webhooks.cc/.well-known/agent-skills/index.json, serving the webhook-testing skill
+- API catalog (RFC 9727): https://webhooks.cc/.well-known/api-catalog
+- OAuth metadata: https://webhooks.cc/.well-known/oauth-authorization-server and https://webhooks.cc/.well-known/oauth-protected-resource/mcp
+- Markdown versions: https://webhooks.cc/index.md and https://webhooks.cc/docs/<page>.md, or any of those pages with `Accept: text/markdown`
+- PyPI (Python SDK): https://pypi.org/project/webhooks-cc/
 - GitHub: https://github.com/kroqdotdev/webhooks-cc
 - npm (SDK): https://www.npmjs.com/package/@webhooks-cc/sdk
 - npm (MCP): https://www.npmjs.com/package/@webhooks-cc/mcp
 
+## For AI agents: start here
+
+The sandbox needs nothing from your human: it is free, anonymous, isolated from every account, and deleted after 24 hours. Involve them only to keep what you made, or for what the sandbox lacks: more than 3 endpoints, mock responses, forwarding, signature checks, email. Take the first option you can use:
+
+1. Hosted agent (claude.ai, ChatGPT, a cloud coding agent), or a client that takes remote MCP servers: the server is https://webhooks.cc/mcp (streamable HTTP). Your human adds it as a custom connector and approves it once in the browser (OAuth); there is no code to type. A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`.
+2. Local MCP servers (Claude Code, Cursor, Codex, VS Code, Windsurf): `claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`, or `npx -y @webhooks-cc/mcp setup cursor`. No key needed: your first `create_endpoint` registers a sandbox; `connect_account` then `wait_for_connection` moves everything into your human's account.
+3. Claude Code with plugins: `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc` (the MCP server plus the webhook-testing skill).
+4. You can run code. Each of these registers, solves the proof of work and reuses the sandbox on the next run:
+   - Python: `pip install webhooks-cc`, then `WebhooksCC.sandbox()`
+   - Node: `npm i @webhooks-cc/sdk`, then `WebhooksCC.sandbox()`
+   - Go: `go get webhooks.cc/go`, then `webhookscc.NewSandbox(ctx)`
+   - Shell: `whk sandbox create --json` (install with `curl -fsSL https://webhooks.cc/install.sh | sh` or `brew install kroqdotdev/tap/whk`)
+5. Only HTTP: follow the steps in https://webhooks.cc/auth.md.
+
+For the claim email, use the address your human signs in to webhooks.cc with (their GitHub or Google primary email if they sign in that way). Your human has an API key? Set `WHK_API_KEY` and skip all of this.
+
+## Agent credential file
+
+Options 2 to 4 keep the sandbox and the human's connection in one file and reuse it, so the human approves an agent once:
+
+~/.config/whk/agent.json                       # Linux, or $XDG_CONFIG_HOME/whk/agent.json
+~/Library/Application Support/whk/agent.json   # macOS
+%APPDATA%\whk\agent.json                       # Windows
+
+`WHK_AGENT_FILE` overrides the path. The file is JSON (version 1) with a `claimed` slot (a connection to a human's account, 90 days) and a `sandbox` slot (24 hours) under each app URL, written atomically with mode 0600. The claim token is never written. An explicit API key wins over the file; then a live `claimed` slot; then the sandbox. Read it before registering again: `WebhooksCC.connected()` in the SDKs does. Format: https://webhooks.cc/docs/agents#the-agent-credential-file
+
 ## API key format
 
-All API keys use the prefix `whcc_`. Keys are generated via the CLI with `whk auth login` or from the account page after signing in. See https://webhooks.cc/docs for setup instructions.
+All API keys use the prefix `whcc_`. Keys are generated via the CLI with `whk auth login` or from the account page after signing in. Access tokens that agents get through auth.md or OAuth use the same prefix and the same `Authorization: Bearer` header. See https://webhooks.cc/docs for setup instructions.
 
 ## Webhook endpoint URL format
 
@@ -87,6 +124,11 @@ whk list             # List endpoints
 whk delete <slug>    # Delete endpoint
 whk replay <id>      # Replay captured request
 whk update           # Self-update from GitHub releases
+
+whk sandbox create --json                # Capture without an account (AI agents)
+whk sandbox wait <slug> --json           # Wait for a request to arrive
+whk sandbox list|get|delete|requests|request|status|forget
+whk sandbox connect --email <address>    # Prints a link and a code, waits for the human
 
 ## SDK quick start
 
@@ -136,13 +178,18 @@ await client.endpoints.delete(endpoint.slug);
 # The skill for Cursor, Codex, Copilot and other agents
 npx skills add kroqdotdev/webhooks-cc
 
-# Claude Code, MCP server only
+# Claude Code, local MCP server only
 claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
-# Cursor / VS Code / Windsurf
+# Claude Code, remote MCP server (approve once in the browser)
+claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp
+
+# Cursor / VS Code / Windsurf (also codex and claude-desktop)
 npx @webhooks-cc/mcp setup cursor
 npx @webhooks-cc/mcp setup vscode
 npx @webhooks-cc/mcp setup windsurf
 ```
 
-Set the `WHK_API_KEY` environment variable to your API key.
+`WHK_API_KEY` is optional. Without it the local server starts with the full tools when the human connected the agent before (saved in the agent credential file), and otherwise in the keyless sandbox, where `connect_account` and `wait_for_connection` connect an account. To start with your account's tools, set `WHK_API_KEY` or pass `--api-key whcc_...` to `setup`.
+
+The remote server at https://webhooks.cc/mcp has the same tools except `send_to` and `replay_request` (a hosted server cannot reach your machine); in claude.ai and ChatGPT, add it as a custom connector.

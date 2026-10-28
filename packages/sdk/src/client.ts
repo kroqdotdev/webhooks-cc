@@ -107,7 +107,17 @@ import {
 } from "./register";
 import * as agentSteps from "./agent";
 import { solveChallenge } from "./pow";
-import { createSandbox, type SandboxClient, type SandboxOptions } from "./sandbox";
+import {
+  connectAccount,
+  connectedClient,
+  createSandbox,
+  savedConnection,
+  type ConnectedOptions,
+  type ConnectOptions,
+  type PendingConnection,
+  type SandboxClient,
+  type SandboxOptions,
+} from "./sandbox";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
@@ -666,7 +676,8 @@ export async function collectMatchingRequests(
       }
     }
 
-    await sleep(safePollInterval);
+    // Never sleep past the deadline: a last poll would not come anyway.
+    await sleep(Math.max(0, Math.min(safePollInterval, timeout - (Date.now() - start))));
   }
 
   throw new TimeoutError(timeout);
@@ -688,6 +699,7 @@ export class WebhooksCC {
   private readonly retry: ReturnType<typeof normalizeRetryOptions>;
   private readonly hooks: ClientHooks;
   private readonly emailDomain: string;
+  private readonly fetchImpl: typeof globalThis.fetch;
 
   constructor(options: ClientOptions) {
     if (typeof options.getAccessToken !== "function") {
@@ -705,11 +717,13 @@ export class WebhooksCC {
     this.retry = normalizeRetryOptions(options.retry);
     this.hooks = options.hooks ?? {};
     this.emailDomain = options.emailDomain ?? DEFAULT_EMAIL_DOMAIN;
+    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   }
 
   /**
    * Webhook capture without an account, for AI agents (auth.md v0.6).
-   * Registers anonymously (a few seconds of proof of work), and returns a
+   * Reuses the live sandbox saved in the agent credential file, or registers
+   * anonymously (a few seconds of proof of work) and saves it, and returns a
    * sandbox client: 3 endpoints, 25 captures each and 100 in all, for 24
    * hours. `claim()` and `waitForClaim()` connect it to a human's account.
    *
@@ -726,6 +740,47 @@ export class WebhooksCC {
    */
   static sandbox(options: SandboxOptions = {}): Promise<SandboxClient> {
     return createSandbox(options);
+  }
+
+  /**
+   * A client for the account a human connected this agent to before (with
+   * `waitForClaim()` or `connect()`, here, in the MCP server, the CLI or
+   * another SDK), read from the agent credential file. Null when there is
+   * none, or when the human has disconnected the agent since.
+   *
+   * @example
+   * ```ts
+   * const client = (await WebhooksCC.connected()) ?? (await WebhooksCC.sandbox());
+   * ```
+   */
+  static connected(options: ConnectedOptions = {}): Promise<WebhooksCC | null> {
+    return connectedClient(options);
+  }
+
+  /**
+   * Like `connected()`, but synchronous and unchecked: reads the agent
+   * credential file now, and the first request finds out whether the human
+   * still has the agent connected (`options.onRevoked` says when not).
+   */
+  static fromSavedConnection(options: ConnectedOptions = {}): WebhooksCC | null {
+    return savedConnection(options);
+  }
+
+  /**
+   * Connects this agent to a human's account without a sandbox: returns a
+   * link and a 6-digit code to show them, and `wait()` resolves with a
+   * client for their account once they enter it (saved to the agent
+   * credential file, so `WebhooksCC.connected()` finds it next time).
+   *
+   * @example
+   * ```ts
+   * const pending = await WebhooksCC.connect({ email: "dev@example.com" });
+   * console.log(`Open ${pending.verificationUri}, sign in, and enter ${pending.userCode}`);
+   * const client = await pending.wait();
+   * ```
+   */
+  static connect(options: ConnectOptions): Promise<PendingConnection> {
+    return connectAccount(options);
   }
 
   /**
@@ -815,7 +870,7 @@ export class WebhooksCC {
       }
 
       try {
-        const response = await fetch(url, {
+        const response = await this.fetchImpl(url, {
           method,
           headers: {
             Authorization: `Bearer ${await this.bearer()}`,
@@ -1522,7 +1577,7 @@ export class WebhooksCC {
         fetchHeaders["Content-Type"] = "application/json";
       }
 
-      return fetch(url, {
+      return this.fetchImpl(url, {
         method,
         headers: fetchHeaders,
         body:
@@ -2243,7 +2298,7 @@ export class WebhooksCC {
       });
 
       const method = (sendOptions.method ?? "POST").toUpperCase();
-      return fetch(url, {
+      return this.fetchImpl(url, {
         method,
         headers: sendOptions.headers ?? {},
         body:
@@ -2269,7 +2324,7 @@ export class WebhooksCC {
       headers["Content-Type"] = "application/json";
     }
 
-    return fetch(url, {
+    return this.fetchImpl(url, {
       method,
       headers,
       body:
@@ -2487,7 +2542,7 @@ export class WebhooksCC {
         body = captured.body ?? undefined;
       }
 
-      return fetch(targetUrl, {
+      return this.fetchImpl(targetUrl, {
         method: captured.method,
         headers,
         body: body as BodyInit | undefined,
@@ -2522,6 +2577,7 @@ export class WebhooksCC {
       const { signal, timeout, reconnect = false, onReconnect } = options;
       const baseUrl = this.baseUrl;
       const bearer = (forceRefresh?: boolean) => this.bearer(forceRefresh);
+      const fetchImpl = this.fetchImpl;
       const timeoutMs = timeout !== undefined ? parseDuration(timeout) : undefined;
       const idleTimeoutMs = normalizeStreamIdleTimeout(options.idleTimeout);
       const maxReconnectAttempts = Math.max(0, Math.floor(options.maxReconnectAttempts ?? 5));
@@ -2643,7 +2699,7 @@ export class WebhooksCC {
             );
             let response: globalThis.Response;
             try {
-              response = await fetch(url, {
+              response = await fetchImpl(url, {
                 headers: { Authorization: `Bearer ${await bearer()}` },
                 signal: connectionController.signal,
               });

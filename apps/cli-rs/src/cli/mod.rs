@@ -4,11 +4,12 @@ pub mod listen;
 pub mod output;
 pub mod replay;
 pub mod requests;
+pub mod sandbox;
 pub mod send;
 pub mod teams;
 pub mod tunnel;
-pub mod usage;
 pub mod update;
+pub mod usage;
 
 use clap::{Parser, Subcommand};
 
@@ -242,6 +243,14 @@ pub enum Command {
         action: TeamsAction,
     },
 
+    /// Agent sandbox and account connection: capture webhooks without an
+    /// account, then connect the agent to a human's account (non-interactive)
+    #[command(long_about = SANDBOX_ABOUT)]
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
+
     /// Show usage and quota info, including team pools
     Usage,
 
@@ -263,6 +272,108 @@ pub enum AuthAction {
     Status,
     /// Log out and clear stored token
     Logout,
+}
+
+const SANDBOX_ABOUT: &str = "Agent sandbox and account connection (auth.md v0.6), for agents running whk \
+without a human at the keyboard. Every subcommand is non-interactive and supports --json.
+
+Without an account, `whk sandbox create` registers anonymously (a few seconds of proof of work) \
+and makes a capture endpoint: up to 3 at a time, 25 captures each and 100 in all, deleted after 24 hours. \
+`whk sandbox connect --email <address>` shows a link and a 6-digit code for the human; once they enter it, \
+the regular commands (whk list, whk create, whk requests, ...) act for their account whenever no \
+`whk auth login` session exists.
+
+Registrations are kept in the agent credential file shared with the MCP server and the SDKs: \
+WHK_AGENT_FILE, else agent.json next to token.json (~/.config/whk/agent.json on Linux). \
+`whk sandbox status` shows what it holds; tokens are never printed.";
+
+#[derive(Subcommand, Debug)]
+pub enum SandboxAction {
+    /// Create a sandbox endpoint, registering anonymously first when no sandbox is saved
+    Create,
+
+    /// List the sandbox endpoints and what is left of the budget
+    List,
+
+    /// Show one sandbox endpoint
+    Get {
+        /// Endpoint slug
+        slug: String,
+    },
+
+    /// Delete a sandbox endpoint (frees a slot; captures already counted stay counted)
+    Delete {
+        /// Endpoint slug
+        slug: String,
+    },
+
+    /// List the requests a sandbox endpoint captured, newest first
+    Requests {
+        /// Endpoint slug
+        slug: String,
+
+        /// Maximum number of requests to return (1-100)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=100))]
+        limit: Option<u32>,
+
+        /// Only requests received at or after this timestamp (ms)
+        #[arg(long)]
+        since: Option<i64>,
+    },
+
+    /// Show one captured request
+    Request {
+        /// Request ID
+        id: String,
+    },
+
+    /// Wait until requests arrive at a sandbox endpoint, then print them
+    Wait {
+        /// Endpoint slug
+        slug: String,
+
+        /// Give up after this long (e.g. "30s", "5m")
+        #[arg(long, default_value = "60s")]
+        timeout: String,
+
+        /// Count requests received at or after this timestamp (ms; default: the last 5 minutes)
+        #[arg(long)]
+        since: Option<i64>,
+
+        /// How many requests to wait for (1-25, what one endpoint can capture); more than 1 prints a list
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=25))]
+        count: u32,
+    },
+
+    /// Show the saved registrations for this API (never the tokens)
+    Status,
+
+    /// Connect this agent to a human's account: they open a link, sign in and enter a code
+    Connect {
+        /// Email address of the human's account; only they can complete the connection
+        #[arg(long)]
+        email: String,
+
+        /// Stop waiting after this long (default: until the code expires, 15 minutes)
+        #[arg(long)]
+        timeout: Option<String>,
+    },
+
+    /// Remove saved registrations from the credential file
+    #[command(group(clap::ArgGroup::new("which").required(true).args(["claimed", "sandbox", "all"])))]
+    Forget {
+        /// The account connection
+        #[arg(long)]
+        claimed: bool,
+
+        /// The anonymous sandbox registration
+        #[arg(long)]
+        sandbox: bool,
+
+        /// Both
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

@@ -28,16 +28,19 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
 
 from . import __version__
+from ._agent_tokens import AgentTokens, SlotBinding, cached_token
 from ._crypto import json_body
 from ._js import JS_SPACE, js_to_number, js_trim
 from ._sentinel import UNSET
 from ._sse import parse_sse
+from .agent import AccessToken, AgentAuthError
+from .credentials import AgentCredentialStore
 from .durations import Duration, parse_duration
 from .email import (
     DEFAULT_EMAIL_DOMAIN,
@@ -72,6 +75,9 @@ from .models import (
     UsageInfo,
 )
 from .templates import TEMPLATE_METADATA, build_template_request
+
+if TYPE_CHECKING:
+    from .sandbox import PendingConnection, SandboxClient
 
 DEFAULT_BASE_URL = "https://webhooks.cc"
 DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc"
@@ -281,7 +287,17 @@ class WebhooksCC:
     client as a context manager, or call :meth:`close`, to release its
     connections. Durations (``timeout``, ``poll_interval``) take ``"30s"``,
     ``"500ms"``, ``"5m"``, a ``timedelta``, or a number of milliseconds.
+
+    Without ``api_key`` and ``WHK_API_KEY``, the client acts for the account an AI
+    agent was connected to (see :meth:`connect`), when the shared agent credential
+    file holds such a connection.
     """
+
+    _api_key: str | None
+    _tokens: AgentTokens | None
+    _base_url: str
+    _http: httpx.Client
+    _timeout_ms: float
 
     def __init__(
         self,
@@ -295,12 +311,48 @@ class WebhooksCC:
         http_client: httpx.Client | None = None,
     ) -> None:
         key = api_key if api_key is not None else os.environ.get(API_KEY_ENV)
-        if not key:
+        resolved_base = (base_url or os.environ.get(BASE_URL_ENV) or DEFAULT_BASE_URL).rstrip("/")
+        # Without a key, an agent a human connected to their account acts for it.
+        store = AgentCredentialStore.resolve() if not key and api_key is None else None
+        slot = store.load(resolved_base).claimed if store is not None else None
+        if not key and slot is None:
             raise ValueError(
                 f"Missing API key: pass api_key or set {API_KEY_ENV}. "
-                "Get one at https://webhooks.cc/account/api-keys"
+                "Get one at https://webhooks.cc/account/api-keys. Without an account, "
+                "WebhooksCC.sandbox() captures webhooks for 24 hours; "
+                "WebhooksCC.connect(email) connects an agent to your account."
             )
-        self._api_key = key
+        self._configure(
+            base_url=resolved_base,
+            webhook_url=webhook_url,
+            timeout=timeout,
+            retry=retry,
+            email_domain=email_domain,
+            http_client=http_client,
+        )
+        self._api_key = key or None
+        if store is not None and slot is not None:
+            self._tokens = AgentTokens(
+                base_url=self._base_url,
+                assertion=slot.identity_assertion,
+                http=self._http,
+                timeout_ms=self._timeout_ms,
+                token=cached_token(slot),
+                binding=SlotBinding(store, self._base_url, "claimed", slot.registration_id),
+            )
+
+    def _configure(
+        self,
+        *,
+        base_url: str | None,
+        webhook_url: str | None,
+        timeout: Duration,
+        retry: RetryOptions | None,
+        email_domain: str,
+        http_client: httpx.Client | None,
+    ) -> None:
+        self._api_key = None
+        self._tokens = None
         self._base_url = (base_url or os.environ.get(BASE_URL_ENV) or DEFAULT_BASE_URL).rstrip("/")
         self._webhook_url = (
             webhook_url or os.environ.get(WEBHOOK_URL_ENV) or DEFAULT_WEBHOOK_URL
@@ -319,6 +371,40 @@ class WebhooksCC:
         self.forwarding = Forwarding(self)
         self.destinations = Destinations(self)
 
+    @classmethod
+    def _for_agent(
+        cls,
+        *,
+        assertion: str,
+        token: AccessToken | None,
+        binding: SlotBinding | None,
+        base_url: str | None,
+        webhook_url: str | None = None,
+        timeout: Duration | None = None,
+        retry: RetryOptions | None = None,
+        email_domain: str = DEFAULT_EMAIL_DOMAIN,
+        http_client: httpx.Client | None = None,
+    ) -> WebhooksCC:
+        """A client acting for an account through a claimed agent's assertion."""
+        client = cls.__new__(cls)
+        client._configure(
+            base_url=base_url,
+            webhook_url=webhook_url,
+            timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT_MS,
+            retry=retry,
+            email_domain=email_domain,
+            http_client=http_client,
+        )
+        client._tokens = AgentTokens(
+            base_url=client._base_url,
+            assertion=assertion,
+            http=client._http,
+            timeout_ms=client._timeout_ms,
+            token=token,
+            binding=binding,
+        )
+        return client
+
     def __enter__(self) -> WebhooksCC:
         return self
 
@@ -330,14 +416,150 @@ class WebhooksCC:
         if self._owns_http:
             self._http.close()
 
+    # --- agents without an API key ----------------------------------------------------
+
+    @staticmethod
+    def sandbox(
+        *,
+        client_name: str | None = None,
+        base_url: str | None = None,
+        webhook_url: str | None = None,
+        timeout: Duration | None = None,
+        credentials_file: bool | str | os.PathLike[str] = True,
+        http_client: httpx.Client | None = None,
+    ) -> SandboxClient:
+        """Webhook capture without an account, for AI agents (auth.md v0.6).
+
+        .. code-block:: python
+
+            with WebhooksCC.sandbox(client_name="my-agent") as sandbox:
+                endpoint = sandbox.endpoints.create()
+                request = sandbox.requests.wait_for(endpoint.slug, timeout="60s")
+
+                claim = sandbox.claim("dev@example.com")
+                print(f"Open {claim.verification_uri} and enter {claim.user_code}")
+                client = sandbox.wait_for_claim()  # a WebhooksCC for that account
+
+        Reuses the live sandbox in the shared agent credential file
+        (:func:`~webhooks_cc.credentials.agent_credentials_path`), or registers
+        a new one with a few seconds of proof of work and saves it there. A
+        sandbox holds 3 endpoints, 25 captured requests each and 100 in all, for
+        24 hours. ``credentials_file=False`` leaves the file alone; a path uses
+        that file instead. ``client_name`` defaults to ``webhooks-cc-python``.
+        """
+        from .sandbox import create_sandbox
+
+        return create_sandbox(
+            client_name=client_name,
+            base_url=base_url,
+            webhook_url=webhook_url,
+            timeout=timeout,
+            credentials_file=credentials_file,
+            http_client=http_client,
+        )
+
+    @classmethod
+    def connected(
+        cls,
+        *,
+        base_url: str | None = None,
+        webhook_url: str | None = None,
+        timeout: Duration = _DEFAULT_TIMEOUT_MS,
+        retry: RetryOptions | None = None,
+        email_domain: str = DEFAULT_EMAIL_DOMAIN,
+        credentials_file: bool | str | os.PathLike[str] = True,
+        http_client: httpx.Client | None = None,
+    ) -> WebhooksCC | None:
+        """A client for the account an agent was connected to, or ``None``.
+
+        Reads the live ``claimed`` slot of the shared agent credential file, which
+        :meth:`connect`, :meth:`SandboxClient.wait_for_claim
+        <webhooks_cc.sandbox.SandboxClient.wait_for_claim>` and the other
+        webhooks.cc tools write. Returns ``None`` when there is none, or when the
+        human disconnected the agent (the slot is removed then), which one
+        :meth:`usage` call finds out. Other errors from that call are raised.
+        """
+        store = AgentCredentialStore.resolve(credentials_file)
+        resolved_base = (base_url or os.environ.get(BASE_URL_ENV) or DEFAULT_BASE_URL).rstrip("/")
+        slot = store.load(resolved_base).claimed if store is not None else None
+        if store is None or slot is None:
+            return None
+        client = cls._for_agent(
+            assertion=slot.identity_assertion,
+            token=cached_token(slot),
+            binding=SlotBinding(store, resolved_base, "claimed", slot.registration_id),
+            base_url=resolved_base,
+            webhook_url=webhook_url,
+            timeout=timeout,
+            retry=retry,
+            email_domain=email_domain,
+            http_client=http_client,
+        )
+        try:
+            # The cheapest authenticated call. A disconnected agent's cached token gets a
+            # 401, and the exchange that follows answers invalid_grant.
+            client.usage()
+        except BaseException as error:
+            client.close()
+            revoked = client._tokens is not None and client._tokens.revoked
+            if revoked and isinstance(error, UnauthorizedError):
+                return None
+            raise
+        return client
+
+    @staticmethod
+    def connect(
+        email: str,
+        *,
+        client_name: str | None = None,
+        base_url: str | None = None,
+        webhook_url: str | None = None,
+        timeout: Duration | None = None,
+        credentials_file: bool | str | os.PathLike[str] = True,
+        http_client: httpx.Client | None = None,
+    ) -> PendingConnection:
+        """Start connecting an agent to the account of the human at ``email``.
+
+        .. code-block:: python
+
+            pending = WebhooksCC.connect("dev@example.com", client_name="my-agent")
+            print(f"Open {pending.verification_uri} and enter {pending.user_code}")
+            client = pending.wait()  # a WebhooksCC for that account
+
+        The human signs in (or signs up) as ``email`` and types the code. The
+        connection is saved in the shared agent credential file, so
+        :meth:`connected` and ``WebhooksCC()`` without an API key pick it up
+        later, in this process or another.
+        """
+        from .sandbox import PendingConnection
+
+        return PendingConnection._start(
+            email,
+            client_name=client_name,
+            base_url=base_url,
+            webhook_url=webhook_url,
+            timeout=timeout,
+            credentials_file=credentials_file,
+            http_client=http_client,
+        )
+
     # --- plumbing ---------------------------------------------------------------------
 
     @property
     def _timeout_s(self) -> float:
         return self._timeout_ms / 1000
 
+    def _bearer(self, force_refresh: bool = False) -> str:
+        """The API key, or an agent's access token. A token that cannot be had is a 401."""
+        if self._tokens is None:
+            return self._api_key or ""
+        try:
+            return self._tokens.get(force_refresh)
+        except AgentAuthError as error:
+            raise UnauthorizedError(f"Could not get an access token: {error}") from error
+
     def _auth(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._api_key}"}
+        return {"Authorization": f"Bearer {self._bearer()}"}
 
     def _api(
         self,
@@ -355,6 +577,7 @@ class WebhooksCC:
         if repeatable is None:
             repeatable = method.upper() in _IDEMPOTENT_METHODS
         attempt = 0
+        refreshed = False
         while True:
             attempt += 1
             backoff = self._backoff_ms * 2 ** (attempt - 1)
@@ -377,6 +600,13 @@ class WebhooksCC:
                     _sleep_ms(backoff)
                     continue
                 raise
+
+            # An agent's token that expired or was revoked: exchange once more and retry.
+            if response.status_code == 401 and self._tokens is not None and not refreshed:
+                refreshed = True
+                self._bearer(force_refresh=True)
+                attempt -= 1
+                continue
 
             if response.status_code >= 400:
                 error = _error_from_response(response)
@@ -1675,6 +1905,7 @@ def _subscribe(
     # first connection, so the gap is replayed rather than skipped.
     resume_floor: float | None = None
     rapid_rotations = 0
+    refreshed = False
     seen = _RecentIds(_STREAM_DEDUP_WINDOW)
 
     def expired() -> bool:
@@ -1774,7 +2005,14 @@ def _subscribe(
             if back_off():
                 continue
             return
-        except (UnauthorizedError, NotFoundError):
+        except UnauthorizedError:
+            # An agent's token that expired or was revoked: exchange once more.
+            if client._tokens is None or refreshed:
+                raise
+            refreshed = True
+            client._bearer(force_refresh=True)
+            continue
+        except NotFoundError:
             raise
         except (WebhooksCCError, httpx.TransportError) as caught:
             # The deadline timer ends a read with an error; that is the normal end.

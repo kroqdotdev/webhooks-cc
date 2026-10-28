@@ -198,11 +198,14 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
   } as unknown as WebhooksCC;
 }
 
-function getRegisteredTools(client: WebhooksCC): Record<string, RegisteredTool> {
+function getRegisteredTools(
+  client: WebhooksCC,
+  options: { remote?: boolean } = {}
+): Record<string, RegisteredTool> {
   const server = new McpServer({ name: "test", version: "0.0.0" });
   const toolSpy = vi.spyOn(server, "tool");
 
-  registerTools(server, client);
+  registerTools(server, client, options);
 
   return Object.fromEntries(
     toolSpy.mock.calls.map((call) => [
@@ -222,6 +225,47 @@ function parseJsonResult(result: { content: Array<{ text: string }> }) {
 }
 
 describe("registerTools", () => {
+  it("leaves out local-only tools on the hosted server and caps its waits", async () => {
+    const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
+    const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
+    const tools = getRegisteredTools(client, { remote: true });
+    expect(Object.keys(tools)).toHaveLength(44);
+    expect(tools).not.toHaveProperty("send_to");
+    expect(tools).not.toHaveProperty("replay_request");
+
+    const render = await tools.render_email.handler({
+      requestId: "req1",
+      format: "postmark",
+      targetUrl: "http://localhost:3000/inbound",
+    });
+    expect(render.isError).toBe(true);
+    expect(render.content[0].text).toContain("local MCP server");
+
+    await tools.wait_for_request.handler({ endpointSlug: "abc", timeout: "10m" });
+    expect(waitFor).toHaveBeenCalledWith("abc", expect.objectContaining({ timeout: 50_000 }));
+    await tools.wait_for_request.handler({
+      endpointSlug: "abc",
+      timeout: "1.5h",
+      pollInterval: "10ms",
+    });
+    expect(waitFor).toHaveBeenLastCalledWith(
+      "abc",
+      expect.objectContaining({ timeout: 50_000, pollInterval: 1_000 })
+    );
+    await tools.wait_for_request.handler({ endpointSlug: "abc", timeout: "20s" });
+    expect(waitFor).toHaveBeenLastCalledWith(
+      "abc",
+      expect.objectContaining({ timeout: 20_000, pollInterval: 1_000 })
+    );
+    await tools.wait_for_request.handler({ endpointSlug: "abc", pollInterval: 1e12 });
+    expect(waitFor).toHaveBeenLastCalledWith(
+      "abc",
+      expect.objectContaining({ pollInterval: 50_000 })
+    );
+    const bad = await tools.wait_for_request.handler({ endpointSlug: "abc", timeout: "soon" });
+    expect(bad.isError).toBe(true);
+  });
+
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 

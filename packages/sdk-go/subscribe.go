@@ -101,10 +101,18 @@ type subscription struct {
 	rapidRotations  int
 	endpointDeleted bool
 	seen            *recentIDs
+	// refreshed is set after an agent token was refused once, until a
+	// connection succeeds.
+	refreshed bool
 }
 
-// errStop means the consumer stopped iterating.
-var errStop = errors.New("stop")
+var (
+	// errStop means the consumer stopped iterating.
+	errStop = errors.New("stop")
+	// errRefreshed means an agent token was refused and dropped: connect
+	// again at once with a new one.
+	errRefreshed = errors.New("refreshed")
+)
 
 func (s *subscription) run(parent context.Context, yield func(*Request, error) bool) {
 	ctx := parent
@@ -125,6 +133,9 @@ func (s *subscription) run(parent context.Context, yield func(*Request, error) b
 		rotated, err := s.connect(ctx, yield)
 		if errors.Is(err, errStop) {
 			return
+		}
+		if errors.Is(err, errRefreshed) {
+			continue
 		}
 		if ctx.Err() != nil {
 			finish()
@@ -169,6 +180,10 @@ func (s *subscription) run(parent context.Context, yield func(*Request, error) b
 }
 
 func (s *subscription) retryable(err error) bool {
+	// An agent token the server will not give: reconnecting cannot help.
+	if errors.Is(err, ErrUnauthorized) {
+		return false
+	}
 	var apiErr *Error
 	if errors.As(err, &apiErr) {
 		return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
@@ -208,11 +223,15 @@ func (s *subscription) connect(ctx context.Context, yield func(*Request, error) 
 	if len(query) > 0 {
 		target += "?" + query.Encode()
 	}
+	bearer, err := s.c.bearer(connCtx)
+	if err != nil {
+		return false, err
+	}
 	request, err := http.NewRequestWithContext(connCtx, http.MethodGet, target, nil)
 	if err != nil {
 		return false, err
 	}
-	request.Header.Set("Authorization", "Bearer "+s.c.apiKey)
+	request.Header.Set("Authorization", "Bearer "+bearer)
 	request.Header.Set("Accept", "text/event-stream")
 	request.Header.Set("User-Agent", userAgent)
 
@@ -234,10 +253,17 @@ func (s *subscription) connect(ctx context.Context, yield func(*Request, error) 
 		return false, err
 	}
 	defer response.Body.Close()
+	// An agent token expired or was revoked: exchange once more.
+	if response.StatusCode == http.StatusUnauthorized && s.c.tokens != nil && !s.refreshed {
+		s.refreshed = true
+		s.c.tokens.reject(bearer)
+		return false, errRefreshed
+	}
 	if response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 		return false, errorFromResponse(&apiResponse{status: response.StatusCode, header: response.Header, body: body})
 	}
+	s.refreshed = false
 	connectedAt := time.Now()
 	if s.resumeFloor.IsZero() {
 		if date, err := http.ParseTime(response.Header.Get("Date")); err == nil {

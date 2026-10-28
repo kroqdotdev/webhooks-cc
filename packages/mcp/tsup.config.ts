@@ -6,7 +6,9 @@ const define = { PKG_VERSION: JSON.stringify(pkg.version) };
 
 export default defineConfig([
   {
-    entry: ["src/index.ts"],
+    // tools: the tool definitions alone, for the hosted server at webhooks.cc/mcp,
+    // which runs them on its own MCP server without this package's stdio one.
+    entry: { index: "src/index.ts", tools: "src/tools.ts" },
     format: ["cjs", "esm"],
     dts: true,
     clean: true,

@@ -102,6 +102,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@modelcontextprotocol/server':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@polar-sh/sdk':
         specifier: ^1.0.2
         version: 1.0.2
@@ -141,6 +144,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.118.0
         version: 2.118.0(@opentelemetry/api@1.10.0)
+      '@webhooks-cc/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@webhooks-cc/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -981,6 +987,10 @@ packages:
       '@types/react': '>=16'
       react: '>=16'
 
+  '@modelcontextprotocol/core@2.4.0':
+    resolution: {integrity: sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==}
+    engines: {node: '>=20'}
+
   '@modelcontextprotocol/sdk@1.32.1':
     resolution: {integrity: sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==}
     engines: {node: '>=18'}
@@ -990,6 +1000,10 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@modelcontextprotocol/server@2.4.0':
+    resolution: {integrity: sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==}
+    engines: {node: '>=20'}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -5650,6 +5664,10 @@ snapshots:
       '@types/react': 19.3.0
       react: 19.3.1
 
+  '@modelcontextprotocol/core@2.4.0':
+    dependencies:
+      zod: 4.6.7
+
   '@modelcontextprotocol/sdk@1.32.1(zod@4.6.7)':
     dependencies:
       '@hono/node-server': 2.1.5(hono@4.13.13)
@@ -5671,6 +5689,11 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@4.6.7)
     transitivePeerDependencies:
       - supports-color
+
+  '@modelcontextprotocol/server@2.4.0':
+    dependencies:
+      '@modelcontextprotocol/core': 2.4.0
+      zod: 4.6.7
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true

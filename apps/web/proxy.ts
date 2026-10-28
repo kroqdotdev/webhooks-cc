@@ -1,13 +1,19 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { imgSrcDirective } from "@/lib/csp-img-src";
+import {
+  MARKDOWN_TWIN_HEADER,
+  isMarkdownTwinPath,
+  negotiatesMarkdown,
+} from "@/lib/markdown-negotiation";
 
 /**
- * Proxy: Supabase session refresh + security headers.
+ * Proxy: markdown twins, Supabase session refresh, security headers.
  *
  * 1. Refuses Server Action probes and POST requests outside /api.
- * 2. Refreshes the Supabase JWT on every request so server components get fresh cookies.
- * 3. Sets Content-Security-Policy and related headers on every response.
+ * 2. Marks requests that prefer a page's markdown twin (next.config.ts rewrites them).
+ * 3. Otherwise refreshes the Supabase JWT so server components get fresh cookies.
+ * 4. Sets Content-Security-Policy and related headers on every response.
  */
 
 function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
@@ -34,26 +40,15 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/blog/preview",
     // Shared request snapshots: links people pass around, never search results.
     "/s",
+    // The OAuth consent page and the remote MCP server.
+    "/oauth",
+    "/mcp",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-export async function proxy(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
-
-  // The web app has no Server Actions, and every POST route lives under /api.
-  // Refusing Next-Action probes and POSTs to page routes here keeps Next's
-  // action handler from running (which throws InvariantError when RSC: 1 is
-  // also set) and skips the session refresh round-trip on scanner traffic.
-  const isApiPath = pathname === "/api" || pathname.startsWith("/api/");
-  if (request.headers.has("next-action") || (request.method === "POST" && !isApiPath)) {
-    return new NextResponse("Not Found", {
-      status: 404,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-
-  // --- Supabase session refresh ---
+/** Refreshes the Supabase session so server components get fresh cookies. */
+async function refreshSession(request: NextRequest, pathname: string): Promise<NextResponse> {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -86,9 +81,52 @@ export async function proxy(request: NextRequest) {
     await supabase.auth.getUser();
   }
 
-  // --- Security headers ---
-  const response = supabaseResponse;
+  return supabaseResponse;
+}
 
+export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // The web app has no Server Actions, and every POST route lives under /api
+  // or is the remote MCP server (app/mcp, bearer tokens only).
+  // Refusing Next-Action probes and POSTs to page routes here keeps Next's
+  // action handler from running (which throws InvariantError when RSC: 1 is
+  // also set) and skips the session refresh round-trip on scanner traffic.
+  const isApiPath = pathname === "/api" || pathname.startsWith("/api/");
+  const isMcpPath = pathname === "/mcp" || pathname.startsWith("/mcp/");
+  if (
+    request.headers.has("next-action") ||
+    (request.method === "POST" && !isApiPath && !isMcpPath)
+  ) {
+    return new NextResponse("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
+  // --- Markdown for agents ---
+  // A page asked for with an Accept header that prefers text/markdown is
+  // marked for the next.config.ts rewrite to its markdown twin, and a twin's
+  // own URL needs nothing (lib/markdown-negotiation.ts). Twins are public,
+  // so neither refreshes the session; nor does the MCP server, which reads
+  // only bearer tokens.
+  // The marker is ours to set: a client sending it could otherwise get a
+  // page's markdown under its HTML URL.
+  request.headers.delete(MARKDOWN_TWIN_HEADER);
+
+  let response: NextResponse;
+  const isRead = request.method === "GET" || request.method === "HEAD";
+  if (isRead && negotiatesMarkdown(pathname, request.headers.get("accept"))) {
+    const headers = new Headers(request.headers);
+    headers.set(MARKDOWN_TWIN_HEADER, "1");
+    response = NextResponse.next({ request: { headers } });
+  } else if (isMcpPath || isMarkdownTwinPath(pathname)) {
+    response = NextResponse.next({ request: { headers: request.headers } });
+  } else {
+    response = await refreshSession(request, pathname);
+  }
+
+  // --- Security headers ---
   const webhookOrigin = sanitizeCspOrigin(
     process.env.NEXT_PUBLIC_WEBHOOK_URL,
     "https://go.webhooks.cc"
@@ -147,6 +185,9 @@ export async function proxy(request: NextRequest) {
 
   if (shouldNoIndexPath(pathname)) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  } else if (isMarkdownTwinPath(pathname)) {
+    // The HTML page is the one to index; its links still count.
+    response.headers.set("X-Robots-Tag", "noindex");
   }
 
   return response;

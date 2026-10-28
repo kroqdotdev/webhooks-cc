@@ -16,19 +16,30 @@ function validateApiKeyFormat(key: string): void {
   }
 }
 
-function mcpServerConfig(apiKey: string) {
+/** Without an API key the server starts in the keyless agent sandbox. */
+function mcpServerConfig(apiKey: string | null) {
   return {
     command: "npx",
     args: ["-y", "@webhooks-cc/mcp"],
-    env: { WHK_API_KEY: apiKey },
+    ...(apiKey ? { env: { WHK_API_KEY: apiKey } } : {}),
   };
+}
+
+/** VS Code's mcp.json names its servers under `servers`, with a transport type. */
+function vscodeServerConfig(apiKey: string | null) {
+  return { type: "stdio", ...mcpServerConfig(apiKey) };
 }
 
 function resolveApiKey(flags: Record<string, string>): string | null {
   return flags["api-key"] ?? process.env.WHK_API_KEY ?? null;
 }
 
-function mergeJsonConfig(filePath: string, serverName: string, serverConfig: object): void {
+function mergeJsonConfig(
+  filePath: string,
+  serverName: string,
+  serverConfig: object,
+  key: "mcpServers" | "servers" = "mcpServers"
+): void {
   let existing: Record<string, unknown> = {};
   if (existsSync(filePath)) {
     try {
@@ -40,9 +51,9 @@ function mergeJsonConfig(filePath: string, serverName: string, serverConfig: obj
     }
   }
 
-  const mcpServers = (existing.mcpServers ?? {}) as Record<string, unknown>;
-  mcpServers[serverName] = serverConfig;
-  existing.mcpServers = mcpServers;
+  const servers = (existing[key] ?? {}) as Record<string, unknown>;
+  servers[serverName] = serverConfig;
+  existing[key] = servers;
 
   const dir = dirname(filePath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -71,7 +82,7 @@ function getClaudeDesktopConfigPath(): string {
   return join(homedir(), ".config", "Claude", "claude_desktop_config.json");
 }
 
-function setupClaudeCode(apiKey: string): void {
+function setupClaudeCode(apiKey: string | null): void {
   try {
     execFileSync(
       "claude",
@@ -83,8 +94,7 @@ function setupClaudeCode(apiKey: string): void {
         "--transport",
         "stdio",
         "webhooks-cc",
-        "-e",
-        `WHK_API_KEY=${apiKey}`,
+        ...(apiKey ? ["-e", `WHK_API_KEY=${apiKey}`] : []),
         "--",
         "npx",
         "-y",
@@ -99,34 +109,34 @@ function setupClaudeCode(apiKey: string): void {
     console.error("Install it: npm install -g @anthropic-ai/claude-code");
     console.error("\nManual alternative — run this command:");
     console.error(
-      `  claude mcp add -s user --transport stdio webhooks-cc -e WHK_API_KEY=<your-key> -- npx -y @webhooks-cc/mcp`
+      `  claude mcp add -s user --transport stdio webhooks-cc${apiKey ? " -e WHK_API_KEY=<your-key>" : ""} -- npx -y @webhooks-cc/mcp`
     );
     process.exit(1);
   }
 }
 
-function setupClaudeDesktop(apiKey: string): void {
+function setupClaudeDesktop(apiKey: string | null): void {
   const configPath = getClaudeDesktopConfigPath();
   mergeJsonConfig(configPath, "webhooks-cc", mcpServerConfig(apiKey));
   console.log(`Done! Config written to ${configPath}`);
   console.log("Restart Claude Desktop for changes to take effect.");
 }
 
-function setupCursor(apiKey: string): void {
+function setupCursor(apiKey: string | null): void {
   const configPath = join(process.cwd(), ".cursor", "mcp.json");
   mergeJsonConfig(configPath, "webhooks-cc", mcpServerConfig(apiKey));
   console.log(`Done! Config written to ${configPath}`);
   console.log("Restart Cursor or reload the window for changes to take effect.");
 }
 
-function setupVSCode(apiKey: string): void {
+function setupVSCode(apiKey: string | null): void {
   const configPath = join(process.cwd(), ".vscode", "mcp.json");
-  mergeJsonConfig(configPath, "webhooks-cc", mcpServerConfig(apiKey));
+  mergeJsonConfig(configPath, "webhooks-cc", vscodeServerConfig(apiKey), "servers");
   console.log(`Done! Config written to ${configPath}`);
   console.log("Reload VS Code window for changes to take effect.");
 }
 
-function setupCodex(apiKey: string): void {
+function setupCodex(apiKey: string | null): void {
   try {
     execFileSync(
       "codex",
@@ -134,8 +144,7 @@ function setupCodex(apiKey: string): void {
         "mcp",
         "add",
         "webhooks-cc",
-        "-e",
-        `WHK_API_KEY=${apiKey}`,
+        ...(apiKey ? ["-e", `WHK_API_KEY=${apiKey}`] : []),
         "--",
         "npx",
         "-y",
@@ -148,18 +157,22 @@ function setupCodex(apiKey: string): void {
     console.error("\nFailed to run 'codex mcp add'. Is OpenAI Codex CLI installed?");
     console.error("\nManual alternative — add to ~/.codex/config.toml:");
     console.error(`
-[mcp.webhooks-cc]
+[mcp_servers.webhooks-cc]
 command = "npx"
 args = ["-y", "@webhooks-cc/mcp"]
-
-[mcp.webhooks-cc.env]
+${
+  apiKey
+    ? `
+[mcp_servers.webhooks-cc.env]
 WHK_API_KEY = "<your-key>"
-`);
+`
+    : ""
+}`);
     process.exit(1);
   }
 }
 
-function setupWindsurf(apiKey: string): void {
+function setupWindsurf(apiKey: string | null): void {
   const configPath = join(homedir(), ".codeium", "windsurf", "mcp_config.json");
   mergeJsonConfig(configPath, "webhooks-cc", mcpServerConfig(apiKey));
   console.log(`Done! Config written to ${configPath}`);
@@ -173,6 +186,9 @@ function printUsage(): void {
 Usage:
   npx @webhooks-cc/mcp setup <tool> [--api-key <key>]
 
+Without a key the server starts in the keyless agent sandbox; your agent can
+connect your account later (connect_account), and the connection is saved.
+
 Tools:
   claude-code      Claude Code CLI (runs 'claude mcp add')
   claude-desktop   Claude Desktop app
@@ -182,9 +198,10 @@ Tools:
   windsurf         Windsurf editor
 
 Options:
-  --api-key <key>  Your webhooks.cc API key (or set WHK_API_KEY env var)
+  --api-key <key>  Your webhooks.cc API key (or set WHK_API_KEY env var); optional
 
 Examples:
+  npx @webhooks-cc/mcp setup claude-code
   npx @webhooks-cc/mcp setup claude-code --api-key whcc_abc123
   WHK_API_KEY=whcc_abc123 npx @webhooks-cc/mcp setup cursor
   npx @webhooks-cc/mcp setup vscode --api-key whcc_abc123
@@ -216,15 +233,13 @@ export function runSetup(args: string[]): void {
   }
 
   const apiKey = resolveApiKey(flags);
-  if (!apiKey) {
-    console.error("Error: API key required. Pass --api-key or set WHK_API_KEY env var.");
-    console.error("Get your API key at https://webhooks.cc/account/api-keys\n");
-    process.exit(1);
-  }
-
-  validateApiKeyFormat(apiKey);
+  if (apiKey) validateApiKeyFormat(apiKey);
 
   console.log(`Setting up webhooks-cc MCP server for ${tool}...\n`);
+  if (!apiKey) {
+    console.log("No API key: the server starts in the keyless agent sandbox. Your agent can");
+    console.log("connect your account later with connect_account; the connection is saved.\n");
+  }
 
   switch (tool) {
     case "claude-code":

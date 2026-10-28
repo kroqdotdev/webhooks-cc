@@ -63,6 +63,8 @@ async function call(
     method: init.method ?? (body === undefined ? "GET" : "POST"),
     headers,
     body,
+    // Never re-send an assertion or a claim token to wherever a redirect points.
+    redirect: "error",
     signal: AbortSignal.timeout(options.timeout ?? DEFAULT_TIMEOUT),
   });
   const text = await response.text();

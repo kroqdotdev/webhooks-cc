@@ -546,7 +546,7 @@ npx @webhooks-cc/mcp setup windsurf
 codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 ```
 
-Set `WHK_API_KEY` environment variable to your API key.
+`WHK_API_KEY` is optional. Without it the server starts connected to the account the agent was connected to before (saved in ~/.config/whk/agent.json), or in the keyless agent sandbox: 3 endpoints for 24 hours, and `connect_account` then `wait_for_connection` connect a human's account. Hosted agents (claude.ai, ChatGPT) use the remote server at https://webhooks.cc/mcp instead, approved once in the client's connect dialog. See https://webhooks.cc/auth.md.
 
 ### MCP Tools
 

@@ -260,9 +260,12 @@ describe("agent identity (auth.md v0.6)", () => {
         "identity_assertion",
       ]);
       expect(as.grant_types_supported).toEqual([
+        "authorization_code",
+        "refresh_token",
         "urn:ietf:params:oauth:grant-type:jwt-bearer",
         "urn:workos:agent-auth:grant-type:claim",
       ]);
+      expect(as.authorization_endpoint).toBe(`${APP}/oauth/authorize`);
       expect(as.agent_auth.anonymous.proof_of_work.challenge_endpoint).toBe(
         `${APP}/api/agent/identity/challenge`
       );

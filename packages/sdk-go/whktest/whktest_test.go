@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -54,6 +55,7 @@ func TestEndpointIsNamedAfterTheTestAndDeleted(t *testing.T) {
 
 func TestClientSkipsWithoutAKey(t *testing.T) {
 	t.Setenv(webhookscc.APIKeyEnv, "")
+	t.Setenv(webhookscc.AgentFileEnv, filepath.Join(t.TempDir(), "agent.json"))
 	skipped := t.Run("inner", func(t *testing.T) {
 		whktest.Client(t)
 		t.Error("not skipped")

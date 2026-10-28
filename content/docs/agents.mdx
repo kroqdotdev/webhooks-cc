@@ -1,9 +1,9 @@
 ---
 title: "AI Agents: Sandbox and Registration"
-description: "AI agents can use webhooks.cc without an account: register through the auth.md protocol, solve a short proof of work, and capture webhooks in a 24-hour sandbox. Limits, lifetimes, and how to connect an agent to your account."
+description: "How AI agents use webhooks.cc: the remote MCP server with one-click OAuth, a 24-hour sandbox without an account through the auth.md protocol, connecting an agent to your account once, and the credential file every tool shares."
 section: getting-started
 order: 6
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-28
 schema: tech-article
 keywords:
   [
@@ -13,15 +13,39 @@ keywords:
     "webhook testing for AI agents",
     "agentic registration",
     "agent access token",
+    "remote MCP server",
+    "agent credential file",
   ]
 seo:
   ogTitle: "AI Agents on webhooks.cc: Sandbox and Registration"
-  ogDescription: "An AI agent can register without an account, solve a short proof of work, and capture webhooks in a 24-hour sandbox. Limits, lifetimes, and the auth.md flow."
+  ogDescription: "Hosted agents connect to the remote MCP server with one approval; local agents capture webhooks in a 24-hour sandbox without an account and connect to yours once."
 ---
 
-An AI agent can use webhooks.cc before anyone signs up. It registers itself through [auth.md](/auth.md), the agent registration protocol webhooks.cc implements (version 0.6), and gets a **sandbox**: a few temporary endpoints that capture webhooks for a day and that only the agent can read.
+An AI agent can use webhooks.cc before anyone signs up. It registers itself through [auth.md](/auth.md), the agent registration protocol webhooks.cc implements (version 0.6), and gets a **sandbox**: a few temporary endpoints that capture webhooks for a day and that only the agent can read. When you want to keep what it made, or let it work in your account, you connect it once.
 
-The full protocol, with request and response examples, is at [webhooks.cc/auth.md](/auth.md). Agents read that document directly; this page explains the same flow for people.
+Hosted agents, such as claude.ai or ChatGPT, use the remote MCP server instead and connect with a single approval in your browser.
+
+The full protocol, with request and response examples, is at [webhooks.cc/auth.md](/auth.md). Agents read that document directly; this page explains the same flows for people.
+
+## Start here
+
+The sandbox needs nothing from you: it is free, anonymous, isolated from every account, and deleted after 24 hours. An agent involves you only to keep what it made, or for what the sandbox lacks: more than 3 endpoints, mock responses, forwarding, signature checks, and email.
+
+An agent takes the first of these it can use:
+
+1. **Hosted agents (claude.ai, ChatGPT, cloud coding agents) and clients that take remote MCP servers.** Add `https://webhooks.cc/mcp` (streamable HTTP) as a custom connector and approve it once in your browser; there is no code to type. See [apps connected with OAuth](#apps-connected-with-oauth) and the [setup for each client](/docs/mcp#remote-server).
+2. **Clients that run local MCP servers** (Claude Code, Cursor, Codex, VS Code, Windsurf): `claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`, or `npx -y @webhooks-cc/mcp setup cursor` (or `vscode`, `codex`, `windsurf`, `claude-desktop`). No key is needed: the first `create_endpoint` registers a sandbox, and `connect_account` then `wait_for_connection` connect it to your account.
+3. **Claude Code with plugins:** `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc` installs the MCP server with the [webhook testing skill](/docs/mcp/skills).
+4. **Agents that run code.** Each of these registers, solves the proof of work, and reuses the sandbox on the next run:
+   - TypeScript: `npm i @webhooks-cc/sdk`, then `WebhooksCC.sandbox()` ([SDK](/docs/sdk))
+   - Python: `pip install webhooks-cc`, then `WebhooksCC.sandbox()` ([Python SDK](/docs/sdk/python#no-account-the-agent-sandbox))
+   - Go: `go get webhooks.cc/go`, then `webhookscc.NewSandbox(ctx)` ([Go SDK](/docs/sdk/go#no-account-the-agent-sandbox))
+   - Shell: `whk sandbox create --json` ([CLI](/docs/cli/commands#sandbox); install with `curl -fsSL https://webhooks.cc/install.sh | sh` or `brew install kroqdotdev/tap/whk`)
+
+   To connect an account without a sandbox first, they have `WebhooksCC.connect()` (TypeScript and Python), `webhookscc.Connect()` (Go) and `whk sandbox connect --email <address>`.
+5. **Agents with only HTTP** follow Steps 1 to 6 of [auth.md](/auth.md). Any User-Agent works.
+
+Options 2 to 4 keep the sandbox and your connection in [the agent credential file](#the-agent-credential-file), so you approve an agent once and every tool on that machine starts connected. With an API key in `WHK_API_KEY`, none of this is needed.
 
 ## What an agent gets without an account
 
@@ -41,19 +65,21 @@ Sandbox endpoints only capture. They answer every webhook with a plain `200` and
 
 ## How registration works
 
+The MCP server, the SDKs and the CLI do these steps for the agent.
+
 1. **Discover.** The agent finds the registration endpoints in `/.well-known/oauth-authorization-server`, or follows the `WWW-Authenticate` header of any `401` from the API.
 2. **Prove some work.** Anonymous registration needs a solved proof-of-work challenge from `POST /api/agent/identity/challenge`: many SHA-256 hashes, a few seconds of CPU. It keeps scripts from filling the sandbox for free. A registration request without one gets a challenge back, so an agent needs no extra knowledge.
 3. **Register.** `POST /api/agent/identity` with `{ "type": "anonymous", "proof_of_work": ... }` returns a signed identity assertion and a claim token.
 4. **Get an access token.** The agent exchanges the assertion at `POST /api/oauth2/token` for an access token that lasts one hour. It can exchange again for a new one until the registration expires.
 5. **Use the sandbox.** With that token the agent creates endpoints at `/api/agent/sandbox/endpoints` and reads what they captured.
 
-Each IP address can register 5 times an hour. An agent that cannot run code, and so cannot solve the challenge, can register with your email instead (`"type": "service_auth"`): it gets no sandbox, and nothing works until you connect it as described below.
+Each IP address can register 5 times an hour. An agent that cannot run code, and so cannot solve the challenge, can register with your email instead (`"type": "service_auth"`): it gets no sandbox, and nothing works until you connect it as described below. The SDKs' connect functions and `whk sandbox connect` take this path.
 
 ## Connecting an agent to your account
 
 When you want to keep what an agent set up, or let it work in your account, connect it:
 
-1. The agent names your email and gets a link and a 6-digit code. It shows you both, for example: "Open this link, sign in, and enter 123456".
+1. The agent names your email and gets a link and a 6-digit code. It shows you both, for example: "Open this link, sign in, and enter 123456". The email must be the one you sign in to webhooks.cc with (your GitHub or Google primary email if you sign in that way).
 2. Open the link and sign in, or sign up, with that email address. A link for someone else's address does not work in your account.
 3. Check the page: it shows the name the agent gave itself, when it registered, and which sandbox endpoints will move into your account. Enter the code, or decline.
 
@@ -61,9 +87,82 @@ After you connect it:
 
 - Its sandbox endpoints become ordinary endpoints in your account, with the same URLs and the requests they already captured. They no longer expire, and new captures count against your plan.
 - The agent can use the API on your behalf, like an API key: manage endpoints and read what they capture. It cannot change your API keys, billing or account settings.
+- The connection lasts 90 days and is saved in [the agent credential file](#the-agent-credential-file), so later sessions of the MCP server, the CLI and the SDKs on that machine start connected. You approve the agent once, not every session.
 - You get an email saying an agent was connected.
 
-The code works for 15 minutes and for 5 tries; the agent can ask for a new one. An account can connect up to 10 agents.
+The code works for 15 minutes and for 5 tries; the agent can ask for a new one. An account can connect up to 10 agents, apps connected with OAuth included.
+
+Only the process that registered a sandbox can move its endpoints into your account, because the claim token never leaves its memory. When an agent asks to connect from a later session, it connects through a new registration and says so: you get a link and a code as usual, and the endpoints of the earlier sandbox stay in the sandbox until they expire.
+
+## Apps connected with OAuth
+
+Hosted agents cannot run a local server or keep a file, so they use the remote MCP server at `https://webhooks.cc/mcp` and connect with OAuth:
+
+1. Add `https://webhooks.cc/mcp` to the client, for example as a custom connector in claude.ai. The [MCP server page](/docs/mcp#remote-server) has the setup for each client.
+2. The client opens webhooks.cc in your browser. Sign in, or sign up.
+3. The page shows which app asks, where it will send you back to, and what it gets. An app that publishes a Client ID Metadata Document is identified by its own host; an app that registered itself shows its name as unverified. Click **Connect**, or **Decline**. There is no code to type.
+
+The app then appears under **Account, Connected agents**, labelled as an app connected with OAuth. It gets the same access as a connected agent: your endpoints and what they capture, never your API keys, billing or account settings. Its access tokens last an hour, and it renews them with a refresh token that changes on every use and stops working after 90 days unused. When a refresh token that was already replaced turns up again, the connection ends, since that points to a copy. OAuth apps count toward the 10 connected agents; at the limit, the page asks you to disconnect one first.
+
+For client developers: the authorization server takes the authorization code grant with PKCE (`S256`) from public clients, which identify themselves with a Client ID Metadata Document (preferred) or dynamic client registration at `/api/oauth2/register`. An unauthenticated request to `/mcp` answers `401` with a `WWW-Authenticate` header pointing to the protected resource metadata at `/.well-known/oauth-protected-resource/mcp`, which names the authorization server and its metadata at `/.well-known/oauth-authorization-server`. A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server needs an account, so it refuses a sandbox token with `403`.
+
+## The agent credential file
+
+The MCP server, the TypeScript, Python and Go SDKs and the `whk` CLI keep an agent's sandbox and its connection to your account in one shared file. A connection you approved once survives restarts and works from every tool on that machine.
+
+| Platform | Path |
+| --- | --- |
+| Linux | `$XDG_CONFIG_HOME/whk/agent.json`, else `~/.config/whk/agent.json` |
+| macOS | `~/Library/Application Support/whk/agent.json` |
+| Windows | `%APPDATA%\whk\agent.json` |
+
+`WHK_AGENT_FILE` overrides the path, for example one file per CI job. The file holds identity assertions and short-lived access tokens: treat it like a password, and never print or commit it.
+
+It is UTF-8 JSON, version 1, with one entry per app URL and up to two slots in each:
+
+```json
+{
+  "version": 1,
+  "issuers": {
+    "https://webhooks.cc": {
+      "claimed": {
+        "registration_id": "6f1c2d4e-8a1b-4c3d-9e2f-0a1b2c3d4e5f",
+        "identity_assertion": "eyJhbGciOiJFUzI1NiIs...",
+        "assertion_expires": "2027-01-26T09:00:00.000Z",
+        "email": "dev@example.com",
+        "client_name": "webhooks-cc-mcp",
+        "saved_at": "2026-10-28T09:00:00.000Z",
+        "access_token": "whcc_...",
+        "access_token_expires": "2026-10-28T10:00:00.000Z"
+      },
+      "sandbox": {
+        "registration_id": "0d9e8f7a-6b5c-4d3e-2f1a-0b9c8d7e6f5a",
+        "identity_assertion": "eyJhbGciOiJFUzI1NiIs...",
+        "assertion_expires": "2026-10-29T09:00:00.000Z",
+        "saved_at": "2026-10-28T09:00:00.000Z"
+      }
+    }
+  }
+}
+```
+
+- The key under `issuers` is the app's base URL with trailing slashes removed and the scheme and host lowercased, so a local stack never touches production's entry.
+- `claimed` is a registration a human connected to their account (90 days); `sandbox` is an unclaimed anonymous registration (24 hours, sandbox only). A slot needs `registration_id`, `identity_assertion` and `assertion_expires`, and it is live while its assertion expires more than 60 seconds from now. Readers ignore other slots; `email`, `client_name`, `scope` and `saved_at` are informational.
+- `access_token` and `access_token_expires` cache the last token exchanged from the assertion, so a short-lived process does not exchange on every start. A cached token is used while it starts with `whcc_` and expires more than 60 seconds from now.
+- The claim token is never written. It stays in the memory of the process that registered, which is why only that process can move its sandbox endpoints into an account.
+
+Tools read the file like this: an explicit API key (`WHK_API_KEY`, or one passed in code) always wins, and the file is not read at all. Otherwise a live `claimed` slot gives account access, and failing that a live `sandbox` slot is reused instead of registering again. When the token exchange answers `invalid_grant`, the registration expired, was revoked or was claimed, and the slot is removed: for `claimed` that means you disconnected the agent, so the tools fall back to the sandbox.
+
+Writes change one slot and keep everything else. They go to a temporary file in the same directory, created with mode `0600`, which is then renamed over `agent.json`, so a crash never leaves half a file. A file with a newer `version` is left alone. The full specification, with the test vectors every implementation passes, is [agent-credentials.md](https://github.com/kroqdotdev/webhooks-cc/blob/main/packages/sdk/conformance/agent-credentials.md) on GitHub.
+
+## How agents find webhooks.cc
+
+- [`/auth.md`](/auth.md): the registration protocol, with a "Start here" section that matches the one above. Every response carries it in a `Link` header (`rel="auth.md"`), and every page in a `<link>` element.
+- [`/llms.txt`](/llms.txt): a summary of the product, its docs and its tools.
+- [`/.well-known/agent-skills/index.json`](/.well-known/agent-skills/index.json): Agent Skills discovery, serving the [webhook testing skill](/docs/mcp/skills).
+- [`/.well-known/api-catalog`](/.well-known/api-catalog): the RFC 9727 API catalog, naming the REST API and the remote MCP server.
+- [`/openapi.yaml`](/openapi.yaml): the REST API, with the OAuth scheme and the agent routes.
+- Markdown versions of the home page and the docs: [`/index.md`](/index.md), `/docs/<page>.md`, or any of those pages requested with `Accept: text/markdown`.
 
 ## Agents that sign in through an identity provider
 
@@ -76,7 +175,8 @@ auth.md also lets an agent present a signed statement from an identity provider 
 
 ## Revocation and expiry
 
-- Disconnect a connected agent under **Account, Connected agents**. Its access stops at once; endpoints it brought stay in your account.
-- An agent can drop one of its access tokens at `POST /api/oauth2/revoke`.
+- Disconnect a connected agent or an app connected with OAuth under **Account, Connected agents**. Its access stops at once; endpoints it brought stay in your account. Tools that saved the connection remove it from the credential file on their next call; the local MCP server then offers the sandbox tools again.
+- A connected agent's connection ends after 90 days, and you connect it again the same way. An app connected with OAuth stays connected while it keeps using its refresh token, and stops after 90 days unused.
+- An agent can drop one of its access tokens at `POST /api/oauth2/revoke`. To forget what is saved on a machine, delete the credential file, or run `whk sandbox forget --all`.
 - An unclaimed registration stops working 24 hours after registration; its tokens, endpoints and captured requests are deleted within minutes after that. There is nothing to clean up.
 - Agents that used the earlier version of the protocol (auth.md 0.1) get `410 endpoint_moved` from the old registration endpoint and a pointer to `/auth.md`. Its email-code flow keeps working for older SDK and MCP versions until November 30, 2026.

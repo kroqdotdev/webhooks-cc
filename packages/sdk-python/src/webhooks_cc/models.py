@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Literal, cast
 
 RequestKind = Literal["http", "email"]
@@ -439,6 +439,52 @@ class Endpoint:
             if isinstance(from_teams, list)
             else [],
             raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class SandboxLimits:
+    """An agent sandbox's limits, shared by its endpoints: ``max_endpoints`` live at
+    once, ``request_limit`` captures per endpoint, and ``budget_used`` of
+    ``budget_limit`` captures across them. ``expires_at`` is in ms since the epoch."""
+
+    expires_at: int | None
+    max_endpoints: int
+    request_limit: int
+    budget_used: int
+    budget_limit: int
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> SandboxLimits:
+        budget = data.get("budget")
+        budget = budget if isinstance(budget, Mapping) else {}
+        return cls(
+            expires_at=_int_or_none(data.get("expiresAt")),
+            max_endpoints=int(_number(data.get("maxEndpoints"), 3)),
+            request_limit=int(_number(data.get("requestLimit"), 25)),
+            budget_used=int(_number(budget.get("used"))),
+            budget_limit=int(_number(budget.get("limit"), 100)),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class SandboxEndpoint(Endpoint):
+    """An agent sandbox endpoint: capture only, living as long as its registration.
+    ``request_count`` is what it captured so far."""
+
+    request_count: int = 0
+    sandbox: SandboxLimits | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> SandboxEndpoint:
+        base = Endpoint.from_dict(data)
+        limits = data.get("sandbox")
+        return cls(
+            **{item.name: getattr(base, item.name) for item in fields(Endpoint)},
+            request_count=int(_number(data.get("requestCount"))),
+            sandbox=SandboxLimits.from_dict(limits) if isinstance(limits, Mapping) else None,
         )
 
 

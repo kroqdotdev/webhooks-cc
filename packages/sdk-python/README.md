@@ -7,7 +7,7 @@ pip install webhooks-cc
 pip install "webhooks-cc[crypto]"  # also verify Discord (Ed25519) and PayPal (RSA) signatures
 ```
 
-Python 3.10 or later. Get an API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/api-keys) and set `WHK_API_KEY`, or pass `api_key=`.
+Python 3.10 or later. Get an API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/api-keys) and set `WHK_API_KEY`, or pass `api_key=`. An AI agent without an account can start in [the agent sandbox](#no-account-the-agent-sandbox).
 
 ## Wait for a webhook
 
@@ -184,6 +184,35 @@ It runs against the endpoint's newest HTTP request unless you pass `request_id`,
 for request in client.requests.subscribe(endpoint.slug, timeout="10m", reconnect=True):
     print(request.method, request.path)
 ```
+
+## No account: the agent sandbox
+
+An AI agent can capture webhooks before anyone signs up. `WebhooksCC.sandbox()` registers through [auth.md](https://webhooks.cc/auth.md), solves a short proof of work (a few seconds of CPU) and returns a sandbox: up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. Sandbox endpoints only capture: no mock responses, forwarding or email.
+
+```python
+from webhooks_cc import WebhooksCC
+
+with WebhooksCC.sandbox(client_name="my-agent") as sandbox:
+    endpoint = sandbox.endpoints.create()
+    trigger_checkout(webhook_url=endpoint.url)
+    request = sandbox.requests.wait_for(endpoint.slug, timeout="60s")
+
+    # To keep the endpoints, a human connects the agent to their account.
+    claim = sandbox.claim("dev@example.com")
+    print(f"Open {claim.verification_uri} and enter {claim.user_code}")
+    client = sandbox.wait_for_claim()  # a WebhooksCC for that account
+```
+
+The registration is saved in the agent credential file the MCP server, the other SDKs and the `whk` CLI share: `~/.config/whk/agent.json` on Linux (in `$XDG_CONFIG_HOME` when that is set), `~/Library/Application Support/whk/agent.json` on macOS, `%APPDATA%\whk\agent.json` on Windows, or the path in `WHK_AGENT_FILE`. The next `WebhooksCC.sandbox()` reuses a live sandbox instead of registering again, and `credentials_file=False` leaves the file alone. The claim token is never saved, so only the process that registered moves the sandbox endpoints into the account; a sandbox reused from the file starts a new code for the email instead (`claim.moves_endpoints` is false), and its endpoints stay in the sandbox until they expire.
+
+A connection lasts 90 days, and any process picks it up:
+
+```python
+client = WebhooksCC.connected()  # None when no agent is connected
+client = WebhooksCC()            # without WHK_API_KEY, acts for the connected account
+```
+
+`WebhooksCC.connect(email)` connects an agent without a sandbox: show the human `pending.verification_uri` and `pending.user_code`, then `pending.wait()` returns the client. An API key always wins over the file. A refused sandbox call raises `SandboxError` with the server's `code`; the protocol steps themselves are in `webhooks_cc.agent`.
 
 ## Errors
 

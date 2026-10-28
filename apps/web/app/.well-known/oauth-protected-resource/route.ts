@@ -1,3 +1,4 @@
+import { preflight, withCors } from "@/lib/oauth/cors";
 import { buildProtectedResourceMetadata } from "@/lib/agent/metadata";
 
 /**
@@ -6,7 +7,13 @@ import { buildProtectedResourceMetadata } from "@/lib/agent/metadata";
  * (derived from NEXT_PUBLIC_APP_URL), so it is safe to cache at the edge.
  */
 export async function GET() {
-  return Response.json(buildProtectedResourceMetadata(), {
-    headers: { "Cache-Control": "public, max-age=300" },
-  });
+  return withCors(
+    Response.json(buildProtectedResourceMetadata(), {
+      headers: { "Cache-Control": "public, max-age=300" },
+    })
+  );
+}
+
+export function OPTIONS() {
+  return preflight();
 }

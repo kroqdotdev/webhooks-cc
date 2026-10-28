@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -91,6 +92,8 @@ func requestJSON(id string, receivedAt int64, extra map[string]any) map[string]a
 
 func TestNewNeedsAnAPIKey(t *testing.T) {
 	t.Setenv(webhookscc.APIKeyEnv, "")
+	// No connected agent either, whatever this machine's own file holds.
+	t.Setenv(webhookscc.AgentFileEnv, filepath.Join(t.TempDir(), "agent.json"))
 	if _, err := webhookscc.New(); !errors.Is(err, webhookscc.ErrMissingAPIKey) {
 		t.Fatalf("err = %v, want ErrMissingAPIKey", err)
 	}

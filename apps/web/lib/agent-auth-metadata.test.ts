@@ -22,6 +22,7 @@ import {
   buildAuthMd,
   buildAuthMdUrl,
   buildAuthorizationServerMetadata,
+  buildMcpProtectedResourceMetadata,
   buildProtectedResourceMetadata,
 } from "@/lib/agent/metadata";
 
@@ -57,6 +58,20 @@ describe("agent auth.md: Protected Resource Metadata (RFC 9728)", () => {
   });
 });
 
+describe("remote MCP protected resource metadata", () => {
+  test("names the MCP server as its own resource, with the account scopes", () => {
+    expect(buildMcpProtectedResourceMetadata()).toEqual({
+      resource: `${APP_URL}/mcp`,
+      resource_name: "webhooks.cc MCP server",
+      resource_logo_uri: `${APP_URL}/icon-512.png`,
+      authorization_servers: [APP_URL],
+      bearer_methods_supported: ["header"],
+      resource_documentation: `${APP_URL}/docs/mcp`,
+      scopes_supported: ["webhooks:read", "webhooks:write"],
+    });
+  });
+});
+
 describe("agent auth.md: Authorization Server Metadata", () => {
   const as = buildAuthorizationServerMetadata({ idJagEnabled: false });
 
@@ -67,13 +82,24 @@ describe("agent auth.md: Authorization Server Metadata", () => {
       scopes_supported: ["webhooks:sandbox", "webhooks:read", "webhooks:write"],
       bearer_methods_supported: ["header"],
       issuer: APP_URL,
+      authorization_endpoint: `${APP_URL}/oauth/authorize`,
       token_endpoint: `${APP_URL}/api/oauth2/token`,
+      registration_endpoint: `${APP_URL}/api/oauth2/register`,
       revocation_endpoint: `${APP_URL}/api/oauth2/revoke`,
       jwks_uri: `${APP_URL}/.well-known/jwks.json`,
+      response_types_supported: ["code"],
+      response_modes_supported: ["query"],
       grant_types_supported: [
+        "authorization_code",
+        "refresh_token",
         "urn:ietf:params:oauth:grant-type:jwt-bearer",
         "urn:workos:agent-auth:grant-type:claim",
       ],
+      code_challenge_methods_supported: ["S256"],
+      token_endpoint_auth_methods_supported: ["none"],
+      revocation_endpoint_auth_methods_supported: ["none"],
+      client_id_metadata_document_supported: true,
+      authorization_response_iss_parameter_supported: true,
       service_documentation: `${APP_URL}/auth.md`,
       agent_auth: {
         skill: `${APP_URL}/auth.md`,
@@ -104,9 +130,11 @@ describe("agent auth.md: Authorization Server Metadata", () => {
     });
   });
 
-  test("does not advertise endpoints that do not exist", () => {
-    expect(as).not.toHaveProperty("authorization_endpoint");
-    expect(as).not.toHaveProperty("registration_endpoint");
+  test("offers OAuth 2.1 for public clients: PKCE S256 only, iss in responses", () => {
+    expect(as.code_challenge_methods_supported).toEqual(["S256"]);
+    expect(as.token_endpoint_auth_methods_supported).toEqual(["none"]);
+    expect(as.authorization_response_iss_parameter_supported).toBe(true);
+    expect(as.client_id_metadata_document_supported).toBe(true);
   });
 
   test("offers identity_assertion only while an issuer is trusted", () => {

@@ -17,7 +17,7 @@ import { extractCode, type EmailReceivedEvent } from "@webhooks-cc/sdk/email";
 
 ## API key setup
 
-The SDK needs an API key in `whcc_...` format. You can pass the key directly, but most projects load it from `WHK_API_KEY` so the same code works locally and in CI.
+The SDK needs an API key in `whcc_...` format, unless an AI agent uses the [sandbox or a saved connection](#without-an-api-key-ai-agents). You can pass the key directly, but most projects load it from `WHK_API_KEY` so the same code works locally and in CI.
 
 For local development, set the env var in your shell or `.env.local`:
 
@@ -35,7 +35,7 @@ env:
 
 ## Without an API key (AI agents)
 
-An agent can capture webhooks before anyone signs up. `WebhooksCC.sandbox()` registers through [auth.md](https://webhooks.cc/auth.md), solves a short proof of work (about 3 seconds) and returns a sandbox: up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours.
+An agent can capture webhooks before anyone signs up. `WebhooksCC.sandbox()` registers through [auth.md](https://webhooks.cc/auth.md), solves a short proof of work (a few seconds of CPU) and returns a sandbox: up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. The sandbox is saved in [the agent credential file](#the-agent-credential-file), so the next `WebhooksCC.sandbox()`, in this process or a later one, reuses it instead of registering again. Pass `credentialsFile: false` to keep it in memory only.
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";
@@ -45,12 +45,42 @@ const endpoint = await sandbox.endpoints.create();
 const request = await sandbox.requests.waitFor(endpoint.slug, { timeout: "60s" });
 
 // Connect it to a human's account: they open the link, sign in and enter the code.
-const { verificationUri, userCode } = await sandbox.claim({ email: "dev@example.com" });
+const { verificationUri, userCode, movesEndpoints } = await sandbox.claim({
+  email: "dev@example.com",
+});
 console.log(`Open ${verificationUri}, sign in, and enter ${userCode}`);
-const client = await sandbox.waitForClaim(); // a WebhooksCC for that account
+const client = await sandbox.waitForClaim(); // a WebhooksCC for that account, saved to the file
 ```
 
-`WebhooksCC.agent.*` exposes the auth.md steps one by one. See [AI Agents](https://webhooks.cc/docs/agents).
+Use the email the human signs in to webhooks.cc with. `movesEndpoints` is `true` when the sandbox endpoints, with what they captured, move into the account. It is `false` for a sandbox read back from the file: only the process that registered holds the claim token, so the agent is connected through a new registration and the sandbox endpoints stay where they are until they expire. `waitForClaim()` rejects with an `AgentAuthError` whose `code` is `expired_token` (call `claim()` again), `access_denied` or `timeout`.
+
+The connection lasts 90 days, and every later process picks it up:
+
+```ts
+// The saved connection, checked with one request; null when there is none
+// or the human has disconnected the agent since.
+const client = (await WebhooksCC.connected()) ?? (await WebhooksCC.sandbox());
+```
+
+`WebhooksCC.fromSavedConnection()` is the synchronous variant: it reads the file without a request, and `onRevoked` says when the first request finds the agent disconnected.
+
+To connect an agent without a sandbox, start with the human's email:
+
+```ts
+const pending = await WebhooksCC.connect({ email: "dev@example.com", clientName: "my-agent" });
+console.log(`Open ${pending.verificationUri}, sign in, and enter ${pending.userCode}`);
+const client = await pending.wait(); // saved, so WebhooksCC.connected() finds it next time
+```
+
+`pending.restart()` gets a new code when the old one ran out. `WebhooksCC.agent.*` exposes the auth.md steps one by one. See [AI Agents](https://webhooks.cc/docs/agents).
+
+### The agent credential file
+
+The sandbox and the connection live in `~/.config/whk/agent.json` (`$XDG_CONFIG_HOME/whk/agent.json` when set; `~/Library/Application Support/whk/agent.json` on macOS; `%APPDATA%\whk\agent.json` on Windows). `WHK_AGENT_FILE` or the `credentialsFile` option points elsewhere, and `agentCredentialsPath()` returns the default. The [MCP server](https://webhooks.cc/docs/mcp), the [Python](https://webhooks.cc/docs/sdk/python) and [Go](https://webhooks.cc/docs/sdk/go) SDKs and the [`whk` CLI](https://webhooks.cc/docs/cli/commands#sandbox) share the file, so a human approves an agent once for all of them. It is written atomically with mode `0600` and never holds the claim token. An API key always wins: `new WebhooksCC({ apiKey })` never reads the file. The format is described in [AI agents](https://webhooks.cc/docs/agents#the-agent-credential-file) and specified in [agent-credentials.md](https://github.com/kroqdotdev/webhooks-cc/blob/main/packages/sdk/conformance/agent-credentials.md).
+
+### Deprecated: the auth.md v0.1 helpers
+
+`registerAnonymous`, `registerWithEmail`, `confirmEmailOtp`, `registerWithIdJag`, `pollClaim` and `waitForClaim` (the standalone functions, also under `WebhooksCC.register`) use auth.md v0.1, which webhooks.cc retired. They log one warning per process and will be removed in the next major version. The server answers them with `410 endpoint_moved`, except the email flow (`registerWithEmail`, `confirmEmailOtp`), which works until November 30, 2026. Use `WebhooksCC.sandbox()` or `WebhooksCC.connect()` instead.
 
 ## Quick start
 

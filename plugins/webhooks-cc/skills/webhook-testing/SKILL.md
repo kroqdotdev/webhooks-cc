@@ -12,20 +12,33 @@ check stays switched on.
 
 ## Which interface to use
 
-1. **MCP tools** (the `webhooks-cc` server, `@webhooks-cc/mcp`): use them
-   whenever they are available. The tool names below are theirs.
-2. **TypeScript SDK** (`@webhooks-cc/sdk`): for tests that run in CI, and when
-   the MCP tools are missing. See [references/sdk-tests.md](references/sdk-tests.md).
+1. **MCP tools** (the `webhooks-cc` server): use them whenever they are
+   available. The tool names below are theirs. Locally the server is
+   `npx -y @webhooks-cc/mcp`. Hosted agents (claude.ai, ChatGPT, cloud
+   agents) use the remote server at `https://webhooks.cc/mcp`, which the
+   human adds as a custom connector and approves once. It cannot reach the
+   developer's machine, so it has no `send_to` or `replay_request` and
+   refuses `targetUrl`; for localhost, the developer runs the local server
+   or `whk tunnel`.
+2. **SDKs** (`@webhooks-cc/sdk`; `webhooks-cc` for Python, `webhooks.cc/go`
+   for Go): for tests that run in CI, and when the MCP tools are missing.
+   TypeScript recipes are in [references/sdk-tests.md](references/sdk-tests.md).
 3. **CLI** (`whk`): `whk tunnel <port>` forwards live deliveries to localhost
-   while the developer clicks through a provider dashboard.
+   while the developer clicks through a provider dashboard, and
+   `whk sandbox create --json` captures without an account.
 
-Without an API key the MCP server runs a sandbox: up to 3 endpoints, 25
-requests each and 100 in all, for 24 hours. It covers `create_endpoint`,
+Without an API key the local MCP server needs no setup. If the human
+connected you before, it starts with the full tools for their account (the
+connection is saved in `~/.config/whk/agent.json`, shared with the CLI and
+the SDKs). Otherwise it runs a sandbox: up to 3 endpoints, 25 requests each
+and 100 in all, for 24 hours. The first `create_endpoint` registers it, and
 `list_requests`, `get_request`, `wait_for_request` and
-`generate_payload_schema`. For signed sends, email, mock responses, and
-anything longer-lived, call `connect_account`: show the human the link and
-the code it returns, then call `wait_for_connection`. The full tools appear
-once they enter the code.
+`generate_payload_schema` work in it. For signed sends, email, mock
+responses, and anything longer-lived, call `connect_account` with the email
+the human signs in to webhooks.cc with (their GitHub or Google primary email
+if they sign in that way): show them the link and the code it returns, then
+call `wait_for_connection`. The full tools appear once they enter the code,
+and the connection is saved, so they approve you once.
 
 ## Workflows
 

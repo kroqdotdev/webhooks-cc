@@ -746,6 +746,8 @@ export interface ClientOptions {
   hooks?: ClientHooks;
   /** Domain endpoints receive email on, for `emails.address()` (default: mailhooks.cc) */
   emailDomain?: string;
+  /** The fetch every request goes through (default: the global fetch), for proxies and tests. */
+  fetch?: typeof globalThis.fetch;
 }
 
 /** Description of a single SDK operation. */

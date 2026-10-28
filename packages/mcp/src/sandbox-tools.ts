@@ -1,12 +1,13 @@
 import { z } from "zod";
-import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   AgentAuthError,
+  AgentCredentialStore,
+  SandboxClient,
   WebhooksCC,
-  type AgentAccessToken,
-  type AgentClaimAttempt,
+  type PendingConnection,
   type Request,
-  type SandboxClient,
+  type SandboxClaimAttempt,
 } from "@webhooks-cc/sdk";
 import { compactRequest } from "./compact";
 import {
@@ -22,16 +23,23 @@ import {
   registerTools,
   waitForRequestShape,
   withErrorHandling,
+  type RegisteredToolHandle,
+  type ToolServer,
 } from "./tools";
 
 /**
- * The tools of a server started without an API key (auth.md v0.6). The
- * endpoint and request tools keep the names and arguments of the full tools
- * but run in the agent sandbox, which the first create_endpoint registers
- * (a few seconds of proof of work). connect_account and
- * wait_for_connection connect the agent to a human's account; once the human
- * enters the code, these tools are replaced by the full set for that account
- * (notifications/tools/list_changed).
+ * The tools of a server started without an API key (auth.md v0.6).
+ *
+ * When the agent credential file (~/.config/whk/agent.json, shared with the
+ * CLI and the SDKs) holds a live connection to a human's account, the server
+ * starts with the full tools for that account. Otherwise the endpoint and
+ * request tools keep the names and arguments of the full tools but run in
+ * the agent sandbox, which the first create_endpoint registers (a few
+ * seconds of proof of work) and the file keeps for later sessions.
+ * connect_account and wait_for_connection connect the agent to a human's
+ * account; once the human enters the code, these tools are replaced by the
+ * full set (notifications/tools/list_changed) and the connection is saved.
+ * If the human later disconnects the agent, the sandbox tools come back.
  */
 
 /** The sandbox limits webhooks.cc enforces (lib/agent/constants.ts on the server). */
@@ -44,8 +52,6 @@ const SANDBOX = {
 /** MCP clients often give up on a tool call after 60 seconds. */
 const DEFAULT_WAIT_SECONDS = 45;
 const MAX_WAIT_SECONDS = 600;
-/** Exchange the claimed assertion again this long before the token expires. */
-const TOKEN_REFRESH_MARGIN_MS = 60_000;
 const DOCS_URL = "https://webhooks.cc/docs/agents";
 
 /** create_endpoint options the sandbox does not have. */
@@ -65,36 +71,47 @@ export interface SandboxToolOptions {
   webhookUrl?: string;
   /** The agent's name, shown to the human as self-reported. */
   clientName?: string;
-  /** Called once a human has connected the agent, with a client for their account. */
+  /**
+   * The agent credential file (default: WHK_AGENT_FILE, else
+   * ~/.config/whk/agent.json or the platform's equivalent); false keeps the
+   * sandbox and the connection in memory, for this process only.
+   */
+  credentialsFile?: string | false;
+  /** Called whenever the tools switch to a human's account, with a client for it. */
   onConnected?: (client: WebhooksCC) => void;
 }
 
-interface PendingClaim {
-  kind: "sandbox" | "service_auth";
-  claimToken: string;
-  email: string;
-  attempt: AgentClaimAttempt;
-  /** When the registration, and so the claim token, expires. */
-  claimExpires: Date;
-}
+type PendingConnect =
+  | { via: "sandbox"; sandbox: SandboxClient; email: string; attempt: SandboxClaimAttempt }
+  | { via: "connect"; pending: PendingConnection; email: string };
 
 class AgentSession {
   private sandbox: Promise<SandboxClient> | null = null;
-  claim: PendingClaim | null = null;
-  connected = false;
+  connect: PendingConnect | null = null;
 
   constructor(
     readonly baseUrl: string,
     readonly webhookUrl: string | undefined,
-    readonly clientName: string
+    readonly clientName: string,
+    readonly credentialsFile: string | false | undefined
   ) {}
 
+  private sandboxOptions() {
+    return {
+      baseUrl: this.baseUrl,
+      webhookUrl: this.webhookUrl,
+      clientName: this.clientName,
+      credentialsFile: this.credentialsFile,
+    };
+  }
+
   /**
-   * The sandbox, registered on first use and again after it expired. Tool
-   * calls can run in parallel: this.sandbox is read again after every await,
-   * and a new sandbox is assigned with no await in between, so parallel
-   * calls share one registration. Calls waiting on a registration that fails
-   * get its error (a 429 asks them to wait); the next call starts again.
+   * The sandbox: the one saved by an earlier session when it is still live,
+   * else a new registration (and again after it expired). Tool calls can run
+   * in parallel: this.sandbox is read again after every await, and a new
+   * sandbox is assigned with no await in between, so parallel calls share
+   * one registration. Calls waiting on a registration that fails get its
+   * error (a 429 asks them to wait); the next call starts again.
    */
   async sandboxClient(): Promise<SandboxClient> {
     while (this.sandbox) {
@@ -104,11 +121,7 @@ class AgentSession {
       // Another call may have started the next one meanwhile; the loop then
       // waits for it.
     }
-    const created = WebhooksCC.sandbox({
-      baseUrl: this.baseUrl,
-      webhookUrl: this.webhookUrl,
-      clientName: this.clientName,
-    });
+    const created = WebhooksCC.sandbox(this.sandboxOptions());
     this.sandbox = created;
     created.catch(() => {
       if (this.sandbox === created) this.sandbox = null;
@@ -116,28 +129,31 @@ class AgentSession {
     return created;
   }
 
-  /** The live sandbox, if one was registered; never registers one. */
+  /** The live sandbox, from this session or the credential file; never registers one. */
   async existingSandbox(): Promise<SandboxClient | null> {
     const pending = this.sandbox;
-    if (!pending) return null;
-    let sandbox: SandboxClient;
-    try {
-      sandbox = await pending;
-    } catch {
-      return null;
+    if (pending) {
+      let sandbox: SandboxClient;
+      try {
+        sandbox = await pending;
+      } catch {
+        return null;
+      }
+      return this.expired(pending, sandbox) ? null : sandbox;
     }
-    return this.expired(pending, sandbox) ? null : sandbox;
+    const resumed = await SandboxClient.resume(this.sandboxOptions()).catch(() => null);
+    if (!resumed) return null;
+    // A parallel call may have registered meanwhile; keep the first.
+    if (!this.sandbox) this.sandbox = Promise.resolve(resumed);
+    return this.sandbox;
   }
 
   /** True when the sandbox is past its 24 hours; then it is dropped. */
   private expired(pending: Promise<SandboxClient>, sandbox: SandboxClient): boolean {
     if (sandbox.expiresAt.getTime() > Date.now()) return false;
     if (this.sandbox === pending) this.sandbox = null;
-    if (
-      this.claim?.kind === "sandbox" &&
-      this.claim.claimToken === sandbox.registration.claimToken
-    ) {
-      this.claim = null;
+    if (this.connect?.via === "sandbox" && this.connect.sandbox === sandbox) {
+      this.connect = null;
     }
     return true;
   }
@@ -150,37 +166,10 @@ class AgentSession {
     return sandbox;
   }
 
-  forgetSandbox(): void {
+  reset(): void {
     this.sandbox = null;
+    this.connect = null;
   }
-}
-
-/**
- * A token getter for the account client: the access token from the claim
- * first, then fresh ones exchanged from the claimed assertion.
- */
-function claimedTokens(
-  baseUrl: string,
-  assertion: string,
-  first: AgentAccessToken
-): (options?: { forceRefresh?: boolean }) => Promise<string> {
-  let current = first;
-  let pending: Promise<AgentAccessToken> | null = null;
-  return async (options) => {
-    if (
-      !options?.forceRefresh &&
-      current.expiresAt.getTime() - Date.now() > TOKEN_REFRESH_MARGIN_MS
-    ) {
-      return current.accessToken;
-    }
-    if (!pending) {
-      pending = WebhooksCC.agent.exchange({ baseUrl, assertion }).finally(() => {
-        pending = null;
-      });
-    }
-    current = await pending;
-    return current.accessToken;
-  };
 }
 
 function minutesLeft(until: Date): number {
@@ -192,23 +181,75 @@ function onlyKind(requests: Request[], kind: "http" | "email" | undefined): Requ
   return requests.filter((request) => (request.kind ?? "http") === kind);
 }
 
+/** Where the connection is saved, for the messages; null when nothing is saved. */
+function savedTo(credentialsFile: string | false | undefined): string | null {
+  return AgentCredentialStore.resolve(credentialsFile)?.path ?? null;
+}
+
 /**
- * Registers the sandbox tools (create_endpoint, list_endpoints,
- * get_endpoint, delete_endpoint, list_requests, get_request,
- * wait_for_request) and connect_account, wait_for_connection and
- * about_sandbox.
+ * Registers the agent tools: the full tools when the credential file holds a
+ * live connection to a human's account, else the sandbox tools
+ * (create_endpoint, list_endpoints, get_endpoint, delete_endpoint,
+ * list_requests, get_request, wait_for_request, generate_payload_schema) with
+ * connect_account, wait_for_connection and about_sandbox.
  */
 export function registerSandboxTools(server: McpServer, options: SandboxToolOptions = {}): void {
   const baseUrl = options.baseUrl ?? process.env.WHK_BASE_URL ?? "https://webhooks.cc";
+  const webhookUrl = options.webhookUrl ?? process.env.WHK_WEBHOOK_URL;
   const session = new AgentSession(
     baseUrl,
-    options.webhookUrl ?? process.env.WHK_WEBHOOK_URL,
-    options.clientName ?? "webhooks-cc-mcp"
+    webhookUrl,
+    options.clientName ?? "webhooks-cc-mcp",
+    options.credentialsFile
   );
-  const registered: RegisteredTool[] = [];
-  const limits = `up to ${SANDBOX.maxEndpoints} endpoints at a time, ${SANDBOX.requestsPerEndpoint} captured requests each and ${SANDBOX.requests} in all, deleted ${SANDBOX.lifetimeHours} hours after the sandbox was created`;
+  let handles: RegisteredToolHandle[] = [];
+  // Which tool set is on display; a revocation only counts for its own.
+  let shown = 0;
+  const swap = (register: (id: number) => RegisteredToolHandle[]) => {
+    const id = ++shown;
+    // Removing and adding tools sends notifications/tools/list_changed.
+    for (const handle of handles) handle.remove();
+    handles = register(id);
+  };
+  const showSandbox = () => swap(() => sandboxToolSet(server, session, showAccount));
+  const savedAccount = (id: number) =>
+    options.credentialsFile === false
+      ? null
+      : WebhooksCC.fromSavedConnection({
+          baseUrl,
+          webhookUrl,
+          credentialsFile: options.credentialsFile,
+          // The human disconnected the agent: back to the sandbox, unless a
+          // newer connection is already on display.
+          onRevoked: () =>
+            queueMicrotask(() => {
+              if (shown === id) showSandbox();
+            }),
+        });
+  function showAccount(client: WebhooksCC): void {
+    swap((id) => registerTools(server, savedAccount(id) ?? client));
+    options.onConnected?.(client);
+  }
 
-  registered.push(
+  const saved = savedAccount(1);
+  if (saved) {
+    swap(() => registerTools(server, saved));
+    options.onConnected?.(saved);
+  } else {
+    showSandbox();
+  }
+}
+
+function sandboxToolSet(
+  server: ToolServer,
+  session: AgentSession,
+  showAccount: (client: WebhooksCC) => void
+): RegisteredToolHandle[] {
+  const tools: RegisteredToolHandle[] = [];
+  const limits = `up to ${SANDBOX.maxEndpoints} endpoints at a time, ${SANDBOX.requestsPerEndpoint} captured requests each and ${SANDBOX.requests} in all, deleted ${SANDBOX.lifetimeHours} hours after the sandbox was created`;
+  const file = savedTo(session.credentialsFile);
+
+  tools.push(
     server.tool(
       "create_endpoint",
       `Create a temporary webhook capture endpoint in the agent sandbox (no account needed): ${limits}. The first call registers the sandbox, which takes a few seconds of proof of work. Mock responses, notifications and signature verification need an account: see connect_account.`,
@@ -235,7 +276,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "list_endpoints",
       "List this agent's sandbox endpoints. Empty until create_endpoint starts the sandbox.",
@@ -250,7 +291,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "get_endpoint",
       "Get one of this agent's sandbox endpoints by slug, with its sandbox limits and usage.",
@@ -261,7 +302,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "delete_endpoint",
       "Delete one of this agent's sandbox endpoints and its captured requests. Frees a slot; the sandbox's request budget is not refunded.",
@@ -273,7 +314,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "list_requests",
       "List recent requests captured by a sandbox endpoint, newest first.",
@@ -286,7 +327,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "get_request",
       "Get full details for a request captured by a sandbox endpoint.",
@@ -298,7 +339,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "wait_for_request",
       "Wait for a request to arrive at a sandbox endpoint.",
@@ -311,7 +352,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "generate_payload_schema",
       "Generate TypeScript interfaces, Zod schemas, Pydantic models, or JSON Schema from the bodies of requests captured by a sandbox endpoint. Several requests of one event teach which fields are optional or nullable.",
@@ -326,7 +367,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "connect_account",
       "Connect this agent to a human's webhooks.cc account, for the full tool set (mock responses, signatures, email, teams) and to keep the sandbox endpoints. Returns a link and a 6-digit code: show both to the human, who signs in or signs up with that email and enters the code. Then call wait_for_connection. Calling again gives a new code.",
@@ -334,66 +375,61 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
         email: z
           .string()
           .email({ message: "Invalid email address" })
-          .describe("The human's email address; only someone signed in as it can connect"),
+          .describe(
+            "The email the human signs in to webhooks.cc with (their GitHub or Google primary email if they sign in that way); only someone signed in as it can connect"
+          ),
       },
       withErrorHandling(async ({ email }) => {
-        if (session.connected) {
-          return jsonContent({ connected: true, message: "Already connected to an account." });
-        }
         const normalized = email.trim().toLowerCase();
+        const previous = session.connect;
         const sandbox = await session.existingSandbox();
-        let claim: PendingClaim;
+        let attempt: { verificationUri: string; userCode: string; expiresAt: Date };
+        let movesEndpoints = false;
         if (sandbox) {
-          claim = {
-            kind: "sandbox",
-            claimToken: sandbox.registration.claimToken,
-            email: normalized,
-            attempt: await sandbox.claim({ email: normalized }),
-            claimExpires: sandbox.expiresAt,
-          };
-        } else if (
-          session.claim?.kind === "service_auth" &&
-          session.claim.email === normalized &&
-          session.claim.claimExpires.getTime() > Date.now()
-        ) {
-          // The same human again: a new code for the same registration.
-          const attempt = await WebhooksCC.agent.startClaim({
-            baseUrl,
-            claimToken: session.claim.claimToken,
-          });
-          claim = { ...session.claim, attempt };
+          const claim = await sandbox.claim({ email: normalized });
+          session.connect = { via: "sandbox", sandbox, email: normalized, attempt: claim };
+          attempt = claim;
+          movesEndpoints = claim.movesEndpoints;
         } else {
-          const registration = await WebhooksCC.agent.registerServiceAuth({
-            baseUrl,
+          let pending: PendingConnection | null = null;
+          if (previous?.via === "connect" && previous.email === normalized) {
+            // The same human again: a new code for the same registration.
+            pending = await previous.pending.restart().catch((error: unknown) => {
+              if (error instanceof AgentAuthError) return null;
+              throw error;
+            });
+          }
+          pending ??= await WebhooksCC.connect({
+            baseUrl: session.baseUrl,
+            webhookUrl: session.webhookUrl,
             email: normalized,
             clientName: session.clientName,
+            credentialsFile: session.credentialsFile,
           });
-          claim = {
-            kind: "service_auth",
-            claimToken: registration.claimToken,
-            email: normalized,
-            attempt: registration.claim,
-            claimExpires: registration.claimTokenExpires,
-          };
+          session.connect = { via: "connect", pending, email: normalized };
+          attempt = pending;
         }
-        session.claim = claim;
 
-        const { verificationUri, userCode, expiresAt } = claim.attempt;
+        const { verificationUri, userCode, expiresAt } = attempt;
         return jsonContent({
           verificationUri,
           userCode,
           expiresAt: expiresAt.toISOString(),
           tellTheHuman: `Open ${verificationUri}, sign in or sign up as ${normalized}, and enter the code ${userCode}.`,
           next: `Show the human that line, then call wait_for_connection. The code works for about ${minutesLeft(expiresAt)} minutes; connect_account gives a new one.`,
-          ...(claim.kind === "sandbox"
-            ? { endpoints: "The sandbox endpoints move into that account with what they captured." }
+          ...(sandbox
+            ? {
+                endpoints: movesEndpoints
+                  ? "The sandbox endpoints move into that account with what they captured."
+                  : "The sandbox endpoints were made in an earlier session, so they stay in the sandbox until it expires; the account starts without them.",
+              }
             : {}),
         });
       })
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "wait_for_connection",
       `Wait for the human to enter the code from connect_account. On success the full webhooks.cc tools for their account replace these sandbox tools. Returns after timeoutSeconds (default ${DEFAULT_WAIT_SECONDS}) if they have not finished yet; call it again to keep waiting.`,
@@ -407,29 +443,27 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
           .describe(`How long to wait, in seconds (default ${DEFAULT_WAIT_SECONDS})`),
       },
       withErrorHandling(async ({ timeoutSeconds }) => {
-        if (session.connected) {
-          return jsonContent({ connected: true, message: "Already connected to an account." });
-        }
-        const claim = session.claim;
-        if (!claim) {
+        const pending = session.connect;
+        if (!pending) {
           throw new Error("Nothing to wait for: call connect_account first.");
         }
 
-        let claimed;
+        const timeout = (timeoutSeconds ?? DEFAULT_WAIT_SECONDS) * 1000;
+        const expiresAt =
+          pending.via === "sandbox" ? pending.attempt.expiresAt : pending.pending.expiresAt;
+        let client: WebhooksCC;
         try {
-          claimed = await WebhooksCC.agent.waitForClaim({
-            baseUrl,
-            claimToken: claim.claimToken,
-            interval: claim.attempt.interval,
-            timeout: (timeoutSeconds ?? DEFAULT_WAIT_SECONDS) * 1000,
-          });
+          client =
+            pending.via === "sandbox"
+              ? await pending.sandbox.waitForClaim({ timeout })
+              : await pending.pending.wait({ timeout });
         } catch (error) {
           if (!(error instanceof AgentAuthError)) throw error;
           if (error.code === "timeout") {
             return jsonContent({
               connected: false,
               status: "waiting",
-              message: `Not connected yet. The code works until ${claim.attempt.expiresAt.toISOString()}; call wait_for_connection again.`,
+              message: `Not connected yet. The code works until ${expiresAt.toISOString()}; call wait_for_connection again.`,
             });
           }
           if (error.code === "expired_token") {
@@ -449,39 +483,31 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
           throw error;
         }
 
-        const client = new WebhooksCC({
-          baseUrl,
-          webhookUrl: session.webhookUrl,
-          getAccessToken: claimedTokens(baseUrl, claimed.identityAssertion, claimed.token),
-        });
-        session.connected = true;
-        session.claim = null;
-        session.forgetSandbox();
-
-        // Swap to the full tool set for the account. Removing and adding
-        // tools sends notifications/tools/list_changed.
-        for (const tool of registered) tool.remove();
-        registerTools(server, client);
-        options.onConnected?.(client);
+        const movedEndpoints = pending.via === "sandbox" && pending.attempt.movesEndpoints;
+        session.reset();
+        showAccount(client);
 
         return jsonContent({
           connected: true,
-          email: claim.email,
-          scope: claimed.token.scope,
-          message: `Connected to the webhooks.cc account of ${claim.email}. The full tool set has replaced the sandbox tools (the tool list changed; if your client does not pick that up, ask the user to restart it).${claim.kind === "sandbox" ? " The sandbox endpoints are now that account's endpoints, with what they captured." : ""} This connection lasts while this MCP server runs; for a lasting setup, the human can create an API key under Account and set WHK_API_KEY.`,
+          email: pending.email,
+          message: `Connected to the webhooks.cc account of ${pending.email}. The full tool set has replaced the sandbox tools (the tool list changed; if your client does not pick that up, ask the user to restart it).${movedEndpoints ? " The sandbox endpoints are now that account's endpoints, with what they captured." : ""} ${
+            file
+              ? `The connection is saved in ${file}, so later sessions, the whk CLI and the SDKs start connected; it lasts 90 days, and the human can remove it under Account, Connected agents.`
+              : "This connection lasts while this MCP server runs; for a lasting setup, the human can create an API key under Account and set WHK_API_KEY."
+          }`,
         });
       })
     )
   );
 
-  registered.push(
+  tools.push(
     server.tool(
       "about_sandbox",
       "Explain what this agent can do without a webhooks.cc account, the sandbox limits, and how to connect an account. No network call.",
       {},
       withErrorHandling(async () => {
         return jsonContent({
-          mode: "sandbox (no WHK_API_KEY)",
+          mode: "sandbox (no WHK_API_KEY, no saved connection)",
           sandbox: {
             maxEndpoints: SANDBOX.maxEndpoints,
             requestsPerEndpoint: SANDBOX.requestsPerEndpoint,
@@ -494,18 +520,23 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
               "Mock responses, response rules, notifications, signature verification, email capture, forwarding, teams and sending webhooks.",
           },
           connectAnAccount: [
-            "Call connect_account with the human's email and show them the link and code it returns.",
+            "Call connect_account with the email the human signs in to webhooks.cc with, and show them the link and code it returns.",
             "Call wait_for_connection until it reports connected; the full tools for their account then replace the sandbox tools.",
-            "Sandbox endpoints move into the account with their captured requests.",
+            "Sandbox endpoints registered by this server process move into the account with their captured requests; a sandbox resumed from an earlier session stays in the sandbox (connect_account says which).",
           ],
+          savedIn: file
+            ? `${file} (shared with the whk CLI and the SDKs): the sandbox and the connection survive restarts.`
+            : "nowhere: this session only.",
           withAnApiKey:
             "Set WHK_API_KEY to a whcc_ key from the dashboard and restart for the full tools from the start.",
           docs: DOCS_URL,
-          protocol: `${baseUrl}/auth.md`,
+          protocol: `${session.baseUrl}/auth.md`,
         });
       })
     )
   );
+
+  return tools;
 }
 
 /**

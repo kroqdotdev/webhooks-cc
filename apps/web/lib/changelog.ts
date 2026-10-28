@@ -17,15 +17,28 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.47.0";
-export const CLI_VERSION = "1.5.0";
-export const SDK_VERSION = "1.18.0";
-export const PYTHON_SDK_VERSION = "0.2.0";
-export const GO_SDK_VERSION = "0.2.0";
-export const MCP_VERSION = "1.14.0";
+export const APP_VERSION = "0.48.0";
+export const CLI_VERSION = "1.6.0";
+export const SDK_VERSION = "1.19.0";
+export const PYTHON_SDK_VERSION = "0.3.0";
+export const GO_SDK_VERSION = "0.3.0";
+export const MCP_VERSION = "1.15.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.48.0",
+    date: "2026-10-28",
+    title: "A Remote MCP Server, and Easier Agent Onboarding",
+    track: "web",
+    items: [
+      "A remote MCP server at https://webhooks.cc/mcp for hosted agents (claude.ai, ChatGPT, cloud coding agents) and any client that takes remote servers: add it as a custom connector and approve it once in your browser, with no key or code to copy. It speaks the MCP 2026-07-28 revision (stateless, per-request metadata, cached tool lists) and still serves clients on the 2025 revision. An API key works too, as a bearer header",
+      "OAuth 2.1 behind it: the authorization code flow with PKCE, Client ID Metadata Documents and dynamic client registration, rotating refresh tokens, and iss in every authorization response. A connected app is listed under Connected agents, next to the agents you approved with a code, and disconnects the same way",
+      "/auth.md starts with the shortest way in for each kind of agent (the remote server, the local MCP server, the Claude Code plugin, the Python, Node and Go SDKs and the CLI, or plain HTTP), and the agent docs, llms.txt and the agent skill say the same",
+      "Discovery for agents: an Agent Skills index at /.well-known/agent-skills/index.json, an API catalog at /.well-known/api-catalog (RFC 9727) advertised in a Link header, the OAuth scheme and the agent routes in openapi.yaml, and markdown for the homepage and every docs page, at /index.md and /docs/<page>.md or with Accept: text/markdown",
+      "The retired auth.md v0.1 routes tell old MCP servers and SDKs how to update",
+    ],
+  },
   {
     version: "0.47.0",
     date: "2026-10-27",
@@ -1505,6 +1518,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.6.0",
+    date: "2026-10-28",
+    title: "The Agent Sandbox",
+    track: "cli",
+    items: [
+      "whk sandbox create, list, get, delete, requests, request and wait capture webhooks without an account: whk registers on the first call (a second of proof of work) and keeps the sandbox for the next commands, all with --json for agents",
+      "whk sandbox connect --email connects the agent to your account: it prints a link and a code (one JSON line with --json), waits until you enter it, and saves the connection",
+      "Without a login, every command uses a saved agent connection, from whk, the MCP server or an SDK (~/.config/whk/agent.json); whk auth status says so",
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-10-25",
     title: "Emails Through the Tunnel",
@@ -1715,6 +1739,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.19.0",
+    date: "2026-10-28",
+    title: "Agent Connections That Last",
+    track: "sdk",
+    items: [
+      "`WebhooksCC.sandbox()` keeps the sandbox in the agent credential file (~/.config/whk/agent.json, shared with the MCP server, the CLI and the other SDKs) and reuses it on the next run instead of registering again; `credentialsFile: false` keeps it in memory",
+      "`sandbox.waitForClaim()` saves the account connection, and `WebhooksCC.connected()` returns a client for it later, or null once the human disconnects the agent; `WebhooksCC.connect({ email })` connects an account without a sandbox",
+      "A sandbox read back from the file connects its human through a new registration (`movesEndpoints: false`), since only the process that registered holds the claim token",
+      "`fetch` option on the client, for proxies and tests; waits no longer sleep past their timeout",
+      "The auth.md v0.1 helpers (`registerAnonymous`, `registerWithEmail`, `confirmEmailOtp`, `registerWithIdJag` and their `pollClaim`, `waitForClaim`) are deprecated and warn once; they go in the next major version",
+    ],
+  },
   {
     version: "1.18.0",
     date: "2026-10-25",
@@ -2050,6 +2087,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.3.0",
+    date: "2026-10-28",
+    title: "The Agent Sandbox",
+    track: "python",
+    items: [
+      "`WebhooksCC.sandbox()` registers an agent without an account (proof of work included) and returns a sandbox client: three endpoints for 24 hours, kept in the agent credential file and reused on the next run",
+      "`sandbox.claim(email)` and `sandbox.wait_for_claim()` connect it to a human's account, and `WebhooksCC.connect(email)` does so without a sandbox; the connection is saved, `WebhooksCC.connected()` returns it, and `WebhooksCC()` without a key uses it",
+      "`webhooks_cc.agent` has each auth.md step on its own, and `webhooks_cc.credentials` reads and writes the credential file",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-10-25",
     title: "Destinations, Response Previews and Email Fields",
@@ -2110,6 +2158,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.3.0",
+    date: "2026-10-28",
+    title: "The Agent Sandbox",
+    track: "go",
+    items: [
+      "`NewSandbox` registers an agent without an account (proof of work included) and returns a sandbox: three endpoints for 24 hours, kept in the agent credential file and reused on the next run",
+      "`Sandbox.Claim` and `WaitForClaim` connect it to a human's account, and `Connect` does so without a sandbox; the connection is saved, `Connected` returns it, and `New()` without a key uses it",
+      "The `agent` package has each auth.md step on its own",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-10-25",
     title: "Destinations, Response Previews and Email Fields",
@@ -2148,6 +2207,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.15.0",
+    date: "2026-10-28",
+    title: "Connections That Survive Restarts",
+    track: "mcp",
+    items: [
+      "The sandbox and the account connection are saved in the agent credential file (~/.config/whk/agent.json), so a new session starts connected, with the full tools, and the human approves the agent once; when they disconnect it, the sandbox tools come back",
+      "`npx @webhooks-cc/mcp setup <tool>` works without an API key, and the VS Code and Codex configs it writes use their current formats",
+      "The same tools run on the remote server at https://webhooks.cc/mcp (tools that post to a URL you name stay local)",
+    ],
+  },
   {
     version: "1.14.0",
     date: "2026-10-25",

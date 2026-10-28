@@ -7,6 +7,11 @@ use std::process::Command;
 fn whk() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_whk"));
     cmd.env("NO_COLOR", "1");
+    // Never act through an agent connection saved on this machine.
+    cmd.env(
+        "WHK_AGENT_FILE",
+        std::env::temp_dir().join(format!("whk-smoke-agent-{}.json", std::process::id())),
+    );
     cmd
 }
 
@@ -63,6 +68,24 @@ fn test_tunnel_help() {
     assert!(stdout.contains("--email-path"));
     assert!(stdout.contains("--mailgun-signing-key"));
     assert!(stdout.contains("--no-email"));
+}
+
+#[test]
+fn test_sandbox_help() {
+    let output = whk().args(["sandbox", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for command in [
+        "create", "list", "get", "delete", "requests", "request", "wait", "status", "connect",
+        "forget",
+    ] {
+        assert!(stdout.contains(command), "missing {command}");
+    }
+    assert!(stdout.contains("WHK_AGENT_FILE"));
+
+    // forget needs to be told what to remove.
+    let output = whk().args(["sandbox", "forget"]).output().unwrap();
+    assert!(!output.status.success());
 }
 
 #[test]
@@ -135,10 +158,13 @@ fn test_usage_json() {
 #[test]
 fn test_full_lifecycle() {
     // Use a unique slug to prevent test pollution
-    let slug_name = format!("smoke-test-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis());
+    let slug_name = format!(
+        "smoke-test-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
 
     // Create
     let output = whk()
@@ -155,7 +181,15 @@ fn test_full_lifecycle() {
 
     // Send webhook
     let output = whk()
-        .args(["send", slug, "--method", "POST", "-d", "{\"smoke\":true}", "--json"])
+        .args([
+            "send",
+            slug,
+            "--method",
+            "POST",
+            "-d",
+            "{\"smoke\":true}",
+            "--json",
+        ])
         .output()
         .unwrap();
     assert!(output.status.success(), "send failed");
@@ -192,20 +226,22 @@ fn test_full_lifecycle() {
     assert!(output.status.success(), "requests get failed");
 
     // Get endpoint detail
-    let output = whk()
-        .args(["get", slug, "--json"])
-        .output()
-        .unwrap();
+    let output = whk().args(["get", slug, "--json"]).output().unwrap();
     assert!(output.status.success(), "get endpoint failed");
 
     // Export as curl
     let output = whk()
-        .args(["requests", "export", slug, "--format", "curl", "--limit", "1"])
+        .args([
+            "requests", "export", slug, "--format", "curl", "--limit", "1",
+        ])
         .output()
         .unwrap();
     assert!(output.status.success(), "export failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("curl"), "export should contain curl command");
+    assert!(
+        stdout.contains("curl"),
+        "export should contain curl command"
+    );
 
     // Delete
     let output = whk()
@@ -235,10 +271,12 @@ fn test_get_nonexistent_slug() {
         .output()
         .unwrap();
     // Should fail but not panic
-    assert!(!output.status.success() || {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        stderr.contains("Not logged in") || stderr.contains("not_found")
-    });
+    assert!(
+        !output.status.success() || {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            stderr.contains("Not logged in") || stderr.contains("not_found")
+        }
+    );
 }
 
 #[test]
