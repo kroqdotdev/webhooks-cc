@@ -199,6 +199,8 @@ func (s *Sandbox) api(ctx context.Context, method, path string, query url.Values
 // One loaded from the credential file has no claim token, so Claim starts a
 // service_auth registration for the email instead (MovesEndpoints false).
 func (s *Sandbox) Claim(ctx context.Context, email string) (*ClaimAttempt, error) {
+	// As the server compares it: one address, however it was typed.
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, errors.New("webhooks.cc: Claim needs the email address of the human who connects the agent")
 	}
@@ -220,22 +222,40 @@ func (s *Sandbox) Claim(ctx context.Context, email string) (*ClaimAttempt, error
 	case pending != nil && pending.email == email:
 		// A new code for the service_auth registration already started.
 		attempt, err := steps.StartClaim(ctx, pending.claimToken, email)
+		var refused *AgentAuthError
+		if errors.As(err, &refused) && refused.Status >= 400 && refused.Status < 500 {
+			// Expired, out of attempts or revoked: start a new registration.
+			next, err = s.registerFor(ctx, steps, email)
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
 		if err != nil {
 			return nil, err
 		}
 		next = &pendingClaim{registrationID: pending.registrationID, claimToken: pending.claimToken, email: email, attempt: *claimAttempt(*attempt, false)}
 	default:
-		registration, err := steps.RegisterServiceAuth(ctx, email, s.c.clientName)
+		var err error
+		next, err = s.registerFor(ctx, steps, email)
 		if err != nil {
 			return nil, err
 		}
-		next = &pendingClaim{registrationID: registration.RegistrationID, claimToken: registration.ClaimToken, email: email, attempt: *claimAttempt(registration.Claim, false)}
 	}
 	s.mu.Lock()
 	s.pending = next
 	s.mu.Unlock()
 	attempt := next.attempt
 	return &attempt, nil
+}
+
+// registerFor starts a service_auth registration for the human with this email.
+func (s *Sandbox) registerFor(ctx context.Context, steps *agent.Client, email string) (*pendingClaim, error) {
+	registration, err := steps.RegisterServiceAuth(ctx, email, s.c.clientName)
+	if err != nil {
+		return nil, err
+	}
+	return &pendingClaim{registrationID: registration.RegistrationID, claimToken: registration.ClaimToken, email: email, attempt: *claimAttempt(registration.Claim, false)}, nil
 }
 
 // WaitForClaim waits until the human enters the code from Claim, then

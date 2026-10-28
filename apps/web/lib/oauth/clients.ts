@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { customAlphabet } from "nanoid";
 import { sendOptions } from "@/lib/forwarding/config";
 import { sendForward } from "@/lib/forwarding/send";
@@ -163,6 +164,9 @@ export function isMetadataDocumentClientId(clientId: string): boolean {
   if (url.protocol !== "https:" || url.username || url.password) return false;
   if (url.pathname === "/" || url.pathname === "") return false;
   if (isOwnHost(url.hostname)) return false;
+  // A document is identified by a host name; the fetch would refuse these anyway.
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (isIP(host) !== 0 || host === "localhost" || host.endsWith(".localhost")) return false;
   const segments = clientId.slice(clientId.indexOf("//") + 2).split(/[/?]/);
   return !segments.some((segment) => segment === "." || segment === "..");
 }

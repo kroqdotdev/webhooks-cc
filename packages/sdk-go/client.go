@@ -306,7 +306,12 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 				continue
 			}
 			if c.sandbox && response.status != http.StatusTooManyRequests {
-				return sandboxErrorFromResponse(response)
+				refusal := sandboxErrorFromResponse(response)
+				// Claimed, revoked or expired elsewhere: the registration is over.
+				if refusal.Code == "sandbox_closed" && c.tokens != nil {
+					c.tokens.forgetSlot()
+				}
+				return refusal
 			}
 			return apiErr
 		}

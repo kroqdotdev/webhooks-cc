@@ -444,8 +444,10 @@ func (c *Client) PollClaim(ctx context.Context, claimToken string) (*ClaimPoll, 
 // with Code expired_token when the code ran out (start a new attempt) or
 // access_denied when the human declined, and ctx's error when ctx ends. A
 // poll that fails on the network or with a 5xx is repeated at the next
-// interval, up to five in a row. The code lives 15 minutes, after which the
-// server answers expired_token, so the wait always ends.
+// interval, up to five in a row; a 429 (the token endpoint's limit is per
+// address) waits out its Retry-After and does not count toward those five.
+// The code lives 15 minutes, after which the server answers expired_token,
+// so the wait always ends.
 func (c *Client) WaitForClaim(ctx context.Context, claimToken string, interval time.Duration) (*Claimed, error) {
 	if interval <= 0 {
 		interval = defaultInterval
@@ -453,6 +455,17 @@ func (c *Client) WaitForClaim(ctx context.Context, claimToken string, interval t
 	failures := 0
 	for {
 		poll, err := c.PollClaim(ctx, claimToken)
+		wait := interval
+		var limited *AuthError
+		if errors.As(err, &limited) && limited.Status == http.StatusTooManyRequests {
+			if limited.RetryAfter > wait {
+				wait = limited.RetryAfter
+			}
+			if err := sleep(ctx, wait); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		switch {
 		case err == nil:
 			failures = 0
@@ -473,7 +486,7 @@ func (c *Client) WaitForClaim(ctx context.Context, claimToken string, interval t
 		default:
 			return nil, err
 		}
-		if err := sleep(ctx, interval); err != nil {
+		if err := sleep(ctx, wait); err != nil {
 			return nil, err
 		}
 	}
@@ -483,7 +496,7 @@ func (c *Client) WaitForClaim(ctx context.Context, claimToken string, interval t
 func transient(err error) bool {
 	var authErr *AuthError
 	if errors.As(err, &authErr) {
-		return authErr.Status >= 500 || authErr.Status == http.StatusTooManyRequests
+		return authErr.Status >= 500
 	}
 	return true
 }
@@ -745,3 +758,41 @@ func intOr(value *int, fallback int) int {
 	}
 	return *value
 }
+
+// The types below hold secrets (claim tokens, assertions, access tokens):
+// printing one shows what it is, never the secret.
+
+// String describes the registration without its secrets.
+func (r AnonymousRegistration) String() string {
+	return fmt.Sprintf("AnonymousRegistration{RegistrationID: %s, AssertionExpires: %s}",
+		r.RegistrationID, r.AssertionExpires.Format(time.RFC3339))
+}
+
+// GoString keeps %#v from printing the secrets.
+func (r AnonymousRegistration) GoString() string { return r.String() }
+
+// String describes the registration without its claim token.
+func (r ServiceAuthRegistration) String() string {
+	return fmt.Sprintf("ServiceAuthRegistration{RegistrationID: %s, UserCode: %s, VerificationURI: %s}",
+		r.RegistrationID, r.Claim.UserCode, r.Claim.VerificationURI)
+}
+
+// GoString keeps %#v from printing the claim token.
+func (r ServiceAuthRegistration) GoString() string { return r.String() }
+
+// String describes the token without the token itself.
+func (t Token) String() string {
+	return fmt.Sprintf("Token{Scope: %q, ExpiresAt: %s}", t.Scope, t.ExpiresAt.Format(time.RFC3339))
+}
+
+// GoString keeps %#v from printing the token.
+func (t Token) GoString() string { return t.String() }
+
+// String describes the claim without its token or assertion.
+func (c Claimed) String() string {
+	return fmt.Sprintf("Claimed{Scope: %q, AssertionExpires: %s}",
+		c.Token.Scope, c.AssertionExpires.Format(time.RFC3339))
+}
+
+// GoString keeps %#v from printing the token or the assertion.
+func (c Claimed) GoString() string { return c.String() }

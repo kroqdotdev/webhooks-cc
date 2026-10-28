@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -367,5 +368,22 @@ func TestCallTimesOut(t *testing.T) {
 	_, err := steps.Exchange(t.Context(), "a")
 	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "timed out after 20ms") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestSecretsNeverPrint(t *testing.T) {
+	values := []any{
+		AnonymousRegistration{RegistrationID: "reg", IdentityAssertion: "ey.secret", ClaimToken: "clm_secret"},
+		ServiceAuthRegistration{RegistrationID: "reg", ClaimToken: "clm_secret"},
+		Token{AccessToken: "whcc_secret", Scope: "webhooks:read"},
+		Claimed{Token: Token{AccessToken: "whcc_secret"}, IdentityAssertion: "ey.secret"},
+	}
+	for _, value := range values {
+		for _, format := range []string{"%v", "%+v", "%#v", "%s"} {
+			got := fmt.Sprintf(format, value)
+			if strings.Contains(got, "secret") {
+				t.Fatalf("%s of %T printed a secret: %s", format, value, got)
+			}
+		}
 	}
 }

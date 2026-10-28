@@ -88,6 +88,9 @@ describe("client ID metadata documents", () => {
     expect(isMetadataDocumentClientId("https://claude.ai/a/../meta")).toBe(false);
     expect(isMetadataDocumentClientId("https://claude.ai/meta#x")).toBe(false);
     expect(isMetadataDocumentClientId("whoc_abc")).toBe(false);
+    expect(isMetadataDocumentClientId("https://127.0.0.1/meta")).toBe(false);
+    expect(isMetadataDocumentClientId("https://[::1]/meta")).toBe(false);
+    expect(isMetadataDocumentClientId("https://app.localhost/meta")).toBe(false);
   });
 
   it("takes a document that names itself, and identifies the client by its host", () => {

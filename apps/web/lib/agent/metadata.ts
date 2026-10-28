@@ -650,8 +650,8 @@ On a 401 with a previously working token, exchange the assertion again
 | \`temporarily_unavailable\` (503) | identity | Retry after \`Retry-After\` seconds. |
 | \`invalid_grant\` (400) | token | Register again. |
 | \`authorization_pending\`, \`slow_down\`, \`expired_token\`, \`access_denied\` (400) | token, claim grant | See 4c. |
-| \`unsupported_grant_type\` (400) | token | Use the jwt-bearer or the claim grant. |
-| \`invalid_target\` (400) | token | \`resource\` must be ${u.resource} or left out. |
+| \`unsupported_grant_type\` (400) | token | Use the jwt-bearer or the claim grant (the token endpoint also takes \`authorization_code\` and \`refresh_token\`, for OAuth clients). |
+| \`invalid_target\` (400) | token | \`resource\` must be ${u.resource}, ${u.mcp} or left out. |
 | \`sandbox_endpoint_limit\` (409) | sandbox | Delete an endpoint first. |
 | \`sandbox_full\` (503) | sandbox | Retry later, or ask a human to sign up. |
 | \`sandbox_closed\` (403) | sandbox | The registration was claimed, revoked or expired. |

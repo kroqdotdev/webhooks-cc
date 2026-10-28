@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +40,7 @@ type Connection struct {
 //	fmt.Printf("Open %s, sign in, and enter %s\n", attempt.VerificationURI, attempt.UserCode)
 //	client, err := connection.Wait(ctx)
 func Connect(ctx context.Context, email string, opts ...Option) (*Connection, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, errors.New("webhooks.cc: Connect needs the email address of the human who connects the agent")
 	}

@@ -31,6 +31,9 @@ type tokenSource struct {
 
 	mu   sync.Mutex
 	slot agentfile.Slot
+	// refused is the server's invalid_grant, kept so later calls fail at
+	// once instead of asking again (and spending the token endpoint's limit).
+	refused *AgentAuthError
 }
 
 func (c *Client) newTokenSource(slotName string, slot agentfile.Slot) *tokenSource {
@@ -53,6 +56,12 @@ func (t *tokenSource) cached() string {
 
 // token returns a usable access token, exchanging the assertion when needed.
 func (t *tokenSource) token(ctx context.Context) (string, error) {
+	t.mu.Lock()
+	refused := t.refused
+	t.mu.Unlock()
+	if refused != nil {
+		return "", &agentTokenError{err: refused}
+	}
 	if token := t.cached(); token != "" {
 		return token, nil
 	}
@@ -78,9 +87,10 @@ func (t *tokenSource) token(ctx context.Context) (string, error) {
 		}
 		if refused.Code == "invalid_grant" {
 			t.mu.Lock()
-			registrationID := t.slot.RegistrationID
+			t.refused = refused
+			t.slot.AccessToken, t.slot.AccessTokenExpires = "", ""
 			t.mu.Unlock()
-			_ = t.store.Remove(t.issuer, t.slotName, registrationID)
+			t.forgetSlot()
 		}
 		return "", &agentTokenError{err: refused}
 	}
@@ -117,6 +127,15 @@ func (t *tokenSource) snapshot() agentfile.Slot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.slot
+}
+
+// forgetSlot removes this source's slot from the credential file, unless
+// another process has put another registration there since.
+func (t *tokenSource) forgetSlot() {
+	t.mu.Lock()
+	registrationID := t.slot.RegistrationID
+	t.mu.Unlock()
+	_ = t.store.Remove(t.issuer, t.slotName, registrationID)
 }
 
 // forget drops the token from memory and from the file, after it was revoked.

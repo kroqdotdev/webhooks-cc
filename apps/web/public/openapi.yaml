@@ -14,6 +14,10 @@ info:
     Public endpoints (`/api/stats`, `/api/health`, agent registration and the OAuth endpoints) do not
     require authentication.
 
+    **MCP server:** The same API is available to AI agents as a remote MCP server (streamable
+    HTTP, not described here) at `https://webhooks.cc/mcp`, with the same bearer tokens; its
+    protected resource metadata is at `https://webhooks.cc/.well-known/oauth-protected-resource/mcp`.
+
     **Webhook receiver:** Send webhooks to `https://go.webhooks.cc/w/{slug}`. They are captured
     and available via the API and dashboard in real time.
 
@@ -2029,7 +2033,9 @@ paths:
         - `authorization_code`: redeems the code from `https://webhooks.cc/oauth/authorize` with
           its PKCE `code_verifier`. Returns an access token and a refresh token.
         - `refresh_token`: trades a refresh token for a new access token and a new refresh token.
-          Refresh tokens rotate: the old one stops working.
+          Refresh tokens rotate. A client that lost the answer may retry with the old one within
+          60 seconds and gets a new pair; after that, the old one (or one a retry replaced) ends
+          the connection. A refresh token stops working after 90 days unused.
         - `urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523, auth.md Step 5): exchanges a
           registered agent's identity assertion for a one-hour access token. A pre-claim
           assertion yields a `webhooks:sandbox` token (no user); a claimed one yields
@@ -2043,7 +2049,8 @@ paths:
 
         Every access token is an ordinary `whcc_` bearer token. Answers carry
         `Cache-Control: no-store` and `Pragma: no-cache`, and errors use the RFC 6749 section 5.2
-        envelope. Rate limited to 60 requests per minute per IP.
+        envelope. Rate limited per IP: 600 requests per minute for `authorization_code` and
+        `refresh_token`, 60 for the jwt-bearer and claim grants.
       security: []
       requestBody:
         required: true
@@ -2072,18 +2079,10 @@ paths:
         "400":
           description: |
             RFC 6749 error. Codes: `invalid_request`, `invalid_grant` (the code, refresh token or
-            assertion is invalid, expired, used or revoked; for a registered agent, register
-            again), `invalid_client`, `invalid_scope`, `unsupported_grant_type`, `invalid_target`
-            (a `resource` this server does not serve). The claim grant adds RFC 8628's
-            `authorization_pending`, `slow_down`, `expired_token` and `access_denied`.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/OAuthError"
-        "401":
-          description: |
-            `invalid_client`: the `client_id` is unknown, or is not the client the code or refresh
-            token was issued to
+            assertion is invalid, expired, used or revoked, or was issued to another `client_id`
+            or redirect URI; for a registered agent, register again), `unsupported_grant_type`,
+            `invalid_target` (a `resource` this server does not serve). The claim grant adds RFC
+            8628's `authorization_pending`, `slow_down`, `expired_token` and `access_denied`.
           content:
             application/json:
               schema:
@@ -2148,9 +2147,11 @@ paths:
       summary: Register an OAuth client
       description: |
         Dynamic client registration (RFC 7591) for OAuth clients that do not host a Client ID
-        Metadata Document. Clients are public: no client secret is issued, and
-        `token_endpoint_auth_method` must be `none`. Use the returned `client_id` at
-        `https://webhooks.cc/oauth/authorize` and the token endpoint.
+        Metadata Document. Clients are public: no client secret is issued, and the client is
+        registered with `token_endpoint_auth_method` `none` whatever it asked for (RFC 7591
+        section 3.2.1); it proves itself with PKCE. Use the returned `client_id` at
+        `https://webhooks.cc/oauth/authorize` and the token endpoint. Rate limited to 20
+        registrations per hour per IP; a client nobody uses is deleted after a day.
       security: []
       requestBody:
         required: true
@@ -2167,8 +2168,10 @@ paths:
                 $ref: "#/components/schemas/OAuthClient"
         "400":
           description: |
-            RFC 7591 error: `invalid_redirect_uri` (not https and not a loopback http URI) or
-            `invalid_client_metadata` (any other field is missing or not supported)
+            RFC 7591 error: `invalid_redirect_uri` (no redirect URIs, more than 10, more than 4096
+            characters together, or one that is not allowed: see `redirect_uris`) or
+            `invalid_client_metadata` (`grant_types` without `authorization_code`, or
+            `response_types` without `code`)
           content:
             application/json:
               schema:
@@ -3705,9 +3708,6 @@ components:
         client_id:
           type: string
           description: The client the refresh token was issued to
-        scope:
-          type: string
-          description: Space-separated scopes, no more than were granted
         resource:
           type: string
           format: uri
@@ -3725,8 +3725,10 @@ components:
           description: The identity assertion from agent registration or from the claim grant
         resource:
           type: string
-          const: https://webhooks.cc/api/
-          description: RFC 8707 resource indicator. Optional; any other value answers `invalid_target`.
+          enum: [https://webhooks.cc/api/, https://webhooks.cc/mcp]
+          description: |
+            RFC 8707 resource indicator. Optional; the token is the same for both. Any other
+            value answers `invalid_target`.
 
     ClaimGrant:
       type: object
@@ -3785,11 +3787,14 @@ components:
           items:
             type: string
             format: uri
-          description: Redirect URIs, each https or a loopback http URI (`http://127.0.0.1:<port>/...`)
+          maxItems: 10
+          description: |
+            Redirect URIs, absolute and without a fragment or credentials: https (not on
+            webhooks.cc's own hosts), http on a loopback host (`http://127.0.0.1/...`,
+            `http://localhost/...`; any port matches, RFC 8252), or an app's own scheme
+            (`cursor:`, `vscode:`, `vscode-insiders:`, `vscodium:`, `windsurf:`, `claude:`,
+            `zed:`, `kiro:`, or a reverse-domain scheme such as `com.example.app:`).
         client_uri:
-          type: string
-          format: uri
-        logo_uri:
           type: string
           format: uri
         grant_types:
@@ -3804,10 +3809,10 @@ components:
             enum: [code]
         token_endpoint_auth_method:
           type: string
-          enum: [none]
-        scope:
+          description: Ignored on input; the client is always registered as `none`.
+        application_type:
           type: string
-          description: Space-separated scopes the client will ask for
+          description: Echoed back when given (`web` or `native`)
 
     OAuthClient:
       description: The registered metadata, echoed, with the issued `client_id`
