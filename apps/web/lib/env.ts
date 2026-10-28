@@ -52,6 +52,12 @@ const serverEnvSchema = z
       z.string().url().optional()
     ),
     NOTIFY_SECRET: z.string().optional(),
+    // Where the remote MCP server (/mcp) reaches the API from inside this
+    // process; default http://127.0.0.1:$PORT (lib/mcp/hosted.ts).
+    MCP_INTERNAL_API_URL: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().url().optional()
+    ),
     // The email forwarding worker (lib/forwarding/worker.ts). On by default;
     // turn it off for a process that should not send deliveries.
     EMAIL_FORWARDING_WORKER: z
@@ -203,6 +209,7 @@ export function serverEnv() {
       EMAIL_CAPTURE_DOMAIN: process.env.EMAIL_CAPTURE_DOMAIN || undefined,
       NOTIFY_PROXY_URL: process.env.NOTIFY_PROXY_URL,
       NOTIFY_SECRET: process.env.NOTIFY_SECRET || undefined,
+      MCP_INTERNAL_API_URL: process.env.MCP_INTERNAL_API_URL,
       EMAIL_FORWARDING_WORKER: process.env.EMAIL_FORWARDING_WORKER,
       FORWARDING_ALLOW_PRIVATE_TARGETS: process.env.FORWARDING_ALLOW_PRIVATE_TARGETS,
       ENDPOINT_CREATE_RATE_LIMIT: process.env.ENDPOINT_CREATE_RATE_LIMIT,

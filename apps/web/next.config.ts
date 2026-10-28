@@ -11,6 +11,28 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://webhooks.cc";
 const webVersion = JSON.parse(readFileSync(path.join(__dirname, "package.json"), "utf8")).version;
 const gitSha = process.env.GIT_SHA?.trim().slice(0, 12);
 
+// Discovery relations sent on every response (RFC 8288), so agents that only
+// read headers still find them: auth.md for agent registration (no registered
+// IANA relation exists, so the spec's filename is the relation, matching the
+// <link rel="auth.md"> in app/layout.tsx) and the RFC 9727 API catalog. A
+// later rule's Link replaces an earlier one, so every rule that sets Link
+// below builds on these.
+const discoveryLinks = [
+  `<${appUrl}/auth.md>; rel="auth.md"`,
+  `<${appUrl}/.well-known/api-catalog>; rel="api-catalog"`,
+];
+const linkHeader = (...extra: string[]) => [...discoveryLinks, ...extra].join(", ");
+// The markdown twin of a page (lib/markdown-negotiation.ts).
+const markdownTwin = (pathname: string) =>
+  `<${appUrl}${pathname}>; rel="alternate"; type="text/markdown"`;
+// The same URL answers with HTML or markdown, so caches must key on Accept.
+// This reaches the markdown responses; Next replaces Vary on the pages it
+// renders, so the HTML variant only gets it from the edge.
+const varyAccept = { key: "Vary", value: "Accept" };
+// Set by proxy.ts on a request that prefers markdown; the name is
+// MARKDOWN_TWIN_HEADER in lib/markdown-negotiation.ts.
+const prefersMarkdown = [{ type: "header" as const, key: "x-markdown-twin", value: "1" }];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   env: {
@@ -24,6 +46,12 @@ const nextConfig: NextConfig = {
   // standalone output land under .next/standalone/<home-relative-path>/,
   // breaking the post-build public/static copy in the build script.
   outputFileTracingRoot: path.join(__dirname, "../.."),
+  // lib/agent-skills.ts reads the plugin's skills from the repository at
+  // runtime when a route is not prerendered, like lib/docs.ts reads
+  // content/docs (which the Dockerfile copies instead).
+  outputFileTracingIncludes: {
+    "/.well-known/agent-skills/**": ["../../plugins/webhooks-cc/skills/**/*.md"],
+  },
   transpilePackages: ["@webhooks-cc/sdk"],
   experimental: {
     // simple-icons is a huge barrel package; rewrite named imports to direct
@@ -33,27 +61,31 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Advertise the auth.md agent-registration document on every response
-        // via a Link header, so agents that only inspect response headers (no
-        // HTML parse) still discover it. Complements the <link rel="auth.md">
-        // in app/layout.tsx and the RFC 9728 WWW-Authenticate challenge on 401s.
-        // No registered IANA relation exists, so we reuse the spec's filename
-        // as the relation, matching the HTML <link>.
+        // The discovery relations on every response. Complements the HTML
+        // <link> elements and the RFC 9728 WWW-Authenticate challenge on 401s.
         source: "/:path*",
-        headers: [{ key: "Link", value: `<${appUrl}/auth.md>; rel="auth.md"` }],
+        headers: [{ key: "Link", value: linkHeader() }],
+      },
+      {
+        // Pages with a markdown twin (proxy.ts) point to it and vary on Accept.
+        source: "/",
+        headers: [{ key: "Link", value: linkHeader(markdownTwin("/index.md")) }, varyAccept],
+      },
+      {
+        source: "/docs",
+        headers: [{ key: "Link", value: linkHeader(markdownTwin("/docs.md")) }, varyAccept],
+      },
+      {
+        // Every docs page except the .md URLs themselves; :path is filled
+        // into the header value.
+        source: "/docs/:path((?!.*\\.md$).+)",
+        headers: [{ key: "Link", value: linkHeader(markdownTwin("/docs/:path.md")) }, varyAccept],
       },
       {
         // The auth.md v0.1 routes are deprecated (RFC 9745); the routes set
-        // Deprecation and Sunset. A later rule's Link replaces the one above,
-        // so this one carries both relations. `:path*` matches the bare
-        // /api/agent/auth too.
+        // Deprecation and Sunset. `:path*` matches the bare /api/agent/auth too.
         source: "/api/agent/auth/:path*",
-        headers: [
-          {
-            key: "Link",
-            value: `<${appUrl}/auth.md>; rel="auth.md", <${appUrl}/auth.md>; rel="deprecation"`,
-          },
-        ],
+        headers: [{ key: "Link", value: linkHeader(`<${appUrl}/auth.md>; rel="deprecation"`) }],
       },
       {
         // Explicit X-Robots-Tag header at the Next.js router layer in addition
@@ -70,6 +102,23 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "public, max-age=0, no-transform" }],
       },
     ];
+  },
+  async rewrites() {
+    return {
+      // Markdown twins (lib/markdown-negotiation.ts). These run after
+      // proxy.ts, which marks the requests that prefer markdown, and stay
+      // inside the server, unlike a proxy.ts rewrite to an absolute URL.
+      beforeFiles: [
+        // A route segment cannot end in ".md", so the docs twins live
+        // under /docs.md; an index page's twin is its directory's.
+        { source: "/docs/index.md", destination: "/docs.md" },
+        { source: "/docs/:path(.+)/index.md", destination: "/docs.md/:path" },
+        { source: "/docs/:path(.+)\\.md", destination: "/docs.md/:path" },
+        { source: "/", has: prefersMarkdown, destination: "/index.md" },
+        { source: "/docs", has: prefersMarkdown, destination: "/docs.md" },
+        { source: "/docs/:path(.+)", has: prefersMarkdown, destination: "/docs.md/:path" },
+      ],
+    };
   },
   async redirects() {
     return [

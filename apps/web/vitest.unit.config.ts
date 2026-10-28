@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     include: [
       "proxy.test.ts",
+      "next.config.test.ts",
       "lib/**/*.test.ts",
       "lib/**/*.test.tsx",
       "app/**/*.test.ts",

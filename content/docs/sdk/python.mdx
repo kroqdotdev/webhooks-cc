@@ -3,7 +3,7 @@ title: "Python SDK"
 description: "The webhooks-cc Python package captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes pytest fixtures."
 section: sdk
 order: 6
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-28
 schema: none
 keywords: ["python webhook sdk", "pytest webhooks", "webhook testing python", "verify webhook signature python", "webhooks-cc"]
 seo:
@@ -20,7 +20,7 @@ pip install webhooks-cc
 pip install "webhooks-cc[crypto]"  # also verify Discord (Ed25519) and PayPal (RSA) signatures
 ```
 
-Python 3.10 or later. Create an API key on your [API keys page](/account/api-keys) and set `WHK_API_KEY`, or pass `api_key=`.
+Python 3.10 or later. Create an API key on your [API keys page](/account/api-keys) and set `WHK_API_KEY`, or pass `api_key=`. An AI agent without an account can start in [the agent sandbox](#no-account-the-agent-sandbox).
 
 ## Wait for a webhook
 
@@ -244,6 +244,53 @@ for request in client.requests.subscribe(endpoint.slug, timeout="10m", reconnect
 
 The stream ends at `timeout`, when the endpoint is deleted, or when you stop iterating. With `reconnect=True` it follows the server's 30-minute connection rotation and recovers from dropped connections without missing requests.
 
+## No account: the agent sandbox
+
+An AI agent can capture webhooks before anyone signs up. `WebhooksCC.sandbox()` registers through [auth.md](/auth.md), solves a short proof of work (a few seconds of CPU) and returns a sandbox: up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. Sandbox endpoints only capture: no mock responses, forwarding or email. See [AI agents](/docs/agents) for the limits and how a person connects an agent.
+
+```python
+from webhooks_cc import WebhooksCC
+
+with WebhooksCC.sandbox(client_name="my-agent") as sandbox:
+    endpoint = sandbox.endpoints.create()
+    trigger_checkout(webhook_url=endpoint.url)
+    request = sandbox.requests.wait_for(endpoint.slug, timeout="60s")
+
+    # To keep the endpoints, a human connects the agent to their account.
+    claim = sandbox.claim("dev@example.com")
+    print(f"Open {claim.verification_uri} and enter {claim.user_code}")
+    client = sandbox.wait_for_claim()  # a WebhooksCC for that account
+```
+
+The human opens the link, signs in (or signs up) as that email and types the code; the endpoints and what they captured move into their account. `wait_for_claim()` raises `AgentAuthError` with `code` `expired_token` when the 15-minute code runs out (call `claim()` again) and `access_denied` when the human declines.
+
+The registration is saved in the agent credential file that the [MCP server](/docs/mcp), the TypeScript and Go SDKs and the [CLI](/docs/cli) share:
+
+| Platform | Path                                                                      |
+| -------- | ------------------------------------------------------------------------- |
+| Linux    | `~/.config/whk/agent.json`, or `$XDG_CONFIG_HOME/whk/agent.json` when set |
+| macOS    | `~/Library/Application Support/whk/agent.json`                            |
+| Windows  | `%APPDATA%\whk\agent.json`                                                |
+
+`WHK_AGENT_FILE` names another path. The next `WebhooksCC.sandbox()`, in this process or another, reuses a live sandbox instead of registering again; pass `credentials_file=False` to leave the file alone, or a path to use another file. The claim token is never saved, so only the process that registered moves the sandbox endpoints into an account. A sandbox reused from the file starts a new code for the email instead (`claim.moves_endpoints` is `False`): the agent is connected to the account, and the sandbox endpoints stay where they are until they expire.
+
+A connection lasts 90 days, and every process picks it up:
+
+```python
+client = WebhooksCC.connected()  # None when no agent is connected
+client = WebhooksCC()            # without WHK_API_KEY, acts for the connected account
+```
+
+To connect an agent without a sandbox, start with the human's email:
+
+```python
+pending = WebhooksCC.connect("dev@example.com", client_name="my-agent")
+print(f"Open {pending.verification_uri} and enter {pending.user_code}")
+client = pending.wait()
+```
+
+`pending.restart()` gets a new code when the old one ran out. An API key, passed or in `WHK_API_KEY`, always wins over the file. A refused sandbox call raises `SandboxError` with the server's `code` (`sandbox_endpoint_limit`, `sandbox_full`, ...), and a rate limit `RateLimitError`. Each step of the protocol is a function of its own in `webhooks_cc.agent`.
+
 ## Errors
 
 API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasses:
@@ -259,11 +306,11 @@ API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasse
 
 ## Configuration
 
-| Argument      | Environment variable | Default                  |
-| ------------- | -------------------- | ------------------------ |
-| `api_key`     | `WHK_API_KEY`        | (required)               |
-| `base_url`    | `WHK_BASE_URL`       | `https://webhooks.cc`    |
-| `webhook_url` | `WHK_WEBHOOK_URL`    | `https://go.webhooks.cc` |
-| `timeout`     |                      | `"30s"` per API call     |
+| Argument      | Environment variable | Default                                                                   |
+| ------------- | -------------------- | ------------------------------------------------------------------------- |
+| `api_key`     | `WHK_API_KEY`        | (required, unless an [agent is connected](#no-account-the-agent-sandbox)) |
+| `base_url`    | `WHK_BASE_URL`       | `https://webhooks.cc`                                                     |
+| `webhook_url` | `WHK_WEBHOOK_URL`    | `https://go.webhooks.cc`                                                  |
+| `timeout`     |                      | `"30s"` per API call                                                      |
 
 The source is in [`packages/sdk-python`](https://github.com/kroqdotdev/webhooks-cc/tree/main/packages/sdk-python), MIT licensed.

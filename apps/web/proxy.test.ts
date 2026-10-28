@@ -71,3 +71,92 @@ describe("proxy", () => {
     expect(getUser).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("proxy: markdown twins", () => {
+  const BROWSER_ACCEPT =
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+  // NextResponse.next({ request: { headers } }) hands request headers on to
+  // the router under this prefix, where the next.config.ts rewrite reads them.
+  const MARKED = "x-middleware-request-x-markdown-twin";
+
+  it.each(["/", "/docs", "/docs/agents"])(
+    "marks %s for its markdown twin when an agent prefers markdown",
+    async (path) => {
+      const res = await proxy(
+        new NextRequest(`https://webhooks.cc${path}`, { headers: { Accept: "text/markdown" } })
+      );
+
+      expect(res.headers.get(MARKED)).toBe("1");
+      expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+      // The negotiated URL is the page's own, which stays indexable.
+      expect(res.headers.get("X-Robots-Tag")).toBeNull();
+      expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+      expect(getUser).not.toHaveBeenCalled();
+    }
+  );
+
+  it("marks HEAD like GET", async () => {
+    const res = await proxy(
+      new NextRequest("https://webhooks.cc/", {
+        method: "HEAD",
+        headers: { Accept: "text/markdown" },
+      })
+    );
+    expect(res.headers.get(MARKED)).toBe("1");
+  });
+
+  it("leaves browsers on the HTML page", async () => {
+    const res = await proxy(
+      new NextRequest("https://webhooks.cc/docs/agents", { headers: { Accept: BROWSER_ACCEPT } })
+    );
+
+    expect(res.headers.get(MARKED)).toBeNull();
+    expect(getUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves the twins' own URLs without a session refresh and marks them noindex", async () => {
+    for (const path of ["/index.md", "/docs.md", "/docs.md/agents", "/docs/sdk/api.md"]) {
+      const res = await proxy(new NextRequest(`https://webhooks.cc${path}`));
+      expect(res.headers.get(MARKED)).toBeNull();
+      expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
+    }
+    expect(getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("proxy: remote MCP server", () => {
+  it.each(["POST", "GET", "DELETE", "OPTIONS"])(
+    "lets %s /mcp through without a session refresh",
+    async (method) => {
+      const res = await proxy(
+        new NextRequest("https://webhooks.cc/mcp", {
+          method,
+          headers: { Authorization: "Bearer whcc_example" },
+        })
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(getUser).not.toHaveBeenCalled();
+    }
+  );
+
+  it("still refuses Server Action probes on /mcp and POSTs to look-alike paths", async () => {
+    const probe = await proxy(
+      new NextRequest("https://webhooks.cc/mcp", {
+        method: "POST",
+        headers: { "next-action": "x" },
+      })
+    );
+    expect(probe.status).toBe(404);
+
+    const lookAlike = await proxy(new NextRequest("https://webhooks.cc/mcpx", { method: "POST" }));
+    expect(lookAlike.status).toBe(404);
+  });
+
+  it("keeps the OAuth consent page out of search results", async () => {
+    const res = await proxy(new NextRequest("https://webhooks.cc/oauth/authorize"));
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+  });
+});

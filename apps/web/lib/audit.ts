@@ -72,7 +72,10 @@ export type AgentAuditAction =
   | "agent.registration.revoked"
   | "agent.sandbox.endpoint_created"
   | "agent.sandbox.endpoint_deleted"
-  | "agent.sandbox.full";
+  | "agent.sandbox.full"
+  | "agent.oauth.client_registered"
+  | "agent.oauth.approved"
+  | "agent.oauth.denied";
 
 export type AuditOutcome = "ok" | "refused" | "error";
 

@@ -1,9 +1,9 @@
 ---
 title: "Webhook MCP Server (@webhooks-cc/mcp)"
-description: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 39 MCP tools, a zero-key sandbox, and a Claude Code plugin."
+description: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 46 MCP tools, a remote server at webhooks.cc/mcp with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 section: mcp
 order: 1
-lastUpdated: 2026-10-20
+lastUpdated: 2026-10-28
 schema: faq
 keywords:
   [
@@ -12,45 +12,93 @@ keywords:
     "mcp webhook",
     "@webhooks-cc/mcp",
     "MCP server",
+    "remote MCP server",
     "AI webhook testing",
     "Claude Code webhooks",
     "Cursor webhooks",
   ]
 seo:
   ogTitle: "Webhook MCP Server (@webhooks-cc/mcp): Claude, Cursor & Codex"
-  ogDescription: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 39 MCP tools, a zero-key sandbox, and a Claude Code plugin."
+  ogDescription: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 46 MCP tools, a remote server with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 ---
 
+There are two ways to connect an agent. Hosted agents such as claude.ai and ChatGPT, and any client that takes remote MCP servers, use the [remote server](#remote-server) at `https://webhooks.cc/mcp` and approve it once in the browser. Coding agents on your machine can also run the local server, `@webhooks-cc/mcp`, set up below. The local server works without an API key: leave the key out and it starts in the [agent sandbox](#without-an-api-key-the-agent-sandbox).
+
 <McpInstallGuide />
+
+## Remote server
+
+`https://webhooks.cc/mcp` serves the same tools over streamable HTTP. There is nothing to install and no key to paste: you approve the connection once in your browser. It speaks the MCP 2026-07-28 revision (stateless, with `server/discover` and a cached tool list), and the stateless fallback for clients still on the 2025 revisions.
+
+### Add it to your client
+
+Client menus change, so treat these paths as a guide.
+
+**claude.ai and Claude Desktop:** in Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`.
+
+**ChatGPT:** add `https://webhooks.cc/mcp` as a custom connector (in developer mode).
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp
+```
+
+**Cursor** (`.cursor/mcp.json`):
+
+```json
+{ "mcpServers": { "webhooks-cc": { "url": "https://webhooks.cc/mcp" } } }
+```
+
+**VS Code** (`.vscode/mcp.json`):
+
+```json
+{ "servers": { "webhooks-cc": { "type": "http", "url": "https://webhooks.cc/mcp" } } }
+```
+
+### Connecting
+
+The first time the client calls the server, it opens webhooks.cc in your browser. Sign in, or sign up, check which app asks and where it will send you back to, and click **Connect**. There is no code to type. The app can then use your endpoints and what they capture, but never your API keys, billing or account settings. Its tokens renew themselves and stop working after 90 days unused; [Apps connected with OAuth](/docs/agents#apps-connected-with-oauth) has the details.
+
+To disconnect, open [Account, Connected agents](/account/agents). The app is listed there as an app connected with OAuth, and its access stops as soon as you disconnect it. An account can connect up to 10 agents and apps.
+
+A client that can send headers can skip the browser and use an API key from your [API keys page](/account/api-keys) instead:
+
+```bash
+claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp --header "Authorization: Bearer whcc_..."
+```
+
+### What differs from the local server
+
+- **44 tools.** `send_to` and `replay_request` are left out: they post to a URL you name, and a hosted server cannot reach your machine. For the same reason `render_email` and `test_webhook_flow` refuse `targetUrl`. To send to localhost, use the local server or [`whk tunnel`](/docs/cli/tunnel).
+- **Waits are capped at 50 seconds.** `wait_for_request`, `wait_for_email` and the other tools with a `timeout` return by then; call them again to keep waiting.
+- **Tools only.** The prompts and resources below come with the local server.
+- **An account is required.** There is no sandbox on the remote server, and a sandbox token is refused.
+
+## Without an API key: the agent sandbox
+
+Started without `WHK_API_KEY`, the local server still works. If you connected the agent to your account before, in an earlier session or from the CLI or an SDK, it starts with the full tools for your account. Otherwise it offers `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request` and `generate_payload_schema` with the same names and arguments as the full tools, backed by the [agent sandbox](/docs/agents): up to 3 temporary endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers the sandbox, which takes a few seconds of proof of work.
+
+To get everything else, the agent connects to your account: `connect_account` with the email you sign in to webhooks.cc with returns a link and a 6-digit code, you sign in (or sign up) and enter the code, and `wait_for_connection` then swaps in the full tool set for your account, sandbox endpoints included. `about_sandbox` explains the limits without a network call.
+
+The sandbox and the connection are saved in the [agent credential file](/docs/agents#the-agent-credential-file) (`~/.config/whk/agent.json` on Linux; `WHK_AGENT_FILE` moves it), which the server shares with the [CLI](/docs/cli/commands#sandbox) and the SDKs. A new session starts where the last one stopped, so you approve the agent once. The connection lasts 90 days; when you disconnect the agent under Account, Connected agents, the sandbox tools come back. Sandbox endpoints from an earlier session cannot move into your account, because only the process that registered holds the claim token: `connect_account` then connects through a new registration and says so, and those endpoints stay in the sandbox until they expire.
+
+Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-code`, `vscode`, `codex`, `windsurf`, `claude-desktop`) writes the config without `WHK_API_KEY`; add `--api-key whcc_...` to start with your account's tools.
 
 ## Registry and client support
 
 `@webhooks-cc/mcp` is published on npm and indexed in the Model Context Protocol ecosystem so AI coding agents can discover and install it directly:
 
 - **npm package**: [`@webhooks-cc/mcp`](https://www.npmjs.com/package/@webhooks-cc/mcp) (`npx -y @webhooks-cc/mcp`)
+- **Remote server**: `https://webhooks.cc/mcp` (streamable HTTP, OAuth), listed in the same registry entry
 - **Official MCP Registry**: `io.github.kroqdotdev/webhooks-cc`, published with each release from [`server.json`](https://github.com/kroqdotdev/webhooks-cc/blob/main/packages/mcp/server.json)
 - **Claude Code plugin**: the server bundled with the [webhook testing skill](/docs/mcp/skills), installed with `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc`
 - **Glama**: ships with [`glama.json`](https://glama.ai/mcp/servers) metadata
-- **Supported MCP clients**: Claude Code (`claude mcp add webhooks -- npx -y @webhooks-cc/mcp`), Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop
+- **Supported MCP clients**: Claude Code (`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`), Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop run the local server; claude.ai, ChatGPT, and any client that takes remote MCP servers connect to the remote one
 
 ## Available tools
 
-The MCP server exposes 46 tools your AI agent can call. Without an API key, 11 sandbox tools are available (see below). The [agent skill](/docs/mcp/skills) tells your agent when to use them.
-
-## Provider-aware testing
-
-Agents can inspect provider metadata, send realistic templates, then read the captured request with the provider and event visible in the dashboard.
-
-```text
-You: "List the Typeform webhook templates and send a form_response to my endpoint"
-Agent: [calls list_provider_templates with provider: "typeform"]
-Agent: [calls send_webhook with provider: "typeform", template: "form_response", secret: "..."]
-Agent: Captured POST request detected as Typeform / form_response
-```
-
-The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, Standard Webhooks, DocuSign, Adyen, PayPal templates, and Plaid templates.
-
-For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
+The local server exposes 46 tools your AI agent can call, and the remote server 44 of them. Without an API key or a saved connection, 11 sandbox tools are available (see above). The [agent skill](/docs/mcp/skills) tells your agent when to use them, and the [tool reference](/docs/mcp/tools) lists every argument.
 
 ### Endpoint management
 
@@ -106,11 +154,17 @@ Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mai
 | `get_email`       | Get one email by ID, or the newest at an endpoint, with its code and link |
 | `wait_for_email`  | Wait for an email to arrive (for example after a signup), then return it  |
 | `send_test_email` | Deliver a sample email with a code and a link, optionally to a `+tag`     |
+| `render_email`    | An email in Postmark, SendGrid, Mailgun or CloudMailin shape, optionally posted to your local handler |
 
 ### Forwarding
 
 | Tool                    | Description                                                                            |
 | ----------------------- | -------------------------------------------------------------------------------------- |
+| `list_destinations`     | List an endpoint's forwarding destinations                                             |
+| `add_destination`       | Add a destination (up to 10 per endpoint) with its kinds, filter, format, throttle and delay |
+| `update_destination`    | Change a destination                                                                   |
+| `remove_destination`    | Remove a destination                                                                   |
+| `preview_destination`   | Dry run: whether the filter lets a request through, and the exact request it would send |
 | `configure_forwarding`  | Set where and how captured requests and emails are forwarded, and turn it on or off   |
 | `get_forwarding_secret` | Read or rotate the signing secret for forwarded deliveries                             |
 | `test_forwarding`       | Send the newest request (or a sample) to the forwarding URL once and report the answer |
@@ -134,15 +188,24 @@ Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mai
 | `get_usage`               | Check current request usage, quota, and plan              |
 | `describe`                | Describe all available SDK operations                     |
 
-### Without an API key: the agent sandbox
+## Provider-aware testing
 
-Started without `WHK_API_KEY`, the server still works. It offers `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request` and `generate_payload_schema` with the same names and arguments as above, backed by the [agent sandbox](/docs/agents): up to 3 temporary endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers the sandbox, which takes a few seconds of proof of work.
+Agents can inspect provider metadata, send realistic templates, then read the captured request with the provider and event visible in the dashboard.
 
-To get everything else, the agent connects to your account: `connect_account` with your email returns a link and a 6-digit code, you sign in (or sign up) and enter the code, and `wait_for_connection` then swaps in the full tool set for your account, sandbox endpoints included. `about_sandbox` explains the limits without a network call. The connection lasts while the server runs; for a lasting setup, create an API key and set `WHK_API_KEY`.
+```text
+You: "List the Typeform webhook templates and send a form_response to my endpoint"
+Agent: [calls list_provider_templates with provider: "typeform"]
+Agent: [calls send_webhook with provider: "typeform", template: "form_response", secret: "..."]
+Agent: Captured POST request detected as Typeform / form_response
+```
+
+The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, Standard Webhooks, DocuSign, Adyen, PayPal templates, and Plaid templates.
+
+For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
 
 ## Prompts
 
-The MCP server provides 3 prompt templates for common workflows:
+The local MCP server provides 3 prompt templates for common workflows:
 
 - **debug_webhook_delivery**: diagnose why webhook delivery is failing or missing
 - **setup_provider_testing**: set up webhook testing for a specific provider
@@ -150,7 +213,7 @@ The MCP server provides 3 prompt templates for common workflows:
 
 ## Resources
 
-Three resources provide read-only access to your webhook data:
+With an API key, three resources provide read-only access to your webhook data:
 
 - **endpoints-overview** (`webhooks://endpoints`): all endpoints with recent activity
 - **endpoint-recent-requests** (`webhooks://endpoint/{slug}/recent`): last 10 requests at an endpoint
@@ -183,6 +246,12 @@ Agent: Replayed to http://localhost:3000/webhooks - got 200 OK
 ## Learn more
 
 <LinkCard
+  href="/docs/agents"
+  title="AI agents"
+  description="The sandbox, connecting an agent, OAuth apps, and the credential file."
+/>
+
+<LinkCard
   href="/docs/sdk"
   title="SDK Overview"
   description="The TypeScript SDK that powers the MCP server."
@@ -203,12 +272,22 @@ Agent: Replayed to http://localhost:3000/webhooks - got 200 OK
 <FAQ>
 <FAQItem question="Which AI coding agents support @webhooks-cc/mcp?">
 
-The `@webhooks-cc/mcp` server works with Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop. Any client that supports the Model Context Protocol over stdio can connect with `npx -y @webhooks-cc/mcp`.
+The local `@webhooks-cc/mcp` server works with Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop. Any client that supports the Model Context Protocol over stdio can connect with `npx -y @webhooks-cc/mcp`. Clients that take remote MCP servers can connect to `https://webhooks.cc/mcp` instead.
+
+</FAQItem>
+<FAQItem question="Can I use webhooks.cc from claude.ai or ChatGPT?">
+
+Yes. Add `https://webhooks.cc/mcp` as a custom connector, sign in to webhooks.cc when the client opens it, and click Connect. The remote server has 44 of the 46 tools: it leaves out `send_to` and `replay_request`, which post to a URL on your machine that a hosted server cannot reach. You can disconnect it at any time under Account, Connected agents.
 
 </FAQItem>
 <FAQItem question="Can I use the Webhook MCP server without an API key?">
 
-Yes. Running `npx -y @webhooks-cc/mcp` without `WHK_API_KEY` starts in agent sandbox mode with 11 tools (`create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`, `generate_payload_schema`, `connect_account`, `wait_for_connection`, and `about_sandbox`), giving your agent up to 3 temporary endpoints, 25 requests per endpoint and 100 in total, for 24 hours.
+Yes. Running `npx -y @webhooks-cc/mcp` without `WHK_API_KEY` starts in agent sandbox mode with 11 tools (`create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`, `generate_payload_schema`, `connect_account`, `wait_for_connection`, and `about_sandbox`), giving your agent up to 3 temporary endpoints, 25 requests per endpoint and 100 in total, for 24 hours. Once you connect the agent to your account, the connection is saved, and later sessions start with the full tools.
+
+</FAQItem>
+<FAQItem question="Do I have to connect the agent again in every session?">
+
+No. The local server saves the connection in the agent credential file (`~/.config/whk/agent.json` on Linux), which the CLI and the SDKs read too, so you approve an agent once. The connection lasts 90 days, or until you disconnect it under Account, Connected agents. The remote server keeps its own connection, which lasts until it goes unused for 90 days.
 
 </FAQItem>
 <FAQItem question="What can an AI agent do with webhooks.cc?">

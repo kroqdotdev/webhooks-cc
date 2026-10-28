@@ -1,3 +1,4 @@
+import { preflight, withCors } from "@/lib/oauth/cors";
 import { buildAuthorizationServerMetadata } from "@/lib/agent/metadata";
 import { hasTrustedProviders } from "@/lib/agent/trusted-providers";
 
@@ -10,7 +11,13 @@ export const dynamic = "force-dynamic";
  * challenge and the sandbox limits.
  */
 export async function GET() {
-  return Response.json(buildAuthorizationServerMetadata({ idJagEnabled: hasTrustedProviders() }), {
-    headers: { "Cache-Control": "public, max-age=300" },
-  });
+  return withCors(
+    Response.json(buildAuthorizationServerMetadata({ idJagEnabled: hasTrustedProviders() }), {
+      headers: { "Cache-Control": "public, max-age=300" },
+    })
+  );
+}
+
+export function OPTIONS() {
+  return preflight();
 }

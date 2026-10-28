@@ -133,7 +133,7 @@ export interface Database {
       agent_registrations: {
         Row: {
           id: string;
-          kind: "anonymous" | "service_auth" | "identity_assertion";
+          kind: "anonymous" | "service_auth" | "identity_assertion" | "oauth";
           user_id: string | null;
           client_name: string | null;
           claim_token_hash: string | null;
@@ -153,11 +153,15 @@ export interface Database {
           attempt_denied_at: string | null;
           idjag_iss: string | null;
           idjag_sub: string | null;
+          oauth_client_id: string | null;
+          oauth_refresh_hash: string | null;
+          oauth_previous_refresh_hash: string | null;
+          oauth_refreshed_at: string | null;
           created_at: string;
         };
         Insert: {
           id?: string;
-          kind: "anonymous" | "service_auth" | "identity_assertion";
+          kind: "anonymous" | "service_auth" | "identity_assertion" | "oauth";
           user_id?: string | null;
           client_name?: string | null;
           claim_token_hash?: string | null;
@@ -177,11 +181,15 @@ export interface Database {
           attempt_denied_at?: string | null;
           idjag_iss?: string | null;
           idjag_sub?: string | null;
+          oauth_client_id?: string | null;
+          oauth_refresh_hash?: string | null;
+          oauth_previous_refresh_hash?: string | null;
+          oauth_refreshed_at?: string | null;
           created_at?: string;
         };
         Update: {
           id?: string;
-          kind?: "anonymous" | "service_auth" | "identity_assertion";
+          kind?: "anonymous" | "service_auth" | "identity_assertion" | "oauth";
           user_id?: string | null;
           client_name?: string | null;
           claim_token_hash?: string | null;
@@ -201,6 +209,82 @@ export interface Database {
           attempt_denied_at?: string | null;
           idjag_iss?: string | null;
           idjag_sub?: string | null;
+          oauth_client_id?: string | null;
+          oauth_refresh_hash?: string | null;
+          oauth_previous_refresh_hash?: string | null;
+          oauth_refreshed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      oauth_clients: {
+        Row: {
+          client_id: string;
+          client_name: string | null;
+          client_uri: string | null;
+          redirect_uris: string[];
+          created_at: string;
+          last_used_at: string | null;
+        };
+        Insert: {
+          client_id: string;
+          client_name?: string | null;
+          client_uri?: string | null;
+          redirect_uris: string[];
+          created_at?: string;
+          last_used_at?: string | null;
+        };
+        Update: {
+          client_id?: string;
+          client_name?: string | null;
+          client_uri?: string | null;
+          redirect_uris?: string[];
+          created_at?: string;
+          last_used_at?: string | null;
+        };
+        Relationships: [];
+      };
+      oauth_authorization_codes: {
+        Row: {
+          code_hash: string;
+          client_id: string;
+          client_name: string | null;
+          user_id: string;
+          redirect_uri: string;
+          code_challenge: string;
+          scope: string;
+          resource: string | null;
+          expires_at: string;
+          used_at: string | null;
+          registration_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          code_hash: string;
+          client_id: string;
+          client_name?: string | null;
+          user_id: string;
+          redirect_uri: string;
+          code_challenge: string;
+          scope: string;
+          resource?: string | null;
+          expires_at: string;
+          used_at?: string | null;
+          registration_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          code_hash?: string;
+          client_id?: string;
+          client_name?: string | null;
+          user_id?: string;
+          redirect_uri?: string;
+          code_challenge?: string;
+          scope?: string;
+          resource?: string | null;
+          expires_at?: string;
+          used_at?: string | null;
+          registration_id?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -1119,6 +1203,36 @@ export interface Database {
       revoke_agent_registration: {
         Args: { p_id: string; p_user_id: string };
         Returns: boolean;
+      };
+      redeem_oauth_code: {
+        Args: {
+          p_code_hash: string;
+          p_client_id: string;
+          p_redirect_uri: string;
+          p_code_challenge: string;
+          p_refresh_hash: string;
+          p_expires_at: string;
+          p_max_agents: number;
+        };
+        Returns: Json;
+      };
+      rotate_oauth_refresh: {
+        Args: {
+          p_refresh_hash: string;
+          p_client_id: string;
+          p_new_hash: string;
+          p_expires_at: string;
+          p_grace_seconds: number;
+        };
+        Returns: Json;
+      };
+      revoke_oauth_refresh: {
+        Args: { p_refresh_hash: string };
+        Returns: string | null;
+      };
+      cleanup_oauth: {
+        Args: Record<PropertyKey, never>;
+        Returns: undefined;
       };
       link_agent_idjag_identity: {
         Args: {

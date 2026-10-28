@@ -59,3 +59,16 @@ export const MAX_CONNECTED_AGENTS = 10;
  */
 export const VERIFIED_EMAIL_DEPRECATED_AT = "2026-10-10T00:00:00Z";
 export const VERIFIED_EMAIL_SUNSET_AT = "2026-11-30T00:00:00Z";
+
+/** An OAuth authorization code (remote MCP clients) lives this long. */
+export const OAUTH_CODE_TTL_SECONDS = 5 * 60;
+/** An OAuth refresh token works this long after its last use. */
+export const OAUTH_REFRESH_TTL_SECONDS = 90 * 24 * 60 * 60;
+/**
+ * A refresh token presented again this soon after its rotation is a client
+ * retrying a lost response: refused, but the grant survives. Later, it is a
+ * copy, and the grant is revoked.
+ */
+export const OAUTH_REFRESH_GRACE_SECONDS = 60;
+export const AUTHORIZATION_CODE_GRANT = "authorization_code";
+export const REFRESH_TOKEN_GRANT = "refresh_token";

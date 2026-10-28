@@ -576,7 +576,7 @@ Self-documenting schema of all available operations and their parameters. No par
 
 ## Without an API key: the agent sandbox
 
-A server started without `WHK_API_KEY` registers these eleven tools instead of the ones above. The eight endpoint and request tools have the same names and arguments as the full tools, but run in the [agent sandbox](/docs/agents) ([auth.md](https://webhooks.cc/auth.md)): up to 3 endpoints at a time, 25 captured requests each and 100 in all, deleted 24 hours after the sandbox was created. Captures are readable only by this agent.
+A server started without `WHK_API_KEY`, and without a saved connection to a human's account (see [the agent credential file](/docs/agents#the-agent-credential-file)), registers these eleven tools instead of the ones above. The eight endpoint and request tools have the same names and arguments as the full tools, but run in the [agent sandbox](/docs/agents) ([auth.md](https://webhooks.cc/auth.md)): up to 3 endpoints at a time, 25 captured requests each and 100 in all, deleted 24 hours after the sandbox was created. Captures are readable only by this agent.
 
 | Tool               | In the sandbox                                                                                                                         |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -591,7 +591,7 @@ A server started without `WHK_API_KEY` registers these eleven tools instead of t
 
 ### connect_account
 
-Connect the agent to a human's account. Returns `verificationUri`, a 6-digit `userCode` and a `tellTheHuman` line to show them: they sign in or sign up with that email and enter the code. With a sandbox, its endpoints move into the account with what they captured; without one, the agent registers for that human directly. Calling it again gives a new code.
+Connect the agent to a human's account. Returns `verificationUri`, a 6-digit `userCode` and a `tellTheHuman` line to show them: they sign in or sign up with that email and enter the code. With a sandbox made in this session, its endpoints move into the account with what they captured; with one from an earlier session, or none, the agent registers for that human directly (`endpoints` in the answer says which). Calling it again gives a new code.
 
 | Parameter | Type     | Required | Description                                                          |
 | --------- | -------- | -------- | -------------------------------------------------------------------- |
@@ -599,7 +599,7 @@ Connect the agent to a human's account. Returns `verificationUri`, a 6-digit `us
 
 ### wait_for_connection
 
-Wait for the human to enter the code. On success the full tools for their account replace the sandbox tools (the server sends `notifications/tools/list_changed`). Otherwise it returns `status` `waiting` (call it again), `expired` (call `connect_account` for a new code) or `declined`. The connection lasts while the server runs; set `WHK_API_KEY` for a lasting setup.
+Wait for the human to enter the code. On success the full tools for their account replace the sandbox tools (the server sends `notifications/tools/list_changed`). Otherwise it returns `status` `waiting` (call it again), `expired` (call `connect_account` for a new code) or `declined`. The connection is saved in the agent credential file, so later sessions start with the full tools; when the human disconnects the agent under Account, Connected agents, the sandbox tools come back.
 
 | Parameter        | Type     | Required | Description                                         |
 | ---------------- | -------- | -------- | --------------------------------------------------- |

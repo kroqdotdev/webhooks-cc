@@ -2,6 +2,8 @@ import { publicEnv } from "@/lib/env";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   ASSERTION_REVOKED_EVENT,
+  AUTHORIZATION_CODE_GRANT,
+  REFRESH_TOKEN_GRANT,
   CLAIM_GRANT,
   CLAIMED_ASSERTION_TTL_SECONDS,
   CLAIM_POLL_INTERVAL_SECONDS,
@@ -61,6 +63,12 @@ function urls(appUrl: string) {
     sandbox: `${appUrl}/api/agent/sandbox/endpoints`,
     sandboxRequest: `${appUrl}/api/agent/sandbox/requests`,
     docs: `${appUrl}/docs/agents`,
+    mcp: `${appUrl}/mcp`,
+    mcpPrm: `${appUrl}/.well-known/oauth-protected-resource/mcp`,
+    mcpDocs: `${appUrl}/docs/mcp`,
+    authorize: `${appUrl}/oauth/authorize`,
+    register: `${appUrl}/api/oauth2/register`,
+    llms: `${appUrl}/llms.txt`,
   };
 }
 
@@ -86,6 +94,24 @@ export interface ProtectedResourceMetadata {
   bearer_methods_supported: string[];
   resource_documentation: string;
   scopes_supported: string[];
+}
+
+/**
+ * Served at `/.well-known/oauth-protected-resource/mcp` (RFC 9728 3.1: the
+ * resource's path appended): the remote MCP server, which takes the same
+ * tokens as the API. Its 401s point here.
+ */
+export function buildMcpProtectedResourceMetadata(): ProtectedResourceMetadata {
+  const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
+  return {
+    resource: `${appUrl}/mcp`,
+    resource_name: "webhooks.cc MCP server",
+    resource_logo_uri: `${appUrl}/icon-512.png`,
+    authorization_servers: [appUrl],
+    bearer_methods_supported: ["header"],
+    resource_documentation: `${appUrl}/docs/mcp`,
+    scopes_supported: POST_CLAIM_SCOPES,
+  };
 }
 
 /** Served at `/.well-known/oauth-protected-resource`. */
@@ -137,10 +163,19 @@ export interface AuthorizationServerMetadata {
   scopes_supported: string[];
   bearer_methods_supported: string[];
   issuer: string;
+  authorization_endpoint: string;
   token_endpoint: string;
+  registration_endpoint: string;
   revocation_endpoint: string;
   jwks_uri: string;
+  response_types_supported: string[];
+  response_modes_supported: string[];
   grant_types_supported: string[];
+  code_challenge_methods_supported: string[];
+  token_endpoint_auth_methods_supported: string[];
+  revocation_endpoint_auth_methods_supported: string[];
+  client_id_metadata_document_supported: boolean;
+  authorization_response_iss_parameter_supported: boolean;
   service_documentation: string;
   agent_auth: AgentAuthMetadata;
 }
@@ -160,10 +195,28 @@ export function buildAuthorizationServerMetadata(
     bearer_methods_supported: ["header"],
 
     issuer: appUrl,
+    // OAuth 2.1 with PKCE for remote MCP clients (the MCP authorization
+    // spec): Client ID Metadata Documents preferred, Dynamic Client
+    // Registration for clients that have not moved yet, public clients only.
+    authorization_endpoint: u.authorize,
     token_endpoint: u.token,
+    registration_endpoint: u.register,
     revocation_endpoint: u.revoke,
     jwks_uri: u.jwks,
-    grant_types_supported: [JWT_BEARER_GRANT, CLAIM_GRANT],
+    response_types_supported: ["code"],
+    response_modes_supported: ["query"],
+    grant_types_supported: [
+      AUTHORIZATION_CODE_GRANT,
+      REFRESH_TOKEN_GRANT,
+      JWT_BEARER_GRANT,
+      CLAIM_GRANT,
+    ],
+    code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["none"],
+    revocation_endpoint_auth_methods_supported: ["none"],
+    client_id_metadata_document_supported: true,
+    // RFC 9207: every authorization response carries `iss`.
+    authorization_response_iss_parameter_supported: true,
     service_documentation: u.authMd,
     agent_auth: {
       skill: u.authMd,
@@ -230,6 +283,51 @@ human wants to keep them, or you need their account, run the claim ceremony:
 they sign in and type a code you show them. Follow the steps in order.
 
 Human-readable guide: ${u.docs}
+
+## Start here: use the tools you have
+
+The sandbox needs nothing from your human: it is free, anonymous, isolated
+from every account, and deleted after ${hours(UNCLAIMED_LIFETIME_SECONDS)}. Involve them only to keep
+what you made (the claim), or for what the sandbox lacks: more than
+${SANDBOX_MAX_ENDPOINTS} endpoints, mock responses, forwarding, signature checks, email.
+
+Take the first option you can use:
+
+1. **You are a hosted agent (claude.ai, ChatGPT, a cloud coding agent), or
+   your client takes remote MCP servers:** the server is \`${u.mcp}\`
+   (streamable HTTP). Your human adds it as a custom connector and approves
+   it once in the connect dialog (OAuth); there is no code to type. A client
+   that can send headers may use an API key instead:
+   \`Authorization: Bearer whcc_...\`.
+2. **You can add local MCP servers** (Claude Code, Cursor, Codex, VS Code,
+   Windsurf): \`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp\`, or
+   \`npx -y @webhooks-cc/mcp setup cursor\` (or \`vscode\`, \`codex\`,
+   \`windsurf\`, \`claude-desktop\`). No key needed: your first
+   \`create_endpoint\` registers you. Later, \`connect_account\` then
+   \`wait_for_connection\` moves everything into your human's account.
+3. **You run Claude Code and can install plugins:**
+   \`/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc\` (the
+   MCP server plus the webhook-testing skill).
+4. **You can run code.** Each of these registers, solves the proof of work
+   and reuses the sandbox on the next run:
+   - Python: \`pip install webhooks-cc\`, then \`WebhooksCC.sandbox()\`
+   - Node: \`npm i @webhooks-cc/sdk\`, then \`WebhooksCC.sandbox()\`
+   - Go: \`go get webhooks.cc/go\`, then \`webhookscc.NewSandbox(ctx)\`
+   - Shell: \`whk sandbox create --json\` (install with
+     \`curl -fsSL ${appUrl}/install.sh | sh\`)
+5. **You only have HTTP:** follow Steps 1 to 6 below. Any User-Agent works.
+
+Connected before? All of the above keep the sandbox and your human's
+connection in one file and reuse it: \`~/.config/whk/agent.json\` (or
+\`$XDG_CONFIG_HOME/whk/agent.json\`; macOS
+\`~/Library/Application Support/whk/agent.json\`; Windows
+\`%APPDATA%\\whk\\agent.json\`; \`WHK_AGENT_FILE\` overrides it). Read it before
+registering again: \`WebhooksCC.connected()\` in the SDKs does. Its format is in
+${u.docs}. Your human has an API key? Set \`WHK_API_KEY\` and skip all of
+this.
+
+For the claim email, use the address your human signs in to webhooks.cc
+with (their GitHub or Google primary email if they sign in that way).
 
 ## At a glance
 

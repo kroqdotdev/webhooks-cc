@@ -10,10 +10,22 @@ import { VERIFIED_EMAIL_DEPRECATED_AT, VERIFIED_EMAIL_SUNSET_AT } from "./consta
 export function endpointMoved(description: string): Response {
   const authMd = `${publicEnv().NEXT_PUBLIC_APP_URL}/auth.md`;
   return Response.json(
-    { error: "endpoint_moved", error_description: description, auth_md: authMd },
+    {
+      error: "endpoint_moved",
+      error_description: description,
+      auth_md: authMd,
+      upgrade: UPGRADE_NOTICE,
+    },
     { status: 410, headers: { "Cache-Control": "no-store" } }
   );
 }
+
+/**
+ * What the agent reading a v0.1 answer should tell its human: old MCP
+ * servers (before 1.11.0) and SDKs (before 1.13.0) are the only clients of
+ * these routes, and a current one needs no key and keeps its connection.
+ */
+export const UPGRADE_NOTICE = `This is the retired auth.md v0.1 flow (the email flow stops on ${VERIFIED_EMAIL_SUNSET_AT.slice(0, 10)}). Update: npx -y @webhooks-cc/mcp@latest (no key needed, and the connection is saved), or npm i @webhooks-cc/sdk@latest and use WebhooksCC.sandbox() or WebhooksCC.connect().`;
 
 /**
  * Headers on the deprecated verified_email flow: Deprecation (RFC 9745, a
@@ -28,10 +40,28 @@ export function deprecationHeaders(): Record<string, string> {
   };
 }
 
-/** Adds the deprecation headers to a verified_email response. */
-export function deprecated(response: Response): Response {
-  for (const [key, value] of Object.entries(deprecationHeaders())) {
-    response.headers.set(key, value);
+/**
+ * Adds the deprecation headers to a verified_email response, and the
+ * upgrade notice to its JSON body, where an agent sees it.
+ */
+export async function deprecated(response: Response): Promise<Response> {
+  let next = response;
+  if ((response.headers.get("content-type") ?? "").includes("application/json")) {
+    const body: unknown = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    if (body && typeof body === "object" && !Array.isArray(body)) {
+      const headers = new Headers(response.headers);
+      headers.delete("content-length");
+      next = new Response(JSON.stringify({ ...body, notice: UPGRADE_NOTICE }), {
+        status: response.status,
+        headers,
+      });
+    }
   }
-  return response;
+  for (const [key, value] of Object.entries(deprecationHeaders())) {
+    next.headers.set(key, value);
+  }
+  return next;
 }

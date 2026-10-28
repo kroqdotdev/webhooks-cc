@@ -14,8 +14,8 @@ export default function AgentsPage() {
         title="Connected agents"
         description={
           <>
-            AI agents you approved with a code. They use the API for you, but cannot change your API
-            keys, billing or account.{" "}
+            AI agents you approved with a code, and apps you connected from their own connect
+            dialog. They use the API for you, but cannot change your API keys, billing or account.{" "}
             <Link href="/docs/agents" className={settingsLink}>
               How agents connect
             </Link>

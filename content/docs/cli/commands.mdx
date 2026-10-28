@@ -1,9 +1,9 @@
 ---
 title: "Command Reference"
-description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, and updates."
+description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-28
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -45,7 +45,7 @@ whk auth logout
 
 ## auth status
 
-Show current authentication status and email.
+Show current authentication status and email. When you are not logged in but an agent's account connection is saved (see [sandbox connect](#sandbox)), it says the CLI acts through that connection; with `--json` the answer carries `"via": "agent"` instead of `"via": "login"`.
 
 ```bash
 whk auth status
@@ -197,6 +197,54 @@ Show your plan's request usage and, below it, the pooled quota of every subscrib
 ```bash
 whk usage
 ```
+
+## sandbox
+
+Webhook capture for AI agents and scripts without an account, and the claim that connects an agent to a human's account ([auth.md](/docs/agents)). Every subcommand runs without prompts and supports `--json`; progress messages go to stderr and are left out with `--json`. Errors carry the server's code (`sandbox_full`, `sandbox_endpoint_limit`, `rate_limited` with its `Retry-After`, `invalid_grant`, ...) and exit with a non-zero status.
+
+```bash
+whk sandbox create --json                   # a capture endpoint: slug, url, limits
+whk sandbox list                            # endpoints and the remaining budget
+whk sandbox get <slug>
+whk sandbox delete <slug>                   # frees a slot; the budget is not refunded
+whk sandbox requests <slug>                 # newest first, --limit (1-100), --since <ms>
+whk sandbox request <request-id>
+whk sandbox wait <slug> --timeout 60s       # poll until a request arrives, then print it
+whk sandbox status                          # what the credential file holds (never tokens)
+whk sandbox connect --email you@example.com # connect the agent to your account
+whk sandbox forget --sandbox                # or --claimed, or --all
+```
+
+The first `whk sandbox create` registers anonymously, which takes a short proof of work (a second or two of CPU). Later commands, and later processes, reuse that registration until it expires. A sandbox holds up to 3 endpoints at a time, 25 captures per endpoint and 100 in all; everything is deleted after 24 hours. Sandbox endpoints answer every capture with a plain 200: no mock responses, forwarding, signature checks or email.
+
+`whk sandbox wait` counts requests from the last 5 minutes unless `--since` gives a timestamp in milliseconds. `--count <n>` (up to 25, what one endpoint can capture) waits for several and prints them as a list.
+
+### Connecting an agent to an account
+
+```bash
+whk sandbox connect --email you@example.com --json
+```
+
+```json
+{"status":"pending","registration_id":"...","verification_uri":"https://webhooks.cc/agent/claim?attempt=...","user_code":"123456","expires_at":"2026-10-28T12:15:00.000Z","email":"you@example.com"}
+{"status":"claimed","registration_id":"...","email":"you@example.com","scope":"webhooks:read webhooks:write","assertion_expires":"2027-01-26T12:00:00.000Z","client_name":"whk-cli","saved_at":"2026-10-28T12:01:10.000Z"}
+```
+
+The first line is printed at once: hand the link and the 6-digit code to the human, who signs in (or signs up) with that email address and enters the code. The command keeps polling and prints a second line when the human approves (`claimed`), declines (`declined`), or the code runs out (`expired`, after 15 minutes, or `timeout` when `--timeout` is shorter); anything but `claimed` exits with a non-zero status. When a connection is already saved, it prints `already_connected` and exits without registering again; run `whk sandbox forget --claimed` first to connect another account.
+
+Once connected, the regular commands (`whk list`, `whk create`, `whk requests`, `whk listen`, `whk tunnel`, ...) act for that account whenever no `whk auth login` session exists; a login always wins. The connection lasts 90 days. When the human disconnects the agent under Account, Connected agents, the next command answers `invalid_grant` and the connection is removed from the credential file. The sandbox endpoints of an earlier `whk sandbox create` stay in the sandbox until they expire.
+
+### The credential file
+
+Registrations are saved in a file the CLI shares with the [MCP server](/docs/mcp) and the SDKs, so a connection the human approved once works from every tool and survives restarts:
+
+| Platform | Path                                                                    |
+| -------- | ----------------------------------------------------------------------- |
+| Linux    | `$XDG_CONFIG_HOME/whk/agent.json`, else `~/.config/whk/agent.json`      |
+| macOS    | `~/Library/Application Support/whk/agent.json`                          |
+| Windows  | `%APPDATA%\whk\agent.json`                                              |
+
+Set `WHK_AGENT_FILE` to use another path, for example one per CI job. The file is written with mode `0600` and holds identity assertions and short-lived access tokens, so treat it like `token.json`. Entries are kept per API URL (`--api-url`, `WHK_API_URL`), so a local stack never touches production's. `whk sandbox status` shows what is saved without printing any secret.
 
 ## update
 
