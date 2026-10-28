@@ -13,7 +13,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { PostHogProvider } from "@/components/providers/posthog-provider";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
-import { ANNOUNCEMENTS } from "@/lib/announcements";
+import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
 import { buildAuthMdUrl } from "@/lib/agent/metadata";
 import { appearanceBootstrapScript } from "@/lib/ui-style";
 
@@ -133,7 +133,7 @@ export default function RootLayout({
         {ANNOUNCEMENTS.length > 0 && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){var d=localStorage.getItem(${JSON.stringify(ANNOUNCEMENTS[0].id).replace(/</g, "\\u003c").replace(/>/g, "\\u003e")});if(!d)document.documentElement.style.setProperty('--ann-h','42px')})();`,
+              __html: `(function(){var d=localStorage.getItem(${JSON.stringify(ANNOUNCEMENTS[0].id).replace(/</g, "\\u003c").replace(/>/g, "\\u003e")});if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
             }}
           />
         )}

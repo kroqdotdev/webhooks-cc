@@ -22,6 +22,12 @@ interface SiteHeaderProps {
   children?: React.ReactNode;
   /** The dashboard is short on room, so it drops the blog link. */
   compact?: boolean;
+  /**
+   * Where the header sticks. By default it clears the fixed banners; inside a
+   * scroll frame that already starts below them (the dashboard) pass "0px",
+   * since a sticky offset counts from the frame, not the viewport.
+   */
+  top?: string;
 }
 
 function isActive(pathname: string, href: string): boolean {
@@ -33,7 +39,7 @@ function isActive(pathname: string, href: string): boolean {
  * context, the site links, and either a sign-in link or the account menu. It
  * sits below the fixed maintenance and announcement banners when they show.
  */
-export function SiteHeader({ children, compact = false }: SiteHeaderProps) {
+export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthenticated = useIsAuthenticated();
@@ -70,7 +76,7 @@ export function SiteHeader({ children, compact = false }: SiteHeaderProps) {
   return (
     <header
       className="sticky z-50 shrink-0 border-b-strong border-line bg-background clean:bg-card"
-      style={{ top: siteHeaderTop() }}
+      style={{ top: top ?? siteHeaderTop() }}
     >
       <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">

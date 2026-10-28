@@ -267,7 +267,7 @@ console.log(endpoint.url);`}
                     <h2 className="text-lg font-bold mb-3">Your API key</h2>
                     <p className="text-sm text-muted-foreground mb-3">
                       Paste your API key to fill it into every command below. It stays in your
-                      browser only — nothing is sent or stored.
+                      browser only. Nothing is sent or stored.
                     </p>
                     <input
                       type="password"
@@ -307,8 +307,8 @@ console.log(endpoint.url);`}
                         </a>
                         <p className="text-sm text-muted-foreground mt-1.5">
                           {key !== KEY_PLACEHOLDER
-                            ? "Your key is included in the link — do not share this URL."
-                            : "Paste your key above first — it gets baked into the install link."}
+                            ? "Your key is included in the link, so do not share this URL."
+                            : "Paste your key above first. It gets baked into the install link."}
                         </p>
                       </div>
                       <div>

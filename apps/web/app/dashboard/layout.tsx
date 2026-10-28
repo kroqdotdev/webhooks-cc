@@ -19,12 +19,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <RequireAuth>
       {/* The fixed banners leave a spacer above this frame, so the frame gives up
-          their height rather than pushing its own header under them. */}
+          their height rather than pushing its own header under them. The header
+          sticks to the frame's top edge, which is already below the banners. */}
       <div
         className="flex flex-col overflow-hidden"
         style={{ height: `calc(100vh - ${siteHeaderTop()})` }}
       >
-        <SiteHeader compact>
+        <SiteHeader compact top="0px">
           <EndpointSwitcher />
           <NewEndpointDialog />
         </SiteHeader>

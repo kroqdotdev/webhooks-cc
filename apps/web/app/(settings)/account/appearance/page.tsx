@@ -24,7 +24,11 @@ const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
   { value: "dark", label: "Dark", icon: Moon },
 ];
 
-/** A swatch of the style itself: the lines, shadow and accent it would draw with. */
+/**
+ * A swatch of the style itself: the canvas, lines, shadow and accent it would
+ * draw with, in the mode the page is in. The colours are the style's own
+ * tokens written out, since the page only carries the current style's.
+ */
 function StyleSwatch({ style }: { style: UiStyle }) {
   const classic = style === "classic";
   return (
@@ -32,21 +36,23 @@ function StyleSwatch({ style }: { style: UiStyle }) {
       aria-hidden="true"
       className={cn(
         "h-16 w-24 shrink-0 rounded-md border p-2",
-        classic ? "border-[2px] border-[#000] bg-[#fafaf7]" : "border-[#dfe3e9] bg-[#f7f8fa]"
+        classic
+          ? "border-[2px] border-[#000] bg-[#fafaf7] dark:border-[#fafaf9] dark:bg-[#18181b]"
+          : "border-[#dfe3e9] bg-[#f7f8fa] dark:border-[#282c33] dark:bg-[#0f1115]"
       )}
     >
       <div
         className={cn(
           "h-full w-full rounded-sm border",
           classic
-            ? "border-[2px] border-[#000] bg-white shadow-[3px_3px_0_0_#000]"
-            : "border-[#dfe3e9] bg-white"
+            ? "border-[2px] border-[#000] bg-white shadow-[3px_3px_0_0_#000] dark:border-[#fafaf9] dark:bg-[#222226] dark:shadow-[3px_3px_0_0_#fafaf9]"
+            : "border-[#dfe3e9] bg-white dark:border-[#282c33] dark:bg-[#15181d]"
         )}
       >
         <div
           className={cn(
             "m-1.5 h-2 w-8 rounded-sm",
-            classic ? "bg-[#00d08a]" : "bg-[#0e6b4e]"
+            classic ? "bg-[#00d08a] dark:bg-[#00e6a3]" : "bg-[#0e6b4e] dark:bg-[#3bd39c]"
           )}
         />
       </div>

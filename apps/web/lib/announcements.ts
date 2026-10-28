@@ -24,6 +24,12 @@ export const ANNOUNCEMENTS: Announcement[] = [
 ];
 
 /**
+ * The fixed banners are sized to exactly this, so everything laid out
+ * beneath them can rely on the number rather than measure.
+ */
+export const BANNER_HEIGHT = "42px";
+
+/**
  * Height of the fixed maintenance banner, or none. The announcement banner's
  * height travels as the `--ann-h` CSS variable instead, set client-side by
  * the AnnouncementBanner component so it responds to dismissal at once.
@@ -32,7 +38,7 @@ export function getMaintenanceBannerHeight(): string {
   const maintenance =
     process.env.NEXT_PUBLIC_MAINTENANCE_BANNER_ENABLED === "true" &&
     !!process.env.NEXT_PUBLIC_MAINTENANCE_BANNER_TEXT;
-  return maintenance ? "42px" : "0px";
+  return maintenance ? BANNER_HEIGHT : "0px";
 }
 
 /** The site header's height, for anything sticky that has to clear it. */

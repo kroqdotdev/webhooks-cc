@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
+import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
 
 export interface TocItem {
   id: string;
@@ -38,10 +39,16 @@ export function TableOfContents({ headings }: { headings: TocItem[] }) {
 
   if (headings.length < 3) return null;
 
+  // Sticks just below the header, which itself sits below the fixed banners.
+  const top = `calc(${siteHeaderTop()} + ${SITE_HEADER_HEIGHT} + 1.5rem)`;
+
   return (
     <>
       {/* Desktop: sticky sidebar */}
-      <aside className="hidden xl:block w-48 shrink-0 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
+      <aside
+        className="hidden xl:block w-48 shrink-0 sticky self-start overflow-y-auto"
+        style={{ top, maxHeight: `calc(100vh - ${top} - 1rem)` }}
+      >
         <p className="text-xs font-bold caps-wide text-muted-foreground mb-3">On this page</p>
         <nav aria-label="Table of contents">
           <ul className="space-y-1.5 text-sm">

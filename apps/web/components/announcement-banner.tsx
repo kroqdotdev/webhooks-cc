@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { X } from "lucide-react";
-import { ANNOUNCEMENTS } from "@/lib/announcements";
+import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
 import { isMaintenanceBannerEnabled } from "@/components/maintenance-banner";
 
 function setAnnOffset(h: string) {
@@ -26,7 +26,7 @@ export function AnnouncementBanner() {
     }
     if (!localStorage.getItem(announcementId)) {
       setVisible(true);
-      setAnnOffset("42px");
+      setAnnOffset(BANNER_HEIGHT);
     } else {
       setAnnOffset("0px");
     }
@@ -47,9 +47,13 @@ export function AnnouncementBanner() {
       <div
         role="status"
         aria-live="polite"
-        className={`fixed left-0 right-0 z-[55] ${maintenanceActive ? "top-[42px]" : "top-0"}`}
+        className="fixed left-0 right-0 z-[55]"
+        style={{ top: maintenanceActive ? BANNER_HEIGHT : 0 }}
       >
-        <div className="bg-primary border-b-strong border-line text-primary-foreground px-4 py-2 text-center text-sm font-medium">
+        <div
+          className="flex items-center justify-center bg-primary border-b-strong border-line text-primary-foreground px-4 text-center text-sm font-medium"
+          style={{ height: BANNER_HEIGHT }}
+        >
           <div className="flex items-center justify-center gap-2">
             <span>
               <span className="font-bold">New:</span> {announcement.text}{" "}
