@@ -13,11 +13,16 @@ your own handlers, and verify provider and forwarding signatures.
             endpoint.slug, timeout="30s", match=match_body_path("type", "invoice.paid")
         )
 
+Without an API key, ``WebhooksCC.sandbox()`` gives an AI agent a sandbox for 24
+hours, and ``WebhooksCC.connect(email)`` connects it to a human's account; see
+:mod:`webhooks_cc.sandbox` and :mod:`webhooks_cc.agent`.
+
 Every signature check for each provider is in :mod:`webhooks_cc.verify`.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
+from .agent import AgentAuthError, ClaimAttempt
 from .client import (
     Destinations,
     Emails,
@@ -27,6 +32,7 @@ from .client import (
     RetryOptions,
     WebhooksCC,
 )
+from .credentials import agent_credentials_path
 from .durations import Duration, parse_duration
 from .email import (
     DEFAULT_EMAIL_DOMAIN,
@@ -87,11 +93,14 @@ from .models import (
     Request,
     RequestPage,
     ResponsePreview,
+    SandboxEndpoint,
+    SandboxLimits,
     SenderTime,
     SendTestEmailResult,
     TeamShare,
     UsageInfo,
 )
+from .sandbox import PendingConnection, SandboxClaim, SandboxClient, SandboxError
 from .templates import (
     TEMPLATE_METADATA,
     TEMPLATE_PROVIDERS,
@@ -115,7 +124,9 @@ __all__ = [
     "TEMPLATE_METADATA",
     "TEMPLATE_PROVIDERS",
     "VERIFY_PROVIDERS",
+    "AgentAuthError",
     "BuiltRequest",
+    "ClaimAttempt",
     "DeliveryCounts",
     "Destination",
     "DestinationFilter",
@@ -139,6 +150,7 @@ __all__ = [
     "Forwarding",
     "Matcher",
     "NotFoundError",
+    "PendingConnection",
     "PreviewRequest",
     "PreviewRule",
     "PreviewedDelivery",
@@ -151,6 +163,11 @@ __all__ = [
     "Requests",
     "ResponsePreview",
     "RetryOptions",
+    "SandboxClaim",
+    "SandboxClient",
+    "SandboxEndpoint",
+    "SandboxError",
+    "SandboxLimits",
     "SendTestEmailResult",
     "SenderTime",
     "TeamShare",
@@ -162,6 +179,7 @@ __all__ = [
     "WebhooksCC",
     "WebhooksCCError",
     "__version__",
+    "agent_credentials_path",
     "build_template_request",
     "capture_during",
     "capture_email_during",
