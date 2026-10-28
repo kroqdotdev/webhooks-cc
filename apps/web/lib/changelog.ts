@@ -37,6 +37,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "The clean style is no longer stock shadcn: pages sit on a cool paper canvas with white surfaces and hairlines instead of shadows, buttons, links and selected tabs share one pine green drawn from the brand mint, and the text is set in IBM Plex Sans with IBM Plex Mono for URLs, headers and bodies",
       "Dark mode in the clean style follows the same system, with the mint as the accent and surfaces that step up from the canvas instead of fading into it",
       "Scrollbars take the style's own colours in both modes, a thin grey in clean and a solid bar in classic, instead of the browser's white ones",
+      "The docs sidebar opens only the section you are in; the others start folded, and one you open stays open until you move to another page",
     ],
   },
   {

@@ -5,21 +5,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X, ChevronDown, Search } from "lucide-react";
-import { NAV_SECTIONS } from "@/lib/docs-nav";
+import { NAV_SECTIONS, type NavSection } from "@/lib/docs-nav";
 import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
 
-const STORAGE_KEY = "docs-sidebar-sections";
-
-function getInitialState(): Record<string, boolean> {
-  if (typeof window === "undefined") return {};
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
+function sectionHasPage(section: NavSection, pathname: string): boolean {
+  return section.items.some(
+    (item) =>
+      pathname === item.href ||
+      (!item.depth && item.href !== "/docs" && pathname.startsWith(`${item.href}/`))
+  );
 }
 
+/**
+ * Only the section holding the current page starts open, so the list stays
+ * short enough to scan. A section the reader opens or closes by hand keeps
+ * that state until they navigate; the next page starts tidy again.
+ */
 function SidebarContent({
   onNavigate,
   onSearchClick,
@@ -28,23 +29,21 @@ function SidebarContent({
   onSearchClick?: () => void;
 }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [toggled, setToggled] = useState<{ path: string; open: Record<string, boolean> }>({
+    path: pathname,
+    open: {},
+  });
+  const open = toggled.path === pathname ? toggled.open : {};
 
-  useEffect(() => {
-    setCollapsed(getInitialState());
-  }, []);
+  const isOpen = (section: NavSection) => open[section.id] ?? sectionHasPage(section, pathname);
 
-  const toggle = useCallback((id: string) => {
-    setCollapsed((prev) => {
-      const next = { ...prev, [id]: !prev[id] };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // localStorage unavailable
-      }
-      return next;
-    });
-  }, []);
+  const toggle = (section: NavSection) => {
+    const next = !isOpen(section);
+    setToggled((prev) => ({
+      path: pathname,
+      open: { ...(prev.path === pathname ? prev.open : {}), [section.id]: next },
+    }));
+  };
 
   return (
     <nav className="space-y-1">
@@ -62,19 +61,14 @@ function SidebarContent({
       </button>
 
       {NAV_SECTIONS.map((section) => {
-        const isCollapsed = collapsed[section.id] ?? false;
-        const hasActive = section.items.some(
-          (item) =>
-            pathname === item.href ||
-            (!item.depth && item.href !== "/docs" && pathname.startsWith(`${item.href}/`))
-        );
-        const showItems = hasActive || !isCollapsed;
+        const showItems = isOpen(section);
 
         return (
           <div key={section.id} className="mb-2">
             <button
-              onClick={() => toggle(section.id)}
+              onClick={() => toggle(section)}
               type="button"
+              aria-expanded={showItems}
               className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold caps-wide text-muted-foreground hover:text-foreground cursor-pointer"
             >
               {section.title}
