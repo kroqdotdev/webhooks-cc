@@ -306,11 +306,21 @@ describe("OAuth for remote MCP clients", () => {
       // A client that lost the response retries with the old token...
       const retry = await refresh(tokens.refresh_token);
       expect(retry.status).toBe(200);
-      // ...and the pair it lost stops working.
-      expect((await refresh(rotated.body.refresh_token)).body.error).toBe("invalid_grant");
       const next = await refresh(retry.body.refresh_token);
       expect(next.status).toBe(200);
       tokens = { ...tokens, ...next.body };
+    });
+
+    it("treats the refresh token a retry superseded as a copy", async () => {
+      const pair = verifierPair();
+      const { code, redirectUri } = await approve(pair.challenge);
+      const own = (await redeem(code, pair.verifier, redirectUri)).body;
+      const lost = await refresh(own.refresh_token);
+      const retry = await refresh(own.refresh_token);
+      expect(retry.status).toBe(200);
+      // Whoever holds the superseded token is not the client: the grant ends.
+      expect((await refresh(lost.body.refresh_token)).body.error).toBe("invalid_grant");
+      expect((await refresh(retry.body.refresh_token)).body.error).toBe("invalid_grant");
     });
 
     it("revokes the grant when an old refresh token comes back after the grace period", async () => {
@@ -421,6 +431,16 @@ describe("OAuth for remote MCP clients", () => {
       expect(call.status).toBe(200);
       const called = (await rpc(call)).result;
       expect(called.isError).not.toBe(true);
+    });
+
+    it("refuses JSON-RPC batches", async () => {
+      const res = await mcp(
+        mcpRequest(tokens.access_token, [
+          { jsonrpc: "2.0", id: 1, method: "tools/list" },
+          { jsonrpc: "2.0", id: 2, method: "tools/list" },
+        ])
+      );
+      expect(res.status).toBe(400);
     });
 
     it("ends the grant when the client revokes its refresh token", async () => {

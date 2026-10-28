@@ -114,6 +114,17 @@ describe("proxy: markdown twins", () => {
     expect(getUser).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a marker a client sent itself", async () => {
+    const res = await proxy(
+      new NextRequest("https://webhooks.cc/docs/agents", {
+        headers: { Accept: BROWSER_ACCEPT, "x-markdown-twin": "1" },
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get(MARKED)).toBeNull();
+    expect(res.headers.get("x-middleware-override-headers") ?? "").not.toContain("x-markdown-twin");
+  });
+
   it("serves the twins' own URLs without a session refresh and marks them noindex", async () => {
     for (const path of ["/index.md", "/docs.md", "/docs.md/agents", "/docs/sdk/api.md"]) {
       const res = await proxy(new NextRequest(`https://webhooks.cc${path}`));

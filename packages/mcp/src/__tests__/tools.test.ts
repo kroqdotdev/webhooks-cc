@@ -253,7 +253,15 @@ describe("registerTools", () => {
       expect.objectContaining({ timeout: 50_000, pollInterval: 1_000 })
     );
     await tools.wait_for_request.handler({ endpointSlug: "abc", timeout: "20s" });
-    expect(waitFor).toHaveBeenLastCalledWith("abc", expect.objectContaining({ timeout: 20_000 }));
+    expect(waitFor).toHaveBeenLastCalledWith(
+      "abc",
+      expect.objectContaining({ timeout: 20_000, pollInterval: 1_000 })
+    );
+    await tools.wait_for_request.handler({ endpointSlug: "abc", pollInterval: 1e12 });
+    expect(waitFor).toHaveBeenLastCalledWith(
+      "abc",
+      expect.objectContaining({ pollInterval: 50_000 })
+    );
     const bad = await tools.wait_for_request.handler({ endpointSlug: "abc", timeout: "soon" });
     expect(bad.isError).toBe(true);
   });

@@ -156,6 +156,7 @@ export interface Database {
           oauth_client_id: string | null;
           oauth_refresh_hash: string | null;
           oauth_previous_refresh_hash: string | null;
+          oauth_superseded_refresh_hash: string | null;
           oauth_refreshed_at: string | null;
           created_at: string;
         };
@@ -184,6 +185,7 @@ export interface Database {
           oauth_client_id?: string | null;
           oauth_refresh_hash?: string | null;
           oauth_previous_refresh_hash?: string | null;
+          oauth_superseded_refresh_hash?: string | null;
           oauth_refreshed_at?: string | null;
           created_at?: string;
         };
@@ -212,6 +214,7 @@ export interface Database {
           oauth_client_id?: string | null;
           oauth_refresh_hash?: string | null;
           oauth_previous_refresh_hash?: string | null;
+          oauth_superseded_refresh_hash?: string | null;
           oauth_refreshed_at?: string | null;
           created_at?: string;
         };

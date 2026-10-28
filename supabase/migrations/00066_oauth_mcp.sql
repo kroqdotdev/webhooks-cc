@@ -22,8 +22,9 @@
 --    (RFC 6749 4.1.2).
 -- 5. rotate_oauth_refresh(): the refresh grant. A refresh token presented
 --    again moments after its rotation is a client retrying a lost response
---    (or refreshing twice in parallel): it gets a new pair, and the pair it
---    lost stops working. Later, it is a copy: the registration is revoked.
+--    (or refreshing twice in parallel): it gets a new pair, and the refresh
+--    token it lost is superseded. Later, or a superseded token at any time,
+--    it is a copy: the registration is revoked.
 -- 6. revoke_oauth_refresh(): RFC 7009 for refresh tokens; the access tokens
 --    of the grant go with it.
 -- 7. cleanup_oauth(), hourly: old codes, OAuth registrations whose refresh
@@ -49,6 +50,9 @@ alter table public.agent_registrations
     check (char_length(oauth_client_id) <= 2048),
   add column if not exists oauth_refresh_hash text,
   add column if not exists oauth_previous_refresh_hash text,
+  -- The refresh token a retry inside the grace window replaced: never valid
+  -- again, and a copy if it comes back.
+  add column if not exists oauth_superseded_refresh_hash text,
   add column if not exists oauth_refreshed_at timestamptz;
 
 do $$
@@ -71,6 +75,9 @@ create unique index if not exists agent_registrations_oauth_refresh
 create index if not exists agent_registrations_oauth_previous_refresh
   on public.agent_registrations (oauth_previous_refresh_hash)
   where oauth_previous_refresh_hash is not null;
+create index if not exists agent_registrations_oauth_superseded_refresh
+  on public.agent_registrations (oauth_superseded_refresh_hash)
+  where oauth_superseded_refresh_hash is not null;
 -- The clients still in use, for the client cleanup below.
 create index if not exists agent_registrations_oauth_client
   on public.agent_registrations (oauth_client_id)
@@ -257,18 +264,21 @@ begin
 
   select * into v_registration
     from public.agent_registrations
-   where oauth_previous_refresh_hash = p_refresh_hash
+   where (oauth_previous_refresh_hash = p_refresh_hash
+          or oauth_superseded_refresh_hash = p_refresh_hash)
      and kind = 'oauth'
      and revoked_at is null
      for update;
   if not found then
     return jsonb_build_object('status', 'invalid');
   end if;
-  if v_registration.oauth_refreshed_at > now() - make_interval(secs => p_grace_seconds)
+  if v_registration.oauth_previous_refresh_hash = p_refresh_hash
+     and v_registration.oauth_refreshed_at > now() - make_interval(secs => p_grace_seconds)
      and v_registration.oauth_client_id = p_client_id
      and v_registration.expires_at > now() then
     update public.agent_registrations
-       set oauth_refresh_hash = p_new_hash,
+       set oauth_superseded_refresh_hash = oauth_refresh_hash,
+           oauth_refresh_hash = p_new_hash,
            expires_at = p_expires_at
      where id = v_registration.id;
     return jsonb_build_object(

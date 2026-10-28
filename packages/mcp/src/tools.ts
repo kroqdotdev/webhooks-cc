@@ -987,14 +987,21 @@ function toolTarget(
                 isError: true,
               };
             }
-            // Waits poll the API: bound how long and how often.
+            // Waits poll the API: bound how long and how often, and poll no
+            // faster than once a second even when the caller leaves it out.
             const bounded = { ...input };
+            if ("pollInterval" in shape && input.pollInterval === undefined) {
+              bounded.pollInterval = REMOTE_MIN_POLL_MS;
+            }
             for (const [key, bound] of [
               ["timeout", (ms: number) => Math.min(ms, REMOTE_MAX_WAIT_MS)],
-              ["pollInterval", (ms: number) => Math.max(ms, REMOTE_MIN_POLL_MS)],
+              [
+                "pollInterval",
+                (ms: number) => Math.min(Math.max(ms, REMOTE_MIN_POLL_MS), REMOTE_MAX_WAIT_MS),
+              ],
             ] as const) {
-              if (input[key] === undefined) continue;
-              const ms = durationMs(input[key]);
+              if (bounded[key] === undefined) continue;
+              const ms = durationMs(bounded[key]);
               if (ms === null) {
                 return {
                   ...textContent(`${key} must be a duration such as "30s" or milliseconds.`),

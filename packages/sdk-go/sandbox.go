@@ -171,6 +171,15 @@ func (s *Sandbox) RegistrationID() string { return s.registrationID }
 // deleted.
 func (s *Sandbox) ExpiresAt() time.Time { return s.expiresAt }
 
+// String describes the sandbox without its claim token or tokens.
+func (s *Sandbox) String() string {
+	return fmt.Sprintf("Sandbox{RegistrationID: %s, ExpiresAt: %s}",
+		s.registrationID, s.expiresAt.Format(time.RFC3339))
+}
+
+// GoString keeps %#v from printing the claim token too.
+func (s *Sandbox) GoString() string { return s.String() }
+
 func (s *Sandbox) api(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	s.mu.Lock()
 	closed := s.closed

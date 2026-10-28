@@ -75,9 +75,12 @@ func TestHeaderDigitsSkipJavaScriptWhitespace(t *testing.T) {
 
 func TestConnectionNeverPrintsItsClaimToken(t *testing.T) {
 	conn := &Connection{registrationID: "reg_1", claimToken: "clm_secret"}
-	for _, format := range []string{"%v", "%+v", "%#v", "%s"} {
-		if got := fmt.Sprintf(format, conn); strings.Contains(got, "clm_") {
-			t.Fatalf("%s printed the claim token: %s", format, got)
+	sandbox := &Sandbox{registrationID: "reg_2", claimToken: "clm_secret"}
+	for _, value := range []any{conn, sandbox} {
+		for _, format := range []string{"%v", "%+v", "%#v", "%s"} {
+			if got := fmt.Sprintf(format, value); strings.Contains(got, "clm_") {
+				t.Fatalf("%s printed the claim token: %s", format, got)
+			}
 		}
 	}
 }

@@ -110,6 +110,10 @@ export async function proxy(request: NextRequest) {
   // own URL needs nothing (lib/markdown-negotiation.ts). Twins are public,
   // so neither refreshes the session; nor does the MCP server, which reads
   // only bearer tokens.
+  // The marker is ours to set: a client sending it could otherwise get a
+  // page's markdown under its HTML URL.
+  request.headers.delete(MARKDOWN_TWIN_HEADER);
+
   let response: NextResponse;
   const isRead = request.method === "GET" || request.method === "HEAD";
   if (isRead && negotiatesMarkdown(pathname, request.headers.get("accept"))) {
@@ -117,7 +121,7 @@ export async function proxy(request: NextRequest) {
     headers.set(MARKDOWN_TWIN_HEADER, "1");
     response = NextResponse.next({ request: { headers } });
   } else if (isMcpPath || isMarkdownTwinPath(pathname)) {
-    response = NextResponse.next();
+    response = NextResponse.next({ request: { headers: request.headers } });
   } else {
     response = await refreshSession(request, pathname);
   }

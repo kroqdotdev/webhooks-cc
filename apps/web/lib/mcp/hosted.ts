@@ -86,14 +86,44 @@ export function callerFetch(clientIp: string | null): typeof fetch {
   };
 }
 
-/** registerTools' view of the v2 server. */
-function toolServer(server: McpServer): ToolServer {
+/**
+ * Tool calls one account may have running at once (one process serves
+ * /mcp). Counted around the handler itself, not the HTTP request: a 2025-era
+ * client gets its answer as a stream, so the request returns before the tool
+ * finishes, and a wait tool polls the API for up to 50 seconds.
+ */
+export const MAX_RUNNING_TOOLS_PER_ACCOUNT = 8;
+const running = new Map<string, number>();
+
+/** registerTools' view of the v2 server, with the per-account cap. */
+function toolServer(server: McpServer, account: string): ToolServer {
   return {
     tool(name, description, shape, handler) {
       return server.registerTool(
         name,
         { description, inputSchema: z.object(shape) },
-        (args: unknown) => handler(args as Parameters<typeof handler>[0])
+        async (args: unknown) => {
+          const busy = running.get(account) ?? 0;
+          if (busy >= MAX_RUNNING_TOOLS_PER_ACCOUNT) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `At most ${MAX_RUNNING_TOOLS_PER_ACCOUNT} tool calls run at once per account. Retry when one finishes.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          running.set(account, busy + 1);
+          try {
+            return await handler(args as Parameters<typeof handler>[0]);
+          } finally {
+            const left = (running.get(account) ?? 1) - 1;
+            if (left > 0) running.set(account, left);
+            else running.delete(account);
+          }
+        }
       );
     },
   };
@@ -102,6 +132,8 @@ function toolServer(server: McpServer): ToolServer {
 export interface CallerAuth {
   token: string;
   clientIp: string | null;
+  /** The account the token acts for; the cap on running tools is per account. */
+  userId: string;
 }
 
 function buildServer(caller: CallerAuth | undefined): McpServer {
@@ -120,7 +152,7 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
     webhookUrl: publicEnv().NEXT_PUBLIC_WEBHOOK_URL,
     fetch: callerFetch(caller?.clientIp ?? null),
   });
-  registerTools(toolServer(server), client, { remote: true });
+  registerTools(toolServer(server, caller?.userId ?? "anonymous"), client, { remote: true });
   return server;
 }
 
@@ -131,6 +163,7 @@ export const mcpHandler = createMcpHandler(
         ? {
             token: authInfo.token,
             clientIp: (authInfo.extra?.clientIp as string | undefined) ?? null,
+            userId: (authInfo.extra?.userId as string | undefined) ?? authInfo.token,
           }
         : undefined
     ),
@@ -138,6 +171,8 @@ export const mcpHandler = createMcpHandler(
     // Tool results only, no streaming: one JSON body per request.
     responseMode: "json",
     maxRequestBodySize: 1024 * 1024,
+    // The server sends no change notifications; keep idle listen streams few.
+    maxSubscriptions: 64,
     // Mostly a client's malformed or unsupported request, not our fault: a
     // log line, never the request itself.
     // The error's name only: a JSON parse error's message quotes the body.

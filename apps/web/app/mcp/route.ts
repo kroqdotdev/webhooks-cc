@@ -5,6 +5,7 @@ import { POST_CLAIM_SCOPES } from "@/lib/agent/constants";
 import { mcpHandler } from "@/lib/mcp/hosted";
 import { preflight, withCors } from "@/lib/oauth/cors";
 import { validateApiKeyWithMetadata } from "@/lib/supabase/api-keys";
+import { readBoundedBody } from "@/lib/agent/http";
 import { reportError } from "@/lib/observability";
 
 // Authenticated per request, never cached.
@@ -18,14 +19,6 @@ export const dynamic = "force-dynamic";
  * challenge that starts the client's OAuth flow.
  */
 
-/**
- * Requests one token may have running at once (one process serves /mcp).
- * A wait tool polls the API for up to 50 seconds; this keeps a single token
- * from stacking hundreds of them.
- */
-const MAX_INFLIGHT_PER_TOKEN = 4;
-const inflight = new Map<string, number>();
-
 function challenge(error?: { code: string; description: string }): string {
   const app = publicEnv().NEXT_PUBLIC_APP_URL;
   const parts = [
@@ -36,6 +29,17 @@ function challenge(error?: { code: string; description: string }): string {
     parts.push(`error="${error.code}"`, `error_description="${error.description}"`);
   }
   return `Bearer ${parts.join(", ")}`;
+}
+
+const MAX_BODY_BYTES = 1024 * 1024;
+
+function rpcError(status: number, code: number, message: string): Response {
+  return withCors(
+    Response.json(
+      { jsonrpc: "2.0", id: null, error: { code, message } },
+      { status, headers: { "Cache-Control": "no-store" } }
+    )
+  );
 }
 
 function refuse(status: 401 | 403, error?: { code: string; description: string }): Response {
@@ -89,39 +93,32 @@ async function handle(request: Request): Promise<Response> {
   const limit = await checkRateLimitByKeyWithInfo(`mcp:${validation.keyId}`, 300, 60_000);
   if (limit.response) return withCors(limit.response);
 
-  const key = validation.keyId ?? token;
-  const running = inflight.get(key) ?? 0;
-  if (running >= MAX_INFLIGHT_PER_TOKEN) {
-    return withCors(
-      Response.json(
-        {
-          jsonrpc: "2.0",
-          id: null,
-          error: {
-            code: -32000,
-            message: `At most ${MAX_INFLIGHT_PER_TOKEN} requests at a time per token. Retry when one finishes.`,
-          },
-        },
-        { status: 429, headers: { "Retry-After": "5" } }
-      )
-    );
+  // One message per request: a JSON-RPC batch (2025-era clients may send
+  // one) would start many tools from a single request.
+  let parsedBody: unknown;
+  if (request.method === "POST") {
+    const raw = await readBoundedBody(request, MAX_BODY_BYTES);
+    if (!raw) return rpcError(413, -32600, "The request body is too large.");
+    try {
+      parsedBody = JSON.parse(new TextDecoder().decode(raw));
+    } catch {
+      return rpcError(400, -32700, "The request body is not JSON.");
+    }
+    if (Array.isArray(parsedBody)) {
+      return rpcError(400, -32600, "Batches are not supported; send one message per request.");
+    }
   }
-  inflight.set(key, running + 1);
-  try {
-    const response = await mcpHandler.fetch(request, {
-      authInfo: {
-        token,
-        clientId: validation.agentRegistrationId ?? "api-key",
-        scopes: POST_CLAIM_SCOPES,
-        extra: { clientIp: getClientIp(request) },
-      },
-    });
-    return withCors(response);
-  } finally {
-    const left = (inflight.get(key) ?? 1) - 1;
-    if (left > 0) inflight.set(key, left);
-    else inflight.delete(key);
-  }
+
+  const response = await mcpHandler.fetch(request, {
+    parsedBody,
+    authInfo: {
+      token,
+      clientId: validation.agentRegistrationId ?? "api-key",
+      scopes: POST_CLAIM_SCOPES,
+      extra: { clientIp: getClientIp(request), userId: validation.userId },
+    },
+  });
+  return withCors(response);
 }
 
 export function POST(request: Request) {

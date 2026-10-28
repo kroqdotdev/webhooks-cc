@@ -66,8 +66,8 @@ export const OAUTH_CODE_TTL_SECONDS = 5 * 60;
 export const OAUTH_REFRESH_TTL_SECONDS = 90 * 24 * 60 * 60;
 /**
  * A refresh token presented again this soon after its rotation is a client
- * retrying a lost response: refused, but the grant survives. Later, it is a
- * copy, and the grant is revoked.
+ * retrying a lost response: it gets a new pair, and the one it lost is
+ * superseded. Later, it is a copy, and the grant is revoked.
  */
 export const OAUTH_REFRESH_GRACE_SECONDS = 60;
 export const AUTHORIZATION_CODE_GRANT = "authorization_code";
