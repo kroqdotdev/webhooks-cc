@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, LogOut, Settings, Users } from "lucide-react";
+import { ChevronDown, LayoutDashboard, LogOut, Palette, Settings, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface UserProfile {
@@ -95,9 +95,20 @@ export function UserDropdown() {
         <ChevronDown className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem onClick={() => router.push("/dashboard")} className="cursor-pointer">
+          <LayoutDashboard className="h-4 w-4 mr-2" />
+          Dashboard
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => router.push("/account")} className="cursor-pointer">
           <Settings className="h-4 w-4 mr-2" />
           Account
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => router.push("/account/appearance")}
+          className="cursor-pointer"
+        >
+          <Palette className="h-4 w-4 mr-2" />
+          Appearance
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => router.push("/teams")} className="cursor-pointer">
           <Users className="h-4 w-4 mr-2" />

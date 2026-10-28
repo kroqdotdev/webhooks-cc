@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AppHeader } from "@/components/nav/app-header";
+import { SiteHeader } from "@/components/nav/site-header";
 
 export const metadata: Metadata = {
   title: "Page Not Found",
@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 export default function NotFound() {
   return (
     <div className="min-h-screen">
-      <AppHeader />
-      <main className="pt-32 pb-20 px-4">
+      <SiteHeader />
+      <main className="pt-24 pb-20 px-4">
         <div className="max-w-2xl mx-auto text-center">
           <h1 className="text-6xl font-bold mb-4">404</h1>
           <p className="text-xl text-muted-foreground mb-8">

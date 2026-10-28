@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { getMaintenanceTopOffset } from "@/lib/announcements";
+import { SiteHeader } from "@/components/nav/site-header";
 
 /**
  * Minimal nav + centered column shared by the auth pages (/login and
@@ -12,38 +10,9 @@ import { getMaintenanceTopOffset } from "@/lib/announcements";
 export function AuthPageShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
-      <nav
-        className="fixed left-4 right-4 z-50"
-        style={{ top: `calc(${getMaintenanceTopOffset()} + var(--ann-h, 0px))` }}
-      >
-        <div className="max-w-6xl mx-auto rounded-lg border-strong border-line bg-background shadow-raised">
-          <div className="px-6 h-16 flex items-center justify-between">
-            <Link href="/" className="font-bold text-xl tracking-tight">
-              webhooks.cc
-            </Link>
-            <div className="flex items-center gap-6">
-              <Link
-                href="/docs"
-                className="hidden sm:inline text-muted-foreground hover:text-foreground font-medium transition-colors"
-              >
-                Docs
-              </Link>
-              <Link
-                href="/installation"
-                className="hidden sm:inline text-muted-foreground hover:text-foreground font-medium transition-colors"
-              >
-                Install
-              </Link>
-              <ThemeToggle />
-              <Link href="/" className="ui-btn-outline text-sm py-2 px-4 text-center">
-                Home
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <SiteHeader />
 
-      <main className="flex-1 flex items-center justify-center px-4 pt-24">
+      <main className="flex-1 flex items-center justify-center px-4 pt-10">
         <div className="w-full max-w-sm">{children}</div>
       </main>
     </div>

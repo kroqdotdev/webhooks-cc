@@ -11,9 +11,13 @@ export function DashboardAnnouncement() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (announcementId && !localStorage.getItem(`dash-${announcementId}`)) {
-      setVisible(true);
+    if (!announcementId) return;
+    try {
+      if (localStorage.getItem(`dash-${announcementId}`)) return;
+    } catch {
+      // Storage is blocked: show it, dismissal lasts for this page view.
     }
+    setVisible(true);
   }, [announcementId]);
 
   if (!visible || !announcement) return null;
@@ -21,7 +25,11 @@ export function DashboardAnnouncement() {
   const { id, text, cta } = announcement;
 
   function dismiss() {
-    localStorage.setItem(`dash-${id}`, "1");
+    try {
+      localStorage.setItem(`dash-${id}`, "1");
+    } catch {
+      // Storage is blocked.
+    }
     setVisible(false);
   }
 

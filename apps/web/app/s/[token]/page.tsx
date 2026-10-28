@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowRight, EyeOff } from "lucide-react";
-import { FloatingNavbar } from "@/components/nav/floating-navbar";
+import { SiteHeader } from "@/components/nav/site-header";
 import { RequestDetail } from "@/components/dashboard/request-detail";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
 import { snapshotToRequest } from "@/lib/request-share";
@@ -49,9 +49,9 @@ export default async function SharedRequestPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen">
-      <FloatingNavbar />
+      <SiteHeader />
 
-      <main className="max-w-6xl mx-auto px-4 pt-28 pb-16">
+      <main className="max-w-6xl mx-auto px-4 pt-10 pb-16">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-xs font-bold caps text-muted-foreground mb-1">Shared request</p>

@@ -1,17 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   appearanceBootstrapScript,
-  UI_STYLE_ASSIGNED_STORAGE_KEY,
+  readUiStyle,
+  storeChosenUiStyle,
   UI_STYLE_SOURCE_STORAGE_KEY,
   UI_STYLE_STORAGE_KEY,
 } from "./ui-style";
 
 /** Runs the inline bootstrap script against a fake browser. */
 function run(options: {
-  split: number;
   storage?: Record<string, string>;
-  cookie?: string;
-  random?: number;
   prefersDark?: boolean;
   blockStorage?: boolean;
 }) {
@@ -21,87 +19,114 @@ function run(options: {
       if (options.blockStorage) throw new Error("storage blocked");
       return store.get(key) ?? null;
     },
-    setItem: (key: string, value: string) => void store.set(key, value),
-    key: (index: number) => [...store.keys()][index] ?? null,
-    get length() {
-      return store.size;
-    },
   };
   const classes = new Set<string>();
   const dataset: Record<string, string> = {};
   const document = {
     documentElement: { dataset, classList: { add: (c: string) => void classes.add(c) } },
-    cookie: options.cookie ?? "",
   };
   const window = { matchMedia: () => ({ matches: options.prefersDark ?? false }) };
-  const math = { ...Math, random: () => options.random ?? 0.5 };
 
-  const script = appearanceBootstrapScript(options.split);
-  new Function("document", "localStorage", "window", "Math", script)(
+  new Function("document", "localStorage", "window", appearanceBootstrapScript())(
     document,
     localStorage,
-    window,
-    math
+    window
   );
 
-  return { style: dataset.style, classes, stored: Object.fromEntries(store) };
+  return { style: dataset.style, classes };
 }
 
 describe("appearanceBootstrapScript", () => {
   it("applies dark mode from the stored theme before paint", () => {
-    expect(run({ split: 0, storage: { theme: "dark" } }).classes.has("dark")).toBe(true);
-    expect(run({ split: 0, prefersDark: true }).classes.has("dark")).toBe(true);
-    expect(
-      run({ split: 0, storage: { theme: "light" }, prefersDark: true }).classes.has("dark")
-    ).toBe(false);
+    expect(run({ storage: { theme: "dark" } }).classes.has("dark")).toBe(true);
+    expect(run({ prefersDark: true }).classes.has("dark")).toBe(true);
+    expect(run({ storage: { theme: "light" }, prefersDark: true }).classes.has("dark")).toBe(false);
+  });
+
+  it("gives everyone the clean style by default", () => {
+    expect(run({}).style).toBe("clean");
+  });
+
+  it("keeps a style the visitor picked", () => {
+    const picked = {
+      [UI_STYLE_STORAGE_KEY]: "classic",
+      [UI_STYLE_SOURCE_STORAGE_KEY]: "chosen",
+    };
+    expect(run({ storage: picked }).style).toBe("classic");
+  });
+
+  it("ignores a style the retired split assigned", () => {
+    const assigned = {
+      [UI_STYLE_STORAGE_KEY]: "classic",
+      [UI_STYLE_SOURCE_STORAGE_KEY]: "assigned",
+      "ui-style-assigned": "classic",
+    };
+    expect(run({ storage: assigned }).style).toBe("clean");
+    expect(run({ storage: { [UI_STYLE_STORAGE_KEY]: "classic" } }).style).toBe("clean");
   });
 
   it("still honors the system theme when storage is blocked", () => {
-    const result = run({ split: 100, blockStorage: true, prefersDark: true, random: 0 });
+    const result = run({ blockStorage: true, prefersDark: true });
     expect(result.classes.has("dark")).toBe(true);
-    expect(result.style).toBe("classic");
+    expect(result.style).toBe("clean");
   });
+});
 
-  it("keeps a style the visitor already has", () => {
-    const result = run({ split: 100, storage: { [UI_STYLE_STORAGE_KEY]: "classic" } });
-    expect(result.style).toBe("classic");
-    expect(result.stored[UI_STYLE_ASSIGNED_STORAGE_KEY]).toBeUndefined();
+/** A localStorage stand-in for the client helpers, which read the real global. */
+function stubStorage(initial: Record<string, string> = {}, blocked = false) {
+  const store = new Map(Object.entries(initial));
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => {
+      if (blocked) throw new Error("storage blocked");
+      return store.get(key) ?? null;
+    },
+    setItem: (key: string, value: string) => {
+      if (blocked) throw new Error("storage blocked");
+      store.set(key, value);
+    },
   });
+  return store;
+}
 
-  it("leaves visitors who have been here before out of the split", () => {
-    const seenBefore: Record<string, string>[] = [{ theme: "dark" }, { ph_phc_test_posthog: "{}" }];
-    for (const storage of seenBefore) {
-      const result = run({ split: 100, storage, random: 0 });
-      expect(result.style).toBe("classic");
-      expect(result.stored[UI_STYLE_STORAGE_KEY]).toBeUndefined();
+describe("readUiStyle", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // The Appearance page's radio must show what the inline script applied, so
+  // the two read the same storage the same way.
+  it("agrees with the bootstrap script for every stored state", () => {
+    const cases: Record<string, string>[] = [
+      {},
+      { [UI_STYLE_STORAGE_KEY]: "classic" },
+      { [UI_STYLE_STORAGE_KEY]: "classic", [UI_STYLE_SOURCE_STORAGE_KEY]: "assigned" },
+      { [UI_STYLE_STORAGE_KEY]: "classic", [UI_STYLE_SOURCE_STORAGE_KEY]: "chosen" },
+      { [UI_STYLE_STORAGE_KEY]: "clean", [UI_STYLE_SOURCE_STORAGE_KEY]: "chosen" },
+      { [UI_STYLE_STORAGE_KEY]: "neon", [UI_STYLE_SOURCE_STORAGE_KEY]: "chosen" },
+    ];
+    for (const storage of cases) {
+      stubStorage(storage);
+      expect(readUiStyle(), JSON.stringify(storage)).toBe(run({ storage }).style);
     }
-    const withSession = run({ split: 100, cookie: "sb-abc-auth-token=x", random: 0 });
-    expect(withSession.style).toBe("classic");
-    expect(withSession.stored[UI_STYLE_STORAGE_KEY]).toBeUndefined();
   });
 
-  it("assigns a brand-new browser and records the variant", () => {
-    const clean = run({ split: 50, random: 0.2 });
-    expect(clean.style).toBe("clean");
-    expect(clean.stored).toMatchObject({
-      [UI_STYLE_STORAGE_KEY]: "clean",
-      [UI_STYLE_SOURCE_STORAGE_KEY]: "assigned",
-      [UI_STYLE_ASSIGNED_STORAGE_KEY]: "clean",
-    });
+  it("falls back to clean when storage is blocked", () => {
+    stubStorage({}, true);
+    expect(readUiStyle()).toBe("clean");
+  });
+});
 
-    const classic = run({ split: 50, random: 0.9 });
-    expect(classic.style).toBe("classic");
-    expect(classic.stored[UI_STYLE_ASSIGNED_STORAGE_KEY]).toBe("classic");
+describe("storeChosenUiStyle", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("records a pick the script will keep", () => {
+    const store = stubStorage();
+    storeChosenUiStyle("classic");
+    expect(store.get(UI_STYLE_SOURCE_STORAGE_KEY)).toBe("chosen");
+    expect(run({ storage: Object.fromEntries(store) }).style).toBe("classic");
+    expect(readUiStyle()).toBe("classic");
   });
 
-  it("stops assigning when the split is zero", () => {
-    const result = run({ split: 0, random: 0 });
-    expect(result.style).toBe("classic");
-    expect(result.stored[UI_STYLE_STORAGE_KEY]).toBeUndefined();
-  });
-
-  it("clamps the split percentage", () => {
-    expect(appearanceBootstrapScript(140)).toContain("100 > 0");
-    expect(appearanceBootstrapScript(-5)).toContain("0 > 0");
+  it("does not throw when storage is blocked", () => {
+    stubStorage({}, true);
+    expect(() => storeChosenUiStyle("classic")).not.toThrow();
   });
 });

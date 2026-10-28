@@ -5,21 +5,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X, ChevronDown, Search } from "lucide-react";
-import { NAV_SECTIONS } from "@/lib/docs-nav";
-import { getMaintenanceTopOffset } from "@/lib/announcements";
+import { NAV_SECTIONS, type NavSection } from "@/lib/docs-nav";
+import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
 
-const STORAGE_KEY = "docs-sidebar-sections";
-
-function getInitialState(): Record<string, boolean> {
-  if (typeof window === "undefined") return {};
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
+function sectionHasPage(section: NavSection, pathname: string): boolean {
+  return section.items.some(
+    (item) =>
+      pathname === item.href ||
+      (!item.depth && item.href !== "/docs" && pathname.startsWith(`${item.href}/`))
+  );
 }
 
+/**
+ * Only the section holding the current page starts open, so the list stays
+ * short enough to scan. A section the reader opens or closes by hand keeps
+ * that state until they navigate; the next page starts tidy again.
+ */
 function SidebarContent({
   onNavigate,
   onSearchClick,
@@ -28,23 +29,21 @@ function SidebarContent({
   onSearchClick?: () => void;
 }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [toggled, setToggled] = useState<{ path: string; open: Record<string, boolean> }>({
+    path: pathname,
+    open: {},
+  });
+  const open = toggled.path === pathname ? toggled.open : {};
 
-  useEffect(() => {
-    setCollapsed(getInitialState());
-  }, []);
+  const isOpen = (section: NavSection) => open[section.id] ?? sectionHasPage(section, pathname);
 
-  const toggle = useCallback((id: string) => {
-    setCollapsed((prev) => {
-      const next = { ...prev, [id]: !prev[id] };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // localStorage unavailable
-      }
-      return next;
-    });
-  }, []);
+  const toggle = (section: NavSection) => {
+    const next = !isOpen(section);
+    setToggled((prev) => ({
+      path: pathname,
+      open: { ...(prev.path === pathname ? prev.open : {}), [section.id]: next },
+    }));
+  };
 
   return (
     <nav className="space-y-1">
@@ -62,19 +61,14 @@ function SidebarContent({
       </button>
 
       {NAV_SECTIONS.map((section) => {
-        const isCollapsed = collapsed[section.id] ?? false;
-        const hasActive = section.items.some(
-          (item) =>
-            pathname === item.href ||
-            (!item.depth && item.href !== "/docs" && pathname.startsWith(`${item.href}/`))
-        );
-        const showItems = hasActive || !isCollapsed;
+        const showItems = isOpen(section);
 
         return (
           <div key={section.id} className="mb-2">
             <button
-              onClick={() => toggle(section.id)}
+              onClick={() => toggle(section)}
               type="button"
+              aria-expanded={showItems}
               className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold caps-wide text-muted-foreground hover:text-foreground cursor-pointer"
             >
               {section.title}
@@ -122,15 +116,14 @@ function SidebarContent({
   );
 }
 
-// Sidebar offsets: base values shift by maintenance (server-known) + announcement (CSS var).
-// Base offset (no banners): 7rem for mobile toggle, 6rem for panels, 6rem for desktop.
+// Everything sticky or fixed here hangs off the header, which itself sits below
+// the fixed banners (see siteHeaderTop).
 function useSidebarStyles() {
-  const base = getMaintenanceTopOffset(); // "1rem" or "3.5rem"
-  // toggle sits below the navbar (navbar height ~4rem + gap)
-  const toggle = `calc(${base} + var(--ann-h, 0px) + 5rem)`;
-  const panel = `calc(${base} + var(--ann-h, 0px) + 4.5rem)`;
-  const desktop = `calc(${base} + var(--ann-h, 0px) + 4.5rem)`;
-  const maxH = `calc(100vh - ${base} - var(--ann-h, 0px) - 6rem)`;
+  const headerBottom = `calc(${siteHeaderTop()} + ${SITE_HEADER_HEIGHT})`;
+  const toggle = `calc(${headerBottom} + 1rem)`;
+  const panel = headerBottom;
+  const desktop = headerBottom;
+  const maxH = `calc(100vh - ${headerBottom})`;
   return { toggle, panel, desktop, maxH };
 }
 
@@ -180,7 +173,7 @@ export function DocsSidebar() {
         aria-label="Documentation navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "md:hidden fixed left-4 bottom-4 z-[35] w-64 rounded-lg border-strong border-line bg-background shadow-raised overflow-y-auto py-6 px-2 transition-transform",
+          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r-strong border-line bg-background clean:bg-card shadow-raised overflow-y-auto py-6 px-2 transition-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ top: s.panel }}
@@ -190,7 +183,7 @@ export function DocsSidebar() {
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:block w-64 shrink-0 sticky self-start rounded-lg border-strong border-line bg-background shadow-raised overflow-y-auto py-6 px-2"
+        className="hidden md:block w-64 shrink-0 sticky self-start border-r-strong border-line overflow-y-auto py-8 pr-4"
         style={{ top: s.desktop, maxHeight: s.maxH }}
       >
         <SidebarContent onSearchClick={handleSearchClick} />

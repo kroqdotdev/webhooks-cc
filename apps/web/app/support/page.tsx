@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { FloatingNavbar } from "@/components/nav/floating-navbar";
-import { BackButton } from "@/components/nav/back-button";
+import { SiteHeader } from "@/components/nav/site-header";
 import { Mail, Bug, CreditCard, MessageSquare } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
 
@@ -14,11 +13,9 @@ export const metadata = createPageMetadata({
 export default function SupportPage() {
   return (
     <div className="min-h-screen">
-      <FloatingNavbar>
-        <BackButton />
-      </FloatingNavbar>
+      <SiteHeader />
 
-      <main className="max-w-3xl mx-auto px-6 pt-28 pb-10 md:px-10">
+      <main className="max-w-3xl mx-auto px-6 pt-10 pb-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Support</h1>
         <p className="text-sm text-muted-foreground mb-12">
           Got a question, found a bug, or need help with billing? We&rsquo;re here to help.

@@ -1,34 +1,22 @@
 /**
- * Visual style bootstrap and the A/B assignment behind it.
+ * Visual style bootstrap.
  *
- * The style has to be on <html> before first paint, so it cannot come from a
- * PostHog feature flag: posthog-js resolves flags after load, which would
- * re-skin the page in front of the visitor. The coin flip therefore happens
- * here, in the inline script, and PostHog only analyses the result (see
- * components/providers/posthog-provider.tsx, which reports the variant as
- * $feature/UI_STYLE_FLAG_KEY plus a $feature_flag_called exposure).
+ * Everyone gets the clean style unless they picked the classic one themselves
+ * (Account > Appearance). The style has to be on <html> before first paint, so
+ * the inline script below reads the browser's choice and applies it, along
+ * with dark mode, before React loads.
  *
- * Only a browser with no trace of an earlier visit joins the split. Anyone who
- * has been here before keeps the classic style and stays out of the experiment.
+ * The choice lives in the browser: a visitor who picked classic keeps it on
+ * that browser, including after signing out.
  */
 
 export type UiStyle = "classic" | "clean";
 
-/** "assigned" means the split chose it, "chosen" means the visitor did. */
-export type UiStyleSource = "assigned" | "chosen";
+export const DEFAULT_UI_STYLE: UiStyle = "clean";
 
 export const UI_STYLE_STORAGE_KEY = "ui-style";
+/** "chosen" marks a pick the visitor made; anything else falls back to the default. */
 export const UI_STYLE_SOURCE_STORAGE_KEY = "ui-style-source";
-/** The variant the split handed out, kept even after the visitor switches away. */
-export const UI_STYLE_ASSIGNED_STORAGE_KEY = "ui-style-assigned";
-/** PostHog experiment key; its results read $feature/<key> off events. */
-export const UI_STYLE_FLAG_KEY = "ui-style";
-
-export interface UiStyleState {
-  style: UiStyle;
-  source: UiStyleSource | null;
-  assigned: UiStyle | null;
-}
 
 function readKey(key: string): string | null {
   try {
@@ -38,21 +26,14 @@ function readKey(key: string): string | null {
   }
 }
 
-function asStyle(value: string | null): UiStyle | null {
-  return value === "classic" || value === "clean" ? value : null;
+/** The style the inline script applied (and any later switch). Client only. */
+export function readUiStyle(): UiStyle {
+  const stored = readKey(UI_STYLE_STORAGE_KEY);
+  const chosen = readKey(UI_STYLE_SOURCE_STORAGE_KEY) === "chosen";
+  return chosen && (stored === "classic" || stored === "clean") ? stored : DEFAULT_UI_STYLE;
 }
 
-/** Reads what the inline script (and any later switch) left behind. Client only. */
-export function readUiStyleState(): UiStyleState {
-  const source = readKey(UI_STYLE_SOURCE_STORAGE_KEY);
-  return {
-    style: asStyle(readKey(UI_STYLE_STORAGE_KEY)) ?? "classic",
-    source: source === "assigned" || source === "chosen" ? source : null,
-    assigned: asStyle(readKey(UI_STYLE_ASSIGNED_STORAGE_KEY)),
-  };
-}
-
-/** Records a visitor's own pick, which also takes them out of future splits. */
+/** Records the visitor's own pick. */
 export function storeChosenUiStyle(style: UiStyle): void {
   try {
     localStorage.setItem(UI_STYLE_STORAGE_KEY, style);
@@ -63,12 +44,11 @@ export function storeChosenUiStyle(style: UiStyle): void {
 }
 
 /**
- * Source of the script that runs before first paint: dark mode class, then
- * the style, assigning one to brand-new browsers when splitPercent is above 0.
+ * Source of the script that runs before first paint: the dark mode class,
+ * then the style. A style stored by the retired A/B split (source "assigned")
+ * no longer counts; only a pick the visitor made keeps them on classic.
  */
-export function appearanceBootstrapScript(splitPercent: number): string {
-  const split = Math.min(100, Math.max(0, Math.round(splitPercent) || 0));
-
+export function appearanceBootstrapScript(): string {
   return `(function(){
   var root = document.documentElement;
   var storedTheme = null;
@@ -80,27 +60,12 @@ export function appearanceBootstrapScript(splitPercent: number): string {
     prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   } catch (e) {}
   if (storedTheme === 'dark' || (storedTheme !== 'light' && prefersDark)) root.classList.add('dark');
-  var style = 'classic';
+  var style = '${DEFAULT_UI_STYLE}';
   try {
     var stored = localStorage.getItem('${UI_STYLE_STORAGE_KEY}');
-    if (stored === 'clean' || stored === 'classic') {
-      style = stored;
-    } else if (${split} > 0 && !seenBefore()) {
-      style = Math.random() * 100 < ${split} ? 'clean' : 'classic';
-      localStorage.setItem('${UI_STYLE_STORAGE_KEY}', style);
-      localStorage.setItem('${UI_STYLE_SOURCE_STORAGE_KEY}', 'assigned');
-      localStorage.setItem('${UI_STYLE_ASSIGNED_STORAGE_KEY}', style);
-    }
+    var chosen = localStorage.getItem('${UI_STYLE_SOURCE_STORAGE_KEY}') === 'chosen';
+    if (chosen && (stored === 'clean' || stored === 'classic')) style = stored;
   } catch (e) {}
   root.dataset.style = style;
-
-  function seenBefore() {
-    if (localStorage.getItem('theme')) return true;
-    for (var i = 0; i < localStorage.length; i++) {
-      var key = localStorage.key(i);
-      if (key && key.indexOf('ph_') === 0 && key.indexOf('_posthog') > 0) return true;
-    }
-    return document.cookie.indexOf('sb-') !== -1;
-  }
 })();`;
 }

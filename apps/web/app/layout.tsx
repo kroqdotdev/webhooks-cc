@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import {
   DEFAULT_OG_IMAGE_PATH,
@@ -13,10 +13,9 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { PostHogProvider } from "@/components/providers/posthog-provider";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
-import { ANNOUNCEMENTS } from "@/lib/announcements";
+import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
 import { buildAuthMdUrl } from "@/lib/agent/metadata";
 import { appearanceBootstrapScript } from "@/lib/ui-style";
-import { publicEnv } from "@/lib/env";
 
 // Font variables live on <html> so globals.css can pick the face for the active style.
 const spaceGrotesk = Space_Grotesk({
@@ -24,10 +23,18 @@ const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
 });
 
-// Only the clean style uses Geist, so classic visitors never download it.
-const geist = Geist({
+// Only the clean style uses the Plex pair, so classic visitors never download it.
+const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
-  variable: "--font-geist",
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-sans",
+  preload: false,
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-plex-mono",
   preload: false,
 });
 
@@ -99,7 +106,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${geist.variable} ${jetbrainsMono.variable}`}
+      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} ${plexSans.variable} ${plexMono.variable}`}
       suppressHydrationWarning
     >
       <head>
@@ -120,13 +127,13 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: appearanceBootstrapScript(publicEnv().NEXT_PUBLIC_UI_STYLE_SPLIT),
+            __html: appearanceBootstrapScript(),
           }}
         />
         {ANNOUNCEMENTS.length > 0 && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){var d=localStorage.getItem(${JSON.stringify(ANNOUNCEMENTS[0].id).replace(/</g, "\\u003c").replace(/>/g, "\\u003e")});if(!d)document.documentElement.style.setProperty('--ann-h','42px')})();`,
+              __html: `(function(){var d=null;try{d=localStorage.getItem(${JSON.stringify(ANNOUNCEMENTS[0].id).replace(/</g, "\\u003c").replace(/>/g, "\\u003e")})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
             }}
           />
         )}
