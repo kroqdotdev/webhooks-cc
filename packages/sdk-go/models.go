@@ -686,6 +686,11 @@ const (
 	FormatSendGrid    DestinationFormat = "sendgrid"
 	FormatMailgun     DestinationFormat = "mailgun"
 	FormatCloudMailin DestinationFormat = "cloudmailin"
+	// FormatSheets adds rows to a Google Sheet, set up in the dashboard.
+	FormatSheets DestinationFormat = "sheets"
+	// FormatFileDrop writes files to an SFTP, FTP or S3 server (Business),
+	// set up in the dashboard.
+	FormatFileDrop DestinationFormat = "file_drop"
 )
 
 // DestinationFilter says which captured requests a destination gets: those
