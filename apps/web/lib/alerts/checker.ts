@@ -1,0 +1,328 @@
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { AlertKind, AlertRow } from "@/lib/supabase/alerts";
+import type { Database, Json } from "@/lib/supabase/database";
+
+type AlertUpdate = Database["public"]["Tables"]["endpoint_alerts"]["Update"];
+import { toEmailCapture } from "@/lib/email-capture";
+import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
+import { reportError } from "@/lib/observability";
+import {
+  fieldAlertDue,
+  missingFields,
+  missShare,
+  nextFieldState,
+  requiredFieldNames,
+} from "./state";
+import { notifyAlerts } from "./notify";
+
+/**
+ * Opens and resolves alerts (migration 00068). Every minute each endpoint
+ * with alerts on is leased (claim_alert_checks) and checked:
+ *
+ * - fields: the emails that arrived since the last check, in order, each
+ *   found or missing a required email field; an alert opens after N misses
+ *   in a row or when a share of the last 20 missed, and resolves once an
+ *   email has every field again and the share is below the line;
+ * - silence: no email for N hours (counted from the last email, or from when
+ *   alerts were set up); resolves when one arrives;
+ * - destinations: a delivery that failed for good opens an alert for its
+ *   destination; a later successful delivery there resolves it.
+ *
+ * Alerts read the stored emails and the delivery log, never the capture
+ * path, so a slow check cannot slow a capture. notify.ts sends what opened
+ * or resolved.
+ */
+
+const POLL_MS = 30_000;
+const CHECK_EVERY_MS = 60_000;
+const BATCH = 20;
+const EMAILS_PER_CHECK = 200;
+
+type EndpointRow = {
+  id: string;
+  slug: string;
+  email_fields: Json;
+};
+
+async function openAlert(
+  endpointId: string,
+  kind: AlertKind,
+  subject: string | null,
+  details: Json
+): Promise<void> {
+  const admin = createAdminClient();
+  let query = admin
+    .from("alert_events")
+    .select("id")
+    .eq("endpoint_id", endpointId)
+    .eq("kind", kind)
+    .is("resolved_at", null);
+  query = subject === null ? query.is("subject", null) : query.eq("subject", subject);
+  const { data, error } = await query.maybeSingle<{ id: string }>();
+  if (error) throw error;
+  if (data) {
+    // Already open: keep its details current.
+    const { error: updateError } = await admin
+      .from("alert_events")
+      .update({ details })
+      .eq("id", data.id);
+    if (updateError) throw updateError;
+    return;
+  }
+  const { error: insertError } = await admin
+    .from("alert_events")
+    .insert({ endpoint_id: endpointId, kind, subject, details });
+  // A unique violation means another check opened it first.
+  if (insertError && insertError.code !== "23505") throw insertError;
+}
+
+async function resolveAlert(
+  endpointId: string,
+  kind: AlertKind,
+  subject: string | null
+): Promise<void> {
+  let query = createAdminClient()
+    .from("alert_events")
+    .update({ resolved_at: new Date().toISOString() })
+    .eq("endpoint_id", endpointId)
+    .eq("kind", kind)
+    .is("resolved_at", null);
+  query = subject === null ? query.is("subject", null) : query.eq("subject", subject);
+  const { error } = await query;
+  if (error) throw error;
+}
+
+/** The field rules: new emails in order, the streak and share, open or resolve. */
+async function checkFields(
+  alert: AlertRow,
+  endpoint: EndpointRow,
+  update: AlertUpdate
+): Promise<void> {
+  const fields = storedEmailFields(endpoint.email_fields);
+  const required = requiredFieldNames(
+    fields.map((field) => field.name),
+    alert.required_fields
+  );
+  const since = alert.checked_through ?? alert.created_at;
+  let query = createAdminClient()
+    .from("requests")
+    .select("id, kind, email, headers, received_at")
+    .eq("endpoint_id", endpoint.id)
+    .eq("kind", "email")
+    .order("received_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(EMAILS_PER_CHECK);
+  query = alert.checked_through_id
+    ? query.or(
+        `received_at.gt.${since},and(received_at.eq.${since},id.gt.${alert.checked_through_id})`
+      )
+    : query.gt("received_at", since);
+  const { data, error } = await query;
+  if (error) throw error;
+  const rows = (data ?? []) as {
+    id: string;
+    kind: string;
+    email: Json;
+    headers: Json;
+    received_at: string;
+  }[];
+  if (rows.length === 0) return;
+  const last = rows[rows.length - 1];
+  update.checked_through = last.received_at;
+  update.checked_through_id = last.id;
+
+  // Without fields there is nothing to miss.
+  if (
+    required.length === 0 ||
+    (alert.field_failures === null && alert.field_failure_share === null)
+  ) {
+    return;
+  }
+  let lastMissing: string[] = [];
+  let lastMissingId: string | null = null;
+  const outcomes = rows.map((row) => {
+    const values = emailFieldValues(
+      {
+        id: row.id,
+        kind: "email",
+        email: toEmailCapture(row.email),
+        headers: (row.headers ?? {}) as Record<string, string>,
+      },
+      fields
+    );
+    const missing = missingFields(values, required);
+    if (missing.length > 0) {
+      lastMissing = missing;
+      lastMissingId = row.id;
+    }
+    return missing.length === 0;
+  });
+  const state = nextFieldState(
+    { streak: alert.failure_streak, recent: alert.recent_outcomes },
+    outcomes
+  );
+  update.failure_streak = state.streak;
+  update.recent_outcomes = state.recent;
+  const rules = {
+    fieldFailures: alert.field_failures,
+    fieldFailureShare: alert.field_failure_share,
+  };
+  if (fieldAlertDue(rules, state)) {
+    await openAlert(endpoint.id, "fields", null, {
+      missing: lastMissing,
+      lastMissedRequestId: lastMissingId,
+      streak: state.streak,
+      missedPercent: missShare(state.recent),
+    });
+  } else if (state.streak === 0) {
+    await resolveAlert(endpoint.id, "fields", null);
+  }
+}
+
+async function checkSilence(alert: AlertRow, endpoint: EndpointRow): Promise<void> {
+  if (alert.silence_hours === null) {
+    await resolveAlert(endpoint.id, "silence", null);
+    return;
+  }
+  const { data, error } = await createAdminClient()
+    .from("requests")
+    .select("received_at")
+    .eq("endpoint_id", endpoint.id)
+    .eq("kind", "email")
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ received_at: string }>();
+  if (error) throw error;
+  // Counted from the last email, or from when alerts were set up.
+  const since = Math.max(
+    Date.parse(data?.received_at ?? alert.created_at),
+    Date.parse(alert.created_at)
+  );
+  const quietMs = Date.now() - since;
+  if (quietMs >= alert.silence_hours * 3_600_000) {
+    await openAlert(endpoint.id, "silence", null, {
+      lastEmailAt: data?.received_at ?? null,
+      hours: alert.silence_hours,
+    });
+  } else {
+    await resolveAlert(endpoint.id, "silence", null);
+  }
+}
+
+async function checkDestinations(
+  alert: AlertRow,
+  endpoint: EndpointRow,
+  update: AlertUpdate
+): Promise<void> {
+  const admin = createAdminClient();
+  const since = alert.deliveries_checked_through ?? alert.created_at;
+  const { data, error } = await admin
+    .from("email_deliveries")
+    .select("destination_id, status, finished_at, last_error")
+    .eq("endpoint_id", endpoint.id)
+    .in("status", ["failed", "succeeded"])
+    .gt("finished_at", since)
+    .order("finished_at", { ascending: true })
+    .limit(1000);
+  if (error) throw error;
+  const rows = (data ?? []) as {
+    destination_id: string | null;
+    status: string;
+    finished_at: string;
+    last_error: string | null;
+  }[];
+  if (rows.length === 0) return;
+  update.deliveries_checked_through = rows[rows.length - 1].finished_at;
+  if (!alert.destination_failures) return;
+
+  // Per destination, the latest outcome decides: failed opens, succeeded resolves.
+  const latest = new Map<string, { failed: number; last: (typeof rows)[number] }>();
+  for (const row of rows) {
+    if (!row.destination_id) continue;
+    const entry = latest.get(row.destination_id) ?? { failed: 0, last: row };
+    if (row.status === "failed") entry.failed++;
+    entry.last = row;
+    latest.set(row.destination_id, entry);
+  }
+  for (const [destinationId, { failed, last }] of latest) {
+    if (last.status === "failed") {
+      await openAlert(endpoint.id, "destination", destinationId, {
+        failed,
+        lastError: last.last_error,
+        lastFailedAt: last.finished_at,
+      });
+    } else {
+      await resolveAlert(endpoint.id, "destination", destinationId);
+    }
+  }
+}
+
+/** Checks one leased endpoint and releases it until its next check. */
+export async function checkEndpointAlerts(alert: AlertRow): Promise<void> {
+  const admin = createAdminClient();
+  const update: AlertUpdate = {};
+  try {
+    const { data: endpoint, error } = await admin
+      .from("endpoints")
+      .select("id, slug, email_fields")
+      .eq("id", alert.endpoint_id)
+      .maybeSingle<EndpointRow>();
+    if (error) throw error;
+    if (!endpoint) return;
+    await checkFields(alert, endpoint, update);
+    await checkSilence(alert, endpoint);
+    await checkDestinations(alert, endpoint, update);
+  } finally {
+    const { error } = await admin
+      .from("endpoint_alerts")
+      .update({
+        ...update,
+        locked_until: null,
+        next_check_at: new Date(Date.now() + CHECK_EVERY_MS).toISOString(),
+      })
+      .eq("endpoint_id", alert.endpoint_id);
+    if (error) reportError("[alerts] could not release an endpoint", error);
+  }
+}
+
+/** One pass: checks every due endpoint, then sends notifications. */
+export async function runAlertChecks(): Promise<number> {
+  const { data, error } = await createAdminClient().rpc("claim_alert_checks", {
+    p_limit: BATCH,
+    p_lease_seconds: 120,
+  });
+  if (error) throw error;
+  const alerts = (data ?? []) as AlertRow[];
+  for (const alert of alerts) {
+    try {
+      await checkEndpointAlerts(alert);
+    } catch (checkError) {
+      reportError("[alerts] check failed", checkError, { endpoint: alert.endpoint_id });
+    }
+  }
+  await notifyAlerts();
+  return alerts.length;
+}
+
+const globalForAlerts = globalThis as unknown as { __alertChecker?: NodeJS.Timeout };
+
+export function startAlertChecker(): void {
+  if (globalForAlerts.__alertChecker) return;
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      while ((await runAlertChecks()) === BATCH) {
+        // more endpoints are due
+      }
+    } catch (error) {
+      reportError("[alerts] pass failed", error);
+    } finally {
+      running = false;
+    }
+  };
+  globalForAlerts.__alertChecker = setInterval(() => void tick(), POLL_MS);
+  globalForAlerts.__alertChecker.unref();
+  void tick();
+}

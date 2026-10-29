@@ -85,6 +85,8 @@ export function buildEmailJson(
         size: attachment.size,
         contentId: attachment.contentId,
         inline: attachment.inline,
+        ...(attachment.content !== undefined ? { content: attachment.content } : {}),
+        ...(attachment.url !== undefined ? { url: attachment.url } : {}),
       })),
       auth: {
         spf: email.auth?.spf?.result ?? null,

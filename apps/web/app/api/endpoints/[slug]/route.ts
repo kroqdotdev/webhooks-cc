@@ -15,6 +15,7 @@ import {
   updateEndpointBySlugForUser,
   type ForwardFormatSetting,
   type ForwardHeaderInput,
+  endpointRetentionCap,
 } from "@/lib/supabase/endpoints";
 import { checkOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { checkSentField } from "@/lib/forwarding/timing";
@@ -69,6 +70,8 @@ const AUDITED_ENDPOINT_FIELDS = [
   "signingHeader",
   "showEmailExtracts",
   "emailFields",
+  "retentionDays",
+  "deleteAfterDelivery",
   "forwardEnabled",
   "forwardUrl",
   "forwardHttp",
@@ -127,6 +130,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     if (problems.length > 0) {
       return Response.json({ error: `emailFields: ${problems[0]}` }, { status: 400 });
     }
+  }
+
+  if (
+    body.retentionDays !== undefined &&
+    body.retentionDays !== null &&
+    (typeof body.retentionDays !== "number" ||
+      !Number.isInteger(body.retentionDays) ||
+      body.retentionDays < 1 ||
+      body.retentionDays > 365)
+  ) {
+    return Response.json(
+      { error: "retentionDays must be a whole number of days, or null" },
+      { status: 400 }
+    );
+  }
+  if (body.deleteAfterDelivery !== undefined && typeof body.deleteAfterDelivery !== "boolean") {
+    return Response.json({ error: "Invalid deleteAfterDelivery" }, { status: 400 });
   }
 
   if (body.forwardEnabled !== undefined && typeof body.forwardEnabled !== "boolean") {
@@ -235,6 +255,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       body.notificationUrl !== undefined ||
       body.showEmailExtracts !== undefined ||
       body.emailFields !== undefined ||
+      body.retentionDays !== undefined ||
+      body.deleteAfterDelivery !== undefined ||
       signingConfigTouched ||
       forwardingTouched;
 
@@ -242,7 +264,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       return Response.json(
         {
           error:
-            "Only the endpoint owner can update email, notification, forwarding or signing settings",
+            "Only the endpoint owner can update email, retention, notification, forwarding or signing settings",
         },
         { status: 403 }
       );
@@ -342,6 +364,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       }
     }
 
+    if (typeof body.retentionDays === "number") {
+      const cap = await endpointRetentionCap(slug);
+      if (cap !== null && body.retentionDays > cap) {
+        return Response.json(
+          {
+            error: `retentionDays: at most ${cap} days on this endpoint's plan`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const endpoint = await updateEndpointBySlugForUser({
       userId: access.ownerId,
       slug,
@@ -380,6 +414,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       forwardKeepOrder: body.forwardKeepOrder as boolean | undefined,
       forwardHeaders,
       forwardSentField,
+      retentionDays: body.retentionDays as number | null | undefined,
+      deleteAfterDelivery: body.deleteAfterDelivery as boolean | undefined,
     });
 
     await auditUserAction(request, auth.userId, {

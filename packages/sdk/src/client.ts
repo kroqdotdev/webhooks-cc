@@ -1042,6 +1042,8 @@ export class WebhooksCC {
               "{ name, from: subject|text|html|from|to|header, header?, pattern (RE2) }[]|null? (owner only, at most 20)",
             forwardEnabled: "boolean? (owner only; needs forwardUrl)",
             forwardUrl: "string|null? (owner only)",
+            retentionDays: "number|null? — keep requests fewer days than the plan (owner only)",
+            deleteAfterDelivery: "boolean? — delete once every delivery is settled (owner only)",
           },
         },
         delete: {

@@ -65,6 +65,12 @@ export interface DashboardEndpoint {
   forwardHeaders?: { name: string; value: string }[];
   /** The JSON body field that holds when the sender sent the request. */
   forwardSentField?: string | null;
+  /** Days requests are kept here; null keeps them as long as the plan does. */
+  retentionDays?: number | null;
+  /** The longest retention this endpoint may have (its plan's). */
+  retentionCapDays?: number;
+  /** Requests are deleted once every delivery is settled. */
+  deleteAfterDelivery?: boolean;
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
@@ -425,6 +431,8 @@ export interface DashboardDestination {
   sentField: string | null;
   throttleSeconds: number;
   delaySeconds: number;
+  /** How an email's stored attachments travel. */
+  attachments?: "links" | "inline" | "none";
   role: "forward" | "notify" | null;
   createdAt: number;
   updatedAt: number;
@@ -684,6 +692,35 @@ export async function fetchRawEmail(
   return new Uint8Array(await response.arrayBuffer());
 }
 
+/** One attachment of a stored email, with the name to save it under. */
+export async function fetchAttachment(
+  accessToken: string,
+  requestId: string,
+  index: number
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}/attachments/${index}`,
+    withAuthHeaders(accessToken)
+  );
+  if (!response.ok) {
+    throw new Error(
+      response.status === 404 ? "The attachment is no longer kept." : "Download failed."
+    );
+  }
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const plain = /filename="([^"]*)"/i.exec(disposition)?.[1];
+  let filename = plain || `attachment-${index + 1}`;
+  if (encoded) {
+    try {
+      filename = decodeURIComponent(encoded);
+    } catch {
+      // keep the plain name
+    }
+  }
+  return { blob: await response.blob(), filename };
+}
+
 export async function fetchRequestDeliveries(
   accessToken: string,
   requestId: string
@@ -924,4 +961,77 @@ export function emitDashboardEndpointsChanged() {
 export function subscribeDashboardEndpointsChanged(callback: () => void) {
   window.addEventListener(ENDPOINTS_CHANGED_EVENT, callback);
   return () => window.removeEventListener(ENDPOINTS_CHANGED_EVENT, callback);
+}
+
+export interface DashboardAlertSettings {
+  enabled: boolean;
+  fieldFailures: number | null;
+  fieldFailureShare: number | null;
+  requiredFields: string[] | null;
+  silenceHours: number | null;
+  destinationFailures: boolean;
+  notifyEmail: boolean;
+  notifyDestinationIds: string[];
+}
+
+export interface DashboardAlertEvent {
+  id: string;
+  kind: "fields" | "silence" | "destination";
+  subject: string | null;
+  openedAt: number;
+  resolvedAt: number | null;
+  details: Record<string, unknown>;
+}
+
+export async function fetchAlerts(
+  accessToken: string,
+  slug: string
+): Promise<{ settings: DashboardAlertSettings; events: DashboardAlertEvent[] }> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}/alerts`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson(response);
+}
+
+export async function saveAlerts(
+  accessToken: string,
+  slug: string,
+  settings: Partial<DashboardAlertSettings>
+): Promise<DashboardAlertSettings> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}/alerts`,
+    withAuthHeaders(accessToken, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+    })
+  );
+  return (await readJson<{ settings: DashboardAlertSettings }>(response)).settings;
+}
+
+/** Sends an endpoint's requests in a time range through its destinations again. */
+export async function replayEndpoint(
+  accessToken: string,
+  slug: string,
+  range: { since?: number; until?: number; kind?: "email" | "http" }
+): Promise<{ requests: number; queued: number }> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}/replay`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(range),
+    })
+  );
+  return readJson(response);
+}
+
+/** Sends one request through its endpoint's destinations again. */
+export async function replayRequest(accessToken: string, requestId: string): Promise<boolean> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}/replay`,
+    withAuthHeaders(accessToken, { method: "POST" })
+  );
+  return (await readJson<{ queued: boolean }>(response)).queued;
 }

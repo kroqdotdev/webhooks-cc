@@ -26,6 +26,13 @@ export async function register() {
       startForwardingWorker();
     }
 
+    // Open and resolve endpoint alerts and send their notices (lib/alerts);
+    // off with ALERTS_WORKER=false, like the forwarding worker.
+    if (process.env.ALERTS_WORKER !== "false" && process.env.ALERTS_WORKER !== "0") {
+      const { startAlertChecker } = await import("./lib/alerts/checker");
+      startAlertChecker();
+    }
+
     // Delete the stored objects of deleted requests (lib/storage/deleter.ts);
     // starts only when object storage is configured.
     const { startStorageDeleter } = await import("./lib/storage/deleter");

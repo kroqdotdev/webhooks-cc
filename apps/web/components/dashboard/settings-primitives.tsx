@@ -12,7 +12,15 @@ import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/da
  */
 
 export type SettingsSection =
-  "receiving" | "responses" | "forwarding" | "deliveries" | "sharing" | "verification" | "delete";
+  | "receiving"
+  | "retention"
+  | "alerts"
+  | "responses"
+  | "forwarding"
+  | "deliveries"
+  | "sharing"
+  | "verification"
+  | "delete";
 
 export function Section({
   id,
