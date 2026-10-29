@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.48.6";
+export const APP_VERSION = "0.49.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,19 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.49.0",
+    date: "2026-10-29",
+    title: "Attachments, Alerts, Google Sheets and Retention",
+    track: "web",
+    items: [
+      "Email attachments are kept with the email: download them from the Attachments tab, and destinations send them as signed links or inline (base64, up to 1 MB per delivery)",
+      "Alerts tell you by email, and in a chat or webhook destination if you like, when an endpoint's email fields stop matching, when mail stops arriving, or when deliveries to a destination fail for good",
+      "Replay sends emails through their destinations again after you fix a pattern, from an open alert or through the API",
+      "A Google Sheets destination adds a row per email or request, with the columns you choose; webhooks.cc only touches the spreadsheets it creates or you pick",
+      "Every endpoint can keep requests for fewer days than its plan, or delete each one once every destination has its copy",
+    ],
+  },
   {
     version: "0.48.6",
     date: "2026-10-29",

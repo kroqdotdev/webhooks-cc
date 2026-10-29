@@ -421,6 +421,215 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/requests/{id}/raw:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getRawEmail
+      tags: [Requests]
+      summary: Download a captured email's exact message
+      description: |
+        The original message as `message/rfc822`, whatever its size when it was kept in
+        object storage (`email.stored`); otherwise the database copy, which exists for
+        messages up to 1 MiB.
+      responses:
+        "200":
+          description: The message
+          content:
+            message/rfc822:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/requests/{id}/attachments/{index}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: index
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 99
+        description: The attachment's position in `email.attachments`
+    get:
+      operationId: getAttachment
+      tags: [Requests]
+      summary: Download an attachment of a stored email
+      responses:
+        "200":
+          description: The attachment, as a download
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/requests/{id}/replay:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: replayRequest
+      tags: [Forwarding]
+      summary: Send a request through its endpoint's destinations again
+      description: Queues the request to every destination that takes its kind, with their current settings. Owner only.
+      responses:
+        "200":
+          description: Whether a delivery was queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queued:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/endpoints/{slug}/replay:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: replayEndpoint
+      tags: [Forwarding]
+      summary: Send requests in a time range through the destinations again
+      description: At most 500 requests, oldest first. Owner only.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                since:
+                  type: integer
+                  description: Milliseconds; requests received at or after this
+                until:
+                  type: integer
+                  description: Milliseconds; requests received at or before this
+                kind:
+                  type: string
+                  enum: [http, email]
+      responses:
+        "200":
+          description: How many requests were found and queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: integer
+                  queued:
+                    type: integer
+                  limit:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/endpoints/{slug}/alerts:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getAlerts
+      tags: [Endpoints]
+      summary: Alert settings and recent alerts
+      responses:
+        "200":
+          description: Settings and alerts, open ones first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    $ref: "#/components/schemas/AlertSettings"
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        kind:
+                          type: string
+                          enum: [fields, silence, destination]
+                        subject:
+                          type: [string, "null"]
+                        openedAt:
+                          type: integer
+                        resolvedAt:
+                          type: [integer, "null"]
+                        details:
+                          type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateAlerts
+      tags: [Endpoints]
+      summary: Change alert settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertSettings"
+      responses:
+        "200":
+          description: The saved settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    $ref: "#/components/schemas/AlertSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # -- Forwarding --------------------------------------------------------------
 
   /api/endpoints/{slug}/forwarding:
@@ -2343,6 +2552,37 @@ components:
         type: integer
 
   schemas:
+    AlertSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        fieldFailures:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 100
+          description: Emails in a row that miss a required field before an alert opens
+        fieldFailureShare:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 100
+          description: Percent of the last 20 emails that missed a field
+        requiredFields:
+          type: [array, "null"]
+          items:
+            type: string
+        silenceHours:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 720
+        destinationFailures:
+          type: boolean
+        notifyEmail:
+          type: boolean
+        notifyDestinationIds:
+          type: array
+          items:
+            type: string
     Error:
       type: object
       required: [error]

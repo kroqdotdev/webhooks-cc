@@ -3,7 +3,7 @@ title: "Email Capture"
 description: "Every endpoint on an account also receives email at its own mailhooks.cc address. Preview the HTML safely, copy one-time codes and links, pick out fields of your own, read just the reply, check SPF, DKIM and DMARC, and download the original message."
 section: dashboard
 order: 4
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-29
 schema: none
 keywords:
   [
@@ -128,11 +128,13 @@ The score is only information. Every email that reaches an address is captured, 
 | Subject, addresses, dates  | Yes                                                                 |
 | Text and HTML parts        | Up to 256 KB each; longer parts are cut and marked                  |
 | Headers                    | All of them, as they arrived                                        |
-| Attachments                | Name, type and size; the contents are not kept                      |
-| The original message       | When it is 1 MB or smaller; larger messages keep their headers only |
+| Attachments                | Name, type, size and contents (downloadable from the **Attachments** tab) |
+| The original message       | Yes, the exact bytes, up to the 10 MB message limit                  |
 | Sender check results, TLS  | Yes                                                                 |
 
-Emails follow the same [retention](/docs/plans-limits#data-retention) as HTTP requests on your plan.
+The original message and the attachments are kept in object storage in the EU (Germany), apart from the request itself, and deleted with it. **Download .eml** and the **Raw** tab show the exact message whatever its size; each attachment has a **Download** button. A self-hosted copy without object storage keeps attachment names only, and the original message only when it is 1 MB or smaller.
+
+Emails follow the same [retention](/docs/plans-limits#data-retention) as HTTP requests on your plan, or an endpoint's own shorter one (see [Retention](/docs/endpoints#retention)).
 
 ## Quota and limits
 
