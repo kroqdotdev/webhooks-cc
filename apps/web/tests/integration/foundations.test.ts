@@ -2,6 +2,12 @@ import { createHmac } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
+import {
+  getRequestByIdForUser,
+  listPaginatedRequestsForEndpointByUser,
+  listRequestsForEndpointByUser,
+} from "@/lib/supabase/requests";
+import { countSearchRequestsForUser, searchRequestsForUser } from "@/lib/supabase/search";
 import { ENTITLEMENTS, type Entitlements } from "@/lib/entitlements";
 import type { PlanKey } from "@/lib/supabase/database";
 import { getObjectBytes, isObjectStorageConfigured, listKeys } from "@/lib/storage/object-store";
@@ -181,6 +187,34 @@ describe("retention", () => {
     expect(await remaining([...shortIds, ...normalIds])).toEqual(
       new Set([shortIds[0], normalIds[0]])
     );
+  });
+
+  it("hides rows past an endpoint's shorter retention before the cleanup reaches them", async () => {
+    const userId = await createUser({ plan: "pro", request_limit: 100_000 });
+    const short = await createEndpointForUser({ userId, name: "short reads" });
+    await admin.from("endpoints").update({ retention_days: 2 }).eq("id", short.id);
+    const [kept, old] = await insertRequests(short.id, userId, [1, 3]);
+    // A team-billed row past the endpoint's days goes too (the cleanup deletes it).
+    const { data: team, error } = await admin.rpc("create_team_with_owner", {
+      p_user_id: userId,
+      p_name: `Reads team ${ts}`,
+    });
+    if (error) throw error;
+    const teamId = (team as { id: string }).id;
+    createdTeamIds.push(teamId);
+    const [teamOld] = await insertRequests(short.id, userId, [3], { team_id: teamId });
+
+    expect(await getRequestByIdForUser(userId, kept)).not.toBeNull();
+    expect(await getRequestByIdForUser(userId, old)).toBeNull();
+    expect(await getRequestByIdForUser(userId, teamOld)).toBeNull();
+    const listed = await listRequestsForEndpointByUser({ userId, slug: short.slug });
+    expect(listed!.map((r) => r.id)).toEqual([kept]);
+    const page = await listPaginatedRequestsForEndpointByUser({ userId, slug: short.slug });
+    expect(page!.items.map((r) => r.id)).toEqual([kept]);
+    const found = await searchRequestsForUser({ userId, plan: "pro", slug: short.slug });
+    expect(found.map((r) => r.id)).toEqual([kept]);
+    expect(await countSearchRequestsForUser({ userId, plan: "pro", slug: short.slug })).toBe(1);
+    expect(await countSearchRequestsForUser({ userId, plan: "pro" })).toBe(1);
   });
 
   it("keeps team-billed rows for the team's days, not the owner's", async () => {
