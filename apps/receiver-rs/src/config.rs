@@ -31,6 +31,9 @@ pub struct Config {
     pub mail_ingest_paused: bool,
     /// Domains whose recipients map to endpoint slugs, lowercase.
     pub mail_domains: Vec<String>,
+    /// Where captured email (raw message and attachments) is stored. Unset:
+    /// only the database copy is kept, as before object storage.
+    pub object_store: Option<crate::object_store::ObjectStoreConfig>,
 }
 
 impl std::fmt::Debug for Config {
@@ -57,6 +60,7 @@ impl std::fmt::Debug for Config {
             .field("mail_ingest_addr", &self.mail_ingest_addr)
             .field("mail_ingest_paused", &self.mail_ingest_paused)
             .field("mail_domains", &self.mail_domains)
+            .field("object_store", &self.object_store)
             .finish()
     }
 }
@@ -124,6 +128,8 @@ impl Config {
         let mail_domains =
             parse_mail_domains(&env::var("MAIL_DOMAINS").unwrap_or_else(|_| "mailhooks.cc".into()));
 
+        let object_store = object_store_from_env();
+
         Self {
             database_url,
             capture_shared_secret,
@@ -140,7 +146,43 @@ impl Config {
             mail_ingest_addr,
             mail_ingest_paused,
             mail_domains,
+            object_store,
         }
+    }
+}
+
+/// OBJECT_STORAGE_ENDPOINT, _BUCKET, _ACCESS_KEY_ID and _SECRET_ACCESS_KEY
+/// together (OBJECT_STORAGE_REGION defaults to us-east-1, which most
+/// S3-compatible services accept). Setting some but not all is a mistake
+/// worth stopping for.
+fn object_store_from_env() -> Option<crate::object_store::ObjectStoreConfig> {
+    let get = |name: &str| {
+        env::var(name)
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let endpoint = get("OBJECT_STORAGE_ENDPOINT");
+    let bucket = get("OBJECT_STORAGE_BUCKET");
+    let access_key_id = get("OBJECT_STORAGE_ACCESS_KEY_ID");
+    let secret_access_key = get("OBJECT_STORAGE_SECRET_ACCESS_KEY");
+    match (endpoint, bucket, access_key_id, secret_access_key) {
+        (None, None, None, None) => None,
+        (Some(endpoint), Some(bucket), Some(access_key_id), Some(secret_access_key)) => {
+            if !(endpoint.starts_with("https://") || endpoint.starts_with("http://")) {
+                panic!("OBJECT_STORAGE_ENDPOINT must start with http:// or https://");
+            }
+            Some(crate::object_store::ObjectStoreConfig {
+                endpoint: endpoint.trim_end_matches('/').to_string(),
+                region: get("OBJECT_STORAGE_REGION").unwrap_or_else(|| "us-east-1".into()),
+                bucket,
+                access_key_id,
+                secret_access_key,
+            })
+        }
+        _ => panic!(
+            "set all of OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_BUCKET, OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY, or none"
+        ),
     }
 }
 
@@ -164,6 +206,7 @@ impl Config {
             mail_ingest_addr: None,
             mail_ingest_paused: false,
             mail_domains: vec!["mailhooks.cc".into()],
+            object_store: None,
         }
     }
 }

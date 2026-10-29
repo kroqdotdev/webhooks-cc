@@ -13,7 +13,7 @@ import {
   type ExtractedLink,
 } from "@webhooks-cc/sdk/email";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { fetchEmailFieldValues } from "@/lib/dashboard-api";
+import { fetchEmailFieldValues, fetchRawEmail } from "@/lib/dashboard-api";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { highlightBody } from "@/lib/highlight";
 import { JsonTree } from "./json-tree";
@@ -62,6 +62,9 @@ function formatReceived(timestamp: number): string {
     hour12: false,
   });
 }
+
+/** The Raw tab shows at most this much of a stored message; the download has all of it. */
+const RAW_DISPLAY_BYTES = 1024 * 1024;
 
 /** The raw message as stored: bytes when it was not valid UTF-8, text otherwise. */
 function rawMessage(
@@ -831,6 +834,25 @@ export function EmailDetail({
     };
   }, [accessToken, isEmail, requestId, fieldsKnownEmpty]);
   const fields = fieldValues?.id === requestId ? fieldValues.values : null;
+  // With object storage the exact message is fetched when it is wanted (the
+  // Raw tab or a download), whatever its size.
+  const stored = email?.stored === true;
+  const [storedRaw, setStoredRaw] = useState<
+    | { id: string; bytes: Uint8Array<ArrayBuffer>; text: string }
+    | { id: string; error: string }
+    | null
+  >(null);
+  const storedRawHere = storedRaw?.id === requestId ? storedRaw : null;
+  const loadStoredRaw = useCallback(async () => {
+    if (!accessToken) throw new Error("Sign in again to download the message.");
+    const bytes = await fetchRawEmail(accessToken, requestId);
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(
+      bytes.subarray(0, RAW_DISPLAY_BYTES)
+    );
+    const loaded = { id: requestId, bytes, text };
+    setStoredRaw(loaded);
+    return loaded;
+  }, [accessToken, requestId]);
   const json = useMemo(
     () =>
       email
@@ -850,16 +872,41 @@ export function EmailDetail({
     [email, requestId, request, endpoint.slug, endpoint.name, showExtracts, fields]
   );
 
-  const downloadEml = useCallback(() => {
-    if (!raw) return;
-    const blob = new Blob([raw.bytes], { type: "message/rfc822" });
+  const downloadEml = useCallback(async () => {
+    let bytes: Uint8Array<ArrayBuffer> | null = raw?.bytes ?? null;
+    if (stored) {
+      try {
+        bytes =
+          storedRawHere && "bytes" in storedRawHere
+            ? storedRawHere.bytes
+            : (await loadStoredRaw()).bytes;
+      } catch (error) {
+        setStoredRaw({
+          id: requestId,
+          error: error instanceof Error ? error.message : "Download failed.",
+        });
+        return;
+      }
+    }
+    if (!bytes) return;
+    const blob = new Blob([bytes], { type: "message/rfc822" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `email-${requestId.slice(0, 8)}.eml`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [raw, requestId]);
+  }, [raw, requestId, stored, storedRawHere, loadStoredRaw]);
+
+  useEffect(() => {
+    if (!stored || tab !== "raw" || storedRawHere) return;
+    loadStoredRaw().catch((error) =>
+      setStoredRaw({
+        id: requestId,
+        error: error instanceof Error ? error.message : "The message could not be loaded.",
+      })
+    );
+  }, [stored, tab, storedRawHere, loadStoredRaw, requestId]);
 
   if (!email) {
     return (
@@ -891,7 +938,7 @@ export function EmailDetail({
       : []),
   ];
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : tabs[0].id;
-  const rawAvailable = !!raw && !email.truncated.raw;
+  const rawAvailable = stored || (!!raw && !email.truncated.raw);
 
   return (
     <div className="flex flex-col h-full">
@@ -1173,7 +1220,25 @@ export function EmailDetail({
         {activeTab === "authentication" && <AuthenticationPane email={email} ip={request.ip} />}
 
         {activeTab === "raw" &&
-          (rawAvailable ? (
+          (stored ? (
+            storedRawHere === null ? (
+              <p className="text-sm text-muted-foreground">Loading the message...</p>
+            ) : "error" in storedRawHere ? (
+              <p className="text-sm text-destructive">{storedRawHere.error}</p>
+            ) : (
+              <>
+                {storedRawHere.bytes.length > RAW_DISPLAY_BYTES && (
+                  <p className="mb-3 text-sm text-muted-foreground">
+                    Showing the first {formatBytes(RAW_DISPLAY_BYTES)} of{" "}
+                    {formatBytes(storedRawHere.bytes.length)}. Download the .eml for all of it.
+                  </p>
+                )}
+                <pre className="ui-code overflow-x-auto text-xs whitespace-pre-wrap break-all">
+                  {storedRawHere.text}
+                </pre>
+              </>
+            )
+          ) : rawAvailable ? (
             <pre className="ui-code overflow-x-auto text-xs whitespace-pre-wrap break-all">
               {raw!.text}
             </pre>

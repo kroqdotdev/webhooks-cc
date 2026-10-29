@@ -109,6 +109,12 @@ export interface EmailCapture {
   spam?: EmailSpam | null;
   smtp: EmailSmtp | null;
   parseError: boolean;
+  /**
+   * The exact message and its attachments are kept in object storage: the
+   * raw message and each attachment can be downloaded whatever their size,
+   * even when `truncated.raw` says the copy in `body` was cut.
+   */
+  stored?: boolean;
   truncated: {
     raw: boolean;
     text: boolean;

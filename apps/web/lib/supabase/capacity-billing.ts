@@ -13,6 +13,7 @@ import {
   loggablePolarError,
 } from "@/lib/polar";
 import { reportError } from "@/lib/observability";
+import { planEntitlements } from "@/lib/entitlements";
 import { createAdminClient } from "./admin";
 import { ensurePolarCustomerId, getBillingUser } from "./billing";
 import { asNonEmptyString, asRecord, parseEventTimestamp } from "./billing-shared";
@@ -150,7 +151,10 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return { ...data, plan_active: data.plan === "pro" && data.subscription_status !== null };
+  return {
+    ...data,
+    plan_active: planEntitlements(data.plan).requestAddons && data.subscription_status !== null,
+  };
 }
 
 async function liveSubscriptions(account: CapacityAccount): Promise<CapacitySubscriptionRow[]> {

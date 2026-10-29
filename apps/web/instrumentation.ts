@@ -26,6 +26,11 @@ export async function register() {
       startForwardingWorker();
     }
 
+    // Delete the stored objects of deleted requests (lib/storage/deleter.ts);
+    // starts only when object storage is configured.
+    const { startStorageDeleter } = await import("./lib/storage/deleter");
+    startStorageDeleter();
+
     // Send counted overage to Polar's meter (lib/billing/overage-reporter.ts);
     // starts only when the extra-request products are configured.
     const { startOverageReporter } = await import("./lib/billing/overage-reporter");
