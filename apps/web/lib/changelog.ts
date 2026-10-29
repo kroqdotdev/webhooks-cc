@@ -26,7 +26,7 @@ export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: "0.48.4",
+    version: "0.48.5",
     date: "2026-10-29",
     title: "Full Messages for Large Emails",
     track: "web",
