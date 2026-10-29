@@ -1,4 +1,4 @@
-import { resolveMx, resolveTxt } from "node:dns/promises";
+import { Resolver } from "node:dns/promises";
 import { createAdminClient } from "./admin";
 import { getTeamForOwner } from "./team-billing";
 import { reportError } from "@/lib/observability";
@@ -10,7 +10,9 @@ import { mailhooksOrigin, webhooksOrigin } from "@/lib/site";
  * with a TXT record and points the domain's MX at the MX host; the receiver
  * then routes local@domain to an endpoint (resolve_inbound_recipient). This
  * module adds, verifies, routes and re-checks them; DNS is looked up here,
- * never by the receiver or the MX host.
+ * never by the receiver or the MX host, through public resolvers
+ * (DOMAIN_DNS_SERVERS) rather than the host's, so a customer's nameservers
+ * never see where we run.
  */
 
 export type DomainAccount = { kind: "user"; userId: string } | { kind: "team"; teamId: string };
@@ -45,7 +47,9 @@ export class DomainError extends Error {
       | "exists"
       | "held"
       | "not_found"
-      | "bad_route",
+      | "bad_route"
+      | "has_accounts"
+      | "dns_failed",
     message: string,
     public status = 400
   ) {
@@ -62,6 +66,8 @@ export const MAX_ROUTES_PER_DOMAIN = 100;
 export const LAPSE_AFTER_FAILED_CHECKS = 3;
 /** How often a verified domain's records are looked up again. */
 const RECHECK_AFTER_MS = 24 * 60 * 60 * 1000;
+/** A lapsed domain, less often: it may come back, and most never do. */
+const LAPSED_RECHECK_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 const DOMAIN = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const LOCAL_PART = /^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$/;
@@ -124,17 +130,32 @@ function emptyOnMissing(error: unknown): never[] {
   throw error;
 }
 
+let dnsResolver: Resolver | null = null;
+
+/** Public resolvers with a short timeout: a nameserver that never answers costs seconds, not minutes. */
+function resolver(): Resolver {
+  if (dnsResolver) return dnsResolver;
+  const next = new Resolver({ timeout: 3000, tries: 2 });
+  const servers = (process.env.DOMAIN_DNS_SERVERS || "1.1.1.1,1.0.0.1")
+    .split(",")
+    .map((server) => server.trim())
+    .filter(Boolean);
+  next.setServers(servers);
+  dnsResolver = next;
+  return next;
+}
+
 export const systemResolver: DomainResolver = {
   async txt(name) {
     try {
-      return (await resolveTxt(name)).map((chunks) => chunks.join(""));
+      return (await resolver().resolveTxt(name)).map((chunks) => chunks.join(""));
     } catch (error) {
       return emptyOnMissing(error);
     }
   },
   async mx(domain) {
     try {
-      return (await resolveMx(domain)).map((record) =>
+      return (await resolver().resolveMx(domain)).map((record) =>
         record.exchange.toLowerCase().replace(/\.$/, "")
       );
     } catch (error) {
@@ -152,7 +173,9 @@ export async function checkRecords(
   const [txt, mx] = await Promise.all([resolver.txt(txtName(domain)), resolver.mx(domain)]);
   return {
     txt: txt.some((value) => value.trim() === txtValue(token)),
-    mx: mx.includes(mxHost()),
+    // Every MX ours: a domain that also receives elsewhere (or lists us as
+    // a backup) is not one whose mail comes here.
+    mx: mx.length > 0 && mx.every((host) => host === mxHost()),
   };
 }
 
@@ -286,7 +309,16 @@ export async function addDomain(account: DomainAccount, raw: string): Promise<In
     user_id: account.kind === "user" ? account.userId : null,
     team_id: account.kind === "team" ? account.teamId : null,
   });
-  if (error) throw error;
+  if (error) {
+    // The cap again, under the owner's lock (two adds at once), or the same domain twice.
+    if ((error as { code?: string }).code === "P0001") {
+      throw new DomainError("too_many", `At most ${MAX_DOMAINS_PER_ACCOUNT} domains.`);
+    }
+    if ((error as { code?: string }).code === "23505") {
+      throw new DomainError("exists", "That domain is already on your list.", 409);
+    }
+    throw error;
+  }
   const added = (await listDomains(account)).find((row) => row.domain === domain);
   if (!added) throw new Error("The domain was not saved");
   return added;
@@ -307,8 +339,79 @@ async function ownedRow(account: DomainAccount, id: string): Promise<DomainRow> 
 }
 
 /**
+ * Records one check of a domain's records. In place: verified (a lapsed one
+ * comes back, keeping when it was first verified). Missing on a verified or
+ * lapsed domain: one more failed check, lapsing after
+ * LAPSE_AFTER_FAILED_CHECKS in a row, whoever asked for the check. A pending
+ * domain stays pending. Throws the unique violation when another account
+ * holds the domain.
+ */
+async function recordCheck(row: DomainRow, ok: boolean): Promise<DomainRow["status"]> {
+  const now = new Date().toISOString();
+  const failed = ok ? 0 : row.status === "pending" ? 0 : row.failed_checks + 1;
+  const status: DomainRow["status"] = ok
+    ? "verified"
+    : row.status === "pending"
+      ? "pending"
+      : failed >= LAPSE_AFTER_FAILED_CHECKS
+        ? "lapsed"
+        : row.status;
+  const { error } = await createAdminClient()
+    .from("inbound_domains")
+    .update({
+      status,
+      verified_at: ok ? (row.verified_at ?? now) : row.verified_at,
+      failed_checks: failed,
+      last_checked_at: now,
+    })
+    .eq("id", row.id);
+  if (error) throw error;
+  return status;
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string })?.code === "23505";
+}
+
+/**
+ * Another account's verified row for the same domain, demoted when its own
+ * TXT record is gone: whoever controls the domain's DNS now has proved it
+ * with theirs. Returns whether the domain is free now.
+ */
+async function releaseStaleHolder(row: DomainRow, resolver: DomainResolver): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("inbound_domains")
+    .select(DOMAIN_COLUMNS)
+    .eq("domain", row.domain)
+    .eq("status", "verified")
+    .neq("id", row.id)
+    .maybeSingle();
+  if (error) throw error;
+  const holder = data as unknown as DomainRow | null;
+  if (!holder) return true;
+  const values = await resolver.txt(txtName(row.domain));
+  if (values.some((value) => value.trim() === txtValue(holder.token))) return false;
+  const { error: demoteError } = await admin
+    .from("inbound_domains")
+    .update({
+      status: "lapsed",
+      failed_checks: LAPSE_AFTER_FAILED_CHECKS,
+      last_checked_at: new Date().toISOString(),
+    })
+    .eq("id", holder.id)
+    .eq("status", "verified");
+  if (demoteError) throw demoteError;
+  console.info(
+    `[domains] released a domain whose records moved to another account holder=${holder.id} by=${row.id}`
+  );
+  return true;
+}
+
+/**
  * Looks the records up now. Both in place: the domain is verified (unless
- * another account holds it). The answer says which records are missing.
+ * another account still proves it). Missing on a verified domain: counts as
+ * a failed check. The answer says which records are missing.
  */
 export async function verifyDomain(
   account: DomainAccount,
@@ -316,34 +419,49 @@ export async function verifyDomain(
   resolver: DomainResolver = systemResolver
 ): Promise<{ domain: InboundDomain; records: { txt: boolean; mx: boolean } }> {
   const row = await ownedRow(account, id);
-  const records = await checkRecords(row.domain, row.token, resolver);
-  const admin = createAdminClient();
-  const now = new Date().toISOString();
-  if (records.txt && records.mx) {
-    const { error } = await admin
-      .from("inbound_domains")
-      .update({
-        status: "verified",
-        verified_at: row.verified_at ?? now,
-        last_checked_at: now,
-        failed_checks: 0,
-      })
-      .eq("id", id);
-    if (error) {
-      // The partial unique index: another account holds the domain.
-      if ((error as { code?: string }).code === "23505") {
+  let records: { txt: boolean; mx: boolean };
+  try {
+    records = await checkRecords(row.domain, row.token, resolver);
+  } catch {
+    throw new DomainError("dns_failed", "The DNS lookup failed. Try again in a minute.", 503);
+  }
+  const ok = records.txt && records.mx;
+  if (ok && row.status !== "verified") {
+    const { data: hasAccounts, error: accountsError } = await createAdminClient().rpc(
+      "inbound_domain_has_accounts",
+      { p_domain: row.domain }
+    );
+    if (accountsError) throw accountsError;
+    if (hasAccounts === true) {
+      throw new DomainError(
+        "has_accounts",
+        "An account here uses an email address at this domain, and its mail would become readable through your endpoints. Use a subdomain that receives no other mail.",
+        409
+      );
+    }
+  }
+  try {
+    await recordCheck(row, ok);
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    const free = await releaseStaleHolder(row, resolver);
+    if (!free) {
+      throw new DomainError(
+        "held",
+        "Another account receives mail at that domain and its TXT record is still there. If the domain is yours, remove the other mailhooks-verify record and check again.",
+        409
+      );
+    }
+    try {
+      await recordCheck(row, ok);
+    } catch (retryError) {
+      if (isUniqueViolation(retryError)) {
         throw new DomainError("held", "Another account already receives mail at that domain.", 409);
       }
-      throw error;
+      throw retryError;
     }
-  } else {
-    const { error } = await admin
-      .from("inbound_domains")
-      .update({ last_checked_at: now })
-      .eq("id", id);
-    if (error) throw error;
   }
-  const domain = (await listDomains(account)).find((row) => row.id === id)!;
+  const domain = (await listDomains(account)).find((item) => item.id === id)!;
   return { domain, records };
 }
 
@@ -410,27 +528,16 @@ export async function setDomainRouting(
     );
   }
 
-  const admin = createAdminClient();
-  const { error: domainError } = await admin
-    .from("inbound_domains")
-    .update({ catch_all_endpoint_id: routing.catchAllEndpointId })
-    .eq("id", id);
-  if (domainError) throw domainError;
-  const { error: deleteError } = await admin
-    .from("inbound_domain_routes")
-    .delete()
-    .eq("domain_id", id);
-  if (deleteError) throw deleteError;
-  if (routes.length > 0) {
-    const { error: insertError } = await admin.from("inbound_domain_routes").insert(
-      routes.map((route) => ({
-        domain_id: id,
-        local_part: route.localPart,
-        endpoint_id: route.endpointId,
-      }))
-    );
-    if (insertError) throw insertError;
-  }
+  // In one transaction: a failure or a second save at once never leaves the domain half routed.
+  const { error: routingError } = await createAdminClient().rpc("set_inbound_domain_routes", {
+    p_domain_id: id,
+    p_catch_all: routing.catchAllEndpointId,
+    p_routes: routes.map((route) => ({
+      local_part: route.localPart,
+      endpoint_id: route.endpointId,
+    })),
+  });
+  if (routingError) throw routingError;
   return (await listDomains(account)).find((row) => row.id === id)!;
 }
 
@@ -452,42 +559,57 @@ export async function recheckDomains(
   limit = 50
 ): Promise<{ checked: number; lapsed: number; restored: number }> {
   const admin = createAdminClient();
-  const due = new Date(Date.now() - RECHECK_AFTER_MS).toISOString();
+  const now = Date.now();
+  const due = new Date(now - RECHECK_AFTER_MS).toISOString();
+  const lapsedDue = new Date(now - LAPSED_RECHECK_AFTER_MS).toISOString();
   const { data, error } = await admin
     .from("inbound_domains")
     .select(DOMAIN_COLUMNS)
     .neq("status", "pending")
-    .or(`last_checked_at.is.null,last_checked_at.lt.${due}`)
+    .or(
+      `last_checked_at.is.null,and(status.eq.verified,last_checked_at.lt.${due}),and(status.eq.lapsed,last_checked_at.lt.${lapsedDue})`
+    )
     .order("last_checked_at", { ascending: true, nullsFirst: true })
     .limit(limit);
   if (error) throw error;
   let lapsed = 0;
   let restored = 0;
+  let lookupFailures = 0;
   const rows = (data ?? []) as unknown as DomainRow[];
   for (const row of rows) {
     let ok: boolean;
     try {
       const records = await checkRecords(row.domain, row.token, resolver);
       ok = records.txt && records.mx;
-    } catch (lookupError) {
-      // A resolver that fails is not the customer's records being gone.
-      reportError("[domains] DNS lookup failed", lookupError);
+    } catch {
+      // A nameserver that fails is not the records being gone: no failed
+      // check, but the row is stamped so it waits its turn again and a few
+      // dead delegations cannot hold up every other domain's check.
+      lookupFailures++;
+      const { error: stampError } = await admin
+        .from("inbound_domains")
+        .update({ last_checked_at: new Date().toISOString() })
+        .eq("id", row.id);
+      if (stampError) throw stampError;
       continue;
     }
-    const failed = ok ? 0 : row.failed_checks + 1;
-    const status = ok ? "verified" : failed >= LAPSE_AFTER_FAILED_CHECKS ? "lapsed" : row.status;
-    if (status === "lapsed" && row.status !== "lapsed") lapsed++;
-    if (status === "verified" && row.status === "lapsed") restored++;
-    const { error: updateError } = await admin
-      .from("inbound_domains")
-      .update({
-        status,
-        failed_checks: failed,
-        last_checked_at: new Date().toISOString(),
-      })
-      .eq("id", row.id);
-    // Restoring may collide with another account that verified it meanwhile.
-    if (updateError && (updateError as { code?: string }).code !== "23505") throw updateError;
+    try {
+      const status = await recordCheck(row, ok);
+      if (status === "lapsed" && row.status !== "lapsed") lapsed++;
+      if (status === "verified" && row.status === "lapsed") restored++;
+    } catch (updateError) {
+      // Restoring collides with another account that verified it meanwhile:
+      // it stays lapsed, checked again in a week.
+      if (!isUniqueViolation(updateError)) throw updateError;
+      const { error: stampError } = await admin
+        .from("inbound_domains")
+        .update({ last_checked_at: new Date().toISOString() })
+        .eq("id", row.id);
+      if (stampError) throw stampError;
+    }
+  }
+  if (lookupFailures > 0) {
+    console.warn(`[domains] DNS lookups failed for ${lookupFailures} of ${rows.length} domains`);
   }
   return { checked: rows.length, lapsed, restored };
 }
@@ -524,7 +646,7 @@ export async function isInboundDomainAddress(email: string): Promise<boolean> {
     .from("inbound_domains")
     .select("id")
     .eq("domain", domain)
-    .neq("status", "pending")
+    .eq("status", "verified")
     .limit(1);
   if (error) throw error;
   return (data ?? []).length > 0;

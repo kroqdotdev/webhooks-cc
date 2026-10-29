@@ -33,7 +33,7 @@ import {
 import {
   claimAttemptBlock,
   createServiceAuthRegistration,
-  normalizeLoginHint,
+  checkLoginHint,
 } from "@/lib/agent/claims";
 import { linkIdJagIdentity } from "@/lib/agent/delegations";
 import { maxAuthAgeSeconds, verifyIdJag } from "@/lib/agent/id-jag";
@@ -280,7 +280,7 @@ async function registerServiceAuth(
   );
   if (limit.response) return rateLimitedResponse(limit.response);
 
-  const loginHint = normalizeLoginHint(body.login_hint);
+  const loginHint = await checkLoginHint(body.login_hint);
   const clientName = cleanClientName(body.client_name);
   let created;
   try {

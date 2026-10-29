@@ -1,4 +1,5 @@
 import { auditDomain, domainAccount, domainErrorResponse } from "@/lib/domain-route";
+import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { deleteDomain, setDomainRouting, type DomainRoute } from "@/lib/supabase/inbound-domains";
 import { isUuid } from "@/lib/uuid";
 
@@ -12,6 +13,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (context instanceof Response) return context;
   const { id } = await params;
   if (!isUuid(id)) return Response.json({ error: "Domain not found" }, { status: 404 });
+  const limited = await checkRateLimitByKeyWithInfo(`user:domains-change:${context.userId}`, 60);
+  if (limited.response) return limited.response;
 
   let body: Record<string, unknown> | null = null;
   try {
@@ -61,6 +64,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (context instanceof Response) return context;
   const { id } = await params;
   if (!isUuid(id)) return Response.json({ error: "Domain not found" }, { status: 404 });
+  const limited = await checkRateLimitByKeyWithInfo(`user:domains-change:${context.userId}`, 60);
+  if (limited.response) return limited.response;
   try {
     await deleteDomain(context.account, id);
     await auditDomain(request, context.userId, context.account, "domain.deleted", 204, { id });

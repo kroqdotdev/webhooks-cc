@@ -34,10 +34,12 @@ create table if not exists public.inbound_domains (
   )
 );
 
--- A domain once verified belongs to one owner; others may add it, pending,
--- but never verify it while it is held.
-create unique index if not exists inbound_domains_held
-  on public.inbound_domains (domain) where status <> 'pending';
+-- A verified domain belongs to one owner; others may add it, pending, but
+-- never verify it while it is held. A lapsed one holds nothing, so whoever
+-- controls the domain's DNS now can verify it.
+drop index if exists public.inbound_domains_held;
+create unique index inbound_domains_held
+  on public.inbound_domains (domain) where status = 'verified';
 create unique index if not exists inbound_domains_user_domain
   on public.inbound_domains (user_id, domain) where user_id is not null;
 create unique index if not exists inbound_domains_team_domain
@@ -72,31 +74,34 @@ revoke all on table public.inbound_domain_routes from anon, authenticated;
 alter table public.users add column if not exists extra_domains integer not null default 0;
 alter table public.teams add column if not exists extra_domains integer not null default 0;
 
--- How many custom domains an owner may use now.
+-- How many custom domains an owner may use now: the plan's own, plus extra
+-- ones only on a plan that has custom domains at all (extra_domains can lag
+-- a downgrade until the add-on's events are processed).
 create or replace function public.inbound_domains_allowed(p_user_id uuid, p_team_id uuid)
 returns integer
 language sql
 stable
 set search_path = ''
 as $$
-  select case
+  select coalesce(case
     when p_user_id is not null then (
-      select coalesce(pe.custom_domains, 0) + u.extra_domains
+      select case when coalesce(pe.custom_domains, 0) > 0
+                  then pe.custom_domains + u.extra_domains else 0 end
         from public.users u
         join public.plan_entitlements pe on pe.key = u.plan
        where u.id = p_user_id
     )
     else (
       select case
-               when t.subscription_status is null then 0
-               else coalesce(pe.custom_domains, 0) + t.extra_domains
+               when t.subscription_status is null or coalesce(pe.custom_domains, 0) = 0 then 0
+               else pe.custom_domains + t.extra_domains
              end
         from public.teams t
         join public.plan_entitlements pe
           on pe.key = case when t.business then 'team_business' else 'team' end
        where t.id = p_team_id
     )
-  end
+  end, 0)
 $$;
 
 -- The endpoint mail to local@domain lands on: {status, slug}. status is ok,
@@ -133,7 +138,7 @@ begin
          and (d.user_id = v_domain.user_id or d.team_id = v_domain.team_id)
     ) r
    where r.id = v_domain.id;
-  if v_rank > public.inbound_domains_allowed(v_domain.user_id, v_domain.team_id) then
+  if v_rank > coalesce(public.inbound_domains_allowed(v_domain.user_id, v_domain.team_id), 0) then
     return jsonb_build_object('status', 'relay_denied');
   end if;
 
@@ -170,10 +175,87 @@ begin
 end;
 $$;
 
+-- A domain's routing replaced in one transaction: the catch-all endpoint
+-- and every address. The web app checks the endpoints first.
+create or replace function public.set_inbound_domain_routes(
+  p_domain_id uuid,
+  p_catch_all uuid,
+  p_routes jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.inbound_domains
+     set catch_all_endpoint_id = p_catch_all
+   where id = p_domain_id;
+  if not found then
+    raise exception 'no such domain' using errcode = 'P0002';
+  end if;
+  delete from public.inbound_domain_routes where domain_id = p_domain_id;
+  insert into public.inbound_domain_routes (domain_id, local_part, endpoint_id)
+  select p_domain_id, r ->> 'local_part', (r ->> 'endpoint_id')::uuid
+    from jsonb_array_elements(coalesce(p_routes, '[]'::jsonb)) r;
+end;
+$$;
+
+-- At most 20 domains per account or team, counted under the owner's row
+-- lock so two requests at once cannot both pass.
+create or replace function public.inbound_domains_cap()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_count integer;
+begin
+  if new.user_id is not null then
+    perform 1 from public.users where id = new.user_id for update;
+    select count(*) into v_count from public.inbound_domains where user_id = new.user_id;
+  else
+    perform 1 from public.teams where id = new.team_id for update;
+    select count(*) into v_count from public.inbound_domains where team_id = new.team_id;
+  end if;
+  if v_count >= 20 then
+    raise exception 'too many inbound domains' using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists inbound_domains_cap on public.inbound_domains;
+create trigger inbound_domains_cap
+  before insert on public.inbound_domains
+  for each row execute function public.inbound_domains_cap();
+
+-- Whether any account's email is at the domain: such a domain is refused,
+-- because its mail (password resets included) would be readable by whoever
+-- can see the endpoint it is routed to.
+create or replace function public.inbound_domain_has_accounts(p_domain text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from auth.users u
+     where rtrim(lower(split_part(u.email, '@', 2)), '.') = lower(rtrim(p_domain, '.'))
+  )
+$$;
+
 revoke all on function public.inbound_domains_allowed(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.resolve_inbound_recipient(text, text) from public, anon, authenticated;
+revoke all on function public.set_inbound_domain_routes(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.inbound_domains_cap() from public, anon, authenticated;
+revoke all on function public.inbound_domain_has_accounts(text) from public, anon, authenticated;
 grant execute on function public.inbound_domains_allowed(uuid, uuid) to service_role;
 grant execute on function public.resolve_inbound_recipient(text, text) to service_role;
+grant execute on function public.set_inbound_domain_routes(uuid, uuid, jsonb) to service_role;
+grant execute on function public.inbound_domain_has_accounts(text) to service_role;
 
 -- Addresses at a customer's verified domain never become account emails:
 -- their mail is readable through this app, like the capture domain's
@@ -202,7 +284,7 @@ begin
   end if;
   if exists (
     select 1 from public.inbound_domains d
-     where d.domain = email_domain and d.status <> 'pending'
+     where d.domain = email_domain and d.status = 'verified'
   ) then
     return jsonb_build_object(
       'error', jsonb_build_object(
