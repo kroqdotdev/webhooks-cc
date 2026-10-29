@@ -985,7 +985,13 @@ export interface Database {
           id: string;
           user_id: string | null;
           team_id: string | null;
-          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
+          kind:
+            | "blocks"
+            | "overage"
+            | "page_blocks"
+            | "page_overage"
+            | "team_business"
+            | "domain_blocks";
           polar_subscription_id: string;
           status: "active" | "canceled" | "past_due" | null;
           units: number;
@@ -1001,7 +1007,13 @@ export interface Database {
           id?: string;
           user_id?: string | null;
           team_id?: string | null;
-          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
+          kind:
+            | "blocks"
+            | "overage"
+            | "page_blocks"
+            | "page_overage"
+            | "team_business"
+            | "domain_blocks";
           polar_subscription_id: string;
           status?: "active" | "canceled" | "past_due" | null;
           units?: number;
@@ -1037,7 +1049,12 @@ export interface Database {
           polar_order_id: string;
           user_id: string | null;
           team_id: string | null;
-          kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
+          kind:
+            | "credits"
+            | "block_increase"
+            | "page_credits"
+            | "page_block_increase"
+            | "domain_increase";
           units: number;
           requests: number;
           amount: number | null;
@@ -1052,7 +1069,12 @@ export interface Database {
           polar_order_id: string;
           user_id?: string | null;
           team_id?: string | null;
-          kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
+          kind:
+            | "credits"
+            | "block_increase"
+            | "page_credits"
+            | "page_block_increase"
+            | "domain_increase";
           units: number;
           requests: number;
           amount?: number | null;
@@ -1895,7 +1917,13 @@ export interface Database {
         Args: {
           p_user_id: string | null;
           p_team_id: string | null;
-          p_kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
+          p_kind:
+            | "blocks"
+            | "overage"
+            | "page_blocks"
+            | "page_overage"
+            | "team_business"
+            | "domain_blocks";
           p_subscription_id: string;
           p_status: "active" | "canceled" | "past_due" | null;
           p_units: number;
@@ -1911,7 +1939,12 @@ export interface Database {
           p_order_id: string;
           p_user_id: string | null;
           p_team_id: string | null;
-          p_kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
+          p_kind:
+            | "credits"
+            | "block_increase"
+            | "page_credits"
+            | "page_block_increase"
+            | "domain_increase";
           p_units: number;
           p_amount: number | null;
         };

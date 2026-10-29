@@ -4,15 +4,18 @@ import {
   DEFAULT_OVERAGE_MAX_REQUESTS,
   DEFAULT_PAGE_OVERAGE_MAX_PAGES,
   MAX_BLOCKS,
+  MAX_EXTRA_DOMAINS,
   MAX_PAGE_BLOCKS,
   periodOverageUsed,
 } from "@/lib/capacity";
 import { publicEnv } from "@/lib/env";
 import {
   configuredCapacityProductIds,
+  configuredDomainProductIds,
   configuredPageProductIds,
   createPolarClient,
   getCapacityProductIds,
+  getDomainProductIds,
   getPageProductIds,
   isEndedSubscriptionError,
   loggablePolarError,
@@ -50,6 +53,10 @@ import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
  * on the team's customer, aligned and ended with the team's plan the same
  * way; while it is live the team is a Business team (sync_capacity_account).
  *
+ * Extra inbound domains (migration 00073) are recurring blocks only, one
+ * unit per domain, with the same mid-period add: `resource: "domains"`.
+ * Like page add-ons they need Business or Team Business.
+ *
  * Polar's subscription events for these products never reach the plan
  * handlers: the webhook routes them here by product.
  */
@@ -61,8 +68,12 @@ type CapacityKind = CapacitySubscriptionRow["kind"];
 
 type PurchaseKind = Database["public"]["Tables"]["capacity_purchases"]["Row"]["kind"];
 
-/** What an add-on adds to: the request quota or the parsed pages. */
-export type CapacityResource = "requests" | "pages";
+/** What an add-on adds to: the request quota, the parsed pages or the custom domains. */
+export type CapacityResource = "requests" | "pages" | "domains";
+
+/** A resource's products: every resource has recurring blocks, not all the rest. */
+type ResourceProducts = Pick<CapacityProductIds, "monthly" | "monthlyAdd"> &
+  Partial<Pick<CapacityProductIds, "oneTime" | "overage">>;
 
 /** An add-on product, as the webhook routes it. */
 export type CapacityProductKind =
@@ -70,18 +81,19 @@ export type CapacityProductKind =
   | { resource: "team"; kind: "team_business" };
 
 interface ResourceSpec {
-  /** The recurring blocks' and overage's subscription kinds. */
+  /** The recurring blocks' and overage's subscription kinds (null: not sold). */
   blocks: CapacityKind;
-  overage: CapacityKind;
-  /** One-time blocks, and blocks added to the subscription mid-period. */
-  credits: PurchaseKind;
+  overage: CapacityKind | null;
+  /** One-time blocks (null: not sold), and blocks added to the subscription mid-period. */
+  credits: PurchaseKind | null;
   increase: PurchaseKind;
   blockSize: number;
   maxBlocks: number;
   defaultOverageMax: number;
-  /** Where the account page shows them. */
+  /** Where the account's settings show them, and the anchor there. */
+  accountPath: string;
   anchor: string;
-  products: () => CapacityProductIds | null;
+  products: () => ResourceProducts | null;
   /** In the customer's words. */
   noun: string;
 }
@@ -95,6 +107,7 @@ const RESOURCES: Record<CapacityResource, ResourceSpec> = {
     blockSize: BLOCK_REQUESTS,
     maxBlocks: MAX_BLOCKS,
     defaultOverageMax: DEFAULT_OVERAGE_MAX_REQUESTS,
+    accountPath: "/account/plan",
     anchor: "extra-requests",
     products: getCapacityProductIds,
     noun: "requests",
@@ -107,14 +120,36 @@ const RESOURCES: Record<CapacityResource, ResourceSpec> = {
     blockSize: BLOCK_PAGES,
     maxBlocks: MAX_PAGE_BLOCKS,
     defaultOverageMax: DEFAULT_PAGE_OVERAGE_MAX_PAGES,
+    accountPath: "/account/plan",
     anchor: "extra-pages",
     products: getPageProductIds,
     noun: "parsed pages",
   },
+  domains: {
+    blocks: "domain_blocks",
+    overage: null,
+    credits: null,
+    increase: "domain_increase",
+    blockSize: 1,
+    maxBlocks: MAX_EXTRA_DOMAINS,
+    defaultOverageMax: 0,
+    accountPath: "/account/domains",
+    anchor: "extra-domains",
+    products: getDomainProductIds,
+    noun: "domains",
+  },
 };
 
 const PAGE_KINDS = new Set<CapacityKind>(["page_blocks", "page_overage"]);
-const BLOCK_KINDS = new Set<CapacityKind>(["blocks", "page_blocks"]);
+const DOMAIN_KINDS = new Set<CapacityKind>(["domain_blocks"]);
+const BLOCK_KINDS = new Set<CapacityKind>(["blocks", "page_blocks", "domain_blocks"]);
+
+/** Where paid recurring blocks of a kind are kept when they cannot renew (none for domains). */
+function creditsFor(kind: CapacityKind): PurchaseKind | null {
+  if (kind === "blocks") return "credits";
+  if (kind === "page_blocks") return "page_credits";
+  return null;
+}
 
 export class CapacityError extends Error {
   code: string;
@@ -178,6 +213,13 @@ interface AccountRow {
   pages_active: boolean;
   /** Extra pages end at the renewal: the plan changes to one without them. */
   pages_ending: boolean;
+  /** Extra domains count: a plan with custom domains (Business, Team Business), live. */
+  domains_active: boolean;
+  /** Extra domains end at the renewal: the plan changes to one without custom domains. */
+  domains_ending: boolean;
+  /** The plan's own custom domains (its entitlements), and the extra ones counting now. */
+  plan_custom_domains: number;
+  extra_domains: number;
   /**
    * The quota period is the plan's last before it ends or changes: always
    * for monthly plans and teams, only the year's last month on an annual
@@ -209,7 +251,7 @@ interface AccountRow {
 }
 
 const ACCOUNT_COLUMNS =
-  "polar_customer_id, cancel_at_period_end, requests_used, request_limit, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start, period_start, period_end, credit_pages, page_block_pages, page_overage_active, page_overage_max";
+  "polar_customer_id, cancel_at_period_end, requests_used, request_limit, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start, period_start, period_end, credit_pages, page_block_pages, page_overage_active, page_overage_max, extra_domains";
 
 function accountIds(account: CapacityAccount): {
   p_user_id: string | null;
@@ -237,6 +279,9 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
       pages_active: live && data.business,
       // Set from the Team Business add-on by requireEligible when it matters.
       pages_ending: false,
+      domains_active: live && teamEntitlements(data.business).customDomains > 0,
+      domains_ending: false,
+      plan_custom_domains: teamEntitlements(data.business).customDomains,
       last_period: true,
       annual_end: null,
       pages_follow_period: true,
@@ -265,6 +310,9 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
     plan_active: entitlements.requestAddons && row.subscription_status !== null,
     pages_active: entitlements.pageAddons && row.subscription_status !== null,
     pages_ending: pendingPlan !== null && !planEntitlements(pendingPlan).pageAddons,
+    domains_active: entitlements.customDomains > 0 && row.subscription_status !== null,
+    domains_ending: pendingPlan !== null && planEntitlements(pendingPlan).customDomains === 0,
+    plan_custom_domains: entitlements.customDomains,
     last_period: interval !== "year" || endsBeforeNextWindow(billingEnd, row.period_end),
     annual_end: interval === "year" ? billingEnd : null,
     plan_pages: entitlements.parsedPages,
@@ -311,25 +359,25 @@ async function ensureCustomer(account: CapacityAccount, ownerUserId: string): Pr
 async function successUrl(
   account: CapacityAccount,
   what: string,
-  anchor = "extra-requests"
+  spec: Pick<ResourceSpec, "accountPath" | "anchor"> = RESOURCES.requests
 ): Promise<string> {
   const appUrl = await returnOrigin(publicEnv().NEXT_PUBLIC_APP_URL);
   return account.kind === "team"
-    ? `${appUrl}/teams/${account.teamId}?capacity=${what}#${anchor}`
-    : `${appUrl}/account/plan?capacity=${what}#${anchor}`;
+    ? `${appUrl}/teams/${account.teamId}?capacity=${what}#${spec.anchor}`
+    : `${appUrl}${spec.accountPath}?capacity=${what}#${spec.anchor}`;
 }
 
-function requireProducts(resource: CapacityResource = "requests") {
+function notOffered(resource: CapacityResource): CapacityError {
+  return new CapacityError(
+    "not_offered",
+    `Extra ${RESOURCES[resource].noun} are not available yet`,
+    404
+  );
+}
+
+function requireProducts(resource: CapacityResource = "requests"): ResourceProducts {
   const products = RESOURCES[resource].products();
-  if (!products) {
-    throw new CapacityError(
-      "not_offered",
-      resource === "pages"
-        ? "Extra parsed pages are not available yet"
-        : "Extra requests are not available yet",
-      404
-    );
-  }
+  if (!products) throw notOffered(resource);
   return products;
 }
 
@@ -357,6 +405,14 @@ async function requireEligible(
         : "Extra parsed pages are part of Business. Upgrade first."
     );
   }
+  if (resource === "domains" && !row.domains_active) {
+    throw new CapacityError(
+      "plan_required",
+      account.kind === "team"
+        ? "Custom domains come with Team Business. Add it to the team first."
+        : "Custom domains are part of Business. Upgrade first."
+    );
+  }
   if (!row.plan_active) {
     throw new CapacityError(
       "plan_required",
@@ -365,18 +421,21 @@ async function requireEligible(
         : "Extra requests are part of Pro. Upgrade first."
     );
   }
-  if (renewing && resource === "pages") {
+  if (renewing && resource !== "requests") {
+    const noun = resource === "pages" ? "extra parsed pages" : "extra domains";
     const ending =
       account.kind === "team"
         ? (liveOfKind(await liveSubscriptions(account), "team_business")?.cancel_at_period_end ??
           false)
-        : row.pages_ending;
+        : resource === "pages"
+          ? row.pages_ending
+          : row.domains_ending;
     if (ending && row.last_period) {
       throw new CapacityError(
         "plan_ending",
         account.kind === "team"
-          ? "Team Business is set to end, and extra parsed pages end with it. Keep Team Business first."
-          : "Your plan changes from Business at the renewal, and extra parsed pages end with it. Keep Business first."
+          ? `Team Business is set to end, and ${noun} end with it. Keep Team Business first.`
+          : `Your plan changes from Business at the renewal, and ${noun} end with it. Keep Business first.`
       );
     }
   }
@@ -416,6 +475,7 @@ export async function getCapacityState(
     throw new CapacityError("not_found", "Account not found", 404);
   }
   if (resource === "pages") return pageState(account, row);
+  if (resource === "domains") return domainState(account, row);
   const subscriptions = await liveSubscriptions(account);
   const blocks = liveOfKind(subscriptions, "blocks");
   const overage = liveOfKind(subscriptions, "overage");
@@ -513,6 +573,57 @@ async function pageState(account: CapacityAccount, row: AccountRow): Promise<Cap
   };
 }
 
+/**
+ * Custom domains in the same shape, counted in domains: the plan's own
+ * (planRequests), the extra ones (blockRequests) and the ones added (used).
+ * There are no one-time domains and no overage.
+ */
+async function domainState(account: CapacityAccount, row: AccountRow): Promise<CapacityState> {
+  const admin = createAdminClient();
+  let query = admin.from("inbound_domains").select("id", { count: "exact", head: true });
+  query =
+    account.kind === "team"
+      ? query.eq("team_id", account.teamId)
+      : query.eq("user_id", account.userId);
+  const { count, error } = await query;
+  if (error) throw error;
+  const subscriptions = await liveSubscriptions(account);
+  const blocks = liveOfKind(subscriptions, "domain_blocks");
+  const teamBusinessEnding =
+    liveOfKind(subscriptions, "team_business")?.cancel_at_period_end ?? false;
+  return {
+    offered: getDomainProductIds() !== null,
+    eligible: row.domains_active,
+    planEnding:
+      row.domains_active &&
+      row.last_period &&
+      (row.cancel_at_period_end || row.domains_ending || teamBusinessEnding),
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    planRequests: row.domains_active ? row.plan_custom_domains : 0,
+    blockRequests: row.extra_domains,
+    used: count ?? 0,
+    creditRequests: 0,
+    blocks: blocks
+      ? {
+          units: blocks.units,
+          pendingUnits: blocks.pending_units,
+          cancelAtPeriodEnd: blocks.cancel_at_period_end,
+          pastDue: blocks.status === "past_due",
+          periodEnd: blocks.period_end,
+        }
+      : null,
+    overage: {
+      subscribed: false,
+      active: false,
+      cancelAtPeriodEnd: false,
+      pastDue: false,
+      maxRequests: 0,
+      usedRequests: 0,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Customer actions
 // ---------------------------------------------------------------------------
@@ -525,17 +636,18 @@ export async function createOneTimeBlocksCheckout(
   resource: CapacityResource = "requests"
 ): Promise<string> {
   const spec = RESOURCES[resource];
-  const products = requireProducts(resource);
+  const { oneTime } = requireProducts(resource);
+  if (!oneTime) throw notOffered(resource);
   await requireEligible(account, { resource });
   const customerId = await ensureCustomer(account, actingUserId);
 
   const checkout = await createPolarClient().checkouts.create({
-    products: [products.oneTime],
+    products: [oneTime],
     units: blocks,
     min_units: 1,
     max_units: spec.maxBlocks,
     customer_id: customerId,
-    success_url: await successUrl(account, "blocks", spec.anchor),
+    success_url: await successUrl(account, "blocks", spec),
     metadata: { capacity: "one_time", resource },
   });
   return checkout.url;
@@ -571,7 +683,7 @@ export async function changeMonthlyBlocks(
       min_units: 1,
       max_units: spec.maxBlocks,
       customer_id: customerId,
-      success_url: await successUrl(account, "monthly", spec.anchor),
+      success_url: await successUrl(account, "monthly", spec),
       metadata: { capacity: "monthly", resource },
     });
     return { kind: "checkout", url: checkout.url };
@@ -606,7 +718,7 @@ export async function changeMonthlyBlocks(
       min_units: blocks - current.units,
       max_units: blocks - current.units,
       customer_id: customerId,
-      success_url: await successUrl(account, "monthly", spec.anchor),
+      success_url: await successUrl(account, "monthly", spec),
       metadata: {
         capacity: "monthly_add",
         resource,
@@ -667,6 +779,8 @@ export async function setOverage(
 ): Promise<OverageResult> {
   const spec = RESOURCES[resource];
   const products = requireProducts(resource);
+  if (!spec.overage || !products.overage) throw notOffered(resource);
+  const overageProduct = products.overage;
   const current = liveOfKind(await liveSubscriptions(account), spec.overage);
   const polar = createPolarClient();
 
@@ -710,9 +824,9 @@ export async function setOverage(
   if (!current) {
     const customerId = await ensureCustomer(account, actingUserId);
     const checkout = await polar.checkouts.create({
-      products: [products.overage],
+      products: [overageProduct],
       customer_id: customerId,
-      success_url: await successUrl(account, "overage", spec.anchor),
+      success_url: await successUrl(account, "overage", spec),
       metadata: { capacity: "overage", resource },
     });
     return { kind: "checkout", url: checkout.url };
@@ -762,7 +876,10 @@ export async function createTeamBusinessCheckout(
   const checkout = await createPolarClient().checkouts.create({
     products: [productId],
     customer_id: customerId,
-    success_url: await successUrl(account, "business", "team-business"),
+    success_url: await successUrl(account, "business", {
+      accountPath: "/account/plan",
+      anchor: "team-business",
+    }),
     metadata: { capacity: "team_business" },
   });
   return checkout.url;
@@ -815,10 +932,12 @@ export function capacityProductKind(productId: string | null): CapacityProductKi
   // still stay away from the plan handlers.
   if (!productId) return null;
   if (productId === teamBusinessProductId()) return { resource: "team", kind: "team_business" };
-  for (const [resource, products] of [
+  const all: [CapacityResource, Partial<CapacityProductIds>][] = [
     ["requests", configuredCapacityProductIds()],
     ["pages", configuredPageProductIds()],
-  ] as const) {
+    ["domains", configuredDomainProductIds()],
+  ];
+  for (const [resource, products] of all) {
     if (productId === products.oneTime) return { resource, kind: "one_time" };
     if (productId === products.monthly) return { resource, kind: "monthly" };
     if (productId === products.monthlyAdd) return { resource, kind: "monthly_add" };
@@ -1033,23 +1152,21 @@ async function settleDuplicate(
   // as ended and never comes back here. The grant is recorded once under the
   // subscription's id, so a retry grants nothing twice.
   const units = typeof subscription.units === "number" ? subscription.units : 0;
-  if (BLOCK_KINDS.has(kind) && units >= 1) {
+  const credits = creditsFor(kind);
+  if (credits && units >= 1) {
     await keepAsOneTimeBlocks(
       account,
       subscriptionId,
       units,
       typeof subscription.amount === "number" ? subscription.amount : null,
-      kind === "page_blocks" ? "page_credits" : "credits"
+      credits
     );
   }
-  if (kind === "team_business") {
-    reportError(
-      "[capacity] a second Team Business subscription was revoked; refund it",
-      undefined,
-      {
-        subscriptionId,
-      }
-    );
+  if (kind === "team_business" || kind === "domain_blocks") {
+    // Neither has a one-time form to keep what was paid.
+    reportError(`[capacity] a second ${kind} subscription was revoked; refund it`, undefined, {
+      subscriptionId,
+    });
   }
   await revokeQuietly(subscriptionId);
 }
@@ -1068,11 +1185,13 @@ async function applyPaidOrder(
     return;
   }
 
+  const kind = productKind === "one_time" ? spec.credits : spec.increase;
+  if (!kind) return;
   const admin = createAdminClient();
   const { data: result, error } = await admin.rpc("grant_capacity_purchase", {
     p_order_id: orderId,
     ...accountIds(account),
-    p_kind: productKind === "one_time" ? spec.credits : spec.increase,
+    p_kind: kind,
     p_units: units,
     p_amount: typeof data.total_amount === "number" ? data.total_amount : null,
   });
@@ -1081,6 +1200,13 @@ async function applyPaidOrder(
   const granted = asRecord(result);
   if (granted?.status === "no_account") {
     reportError("[capacity] paid order for a deleted account: refund it", undefined, { orderId });
+    return;
+  }
+  if (granted?.unapplied === true) {
+    // Domains added to a subscription that ended while the checkout was open.
+    reportError("[capacity] paid increase with nothing to raise: refund it", undefined, {
+      orderId,
+    });
     return;
   }
   if (granted?.kind !== spec.increase || granted.synced === true) return;
@@ -1165,12 +1291,8 @@ export async function applyCapacityWebhookEvent(
         await applySubscriptionEvent(eventType, account, "team_business", data);
       } else if (productKind.kind === "monthly" || productKind.kind === "overage") {
         const spec = RESOURCES[productKind.resource];
-        await applySubscriptionEvent(
-          eventType,
-          account,
-          productKind.kind === "monthly" ? spec.blocks : spec.overage,
-          data
-        );
+        const kind = productKind.kind === "monthly" ? spec.blocks : spec.overage;
+        if (kind) await applySubscriptionEvent(eventType, account, kind, data);
       }
       return;
 
@@ -1192,7 +1314,11 @@ export async function applyCapacityWebhookEvent(
       });
       if (error) throw error;
       const refunded = asRecord(result)?.kind;
-      if (refunded === "block_increase" || refunded === "page_block_increase") {
+      if (
+        refunded === "block_increase" ||
+        refunded === "page_block_increase" ||
+        refunded === "domain_increase"
+      ) {
         reportError(
           "[capacity] refunded monthly blocks: check the renewal count in Polar",
           undefined,
@@ -1275,15 +1401,23 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
   const plan = await readAccount(account);
   if (!plan) return;
 
-  // Page add-ons also end when the account leaves Business at the renewal
-  // or the team's Team Business ends.
-  const pagesLeaving =
-    plan.pages_ending || (liveOfKind(rows, "team_business")?.cancel_at_period_end ?? false);
+  // Page and domain add-ons also end when the account leaves Business at the
+  // renewal or the team's Team Business ends.
+  const teamBusinessEnding = liveOfKind(rows, "team_business")?.cancel_at_period_end ?? false;
+  const pagesLeaving = plan.pages_ending || teamBusinessEnding;
+  const domainsLeaving = plan.domains_ending || teamBusinessEnding;
 
   for (const row of rows) {
-    // Page add-ons need Business (or Team Business); the rest the plan.
-    const active = PAGE_KINDS.has(row.kind) ? plan.pages_active : plan.plan_active;
-    const leaving = plan.cancel_at_period_end || (PAGE_KINDS.has(row.kind) && pagesLeaving);
+    // Page and domain add-ons need Business (or Team Business); the rest the plan.
+    const active = PAGE_KINDS.has(row.kind)
+      ? plan.pages_active
+      : DOMAIN_KINDS.has(row.kind)
+        ? plan.domains_active
+        : plan.plan_active;
+    const leaving =
+      plan.cancel_at_period_end ||
+      (PAGE_KINDS.has(row.kind) && pagesLeaving) ||
+      (DOMAIN_KINDS.has(row.kind) && domainsLeaving);
     if (!active) {
       // The plan is gone, not merely ending: a later plan is a new decision,
       // so nothing here is marked to come back with it.
@@ -1306,13 +1440,18 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
         // behind on payment were not paid for. Granted first, while the row
         // is still live, so a failure here is retried with the webhook.
         if (!row.cancel_at_period_end && row.status === "active" && row.units > 0) {
-          await keepAsOneTimeBlocks(
-            account,
-            row.polar_subscription_id,
-            row.units,
-            null,
-            row.kind === "page_blocks" ? "page_credits" : "credits"
-          );
+          const credits = creditsFor(row.kind);
+          if (credits) {
+            await keepAsOneTimeBlocks(account, row.polar_subscription_id, row.units, null, credits);
+          } else {
+            reportError(
+              "[capacity] paid extra domains ended with the plan; refund them",
+              undefined,
+              {
+                subscriptionId: row.polar_subscription_id,
+              }
+            );
+          }
         }
         await revokeQuietly(row.polar_subscription_id);
         await markEnded(account, row);

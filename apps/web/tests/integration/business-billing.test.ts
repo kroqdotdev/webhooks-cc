@@ -5,7 +5,8 @@ import { createClient } from "@supabase/supabase-js";
  * Business billing (migration 00070) against the local database: the plan
  * webhook for Business and its annual interval, page add-ons that count only
  * with Business, the Team Business add-on and the team pool, page overage
- * reporting and the order pages are charged in. Polar is mocked; the
+ * reporting and the order pages are charged in, and extra inbound domains
+ * (migration 00073). Polar is mocked; the
  * webhook's product matching reads the product ids set here.
  */
 
@@ -592,6 +593,138 @@ describe("page add-ons when Business is about to end", () => {
     await expect(changeMonthlyBlocks(account, owner, 1, "pages")).rejects.toMatchObject({
       code: "plan_ending",
     });
+  });
+});
+
+describe("extra inbound domains", () => {
+  async function allowed(account: { userId?: string; teamId?: string }) {
+    const { data, error } = await admin.rpc("inbound_domains_allowed", {
+      p_user_id: account.userId ?? null,
+      p_team_id: account.teamId ?? null,
+    });
+    if (error) throw error;
+    return data as number;
+  }
+
+  it("count only on Business, on top of the included domain", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    expect(await allowed({ userId })).toBe(1);
+    expect(
+      (await applyAddon({ userId }, "domain_blocks", `sub_db_${ts}`, "active", 2)).status
+    ).toBe("ok");
+    expect((await user(userId)).extra_domains).toBe(2);
+    expect(await allowed({ userId })).toBe(3);
+    const state = await getCapacityState({ kind: "user", userId }, "domains");
+    expect(state).toMatchObject({ eligible: true, planRequests: 1, blockRequests: 2, used: 0 });
+    expect(state.blocks).toMatchObject({ units: 2, pendingUnits: 2 });
+
+    // Down to Pro: none included, and the extra ones stop counting.
+    await admin.from("users").update({ plan: "pro" }).eq("id", userId);
+    await admin.rpc("sync_capacity_account", { p_user_id: userId, p_team_id: null });
+    expect((await user(userId)).extra_domains).toBe(0);
+    expect(await allowed({ userId })).toBe(0);
+  });
+
+  it("raise the subscription when added mid-period, and record an add with nothing to raise", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    const grant = async (order: string) => {
+      const { data, error } = await admin.rpc("grant_capacity_purchase", {
+        p_order_id: order,
+        p_user_id: userId,
+        p_team_id: null,
+        p_kind: "domain_increase",
+        p_units: 1,
+        p_amount: 300,
+      });
+      if (error) throw error;
+      return data as Record<string, unknown>;
+    };
+
+    // No subscription to raise (it ended while the checkout was open).
+    expect(await grant(`ord_dom_orphan_${ts}`)).toMatchObject({
+      status: "ok",
+      kind: "domain_increase",
+      unapplied: true,
+    });
+    expect((await user(userId)).extra_domains).toBe(0);
+    expect((await user(userId)).credit_requests).toBe(0);
+
+    await applyAddon({ userId }, "domain_blocks", `sub_db_add_${ts}`, "active", 1);
+    expect(await grant(`ord_dom_add_${ts}`)).toMatchObject({
+      status: "ok",
+      kind: "domain_increase",
+      target_units: 2,
+      synced: false,
+    });
+    expect((await user(userId)).extra_domains).toBe(2);
+    // A redelivery grants nothing twice.
+    expect(await grant(`ord_dom_add_${ts}`)).toMatchObject({ status: "duplicate" });
+    expect((await user(userId)).extra_domains).toBe(2);
+  });
+
+  it("count for a team only with Team Business", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `dom-${ts}`, created_by: owner, seats: 1, subscription_status: "active" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+
+    await applyAddon(account, "domain_blocks", `sub_tdb_${ts}`, "active", 2);
+    expect(await allowed(account)).toBe(0);
+    await expect(changeMonthlyBlocks(account, owner, 3, "domains")).rejects.toMatchObject({
+      code: "plan_required",
+    });
+
+    await applyAddon(account, "team_business", `sub_tdb_tb_${ts}`, "active");
+    expect(await allowed(account)).toBe(3);
+
+    // Team Business set to end: the extra domains end with it.
+    await setTeamBusinessEnding(account, true);
+    const { data: rows } = await admin
+      .from("capacity_subscriptions")
+      .select("kind, cancel_at_period_end, canceled_with_plan")
+      .eq("team_id", team.id)
+      .order("kind");
+    expect(rows).toEqual([
+      { kind: "domain_blocks", cancel_at_period_end: true, canceled_with_plan: true },
+      { kind: "team_business", cancel_at_period_end: true, canceled_with_plan: false },
+    ]);
+    expect((await getCapacityState(account, "domains")).planEnding).toBe(true);
+  });
+
+  it("end with a change away from Business, and come back when Business is kept", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    await applyAddon({ userId }, "domain_blocks", `sub_db_end_${ts}`, "active", 1);
+    const account = { kind: "user" as const, userId };
+
+    await admin
+      .from("users")
+      .update({ pending_plan: "pro", pending_interval: "month" })
+      .eq("id", userId);
+    await reconcileAddonsWithPlan(account);
+    const ending = async () =>
+      (
+        await admin
+          .from("capacity_subscriptions")
+          .select("cancel_at_period_end")
+          .eq("polar_subscription_id", `sub_db_end_${ts}`)
+          .single()
+      ).data?.cancel_at_period_end;
+    expect(await ending()).toBe(true);
+    await expect(changeMonthlyBlocks(account, userId, 2, "domains")).rejects.toMatchObject({
+      code: "plan_ending",
+    });
+
+    await admin
+      .from("users")
+      .update({ pending_plan: null, pending_interval: null })
+      .eq("id", userId);
+    await reconcileAddonsWithPlan(account);
+    expect(await ending()).toBe(false);
   });
 });
 

@@ -99,6 +99,10 @@ const serverEnvSchema = z
     POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID: z.string().optional(),
     POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID: z.string().optional(),
     POLAR_PAGE_OVERAGE_PRODUCT_ID: z.string().optional(),
+    // Extra inbound domains (migration 00073): monthly units and the
+    // mid-period add; offered only when both are set (getDomainProductIds()).
+    POLAR_DOMAINS_PRODUCT_ID: z.string().optional(),
+    POLAR_DOMAINS_ADD_PRODUCT_ID: z.string().optional(),
     // S3-compatible object storage where the receiver keeps captured email
     // (raw message and attachments, lib/storage). All four, or none; region
     // defaults to us-east-1, which S3-compatible services accept.
@@ -261,6 +265,8 @@ export function serverEnv() {
       POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID:
         process.env.POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID,
       POLAR_PAGE_OVERAGE_PRODUCT_ID: process.env.POLAR_PAGE_OVERAGE_PRODUCT_ID,
+      POLAR_DOMAINS_PRODUCT_ID: process.env.POLAR_DOMAINS_PRODUCT_ID,
+      POLAR_DOMAINS_ADD_PRODUCT_ID: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,

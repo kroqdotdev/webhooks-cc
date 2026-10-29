@@ -1,18 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Copy, Plus, Trash2 } from "lucide-react";
 import {
   InlineMessage,
+  Notice,
   Panel,
   PanelRow,
   StatusTag,
   settingsLink,
 } from "@/components/settings/panel";
-import { shortDate } from "@/components/settings/format";
+import { longDate, shortDate } from "@/components/settings/format";
 import { Button } from "@/components/ui/button";
+import { MAX_EXTRA_DOMAINS, MONTHLY_DOMAIN_CENTS } from "@/lib/capacity";
+import { changeCapacity, fetchCapacity } from "@/lib/capacity-api";
 import { copyToClipboard } from "@/lib/clipboard";
+import type { CapacityState } from "@/lib/supabase/capacity-billing";
+import { formatCents } from "@/lib/team-pricing";
 import {
   addDomainRequest,
   fetchDomains,
@@ -326,6 +331,205 @@ function DomainCard({
   );
 }
 
+function domainCount(count: number): string {
+  return `${count} ${count === 1 ? "domain" : "domains"}`;
+}
+
+/**
+ * How many domains the plan allows (its own plus extra ones) and, where
+ * Polar sells them, the extra domains: a monthly count renewed with the
+ * plan. Adding domains charges them in full at once; fewer apply at the
+ * renewal (capacity add-ons, resource "domains").
+ */
+function ExtraDomains({
+  accessToken,
+  teamId,
+  added,
+  refused,
+  onAllowanceChanged,
+}: {
+  accessToken: string;
+  teamId?: string;
+  /** Domains on the account now, verified or not. */
+  added: number;
+  /** Verified domains past what the plan allows. */
+  refused: number;
+  /** The number of domains allowed changed: which ones receive mail may have too. */
+  onAllowanceChanged: () => void;
+}) {
+  const [state, setState] = useState<CapacityState | null>(null);
+  const [count, setCount] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [returned, setReturned] = useState(false);
+
+  // A ref, so the parent re-rendering (typing a domain) never refetches this.
+  const onChangedRef = useRef(onAllowanceChanged);
+  useEffect(() => {
+    onChangedRef.current = onAllowanceChanged;
+  }, [onAllowanceChanged]);
+  const allowedRef = useRef<number | null>(null);
+  const update = useCallback((next: CapacityState) => {
+    setState(next);
+    const allowed = next.planRequests + next.blockRequests;
+    if (allowedRef.current !== null && allowedRef.current !== allowed) onChangedRef.current();
+    allowedRef.current = allowed;
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const next = await fetchCapacity(accessToken, teamId, "domains");
+      update(next);
+      setCount((current) =>
+        current === null ? String(next.blocks?.pendingUnits ?? next.blocks?.units ?? 0) : current
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load extra domains");
+    }
+  }, [accessToken, teamId, update]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Back from a checkout for domains: they count once Polar's webhook lands.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get("capacity") || window.location.hash !== "#extra-domains") return;
+    setReturned(true);
+    params.delete("capacity");
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}#extra-domains`
+    );
+    const timers = [3000, 8000, 15000].map((ms) => setTimeout(() => void load(), ms));
+    return () => timers.forEach(clearTimeout);
+  }, [load]);
+
+  const save = async (units: number) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await changeCapacity(
+        accessToken,
+        { resource: "domains", action: "set_monthly_blocks", blocks: units },
+        teamId
+      );
+      if ("url" in result) {
+        window.location.assign(result.url);
+        return;
+      }
+      update(result.state);
+      setCount(String(result.state.blocks?.pendingUnits ?? result.state.blocks?.units ?? 0));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The change was not made");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!state) {
+    return error ? <InlineMessage tone="error">{error}</InlineMessage> : null;
+  }
+
+  const allowed = state.planRequests + state.blockRequests;
+  const units = Number(count ?? 0);
+  const valid = Number.isInteger(units) && units >= 0 && units <= MAX_EXTRA_DOMAINS;
+  const blocks = state.blocks;
+  const renewal = blocks?.periodEnd
+    ? longDate(blocks.periodEnd)
+    : state.periodEnd
+      ? longDate(state.periodEnd)
+      : "the renewal";
+  const current = blocks?.pendingUnits ?? blocks?.units ?? 0;
+
+  return (
+    <div id="extra-domains" className="space-y-3 scroll-mt-24">
+      {returned && (
+        <Notice tone="success" title="Thanks">
+          Your extra domains count once Polar confirms the payment, usually within a minute.
+        </Notice>
+      )}
+      <PanelRow label="Domains" hint={`${allowed} allowed, ${added} added`}>
+        <p className="text-sm">
+          {domainCount(state.planRequests)} included
+          {state.blockRequests > 0 && <>, plus {state.blockRequests} extra</>}.
+          {refused > 0 && (
+            <span className="text-muted-foreground">
+              {" "}
+              Mail to {refused === 1 ? "one verified domain" : `${refused} verified domains`} is
+              refused until you add extra domains or remove one.
+            </span>
+          )}
+        </p>
+      </PanelRow>
+      {state.offered && state.eligible && state.planEnding && (
+        <Notice tone="warning" title={`Extra domains end on ${renewal}`}>
+          {teamId
+            ? "Team Business is set to end, and extra domains end with it. Keep Team Business to change them."
+            : "Your plan leaves Business then, and extra domains end with it. Keep Business to change them."}
+        </Notice>
+      )}
+      {state.offered && state.eligible && (
+        <PanelRow
+          label="Extra domains"
+          htmlFor="extra-domain-count"
+          hint={`${formatCents(MONTHLY_DOMAIN_CENTS)} per domain a month, renewed with your plan. Adding domains charges them in full now; fewer apply at the renewal.`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id="extra-domain-count"
+              type="number"
+              min={0}
+              max={MAX_EXTRA_DOMAINS}
+              value={count ?? ""}
+              onChange={(event) => setCount(event.target.value)}
+              className="ui-input w-24 text-sm py-1.5!"
+            />
+            <span className="text-sm text-muted-foreground">
+              ({formatCents(MONTHLY_DOMAIN_CENTS * (valid ? units : 0))} a month)
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                busy ||
+                !valid ||
+                state.planEnding ||
+                (units === current && !blocks?.cancelAtPeriodEnd)
+              }
+              onClick={() => void save(units)}
+            >
+              {blocks?.cancelAtPeriodEnd && !state.planEnding && units > 0 ? "Keep" : "Save"}
+            </Button>
+          </div>
+          {blocks?.pastDue && (
+            <p className="text-xs text-destructive mt-1">
+              The last payment failed. Update your card from the Polar receipt email.
+            </p>
+          )}
+          {blocks?.cancelAtPeriodEnd && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {domainCount(blocks.units)} extra until {renewal}, not renewed.
+            </p>
+          )}
+          {blocks &&
+            !blocks.cancelAtPeriodEnd &&
+            blocks.pendingUnits !== null &&
+            blocks.pendingUnits !== blocks.units && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {domainCount(blocks.pendingUnits)} extra from {renewal}.
+              </p>
+            )}
+        </PanelRow>
+      )}
+      {error && <InlineMessage tone="error">{error}</InlineMessage>}
+    </div>
+  );
+}
+
 /**
  * Custom inbound domains (Business, or a team's with Team Business): mail
  * to the account's own domain lands on its endpoints. Lists, adds, verifies,
@@ -411,7 +615,9 @@ export function DomainsPanel({
           ))}
         </ul>
       )}
-      <div className="px-5 py-4 space-y-2">
+      <div
+        className={`px-5 py-4 space-y-2 ${domains && domains.length > 0 ? "border-t border-line/60" : ""}`}
+      >
         {canAdd ? (
           <PanelRow label="Add a domain" htmlFor="add-domain">
             <div className="flex flex-wrap items-center gap-2">
@@ -447,6 +653,20 @@ export function DomainsPanel({
         )}
         {error && <InlineMessage tone="error">{error}</InlineMessage>}
       </div>
+      {canAdd && accessToken && (
+        <div className="px-5 py-4 border-t border-line/60">
+          <ExtraDomains
+            accessToken={accessToken}
+            teamId={teamId}
+            added={domains?.length ?? 0}
+            refused={
+              domains?.filter((domain) => domain.status === "verified" && !domain.active).length ??
+              0
+            }
+            onAllowanceChanged={() => void load()}
+          />
+        </div>
+      )}
     </Panel>
   );
 }
