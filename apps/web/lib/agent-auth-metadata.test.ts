@@ -182,6 +182,16 @@ describe("agent auth.md: hosted /auth.md document", () => {
     }
   });
 
+  test("starts with the remote MCP server, before the local server and the sandbox", () => {
+    const remote = md.indexOf(`claude mcp add --transport http webhooks-cc ${APP_URL}/mcp`);
+    const local = md.indexOf("claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp");
+    expect(remote).toBeGreaterThan(-1);
+    expect(md.indexOf(`${APP_URL}/mcp`)).toBeLessThan(md.indexOf("## Start here"));
+    expect(remote).toBeLessThan(local);
+    expect(local).toBeLessThan(md.indexOf("## Step 1: Discover"));
+    expect(md).toContain("do not start a sandbox claim as well");
+  });
+
   test("names every endpoint the discovery document advertises", () => {
     for (const url of [
       as.token_endpoint,

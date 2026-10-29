@@ -275,8 +275,13 @@ export function buildAuthMd(options: AgentMetadataOptions): string {
 
   return `# webhooks.cc agent registration (auth.md)
 
-You are an agent. webhooks.cc implements [auth.md v0.6](https://github.com/workos/auth.md)
-agent registration. Without an account you can register anonymously, solve a
+You are an agent. If a human is with you and your client can add a remote
+MCP server (Claude Code, Cursor, VS Code, Codex, claude.ai and ChatGPT all
+can), start with option 1 below: the remote server at ${u.mcp} needs one
+approval in their browser and no code.
+
+Otherwise, register yourself: webhooks.cc implements
+[auth.md v0.6](https://github.com/workos/auth.md) agent registration. Without an account you can register anonymously, solve a
 short proof of work, and use a sandbox: capture webhooks on up to
 ${SANDBOX_MAX_ENDPOINTS} temporary endpoints and read them back. When your
 human wants to keep them, or you need their account, run the claim ceremony:
@@ -286,28 +291,56 @@ Human-readable guide: ${u.docs}
 
 ## Start here: use the tools you have
 
-The sandbox needs nothing from your human: it is free, anonymous, isolated
-from every account, and deleted after ${hours(UNCLAIMED_LIFETIME_SECONDS)}. Involve them only to keep
-what you made (the claim), or for what the sandbox lacks: more than
-${SANDBOX_MAX_ENDPOINTS} endpoints, mock responses, forwarding, signature checks, email.
+Take the first option that fits.
 
-Take the first option you can use:
+1. **Your client can add a remote MCP server, and a human is around: use
+   the remote server.** This is the default for coding agents (Claude Code,
+   Cursor, VS Code, Codex) as much as for hosted ones (claude.ai, ChatGPT).
+   The server is \`${u.mcp}\` (streamable HTTP, OAuth). Your human signs in,
+   or signs up, and clicks Connect once in the browser: no code to type,
+   nothing that expires after ${hours(UNCLAIMED_LIFETIME_SECONDS)}, and their account's tools (mock
+   responses, forwarding, signature checks, email). Suggest it with the line
+   for your client:
+   - Claude Code: \`claude mcp add --transport http webhooks-cc ${u.mcp}\`,
+     then \`/mcp\` in Claude Code to sign in
+   - Codex: \`codex mcp add webhooks-cc --url ${u.mcp}\`, then
+     \`codex mcp login webhooks-cc\`
+   - Cursor, in \`.cursor/mcp.json\`:
+     \`{ "mcpServers": { "webhooks-cc": { "url": "${u.mcp}" } } }\`
+   - VS Code, in \`.vscode/mcp.json\`:
+     \`{ "servers": { "webhooks-cc": { "type": "http", "url": "${u.mcp}" } } }\`
+   - claude.ai and Claude Desktop: in Settings, Connectors, add a custom
+     connector with the URL \`${u.mcp}\`. ChatGPT: add it as a custom
+     connector (in developer mode)
+   - Any other client: add \`${u.mcp}\` as a remote (streamable HTTP) server
 
-1. **You are a hosted agent (claude.ai, ChatGPT, a cloud coding agent), or
-   your client takes remote MCP servers:** the server is \`${u.mcp}\`
-   (streamable HTTP). Your human adds it as a custom connector and approves
-   it once in the connect dialog (OAuth); there is no code to type. A client
-   that can send headers may use an API key instead:
-   \`Authorization: Bearer whcc_...\`.
-2. **You can add local MCP servers** (Claude Code, Cursor, Codex, VS Code,
-   Windsurf): \`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp\`, or
+   Then stop and hand over. Tools from a newly added server appear only
+   after your client reconnects or restarts, so wait for your human there;
+   do not start a sandbox claim as well. Setup for each client is at
+   ${u.mcpDocs}#remote-server. A client that can send headers may use an API
+   key instead: \`Authorization: Bearer whcc_...\`.
+
+Options 2 to 5 are the fallback, and they start in the sandbox. It needs
+nothing from your human: it is free, anonymous, isolated from every account,
+and deleted after ${hours(UNCLAIMED_LIFETIME_SECONDS)}. It lacks more than ${SANDBOX_MAX_ENDPOINTS} endpoints, mock responses,
+forwarding, signature checks and email. Pick it when nobody wants an
+account, for throwaway captures, in CI, or with no human present. Your human
+can still keep what you made there through the claim; the remote server
+does not move sandbox endpoints into the account.
+
+2. **The local MCP server**, for clients that run local (stdio) servers:
+   \`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp\`, or
    \`npx -y @webhooks-cc/mcp setup cursor\` (or \`vscode\`, \`codex\`,
    \`windsurf\`, \`claude-desktop\`). No key needed: your first
    \`create_endpoint\` registers you. Later, \`connect_account\` then
    \`wait_for_connection\` moves everything into your human's account.
+   Connected to an account (an API key or a claim), the local server is
+   also the one you need to send to localhost (\`send_to\`,
+   \`replay_request\`, \`targetUrl\`) and for its prompts and resources, which
+   the remote server lacks.
 3. **You run Claude Code and can install plugins:**
    \`/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc\` (the
-   MCP server plus the webhook-testing skill).
+   local MCP server plus the webhook-testing skill).
 4. **You can run code.** Each of these registers, solves the proof of work
    and reuses the sandbox on the next run:
    - Python: \`pip install webhooks-cc\`, then \`WebhooksCC.sandbox()\`
@@ -317,7 +350,7 @@ Take the first option you can use:
      \`curl -fsSL ${appUrl}/install.sh | sh\`)
 5. **You only have HTTP:** follow Steps 1 to 6 below. Any User-Agent works.
 
-Connected before? All of the above keep the sandbox and your human's
+Connected before? Options 2 to 4 keep the sandbox and your human's
 connection in one file and reuse it: \`~/.config/whk/agent.json\` (or
 \`$XDG_CONFIG_HOME/whk/agent.json\`; macOS
 \`~/Library/Application Support/whk/agent.json\`; Windows

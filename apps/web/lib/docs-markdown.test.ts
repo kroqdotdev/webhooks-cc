@@ -86,7 +86,7 @@ describe("mdxToMarkdown", () => {
 
   it("replaces the interactive MCP install guide with the commands it shows", () => {
     const out = convert("<McpInstallGuide />\n\n## Next");
-    expect(out).toContain("## Install");
+    expect(out).toContain("Replace `whcc_...` with an API key");
     expect(out).toContain("claude mcp add -s user webhooks-cc");
     expect(out).toContain("npx skills add kroqdotdev/webhooks-cc");
     expect(out.endsWith("## Next")).toBe(true);

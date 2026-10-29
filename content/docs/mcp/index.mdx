@@ -3,7 +3,7 @@ title: "Webhook MCP Server (@webhooks-cc/mcp)"
 description: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 46 MCP tools, a remote server at webhooks.cc/mcp with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 section: mcp
 order: 1
-lastUpdated: 2026-10-28
+lastUpdated: 2026-10-29
 schema: faq
 keywords:
   [
@@ -22,26 +22,29 @@ seo:
   ogDescription: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 46 MCP tools, a remote server with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 ---
 
-There are two ways to connect an agent. Hosted agents such as claude.ai and ChatGPT, and any client that takes remote MCP servers, use the [remote server](#remote-server) at `https://webhooks.cc/mcp` and approve it once in the browser. Coding agents on your machine can also run the local server, `@webhooks-cc/mcp`, set up below. The local server works without an API key: leave the key out and it starts in the [agent sandbox](#without-an-api-key-the-agent-sandbox).
-
-<McpInstallGuide />
+There are two ways to connect an agent. Start with the [remote server](#remote-server) at `https://webhooks.cc/mcp`: any client that takes remote MCP servers can use it, coding agents such as Claude Code, Cursor, VS Code and Codex as well as claude.ai and ChatGPT, and you approve it once in the browser, with no key to paste and no code to type. The [local server](#local-server), `@webhooks-cc/mcp`, runs on your machine. Use it when the agent must send to localhost, for its prompts and resources, without an account (leave the key out and it starts in the [agent sandbox](#without-an-api-key-the-agent-sandbox)), or in CI.
 
 ## Remote server
 
-`https://webhooks.cc/mcp` serves the same tools over streamable HTTP. There is nothing to install and no key to paste: you approve the connection once in your browser. It speaks the MCP 2026-07-28 revision (stateless, with `server/discover` and a cached tool list), and the stateless fallback for clients still on the 2025 revisions.
+`https://webhooks.cc/mcp` is the recommended way in. It serves the same tools over streamable HTTP. There is nothing to install and no key to paste: you approve the connection once in your browser. It speaks the MCP 2026-07-28 revision (stateless, with `server/discover` and a cached tool list), and the stateless fallback for clients still on the 2025 revisions.
 
 ### Add it to your client
 
 Client menus change, so treat these paths as a guide.
 
-**claude.ai and Claude Desktop:** in Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`.
-
-**ChatGPT:** add `https://webhooks.cc/mcp` as a custom connector (in developer mode).
-
 **Claude Code:**
 
 ```bash
 claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp
+```
+
+Then run `/mcp` in Claude Code and pick `webhooks-cc` to sign in.
+
+**Codex:**
+
+```bash
+codex mcp add webhooks-cc --url https://webhooks.cc/mcp
+codex mcp login webhooks-cc
 ```
 
 **Cursor** (`.cursor/mcp.json`):
@@ -56,9 +59,15 @@ claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp
 { "servers": { "webhooks-cc": { "type": "http", "url": "https://webhooks.cc/mcp" } } }
 ```
 
+**claude.ai and Claude Desktop:** in Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`.
+
+**ChatGPT:** add `https://webhooks.cc/mcp` as a custom connector (in developer mode).
+
+Tools from a server you add during a session appear once the client reconnects to it or restarts.
+
 ### Connecting
 
-The first time the client calls the server, it opens webhooks.cc in your browser. Sign in, or sign up, check which app asks and where it will send you back to, and click **Connect**. There is no code to type. The app can then use your endpoints and what they capture, but never your API keys, billing or account settings. Its tokens renew themselves and stop working after 90 days unused; [Apps connected with OAuth](/docs/agents#apps-connected-with-oauth) has the details.
+The first time the client connects to the server, it opens webhooks.cc in your browser. Sign in, or sign up, check which app asks and where it will send you back to, and click **Connect**. There is no code to type. The app can then use your endpoints and what they capture, but never your API keys, billing or account settings. Its tokens renew themselves and stop working after 90 days unused; [Apps connected with OAuth](/docs/agents#apps-connected-with-oauth) has the details.
 
 To disconnect, open [Account, Connected agents](/account/agents). The app is listed there as an app connected with OAuth, and its access stops as soon as you disconnect it. An account can connect up to 10 agents and apps.
 
@@ -74,6 +83,12 @@ claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp --header "Au
 - **Waits are capped at 50 seconds.** `wait_for_request`, `wait_for_email` and the other tools with a `timeout` return by then; call them again to keep waiting.
 - **Tools only.** The prompts and resources below come with the local server.
 - **An account is required.** There is no sandbox on the remote server, and a sandbox token is refused.
+
+## Local server
+
+The local server, `@webhooks-cc/mcp`, runs on your machine over stdio. Use it when the agent must send to localhost (`send_to`, `replay_request`, `targetUrl`), for the [prompts](#prompts) and [resources](#resources), without an account (it starts in the [agent sandbox](#without-an-api-key-the-agent-sandbox)), or in CI with an API key.
+
+<McpInstallGuide />
 
 ## Without an API key: the agent sandbox
 
@@ -94,7 +109,7 @@ Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-c
 - **Official MCP Registry**: `io.github.kroqdotdev/webhooks-cc`, published with each release from [`server.json`](https://github.com/kroqdotdev/webhooks-cc/blob/main/packages/mcp/server.json)
 - **Claude Code plugin**: the server bundled with the [webhook testing skill](/docs/mcp/skills), installed with `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc`
 - **Glama**: ships with [`glama.json`](https://glama.ai/mcp/servers) metadata
-- **Supported MCP clients**: Claude Code (`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`), Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop run the local server; claude.ai, ChatGPT, and any client that takes remote MCP servers connect to the remote one
+- **Supported MCP clients**: Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, claude.ai, Claude Desktop, ChatGPT, and any client that takes remote MCP servers connect to the remote one; Claude Code (`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`), Cursor, VS Code, OpenAI Codex, Windsurf, and Claude Desktop also run the local server
 
 ## Available tools
 
@@ -272,7 +287,7 @@ Agent: Replayed to http://localhost:3000/webhooks - got 200 OK
 <FAQ>
 <FAQItem question="Which AI coding agents support @webhooks-cc/mcp?">
 
-The local `@webhooks-cc/mcp` server works with Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop. Any client that supports the Model Context Protocol over stdio can connect with `npx -y @webhooks-cc/mcp`. Clients that take remote MCP servers can connect to `https://webhooks.cc/mcp` instead.
+Claude Code, Cursor, VS Code (GitHub Copilot) and OpenAI Codex all connect to the remote server at `https://webhooks.cc/mcp`, which is the easiest way in: you approve it once in your browser, with no key to paste. The local `@webhooks-cc/mcp` server works with those and with Windsurf and Claude Desktop, and any client that supports the Model Context Protocol over stdio can run it with `npx -y @webhooks-cc/mcp`.
 
 </FAQItem>
 <FAQItem question="Can I use webhooks.cc from claude.ai or ChatGPT?">

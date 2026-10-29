@@ -3,7 +3,7 @@ title: "Agent Skill and Claude Code Plugin"
 description: "Install the webhooks.cc webhook testing skill so Claude Code, Cursor, Codex, and Copilot test webhook handlers with real, signed payloads, generate payload types from captured requests, and read signup emails in tests."
 section: mcp
 order: 4
-lastUpdated: 2026-10-28
+lastUpdated: 2026-10-29
 schema: tech-article
 keywords:
   [
@@ -56,13 +56,13 @@ Most coding agents read skills in the open `SKILL.md` format. Install it with th
 npx skills add kroqdotdev/webhooks-cc
 ```
 
-Then add the MCP server, for example:
+Then add the MCP server. The [remote server](/docs/mcp#remote-server) is the easiest: add `https://webhooks.cc/mcp` to your agent's MCP settings and approve it once in your browser, with no key to paste. Or run the local server, for example:
 
 ```bash
 npx @webhooks-cc/mcp setup cursor
 ```
 
-The key is optional (`--api-key whcc_...`): without one the server starts in the keyless sandbox, and the agent connects your account when it needs to. Hosted agents such as claude.ai and ChatGPT use the [remote server](/docs/mcp#remote-server) at `https://webhooks.cc/mcp` instead. The [MCP server page](/docs/mcp) has the command for each agent. To install the skill by hand, copy [`plugins/webhooks-cc/skills/webhook-testing`](https://github.com/kroqdotdev/webhooks-cc/tree/main/plugins/webhooks-cc/skills/webhook-testing) into your agent's skills folder, for example `.agents/skills/` or `.claude/skills/`.
+For the local server the key is optional (`--api-key whcc_...`): without one it starts in the keyless sandbox, and the agent connects your account when it needs to. The [MCP server page](/docs/mcp) has the setup for each agent. To install the skill by hand, copy [`plugins/webhooks-cc/skills/webhook-testing`](https://github.com/kroqdotdev/webhooks-cc/tree/main/plugins/webhooks-cc/skills/webhook-testing) into your agent's skills folder, for example `.agents/skills/` or `.claude/skills/`.
 
 ## For agents that read AGENTS.md
 

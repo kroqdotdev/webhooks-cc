@@ -27,12 +27,11 @@ const CALLOUT_LABELS: Record<string, string> = {
 };
 
 // The install commands <McpInstallGuide /> (components/docs/mdx/mcp-setup.tsx
-// and agent-skill-install.tsx) renders, minus its key field and buttons.
-const MCP_INSTALL_GUIDE = `## Install
+// and agent-skill-install.tsx) renders, minus its key field and buttons. The
+// MDX puts it under its "Local server" heading, so it brings no heading.
+const MCP_INSTALL_GUIDE = `Replace \`whcc_...\` with an API key from https://webhooks.cc/account/api-keys.
 
-Replace \`whcc_...\` with an API key from https://webhooks.cc/account/api-keys.
-
-Claude Code plugin (the MCP server plus the webhook testing skill):
+Claude Code plugin (the local MCP server plus the webhook testing skill):
 
 \`\`\`text
 /plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc

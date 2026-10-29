@@ -13,6 +13,7 @@ import { AgentSkillInstall } from "@/components/docs/agent-skill-install";
 type Tab = "cli" | "sdk" | "mcp";
 const TABS: Tab[] = ["cli", "sdk", "mcp"];
 
+const REMOTE_MCP_URL = "https://webhooks.cc/mcp";
 const KEY_PLACEHOLDER = "whcc_...";
 const KEY_REGEX = /^whcc_[A-Za-z0-9_-]+$/;
 
@@ -102,102 +103,103 @@ export default function InstallationPage() {
                 ))}
               </div>
 
-              {tab === "cli" && (
-                <div
-                  role="tabpanel"
-                  id="tabpanel-cli"
-                  aria-labelledby="tab-cli"
-                  className="space-y-6"
-                >
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">Homebrew (macOS / Linux)</h2>
-                    <CodeBlock>{`brew install kroqdotdev/tap/whk`}</CodeBlock>
-                  </section>
+              {/* Every panel is rendered, so the page's HTML carries all three for
+                  readers that do not run scripts; the inactive ones are hidden. */}
+              <div
+                role="tabpanel"
+                hidden={tab !== "cli"}
+                id="tabpanel-cli"
+                aria-labelledby="tab-cli"
+                className="space-y-6"
+              >
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Homebrew (macOS / Linux)</h2>
+                  <CodeBlock>{`brew install kroqdotdev/tap/whk`}</CodeBlock>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">Shell script (macOS / Linux)</h2>
-                    <CodeBlock>{`curl -fsSL https://webhooks.cc/install.sh | sh`}</CodeBlock>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Downloads the latest binary for your platform and installs it to{" "}
-                      <code className="font-mono font-bold">/usr/local/bin</code>.
-                    </p>
-                  </section>
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Shell script (macOS / Linux)</h2>
+                  <CodeBlock>{`curl -fsSL https://webhooks.cc/install.sh | sh`}</CodeBlock>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Downloads the latest binary for your platform and installs it to{" "}
+                    <code className="font-mono font-bold">/usr/local/bin</code>.
+                  </p>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">GitHub Releases</h2>
-                    <p className="text-sm text-muted-foreground">
-                      Download pre-built binaries for macOS, Linux, and Windows from{" "}
-                      <a
-                        href="https://github.com/kroqdotdev/webhooks-cc/releases"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline font-bold"
-                      >
-                        GitHub Releases
-                      </a>
-                      .
-                    </p>
-                  </section>
+                <section>
+                  <h2 className="text-lg font-bold mb-3">GitHub Releases</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Download pre-built binaries for macOS, Linux, and Windows from{" "}
+                    <a
+                      href="https://github.com/kroqdotdev/webhooks-cc/releases"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline font-bold"
+                    >
+                      GitHub Releases
+                    </a>
+                    .
+                  </p>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">Verify</h2>
-                    <CodeBlock>{`whk --version`}</CodeBlock>
-                  </section>
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Verify</h2>
+                  <CodeBlock>{`whk --version`}</CodeBlock>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">Get started</h2>
-                    <p className="text-sm text-muted-foreground mb-3">
-                      Run <code className="font-mono font-bold">whk</code> to open the interactive
-                      TUI with tunneling, live request streaming, and endpoint management:
-                    </p>
-                    <CodeBlock>{`whk`}</CodeBlock>
-                    <p className="text-sm text-muted-foreground mt-4 mb-3">
-                      Or use subcommands directly:
-                    </p>
-                    <CodeBlock copyText="whk auth login">{`whk auth login      # authenticate via browser
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Get started</h2>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Run <code className="font-mono font-bold">whk</code> to open the interactive TUI
+                    with tunneling, live request streaming, and endpoint management:
+                  </p>
+                  <CodeBlock>{`whk`}</CodeBlock>
+                  <p className="text-sm text-muted-foreground mt-4 mb-3">
+                    Or use subcommands directly:
+                  </p>
+                  <CodeBlock copyText="whk auth login">{`whk auth login      # authenticate via browser
 whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      See the{" "}
-                      <Link href="/docs/cli" className="text-primary hover:underline font-bold">
-                        CLI docs
-                      </Link>{" "}
-                      for the full command reference.
-                    </p>
-                  </section>
-                </div>
-              )}
+                  <p className="text-sm text-muted-foreground mt-2">
+                    See the{" "}
+                    <Link href="/docs/cli" className="text-primary hover:underline font-bold">
+                      CLI docs
+                    </Link>{" "}
+                    for the full command reference.
+                  </p>
+                </section>
+              </div>
 
-              {tab === "sdk" && (
-                <div
-                  role="tabpanel"
-                  id="tabpanel-sdk"
-                  aria-labelledby="tab-sdk"
-                  className="space-y-6"
-                >
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">npm</h2>
-                    <CodeBlock>{`npm install @webhooks-cc/sdk`}</CodeBlock>
-                  </section>
+              <div
+                role="tabpanel"
+                hidden={tab !== "sdk"}
+                id="tabpanel-sdk"
+                aria-labelledby="tab-sdk"
+                className="space-y-6"
+              >
+                <section>
+                  <h2 className="text-lg font-bold mb-3">npm</h2>
+                  <CodeBlock>{`npm install @webhooks-cc/sdk`}</CodeBlock>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">pnpm</h2>
-                    <CodeBlock>{`pnpm add @webhooks-cc/sdk`}</CodeBlock>
-                  </section>
+                <section>
+                  <h2 className="text-lg font-bold mb-3">pnpm</h2>
+                  <CodeBlock>{`pnpm add @webhooks-cc/sdk`}</CodeBlock>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">bun</h2>
-                    <CodeBlock>{`bun add @webhooks-cc/sdk`}</CodeBlock>
-                  </section>
+                <section>
+                  <h2 className="text-lg font-bold mb-3">bun</h2>
+                  <CodeBlock>{`bun add @webhooks-cc/sdk`}</CodeBlock>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">yarn</h2>
-                    <CodeBlock>{`yarn add @webhooks-cc/sdk`}</CodeBlock>
-                  </section>
+                <section>
+                  <h2 className="text-lg font-bold mb-3">yarn</h2>
+                  <CodeBlock>{`yarn add @webhooks-cc/sdk`}</CodeBlock>
+                </section>
 
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">Quick start</h2>
-                    <CodeBlock>
-                      {`import { WebhooksCC } from "@webhooks-cc/sdk";
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Quick start</h2>
+                  <CodeBlock>
+                    {`import { WebhooksCC } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({
   apiKey: process.env.WHK_API_KEY,
@@ -208,63 +210,137 @@ const endpoint = await client.endpoints.create({
 });
 
 console.log(endpoint.url);`}
-                    </CodeBlock>
+                  </CodeBlock>
+                </section>
+
+                <p className="text-sm text-muted-foreground">
+                  Generate an API key from your{" "}
+                  <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
+                    API keys page
+                  </Link>
+                  . See the{" "}
+                  <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
+                    SDK docs
+                  </Link>{" "}
+                  for the full API reference.
+                </p>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Python</h2>
+                  <CodeBlock>{`pip install webhooks-cc`}</CodeBlock>
+                  <p className="text-sm text-muted-foreground mt-3">
+                    The same testing tools for Python, with pytest fixtures. See the{" "}
+                    <Link
+                      href="/docs/sdk/python"
+                      className="text-primary hover:underline font-bold"
+                    >
+                      Python SDK docs
+                    </Link>
+                    .
+                  </p>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Go</h2>
+                  <CodeBlock>{`go get webhooks.cc/go`}</CodeBlock>
+                  <p className="text-sm text-muted-foreground mt-3">
+                    The same testing tools for Go, with helpers for <code>testing.TB</code>. See the{" "}
+                    <Link href="/docs/sdk/go" className="text-primary hover:underline font-bold">
+                      Go SDK docs
+                    </Link>
+                    .
+                  </p>
+                </section>
+              </div>
+
+              <div
+                role="tabpanel"
+                hidden={tab !== "mcp"}
+                id="tabpanel-mcp"
+                aria-labelledby="tab-mcp"
+                className="space-y-10"
+              >
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold mb-2">Remote server (recommended)</h2>
+                    <p className="text-sm text-muted-foreground">
+                      No key to paste and nothing to install. Add{" "}
+                      <code className="font-mono font-bold">{REMOTE_MCP_URL}</code> to your client.
+                      The first time it connects, webhooks.cc opens in your browser: sign in, or
+                      sign up, and click Connect. There is no code to type.
+                    </p>
+                  </div>
+
+                  <section>
+                    <h3 className="text-lg font-bold mb-3">Claude Code</h3>
+                    <CodeBlock>{`claude mcp add --transport http webhooks-cc ${REMOTE_MCP_URL}`}</CodeBlock>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Then run <code className="font-mono font-bold">/mcp</code> in Claude Code and
+                      pick webhooks-cc to sign in.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold mb-3">OpenAI Codex</h3>
+                    <CodeBlock>{`codex mcp add webhooks-cc --url ${REMOTE_MCP_URL}
+codex mcp login webhooks-cc`}</CodeBlock>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold mb-3">Cursor</h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      In <code className="font-mono font-bold">.cursor/mcp.json</code>:
+                    </p>
+                    <CodeBlock>{`{ "mcpServers": { "webhooks-cc": { "url": "${REMOTE_MCP_URL}" } } }`}</CodeBlock>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold mb-3">VS Code</h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      In <code className="font-mono font-bold">.vscode/mcp.json</code>:
+                    </p>
+                    <CodeBlock>{`{ "servers": { "webhooks-cc": { "type": "http", "url": "${REMOTE_MCP_URL}" } } }`}</CodeBlock>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold mb-3">claude.ai and Claude Desktop</h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      In Settings, Connectors, add a custom connector with this URL. ChatGPT takes
+                      the same URL as a custom connector, in developer mode.
+                    </p>
+                    <CodeBlock>{REMOTE_MCP_URL}</CodeBlock>
                   </section>
 
                   <p className="text-sm text-muted-foreground">
-                    Generate an API key from your{" "}
+                    Disconnect it at any time under{" "}
+                    <Link href="/account/agents" className="text-primary hover:underline font-bold">
+                      Connected agents
+                    </Link>
+                    . The{" "}
                     <Link
-                      href="/account/api-keys"
+                      href="/docs/mcp#remote-server"
                       className="text-primary hover:underline font-bold"
                     >
-                      API keys page
-                    </Link>
-                    . See the{" "}
-                    <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
-                      SDK docs
+                      remote server docs
                     </Link>{" "}
-                    for the full API reference.
+                    cover other clients and what differs from the local server.
                   </p>
-
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">Python</h2>
-                    <CodeBlock>{`pip install webhooks-cc`}</CodeBlock>
-                    <p className="text-sm text-muted-foreground mt-3">
-                      The same testing tools for Python, with pytest fixtures. See the{" "}
-                      <Link
-                        href="/docs/sdk/python"
-                        className="text-primary hover:underline font-bold"
-                      >
-                        Python SDK docs
-                      </Link>
-                      .
-                    </p>
-                  </section>
-
-                  <section>
-                    <h2 className="text-lg font-bold mb-3">Go</h2>
-                    <CodeBlock>{`go get webhooks.cc/go`}</CodeBlock>
-                    <p className="text-sm text-muted-foreground mt-3">
-                      The same testing tools for Go, with helpers for <code>testing.TB</code>. See
-                      the{" "}
-                      <Link href="/docs/sdk/go" className="text-primary hover:underline font-bold">
-                        Go SDK docs
-                      </Link>
-                      .
-                    </p>
-                  </section>
                 </div>
-              )}
 
-              {tab === "mcp" && (
-                <div
-                  role="tabpanel"
-                  id="tabpanel-mcp"
-                  aria-labelledby="tab-mcp"
-                  className="space-y-6"
-                >
+                <div className="space-y-6 border-t-strong border-line pt-10">
+                  <div>
+                    <h2 className="text-2xl font-bold mb-2">Local server</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Runs <code className="font-mono font-bold">@webhooks-cc/mcp</code> on your
+                      machine. Use it when your agent must send to localhost (
+                      <code className="font-mono font-bold">send_to</code>,{" "}
+                      <code className="font-mono font-bold">replay_request</code>), to start in the
+                      agent sandbox without an account, or in CI with an API key.
+                    </p>
+                  </div>
+
                   <section>
-                    <h2 className="text-lg font-bold mb-3">Your API key</h2>
+                    <h3 className="text-lg font-bold mb-3">Your API key</h3>
                     <p className="text-sm text-muted-foreground mb-3">
                       Paste your API key to fill it into every command below. It stays in your
                       browser only. Nothing is sent or stored.
@@ -294,7 +370,7 @@ console.log(endpoint.url);`}
                   <AgentSkillInstall />
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">One-click install</h2>
+                    <h3 className="text-lg font-bold mb-3">One-click install</h3>
                     <div className="space-y-3">
                       <div>
                         <a
@@ -328,37 +404,37 @@ console.log(endpoint.url);`}
                   </section>
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">Claude Code</h2>
+                    <h3 className="text-lg font-bold mb-3">Claude Code</h3>
                     <CodeBlock>{`claude mcp add -s user webhooks-cc -e WHK_API_KEY=${key} -- npx -y @webhooks-cc/mcp`}</CodeBlock>
                   </section>
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">Cursor (CLI)</h2>
+                    <h3 className="text-lg font-bold mb-3">Cursor (CLI)</h3>
                     <CodeBlock>{`npx @webhooks-cc/mcp setup cursor --api-key ${key}`}</CodeBlock>
                   </section>
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">VS Code (CLI)</h2>
+                    <h3 className="text-lg font-bold mb-3">VS Code (CLI)</h3>
                     <CodeBlock>{`npx @webhooks-cc/mcp setup vscode --api-key ${key}`}</CodeBlock>
                   </section>
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">OpenAI Codex</h2>
+                    <h3 className="text-lg font-bold mb-3">OpenAI Codex</h3>
                     <CodeBlock>{`codex mcp add webhooks-cc -e WHK_API_KEY=${key} -- npx -y @webhooks-cc/mcp`}</CodeBlock>
                   </section>
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">Windsurf</h2>
+                    <h3 className="text-lg font-bold mb-3">Windsurf</h3>
                     <CodeBlock>{`npx @webhooks-cc/mcp setup windsurf --api-key ${key}`}</CodeBlock>
                   </section>
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">Claude Desktop</h2>
+                    <h3 className="text-lg font-bold mb-3">Claude Desktop</h3>
                     <CodeBlock>{`npx @webhooks-cc/mcp setup claude-desktop --api-key ${key}`}</CodeBlock>
                   </section>
 
                   <section>
-                    <h2 className="text-lg font-bold mb-3">Manual config</h2>
+                    <h3 className="text-lg font-bold mb-3">Manual config</h3>
                     <p className="text-sm text-muted-foreground mb-3">
                       For any tool that reads an MCP config JSON file:
                     </p>
@@ -385,7 +461,7 @@ console.log(endpoint.url);`}
                     for the full tool reference.
                   </p>
                 </div>
-              )}
+              </div>
             </article>
           </main>
         </div>

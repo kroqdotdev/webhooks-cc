@@ -35,9 +35,9 @@ More: [Quick start](${appUrl}/docs), [installation](${appUrl}/installation), [pl
 
 ## Quick start for agents
 
-- **No account yet:** read [auth.md](${appUrl}/auth.md). An agent registers itself, gets a short-lived access token and a sandbox of temporary capture endpoints, and a person can later connect it to their account. Do not use the home page's guest endpoint; it is for people in a browser.
-- **Remote MCP server:** \`${appUrl}/mcp\` (streamable HTTP). Sign in with OAuth 2.1, or send an access token as \`Authorization: Bearer whcc_...\`.
-- **Local MCP server:** \`npx -y @webhooks-cc/mcp\` with \`WHK_API_KEY\` set. [Setup for each client](${appUrl}/docs/mcp).
+- **Remote MCP server (start here):** \`${appUrl}/mcp\` (streamable HTTP). Any client that can add a remote MCP server, Claude Code, Cursor, VS Code and Codex as well as claude.ai and ChatGPT, connects with one OAuth approval in the browser, with no key or code. In Claude Code: \`claude mcp add --transport http webhooks-cc ${appUrl}/mcp\`, then \`/mcp\` to sign in. [Setup for each client](${appUrl}/docs/mcp#remote-server). A client that sends headers can use \`Authorization: Bearer whcc_...\` instead.
+- **No account, or nobody to approve:** read [auth.md](${appUrl}/auth.md). An agent registers itself, gets a short-lived access token and a sandbox of temporary capture endpoints, and a person can later connect it to their account. Do not use the home page's guest endpoint; it is for people in a browser.
+- **Local MCP server:** \`npx -y @webhooks-cc/mcp\`, for sends to localhost, the keyless sandbox, or CI with \`WHK_API_KEY\` set. [Setup for each client](${appUrl}/docs/mcp#local-server).
 - **Agent skill:** tells a coding agent when to reach for these tools. \`npx skills add kroqdotdev/webhooks-cc\`, or in Claude Code \`/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc\`. Index: [agent-skills/index.json](${appUrl}/.well-known/agent-skills/index.json).
 - **REST API:** bearer tokens with the \`whcc_\` prefix on everything under \`${appUrl}/api/\`. [OpenAPI description](${appUrl}/openapi.yaml), [API catalog](${appUrl}/.well-known/api-catalog), [docs](${appUrl}/docs/api).
 - **SDKs:** \`npm install @webhooks-cc/sdk\`, \`pip install webhooks-cc\`, \`go get webhooks.cc/go\`.

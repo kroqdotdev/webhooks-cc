@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.48.2";
+export const APP_VERSION = "0.48.3";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,17 @@ export const MCP_VERSION = "1.15.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.48.3",
+    date: "2026-10-29",
+    title: "The Remote MCP Server Comes First",
+    track: "web",
+    items: [
+      "The remote MCP server at https://webhooks.cc/mcp is now the recommended way to connect any agent whose client takes remote servers, Claude Code, Cursor, VS Code and Codex included, not just claude.ai and ChatGPT: one approval in the browser, with no key to paste and no code to type",
+      "/auth.md, llms.txt, llms-full.txt, the home page's markdown and the agent and MCP docs lead with it and give the setup line for each client; the local server and the agent sandbox stay as the fallback for sends to localhost, work without an account, and CI",
+      "The installation page's MCP tab starts with the remote server for Claude Code, Codex, Cursor, VS Code and claude.ai, above the local server's setups",
+    ],
+  },
   {
     version: "0.48.2",
     date: "2026-10-29",
