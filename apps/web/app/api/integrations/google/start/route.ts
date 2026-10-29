@@ -3,9 +3,12 @@ import {
   authorizationUrl,
   browserCookie,
   googleConfig,
+  handoffCookie,
+  handoffHash,
   safeReturnPath,
   sealBeginTicket,
 } from "@/lib/integrations/google";
+import { randomBytes } from "node:crypto";
 import { parseJsonBody } from "@/lib/request-validation";
 import { SITE_HEADER, parseSite, webhooksOrigin } from "@/lib/site";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
@@ -37,11 +40,18 @@ export async function POST(request: Request) {
     site
   );
   if (site === "mailhooks") {
-    // The callback is webhooks.cc's: the cookie must be set there first.
-    const ticket = sealBeginTicket(url, browserNonce);
-    return reply({
+    // The callback is webhooks.cc's: its cookie is set there on the way, and
+    // this browser proves itself at mailhooks.cc's handoff with this one.
+    const handoff = randomBytes(24).toString("base64url");
+    const ticket = sealBeginTicket(url, browserNonce, handoffHash(handoff));
+    const response = reply({
       url: `${webhooksOrigin()}/api/integrations/google/begin?ticket=${encodeURIComponent(ticket)}`,
     });
+    response.headers.append(
+      "set-cookie",
+      handoffCookie(handoff, new URL(request.url).protocol === "https:")
+    );
+    return response;
   }
   const response = reply({ url });
   // Only this browser can finish the flow (see OAuthState.browser).
