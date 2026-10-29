@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.50.0";
+export const APP_VERSION = "0.51.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,19 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.51.0",
+    date: "2026-10-29",
+    title: "Business Plan, Parsed Page Add-ons and Team Business",
+    track: "web",
+    items: [
+      "Business, $29 a month or $290 a year: 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month and up to 50 layouts per endpoint",
+      "More parsed pages on Business: monthly blocks of 1,000 at $5, one-time blocks at $8 that never expire, or overage at $0.01 a page up to the most you set",
+      "Moving from Pro to Business applies at once: you pay the difference for the rest of the period and get Business's extra requests and pages for that part of it; other plan changes wait for the renewal, and you can undo them until then",
+      "Teams can add Team Business for $49 a month: 150,000 more requests in the pool, 2,000 pooled parsed pages, 50 layouts per endpoint and 90-day retention for shared endpoints",
+      "Extra requests (monthly blocks, one-time blocks and overage) work on Business as on Pro",
+    ],
+  },
   {
     version: "0.50.0",
     date: "2026-10-29",
