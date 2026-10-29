@@ -205,13 +205,13 @@ describe("proxy: two sites", () => {
 
   it("sends webhooks.cc's pages from mailhooks.cc to webhooks.cc", async () => {
     const res = await proxy(new NextRequest("https://mailhooks.cc/docs/layouts?x=1"));
-    expect(res.status).toBe(308);
+    expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("https://webhooks.cc/docs/layouts?x=1");
   });
 
   it("keeps mailhooks.cc's pages off webhooks.cc", async () => {
     const res = await proxy(new NextRequest("https://webhooks.cc/mailhooks/pricing"));
-    expect(res.status).toBe(308);
+    expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("https://mailhooks.cc/pricing");
   });
 
