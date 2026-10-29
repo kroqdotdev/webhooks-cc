@@ -7,8 +7,9 @@ import {
 } from "@webhooks-cc/sdk/email";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { jsonObject } from "@/lib/forwarding/destination-routes";
+import { withAttachmentPayloads } from "@/lib/forwarding/attachments";
 import { FORWARD_USER_AGENT } from "@/lib/forwarding/sign";
-import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
+import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { getRequestByIdForUser, withEmailExtracts } from "@/lib/supabase/requests";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
@@ -28,7 +29,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!auth.success) return auth.response;
   const { id } = await params;
 
-  const rateLimit = await checkRateLimitWithInfo(request, "email-render", 120);
+  // Per account, not per address: Zapier and Make send every customer's
+  // calls from a few shared addresses.
+  const rateLimit = await checkRateLimitByKeyWithInfo(`user:email-render:${auth.userId}`, 120);
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(
@@ -58,14 +61,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return reply({ error: "Only a captured email can be rendered in a provider's shape." }, 400);
     }
     if (format === "json") {
-      const [withFields] = await withEmailExtracts([captured]);
+      // With attachment links, as a destination's default sends them, so a
+      // sample has every field a delivery has.
+      const withLinks = await withAttachmentPayloads(captured, "links");
+      const [withFields] = await withEmailExtracts([withLinks]);
       const { data: endpoint } = await createAdminClient()
         .from("endpoints")
         .select("slug, name")
         .eq("id", captured.endpointId)
         .maybeSingle();
       const json = buildEmailJson(
-        { ...captured, email: captured.email },
+        { ...withLinks, email: withLinks.email! },
         { slug: endpoint?.slug ?? "", name: endpoint?.name ?? null },
         {
           includeExtracts: withFields.extracts !== null,

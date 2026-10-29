@@ -8,6 +8,8 @@ The webhooks.cc and mailhooks.cc app for Zapier. It connects with an API key and
 
 Records are the `data` of the `email.received` JSON that forwarding sends, so a Zap reads the same fields as any destination.
 
+The destination a Zap adds is named after it (`Zapier (Zap 123)`), so it can be told apart in the dashboard; deleting it there stops the Zap's emails. If a Zap is removed while its destination stays (an unsubscribe that failed), Zapier answers 410 and webhooks.cc turns the destination off. Find Email uses the search API, limited to 60 searches per 10 minutes per account; when a limit is reached the app asks Zapier to try again later.
+
 ## Develop
 
 ```bash
