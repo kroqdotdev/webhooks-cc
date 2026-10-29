@@ -116,7 +116,8 @@ export function CapacityPanel({
     const params = new URLSearchParams(window.location.search);
     const capacity = params.get("capacity");
     // Back from buying parsed pages: that panel's to say.
-    if (!capacity || window.location.hash === "#extra-pages") return;
+    // Pages and domains have panels of their own that read their returns.
+    if (!capacity || ["#extra-pages", "#extra-domains"].includes(window.location.hash)) return;
     setReturned(capacity);
     params.delete("capacity");
     const query = params.toString();

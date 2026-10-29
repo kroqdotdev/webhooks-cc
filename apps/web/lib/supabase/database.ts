@@ -1593,6 +1593,14 @@ export interface Database {
         Args: { p_domain: string; p_local: string };
         Returns: Json;
       };
+      set_inbound_domain_routes: {
+        Args: { p_domain_id: string; p_catch_all: string | null; p_routes: Json };
+        Returns: undefined;
+      };
+      inbound_domain_has_accounts: {
+        Args: { p_domain: string };
+        Returns: boolean;
+      };
       claim_alert_notices: {
         Args: { p_limit?: number };
         Returns: Database["public"]["Tables"]["alert_events"]["Row"][];

@@ -212,7 +212,7 @@ export function PlanChooser({
                 ? `You are charged the difference for what is left of this period, and get ${confirm ? planName(confirm.plan) : ""}'s extra requests and parsed pages for that part of it at once. The full allowance starts at your renewal${renewal ? ` on ${longDate(renewal)}` : ""}.`
                 : `It takes effect${renewal ? ` on ${longDate(renewal)}` : " at your renewal"}; until then nothing changes.${
                     profile.plan === "business" && confirm?.plan === "pro"
-                      ? " Extra parsed pages end then too; one-time page blocks stay on your account. Requests older than Pro's 31 days are kept one more week, then deleted."
+                      ? " Extra parsed pages and extra domains end then too, and your custom domains stop receiving mail; one-time page blocks stay on your account. Requests older than Pro's 31 days are kept one more week, then deleted."
                       : ""
                   }`}
             </AlertDialogDescription>

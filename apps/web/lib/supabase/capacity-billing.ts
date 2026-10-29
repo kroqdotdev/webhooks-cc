@@ -1091,6 +1091,11 @@ async function applySubscriptionEvent(
     // Bought just as the plan was set to end (a checkout opened before):
     // it ends with the plan too.
     await reconcileAddonsWithPlan(account);
+  } else if (status === "ok" && kind === "team_business") {
+    // Team Business ended (a revoke mid-period, not only at the renewal):
+    // the page and domain add-ons that needed it end now, rather than at
+    // their own next renewal, which would charge once more.
+    await reconcileAddonsWithPlan(account);
   }
 }
 
@@ -1248,8 +1253,10 @@ async function syncIncreaseToPolar(
       });
       await markSubscription(row.id, { pending_units: row.units });
     } catch (polarError) {
-      // Ended meanwhile: there is no renewal left to raise.
       if (!isEndedSubscriptionError(polarError)) throw polarError;
+      // Ended meanwhile (the order landed before the end's own event): what
+      // the order added goes with it.
+      await settleEndedIncrease(account, orderId);
     }
   }
 
@@ -1258,6 +1265,50 @@ async function syncIncreaseToPolar(
     .update({ synced_at: new Date().toISOString() })
     .eq("polar_order_id", orderId);
   if (syncError) throw syncError;
+}
+
+/**
+ * A paid mid-period increase whose subscription ended before the increase
+ * could ride on it. Blocks are kept as one-time blocks (recorded once, under
+ * the order); domains have no one-time form, so the order is reported for a
+ * refund.
+ */
+async function settleEndedIncrease(account: CapacityAccount, orderId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data: purchase, error } = await admin
+    .from("capacity_purchases")
+    .select("kind, units")
+    .eq("polar_order_id", orderId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!purchase) return;
+  const credits: PurchaseKind | null =
+    purchase.kind === "block_increase"
+      ? "credits"
+      : purchase.kind === "page_block_increase"
+        ? "page_credits"
+        : null;
+  if (!credits) {
+    reportError("[capacity] paid increase on an add-on that ended: refund it", undefined, {
+      orderId,
+    });
+    return;
+  }
+  const { error: grantError } = await admin.rpc("grant_capacity_purchase", {
+    p_order_id: `increase:${orderId}`,
+    ...accountIds(account),
+    p_kind: credits,
+    p_units: purchase.units,
+    p_amount: null,
+  });
+  if (grantError) throw grantError;
+  reportError(
+    "[capacity] paid increase on blocks that ended was kept as one-time blocks",
+    undefined,
+    {
+      orderId,
+    }
+  );
 }
 
 /**
@@ -1307,10 +1358,12 @@ export async function applyCapacityWebhookEvent(
       });
       if (error) throw error;
       const refunded = asRecord(result)?.kind;
+      // Only an increase that raised a subscription changed its renewal count.
       if (
-        refunded === "block_increase" ||
-        refunded === "page_block_increase" ||
-        refunded === "domain_increase"
+        (refunded === "block_increase" ||
+          refunded === "page_block_increase" ||
+          refunded === "domain_increase") &&
+        asNonEmptyString(asRecord(result)?.subscription_id)
       ) {
         reportError(
           "[capacity] refunded monthly blocks: check the renewal count in Polar",
@@ -1371,6 +1424,19 @@ async function setAddonEnding(
   await markSubscription(row.id, { cancel_at_period_end: ending, canceled_with_plan: withPlan });
 }
 
+/** The mid-period increase orders of an add-on's current period, not refunded. */
+async function increaseOrders(row: CapacitySubscriptionRow): Promise<string[]> {
+  let query = createAdminClient()
+    .from("capacity_purchases")
+    .select("polar_order_id")
+    .eq("polar_subscription_id", row.polar_subscription_id)
+    .is("refunded_at", null);
+  if (row.period_start) query = query.gte("created_at", row.period_start);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((purchase) => purchase.polar_order_id);
+}
+
 /**
  * Brings the add-ons in line with the plan after any plan subscription
  * event (and after an add-on is bought), from the plan's stored state rather
@@ -1396,11 +1462,18 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
 
   // Page and domain add-ons also end when the account leaves Business at the
   // renewal or the team's Team Business ends.
-  const teamBusinessEnding = liveOfKind(rows, "team_business")?.cancel_at_period_end ?? false;
+  const teamBusiness = liveOfKind(rows, "team_business");
+  const teamBusinessEnding = teamBusiness?.cancel_at_period_end ?? false;
   const pagesLeaving = plan.pages_ending || teamBusinessEnding;
   const domainsLeaving = plan.domains_ending || teamBusinessEnding;
+  // A Team Business payment that failed stops it counting, but it is not
+  // gone: Polar retries the card, and what needs it waits rather than ends.
+  const teamBusinessPastDue = teamBusiness?.status === "past_due";
 
   for (const row of rows) {
+    if (teamBusinessPastDue && (PAGE_KINDS.has(row.kind) || DOMAIN_KINDS.has(row.kind))) {
+      continue;
+    }
     // Page and domain add-ons need Business (or Team Business); the rest the plan.
     const active = PAGE_KINDS.has(row.kind)
       ? plan.pages_active
@@ -1442,6 +1515,8 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
               undefined,
               {
                 subscriptionId: row.polar_subscription_id,
+                // Domains added this period were separate orders.
+                orderIds: (await increaseOrders(row)).join(",") || undefined,
               }
             );
           }
