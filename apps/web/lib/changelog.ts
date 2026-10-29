@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.49.0";
+export const APP_VERSION = "0.50.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,19 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.50.0",
+    date: "2026-10-29",
+    title: "Layouts: Parse Emails into Fields, Line Items and Rows",
+    track: "web",
+    items: [
+      "Layouts read each sender's emails its own way: match conditions pick the layout, which finds its own fields and turns an order's products into line items, from the text or a spreadsheet attachment",
+      "CSV, TSV, Excel, ODS, PDF text and text attachments are parsed into rows and text in a sandboxed parser; Free includes 20 parsed pages a month and Pro 100, and past them attachments arrive as files, unparsed",
+      "The result is `parsed` in every email's JSON: on a new Parsed tab, in deliveries, templates (`{{ parsed.fields.order }}`), Google Sheets rows per line item, the API and the MCP tools",
+      "Settings > Layouts tries your draft on a captured email as you type, without using pages; replay reads earlier emails again with the current layouts",
+      "Alerts also fire when no layout matches the incoming mail; Google Sheets writes your header row only when you ask",
+    ],
+  },
   {
     version: "0.49.0",
     date: "2026-10-29",

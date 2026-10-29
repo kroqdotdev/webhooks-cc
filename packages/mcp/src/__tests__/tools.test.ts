@@ -20,6 +20,7 @@ const EXPECTED_TOOLS = [
   "list_endpoints",
   "get_endpoint",
   "update_endpoint",
+  "preview_layouts",
   "preview_response",
   "list_destinations",
   "add_destination",
@@ -229,7 +230,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(44);
+    expect(Object.keys(tools)).toHaveLength(45);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
 
@@ -269,7 +270,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(46);
+    expect(Object.keys(tools)).toHaveLength(47);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1410,11 +1411,11 @@ function emailClient(overrides: Partial<WebhooksCC> = {}, showEmailExtracts = tr
             includeExtracts?: boolean;
           } = {}
         ) =>
-          buildEmailJson(
-            { ...email, email: email.email },
-            options.endpoint ?? { slug: "acme" },
-            options
-          )
+          buildEmailJson({ ...email, email: email.email }, options.endpoint ?? { slug: "acme" }, {
+            ...options,
+            // As the SDK's toJson: the request's parse rides along.
+            parsed: email.parsed ?? null,
+          })
       ),
       ...(overrides.emails ?? {}),
     } as unknown as WebhooksCC["emails"],
@@ -1496,6 +1497,49 @@ describe("email and forwarding tools", () => {
       expect(detail).not.toHaveProperty("links");
       expect(detail.endpoint).toEqual({ slug: "acme", name: "Acme signups" });
     }
+  });
+
+  it("returns what the layouts found, cut to fit when it is large", async () => {
+    const parsed = {
+      status: "matched" as const,
+      layout: { id: "orders", name: "Orders" },
+      fields: { order: "1001" },
+      lineItems: Array.from({ length: 1000 }, (_, i) => ({ sku: `S-${i}`, qty: String(i) })),
+      lineItemColumns: ["sku", "qty"],
+      attachments: [
+        {
+          index: 0,
+          filename: "o.csv",
+          format: "csv",
+          pages: 1,
+          sheets: [{ name: null, rows: [["sku", "qty"]], rowCount: 1001, truncated: false }],
+        },
+        { index: 1, filename: "i.pdf", format: "pdf", pages: 3, text: "z".repeat(50_000) },
+      ],
+      pages: 4,
+    };
+    const small = { ...parsed, lineItems: parsed.lineItems.slice(0, 2), attachments: [] };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ ...makeEmail("e1"), parsed: small })
+      .mockResolvedValueOnce({ ...makeEmail("e2"), parsed });
+    const tools = getRegisteredTools(emailClient({ emails: { get } as never }));
+
+    const whole = parseJsonResult(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(whole.parsed).toEqual(small);
+
+    const result = await tools.get_email.handler({ requestId: "e2", includeHtml: false });
+    expect(result.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const cut = JSON.parse(result.content[0].text).parsed;
+    expect(cut.fields).toEqual({ order: "1001" });
+    expect(cut.lineItems).toHaveLength(20);
+    expect(cut.lineItemsTotal).toBe(1000);
+    expect(cut.lineItemColumns).toEqual(["sku", "qty"]);
+    expect(cut.attachments[0].sheets).toEqual([{ name: null, rowCount: 1001 }]);
+    expect(cut.attachments[1]).not.toHaveProperty("text");
+    expect(cut.attachments[1].textLength).toBe(50_000);
   });
 
   it("keeps a large email within the output budget, code and link first", async () => {

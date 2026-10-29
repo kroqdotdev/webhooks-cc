@@ -1343,3 +1343,123 @@ def test_send_to_never_follows_redirects_even_with_a_client_that_would() -> None
     response = client.send_to("https://handler.test/hook", provider="github", secret="s")
     assert response.status_code == 302
     assert hosts == ["handler.test"]
+
+
+def test_update_sends_retention_and_layouts_and_reads_them_back() -> None:
+    bodies: list[Any] = []
+    layout = {
+        "id": "orders",
+        "name": "Orders",
+        "match": {
+            "conditions": [
+                {"field": "email", "name": "subject", "op": "contains", "value": "Order"}
+            ]
+        },
+        "lineItems": {"from": "attachment", "attachment": "*.csv"},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "e1",
+                "slug": "acme",
+                "createdAt": 1,
+                "retentionDays": 3,
+                "retentionCapDays": 31,
+                "deleteAfterDelivery": False,
+                "layouts": [layout],
+                "layoutsCap": 2,
+            },
+        )
+
+    endpoint = make_client(handler).endpoints.update(
+        "acme", retention_days=3, delete_after_delivery=False, layouts=[layout]
+    )
+    assert bodies == [{"retentionDays": 3, "deleteAfterDelivery": False, "layouts": [layout]}]
+    assert endpoint.retention_days == 3
+    assert endpoint.retention_cap_days == 31
+    assert endpoint.layouts == [layout]
+    assert endpoint.layouts_cap == 2
+
+
+def test_preview_layouts_reads_the_parsed_result() -> None:
+    calls: list[tuple[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, json.loads(request.content)))
+        return httpx.Response(
+            200,
+            json={
+                "problems": [],
+                "layoutsCap": 2,
+                "request": {"id": "r1", "subject": "Order 1", "receivedAt": 1},
+                "parsed": {
+                    "status": "matched",
+                    "layout": {"id": "orders", "name": "Orders"},
+                    "fields": {"order": "1", "total": None},
+                    "lineItems": [{"sku": "A-1", "qty": "2"}],
+                    "lineItemColumns": ["sku", "qty"],
+                    "attachments": [
+                        {"index": 0, "filename": "o.csv", "format": "csv", "pages": 1},
+                        {
+                            "index": 1,
+                            "filename": "b.pdf",
+                            "format": "pdf",
+                            "pages": 0,
+                            "error": "limit",
+                        },
+                    ],
+                    "pages": 1,
+                },
+            },
+        )
+
+    preview = make_client(handler).endpoints.preview_layouts("acme", request_id="r1")
+    assert calls == [("/api/endpoints/acme/layouts/preview", {"requestId": "r1"})]
+    assert preview.request_id == "r1"
+    parsed = preview.parsed
+    assert parsed is not None
+    assert parsed.status == "matched"
+    assert parsed.layout == {"id": "orders", "name": "Orders"}
+    assert parsed.fields == {"order": "1", "total": None}
+    assert parsed.line_items == [{"sku": "A-1", "qty": "2"}]
+    assert parsed.line_item_columns == ["sku", "qty"]
+    assert [item.error for item in parsed.attachments] == [None, "limit"]
+
+
+def test_requests_carry_the_parse_and_stored_attachments() -> None:
+    from webhooks_cc.models import Request
+
+    request = Request.from_dict(
+        {
+            "id": "r1",
+            "endpointId": "e1",
+            "method": "EMAIL",
+            "path": "acme@mailhooks.cc",
+            "headers": {},
+            "queryParams": {},
+            "ip": "192.0.2.1",
+            "size": 10,
+            "receivedAt": 1,
+            "kind": "email",
+            "email": {
+                "subject": "Order 1",
+                "stored": True,
+                "attachments": [
+                    {
+                        "filename": "o.csv",
+                        "contentType": "text/csv",
+                        "size": 3,
+                        "url": "https://x/a",
+                    }
+                ],
+            },
+            "parsed": {"status": "no_layout", "layout": None, "fields": {}, "lineItems": []},
+        }
+    )
+    assert request.email is not None and request.email.stored
+    assert request.email.attachments[0].url == "https://x/a"
+    assert request.parsed is not None and request.parsed.status == "no_layout"
+    assert request.parsed.line_item_columns == []
