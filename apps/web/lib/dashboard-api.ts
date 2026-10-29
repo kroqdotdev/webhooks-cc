@@ -1213,3 +1213,50 @@ export async function fetchPickerToken(
   );
   return readJson(response);
 }
+
+/** AI setup and repair for an endpoint (app/api/endpoints/[slug]/layouts/assist). */
+export interface AiAssistInfo {
+  /** The server can make assists. */
+  offered: boolean;
+  /** Assists the plan has in 30 days, and used of them. */
+  allowed: number;
+  used: number;
+}
+
+export type AiAssistAsk =
+  | { kind: "field"; name: string; description: string }
+  | { kind: "layout"; description: string }
+  | { kind: "repair"; field: EmailField };
+
+export interface AiAssistResult extends AiAssistInfo {
+  /** Fields that found a value in every sample, with those values. */
+  fields: { field: EmailField; values: string[] }[];
+  match: Condition | null;
+  layoutName: string | null;
+  /** Proposals dropped because they missed a sample or did not compile. */
+  dropped: number;
+}
+
+export async function fetchAiAssists(accessToken: string, slug: string): Promise<AiAssistInfo> {
+  const response = await fetch(
+    `${endpointPath(slug)}/layouts/assist`,
+    withAuthHeaders(accessToken, { cache: "no-store" })
+  );
+  return readJson<AiAssistInfo>(response);
+}
+
+export async function askAiAssist(
+  accessToken: string,
+  slug: string,
+  input: { ask: AiAssistAsk; requestIds: string[]; consent: true }
+): Promise<AiAssistResult> {
+  const response = await fetch(
+    `${endpointPath(slug)}/layouts/assist`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  );
+  return readJson<AiAssistResult>(response);
+}
