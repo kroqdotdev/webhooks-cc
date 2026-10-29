@@ -143,10 +143,11 @@ export function PlanChooser({
       }
       const result = await changeBillingPlan(accessToken, option.plan, option.interval);
       setConfirm(null);
+      // A change at the renewal shows as the pending line instead.
       setNotice(
         result.applied === "now"
           ? `${planName(option.plan)} starts now. The full allowance starts at the renewal.`
-          : `Your plan changes${renewal ? ` on ${longDate(renewal)}` : " at the renewal"}.`
+          : null
       );
       await onChanged?.();
     } catch (err) {

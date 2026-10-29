@@ -4,6 +4,7 @@ const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   createPolarClient: vi.fn(),
   getPolarCheckoutConfig: vi.fn(),
+  endPageAddonsWithPeriod: vi.fn(),
 }));
 
 vi.mock("@/lib/polar", async (importOriginal) => ({
@@ -15,11 +16,20 @@ vi.mock("@/lib/polar", async (importOriginal) => ({
   unwrapPolarResult: <T>(result: T) => result,
 }));
 
+vi.mock("./capacity-billing", () => ({
+  endPageAddonsWithPeriod: mockFns.endPageAddonsWithPeriod,
+}));
+
 vi.mock("./admin", () => ({
   createAdminClient: mockFns.createAdminClient,
 }));
 
-import { applyPolarWebhookEvent, remainingShare } from "./billing";
+import {
+  applyPolarWebhookEvent,
+  changePlanForUser,
+  keepCurrentPlanForUser,
+  remainingShare,
+} from "./billing";
 
 // ---------------------------------------------------------------------------
 // Minimal supabase-js query-builder double (same shape as team-billing.test.ts).
@@ -428,5 +438,107 @@ describe("plan changes within a period", () => {
     );
 
     expect(userUpdatePayload()).toMatchObject({ pending_plan: null, pending_interval: null });
+  });
+});
+
+describe("changePlanForUser", () => {
+  const update = vi.fn();
+
+  beforeEach(() => {
+    vi.stubEnv("POLAR_PRO_PRODUCT_ID", "prod_pro");
+    vi.stubEnv("POLAR_BUSINESS_PRODUCT_ID", "prod_business");
+    vi.stubEnv("POLAR_BUSINESS_ANNUAL_PRODUCT_ID", "prod_business_year");
+    update.mockReset();
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update } });
+  });
+
+  function billingUser(overrides: Record<string, unknown> = {}) {
+    return {
+      data: {
+        id: "user_1",
+        email: "owner@example.com",
+        name: null,
+        plan: "pro",
+        polar_customer_id: "cus_1",
+        polar_subscription_id: "sub_1",
+        cancel_at_period_end: false,
+        billing_interval: "month",
+        pending_plan: null,
+        ...overrides,
+      },
+    };
+  }
+
+  test("Pro to Business monthly changes now, invoicing the rest of the period", async () => {
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "users:select": [billingUser()] }));
+
+    await expect(changePlanForUser("user_1", "business", "month")).resolves.toEqual({
+      applied: "now",
+    });
+    expect(update).toHaveBeenCalledWith("sub_1", {
+      product_id: "prod_business",
+      proration_behavior: "invoice",
+    });
+    expect(userUpdatePayload()).toBeUndefined();
+  });
+
+  test("Pro to Business annual waits for the renewal and shows as pending", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [billingUser()], "users:update": [{}] })
+    );
+
+    await expect(changePlanForUser("user_1", "business", "year")).resolves.toEqual({
+      applied: "renewal",
+    });
+    expect(update).toHaveBeenCalledWith("sub_1", {
+      product_id: "prod_business_year",
+      proration_behavior: "next_period",
+    });
+    expect(userUpdatePayload()).toEqual({ pending_plan: "business", pending_interval: "year" });
+    expect(mockFns.endPageAddonsWithPeriod).not.toHaveBeenCalled();
+  });
+
+  test("Business to Pro waits for the renewal", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [billingUser({ plan: "business" })],
+        "users:update": [{}],
+      })
+    );
+
+    await expect(changePlanForUser("user_1", "pro", "month")).resolves.toEqual({
+      applied: "renewal",
+    });
+    expect(update).toHaveBeenCalledWith("sub_1", {
+      product_id: "prod_pro",
+      proration_behavior: "next_period",
+    });
+    // Extra pages need Business: they are set to end with the period.
+    expect(mockFns.endPageAddonsWithPeriod).toHaveBeenCalledWith({
+      kind: "user",
+      userId: "user_1",
+    });
+  });
+
+  test("keeping the plan clears Polar's pending update and the recorded one", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [billingUser({ plan: "business", pending_plan: "pro" })],
+        "users:update": [{}],
+      })
+    );
+
+    await keepCurrentPlanForUser("user_1");
+    expect(update).toHaveBeenCalledWith("sub_1", { pending_update: null });
+    expect(userUpdatePayload()).toEqual({ pending_plan: null, pending_interval: null });
+  });
+
+  test("keeping the plan without a waiting change is refused", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [billingUser({ plan: "business" })] })
+    );
+
+    await expect(keepCurrentPlanForUser("user_1")).rejects.toMatchObject({ code: "unchanged" });
+    expect(update).not.toHaveBeenCalled();
   });
 });

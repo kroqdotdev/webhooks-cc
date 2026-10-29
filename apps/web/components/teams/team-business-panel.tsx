@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { longDate } from "@/components/settings/format";
 import { Notice, Panel } from "@/components/settings/panel";
 import { Button } from "@/components/ui/button";
 
@@ -27,9 +28,26 @@ export function TeamBusinessPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [ending, setEnding] = useState<{ ending: boolean; periodEnd: string | null } | null>(null);
   const returned =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("capacity") === "business";
+
+  const loadState = useCallback(async () => {
+    if (!accessToken || !canManage || !business) return;
+    try {
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/billing/business`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (response.ok) setEnding((await response.json()) as typeof ending);
+    } catch {
+      // The buttons fall back to both choices.
+    }
+  }, [accessToken, canManage, business, teamId]);
+
+  useEffect(() => {
+    void loadState();
+  }, [loadState]);
 
   const act = async (action: "add" | "end" | "keep") => {
     if (!accessToken) return;
@@ -53,9 +71,10 @@ export function TeamBusinessPanel({
       }
       setNotice(
         action === "end"
-          ? "Team Business ends with the current period."
+          ? "Team Business ends with the current period, and the team's extra parsed pages with it."
           : "Team Business renews with the team."
       );
+      await loadState();
       onChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "The change was not made");
@@ -72,14 +91,15 @@ export function TeamBusinessPanel({
       footer={
         canManage ? (
           business ? (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" disabled={busy} onClick={() => void act("end")}>
+            ending?.ending ? (
+              <Button disabled={busy} onClick={() => void act("keep")}>
+                Keep Team Business
+              </Button>
+            ) : (
+              <Button variant="outline" disabled={busy || !ending} onClick={() => void act("end")}>
                 End at the renewal
               </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => void act("keep")}>
-                Keep it
-              </Button>
-            </div>
+            )
           ) : (
             <Button disabled={busy || !accessToken} onClick={() => void act("add")}>
               Add Team Business, $49 a month
@@ -94,9 +114,11 @@ export function TeamBusinessPanel({
         </Notice>
       )}
       <p className="text-sm">
-        {business
-          ? "Team Business is on."
-          : "The team has the standard pool: 100,000 requests per seat, 100 parsed pages and 2 layouts per endpoint."}
+        {!business
+          ? "The team has the standard pool: 100,000 requests per seat, 100 parsed pages and 2 layouts per endpoint."
+          : ending?.ending
+            ? `Team Business ends on ${ending.periodEnd ? longDate(ending.periodEnd) : "the renewal"}; the team keeps the standard pool after that.`
+            : "Team Business is on."}
       </p>
       {notice && <p className="text-sm text-muted-foreground mt-2">{notice}</p>}
       {error && (

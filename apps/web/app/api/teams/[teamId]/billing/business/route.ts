@@ -6,11 +6,32 @@ import {
   assertCanManage,
   CapacityError,
   createTeamBusinessCheckout,
+  getTeamBusinessState,
   setTeamBusinessEnding,
 } from "@/lib/supabase/capacity-billing";
 import { TeamBillingError } from "@/lib/supabase/team-billing";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** GET: whether Team Business is set to end, for the owner's panel. */
+export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
+  const auth = await authenticateSessionRequest(request);
+  if (!auth.success) return auth.response;
+  const { teamId } = await params;
+  if (!UUID.test(teamId)) return Response.json({ error: "Team not found" }, { status: 404 });
+  const account = { kind: "team" as const, teamId };
+  try {
+    await assertCanManage(account, auth.userId);
+    return Response.json(await getTeamBusinessState(account));
+  } catch (error) {
+    if (error instanceof TeamBillingError) {
+      const status = error.code === "not_owner" ? 403 : error.code === "team_not_found" ? 404 : 400;
+      return Response.json({ error: error.message }, { status });
+    }
+    reportError("Team Business state failed", error);
+    return Response.json({ error: "Could not read Team Business" }, { status: 500 });
+  }
+}
 
 /**
  * POST /api/teams/{teamId}/billing/business { action: "add" | "end" | "keep" }:

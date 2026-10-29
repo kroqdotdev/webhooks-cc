@@ -32,6 +32,12 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 });
 
 import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
+import {
+  changeMonthlyBlocks,
+  getCapacityState,
+  setOverage,
+  setTeamBusinessEnding,
+} from "@/lib/supabase/capacity-billing";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -412,5 +418,61 @@ describe("Team Business", () => {
     await applyAddon({ teamId: team!.id }, "team_business", `sub_tb_off_${ts}`, "active");
     const { data } = await admin.from("teams").select("business").eq("id", team!.id).single();
     expect(data?.business).toBe(false);
+  });
+});
+
+describe("page add-ons when Business is about to end", () => {
+  it("refuses renewing page add-ons while a change away from Business waits, and shows them ending", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    await applyAddon({ userId }, "page_blocks", `sub_pb_end_${ts}`, "active", 2);
+    const account = { kind: "user" as const, userId };
+
+    await admin
+      .from("users")
+      .update({ pending_plan: "pro", pending_interval: "month" })
+      .eq("id", userId);
+    expect((await getCapacityState(account, "pages")).planEnding).toBe(true);
+    await expect(changeMonthlyBlocks(account, userId, 2, "pages")).rejects.toMatchObject({
+      code: "plan_ending",
+    });
+    await expect(
+      setOverage(account, userId, { enabled: true, maxRequests: 2000 }, "pages")
+    ).rejects.toMatchObject({ code: "plan_ending" });
+
+    // Business annual keeps pages; so does keeping Business.
+    await admin
+      .from("users")
+      .update({ pending_plan: "business", pending_interval: "year" })
+      .eq("id", userId);
+    expect((await getCapacityState(account, "pages")).planEnding).toBe(false);
+  });
+
+  it("sets a team's page add-ons to end with Team Business", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `biz-end-${ts}`, created_by: owner, seats: 1, subscription_status: "active" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+    await applyAddon(account, "team_business", `sub_tb_end_${ts}`, "active");
+    await applyAddon(account, "page_blocks", `sub_tpb_end_${ts}`, "active", 1);
+
+    await setTeamBusinessEnding(account, true);
+    const { data: rows } = await admin
+      .from("capacity_subscriptions")
+      .select("kind, cancel_at_period_end")
+      .eq("team_id", team.id)
+      .order("kind");
+    expect(rows).toEqual([
+      { kind: "page_blocks", cancel_at_period_end: true },
+      { kind: "team_business", cancel_at_period_end: true },
+    ]);
+    expect((await getCapacityState(account, "pages")).planEnding).toBe(true);
+    await expect(changeMonthlyBlocks(account, owner, 1, "pages")).rejects.toMatchObject({
+      code: "plan_ending",
+    });
   });
 });

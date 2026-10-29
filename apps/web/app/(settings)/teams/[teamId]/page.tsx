@@ -82,6 +82,8 @@ function TeamDetailContent() {
   const team = settings.teams.find((t) => t.id === teamId) ?? null;
 
   const [members, setMembers] = useState<TeamMember[] | null>(null);
+  // Bumped when Team Business changes, which the pages panel reads.
+  const [businessVersion, setBusinessVersion] = useState(0);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [endpoints, setEndpoints] = useState<TeamEndpoint[]>([]);
   const [ownedEndpoints, setOwnedEndpoints] = useState<OwnedEndpoint[]>([]);
@@ -535,7 +537,10 @@ function TeamDetailContent() {
             teamId={team.id}
             business={team.business}
             canManage={isOwner}
-            onChanged={settings.refresh}
+            onChanged={() => {
+              setBusinessVersion((version) => version + 1);
+              void settings.refresh();
+            }}
           />
         )}
 
@@ -544,7 +549,12 @@ function TeamDetailContent() {
             accessToken={accessToken}
             teamId={team.id}
             canManage={isOwner}
-            reloadKey={[team.subscriptionStatus, team.periodEnd, team.business].join(":")}
+            reloadKey={[
+              team.subscriptionStatus,
+              team.periodEnd,
+              team.business,
+              businessVersion,
+            ].join(":")}
           />
         )}
 
