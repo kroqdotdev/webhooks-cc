@@ -122,6 +122,7 @@ export function ParsedPagesPanel({
   const oneTimeValid =
     Number.isInteger(oneTimeBlocks) && oneTimeBlocks >= 1 && oneTimeBlocks <= MAX_PAGE_BLOCKS;
   const manage = canManage && state.offered && state.eligible;
+  const renewal = state.periodEnd ? longDate(state.periodEnd) : "the renewal";
 
   return (
     <Panel
@@ -168,6 +169,15 @@ export function ParsedPagesPanel({
         </p>
       )}
 
+      {manage && state.planEnding && (
+        <Notice tone="warning" title={`Extra pages end on ${renewal}`}>
+          {teamId
+            ? "Team Business is set to end, and monthly page blocks and overage end with it. Keep Team Business to change them."
+            : "Your plan leaves Business then, and monthly page blocks and overage end with it. Keep Business to change them."}{" "}
+          One-time pages stay.
+        </Notice>
+      )}
+
       {manage && (
         <>
           <PanelRow
@@ -193,12 +203,18 @@ export function ParsedPagesPanel({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={busy || !monthlyValid}
+                disabled={busy || !monthlyValid || state.planEnding}
                 onClick={() => void act({ action: "set_monthly_blocks", blocks: monthlyBlocks })}
               >
-                Save
+                {state.blocks?.cancelAtPeriodEnd && !state.planEnding ? "Keep" : "Save"}
               </Button>
             </div>
+            {state.blocks?.cancelAtPeriodEnd && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {pages(state.blocks.units * BLOCK_PAGES)} pages a month until {renewal}, not
+                renewed.
+              </p>
+            )}
             {state.blocks?.pendingUnits !== null &&
               state.blocks?.pendingUnits !== undefined &&
               state.blocks.pendingUnits !== state.blocks.units && (
@@ -261,7 +277,7 @@ export function ParsedPagesPanel({
                     ? "outline"
                     : "default"
                 }
-                disabled={busy}
+                disabled={busy || state.planEnding}
                 onClick={() =>
                   void act({ action: "set_overage", enabled: true, maxBlocks: Number(overageMax) })
                 }
@@ -281,6 +297,9 @@ export function ParsedPagesPanel({
                 </Button>
               )}
             </div>
+            {state.overage.subscribed && state.overage.cancelAtPeriodEnd && (
+              <p className="text-xs text-muted-foreground mt-1">On until {renewal}.</p>
+            )}
           </PanelRow>
         </>
       )}

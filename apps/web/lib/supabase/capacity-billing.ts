@@ -175,6 +175,8 @@ interface AccountRow {
   plan_active: boolean;
   /** Page add-ons count: Business, or a team with Team Business, on a live plan. */
   pages_active: boolean;
+  /** Extra pages end at the renewal: the plan changes to one without them. */
+  pages_ending: boolean;
   /** The plan's own pages per window (its entitlements). */
   plan_pages: number;
   credit_pages: number;
@@ -222,22 +224,26 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
       ...data,
       plan_active: live,
       pages_active: live && data.business,
+      // Set from the Team Business add-on by requireEligible when it matters.
+      pages_ending: false,
       plan_pages: teamEntitlements(data.business).parsedPages,
     };
   }
 
   const { data, error } = await admin
     .from("users")
-    .select(`${ACCOUNT_COLUMNS}, plan, subscription_status`)
+    .select(`${ACCOUNT_COLUMNS}, plan, subscription_status, pending_plan`)
     .eq("id", account.userId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const entitlements = planEntitlements(data.plan);
+  const { pending_plan: pendingPlan, ...row } = data;
+  const entitlements = planEntitlements(row.plan);
   return {
-    ...data,
-    plan_active: entitlements.requestAddons && data.subscription_status !== null,
-    pages_active: entitlements.pageAddons && data.subscription_status !== null,
+    ...row,
+    plan_active: entitlements.requestAddons && row.subscription_status !== null,
+    pages_active: entitlements.pageAddons && row.subscription_status !== null,
+    pages_ending: pendingPlan !== null && !planEntitlements(pendingPlan).pageAddons,
     plan_pages: entitlements.parsedPages,
   };
 }
@@ -320,6 +326,21 @@ async function requireEligible(
         ? "The team needs an active subscription before it can add requests"
         : "Extra requests are part of Pro. Upgrade first."
     );
+  }
+  if (renewing && resource === "pages") {
+    const ending =
+      account.kind === "team"
+        ? (liveOfKind(await liveSubscriptions(account), "team_business")?.cancel_at_period_end ??
+          false)
+        : row.pages_ending;
+    if (ending) {
+      throw new CapacityError(
+        "plan_ending",
+        account.kind === "team"
+          ? "Team Business is set to end, and extra parsed pages end with it. Keep Team Business first."
+          : "Your plan changes from Business at the renewal, and extra parsed pages end with it. Keep Business first."
+      );
+    }
   }
   if (renewing && row.cancel_at_period_end) {
     throw new CapacityError(
@@ -412,13 +433,19 @@ async function pageState(account: CapacityAccount, row: AccountRow): Promise<Cap
   const blocks = liveOfKind(subscriptions, "page_blocks");
   const overage = liveOfKind(subscriptions, "page_overage");
   const overageMax = row.page_overage_max;
+  const teamBusinessEnding =
+    liveOfKind(subscriptions, "team_business")?.cancel_at_period_end ?? false;
   return {
     offered: getPageProductIds() !== null,
     eligible: row.pages_active,
-    planEnding: row.pages_active && row.cancel_at_period_end,
+    // Extra pages end with the plan, a change away from Business, or the
+    // end of Team Business.
+    planEnding:
+      row.pages_active && (row.cancel_at_period_end || row.pages_ending || teamBusinessEnding),
     periodStart: balance?.window_start ?? row.period_start,
     periodEnd: row.period_end,
-    planRequests: row.plan_pages,
+    // The window's own pages, pro rata after a mid-period upgrade.
+    planRequests: balance ? Math.max(balance.allowance - row.page_block_pages, 0) : row.plan_pages,
     blockRequests: row.page_block_pages,
     used: Number(balance?.used ?? 0),
     creditRequests: Number(row.credit_pages),
@@ -695,6 +722,18 @@ export async function createTeamBusinessCheckout(
 }
 
 /** Ends Team Business at the period end, or keeps it when it was set to end. */
+/** Whether the team's Team Business is set to end, and when its period ends. */
+export async function getTeamBusinessState(
+  account: Extract<CapacityAccount, { kind: "team" }>
+): Promise<{ active: boolean; ending: boolean; periodEnd: string | null }> {
+  const current = liveOfKind(await liveSubscriptions(account), "team_business");
+  return {
+    active: current !== null,
+    ending: current?.cancel_at_period_end ?? false,
+    periodEnd: current?.period_end ?? null,
+  };
+}
+
 export async function setTeamBusinessEnding(
   account: Extract<CapacityAccount, { kind: "team" }>,
   ending: boolean
@@ -703,6 +742,8 @@ export async function setTeamBusinessEnding(
   if (!current) throw new CapacityError("not_found", "The team has no Team Business", 404);
   if (!ending) await requireEligible(account, { renewing: true });
   await setAddonEnding(account, current, ending, false);
+  // Extra pages need Team Business; they would otherwise renew without it.
+  if (ending) await endPageAddonsWithPeriod(account);
 }
 
 /**
