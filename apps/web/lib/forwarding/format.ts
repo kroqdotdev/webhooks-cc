@@ -9,10 +9,17 @@ import { isDiscordUrl, isSlackUrl } from "./chat";
  * no request to relay, so "as received" sends them as signed JSON too. A
  * template (migration 00063) is a JSON body of the owner's own, signed like
  * the JSON format. The inbound provider shapes (migration 00064) are for
- * emails; HTTP requests to such a destination go as received.
+ * emails; HTTP requests to such a destination go as received. Sheets
+ * (migration 00068) appends rows through Google's API instead of a POST.
  */
 
-export type ForwardFormat = "as_received" | "json" | "chat" | "template" | InboundEmailFormat;
+export type ForwardFormat =
+  | "as_received"
+  | "json"
+  | "chat"
+  | "template"
+  | "sheets"
+  | InboundEmailFormat;
 
 export function isChatUrl(url: string): boolean {
   return isSlackUrl(url) || isDiscordUrl(url);
@@ -27,6 +34,8 @@ export function resolveFormat(
   if (setting === "chat") return "chat";
   if (setting === "json") return "json";
   if (setting === "template") return "template";
+  // Rows in a Google Sheet (lib/integrations/sheets.ts), for both kinds.
+  if (setting === "sheets") return "sheets";
   if (isInboundEmailFormat(setting)) return kind === "email" ? setting : "as_received";
   if (setting === "as_received") return native;
   return isChatUrl(url) ? "chat" : native;

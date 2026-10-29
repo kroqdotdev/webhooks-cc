@@ -82,7 +82,8 @@ export type DeliveryFormat =
   | "postmark"
   | "sendgrid"
   | "mailgun"
-  | "cloudmailin";
+  | "cloudmailin"
+  | "sheets";
 export type DeliveryStatus = "pending" | "succeeded" | "failed" | "skipped";
 
 export interface TeamEndpointShare {
@@ -405,7 +406,8 @@ export type DestinationFormatSetting =
   | "postmark"
   | "sendgrid"
   | "mailgun"
-  | "cloudmailin";
+  | "cloudmailin"
+  | "sheets";
 
 /** Where an endpoint's captures go (lib/supabase/destinations.ts). */
 export interface DashboardDestination {
@@ -433,6 +435,8 @@ export interface DashboardDestination {
   delaySeconds: number;
   /** How an email's stored attachments travel. */
   attachments?: "links" | "inline" | "none";
+  /** Settings of a Google Sheets destination. */
+  config?: SheetsDestinationConfig | null;
   role: "forward" | "notify" | null;
   createdAt: number;
   updatedAt: number;
@@ -1034,4 +1038,73 @@ export async function replayRequest(accessToken: string, requestId: string): Pro
     withAuthHeaders(accessToken, { method: "POST" })
   );
   return (await readJson<{ queued: boolean }>(response)).queued;
+}
+
+export interface SheetsDestinationConfig {
+  connectionId: string;
+  spreadsheetId: string;
+  sheet: string;
+  rows: "email" | "line_items";
+  columns: { header: string; value: string }[];
+}
+
+export interface GoogleConnectionsInfo {
+  /** Google Sheets is set up on this server. */
+  available: boolean;
+  /** The Drive picker is set up too. */
+  picker: boolean;
+  connections: { id: string; email: string | null; createdAt: number }[];
+}
+
+export async function fetchGoogleConnections(accessToken: string): Promise<GoogleConnectionsInfo> {
+  const response = await fetch(
+    "/api/integrations/google/connections",
+    withAuthHeaders(accessToken)
+  );
+  return readJson(response);
+}
+
+/** The Google consent URL; the browser comes back to `returnTo`. */
+export async function startGoogleConnect(accessToken: string, returnTo: string): Promise<string> {
+  const response = await fetch(
+    "/api/integrations/google/start",
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ returnTo }),
+    })
+  );
+  return (await readJson<{ url: string }>(response)).url;
+}
+
+export async function createGoogleSpreadsheet(
+  accessToken: string,
+  input: {
+    connectionId: string;
+    title?: string;
+    spreadsheetId?: string;
+    sheet: string;
+    headers: string[];
+  }
+): Promise<{ id: string; url?: string }> {
+  const response = await fetch(
+    "/api/integrations/google/spreadsheets",
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  );
+  return readJson(response);
+}
+
+export async function fetchPickerToken(
+  accessToken: string,
+  connectionId: string
+): Promise<{ accessToken: string; apiKey: string; appId: string }> {
+  const response = await fetch(
+    `/api/integrations/google/picker?connectionId=${encodeURIComponent(connectionId)}`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson(response);
 }
