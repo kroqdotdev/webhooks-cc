@@ -4,24 +4,26 @@ import { siteOrigin } from "@/lib/site";
 /**
  * GET /api/integrations/google/begin?ticket=: the first stop of a Google
  * connection started on mailhooks.cc. On webhooks.cc, it sets the nonce
- * cookie the callback (also webhooks.cc's) checks, then sends the browser on
- * to Google's consent page. The ticket is sealed and lasts two minutes.
+ * cookie the callback (also webhooks.cc's) checks, then sends the browser to
+ * mailhooks.cc's handoff, which checks the browser before going to Google.
  */
 export function GET(request: Request) {
   const url = new URL(request.url);
-  const ticket = openBeginTicket(url.searchParams.get("ticket") ?? "");
-  if (!ticket) {
-    const back = new URL("/dashboard", siteOrigin("mailhooks"));
-    back.searchParams.set("google", "expired");
-    return new Response(null, { status: 303, headers: { location: back.toString() } });
-  }
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: ticket.url,
-      "set-cookie": browserCookie(ticket.browserNonce, url.protocol === "https:"),
-      "cache-control": "no-store",
-      "referrer-policy": "no-referrer",
-    },
+  const sealed = url.searchParams.get("ticket") ?? "";
+  const ticket = openBeginTicket(sealed);
+  const next = new URL(
+    ticket ? "/api/integrations/google/handoff" : "/dashboard",
+    siteOrigin("mailhooks")
+  );
+  if (ticket) next.searchParams.set("ticket", sealed);
+  else next.searchParams.set("google", "expired");
+  const headers = new Headers({
+    location: next.toString(),
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
   });
+  if (ticket) {
+    headers.append("set-cookie", browserCookie(ticket.browserNonce, url.protocol === "https:"));
+  }
+  return new Response(null, { status: 303, headers });
 }

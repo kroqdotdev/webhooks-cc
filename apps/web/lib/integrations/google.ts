@@ -136,11 +136,37 @@ export function openState(sealed: string, now = Date.now()): OAuthState | null {
 /**
  * Starting on mailhooks.cc: Google returns to webhooks.cc's callback (the
  * one redirect URI registered), which reads the nonce cookie of its own
- * host. So the browser first visits a webhooks.cc link that sets the cookie
- * there and goes on to Google: the link carries the consent URL and the
- * nonce, sealed (under a key of its own, so it never passes for a state)
- * and good for two minutes.
+ * host. So the browser makes two stops first: webhooks.cc's begin sets
+ * that cookie, then mailhooks.cc's handoff checks a cookie the start set on
+ * mailhooks.cc (HANDOFF_COOKIE) and only then goes on to Google. The ticket
+ * both stops read carries the consent URL, the callback nonce and the
+ * handoff nonce's hash, sealed (under a key of its own, so it never passes
+ * for a state) and good for two minutes; the consent URL never leaves it, so
+ * a ticket someone else gets hold of leads nowhere without that browser's
+ * handoff cookie.
  */
+export const HANDOFF_COOKIE = "whcc_google_handoff";
+
+export function handoffCookie(nonce: string, secure: boolean): string {
+  return `${HANDOFF_COOKIE}=${nonce}; Path=/api/integrations/google/handoff; Max-Age=120; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+export function clearHandoffCookie(secure: boolean): string {
+  return `${HANDOFF_COOKIE}=; Path=/api/integrations/google/handoff; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+export function handoffNonceOf(request: Request): string | null {
+  const header = request.headers.get("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === HANDOFF_COOKIE) return rest.join("=") || null;
+  }
+  return null;
+}
+
+export function handoffHash(nonce: string): string {
+  return createHash("sha256").update(`google oauth handoff ${nonce}`).digest("base64url");
+}
 const TICKET_LIFETIME_MS = 2 * 60 * 1000;
 
 function ticketKey(): Buffer {
@@ -152,11 +178,19 @@ function ticketKey(): Buffer {
     .digest();
 }
 
-export function sealBeginTicket(url: string, browserNonce: string, now = Date.now()): string {
+export function sealBeginTicket(
+  url: string,
+  browserNonce: string,
+  handoff: string,
+  now = Date.now()
+): string {
   const nonce = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", ticketKey(), nonce);
   const body = Buffer.concat([
-    cipher.update(JSON.stringify({ url, browserNonce, expires: now + TICKET_LIFETIME_MS }), "utf8"),
+    cipher.update(
+      JSON.stringify({ url, browserNonce, handoff, expires: now + TICKET_LIFETIME_MS }),
+      "utf8"
+    ),
     cipher.final(),
   ]);
   return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString("base64url");
@@ -165,7 +199,7 @@ export function sealBeginTicket(url: string, browserNonce: string, now = Date.no
 export function openBeginTicket(
   sealed: string,
   now = Date.now()
-): { url: string; browserNonce: string } | null {
+): { url: string; browserNonce: string; handoff: string } | null {
   try {
     const bytes = Buffer.from(sealed, "base64url");
     if (bytes.length < 29) return null;
@@ -176,10 +210,11 @@ export function openBeginTicket(
         decipher.update(bytes.subarray(12, bytes.length - 16)),
         decipher.final(),
       ]).toString("utf8")
-    ) as { url?: unknown; browserNonce?: unknown; expires?: unknown };
+    ) as { url?: unknown; browserNonce?: unknown; handoff?: unknown; expires?: unknown };
     if (
       typeof ticket.url !== "string" ||
       typeof ticket.browserNonce !== "string" ||
+      typeof ticket.handoff !== "string" ||
       typeof ticket.expires !== "number" ||
       ticket.expires <= now ||
       // Only ever on to Google's consent page.
@@ -187,7 +222,7 @@ export function openBeginTicket(
     ) {
       return null;
     }
-    return { url: ticket.url, browserNonce: ticket.browserNonce };
+    return { url: ticket.url, browserNonce: ticket.browserNonce, handoff: ticket.handoff };
   } catch {
     return null;
   }
