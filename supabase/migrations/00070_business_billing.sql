@@ -38,12 +38,15 @@ alter table public.users
   add column if not exists pending_interval text;
 
 alter table public.users drop constraint if exists users_pending_plan_check;
+-- Added unchecked and validated after, so the scan of users does not hold
+-- the table's exclusive lock.
 alter table public.users
   add constraint users_pending_plan_check
   check (
     (pending_plan is null and pending_interval is null)
     or (pending_plan in ('pro', 'business') and pending_interval in ('month', 'year'))
-  );
+  ) not valid;
+alter table public.users validate constraint users_pending_plan_check;
 
 -- The pro rata allowance belongs to one window: whatever moves the period
 -- on (the renewal webhook, or the fallback in process_billing_period_resets
