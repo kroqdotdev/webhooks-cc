@@ -49,7 +49,7 @@ Options 2 to 5 are the fallback, and they start in the sandbox. It needs nothing
    - TypeScript: `npm i @webhooks-cc/sdk`, then `WebhooksCC.sandbox()` ([SDK](/docs/sdk))
    - Python: `pip install webhooks-cc`, then `WebhooksCC.sandbox()` ([Python SDK](/docs/sdk/python#no-account-the-agent-sandbox))
    - Go: `go get webhooks.cc/go`, then `webhookscc.NewSandbox(ctx)` ([Go SDK](/docs/sdk/go#no-account-the-agent-sandbox))
-   - Shell: `whk sandbox create --json` ([CLI](/docs/cli/commands#sandbox); install with `curl -fsSL https://webhooks.cc/install.sh | sh` or `brew install kroqdotdev/tap/whk`)
+   - Shell: `whk sandbox create --json` ([CLI](/docs/cli/commands#sandbox); install with `curl -fsSL https://webhooks.cc/install.sh | sh` or `brew install kroqdotdev/tap/whk`; without root, `curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh`)
 
    To connect an account without a sandbox first, they have `WebhooksCC.connect()` (TypeScript and Python), `webhookscc.Connect()` (Go) and `whk sandbox connect --email <address>`.
 5. **Agents with only HTTP** follow Steps 1 to 6 of [auth.md](/auth.md). Any User-Agent works.
@@ -67,8 +67,8 @@ Sandbox endpoints only capture. They answer every webhook with a plain `200` and
 
 | | Sandbox (agent) | Guest (browser) | Free account |
 | --- | --- | --- | --- |
-| Endpoints | 3 at a time | Temporary, from the home page | Unlimited |
-| Requests | 25 per endpoint, 100 in all | 25 per endpoint | 50 per day |
+| Endpoints | 3 at a time | One per browser, from the home page | Unlimited |
+| Requests | 25 per endpoint, 100 in all | 25 in all | 50 per day |
 | Lifetime | 24 hours | 12 hours | Never expire |
 | Who can read captures | The agent's token | Anyone with the link | You and your team |
 

@@ -350,7 +350,9 @@ does not move sandbox endpoints into the account.
    - Node: \`npm i @webhooks-cc/sdk\`, then \`WebhooksCC.sandbox()\`
    - Go: \`go get webhooks.cc/go\`, then \`webhookscc.NewSandbox(ctx)\`
    - Shell: \`whk sandbox create --json\` (install with
-     \`curl -fsSL ${appUrl}/install.sh | sh\`)
+     \`curl -fsSL ${appUrl}/install.sh | sh\` or
+     \`brew install kroqdotdev/tap/whk\`; without root,
+     \`curl -fsSL ${appUrl}/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh\`)
 5. **You only have HTTP:** follow Steps 1 to 6 below. Any User-Agent works.
 
 Connected before? Options 2 to 4 keep the sandbox and your human's
@@ -550,6 +552,10 @@ Content-Type: application/json
   }
 }
 \`\`\`
+
+The two ids differ on purpose: \`claim_attempt_id\` (\`cla_\`) names the
+attempt, and the \`cat_\` value in \`verification_uri\` is a separate token
+for the page.
 
 \`email\` binds the attempt: only someone signed in with that address can
 complete it. The same call starts a new attempt when a code ran out (a

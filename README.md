@@ -47,6 +47,10 @@ See [webhooks.cc](https://webhooks.cc) for details.
 
 ```bash
 curl -fsSL https://webhooks.cc/install.sh | sh
+# or
+brew install kroqdotdev/tap/whk
+# without root: any directory you can write to (created when missing)
+curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 Then launch interactive terminal:

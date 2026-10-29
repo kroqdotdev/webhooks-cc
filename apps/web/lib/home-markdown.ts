@@ -20,7 +20,7 @@ Every endpoint has a capture URL, \`https://go.webhooks.cc/w/<slug>\`, that reco
 
 ## Quick start for people
 
-1. Open ${appUrl} to get a temporary endpoint without signing up, or sign up free for permanent endpoints, email capture, the CLI, the SDKs and the MCP server.
+1. Open ${appUrl} to get a temporary endpoint without signing up, or sign up free for permanent endpoints and email capture. AI agents can start with the CLI, the SDKs or the MCP server without an account, in a 24-hour sandbox ([auth.md](${appUrl}/auth.md)).
 2. Send it a request:
 
    \`\`\`bash

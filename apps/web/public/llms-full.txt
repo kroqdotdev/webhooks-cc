@@ -63,7 +63,12 @@ AI agents have two more ways in, and both end in the same kind of token:
 
 The access tokens agents get either way are short-lived `whcc_` tokens, sent in the same `Authorization: Bearer` header as an API key, so every route accepts them unchanged. Connected agents and OAuth apps never reach API keys, billing or account settings, and are listed (and disconnected) under Account, Connected agents.
 
-Public (unauthenticated) routes: `POST /api/auth/device-code`, `POST /api/auth/device-token`, `POST /api/go/endpoint`.
+Public routes (no API key, session or access token; most are rate limited per IP):
+
+- CLI device flow: `POST /api/auth/device-code`, `GET /api/auth/device-poll`, `POST /api/auth/device-claim`
+- Guest endpoints: `POST /api/go/endpoint`, `GET /api/go/endpoint/{slug}`, `GET /api/go/endpoint/{slug}/requests`
+- Agent registration (auth.md): `POST /api/agent/identity/challenge`, `POST /api/agent/identity`, `POST /api/agent/identity/claim` (takes the `claim_token` in the body), `POST /api/agent/event/notify` (takes a signed Security Event Token from a trusted identity provider)
+- OAuth: `POST /api/oauth2/token`, `POST /api/oauth2/register`, `POST /api/oauth2/revoke` (public clients, no client secret)
 
 ---
 
@@ -626,10 +631,14 @@ Each provider signs payloads with its native algorithm (HMAC-SHA256, Ed25519, et
 
 ## CLI Reference
 
-Binary: `whk`. Install via Homebrew or download from GitHub releases.
+Binary: `whk`. Install via Homebrew, the install script, or GitHub releases.
 
 ```bash
 brew install kroqdotdev/tap/whk
+# or
+curl -fsSL https://webhooks.cc/install.sh | sh
+# without root: any directory you can write to (created when missing)
+curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 ### Global Flags
@@ -775,6 +784,8 @@ Forwarding settings are owner only. The owner-only routes below answer `404` to 
 |--------|------|------|-------------|
 | POST | `/api/auth/device-code` | None | Create device code |
 | POST | `/api/auth/device-authorize` | Session | Authorize device |
+| GET | `/api/auth/device-poll` | None | Poll until the device code is authorized |
+| POST | `/api/auth/device-claim` | None | Exchange an authorized device code for an API key |
 
 ### Account
 

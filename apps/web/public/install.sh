@@ -1,16 +1,30 @@
 #!/bin/sh
 # Install script for whk CLI
 # Usage: curl -fsSL https://webhooks.cc/install.sh | sh
+# Without root, pick a directory you can write to (created when missing):
+#   curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh
 set -eu
 
 REPO="kroqdotdev/webhooks-cc"
 BINARY="whk"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${WHK_INSTALL_DIR:-/usr/local/bin}"
+# A quoted "~/..." arrives unexpanded, so expand it here.
+case "$INSTALL_DIR" in
+  \~) INSTALL_DIR="$HOME" ;;
+  \~/*) INSTALL_DIR="$HOME/${INSTALL_DIR#\~/}" ;;
+esac
+[ "$INSTALL_DIR" = "/" ] || INSTALL_DIR="${INSTALL_DIR%/}"
 RELEASES_API="https://api.github.com/repos/$REPO/releases/latest"
 
 # Cosign keyless verification parameters (GitHub Actions OIDC)
 COSIGN_ISSUER="https://token.actions.githubusercontent.com"
 COSIGN_IDENTITY_REGEXP="^https://github.com/$REPO/"
+
+# How to install without sudo, for the errors that need it.
+no_sudo_hint() {
+  echo "To install without sudo, pick a directory you can write to:" >&2
+  echo "  curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR=\"\$HOME/.local/bin\" sh" >&2
+}
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -153,18 +167,39 @@ if [ ! -f "$WHK_TMPDIR/$BINARY" ]; then
   exit 1
 fi
 
+# A directory named by WHK_INSTALL_DIR is created when missing, never with sudo.
+if [ -n "${WHK_INSTALL_DIR:-}" ] && [ ! -d "$INSTALL_DIR" ]; then
+  if ! mkdir -p "$INSTALL_DIR" 2>/dev/null; then
+    echo "Error: could not create $INSTALL_DIR; pick a directory you can write to." >&2
+    exit 1
+  fi
+fi
+
 if [ -w "$INSTALL_DIR" ]; then
   mv "$WHK_TMPDIR/$BINARY" "$INSTALL_DIR/$BINARY"
   chmod +x "$INSTALL_DIR/$BINARY"
 else
   if ! command -v sudo >/dev/null 2>&1; then
     echo "Error: write access to $INSTALL_DIR requires sudo, but sudo is not installed." >&2
+    no_sudo_hint
     exit 1
   fi
   echo "Installing to $INSTALL_DIR (requires sudo)..."
-  sudo mv "$WHK_TMPDIR/$BINARY" "$INSTALL_DIR/$BINARY"
-  sudo chmod +x "$INSTALL_DIR/$BINARY"
+  if ! sudo mv "$WHK_TMPDIR/$BINARY" "$INSTALL_DIR/$BINARY" || ! sudo chmod +x "$INSTALL_DIR/$BINARY"; then
+    echo "Error: could not install to $INSTALL_DIR with sudo." >&2
+    no_sudo_hint
+    exit 1
+  fi
 fi
 
 echo "$BINARY $VERSION installed to $INSTALL_DIR/$BINARY"
-echo "Run '$BINARY --help' to get started"
+case ":${PATH:-}:" in
+  *":$INSTALL_DIR:"*)
+    echo "Run '$BINARY --help' to get started"
+    ;;
+  *)
+    echo "$INSTALL_DIR is not on your PATH. Add it, for example:"
+    echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+    echo "Or run '$INSTALL_DIR/$BINARY --help' to get started"
+    ;;
+esac

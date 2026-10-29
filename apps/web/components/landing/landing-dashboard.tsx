@@ -559,8 +559,8 @@ function LandingDashboardInner() {
         {hasRequests && !upgradeDismissed ? (
           <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex items-center justify-between gap-4">
             <p className="text-sm font-medium">
-              Webhook received! One click keeps this endpoint — free: 50 requests/day, unlimited
-              endpoints, CLI, SDK &amp; MCP. No credit card.
+              Webhook received! One click keeps this endpoint, free: 50 requests/day, unlimited
+              endpoints, and full CLI, SDK &amp; MCP access. No credit card.
             </p>
             <div className="flex items-center gap-2 shrink-0">
               <OAuthSignInButtons

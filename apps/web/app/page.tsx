@@ -36,7 +36,7 @@ export const revalidate = 600; // re-render landing page every 10 min to pick up
 export const metadata = createPageMetadata({
   title: "Webhook Tester: Free Online Webhook URL, CLI, SDK & MCP",
   description:
-    "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, then sign up free with GitHub, Google, or email to unlock 50 requests/day, CLI, SDK & MCP.",
+    "Get a live webhook URL the moment you land, no signup. Inspect requests live, sign up free for 50 requests/day, and let AI agents start without an account.",
   path: "/",
   keywords: [
     "webhook tester",
@@ -329,7 +329,7 @@ export default async function Home() {
                   "7-day request history",
                   "Mock responses & request replay",
                   "Signed Stripe, GitHub, Shopify test webhooks",
-                  "CLI tunnel, TypeScript SDK & MCP for AI agents",
+                  "CLI tunnel, plus full SDK & MCP access",
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2">
                     <Check className="h-4 w-4 text-primary shrink-0" />

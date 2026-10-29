@@ -10,7 +10,9 @@ process.env.SUPABASE_URL ??= "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role";
 process.env.RECEIVER_INTERNAL_URL ??= "http://localhost:3001";
 
+import { USER_CODE_TTL_SECONDS } from "./constants";
 import {
+  claimAttemptBlock,
   claimAttemptId,
   generateAttemptToken,
   generateUserCode,
@@ -42,6 +44,23 @@ describe("claim secrets", () => {
     expect(normalizeUserCode("12345")).toBeNull();
     expect(normalizeUserCode("12345a")).toBeNull();
     expect(normalizeUserCode(123456)).toBeNull();
+  });
+});
+
+describe("claim attempt block", () => {
+  test("reports the code's issued lifetime, not one second less", () => {
+    const block = claimAttemptBlock({
+      registrationId: "reg-1",
+      kind: "anonymous",
+      attemptToken: generateAttemptToken(),
+      attemptTokenHash: "hash",
+      userCode: "123456",
+      // Issued a moment ago, as by the time the response is written.
+      expiresAt: new Date(Date.now() + USER_CODE_TTL_SECONDS * 1000 - 400),
+      expiresIn: USER_CODE_TTL_SECONDS,
+      attempt: 1,
+    });
+    expect(block.expires_in).toBe(USER_CODE_TTL_SECONDS);
   });
 });
 

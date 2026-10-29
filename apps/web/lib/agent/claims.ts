@@ -109,6 +109,8 @@ export interface ClaimAttempt {
   attemptTokenHash: string;
   userCode: string;
   expiresAt: Date;
+  /** Seconds the code lives, from when it was issued; shown as it is issued. */
+  expiresIn: number;
   attempt: number;
 }
 
@@ -116,7 +118,7 @@ export interface ClaimAttempt {
 export function claimAttemptBlock(attempt: ClaimAttempt) {
   return {
     user_code: attempt.userCode,
-    expires_in: Math.max(1, Math.floor((attempt.expiresAt.getTime() - Date.now()) / 1000)),
+    expires_in: attempt.expiresIn,
     verification_uri: verificationUri(attempt.attemptToken),
     interval: CLAIM_POLL_INTERVAL_SECONDS,
   };
@@ -171,6 +173,7 @@ export async function startClaimAttempt(input: {
         attemptTokenHash: secrets.attemptTokenHash,
         userCode: secrets.userCode,
         expiresAt: new Date(result.attempt_expires_at!),
+        expiresIn: USER_CODE_TTL_SECONDS,
         attempt: result.attempt!,
       };
     case "invalid_claim_token":
@@ -263,6 +266,7 @@ export async function createServiceAuthRegistration(input: {
       attemptTokenHash: secrets.attemptTokenHash,
       userCode: secrets.userCode,
       expiresAt: attemptExpires,
+      expiresIn: USER_CODE_TTL_SECONDS,
       attempt: 1,
     },
   };
@@ -503,6 +507,7 @@ export async function pollClaim(claimToken: string): Promise<PollResult> {
     const token = await mintAccessToken(registration, {
       userId: registration.user_id,
       scopes: POST_CLAIM_SCOPES,
+      issuedAtMs: now,
       expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
     });
     const assertionExpires = new Date(now + CLAIMED_ASSERTION_TTL_SECONDS * 1000);

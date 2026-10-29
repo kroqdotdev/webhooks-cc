@@ -3,7 +3,7 @@ title: "CLI"
 description: "Install the webhooks.cc CLI (whk), log in, and use the interactive TUI or plain subcommands to tunnel webhooks to localhost, stream requests, and manage endpoints."
 section: cli
 order: 1
-lastUpdated: 2026-10-28
+lastUpdated: 2026-10-29
 schema: none
 keywords: ["webhook CLI", "whk", "webhook forward", "localhost webhook"]
 seo:
@@ -15,9 +15,13 @@ seo:
 
 ```bash
 brew install kroqdotdev/tap/whk
+# or
+curl -fsSL https://webhooks.cc/install.sh | sh
+# without root: any directory you can write to (created when missing)
+curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
-See [all installation options](/installation) (shell script, GitHub Releases).
+See [all installation options](/installation) (GitHub Releases too).
 
 ## Interactive mode
 

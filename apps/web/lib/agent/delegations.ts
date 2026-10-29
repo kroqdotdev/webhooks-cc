@@ -176,6 +176,7 @@ export async function linkIdJagIdentity(verified: IdJagSuccess): Promise<IdJagLi
           attemptTokenHash: secrets.attemptTokenHash,
           userCode: secrets.userCode,
           expiresAt: new Date(result.attempt_expires_at!),
+          expiresIn: USER_CODE_TTL_SECONDS,
           attempt: result.attempt!,
         },
       };

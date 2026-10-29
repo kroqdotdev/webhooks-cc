@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.48.3";
+export const APP_VERSION = "0.48.4";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,19 @@ export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.48.4",
+    date: "2026-10-29",
+    title: "Smoother Paths for Agents",
+    track: "web",
+    items: [
+      "The install script takes WHK_INSTALL_DIR, so whk installs without root to a directory you can write to (created when missing), with a PATH hint; the default /usr/local/bin and its sudo step are unchanged, and when sudo is missing the error names the option",
+      "/auth.md, llms.txt, the agent and CLI docs, the installation page and the README give Homebrew and the no-root form next to the install script; the local testing guide had a wrong Homebrew tap and a Go command for a repository that does not exist",
+      "A new agent access token reports expires_in 3600 and a new claim code 900, their full lifetimes, instead of one second less",
+      "The homepage no longer says the CLI, SDKs and MCP server need a signup; AI agents can start with them without an account",
+      "llms-full.txt lists every public route, the agent registration and OAuth ones included, and the CLI device-flow routes as they are; auth.md explains why the claim attempt id and the link's token differ; the guest column in the agent docs reads 25 requests in all, one endpoint",
+    ],
+  },
   {
     version: "0.48.3",
     date: "2026-10-29",

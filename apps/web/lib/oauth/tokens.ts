@@ -61,10 +61,12 @@ async function loadRegistration(id: string): Promise<RegistrationRow> {
 
 async function issueTokens(registrationId: string, refreshToken: string): Promise<OAuthTokens> {
   const registration = await loadRegistration(registrationId);
+  const issuedAtMs = Date.now();
   const token = await mintAccessToken(registration, {
     userId: registration.user_id,
     scopes: POST_CLAIM_SCOPES,
-    expiresAtMs: Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000,
+    issuedAtMs,
+    expiresAtMs: issuedAtMs + ACCESS_TOKEN_TTL_SECONDS * 1000,
   });
   // A disconnect, a replayed code or a replayed refresh token may have
   // revoked the grant between the grant check and the insert above; the
