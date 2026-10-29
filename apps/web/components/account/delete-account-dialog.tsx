@@ -66,8 +66,8 @@ export function DeleteAccountDialog({ accessToken }: { accessToken: string | nul
             <AlertDialogTitle>Delete account?</AlertDialogTitle>
             <AlertDialogDescription>
               This permanently deletes your account, endpoints, API keys, device codes, and stored
-              requests. Any Pro subscription and the subscriptions of teams you own are cancelled
-              immediately. This action cannot be undone.
+              requests. Your paid plan and its add-ons, and the subscriptions of teams you own, are
+              cancelled immediately. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

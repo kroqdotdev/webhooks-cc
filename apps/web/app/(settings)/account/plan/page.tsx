@@ -20,6 +20,7 @@ import { useSettingsData } from "@/components/settings/settings-data";
 import { useAccountProfile } from "@/components/settings/use-account-profile";
 import { Button } from "@/components/ui/button";
 import { trackUpgradeCompleted } from "@/lib/analytics";
+import { planEntitlements } from "@/lib/entitlements";
 import { cn } from "@/lib/utils";
 import { longDate } from "@/components/settings/format";
 
@@ -201,6 +202,7 @@ export default function PlanPage() {
           <UpgradeSuccessNotice />
         </Suspense>
         <PastDueBanner subscriptionStatus={profile.subscription_status} />
+        <RetentionGraceNotice profile={profile} />
 
         <Panel
           id="usage"
@@ -321,5 +323,32 @@ export default function PlanPage() {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * After a move to a plan with shorter retention, requests are kept as long
+ * as before for a week (retention_floor_until); this says when the plan's
+ * own days take over and older requests are deleted.
+ */
+function RetentionGraceNotice({
+  profile,
+}: {
+  profile: {
+    plan: string;
+    retention_floor_days: number | null;
+    retention_floor_until: string | null;
+  };
+}) {
+  const [nowMs] = useState(() => Date.now());
+  const until = profile.retention_floor_until;
+  const days = profile.retention_floor_days;
+  const planDays = planEntitlements(profile.plan).retentionDays;
+  if (!until || !days || days <= planDays || Date.parse(until) <= nowMs) return null;
+  return (
+    <Notice tone="warning" title={`Requests are kept ${days} days until ${longDate(until)}`}>
+      After that, {planName(profile.plan)} keeps them for {planDays} days, and older requests are
+      deleted. Export anything you need before then.
+    </Notice>
   );
 }
