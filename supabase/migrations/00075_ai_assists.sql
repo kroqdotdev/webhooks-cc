@@ -118,6 +118,9 @@ begin
   if not found then
     return jsonb_build_object('status', 'no_account');
   end if;
+  -- The person first (the busy check below is theirs, whichever account
+  -- pays), then the account; always in this order.
+  perform pg_advisory_xact_lock(hashtextextended('ai_assist:' || p_actor_id::text, 0));
   if v_account.team_id is not null then
     perform 1 from public.teams where id = v_account.team_id for no key update;
   else
@@ -128,6 +131,7 @@ begin
    where u.created_at > now() - interval '30 days'
      and (u.user_id = v_account.user_id or u.team_id = v_account.team_id);
   -- One ask at a time per person: another is still waiting for the model.
+  -- The web app ends an ask within 80 seconds; the window is longer.
   perform 1
      from public.ai_assist_uses u
     where u.actor_id = p_actor_id
@@ -149,7 +153,8 @@ end;
 $$;
 
 -- How an ask ended. 'failed' (it cost nothing: refused before the model
--- ran, or our side failed first) gives the assist back.
+-- ran, or our side failed first) gives the assist back. An ask that has
+-- ended already is left as it is.
 create or replace function public.finish_ai_assist(p_id uuid, p_outcome text)
 returns void
 language plpgsql
@@ -157,9 +162,9 @@ security definer set search_path = ''
 as $$
 begin
   if p_outcome = 'failed' then
-    delete from public.ai_assist_uses where id = p_id;
+    delete from public.ai_assist_uses where id = p_id and outcome is null;
   else
-    update public.ai_assist_uses set outcome = p_outcome where id = p_id;
+    update public.ai_assist_uses set outcome = p_outcome where id = p_id and outcome is null;
   end if;
 end;
 $$;

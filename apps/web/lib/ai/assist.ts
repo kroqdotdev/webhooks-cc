@@ -1,6 +1,7 @@
 import type { Condition } from "@webhooks-cc/sdk";
 import { htmlToText, type EmailField } from "@webhooks-cc/sdk/email";
 import { emailFieldsProblems, emailFieldValues } from "@/lib/email-fields";
+import { reportError } from "@/lib/observability";
 import { ruleSubjectFor } from "@/lib/request-context";
 import { conditionsHold } from "@/lib/rules";
 import type { RequestRecord } from "@/lib/supabase/requests";
@@ -34,22 +35,37 @@ export interface AssistResult {
   dropped: number;
 }
 
-/** Samples at most, and how much of each part the model reads. */
+/** Samples at most, and how much of each part the model reads at full size. */
 export const MAX_SAMPLES = 5;
 const MAX_PART_CHARS = 8_000;
 const MAX_LINE_CHARS = 1_000;
 const MAX_HEADERS = 40;
-/** The samples together, as JSON: what one ask may send at most. */
+const MAX_HEADER_NAME_CHARS = 100;
+const MAX_HEADER_VALUE_CHARS = 200;
+/** The samples together, as the JSON the prompt carries: what one ask may send at most. */
 const MAX_PROMPT_CHARS = 60_000;
+/**
+ * The whole ask, both model calls included: under the 100 seconds a proxy in
+ * front of the app waits for an answer, so a person never pays for an
+ * answer they cannot see. The busy window in take_ai_assist() is longer.
+ */
+const ASSIST_DEADLINE_MS = 80_000;
+/** The second call (with feedback) only starts with at least this much time left. */
+const RETRY_MIN_MS = 25_000;
 /** Checking proposals runs in the web process: it stops after this long. */
 const CHECK_BUDGET_MS = 1_500;
 /** A layout's match text: shorter would pick up mail it was never meant for. */
 const MIN_MATCH_CHARS = 3;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
 
-function cut(text: string | null | undefined, max = MAX_PART_CHARS): string {
+function cut(text: string | null | undefined, max: number): string {
   if (!text) return "";
-  return text.length > max ? `${text.slice(0, max)} [cut]` : text;
+  if (text.length <= max) return text;
+  // Never between the two halves of a surrogate pair (an emoji, say): a
+  // lone half is not valid text, and the API refuses it.
+  const code = text.charCodeAt(max - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? max - 1 : max;
+  return `${text.slice(0, end)} [cut]`;
 }
 
 function addressText(
@@ -60,38 +76,60 @@ function addressText(
     .join(", ");
 }
 
-/** A sample as the parts patterns read, cut to size; never attachments. */
-export function sampleFor(
-  request: RequestRecord,
-  partChars = MAX_PART_CHARS
-): Record<string, unknown> {
+/** An email's parts the model reads, whole; cut to size by sampleAt(). Never attachments. */
+interface SampleSource {
+  subject: string;
+  from: string;
+  to: string;
+  text: string | null;
+  html: string | null;
+  headers: [string, string][];
+}
+
+function sourceFor(request: RequestRecord): SampleSource {
   const email = request.email!;
-  const text = email.text ?? null;
   const html = email.html ? htmlToText(email.html) : null;
-  const headers = Object.fromEntries(
-    Object.entries(request.headers ?? {})
-      .slice(0, MAX_HEADERS)
-      .map(([name, value]) => [name, cut(String(value), 200)])
-  );
   return {
-    subject: cut(email.subject ?? "", MAX_LINE_CHARS),
-    from: cut(addressText(email.from), MAX_LINE_CHARS),
-    to: cut(addressText([...(email.to ?? []), ...(email.cc ?? [])]), MAX_LINE_CHARS),
-    text: cut(text ?? html, partChars),
-    ...(html && html !== text ? { html: cut(html, partChars) } : {}),
-    headers,
+    subject: email.subject ?? "",
+    from: addressText(email.from),
+    to: addressText([...(email.to ?? []), ...(email.cc ?? [])]),
+    text: email.text ?? null,
+    html,
+    headers: Object.entries(request.headers ?? {}).map(([name, value]) => [name, String(value)]),
   };
 }
 
-/** The samples within the prompt's budget: the texts are cut shorter when they do not fit. */
+/** A sample at a scale: 1 is full size, smaller cuts every part shorter. */
+function sampleAt(source: SampleSource, scale: number): Record<string, unknown> {
+  const part = Math.max(500, Math.floor(MAX_PART_CHARS * scale));
+  const line = Math.max(200, Math.floor(MAX_LINE_CHARS * scale));
+  const headerValue = Math.max(80, Math.floor(MAX_HEADER_VALUE_CHARS * scale));
+  const headerCount = Math.max(15, Math.floor(MAX_HEADERS * scale));
+  return {
+    subject: cut(source.subject, line),
+    from: cut(source.from, line),
+    to: cut(source.to, line),
+    text: cut(source.text ?? source.html, part),
+    ...(source.html && source.html !== source.text ? { html: cut(source.html, part) } : {}),
+    headers: Object.fromEntries(
+      source.headers
+        .slice(0, headerCount)
+        .map(([name, value]) => [cut(name, MAX_HEADER_NAME_CHARS), cut(value, headerValue)])
+    ),
+  };
+}
+
+/** The ask cannot be sent as it is; nothing was taken. */
+export class AssistInputError extends Error {}
+
+/** The samples within the prompt's budget: every part is cut shorter until they fit. */
 function samplesWithinBudget(requests: RequestRecord[]): Record<string, unknown>[] {
-  let partChars = MAX_PART_CHARS;
-  let samples = requests.map((request) => sampleFor(request, partChars));
-  while (JSON.stringify(samples).length > MAX_PROMPT_CHARS && partChars > 500) {
-    partChars = Math.floor(partChars / 2);
-    samples = requests.map((request) => sampleFor(request, partChars));
+  const sources = requests.map(sourceFor);
+  for (const scale of [1, 0.5, 0.25, 0.125, 0.0625]) {
+    const samples = sources.map((source) => sampleAt(source, scale));
+    if (JSON.stringify(samples, null, 1).length <= MAX_PROMPT_CHARS) return samples;
   }
-  return samples;
+  throw new AssistInputError("These emails are too large to send together. Pick fewer of them.");
 }
 
 function instructionFor(ask: AssistAsk, count: number): string {
@@ -113,13 +151,16 @@ function check(
 ): { passed: ProposedField[]; failures: string[] } {
   const failures: string[] = [];
   const seen = new Set<string>();
+  // A field asked for by name keeps that name, whatever the model called
+  // it; its proposals are alternatives, tried in order until one passes.
+  // A layout's are different fields, all kept that pass.
+  const single = ask.kind !== "layout";
   // First what needs no email: names, sources, RE2, size.
   const candidates: EmailField[] = [];
   for (const raw of proposal.fields.slice(0, 10)) {
-    // A field asked for by name keeps that name, whatever the model called it.
     const name =
       ask.kind === "field" ? ask.name : ask.kind === "repair" ? ask.field.name : raw.name.trim();
-    if (!FIELD_NAME.test(name) || seen.has(name)) {
+    if (!FIELD_NAME.test(name) || (!single && seen.has(name))) {
       failures.push(`"${raw.name}" is not a usable field name.`);
       continue;
     }
@@ -137,9 +178,9 @@ function check(
     seen.add(name);
     candidates.push(field);
   }
-  // Together they must stay small enough to run on every email, checked
-  // before any of them runs.
-  while (candidates.length > 0 && emailFieldsProblems(candidates).length > 0) {
+  // A layout's fields together must stay small enough to run on every
+  // email, checked before any of them runs.
+  while (!single && candidates.length > 0 && emailFieldsProblems(candidates).length > 0) {
     failures.push(`${candidates.pop()!.name}: the patterns together are too large.`);
   }
 
@@ -169,6 +210,7 @@ function check(
       continue;
     }
     passed.push({ field, values });
+    if (single) break;
   }
   return { passed, failures };
 }
@@ -190,44 +232,65 @@ function matchFor(proposal: Proposal, requests: RequestRecord[]): Condition | nu
   return holds ? condition : null;
 }
 
+export interface PreparedAssist {
+  instruction: string;
+  samples: Record<string, unknown>[];
+}
+
+/**
+ * What the model will read, built before an assist is taken: throws
+ * AssistInputError when the emails cannot be sent as they are.
+ */
+export function prepareAssist(ask: AssistAsk, requests: RequestRecord[]): PreparedAssist {
+  const samples = samplesWithinBudget(requests);
+  return { instruction: instructionFor(ask, samples.length), samples };
+}
+
 /**
  * Proposes what was asked from the samples (emails of the endpoint, already
  * loaded and checked by the caller). Throws AssistModelError when the model
- * cannot be asked.
+ * cannot be asked or its answer cannot be used.
  */
-export async function runAssist(ask: AssistAsk, requests: RequestRecord[]): Promise<AssistResult> {
-  const samples = samplesWithinBudget(requests);
-  const instruction = instructionFor(ask, samples.length);
-  let proposal = await proposePatterns({ instruction, samples });
-  let { passed, failures } = check(proposal, ask, requests);
+export async function runAssist(
+  ask: AssistAsk,
+  requests: RequestRecord[],
+  { instruction, samples }: PreparedAssist
+): Promise<AssistResult> {
+  const signal = AbortSignal.timeout(ASSIST_DEADLINE_MS);
+  const deadline = Date.now() + ASSIST_DEADLINE_MS;
+  let proposal = await proposePatterns({ instruction, samples }, { signal, maxRetries: 1 });
 
-  if (passed.length === 0 && failures.length > 0) {
-    // Once more, with what went wrong. The first answer was paid for, so a
-    // failure now keeps the assist.
-    try {
-      proposal = await proposePatterns({
-        instruction,
-        samples,
-        feedback: `An earlier proposal failed when tested on the samples:\n- ${failures.slice(0, 10).join("\n- ")}\nPropose patterns that find the value in every sample.`,
-      });
-    } catch (error) {
-      if (error instanceof AssistModelError) {
-        throw new AssistModelError(error.message, error.temporary, true);
-      }
-      throw error;
+  // From here the model has answered: any failure keeps the assist.
+  try {
+    let { passed, failures } = check(proposal, ask, requests);
+    if (passed.length === 0 && failures.length > 0 && deadline - Date.now() >= RETRY_MIN_MS) {
+      // Once more, with what went wrong, and no retries of its own.
+      proposal = await proposePatterns(
+        {
+          instruction,
+          samples,
+          feedback: `An earlier proposal failed when tested on the samples:\n- ${failures.slice(0, 10).join("\n- ")}\nPropose patterns that find the value in every sample.`,
+        },
+        { signal, maxRetries: 0 }
+      );
+      const retry = check(proposal, ask, requests);
+      passed = retry.passed;
+      failures = [...failures, ...retry.failures];
     }
-    const retry = check(proposal, ask, requests);
-    passed = retry.passed;
-    failures = [...failures, ...retry.failures];
+    return {
+      fields: passed,
+      match: ask.kind === "layout" ? matchFor(proposal, requests) : null,
+      layoutName:
+        ask.kind === "layout" && proposal.layoutName
+          ? proposal.layoutName.trim().slice(0, 60) || null
+          : null,
+      dropped: failures.length,
+    };
+  } catch (error) {
+    if (error instanceof AssistModelError) {
+      throw new AssistModelError(error.message, error.temporary, true);
+    }
+    reportError("[ai] checking a proposal failed", error);
+    throw new AssistModelError("The proposals could not be checked. Try again.", true, true);
   }
-
-  return {
-    fields: passed,
-    match: ask.kind === "layout" ? matchFor(proposal, requests) : null,
-    layoutName:
-      ask.kind === "layout" && proposal.layoutName
-        ? proposal.layoutName.trim().slice(0, 60) || null
-        : null,
-    dropped: failures.length,
-  };
 }

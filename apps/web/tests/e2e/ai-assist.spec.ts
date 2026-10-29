@@ -47,11 +47,13 @@ const ONLY = "chromium";
 // eslint-disable-next-line no-empty-pattern -- Playwright wants the fixtures destructured
 test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== ONLY, "runs in one worker; covers the classic style itself");
+  // A production build always talks to the real API, never to the fake model.
+  test.skip(process.env.PLAYWRIGHT_USE_PROD_SERVER === "1", "needs the fake model");
 });
 
 // eslint-disable-next-line no-empty-pattern -- Playwright wants the fixtures destructured
 test.beforeAll(async ({}, testInfo) => {
-  if (testInfo.project.name !== ONLY) return;
+  if (testInfo.project.name !== ONLY || process.env.PLAYWRIGHT_USE_PROD_SERVER === "1") return;
   server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -228,7 +230,7 @@ test("the same in the classic style", async ({ page }) => {
   await draftAndFind(page);
 });
 
-test("fix a field an open alert names, in the layout that has it", async ({ page }) => {
+test("fix a field an open alert names, in the layout the email matched", async ({ page }) => {
   // The sender changed its subjects; the order field no longer finds a value.
   const { user, endpointId, endpointSlug } = await setup([
     "Your order AC-7781 shipped",
@@ -240,9 +242,12 @@ test("fix a field an open alert names, in the layout that has it", async ({ page
     { id: "other", name: "Other", fields: [{ ...order, pattern: "Ref (\\d+)" }] },
   ];
   await admin.from("endpoints").update({ layouts }).eq("id", endpointId);
-  const { error } = await admin
-    .from("alert_events")
-    .insert({ endpoint_id: endpointId, kind: "fields", details: { missing: ["order"] } });
+  // The missed email matched the second layout.
+  const { error } = await admin.from("alert_events").insert({
+    endpoint_id: endpointId,
+    kind: "fields",
+    details: { missing: ["order"], layoutId: "other" },
+  });
   if (error) throw error;
 
   await openSettings(page, user, endpointSlug);
@@ -264,7 +269,7 @@ test("fix a field an open alert names, in the layout that has it", async ({ page
     alerts.getByText("Saved the new pattern for order.", { exact: false })
   ).toBeVisible();
 
-  // Only the layout the field was found in changed.
+  // Only the layout the email matched changed.
   await expect
     .poll(
       async () => {
@@ -279,5 +284,5 @@ test("fix a field an open alert names, in the layout that has it", async ({ page
       },
       { timeout: 10000 }
     )
-    .toEqual(["order (AC-\\d+)", "Ref (\\d+)"]);
+    .toEqual(["Order #(\\d+)", "order (AC-\\d+)"]);
 });

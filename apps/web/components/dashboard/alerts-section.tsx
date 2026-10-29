@@ -21,16 +21,30 @@ import { cn } from "@/lib/utils";
 import { AiAssistPanel } from "./ai-assist-panel";
 import { Field, SaveFooter, Section, SwitchRow } from "./settings-primitives";
 
-/** A field to repair and where it is defined: the endpoint's own fields, or one layout. */
-type FieldAt = { field: EmailField; layoutIndex: number | null };
+/** A field to repair and where it is defined: the endpoint's own fields (null), or a layout. */
+type FieldAt = { field: EmailField; layoutId: string | null };
 
-/** Where a field is defined: the endpoint's own fields, or the first layout that has it. */
-function fieldDefinition(endpoint: DashboardEndpoint, name: string): FieldAt | null {
+/**
+ * Where the field an alert names is defined. A layout's fields win over the
+ * endpoint's own (as when emails are read), so the layout the missed email
+ * matched comes first; alerts from before layouts were recorded fall back
+ * to the endpoint's own fields, then the first layout that has it.
+ */
+function fieldDefinition(
+  endpoint: DashboardEndpoint,
+  name: string,
+  layoutId: string | null
+): FieldAt | null {
+  const layouts = endpoint.layouts ?? [];
+  const matched = layoutId ? layouts.find((layout) => layout.id === layoutId) : undefined;
+  const inMatched = (matched?.fields ?? []).find((field) => field.name === name);
+  if (matched && inMatched) return { field: inMatched, layoutId: matched.id };
   const own = (endpoint.emailFields ?? []).find((field) => field.name === name);
-  if (own) return { field: own, layoutIndex: null };
-  for (const [layoutIndex, layout] of (endpoint.layouts ?? []).entries()) {
+  if (own) return { field: own, layoutId: null };
+  if (layoutId) return null;
+  for (const layout of layouts) {
     const found = (layout.fields ?? []).find((field) => field.name === name);
-    if (found) return { field: found, layoutIndex };
+    if (found) return { field: found, layoutId: layout.id };
   }
   return null;
 }
@@ -126,15 +140,15 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const applyRepair = async (field: EmailField) => {
     if (!accessToken || !repair) return;
     const updates =
-      repair.layoutIndex === null
+      repair.layoutId === null
         ? {
             emailFields: (endpoint.emailFields ?? []).map((item) =>
               item.name === field.name ? field : item
             ),
           }
         : {
-            layouts: (endpoint.layouts ?? []).map((layout, layoutIndex) => {
-              if (layoutIndex !== repair.layoutIndex) return layout;
+            layouts: (endpoint.layouts ?? []).map((layout) => {
+              if (layout.id !== repair.layoutId) return layout;
               const at = (layout.fields ?? []).findIndex((item) => item.name === field.name);
               return at < 0
                 ? layout
@@ -421,7 +435,15 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         ? (event.details.missing as string[])
                         : []
                       )
-                        .map((name) => fieldDefinition(endpoint, name))
+                        .map((name) =>
+                          fieldDefinition(
+                            endpoint,
+                            name,
+                            typeof event.details?.layoutId === "string"
+                              ? event.details.layoutId
+                              : null
+                          )
+                        )
                         .filter((found): found is FieldAt => found !== null)
                         .slice(0, 3)
                         .map((found) => (

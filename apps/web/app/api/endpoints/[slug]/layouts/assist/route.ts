@@ -1,6 +1,12 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest } from "@/lib/api-auth";
-import { MAX_SAMPLES, runAssist, type AssistAsk } from "@/lib/ai/assist";
+import {
+  AssistInputError,
+  MAX_SAMPLES,
+  prepareAssist,
+  runAssist,
+  type AssistAsk,
+} from "@/lib/ai/assist";
 import { aiOffered, AssistModelError, FIELD_SOURCES } from "@/lib/ai/model";
 import type { EmailField } from "@webhooks-cc/sdk/email";
 import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
@@ -148,8 +154,22 @@ export async function POST(request: Request, { params }: Params) {
         { status: 400 }
       );
     }
+    const requests = samples as NonNullable<(typeof samples)[number]>[];
+    let prepared;
+    try {
+      prepared = prepareAssist(ask, requests);
+    } catch (error) {
+      if (error instanceof AssistInputError) {
+        return Response.json({ error: error.message }, { status: 400 });
+      }
+      throw error;
+    }
 
     const admin = createAdminClient();
+    const finish = async (id: string, outcome: "proposed" | "none" | "error" | "failed") => {
+      const { error } = await admin.rpc("finish_ai_assist", { p_id: id, p_outcome: outcome });
+      if (error) throw error;
+    };
     const { data: taken, error: takeError } = await admin.rpc("take_ai_assist", {
       p_endpoint_id: endpoint.id,
       p_actor_id: auth.userId,
@@ -175,21 +195,19 @@ export async function POST(request: Request, { params }: Params) {
 
     let result;
     try {
-      result = await runAssist(ask, samples as NonNullable<(typeof samples)[number]>[]);
+      result = await runAssist(ask, requests, prepared);
     } catch (error) {
       // Given back when it cost nothing; kept when the model may have run.
       const billed = error instanceof AssistModelError && error.billed;
-      await admin.rpc("finish_ai_assist", { p_id: useId, p_outcome: billed ? "error" : "failed" });
+      await finish(useId, billed ? "error" : "failed");
       useId = null;
       if (error instanceof AssistModelError) {
         return Response.json({ error: error.message }, { status: error.temporary ? 503 : 422 });
       }
       throw error;
     }
-    await admin.rpc("finish_ai_assist", {
-      p_id: useId,
-      p_outcome: result.fields.length > 0 ? "proposed" : "none",
-    });
+    await finish(useId, result.fields.length > 0 ? "proposed" : "none");
+    useId = null;
     await auditUserAction(request, auth.userId, {
       action: "endpoint.ai_assist",
       status: 200,
@@ -204,6 +222,7 @@ export async function POST(request: Request, { params }: Params) {
     });
     return Response.json({ ...result, ...(await left(endpoint.id)) });
   } catch (error) {
+    // Only an ask that never finished (finish_ai_assist leaves finished ones be).
     if (useId) {
       await createAdminClient()
         .rpc("finish_ai_assist", { p_id: useId, p_outcome: "failed" })
