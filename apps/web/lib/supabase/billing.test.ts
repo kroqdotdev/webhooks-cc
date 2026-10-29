@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
+  reportError: vi.fn(),
   createPolarClient: vi.fn(),
   getPolarCheckoutConfig: vi.fn(),
   reconcileAddonsWithPlan: vi.fn(),
@@ -19,6 +20,8 @@ vi.mock("@/lib/polar", async (importOriginal) => ({
 vi.mock("./capacity-billing", () => ({
   reconcileAddonsWithPlan: mockFns.reconcileAddonsWithPlan,
 }));
+
+vi.mock("@/lib/observability", () => ({ reportError: mockFns.reportError }));
 
 vi.mock("./admin", () => ({
   createAdminClient: mockFns.createAdminClient,
@@ -604,6 +607,11 @@ describe("plan events apply Polar's current state", () => {
 
     expect(polarRevoke).toHaveBeenCalledWith("sub_second");
     expect(userUpdatePayload()).toBeUndefined();
+    expect(mockFns.reportError).toHaveBeenCalledWith(
+      expect.stringContaining("refund it"),
+      undefined,
+      { subscriptionId: "sub_second" }
+    );
   });
 
   test("a new subscription replaces one Polar no longer has live", async () => {
@@ -618,15 +626,49 @@ describe("plan events apply Polar's current state", () => {
     expect(userUpdatePayload()).toMatchObject({ polar_subscription_id: "sub_1", requests_used: 0 });
   });
 
-  test("a write that lost a race throws, so Polar delivers the event again", async () => {
+  test("a write that lost a race reads again and is applied", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "users:select": [storedUser({ period_start: "2026-08-01T00:00:00.000Z" })],
-        "users:update": [{ data: [] }],
+        "users:select": [
+          storedUser({ period_start: "2026-08-01T00:00:00.000Z" }),
+          storedUser({ period_start: "2026-08-01T00:00:00.000Z" }),
+        ],
+        "users:update": [{ data: [] }, {}],
+      })
+    );
+
+    await apply("subscription.updated", subscriptionEvent());
+
+    const updates = recorded.filter((call) => call.table === "users" && call.op === "update");
+    expect(updates).toHaveLength(2);
+  });
+
+  test("a run of lost races throws, so Polar delivers the event again", async () => {
+    const august = storedUser({ period_start: "2026-08-01T00:00:00.000Z" });
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [august, august, august],
+        "users:update": [{ data: [] }, { data: [] }, { data: [] }],
       })
     );
 
     await expect(apply("subscription.updated", subscriptionEvent())).rejects.toThrow(/retry/);
+  });
+
+  test("a late cancel or uncancel applies the subscription as it is now", async () => {
+    vi.stubEnv("POLAR_PRO_PRODUCT_ID", "prod_pro");
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [{ data: { id: "user_1" } }], "users:update": [{}] })
+    );
+    // Kept after all: the late cancel event must not set it ending.
+    polarSubscriptions.sub_1 = subscriptionEvent({ cancel_at_period_end: false });
+
+    await apply("subscription.canceled", subscriptionEvent({ cancel_at_period_end: true }));
+
+    expect(userUpdatePayload()).toEqual({
+      cancel_at_period_end: false,
+      subscription_status: "active",
+    });
   });
 
   test("the pro rata share uses Polar's period, not one the cron stretched", async () => {
