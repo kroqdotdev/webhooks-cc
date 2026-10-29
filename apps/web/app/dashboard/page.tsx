@@ -109,9 +109,8 @@ export default function DashboardPage() {
   const [newCount, setNewCount] = useState(0);
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
   // mailhooks.cc is mail-first: its list opens on emails.
-  const [kindFilter, setKindFilter] = useState<KindFilter>(
-    site.key === "mailhooks" ? "email" : "all"
-  );
+  const defaultKind: KindFilter = site.key === "mailhooks" ? "email" : "all";
+  const [kindFilter, setKindFilter] = useState<KindFilter>(defaultKind);
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -865,7 +864,7 @@ export default function DashboardPage() {
     setNewCount(0);
     prevTopSummaryId.current = null;
     setMethodFilter("ALL");
-    setKindFilter("all");
+    setKindFilter(defaultKind);
     setSearchInput("");
     setDebouncedSearch("");
     setOlderRequests([]);
@@ -877,7 +876,7 @@ export default function DashboardPage() {
     setSearchLoading(false);
     setSearchError(false);
     clickHouseDetailMap.current.clear();
-  }, [currentEndpointId]);
+  }, [currentEndpointId, defaultKind]);
 
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
@@ -1503,6 +1502,8 @@ function CopyLabel({ done }: { done: boolean }) {
 }
 
 function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress: string | null }) {
+  // mailhooks.cc leads with the address.
+  const mailFirst = useSite().key === "mailhooks" && !!emailAddress;
   const internalTestHeader = "X-Webhooks-CC-Test-Send";
   const { session } = useAuth();
   const [copied, setCopied] = useState<"curl" | "email" | null>(null);
@@ -1606,7 +1607,12 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
           </div>
 
           {emailAddress && (
-            <div className="ui-card ui-card-static p-5! flex flex-col gap-3">
+            <div
+              className={cn(
+                "ui-card ui-card-static p-5! flex flex-col gap-3",
+                mailFirst && "order-first"
+              )}
+            >
               <div className="flex items-center justify-between">
                 <p className="font-bold">Send an email</p>
                 <button
@@ -1620,12 +1626,17 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
                 {emailAddress}
               </pre>
               <p className="text-xs text-muted-foreground">
-                Put this address in your app&apos;s signup form, or send to it from any mail client.
+                {mailFirst
+                  ? "Forward a sender's emails here with a rule in your mailbox, or give this address to the sender."
+                  : "Put this address in your app's signup form, or send to it from any mail client."}
               </p>
               <button
                 onClick={() => void handleSendEmail()}
                 disabled={sending === "email"}
-                className="ui-btn-outline self-start flex items-center gap-2 py-2! px-4! text-sm"
+                className={cn(
+                  mailFirst ? "ui-btn-primary" : "ui-btn-outline",
+                  "self-start flex items-center gap-2 py-2! px-4! text-sm"
+                )}
               >
                 <Mail className="h-4 w-4" />
                 {sending === "email" ? "Sending..." : sent === "email" ? "Sent" : "Send test email"}
@@ -1635,17 +1646,27 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground text-center">
-          Need signed provider templates? Use{" "}
-          <span className="font-bold text-foreground">Send</span> above, or read the{" "}
-          <Link
-            href="/docs/endpoints/test-webhooks"
-            className="underline font-bold text-foreground"
-          >
-            test webhook docs
-          </Link>
-          .
-        </p>
+        {mailFirst ? (
+          <p className="text-xs text-muted-foreground text-center">
+            Then teach the endpoint to read them under Settings &gt; Layouts, or start from a{" "}
+            <Link href="/parse" className="underline font-bold text-foreground">
+              ready-made layout
+            </Link>
+            .
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground text-center">
+            Need signed provider templates? Use{" "}
+            <span className="font-bold text-foreground">Send</span> above, or read the{" "}
+            <Link
+              href="/docs/endpoints/test-webhooks"
+              className="underline font-bold text-foreground"
+            >
+              test webhook docs
+            </Link>
+            .
+          </p>
+        )}
       </div>
     </div>
   );

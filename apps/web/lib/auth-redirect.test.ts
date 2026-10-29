@@ -33,11 +33,14 @@ describe("resolveRedirectBase", () => {
     return new Request("http://internal:3000/auth/confirm", { headers });
   }
 
-  it("uses the request origin in development even behind a proxy header", () => {
+  it("uses the request's own host in development even behind a proxy header", () => {
     vi.stubEnv("NODE_ENV", "development");
     expect(
       resolveRedirectBase(req({ "x-forwarded-host": "webhooks.cc" }), "http://localhost:3000")
     ).toBe("http://localhost:3000");
+    expect(
+      resolveRedirectBase(req({ host: "mailhooks.localhost:3000" }), "http://localhost:3000")
+    ).toBe("http://mailhooks.localhost:3000");
   });
 
   it("answers with the forwarded host's site outside development", () => {

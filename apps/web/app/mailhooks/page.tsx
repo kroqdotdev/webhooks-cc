@@ -21,7 +21,8 @@ import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = mailhooksMetadata({
-  title: "Parse emails into JSON: orders, bookings, receipts and reports",
+  title: "mailhooks.cc: Parse emails into JSON, from orders to reports",
+  absoluteTitle: true,
   description:
     "Give each sender an address, describe its emails once, and get every order, booking, receipt or report as JSON at your webhook, rows in Google Sheets, or a Slack message. Free to start.",
   path: "/",

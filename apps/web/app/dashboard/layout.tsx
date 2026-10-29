@@ -8,14 +8,21 @@ import { DashboardAnnouncement } from "@/components/dashboard/teams-callout";
 import { QuotaBanner } from "@/components/dashboard/quota-banner";
 import { SiteProvider } from "@/components/providers/site-provider";
 import { createPageMetadata } from "@/lib/seo";
+import { SITES } from "@/lib/site";
 import { currentSite } from "@/lib/site-server";
 
-export const metadata: Metadata = createPageMetadata({
-  title: "Dashboard",
-  description: "Private webhook dashboard for viewing endpoints and captured requests.",
-  path: "/dashboard",
-  noIndex: true,
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const site = SITES[await currentSite()];
+  return {
+    ...createPageMetadata({
+      title: "Dashboard",
+      description: "Private dashboard for viewing endpoints and captured requests.",
+      path: "/dashboard",
+      noIndex: true,
+    }),
+    title: { absolute: `Dashboard | ${site.name}` },
+  };
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
