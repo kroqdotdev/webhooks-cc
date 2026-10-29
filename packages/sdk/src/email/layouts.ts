@@ -100,4 +100,14 @@ export interface ParsedEmail {
   attachments: ParsedAttachment[];
   /** Pages this email used. */
   pages: number;
+  /**
+   * The result was cut to fit the email's JSON (about 1 MB): attachments'
+   * rows and text, then line items from the end. The full parse is kept.
+   */
+  truncated?: boolean;
+  /**
+   * In request lists: line items and attachments are left out (each result
+   * can be about 1 MB). Get the request, or the email, for all of it.
+   */
+  partial?: boolean;
 }

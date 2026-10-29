@@ -8,11 +8,12 @@ import {
   type LineItemsSpec,
   type ParsedAttachment,
 } from "@webhooks-cc/sdk/email";
-import { conditionsHold } from "@/lib/rules";
+import { conditionsHold, globProblem, regexProblem } from "@/lib/rules";
 import { fieldPatternProblem, re2Find, MAX_FIELD_PROGRAM } from "@/lib/email-fields";
 import { ruleSubjectFor } from "@/lib/request-context";
 import type { RequestRecord } from "@/lib/supabase/requests";
 import type { ParserSheet } from "./parser";
+import { clipText } from "./fit";
 
 /**
  * Layouts as the server runs them: which one an email matches (the rule
@@ -23,10 +24,10 @@ import type { ParserSheet } from "./parser";
  * hostile the email.
  */
 
-/** Text a line-item pattern reads at most. */
-const MAX_LINE_ITEM_TEXT = 512 * 1024;
+/** Text a line-item pattern reads at most (RE2 in JavaScript runs about 1 ms per KB for a long pattern). */
+const MAX_LINE_ITEM_TEXT = 64 * 1024;
 const MAX_CELL = 1000;
-/** A layout list's patterns together, in compiled steps. */
+/** A layout list's patterns together (fields, line items, match regexes), in compiled steps. */
 const MAX_LAYOUTS_PROGRAM = 20_000;
 
 function programSize(pattern: string): number {
@@ -37,15 +38,24 @@ function programSize(pattern: string): number {
   }
 }
 
-/** What is wrong with a layout list, RE2 syntax and size included; empty when valid. */
-export function layoutsProblems(layouts: unknown, cap: number): string[] {
-  const problems = layoutIssues(layouts, fieldPatternProblem);
+/**
+ * What is wrong with a layout list, RE2 syntax and size included; empty when
+ * valid. A list may be longer than the plan's cap: layouts past it are kept
+ * but not matched (chooseLayout), so a downgrade never blocks editing.
+ */
+export function layoutsProblems(layouts: unknown): string[] {
+  const problems = layoutIssues(layouts, fieldPatternProblem, {
+    checkRegex: regexProblem,
+    checkGlob: globProblem,
+  });
   if (problems.length > 0 || !Array.isArray(layouts)) return problems;
-  if (layouts.length > cap) {
-    return [`your plan allows ${cap} layouts per endpoint`];
-  }
   let total = 0;
   for (const layout of layouts as Layout[]) {
+    for (const condition of layout.match?.conditions ?? []) {
+      if (condition.op === "regex" && typeof condition.value === "string") {
+        total += programSize(condition.value);
+      }
+    }
     for (const field of layout.fields ?? []) total += programSize(field.pattern);
     const spec = layout.lineItems;
     if (spec && spec.from !== "attachment") {
@@ -69,10 +79,13 @@ export function chooseLayout(
   layouts: readonly Layout[],
   cap: number,
   request: RequestRecord,
-  emailFields: Record<string, string | null> | null = null
+  emailFields: Record<string, string | null> | null = null,
+  deadline = Number.POSITIVE_INFINITY
 ): Layout | null {
   const subject = ruleSubjectFor(request, emailFields);
   for (const layout of layouts.slice(0, Math.max(cap, 0))) {
+    // Out of time: no layout rather than a stalled worker.
+    if (Date.now() > deadline) return null;
     if (layout.enabled === false) continue;
     const conditions = layout.match?.conditions ?? [];
     if (
@@ -108,8 +121,7 @@ function compile(pattern: string | undefined): RE2JS | null {
 }
 
 function clip(value: string | null): string | null {
-  if (value === null) return null;
-  return value.length > MAX_CELL ? value.slice(0, MAX_CELL) : value;
+  return value === null ? null : clipText(value, MAX_CELL);
 }
 
 /** The text between the start and end markers, when the spec has them. */
@@ -146,15 +158,19 @@ export function lineItemsFromText(request: RequestRecord, spec: LineItemsSpec): 
   const names = Object.keys(groups).sort((a, b) => groups[a] - groups[b]);
   const rows: Record<string, string | null>[] = [];
   const matcher = regex.matcher(text);
-  while (rows.length < MAX_LINE_ITEMS && matcher.find()) {
-    if (matcher.end() === matcher.start()) {
-      // An empty match would find itself forever; nothing to read here.
-      break;
-    }
-    const row: Record<string, string | null> = {};
-    if (names.length === 0) row.value = clip(matcher.group(0));
-    for (const name of names) row[name] = clip(matcher.group(name) ?? null);
-    rows.push(row);
+  // An empty match is skipped; the matcher moves past it, and the count of
+  // finds is bounded by the text's length.
+  let finds = 0;
+  while (rows.length < MAX_LINE_ITEMS && finds++ <= text.length && matcher.find()) {
+    if (matcher.end() === matcher.start()) continue;
+    // Entries, not assignment: a group named __proto__ stays a column.
+    rows.push(
+      Object.fromEntries(
+        names.length === 0
+          ? [["value", clip(matcher.group(0))]]
+          : names.map((name) => [name, clip(matcher.group(name) ?? null)])
+      )
+    );
   }
   return { rows, columns: names.length === 0 ? ["value"] : names };
 }
@@ -167,6 +183,13 @@ function globToRegex(glob: string): { test: (name: string) => boolean } {
   } catch {
     return { test: () => false };
   }
+}
+
+/** Whether a file name matches a line-item spec's `attachment` wildcard (any file when it has none). */
+export function attachmentMatcher(glob: string | undefined): (name: string) => boolean {
+  if (!glob) return () => true;
+  const regex = globToRegex(glob);
+  return (name) => regex.test(name);
 }
 
 /** Column letters (A, B, ..., AA) as a zero-based index, or null. */
@@ -211,12 +234,16 @@ export function lineItemsFromSheets(
           };
         })
       : header.map((cell, index) => ({ name: cell || `column${index + 1}`, index }));
-  const rows = sheet.rows.slice(1, MAX_LINE_ITEMS + 1).map((row) => {
-    const item: Record<string, string | null> = {};
-    for (const column of columns) {
-      item[column.name] = column.index === null ? null : clip(row[column.index] ?? null);
-    }
-    return item;
-  });
+  // Entries, not assignment: a header named __proto__ stays a column.
+  const rows = sheet.rows
+    .slice(1, MAX_LINE_ITEMS + 1)
+    .map((row) =>
+      Object.fromEntries(
+        columns.map((column) => [
+          column.name,
+          column.index === null ? null : clip(row[column.index] ?? null),
+        ])
+      )
+    );
   return { rows, columns: [...new Set(columns.map((column) => column.name))] };
 }

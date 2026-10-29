@@ -13,6 +13,14 @@ import type { EmailAddress, EmailCapture } from "./types";
  */
 
 /** The part of an email a field reads. */
+
+/** The first `max` UTF-16 units, one fewer rather than half a surrogate pair. */
+function clipChars(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const last = text.charCodeAt(max - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
 export type EmailFieldSource = "subject" | "text" | "html" | "from" | "to" | "header";
 
 export const EMAIL_FIELD_SOURCES: readonly EmailFieldSource[] = [
@@ -114,7 +122,7 @@ function addressText(address: EmailAddress): string {
 }
 
 function sourceText(source: EmailFieldSourceData, field: EmailField): string {
-  return wholeSourceText(source, field).slice(0, MAX_EMAIL_FIELD_TEXT_CHARS);
+  return clipChars(wholeSourceText(source, field), MAX_EMAIL_FIELD_TEXT_CHARS);
 }
 
 function wholeSourceText(source: EmailFieldSourceData, field: EmailField): string {
@@ -161,7 +169,7 @@ export function extractEmailFields(
       texts.set(key, text);
     }
     const found = text ? find(field.pattern, text) : null;
-    const value = found === null ? null : found.trim().slice(0, MAX_EMAIL_FIELD_VALUE_CHARS);
+    const value = found === null ? null : clipChars(found.trim(), MAX_EMAIL_FIELD_VALUE_CHARS);
     out[field.name] = value === "" ? null : value;
   }
   return out;

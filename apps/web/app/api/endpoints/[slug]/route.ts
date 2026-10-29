@@ -15,7 +15,6 @@ import {
   updateEndpointBySlugForUser,
   type ForwardFormatSetting,
   type ForwardHeaderInput,
-  endpointLayoutsCap,
   endpointRetentionCap,
 } from "@/lib/supabase/endpoints";
 import { checkOwnerHeaders } from "@/lib/forwarding/owner-headers";
@@ -370,7 +369,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     }
 
     if (body.layouts !== undefined && body.layouts !== null) {
-      const problems = layoutsProblems(body.layouts, await endpointLayoutsCap(slug));
+      const problems = layoutsProblems(body.layouts);
       if (problems.length > 0) {
         return Response.json({ error: `layouts: ${problems[0]}` }, { status: 400 });
       }

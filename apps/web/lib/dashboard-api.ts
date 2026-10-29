@@ -700,17 +700,24 @@ export async function previewLayouts(
   return readJson<LayoutsPreview>(response);
 }
 
-/** An email's named field values (null when the endpoint has none), found by the server with RE2. */
-export async function fetchEmailFieldValues(
+/**
+ * What an opened email needs from the server: its named field values (RE2
+ * runs there; null when the endpoint has none) and its whole parsed result
+ * (lists carry only a summary).
+ */
+export async function fetchEmailDetails(
   accessToken: string,
   requestId: string
-): Promise<Record<string, string | null> | null> {
+): Promise<{ emailFields: Record<string, string | null> | null; parsed: ParsedEmail | null }> {
   const response = await fetch(
     `/api/requests/${encodeURIComponent(requestId)}?extracts=true`,
     withAuthHeaders(accessToken)
   );
-  const data = await readJson<{ emailFields?: Record<string, string | null> | null }>(response);
-  return data.emailFields ?? null;
+  const data = await readJson<{
+    emailFields?: Record<string, string | null> | null;
+    parsed?: ParsedEmail | null;
+  }>(response);
+  return { emailFields: data.emailFields ?? null, parsed: data.parsed ?? null };
 }
 
 /** The exact message from object storage (emails with `stored`). */

@@ -22,6 +22,21 @@ pub(crate) const ROWS_PER_PAGE: u64 = 1000;
 /// Total bytes of cell text kept across all sheets. A shared string repeated
 /// in every cell could otherwise turn a small file into gigabytes of output.
 pub(crate) const MAX_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
+
+/// A string's length once escaped for JSON: quotes and backslashes take two
+/// bytes, control characters up to six. The output budget counts this, so a
+/// cell of quotes cannot double the output past it.
+pub(crate) fn json_len(s: &str) -> usize {
+    s.len()
+        + s.bytes()
+            .map(|b| match b {
+                b'"' | b'\\' => 1,
+                0..=0x1f => 5,
+                _ => 0,
+            })
+            .sum::<usize>()
+}
+
 /// Total cells kept across all sheets, empty ones inside a row included.
 /// Each costs memory and output even when empty, and a row whose only value
 /// sits in the last column is a thousand cells. 100,000 rows of 50 columns
@@ -137,7 +152,8 @@ impl SheetsBuilder {
         for cell in cells.iter_mut() {
             let owned = std::mem::take(cell);
             *cell = clip_owned(owned);
-            row_bytes += cell.len();
+            // As written in the JSON output: a cell of quotes doubles there.
+            row_bytes += json_len(cell);
         }
         // Empty rows written out ahead of this one count as a cell each:
         // with a large page cap, a repeated empty row could otherwise ask
