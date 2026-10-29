@@ -85,7 +85,7 @@ export function RetentionSection({ endpoint }: { endpoint: DashboardEndpoint }) 
           id="settings-retention-days"
           label="Days to keep"
           error={days !== "" && !daysValid ? `From 1 to ${cap} days.` : undefined}
-          help="Requests older than this are deleted within the hour, with their attachments."
+          help="Requests older than this are deleted within minutes, with their attachments."
         >
           <input
             id="settings-retention-days"

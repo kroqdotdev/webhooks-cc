@@ -129,17 +129,21 @@ function region(text: string, spec: LineItemsSpec): string {
   return out;
 }
 
+/** Line items and their columns in order (stored JSON objects do not keep key order). */
+export interface LineItems {
+  rows: Record<string, string | null>[];
+  columns: string[];
+}
+
 /** Rows from a pattern with named groups found again and again in the email's text or HTML. */
-export function lineItemsFromText(
-  request: RequestRecord,
-  spec: LineItemsSpec
-): Record<string, string | null>[] {
+export function lineItemsFromText(request: RequestRecord, spec: LineItemsSpec): LineItems {
   const email = request.email;
   const regex = compile(spec.pattern);
-  if (!email || !regex) return [];
+  if (!email || !regex) return { rows: [], columns: [] };
   const source = spec.from === "html" ? htmlToText(email.html ?? "") : (email.text ?? "");
   const text = region(source, spec);
-  const names = Object.keys(regex.namedGroups());
+  const groups = regex.namedGroups() as Record<string, number>;
+  const names = Object.keys(groups).sort((a, b) => groups[a] - groups[b]);
   const rows: Record<string, string | null>[] = [];
   const matcher = regex.matcher(text);
   while (rows.length < MAX_LINE_ITEMS && matcher.find()) {
@@ -152,7 +156,7 @@ export function lineItemsFromText(
     for (const name of names) row[name] = clip(matcher.group(name) ?? null);
     rows.push(row);
   }
-  return rows;
+  return { rows, columns: names.length === 0 ? ["value"] : names };
 }
 
 /** A file-name wildcard as RE2 (never RegExp: file names come from senders). */
@@ -181,7 +185,7 @@ function columnLetterIndex(column: string): number | null {
 export function lineItemsFromSheets(
   spec: LineItemsSpec,
   attachments: { parsed: ParsedAttachment; sheets: ParserSheet[] }[]
-): Record<string, string | null>[] {
+): LineItems {
   const pattern = spec.attachment ? globToRegex(spec.attachment) : null;
   const candidate = attachments.find(
     (item) =>
@@ -189,11 +193,11 @@ export function lineItemsFromSheets(
       !item.parsed.error &&
       (!pattern || pattern.test(item.parsed.filename ?? ""))
   );
-  if (!candidate) return [];
+  if (!candidate) return { rows: [], columns: [] };
   const sheet = spec.sheet
     ? candidate.sheets.find((s) => (s.name ?? "").toLowerCase() === spec.sheet!.toLowerCase())
     : candidate.sheets[0];
-  if (!sheet || sheet.rows.length === 0) return [];
+  if (!sheet || sheet.rows.length === 0) return { rows: [], columns: [] };
   const header = sheet.rows[0].map((cell) => cell.trim());
   const columns =
     spec.columns && spec.columns.length > 0
@@ -207,11 +211,12 @@ export function lineItemsFromSheets(
           };
         })
       : header.map((cell, index) => ({ name: cell || `column${index + 1}`, index }));
-  return sheet.rows.slice(1, MAX_LINE_ITEMS + 1).map((row) => {
+  const rows = sheet.rows.slice(1, MAX_LINE_ITEMS + 1).map((row) => {
     const item: Record<string, string | null> = {};
     for (const column of columns) {
       item[column.name] = column.index === null ? null : clip(row[column.index] ?? null);
     }
     return item;
   });
+  return { rows, columns: [...new Set(columns.map((column) => column.name))] };
 }

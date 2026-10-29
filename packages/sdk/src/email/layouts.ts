@@ -95,6 +95,8 @@ export interface ParsedEmail {
   layout: { id: string; name: string } | null;
   fields: Record<string, string | null>;
   lineItems: Record<string, string | null>[];
+  /** The line items' columns in order (a JSON object's keys may come back in any order). */
+  lineItemColumns: string[];
   attachments: ParsedAttachment[];
   /** Pages this email used. */
   pages: number;
