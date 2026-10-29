@@ -268,6 +268,47 @@ async function openAlerts(endpointId: string) {
 }
 
 describe("alerts", () => {
+  it("leaves a notice another pass has claimed until that claim runs out", async () => {
+    const target = await endpoint("alerts claimed");
+    const notify = await createDestination(target.id, {
+      url: `${base}/alerts-claimed`,
+      format: "json",
+      email: false,
+      http: false,
+    });
+    await saveAlertSettings(target.id, {
+      ...DEFAULT_ALERT_SETTINGS,
+      enabled: true,
+      notifyEmail: false,
+      notifyDestinationIds: [notify.id],
+    });
+    const { data: event, error } = await admin
+      .from("alert_events")
+      .insert({ endpoint_id: target.id, kind: "silence", details: { hours: 6 } })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const sent = () => received.filter((r) => r.path === "/alerts-claimed").length;
+
+    // A first pass claimed it (claim_alert_notices) and is still sending: a
+    // second pass started now leaves it alone.
+    await admin
+      .from("alert_events")
+      .update({ notify_claimed_until: new Date(Date.now() + 120_000).toISOString() })
+      .eq("id", event.id);
+    await notifyAlerts();
+    expect(sent()).toBe(0);
+
+    // The first pass died and its claim ran out: a later pass sends it, once.
+    await admin
+      .from("alert_events")
+      .update({ notify_claimed_until: new Date(Date.now() - 1_000).toISOString() })
+      .eq("id", event.id);
+    await notifyAlerts();
+    await notifyAlerts();
+    expect(sent()).toBe(1);
+  });
+
   it("sends a notice once when two passes run at the same time", async () => {
     const target = await endpoint("alerts once");
     const notify = await createDestination(target.id, {
