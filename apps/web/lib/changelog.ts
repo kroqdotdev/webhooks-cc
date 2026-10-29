@@ -25,6 +25,7 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.55.2",
     date: "2026-10-29",
@@ -138,7 +139,6 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Groundwork for longer retention, shorter retention per endpoint and the coming Business plan; nothing changes for any plan today",
     ],
   },
-  // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.48.5",
     date: "2026-10-30",
