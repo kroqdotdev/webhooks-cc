@@ -29,7 +29,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
   }
   if (!membership) return notFound();
 
-  return handleCapacityGet({ kind: "team", teamId });
+  return handleCapacityGet({ kind: "team", teamId }, request);
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {

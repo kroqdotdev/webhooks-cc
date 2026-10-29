@@ -6,7 +6,10 @@ const mockFns = vi.hoisted(() => ({
   getPolarCheckoutConfig: vi.fn(),
 }));
 
-vi.mock("@/lib/polar", () => ({
+vi.mock("@/lib/polar", async (importOriginal) => ({
+  // The real product matching reads the product env vars set in each test.
+  planForProduct: (await importOriginal<typeof import("@/lib/polar")>()).planForProduct,
+  planProductId: (await importOriginal<typeof import("@/lib/polar")>()).planProductId,
   createPolarClient: mockFns.createPolarClient,
   getPolarCheckoutConfig: mockFns.getPolarCheckoutConfig,
   unwrapPolarResult: <T>(result: T) => result,

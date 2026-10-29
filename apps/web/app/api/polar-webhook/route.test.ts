@@ -110,7 +110,7 @@ describe("POST /api/polar-webhook", () => {
     expect(mockFns.applyCapacityWebhookEvent).toHaveBeenCalledWith(
       "subscription.revoked",
       { kind: "user", userId: "user_9" },
-      "overage",
+      { resource: "requests", kind: "overage" },
       data
     );
     expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe("POST /api/polar-webhook", () => {
     expect(mockFns.applyCapacityWebhookEvent).toHaveBeenCalledWith(
       "order.paid",
       { kind: "team", teamId: "team_7" },
-      "one_time",
+      { resource: "requests", kind: "one_time" },
       data
     );
     expect(mockFns.applyTeamPolarWebhookEvent).not.toHaveBeenCalled();

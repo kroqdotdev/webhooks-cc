@@ -77,6 +77,57 @@ export function getCapacityProductIds(): CapacityProductIds | null {
   return { oneTime, monthly, monthlyAdd, overage };
 }
 
+/** Each parsed-page add-on product id that is set. */
+export function configuredPageProductIds(): Partial<CapacityProductIds> {
+  return {
+    oneTime: process.env.POLAR_PAGE_BLOCKS_PRODUCT_ID || undefined,
+    monthly: process.env.POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID || undefined,
+    monthlyAdd: process.env.POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID || undefined,
+    overage: process.env.POLAR_PAGE_OVERAGE_PRODUCT_ID || undefined,
+  };
+}
+
+/** The parsed-page add-on products, or null while any of them is unset. */
+export function getPageProductIds(): CapacityProductIds | null {
+  const { oneTime, monthly, monthlyAdd, overage } = configuredPageProductIds();
+  if (!oneTime || !monthly || !monthlyAdd || !overage) return null;
+  return { oneTime, monthly, monthlyAdd, overage };
+}
+
+/** The Team Business add-on product, or null when it is not offered. */
+export function teamBusinessProductId(): string | null {
+  return process.env.POLAR_TEAM_BUSINESS_PRODUCT_ID || null;
+}
+
+export type PaidPlan = "pro" | "business";
+export type BillingInterval = "month" | "year";
+
+/** The Polar product of a plan and interval, or null when it is not offered. */
+export function planProductId(plan: PaidPlan, interval: BillingInterval): string | null {
+  if (plan === "pro") return interval === "month" ? process.env.POLAR_PRO_PRODUCT_ID || null : null;
+  return interval === "year"
+    ? process.env.POLAR_BUSINESS_ANNUAL_PRODUCT_ID || null
+    : process.env.POLAR_BUSINESS_PRODUCT_ID || null;
+}
+
+/**
+ * The plan and interval a Polar product sells, or null for any other
+ * product. The Pro product id is required; the Business ones are optional.
+ */
+export function planForProduct(
+  productId: string | null | undefined
+): { plan: PaidPlan; interval: BillingInterval } | null {
+  if (!productId) return null;
+  if (productId === process.env.POLAR_PRO_PRODUCT_ID) return { plan: "pro", interval: "month" };
+  if (productId === process.env.POLAR_BUSINESS_PRODUCT_ID) {
+    return { plan: "business", interval: "month" };
+  }
+  if (productId === process.env.POLAR_BUSINESS_ANNUAL_PRODUCT_ID) {
+    return { plan: "business", interval: "year" };
+  }
+  return null;
+}
+
 export function getPolarWebhookSecret(): string {
   return requireEnv("POLAR_WEBHOOK_SECRET");
 }
