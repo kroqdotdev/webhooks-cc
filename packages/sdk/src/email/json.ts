@@ -7,6 +7,7 @@ import {
   type EmailReceivedEvent,
   type EmailReceivedData,
 } from "./types";
+import type { ParsedEmail } from "./layouts";
 
 /**
  * A captured email as JSON: what the dashboard's JSON tab shows and exactly
@@ -43,7 +44,12 @@ function dkimVerdict(email: EmailCapture): string | null {
 export function buildEmailJson(
   request: EmailJsonSource,
   endpoint: { slug: string; name?: string | null },
-  options: { includeExtracts?: boolean; fields?: Record<string, string | null> | null } = {}
+  options: {
+    includeExtracts?: boolean;
+    fields?: Record<string, string | null> | null;
+    /** What the endpoint's layouts found (the server's parse). */
+    parsed?: ParsedEmail | null;
+  } = {}
 ): EmailReceivedEvent {
   const { email } = request;
   const receivedDate = new Date(request.receivedAt);
@@ -73,6 +79,7 @@ export function buildEmailJson(
       html: email.html,
       replyText: replyText(email.text),
       ...(options.fields ? { fields: options.fields } : {}),
+      ...(options.parsed ? { parsed: options.parsed } : {}),
       ...(extracts
         ? {
             codes: extracts.codes,

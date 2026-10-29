@@ -1,3 +1,4 @@
+import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 import type { EmailCapture, EmailSummary } from "@/lib/email-capture";
 
 export interface Request {
@@ -28,6 +29,8 @@ export interface Request {
   /** "email" for captured emails, "http" (or missing, from older clients) otherwise */
   kind?: "http" | "email";
   email?: EmailCapture | null;
+  /** What the endpoint's layouts found (emails on endpoints with layouts). */
+  parsed?: ParsedEmail | null;
 }
 
 export interface RequestSummary {
@@ -68,6 +71,8 @@ export interface ClickHouseRequest {
   detectedEvent?: string | null;
   kind?: "http" | "email";
   email?: EmailCapture | null;
+  /** What the endpoint's layouts found (emails on endpoints with layouts). */
+  parsed?: ParsedEmail | null;
 }
 
 /** Summary shape for ClickHouse results displayed in the sidebar list. */

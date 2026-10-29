@@ -14,6 +14,18 @@ export {
   type EmailLike,
 } from "./extract";
 export { buildEmailJson } from "./json";
+export {
+  MAX_LAYOUTS,
+  MAX_LAYOUT_NAME_CHARS,
+  MAX_LINE_ITEMS,
+  MAX_LINE_ITEM_COLUMNS,
+  MAX_LINE_ITEM_PATTERN_CHARS,
+  type Layout,
+  type LineItemSource,
+  type LineItemsSpec,
+  type ParsedAttachment,
+  type ParsedEmail,
+} from "./layouts";
 export { parseReply, replyText, type ParsedReply } from "./reply";
 export {
   EMAIL_FIELD_SOURCES,

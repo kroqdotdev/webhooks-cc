@@ -457,6 +457,7 @@ export interface Database {
           agent_registration_id: string | null;
           retention_days: number | null;
           delete_after_delivery: boolean;
+          layouts: Json;
         };
         Insert: {
           id?: string;
@@ -489,6 +490,7 @@ export interface Database {
           agent_registration_id?: string | null;
           retention_days?: number | null;
           delete_after_delivery?: boolean;
+          layouts?: Json;
         };
         Update: {
           id?: string;
@@ -521,6 +523,7 @@ export interface Database {
           agent_registration_id?: string | null;
           retention_days?: number | null;
           delete_after_delivery?: boolean;
+          layouts?: Json;
         };
         Relationships: [];
       };
@@ -633,6 +636,18 @@ export interface Database {
           billing_period_end: string | null;
           retention_floor_days: number | null;
           retention_floor_until: string | null;
+          pages_used: number;
+          pages_period_start: string | null;
+          credit_pages: number;
+          page_block_pages: number;
+          page_overage_active: boolean;
+          page_overage_max: number;
+          page_overage_used: number;
+          page_overage_period_start: string | null;
+          page_overage_total: number;
+          page_overage_reported: number;
+          page_overage_reporting_to: number | null;
+          page_overage_report_lease: string | null;
         };
         Insert: {
           id: string;
@@ -667,6 +682,18 @@ export interface Database {
           billing_period_end?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
+          pages_used?: number;
+          pages_period_start?: string | null;
+          credit_pages?: number;
+          page_block_pages?: number;
+          page_overage_active?: boolean;
+          page_overage_max?: number;
+          page_overage_used?: number;
+          page_overage_period_start?: string | null;
+          page_overage_total?: number;
+          page_overage_reported?: number;
+          page_overage_reporting_to?: number | null;
+          page_overage_report_lease?: string | null;
         };
         Update: {
           id?: string;
@@ -701,6 +728,18 @@ export interface Database {
           billing_period_end?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
+          pages_used?: number;
+          pages_period_start?: string | null;
+          credit_pages?: number;
+          page_block_pages?: number;
+          page_overage_active?: boolean;
+          page_overage_max?: number;
+          page_overage_used?: number;
+          page_overage_period_start?: string | null;
+          page_overage_total?: number;
+          page_overage_reported?: number;
+          page_overage_reporting_to?: number | null;
+          page_overage_report_lease?: string | null;
         };
         Relationships: [];
       };
@@ -816,6 +855,18 @@ export interface Database {
           business: boolean;
           retention_floor_days: number | null;
           retention_floor_until: string | null;
+          pages_used: number;
+          pages_period_start: string | null;
+          credit_pages: number;
+          page_block_pages: number;
+          page_overage_active: boolean;
+          page_overage_max: number;
+          page_overage_used: number;
+          page_overage_period_start: string | null;
+          page_overage_total: number;
+          page_overage_reported: number;
+          page_overage_reporting_to: number | null;
+          page_overage_report_lease: string | null;
         };
         Insert: {
           id?: string;
@@ -847,6 +898,18 @@ export interface Database {
           business?: boolean;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
+          pages_used?: number;
+          pages_period_start?: string | null;
+          credit_pages?: number;
+          page_block_pages?: number;
+          page_overage_active?: boolean;
+          page_overage_max?: number;
+          page_overage_used?: number;
+          page_overage_period_start?: string | null;
+          page_overage_total?: number;
+          page_overage_reported?: number;
+          page_overage_reporting_to?: number | null;
+          page_overage_report_lease?: string | null;
         };
         Update: {
           id?: string;
@@ -878,6 +941,18 @@ export interface Database {
           business?: boolean;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
+          pages_used?: number;
+          pages_period_start?: string | null;
+          credit_pages?: number;
+          page_block_pages?: number;
+          page_overage_active?: boolean;
+          page_overage_max?: number;
+          page_overage_used?: number;
+          page_overage_period_start?: string | null;
+          page_overage_total?: number;
+          page_overage_reported?: number;
+          page_overage_reporting_to?: number | null;
+          page_overage_report_lease?: string | null;
         };
         Relationships: [];
       };
@@ -1367,9 +1442,63 @@ export interface Database {
         };
         Relationships: [];
       };
+      request_parses: {
+        Row: {
+          request_id: string;
+          endpoint_id: string;
+          status: "pending" | "done" | "failed";
+          attempts: number;
+          locked_until: string | null;
+          result: Json | null;
+          pages: number;
+          error: string | null;
+          deliver: boolean;
+          created_at: string;
+          finished_at: string | null;
+        };
+        Insert: { request_id: string; endpoint_id: string; deliver?: boolean };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      parsed_pages_available: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: number;
+      };
+      parsed_pages_balance: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: {
+          window_start: string;
+          allowance: number;
+          used: number;
+          credits: number;
+          overage_left: number;
+        }[];
+      };
+      take_parsed_pages: {
+        Args: { p_user_id: string | null; p_team_id: string | null; p_pages: number };
+        Returns: Json;
+      };
+      claim_request_parses: {
+        Args: { p_limit?: number; p_lease_seconds?: number };
+        Returns: { request_id: string; endpoint_id: string; attempts: number }[];
+      };
+      complete_request_parse: {
+        Args: {
+          p_request_id: string;
+          p_status: "done" | "failed";
+          p_result: Json;
+          p_pages: number;
+          p_error?: string | null;
+        };
+        Returns: number | null;
+      };
+      redo_request_parse: {
+        Args: { p_request_id: string; p_deliver: boolean };
+        Returns: boolean;
+      };
       claim_destination_deliveries: {
         Args: { p_destination_id: string; p_limit?: number; p_lease_seconds?: number };
         Returns: {

@@ -108,7 +108,11 @@ export function forwardRequest(
 ): { body: string; headers: Record<string, string> } | null {
   if (request.kind !== "email" || !request.email) return null;
   const body = JSON.stringify(
-    buildEmailJson({ ...request, email: request.email }, endpoint, { includeExtracts, fields })
+    buildEmailJson({ ...request, email: request.email }, endpoint, {
+      includeExtracts,
+      fields,
+      parsed: request.parsed ?? null,
+    })
   );
   return { body, headers: forwardHeaders(secret, request.id, body) };
 }

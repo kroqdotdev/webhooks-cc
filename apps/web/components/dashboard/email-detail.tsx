@@ -866,7 +866,7 @@ export function EmailDetail({
               email,
             },
             { slug: endpoint.slug, name: endpoint.name ?? null },
-            { includeExtracts: showExtracts, fields }
+            { includeExtracts: showExtracts, fields, parsed: request.parsed ?? null }
           )
         : null,
     [email, requestId, request, endpoint.slug, endpoint.name, showExtracts, fields]

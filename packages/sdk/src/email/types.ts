@@ -1,3 +1,4 @@
+import type { ParsedEmail } from "./layouts";
 /**
  * Captured emails: every endpoint on an account also receives email at
  * `{slug}@mailhooks.cc` (and `{slug}+{tag}@mailhooks.cc`). An email is
@@ -188,6 +189,11 @@ export interface EmailReceivedData {
    * pattern found, or null. Left out when the endpoint has none.
    */
   fields?: Record<string, string | null>;
+  /**
+   * What the endpoint's layouts found: the layout that matched, its fields,
+   * line items and parsed attachments. Present when the endpoint has layouts.
+   */
+  parsed?: ParsedEmail | null;
   /** One-time codes found in the email. Left out when the endpoint turned that off. */
   codes?: string[];
   /** Links found in the email. Left out when the endpoint turned that off. */

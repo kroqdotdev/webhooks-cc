@@ -82,6 +82,7 @@ export function templateContextFor(
     const event = buildEmailJson({ ...request, email: request.email }, endpoint, {
       includeExtracts: options.includeExtracts !== false,
       fields: options.fields ?? null,
+      parsed: request.parsed ?? null,
     });
     return emailTemplateContext(event.data as unknown as Record<string, unknown>, extra);
   }
