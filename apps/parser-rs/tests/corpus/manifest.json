@@ -1,0 +1,62 @@
+[
+  {
+    "file": "shop-export.csv",
+    "format": "csv",
+    "pages": 3,
+    "note": "2,401 rows with header, BOM, CRLF"
+  },
+  {
+    "file": "semicolon.csv",
+    "format": "csv",
+    "pages": 1,
+    "note": "1,000 rows including header, ; delimiter, quoted newlines"
+  },
+  {
+    "file": "report.tsv",
+    "format": "tsv",
+    "pages": 2,
+    "note": "1,001 rows"
+  },
+  {
+    "file": "orders.xlsx",
+    "format": "xlsx",
+    "pages": 3,
+    "note": "Orders 1,501 rows (2) + Summary 11 rows (1); hidden 2,001-row sheet skipped"
+  },
+  {
+    "file": "stock.xls",
+    "format": "xls",
+    "pages": 3,
+    "note": "2,101 rows"
+  },
+  {
+    "file": "bookings.ods",
+    "format": "ods",
+    "pages": 1,
+    "note": "1,000 rows including header"
+  },
+  {
+    "file": "invoice-1-page.pdf",
+    "format": "pdf",
+    "pages": 1,
+    "note": "1 pages, text layer, reportlab"
+  },
+  {
+    "file": "statement-7-pages.pdf",
+    "format": "pdf",
+    "pages": 7,
+    "note": "7 pages, text layer, reportlab"
+  },
+  {
+    "file": "calendar.ics",
+    "format": "text",
+    "pages": 1,
+    "note": "calendar invite"
+  },
+  {
+    "file": "payload.json",
+    "format": "text",
+    "pages": 1,
+    "note": "JSON export"
+  }
+]

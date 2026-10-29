@@ -245,11 +245,17 @@ describe("Search across team-shared endpoints", () => {
     });
     const results = await searchRequestsForUser({ userId: memberId, plan: "free", q: MARKER });
     const count = await countSearchRequestsForUser({ userId: memberId, q: MARKER });
+    // Back to free without the 7-day grace a real downgrade keeps (00067).
     const { error: resetError } = await admin
       .from("users")
       .update({ plan: "free" })
       .eq("id", ownerId);
     if (resetError) throw resetError;
+    const { error: graceError } = await admin
+      .from("users")
+      .update({ retention_floor_days: null, retention_floor_until: null })
+      .eq("id", ownerId);
+    if (graceError) throw graceError;
 
     expect(results.map((r) => r.path)).toContain("/shared/owner-billed-expired");
     expect(count).toBe(4);
