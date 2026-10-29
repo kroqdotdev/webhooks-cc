@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.48.0";
+export const APP_VERSION = "0.48.1";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.15.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.48.1",
+    date: "2026-10-29",
+    title: "The Header Stays Put Under Open Menus",
+    track: "web",
+    items: [
+      "Opening a select, menu or dialog on a scrolled page no longer moves the header out of view, for example the overage maximum on the plan page",
+    ],
+  },
   {
     version: "0.48.0",
     date: "2026-10-28",
