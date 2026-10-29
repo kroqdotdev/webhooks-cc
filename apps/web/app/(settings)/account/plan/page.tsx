@@ -272,7 +272,13 @@ export default function PlanPage() {
         <ParsedPagesPanel
           accessToken={accessToken}
           canManage
-          reloadKey={[profile.plan, profile.subscription_status, profile.period_end].join(":")}
+          reloadKey={[
+            profile.plan,
+            profile.subscription_status,
+            profile.period_end,
+            profile.cancel_at_period_end,
+            profile.pending_plan,
+          ].join(":")}
         />
 
         {activeTeams.length > 0 && (
