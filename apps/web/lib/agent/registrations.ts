@@ -254,16 +254,26 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
     expiresAtMs = Math.min(now + ACCESS_TOKEN_TTL_SECONDS * 1000, registrationExpires);
   }
 
-  return mintAccessToken(registration, { userId, scopes, expiresAtMs });
+  return mintAccessToken(registration, { userId, scopes, issuedAtMs: now, expiresAtMs });
+}
+
+/**
+ * `expires_in` for a token issued at `issuedAtMs`: counted from the same
+ * clock reading as its expiry, so a new token reports its full lifetime
+ * rather than one second less, and never more than it has.
+ */
+export function tokenLifetimeSeconds(issuedAtMs: number, expiresAtMs: number): number {
+  return Math.max(0, Math.floor((expiresAtMs - issuedAtMs) / 1000));
 }
 
 /**
  * Inserts an access token for the registration and keeps at most
- * MAX_LIVE_TOKENS of them. `userId` is null for a pre-claim token.
+ * MAX_LIVE_TOKENS of them. `userId` is null for a pre-claim token;
+ * `issuedAtMs` is the clock reading `expiresAtMs` was computed from.
  */
 export async function mintAccessToken(
   registration: RegistrationRow,
-  input: { userId: string | null; scopes: string[]; expiresAtMs: number }
+  input: { userId: string | null; scopes: string[]; issuedAtMs: number; expiresAtMs: number }
 ): Promise<AccessToken> {
   const admin = createAdminClient();
   const rawKey = generateApiKey();
@@ -287,7 +297,7 @@ export async function mintAccessToken(
 
   return {
     accessToken: rawKey,
-    expiresIn: Math.max(1, Math.floor((input.expiresAtMs - Date.now()) / 1000)),
+    expiresIn: tokenLifetimeSeconds(input.issuedAtMs, input.expiresAtMs),
     scope: input.scopes.join(" "),
     registration,
   };

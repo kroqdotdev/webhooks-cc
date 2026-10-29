@@ -89,7 +89,7 @@ Options 2 to 5 are the fallback, and they start in the sandbox. It needs nothing
    - Python: `pip install webhooks-cc`, then `WebhooksCC.sandbox()`
    - Node: `npm i @webhooks-cc/sdk`, then `WebhooksCC.sandbox()`
    - Go: `go get webhooks.cc/go`, then `webhookscc.NewSandbox(ctx)`
-   - Shell: `whk sandbox create --json` (install with `curl -fsSL https://webhooks.cc/install.sh | sh` or `brew install kroqdotdev/tap/whk`)
+   - Shell: `whk sandbox create --json` (install with `curl -fsSL https://webhooks.cc/install.sh | sh` or `brew install kroqdotdev/tap/whk`; without root, `curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh`)
 5. Only HTTP: follow the steps in https://webhooks.cc/auth.md.
 
 For the claim email, use the address your human signs in to webhooks.cc with (their GitHub or Google primary email if they sign in that way). Your human has an API key? Set `WHK_API_KEY` and skip all of this.

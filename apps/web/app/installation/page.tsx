@@ -121,9 +121,14 @@ export default function InstallationPage() {
                   <h2 className="text-lg font-bold mb-3">Shell script (macOS / Linux)</h2>
                   <CodeBlock>{`curl -fsSL https://webhooks.cc/install.sh | sh`}</CodeBlock>
                   <p className="text-sm text-muted-foreground mt-2">
-                    Downloads the latest binary for your platform and installs it to{" "}
-                    <code className="font-mono font-bold">/usr/local/bin</code>.
+                    Downloads the latest binary for your platform, verifies its checksum, and
+                    installs it to <code className="font-mono font-bold">/usr/local/bin</code>, with
+                    sudo when needed. Without root, for example in CI or an agent&apos;s sandbox,
+                    pick a directory you can write to; it is created when missing:
                   </p>
+                  <div className="mt-3">
+                    <CodeBlock>{`curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh`}</CodeBlock>
+                  </div>
                 </section>
 
                 <section>

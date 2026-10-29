@@ -112,11 +112,15 @@ export interface ClaimAttempt {
   attempt: number;
 }
 
-/** The RFC 8628-shaped block an agent hands to its human. */
+/**
+ * The RFC 8628-shaped block an agent hands to its human. The database caps
+ * a code at its registration's expiry, so `expires_in` is what is left,
+ * rounded down, never more than the code has.
+ */
 export function claimAttemptBlock(attempt: ClaimAttempt) {
   return {
     user_code: attempt.userCode,
-    expires_in: Math.max(1, Math.floor((attempt.expiresAt.getTime() - Date.now()) / 1000)),
+    expires_in: Math.max(0, Math.floor((attempt.expiresAt.getTime() - Date.now()) / 1000)),
     verification_uri: verificationUri(attempt.attemptToken),
     interval: CLAIM_POLL_INTERVAL_SECONDS,
   };
@@ -503,6 +507,7 @@ export async function pollClaim(claimToken: string): Promise<PollResult> {
     const token = await mintAccessToken(registration, {
       userId: registration.user_id,
       scopes: POST_CLAIM_SCOPES,
+      issuedAtMs: now,
       expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
     });
     const assertionExpires = new Date(now + CLAIMED_ASSERTION_TTL_SECONDS * 1000);
