@@ -55,11 +55,8 @@ type UserPlan = Database["public"]["Tables"]["users"]["Row"]["plan"];
 type SelectedParse = {
   status: string;
   result?: Json | null;
-  summary_status?: string | null;
-  summary_layout?: Json | null;
-  summary_fields?: Json | null;
-  summary_pages?: number | null;
-  summary_truncated?: boolean | null;
+  /** status, layout, fields, pages and truncated, stored when the parse completed. */
+  summary?: Json | null;
 };
 
 export interface RequestRecord {
@@ -203,17 +200,24 @@ function parsedOf(
   if (parse.result && typeof parse.result === "object") {
     return parse.result as unknown as ParsedEmail;
   }
-  if (parse.summary_status !== "matched" && parse.summary_status !== "no_layout") return null;
+  const summary = (parse.summary ?? null) as {
+    status?: unknown;
+    layout?: ParsedEmail["layout"];
+    fields?: ParsedEmail["fields"];
+    pages?: unknown;
+    truncated?: unknown;
+  } | null;
+  if (!summary || (summary.status !== "matched" && summary.status !== "no_layout")) return null;
   // A list's summary: line items and attachments are fetched with the request.
   return {
-    status: parse.summary_status,
-    layout: (parse.summary_layout as ParsedEmail["layout"]) ?? null,
-    fields: (parse.summary_fields as ParsedEmail["fields"]) ?? {},
+    status: summary.status,
+    layout: summary.layout ?? null,
+    fields: summary.fields ?? {},
     lineItems: [],
     lineItemColumns: [],
     attachments: [],
-    pages: Number(parse.summary_pages ?? 0),
-    ...(parse.summary_truncated ? { truncated: true } : {}),
+    pages: Number(summary.pages ?? 0),
+    ...(summary.truncated === true ? { truncated: true } : {}),
     partial: true,
   };
 }
@@ -482,7 +486,7 @@ export async function listRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -552,7 +556,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -615,7 +619,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -703,7 +707,7 @@ export async function listRequestsForSandboxEndpoint(
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpointId);
   if (input.since !== undefined) {

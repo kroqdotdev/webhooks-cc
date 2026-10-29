@@ -84,6 +84,9 @@ create table if not exists public.request_parses (
   locked_until timestamptz,
   -- The parsed email (packages/sdk/src/email/layouts.ts ParsedEmail).
   result       jsonb,
+  -- Its small part (status, layout, fields, pages, truncated), what request
+  -- lists and alerts read, so they never load a whole result.
+  summary      jsonb,
   pages        integer not null default 0 check (pages >= 0),
   error        text,
   -- Queue the deliveries when the parse completes (false for a parse redone
@@ -437,7 +440,9 @@ begin
               )
          ) ranked
         where ranked.rn = 1
-        order by ranked.created_at
+        -- Among accounts at random, so two accounts with a backlog cannot
+        -- keep every slot from the rest.
+        order by random()
         limit least(greatest(p_limit, 1), 50)
      )
   returning p.request_id, p.endpoint_id, p.attempts, p.claim;
@@ -471,6 +476,13 @@ begin
   update public.request_parses
      set status = p_status,
          result = p_result,
+         summary = case when p_result is null then null else jsonb_build_object(
+           'status', p_result -> 'status',
+           'layout', p_result -> 'layout',
+           'fields', p_result -> 'fields',
+           'pages', p_result -> 'pages',
+           'truncated', p_result -> 'truncated'
+         ) end,
          pages = pages + greatest(coalesce(p_pages, 0), 0),
          error = left(p_error, 1000),
          locked_until = null,
@@ -496,13 +508,14 @@ begin
     v_delivery := public.queue_destination_delivery(
       p_request_id, v_job.endpoint_id, v_destination.id, 'email', 1000, not v_job.redelivery
     );
-    -- A capture's deliveries count from the capture, as they would without
-    -- a parse: queued at its time and delayed from it, so parses finishing
-    -- out of order do not reorder a keep-order destination.
+    -- A capture's delivery is due as it would be without a parse, its
+    -- delay counted from the capture, so parses finishing out of order do
+    -- not reorder a keep-order destination (the claim orders by when a
+    -- delivery is due). It stays queued now: the retry window and the
+    -- heads-up cutoff count from then.
     if v_delivery is not null and not v_job.redelivery then
       update public.email_deliveries d
-         set created_at = r.received_at,
-             next_attempt_at = least(d.next_attempt_at,
+         set next_attempt_at = least(d.next_attempt_at,
                                      r.received_at + make_interval(secs => v_destination.delay_seconds))
         from public.requests r
        where d.id = v_delivery
@@ -517,6 +530,7 @@ $$;
 
 -- The worker's completion: only the current claim completes the job.
 drop function if exists public.complete_request_parse(uuid, text, jsonb, integer, text);
+drop function if exists public.complete_request_parse(uuid, uuid, text, jsonb, integer, text);
 create function public.complete_request_parse(
   p_request_id uuid,
   p_claim      uuid,
@@ -573,15 +587,20 @@ begin
                            then public.request_parses.redelivery
                            else true end,
          status = 'pending',
-         -- A job that already ran out of tries (its parse killed the
-         -- process each time) stays out of them: replaying it cannot loop.
+         -- A job that ran out of tries within the hour (its parse killed the
+         -- process each time) stays out of them, so replaying it cannot
+         -- loop; an older one, after an outage say, gets its tries back.
          attempts = case when public.request_parses.attempts >= 5
+                          and public.request_parses.finished_at > now() - interval '1 hour'
                          then public.request_parses.attempts else 0 end,
          locked_until = null,
          claim = null,
          error = null,
          finished_at = null,
-         created_at = now();
+         -- A job still waiting keeps its place; a finished one goes to the
+         -- back of its account's queue.
+         created_at = case when public.request_parses.status = 'pending'
+                           then public.request_parses.created_at else now() end;
   return true;
 end;
 $$;

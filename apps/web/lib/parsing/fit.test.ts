@@ -50,6 +50,15 @@ describe("fitAttachment", () => {
 });
 
 describe("fitParsed", () => {
+  it("keeps 30 line item columns with short names", () => {
+    const columns = Array.from({ length: 40 }, (_, i) => `${"k".repeat(200)}${i}`);
+    const row = Object.fromEntries(columns.map((name) => [name, "v"]));
+    const fitted = fitParsed(parsed({ lineItems: [row], lineItemColumns: columns }));
+    expect(fitted.lineItemColumns).toHaveLength(30);
+    expect(Object.keys(fitted.lineItems[0])).toEqual(fitted.lineItemColumns);
+    expect(fitted.lineItemColumns.every((name) => name.length <= 100)).toBe(true);
+  });
+
   it("leaves a small result as it is", () => {
     const small = parsed({ fields: { order: "1" }, lineItems: [{ sku: "A-1" }] });
     expect(fitParsed(small)).toEqual(small);

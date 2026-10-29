@@ -13,6 +13,9 @@ export const MAX_PARSED_BYTES = 1024 * 1024;
 export const MAX_ATTACHMENT_BYTES = 256 * 1024;
 /** One cell or line item value, in characters. */
 export const MAX_CELL_CHARS = 1000;
+/** Line item columns kept, and a column name's length. */
+const MAX_COLUMNS = 30;
+const MAX_COLUMN_CHARS = 100;
 
 /**
  * The first `max` UTF-16 units of `text`, one fewer when that would split a
@@ -23,6 +26,23 @@ export function clipText(text: string, max: number): string {
   if (max <= 0) return "";
   const last = text.charCodeAt(max - 1);
   return text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
+/**
+ * Column names cut to `max` characters and made distinct: a repeated name
+ * gets _2, _3 after it, within the same length.
+ */
+export function uniqueNames(names: readonly string[], max = MAX_COLUMN_CHARS): string[] {
+  const used = new Set<string>();
+  return names.map((name) => {
+    let candidate = clipText(name, max);
+    for (let n = 2; used.has(candidate); n++) {
+      const suffix = `_${n}`;
+      candidate = clipText(name, max - suffix.length) + suffix;
+    }
+    used.add(candidate);
+    return candidate;
+  });
 }
 
 function size(value: unknown): number {
@@ -75,17 +95,28 @@ export function fitAttachment(
  * says something was cut; the stored parse has all of it.
  */
 export function fitParsed(parsed: ParsedEmail, max = MAX_PARSED_BYTES): ParsedEmail {
+  // Columns: at most 30, with short names; a column name can be the
+  // sender's (a sheet's header), so it is cut like a value.
+  const names = parsed.lineItemColumns.length
+    ? parsed.lineItemColumns
+    : [...new Set(parsed.lineItems.flatMap((row) => Object.keys(row)))];
+  const kept = names.slice(0, MAX_COLUMNS);
+  const shortNames = uniqueNames(kept);
+  const short = new Map(kept.map((name, i) => [name, shortNames[i]]));
   const lineItems = parsed.lineItems.map((row) =>
     Object.fromEntries(
-      Object.entries(row).map(([key, value]) => [
-        key,
-        value === null ? null : clipText(value, MAX_CELL_CHARS),
-      ])
+      kept
+        .filter((name) => Object.prototype.hasOwnProperty.call(row, name))
+        .map((name) => {
+          const value = row[name];
+          return [short.get(name)!, value === null ? null : clipText(value, MAX_CELL_CHARS)];
+        })
     )
   );
   let result: ParsedEmail = {
     ...parsed,
     lineItems,
+    lineItemColumns: parsed.lineItemColumns.length ? kept.map((name) => short.get(name)!) : [],
     attachments: parsed.attachments.map((attachment) => fitAttachment(attachment)),
   };
   if (size(result) <= max) return result;

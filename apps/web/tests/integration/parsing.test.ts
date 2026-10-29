@@ -576,7 +576,7 @@ describe.skipIf(!ready)("parse jobs", () => {
     expect(parse).toBeNull();
   });
 
-  it("parses only the spreadsheet line items read, and queues deliveries at the capture's time", async () => {
+  it("parses only the spreadsheet line items read, and its deliveries are due from the capture", async () => {
     const userId = await proUser();
     const endpoint = await endpointWithLayouts(userId, "sheet only", [LAYOUTS[0]]);
     const id = await captureEmail(endpoint.slug, "Order 7003", "See attached.", [
@@ -595,10 +595,14 @@ describe.skipIf(!ready)("parse jobs", () => {
       .single();
     const { data: queued } = await admin
       .from("email_deliveries")
-      .select("created_at")
+      .select("created_at, next_attempt_at")
       .eq("request_id", id)
       .single();
-    expect(Date.parse(queued!.created_at)).toBe(Date.parse(request!.received_at));
+    // Due as it would be without a parse (from the capture), queued when the parse finished.
+    expect(Date.parse(queued!.next_attempt_at)).toBeLessThanOrEqual(
+      Date.parse(request!.received_at)
+    );
+    expect(Date.parse(queued!.created_at)).toBeGreaterThanOrEqual(Date.parse(request!.received_at));
   });
 
   it("cuts a large result to about 1 MB, and lists carry only its summary", async () => {

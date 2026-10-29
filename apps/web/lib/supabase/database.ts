@@ -1466,11 +1466,14 @@ export interface Database {
           claim: string | null;
           /** Pages charged per attachment index (charge_parsed_file). */
           charged: Json;
+          /** The result's small part: what lists and alerts read. */
+          summary: Json | null;
           created_at: string;
           finished_at: string | null;
         };
         Insert: { request_id: string; endpoint_id: string; deliver?: boolean };
-        Update: Record<string, never>;
+        /** The worker only moves a lease it holds; the functions do the rest. */
+        Update: { locked_until?: string | null };
         Relationships: [];
       };
     };

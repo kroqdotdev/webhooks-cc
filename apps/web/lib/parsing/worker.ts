@@ -14,6 +14,7 @@ import {
   layoutFieldValues,
   lineItemsFromSheets,
   lineItemsFromText,
+  LINE_ITEMS_BUDGET_MS,
   storedLayouts,
   type LineItems,
 } from "./layouts";
@@ -42,11 +43,13 @@ import {
  */
 
 const POLL_MS = 1000;
-const CONCURRENCY = 2;
+const CONCURRENCY = 3;
 /** Longer than the most a job can take (its budget plus a parse), so a lease never runs out mid-job. */
 const LEASE_SECONDS = 600;
 /** After this many tries a job completes without a result, so its deliveries still go. */
 const MAX_ATTEMPTS = 5;
+/** A failed try waits this long times its number before the next. */
+const RETRY_BACKOFF_MS = 15_000;
 /** Attachments parsed per email at most. */
 const MAX_FILES = 20;
 /** One job's time across its files and layouts. */
@@ -277,11 +280,18 @@ async function parseAttachments(
     }
     const maxPages = Math.min(MAX_PAGES_PER_FILE, available + paid);
     const output = await runParser(bytes, format, maxPages, options.deadline - Date.now());
-    // Stored before charging, failures too: a retry or a replay reads it
-    // instead of parsing again, and charge_parsed_file charges it once.
+    // Stored before charging, definite failures too: a retry or a replay
+    // reads it instead of parsing again, and charge_parsed_file charges it
+    // once. A transient failure is not kept, so a replay parses again.
     if (!(await requestStillExists(request.id))) throw new GoneError();
-    const storedParse: StoredParse = { ...output, maxPages };
-    await putObject(parsedKey(request.id, index), JSON.stringify(storedParse), "application/json");
+    if (!output.transient) {
+      const storedParse: StoredParse = { ...output, maxPages };
+      await putObject(
+        parsedKey(request.id, index),
+        JSON.stringify(storedParse),
+        "application/json"
+      );
+    }
     if (output.error || output.pages === 0) {
       if (keep(summary(index, attachment.filename, output, 0), null)) break;
       continue;
@@ -349,7 +359,8 @@ export async function parseEmail(
             spec,
             files.results.map((item) => ({ parsed: item.parsed, sheets: item.sheets }))
           )
-        : lineItemsFromText(request, spec);
+        : // A short budget of its own: the regex runs on the main thread.
+          lineItemsFromText(request, spec, Math.min(deadline, Date.now() + LINE_ITEMS_BUDGET_MS));
   }
   const fields = Date.now() <= deadline ? layoutFieldValues(request, layout) : {};
   return {
@@ -361,7 +372,7 @@ export async function parseEmail(
       lineItemColumns: lineItems.columns,
       attachments: files.results.map((item) => item.parsed),
       pages: files.pages,
-      ...(Date.now() > deadline ? { truncated: true } : {}),
+      ...(Date.now() > deadline || lineItems.truncated ? { truncated: true } : {}),
     }),
     pages: files.pages,
   };
@@ -418,7 +429,18 @@ export async function parseJob(job: Job): Promise<void> {
       await complete(job, "failed", null, 0, "The email could not be parsed.").catch(
         (completeError) => reportError("[parsing] could not complete a failed parse", completeError)
       );
+      return;
     }
+    // Free the account's slot soon, not when the long lease runs out: its
+    // other emails wait while this one holds it.
+    const { error: releaseError } = await admin
+      .from("request_parses")
+      .update({
+        locked_until: new Date(Date.now() + RETRY_BACKOFF_MS * job.attempts).toISOString(),
+      })
+      .eq("request_id", job.request_id)
+      .eq("claim", job.claim);
+    if (releaseError) reportError("[parsing] could not release a failed parse", releaseError);
   }
 }
 

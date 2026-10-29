@@ -60,8 +60,8 @@ type EmailRow = {
   request_parses?: ParseSummary | ParseSummary[] | null;
 };
 
-/** What alerts read of a parse: its status and the fields it found, never the whole result. */
-type ParseSummary = { status: string; summary_status?: string | null; summary_fields?: Json };
+/** What alerts read of a parse: its status and summary, never the whole result. */
+type ParseSummary = { status: string; summary?: Json | null };
 
 /**
  * How far back each check looks again: an email the MX host retried keeps
@@ -134,7 +134,7 @@ async function checkFields(
   const admin = createAdminClient();
   const columns =
     layouts.length > 0
-      ? "id, kind, email, headers, received_at, request_parses(status, summary_status:result->>status, summary_fields:result->fields)"
+      ? "id, kind, email, headers, received_at, request_parses(status, summary)"
       : "id, kind, email, headers, received_at";
   const emails = () =>
     admin.from("requests").select(columns).eq("endpoint_id", endpoint.id).eq("kind", "email");
@@ -179,7 +179,15 @@ async function checkFields(
     if (windowError) throw windowError;
     const window = (windowData ?? []) as unknown as EmailRow[];
     if (window.length <= SEEN_IDS) {
-      late = window.filter((row) => !seen.has(row.id) && parseOf(row) !== "pending");
+      const cursorMs = Date.parse(alert.checked_through);
+      const cursorId = alert.checked_through_id ?? "";
+      late = window.filter(
+        (row) =>
+          !seen.has(row.id) &&
+          parseOf(row) !== "pending" &&
+          // Rows at the cursor's time with a later id are the cursor pass's.
+          (Date.parse(row.received_at) < cursorMs || row.id <= cursorId)
+      );
     }
   }
   if (rows.length === 0 && late.length === 0) return;
@@ -256,13 +264,14 @@ function parseOf(row: EmailRow): "none" | "pending" | "failed" | ParsedEmail {
   if (!parse) return "none";
   if (parse.status === "pending") return "pending";
   if (parse.status !== "done") return "failed";
-  if (parse.summary_status !== "matched" && parse.summary_status !== "no_layout") return "failed";
+  const summary = (parse.summary ?? null) as { status?: unknown; fields?: unknown } | null;
+  if (summary?.status !== "matched" && summary?.status !== "no_layout") return "failed";
   return {
-    status: parse.summary_status,
+    status: summary.status,
     layout: null,
     fields:
-      parse.summary_fields && typeof parse.summary_fields === "object"
-        ? (parse.summary_fields as Record<string, string | null>)
+      summary.fields && typeof summary.fields === "object"
+        ? (summary.fields as Record<string, string | null>)
         : {},
     lineItems: [],
     lineItemColumns: [],

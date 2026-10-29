@@ -152,9 +152,12 @@ impl SheetsBuilder {
         for cell in cells.iter_mut() {
             let owned = std::mem::take(cell);
             *cell = clip_owned(owned);
-            // As written in the JSON output: a cell of quotes doubles there.
-            row_bytes += json_len(cell);
+            // As written in the JSON output: a cell of quotes doubles there,
+            // and each cell adds its quotes and a comma.
+            row_bytes += json_len(cell) + 3;
         }
+        // The row's brackets and comma.
+        row_bytes += 3;
         // Empty rows written out ahead of this one count as a cell each:
         // with a large page cap, a repeated empty row could otherwise ask
         // for billions of them.

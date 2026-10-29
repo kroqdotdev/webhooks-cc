@@ -92,6 +92,16 @@ describe("lineItemsFromText", () => {
     ]);
   });
 
+  it("stops at its time limit and says so", () => {
+    const items = lineItemsFromText(
+      email("Order", "x".repeat(10_000)),
+      { from: "text", pattern: "(?P<a>(?:b*c)?)" },
+      Date.now() - 1
+    );
+    expect(items.rows).toEqual([]);
+    expect(items.truncated).toBe(true);
+  });
+
   it("keeps a group named __proto__ as a column", () => {
     const items = lineItemsFromText(email("Order", "k=v"), {
       from: "text",
@@ -137,6 +147,19 @@ describe("lineItemsFromSheets", () => {
     const items = lineItemsFromSheets({ from: "attachment" }, [file("order.csv")]);
     expect(items.columns).toEqual(["SKU", "Qty", "__proto__"]);
     expect(Object.keys(items.rows[0])).toEqual(["SKU", "Qty", "__proto__"]);
+  });
+
+  it("keeps at most 30 columns with short, distinct names", () => {
+    const header = Array.from({ length: 40 }, (_, i) => (i < 2 ? "Same" : "n".repeat(500) + i));
+    const items = lineItemsFromSheets({ from: "attachment" }, [
+      {
+        parsed: { index: 0, filename: "w.csv", format: "csv", pages: 1 },
+        sheets: [{ name: null, rows: [header, header], rowCount: 2, truncated: false }],
+      },
+    ]);
+    expect(items.columns).toHaveLength(30);
+    expect(items.columns.slice(0, 2)).toEqual(["Same", "Same_2"]);
+    expect(Math.max(...items.columns.map((name) => name.length))).toBeLessThanOrEqual(100);
   });
 
   it("reads only files matching the wildcard", () => {

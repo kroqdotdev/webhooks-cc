@@ -829,6 +829,7 @@ export function EmailDetail({
     id: string;
     values: Record<string, string | null> | null;
     parsed: ParsedEmail | null;
+    failed?: boolean;
   } | null>(null);
   // Once per opened email (the list refreshes the request objects on every
   // capture), and not at all when there is nothing to fetch: no fields and
@@ -845,15 +846,19 @@ export function EmailDetail({
           !cancelled &&
           setDetails({ id: requestId, values: found.emailFields, parsed: found.parsed })
       )
-      .catch(() => !cancelled && setDetails({ id: requestId, values: null, parsed: null }));
+      .catch(
+        () => !cancelled && setDetails({ id: requestId, values: null, parsed: null, failed: true })
+      );
     return () => {
       cancelled = true;
     };
   }, [accessToken, isEmail, requestId, fieldsKnownEmpty, partialParse]);
   const fields = details?.id === requestId ? details.values : null;
+  const fetchFailed = details?.id === requestId && details.failed === true;
+  // The list's summary stands in when the whole result cannot be fetched.
   const parsed =
     (details?.id === requestId ? details.parsed : null) ??
-    (partialParse ? null : (request.parsed ?? null));
+    (partialParse && !fetchFailed ? null : (request.parsed ?? null));
   // With object storage the exact message is fetched when it is wanted (the
   // Raw tab or a download), whatever its size.
   const stored = email?.stored === true;
@@ -1139,7 +1144,14 @@ export function EmailDetail({
       <div className="flex-1 overflow-auto p-4 md:p-5">
         {activeTab === "parsed" &&
           (parsed ? (
-            <ParsedResult parsed={parsed} />
+            <>
+              {parsed.partial && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  The line items and attachments could not be loaded; reopen the email to try again.
+                </p>
+              )}
+              <ParsedResult parsed={parsed} />
+            </>
           ) : (
             <p className="text-sm text-muted-foreground">Loading the parsed result...</p>
           ))}

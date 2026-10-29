@@ -28,6 +28,12 @@ export interface ParserOutput {
   text: string | null;
   pageTexts: string[] | null;
   error: { code: string; message: string } | null;
+  /**
+   * The failure says nothing about the file (the parser could not start or
+   * set up its sandbox, or was stopped early by the job's time): it is not
+   * kept, so the email can be parsed again later.
+   */
+  transient?: boolean;
 }
 
 /** The most pages one file may use. */
@@ -77,8 +83,14 @@ export function parserFormatFor(filename: string | null, contentType: string): P
   return null;
 }
 
-function failed(format: ParserFormat, code: string, message: string): ParserOutput {
+function failed(
+  format: ParserFormat,
+  code: string,
+  message: string,
+  transient = false
+): ParserOutput {
   return {
+    ...(transient ? { transient: true } : {}),
     format,
     pages: 0,
     truncated: false,
@@ -96,7 +108,9 @@ export async function runParser(
   timeoutMs = TIMEOUT_MS
 ): Promise<ParserOutput> {
   const bin = parserPath();
-  if (!bin) return failed(format, "unavailable", "The parser is not installed on this server.");
+  if (!bin) {
+    return failed(format, "unavailable", "The parser is not installed on this server.", true);
+  }
   if (bytes.byteLength > MAX_PARSE_BYTES)
     return failed(format, "too_large", "The file is too large to parse.");
   const pages = Math.max(1, Math.min(Math.floor(maxPages), MAX_PAGES_PER_FILE));
@@ -114,13 +128,12 @@ export async function runParser(
       clearTimeout(timer);
       resolve(output);
     };
-    const timer = setTimeout(
-      () => {
-        child.kill("SIGKILL");
-        finish(failed(format, "malformed", "The file took too long to parse."));
-      },
-      Math.max(1000, Math.min(timeoutMs, TIMEOUT_MS))
-    );
+    const limit = Math.max(1000, Math.min(timeoutMs, TIMEOUT_MS));
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      // Cut short by the job's time, it says nothing about the file.
+      finish(failed(format, "malformed", "The file took too long to parse.", limit < TIMEOUT_MS));
+    }, limit);
     child.stdout.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > MAX_OUTPUT_BYTES) {
@@ -130,10 +143,13 @@ export async function runParser(
       }
       chunks.push(chunk);
     });
-    child.on("error", () => finish(failed(format, "unavailable", "The parser could not start.")));
+    child.on("error", () =>
+      finish(failed(format, "unavailable", "The parser could not start.", true))
+    );
     child.on("close", (code) => {
       if (code !== 0) {
-        finish(failed(format, "malformed", "The file could not be read."));
+        // Exit 3: the sandbox could not be set up, which is the server's doing.
+        finish(failed(format, "malformed", "The file could not be read.", code === 3));
         return;
       }
       try {
