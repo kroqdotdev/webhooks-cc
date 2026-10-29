@@ -67,7 +67,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const json = buildEmailJson(
         { ...captured, email: captured.email },
         { slug: endpoint?.slug ?? "", name: endpoint?.name ?? null },
-        { includeExtracts: withFields.extracts !== null, fields: withFields.emailFields ?? null }
+        {
+          includeExtracts: withFields.extracts !== null,
+          fields: withFields.emailFields ?? null,
+          parsed: captured.parsed ?? null,
+        }
       );
       return reply({
         format,

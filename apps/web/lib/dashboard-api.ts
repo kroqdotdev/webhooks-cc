@@ -1,7 +1,7 @@
 "use client";
 
 import type { Condition, MockResponse } from "@webhooks-cc/sdk";
-import type { EmailField } from "@webhooks-cc/sdk/email";
+import type { EmailField, Layout, ParsedEmail } from "@webhooks-cc/sdk/email";
 import type { EmailCapture } from "@/lib/email-capture";
 import type { ClickHouseRequest, Request } from "@/types/request";
 
@@ -148,6 +148,7 @@ function toDashboardRequest(record: {
   detectedEvent?: string | null;
   kind?: "http" | "email";
   email?: EmailCapture | null;
+  parsed?: ParsedEmail | null;
 }): Request {
   return {
     _id: record.id,
@@ -170,6 +171,7 @@ function toDashboardRequest(record: {
     detectedEvent: record.detectedEvent ?? null,
     kind: record.kind ?? "http",
     email: record.email ?? null,
+    ...(record.parsed !== undefined ? { parsed: record.parsed } : {}),
   };
 }
 

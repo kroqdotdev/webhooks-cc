@@ -26,6 +26,13 @@ export async function register() {
       startForwardingWorker();
     }
 
+    // Parse emails for endpoints with layouts (lib/parsing/worker.ts); off with
+    // PARSE_WORKER=false. Deliveries of those emails wait for their parse.
+    if (process.env.PARSE_WORKER !== "false" && process.env.PARSE_WORKER !== "0") {
+      const { startParseWorker } = await import("./lib/parsing/worker");
+      startParseWorker();
+    }
+
     // Open and resolve endpoint alerts and send their notices (lib/alerts);
     // off with ALERTS_WORKER=false, like the forwarding worker.
     if (process.env.ALERTS_WORKER !== "false" && process.env.ALERTS_WORKER !== "0") {
