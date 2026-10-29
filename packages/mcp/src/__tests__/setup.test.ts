@@ -97,4 +97,24 @@ describe.skipIf(process.platform === "win32")("setup devin and windsurf", () => 
     expect(read(legacyWindsurfConfigPath()).mcpServers["webhooks-cc"]).toBeDefined();
     expect(read(devinFile()).mcpServers["webhooks-cc"]).toBeDefined();
   });
+
+  it("leaves a Devin config with comments as it is and prints the entry instead", () => {
+    const commented = '// my servers\n{ "mcpServers": { "other": { "command": "other" }, } }\n';
+    mkdirSync(join(home, ".config", "devin"), { recursive: true });
+    writeFileSync(devinFile(), commented);
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((line: string) => errors.push(line));
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${code}`);
+    });
+
+    expect(() => runSetup(["devin", "--api-key", "whcc_test123"])).toThrow("exit 1");
+
+    expect(readFileSync(devinFile(), "utf-8")).toBe(commented);
+    expect(existsSync(`${devinFile()}.bak`)).toBe(false);
+    const printed = errors.join("\n");
+    expect(printed).toContain('"webhooks-cc": {');
+    expect(printed).toContain("<your-key>");
+    expect(printed).not.toContain("whcc_test123");
+  });
 });

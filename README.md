@@ -67,7 +67,7 @@ npm install @webhooks-cc/sdk
 # Claude Code
 claude mcp add -s user webhooks-cc -e WHK_API_KEY=whcc_... -- npx -y @webhooks-cc/mcp
 
-# Cursor, VS Code, Windsurf, Claude Desktop
+# Cursor, VS Code, Devin Desktop (formerly Windsurf), Claude Desktop
 npx @webhooks-cc/mcp setup cursor --api-key whcc_...
 ```
 

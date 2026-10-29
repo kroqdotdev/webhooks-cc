@@ -2232,6 +2232,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "mcp",
     items: [
       "`npx @webhooks-cc/mcp setup devin` writes the user-level MCP config that Devin Desktop (formerly Windsurf) and the Devin CLI read, ~/.config/devin/mcp_config.json or %APPDATA%\\devin\\mcp_config.json on Windows; `setup windsurf` now does the same, and still updates ~/.codeium/windsurf where an older Windsurf is installed",
+      "A Devin config that holds comments is left as it is, and setup prints the entry to add by hand instead of replacing the file",
     ],
   },
   {

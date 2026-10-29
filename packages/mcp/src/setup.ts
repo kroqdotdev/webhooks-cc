@@ -42,17 +42,24 @@ function resolveApiKey(flags: Record<string, string>): string | null {
   return flags["api-key"] ?? process.env.WHK_API_KEY ?? null;
 }
 
+/**
+ * Adds the server to a JSON config file and reports whether it wrote. A file
+ * that is not plain JSON is backed up and replaced, unless `onInvalid` is
+ * "keep" (for formats that allow comments), which leaves it alone.
+ */
 function mergeJsonConfig(
   filePath: string,
   serverName: string,
   serverConfig: object,
-  key: "mcpServers" | "servers" = "mcpServers"
-): void {
+  key: "mcpServers" | "servers" = "mcpServers",
+  onInvalid: "replace" | "keep" = "replace"
+): boolean {
   let existing: Record<string, unknown> = {};
   if (existsSync(filePath)) {
     try {
       existing = JSON.parse(readFileSync(filePath, "utf-8"));
     } catch {
+      if (onInvalid === "keep") return false;
       console.warn(`Warning: ${filePath} contains invalid JSON and will be overwritten.`);
       console.warn(`A backup has been saved to ${filePath}.bak`);
       copyFileSync(filePath, `${filePath}.bak`);
@@ -66,6 +73,7 @@ function mergeJsonConfig(
   const dir = dirname(filePath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(filePath, JSON.stringify(existing, null, 2) + "\n");
+  return true;
 }
 
 function getClaudeDesktopConfigPath(): string {
@@ -204,16 +212,30 @@ export function legacyWindsurfConfigPath(home: string = homedir()): string {
   return join(home, ".codeium", "windsurf", "mcp_config.json");
 }
 
+// Devin's config files may hold comments, which JSON.parse rejects, so a file
+// that does not parse is left as it is rather than replaced.
 function setupDevin(apiKey: string | null): void {
+  const config = mcpServerConfig(apiKey);
   const configPath = devinMcpConfigPath();
-  mergeJsonConfig(configPath, "webhooks-cc", mcpServerConfig(apiKey));
+  if (!mergeJsonConfig(configPath, "webhooks-cc", config, "mcpServers", "keep")) {
+    console.error(
+      `${configPath} is not plain JSON (it may hold comments), so it was left as it is.`
+    );
+    console.error(`Add this under "mcpServers" yourself:\n`);
+    const entry = mcpServerConfig(apiKey ? "<your-key>" : null);
+    console.error(`"webhooks-cc": ${JSON.stringify(entry, null, 2)}`);
+    process.exit(1);
+  }
   console.log(`Done! Config written to ${configPath}`);
 
   // Only update the old file where Windsurf is installed; never create it.
   const legacyPath = legacyWindsurfConfigPath();
   if (existsSync(dirname(legacyPath))) {
-    mergeJsonConfig(legacyPath, "webhooks-cc", mcpServerConfig(apiKey));
-    console.log(`Also written to ${legacyPath}, for Windsurf from before the rename.`);
+    if (mergeJsonConfig(legacyPath, "webhooks-cc", config, "mcpServers", "keep")) {
+      console.log(`Also written to ${legacyPath}, for Windsurf from before the rename.`);
+    } else {
+      console.warn(`Left ${legacyPath} as it is: it is not plain JSON.`);
+    }
   }
   console.log("Restart Devin Desktop (or Windsurf) for changes to take effect.");
 }
