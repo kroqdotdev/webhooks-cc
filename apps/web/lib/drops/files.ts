@@ -53,9 +53,14 @@ export function dropFileName(
   return `${cleanPrefix(prefix)}${stamp(first.receivedAt)}-${id}${batch ? "-batch" : ""}.${format}`;
 }
 
-/** A cell a spreadsheet would read as a formula starts with a quote, so it stays text. */
+/**
+ * A cell a spreadsheet would read as a formula starts with a quote, so it
+ * stays text. Only a plain number keeps a leading sign: "-1+cmd|..." is a
+ * formula too, so anything else starting with = + - @ tab or CR is quoted.
+ */
 function csvSafe(value: string): string {
-  if (/^[=@\t\r]/.test(value) || /^[+-][^0-9\s.]/.test(value)) return `'${value}`;
+  if (/^[+-]?\d+(\.\d+)?$/.test(value)) return value;
+  if (/^[=+\-@\t\r]/.test(value)) return `'${value}`;
   return value;
 }
 
