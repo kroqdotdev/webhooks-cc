@@ -71,7 +71,8 @@ enum Word {
 /// RFC 2047 caps an encoded word at 75 characters, all of them ASCII; some
 /// senders run longer, so a little more is read. Bounding the scan keeps
 /// decoding linear in the subject even when it is full of `=?` that never
-/// close, and bounding it in bytes makes each attempt constant-time.
+/// close, and cutting it by bytes finds the bound without walking the
+/// characters.
 const MAX_ENCODED_WORD_BYTES: usize = 256;
 
 /// One encoded word at the start of `s` and its length in bytes.
@@ -197,7 +198,7 @@ mod tests {
         let longest = MAX_ENCODED_WORD_BYTES - "=?UTF-8?Q??=".len();
         assert_eq!(decode_encoded_words(&word(longest)), "a".repeat(longest));
         assert_eq!(decode_encoded_words(&word(longest + 1)), word(longest + 1));
-        // A cap that lands inside a character moves back to its start.
+        // A cap that lands inside a character does not panic.
         let split = format!("=?a{}", "\u{e9}".repeat(500));
         assert!(!split.is_char_boundary(MAX_ENCODED_WORD_BYTES));
         assert_eq!(decode_encoded_words(&split), split);
