@@ -42,7 +42,7 @@ describe("tokenLifetimeSeconds", () => {
     const issued = Date.parse("2026-10-29T12:00:00.000Z");
     // A pre-claim token capped by its registration's expiry.
     expect(tokenLifetimeSeconds(issued, issued + 1234_999)).toBe(1234);
-    expect(tokenLifetimeSeconds(issued, issued + 500)).toBe(1);
+    expect(tokenLifetimeSeconds(issued, issued + 500)).toBe(0);
   });
 });
 

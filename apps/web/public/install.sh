@@ -13,6 +13,11 @@ case "$INSTALL_DIR" in
   \~) INSTALL_DIR="$HOME" ;;
   \~/*) INSTALL_DIR="$HOME/${INSTALL_DIR#\~/}" ;;
 esac
+# A relative path is taken from the current directory, and printed in full.
+case "$INSTALL_DIR" in
+  /*) ;;
+  *) INSTALL_DIR="$(pwd)/$INSTALL_DIR" ;;
+esac
 [ "$INSTALL_DIR" = "/" ] || INSTALL_DIR="${INSTALL_DIR%/}"
 RELEASES_API="https://api.github.com/repos/$REPO/releases/latest"
 

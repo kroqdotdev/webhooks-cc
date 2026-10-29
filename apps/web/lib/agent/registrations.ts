@@ -263,7 +263,7 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
  * rather than one second less, and never more than it has.
  */
 export function tokenLifetimeSeconds(issuedAtMs: number, expiresAtMs: number): number {
-  return Math.max(1, Math.floor((expiresAtMs - issuedAtMs) / 1000));
+  return Math.max(0, Math.floor((expiresAtMs - issuedAtMs) / 1000));
 }
 
 /**

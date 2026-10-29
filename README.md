@@ -53,6 +53,8 @@ brew install kroqdotdev/tap/whk
 curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
+With `WHK_INSTALL_DIR`, put that directory on your `PATH` (the installer prints the line to add) before running `whk`.
+
 Then launch interactive terminal:
 
 ```bash

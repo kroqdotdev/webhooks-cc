@@ -48,19 +48,24 @@ describe("claim secrets", () => {
 });
 
 describe("claim attempt block", () => {
-  test("reports the code's issued lifetime, not one second less", () => {
-    const block = claimAttemptBlock({
+  const block = (leftMs: number) =>
+    claimAttemptBlock({
       registrationId: "reg-1",
       kind: "anonymous",
       attemptToken: generateAttemptToken(),
       attemptTokenHash: "hash",
       userCode: "123456",
-      // Issued a moment ago, as by the time the response is written.
-      expiresAt: new Date(Date.now() + USER_CODE_TTL_SECONDS * 1000 - 400),
-      expiresIn: USER_CODE_TTL_SECONDS,
+      expiresAt: new Date(Date.now() + leftMs),
       attempt: 1,
     });
-    expect(block.expires_in).toBe(USER_CODE_TTL_SECONDS);
+
+  test("never reports more than the code has left", () => {
+    // Capped by a registration that ends in 312.6 seconds.
+    expect(block(312_600).expires_in).toBe(312);
+    expect(block(USER_CODE_TTL_SECONDS * 1000).expires_in).toBeLessThanOrEqual(
+      USER_CODE_TTL_SECONDS
+    );
+    expect(block(400).expires_in).toBe(0);
   });
 });
 

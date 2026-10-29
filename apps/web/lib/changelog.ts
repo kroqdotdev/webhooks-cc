@@ -34,7 +34,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "The install script takes WHK_INSTALL_DIR, so whk installs without root to a directory you can write to (created when missing), with a PATH hint; the default /usr/local/bin and its sudo step are unchanged, and when sudo is missing the error names the option",
       "/auth.md, llms.txt, the agent and CLI docs, the installation page and the README give Homebrew and the no-root form next to the install script; the local testing guide had a wrong Homebrew tap and a Go command for a repository that does not exist",
-      "A new agent access token reports expires_in 3600 and a new claim code 900, their full lifetimes, instead of one second less",
+      "A new agent access token reports expires_in 3600, its full lifetime, instead of 3599; a claim code reports what it has left, rounded down, and never more",
       "The homepage no longer says the CLI, SDKs and MCP server need a signup; AI agents can start with them without an account",
       "llms-full.txt lists every public route, the agent registration and OAuth ones included, and the CLI device-flow routes as they are; auth.md explains why the claim attempt id and the link's token differ; the guest column in the agent docs reads 25 requests in all, one endpoint",
     ],

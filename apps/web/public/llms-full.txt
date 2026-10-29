@@ -784,8 +784,8 @@ Forwarding settings are owner only. The owner-only routes below answer `404` to 
 |--------|------|------|-------------|
 | POST | `/api/auth/device-code` | None | Create device code |
 | POST | `/api/auth/device-authorize` | Session | Authorize device |
-| GET | `/api/auth/device-poll` | None | Poll until the device code is authorized |
-| POST | `/api/auth/device-claim` | None | Exchange an authorized device code for an API key |
+| GET | `/api/auth/device-poll?code=<device code>` | None | Poll until the device code is authorized |
+| POST | `/api/auth/device-claim` | None | Exchange an authorized device code for an API key; body `{ "deviceCode": "..." }` |
 
 ### Account
 

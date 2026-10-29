@@ -109,16 +109,18 @@ export interface ClaimAttempt {
   attemptTokenHash: string;
   userCode: string;
   expiresAt: Date;
-  /** Seconds the code lives, from when it was issued; shown as it is issued. */
-  expiresIn: number;
   attempt: number;
 }
 
-/** The RFC 8628-shaped block an agent hands to its human. */
+/**
+ * The RFC 8628-shaped block an agent hands to its human. The database caps
+ * a code at its registration's expiry, so `expires_in` is what is left,
+ * rounded down, never more than the code has.
+ */
 export function claimAttemptBlock(attempt: ClaimAttempt) {
   return {
     user_code: attempt.userCode,
-    expires_in: attempt.expiresIn,
+    expires_in: Math.max(0, Math.floor((attempt.expiresAt.getTime() - Date.now()) / 1000)),
     verification_uri: verificationUri(attempt.attemptToken),
     interval: CLAIM_POLL_INTERVAL_SECONDS,
   };
@@ -173,7 +175,6 @@ export async function startClaimAttempt(input: {
         attemptTokenHash: secrets.attemptTokenHash,
         userCode: secrets.userCode,
         expiresAt: new Date(result.attempt_expires_at!),
-        expiresIn: USER_CODE_TTL_SECONDS,
         attempt: result.attempt!,
       };
     case "invalid_claim_token":
@@ -266,7 +267,6 @@ export async function createServiceAuthRegistration(input: {
       attemptTokenHash: secrets.attemptTokenHash,
       userCode: secrets.userCode,
       expiresAt: attemptExpires,
-      expiresIn: USER_CODE_TTL_SECONDS,
       attempt: 1,
     },
   };
