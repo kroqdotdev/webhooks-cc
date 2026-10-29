@@ -1,9 +1,17 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, posix, win32 } from "path";
 import { execFileSync } from "child_process";
 import { homedir, platform } from "os";
 
-const TOOLS = ["claude-code", "claude-desktop", "cursor", "vscode", "codex", "windsurf"] as const;
+const TOOLS = [
+  "claude-code",
+  "claude-desktop",
+  "cursor",
+  "vscode",
+  "codex",
+  "devin",
+  "windsurf",
+] as const;
 type Tool = (typeof TOOLS)[number];
 
 const API_KEY_REGEX = /^whcc_[a-zA-Z0-9_-]+$/;
@@ -172,11 +180,42 @@ WHK_API_KEY = "<your-key>"
   }
 }
 
-function setupWindsurf(apiKey: string | null): void {
-  const configPath = join(homedir(), ".codeium", "windsurf", "mcp_config.json");
+/**
+ * The user-level MCP config of Devin Desktop (Windsurf until its 2026 rename)
+ * and the Devin CLI: devin/mcp_config.json in the XDG config directory, on
+ * macOS too, or in %APPDATA% on Windows.
+ */
+export function devinMcpConfigPath(
+  os: string = platform(),
+  home: string = homedir(),
+  env: Record<string, string | undefined> = process.env
+): string {
+  if (os === "win32") {
+    const base = env.APPDATA || win32.join(home, "AppData", "Roaming");
+    return win32.join(base, "devin", "mcp_config.json");
+  }
+  const xdg = env.XDG_CONFIG_HOME;
+  const base = xdg && posix.isAbsolute(xdg) ? xdg : posix.join(home, ".config");
+  return posix.join(base, "devin", "mcp_config.json");
+}
+
+/** Where Windsurf builds from before the rename read their MCP servers. */
+export function legacyWindsurfConfigPath(home: string = homedir()): string {
+  return join(home, ".codeium", "windsurf", "mcp_config.json");
+}
+
+function setupDevin(apiKey: string | null): void {
+  const configPath = devinMcpConfigPath();
   mergeJsonConfig(configPath, "webhooks-cc", mcpServerConfig(apiKey));
   console.log(`Done! Config written to ${configPath}`);
-  console.log("Restart Windsurf for changes to take effect.");
+
+  // Only update the old file where Windsurf is installed; never create it.
+  const legacyPath = legacyWindsurfConfigPath();
+  if (existsSync(dirname(legacyPath))) {
+    mergeJsonConfig(legacyPath, "webhooks-cc", mcpServerConfig(apiKey));
+    console.log(`Also written to ${legacyPath}, for Windsurf from before the rename.`);
+  }
+  console.log("Restart Devin Desktop (or Windsurf) for changes to take effect.");
 }
 
 function printUsage(): void {
@@ -195,7 +234,8 @@ Tools:
   cursor           Cursor editor (writes .cursor/mcp.json)
   vscode           VS Code Copilot (writes .vscode/mcp.json)
   codex            OpenAI Codex CLI (runs 'codex mcp add')
-  windsurf         Windsurf editor
+  devin            Devin Desktop (formerly Windsurf) and the Devin CLI
+  windsurf         The same as devin
 
 Options:
   --api-key <key>  Your webhooks.cc API key (or set WHK_API_KEY env var); optional
@@ -257,8 +297,9 @@ export function runSetup(args: string[]): void {
     case "codex":
       setupCodex(apiKey);
       break;
+    case "devin":
     case "windsurf":
-      setupWindsurf(apiKey);
+      setupDevin(apiKey);
       break;
   }
 }

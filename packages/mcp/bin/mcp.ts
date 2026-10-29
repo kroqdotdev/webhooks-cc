@@ -30,7 +30,7 @@ Setup:
   npx @webhooks-cc/mcp setup cursor
   npx @webhooks-cc/mcp setup vscode
   npx @webhooks-cc/mcp setup codex
-  npx @webhooks-cc/mcp setup windsurf
+  npx @webhooks-cc/mcp setup devin
   npx @webhooks-cc/mcp setup claude-desktop
   (add --api-key whcc_... to start with your account's tools)
 

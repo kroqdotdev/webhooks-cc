@@ -2,7 +2,7 @@
 
 MCP server for [webhooks.cc](https://webhooks.cc). It gives coding agents direct access to webhook testing workflows: create endpoints, send signed test webhooks, inspect captures, compare attempts, verify signatures, and read recent webhook context through MCP resources.
 
-It works with Claude Code, Cursor, VS Code, Codex, Windsurf, and Claude Desktop. Hosted agents such as claude.ai and ChatGPT use the [remote server](#remote-server) at `https://webhooks.cc/mcp` instead.
+It works with Claude Code, Cursor, VS Code, Codex, Devin Desktop (formerly Windsurf), and Claude Desktop. Hosted agents such as claude.ai and ChatGPT use the [remote server](#remote-server) at `https://webhooks.cc/mcp` instead.
 
 ## Install
 
@@ -56,7 +56,7 @@ npx @webhooks-cc/mcp setup claude-code
 npx @webhooks-cc/mcp setup cursor
 npx @webhooks-cc/mcp setup vscode
 npx @webhooks-cc/mcp setup codex
-npx @webhooks-cc/mcp setup windsurf
+npx @webhooks-cc/mcp setup devin    # Devin Desktop, formerly Windsurf ("windsurf" works too)
 npx @webhooks-cc/mcp setup claude-desktop
 ```
 

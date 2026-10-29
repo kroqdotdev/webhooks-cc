@@ -44,7 +44,7 @@ npx @webhooks-cc/mcp setup cursor --api-key whcc_...
 ```
 
 `setup` also takes `claude-code`, `claude-desktop`, `vscode`, `codex` and
-`windsurf`.
+`devin` (Devin Desktop, formerly Windsurf; `windsurf` works too).
 
 To install by hand, copy [`skills/webhook-testing`](skills/webhook-testing) into
 your agent's skills folder, for example `.agents/skills/` or `.claude/skills/`.
