@@ -29,8 +29,16 @@
 /* Offset anchor scroll targets so they clear the fixed navbar */
 html {
   scroll-padding-top: 6rem;
-  overflow-x: clip;
   --ann-h: 0px; /* set dynamically by announcement banner */
+}
+
+/* Clip sideways overflow on body, not html: with html's overflow left
+   visible, body's overflow belongs to the viewport, so the scroll lock that
+   menus, selects and dialogs put on body (overflow: hidden) locks the page
+   instead of turning body into a scroll box of its own, which would carry
+   the sticky header away with the scrolled page. */
+body {
+  overflow-x: clip;
 }
 
 @theme {
