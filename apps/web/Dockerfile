@@ -13,6 +13,18 @@ ENV PNPM_HOME=/pnpm \
     NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable
 
+# The attachment parser (apps/parser-rs), run by the parse worker as a child
+# process that sandboxes itself. Built on Debian bookworm, so its glibc is no
+# newer than the runner's.
+FROM rust:1.98-slim-bookworm AS parser
+WORKDIR /parser
+# Dependencies first, against stub sources, so that layer survives source changes.
+COPY apps/parser-rs/Cargo.toml apps/parser-rs/Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
+    && cargo build --release --locked --bin webhooks-parser && rm -rf src
+COPY apps/parser-rs/src ./src
+RUN touch src/main.rs src/lib.rs && cargo build --release --locked --bin webhooks-parser
+
 FROM base AS builder
 WORKDIR /app
 
@@ -78,6 +90,8 @@ COPY --from=builder --chown=node:node /app/apps/web/.next/standalone ./
 # lib/docs.ts reads the MDX sources at runtime from ../../content/docs,
 # relative to the server's working directory (apps/web).
 COPY --from=builder --chown=node:node /app/content ./content
+# lib/parsing/parser.ts looks for it here; owned by root so the app cannot replace it.
+COPY --from=parser /parser/target/release/webhooks-parser /app/bin/webhooks-parser
 
 ARG GIT_SHA=
 ENV GIT_SHA=$GIT_SHA

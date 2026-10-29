@@ -83,7 +83,8 @@ function lineItemIssues(
   at: string,
   checkPattern?: (pattern: string) => string | null
 ): string[] {
-  if (typeof value !== "object" || Array.isArray(value)) return [`${at}: lineItems must be an object`];
+  if (typeof value !== "object" || Array.isArray(value))
+    return [`${at}: lineItems must be an object`];
   const spec = value as Record<string, unknown>;
   const issues: string[] = [];
   if (spec.from !== "text" && spec.from !== "html" && spec.from !== "attachment") {
@@ -96,14 +97,19 @@ function lineItemIssues(
       return;
     }
     if (typeof p !== "string" || p.length > MAX_LINE_ITEM_PATTERN_CHARS) {
-      issues.push(`${at}: lineItems.${key} is a pattern of at most ${MAX_LINE_ITEM_PATTERN_CHARS} characters`);
+      issues.push(
+        `${at}: lineItems.${key} is a pattern of at most ${MAX_LINE_ITEM_PATTERN_CHARS} characters`
+      );
       return;
     }
     const problem = checkPattern?.(p);
     if (problem) issues.push(`${at}: lineItems.${key}: ${problem}`);
   };
   if (spec.from === "attachment") {
-    if (spec.attachment !== undefined && (typeof spec.attachment !== "string" || spec.attachment.length > 200)) {
+    if (
+      spec.attachment !== undefined &&
+      (typeof spec.attachment !== "string" || spec.attachment.length > 200)
+    ) {
       issues.push(`${at}: lineItems.attachment is a file name pattern`);
     }
     if (spec.sheet !== undefined && (typeof spec.sheet !== "string" || spec.sheet.length > 100)) {

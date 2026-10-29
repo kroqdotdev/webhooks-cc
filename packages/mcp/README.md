@@ -34,7 +34,7 @@ For other agents, `npx skills add kroqdotdev/webhooks-cc` installs the same skil
 - **claude.ai and Claude Desktop**: Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`
 - **ChatGPT**: add it as a custom connector (developer mode)
 
-A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server has 44 tools: `send_to` and `replay_request` are left out and `targetUrl` is refused, because a hosted server cannot reach your machine, and waits are capped at 50 seconds. It needs an account (no sandbox), and serves tools only, without prompts or resources.
+A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server has 45 tools: `send_to` and `replay_request` are left out and `targetUrl` is refused, because a hosted server cannot reach your machine, and waits are capped at 50 seconds. It needs an account (no sandbox), and serves tools only, without prompts or resources.
 
 ### One-click
 
@@ -83,7 +83,7 @@ Leave out `env` to start without a key. Get your API key at [webhooks.cc/account
 
 ## What it exposes
 
-The server exposes `46` tools, `3` prompts, and `3` resource surfaces with an API key, the same `46` tools and the prompts with a saved connection, and `11` sandbox tools otherwise. The remote server exposes `44` tools.
+The server exposes `47` tools, `3` prompts, and `3` resource surfaces with an API key, the same `47` tools and the prompts with a saved connection, and `11` sandbox tools otherwise. The remote server exposes `45` tools.
 
 ### Endpoint tools
 

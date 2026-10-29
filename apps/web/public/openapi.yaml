@@ -560,6 +560,68 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/endpoints/{slug}/layouts/preview:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: previewLayouts
+      tags: [Endpoints]
+      summary: Try layouts on a captured email
+      description: |
+        Which layout a captured email matches, with its fields and line items, using `layouts`
+        (the saved ones when left out). Nothing is saved and no pages are used: attachments show
+        an earlier parse, never a new one. Owner only.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                requestId:
+                  type: string
+                  description: "A captured email on the endpoint (default: the newest)"
+                layouts:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Layout"
+      responses:
+        "200":
+          description: The preview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  problems:
+                    type: array
+                    items:
+                      type: string
+                  layoutsCap:
+                    type: integer
+                  request:
+                    type: ["object", "null"]
+                    properties:
+                      id:
+                        type: string
+                      subject:
+                        type: ["string", "null"]
+                      receivedAt:
+                        type: integer
+                  parsed:
+                    oneOf:
+                      - $ref: "#/components/schemas/ParsedEmail"
+                      - type: "null"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/endpoints/{slug}/alerts:
     parameters:
       - name: slug
@@ -2664,6 +2726,158 @@ components:
         hasForwardSecret:
           type: boolean
           description: Whether a forwarding secret exists. The secret itself is never included.
+        retentionDays:
+          type: ["integer", "null"]
+          description: Days requests are kept here; null keeps them as long as the plan does. Owner only.
+        retentionCapDays:
+          type: integer
+          description: The longest retention this endpoint may have, its billing account's plan's. Owner only.
+        deleteAfterDelivery:
+          type: boolean
+          description: Requests are deleted once every delivery is settled. Owner only.
+        layouts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Layout"
+          description: How the endpoint reads its emails; the first that matches applies. Owner only.
+        layoutsCap:
+          type: integer
+          description: Layouts the plan uses; later ones are kept but not matched. Owner only.
+
+    Layout:
+      type: object
+      required: [id, name]
+      description: How an endpoint reads the emails of one sender or kind (see /docs/layouts).
+      properties:
+        id:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{1,40}$"
+        name:
+          type: string
+          maxLength: 100
+        enabled:
+          type: boolean
+          default: true
+        match:
+          type: object
+          description: When it applies, in the rule language of destination filters; no conditions takes every email.
+          properties:
+            logic:
+              type: string
+              enum: [and, or]
+            conditions:
+              type: array
+              maxItems: 10
+              items:
+                $ref: "#/components/schemas/ResponseRuleCondition"
+        fields:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [name, from, pattern]
+            properties:
+              name:
+                type: string
+              from:
+                type: string
+                enum: [subject, text, html, from, to, header]
+              header:
+                type: string
+              pattern:
+                type: string
+                description: RE2; the first group is the value
+        lineItems:
+          type: ["object", "null"]
+          required: [from]
+          properties:
+            from:
+              type: string
+              enum: [text, html, attachment]
+            pattern:
+              type: string
+              description: For text and html, RE2 with named groups found again and again; each match is a row
+            start:
+              type: string
+            end:
+              type: string
+            attachment:
+              type: string
+              description: For attachments, the file name with * and ? wildcards
+            sheet:
+              type: string
+            columns:
+              type: array
+              maxItems: 30
+              items:
+                type: object
+                required: [name, column]
+                properties:
+                  name:
+                    type: string
+                  column:
+                    type: string
+                    description: The header's text or a column letter
+        parseAttachments:
+          type: boolean
+          description: Parse CSV, TSV, XLSX, XLS, ODS, PDF text and text attachments; uses parsed pages
+
+    ParsedEmail:
+      type: object
+      description: What the endpoint's layouts found in an email.
+      properties:
+        status:
+          type: string
+          enum: [matched, no_layout]
+        layout:
+          type: ["object", "null"]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: ["string", "null"]
+        lineItems:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: ["string", "null"]
+        lineItemColumns:
+          type: array
+          items:
+            type: string
+          description: The line items' columns in order
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              filename:
+                type: ["string", "null"]
+              format:
+                type: string
+              pages:
+                type: integer
+              sheets:
+                type: array
+                items:
+                  type: object
+              text:
+                type: ["string", "null"]
+              truncated:
+                type: boolean
+              error:
+                type: ["string", "null"]
+                description: limit, not_kept, not_parsed, too_large, malformed, encrypted, zip_bomb or empty
+        pages:
+          type: integer
+          description: Parsed pages this email used
 
     MockResponse:
       type: object
@@ -2818,6 +3032,20 @@ components:
             URL to forward captured emails to, or null (or `""`) to remove it. Must be `https` on a
             public host name: no IP addresses, `localhost`, credentials in the URL, or blocked
             ports (mail, database, and other internal services). Owner only.
+        retentionDays:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 365
+          description: Keep requests this many days (up to the plan's), or null for the plan's. Owner only.
+        deleteAfterDelivery:
+          type: boolean
+          description: Delete each request once every delivery is settled. Owner only.
+        layouts:
+          type: ["array", "null"]
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/Layout"
+          description: Replaces the layouts; null or [] removes them. Patterns are checked with RE2. Owner only.
 
     Request:
       type: object
@@ -2872,6 +3100,11 @@ components:
             - $ref: "#/components/schemas/EmailCapture"
             - type: "null"
           description: The parsed message when `kind` is `email`, null otherwise
+        parsed:
+          oneOf:
+            - $ref: "#/components/schemas/ParsedEmail"
+            - type: "null"
+          description: What the endpoint's layouts found, once the parse is done (emails on endpoints with layouts)
         extracts:
           oneOf:
             - $ref: "#/components/schemas/EmailExtracts"

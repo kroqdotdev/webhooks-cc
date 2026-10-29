@@ -86,6 +86,9 @@ type Request struct {
 	// the signature, or "" when the email quotes no earlier message. Set on
 	// emails read through this client.
 	ReplyText string
+	// Parsed is what the endpoint's layouts found, once the parse is done
+	// (emails on endpoints with layouts).
+	Parsed *ParsedEmail
 	// Raw is the JSON the request was read from.
 	Raw json.RawMessage
 }
@@ -149,6 +152,12 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 			return err
 		}
 	}
+	if parsed := o.raw("parsed"); isJSONObject(parsed) {
+		r.Parsed = new(ParsedEmail)
+		if err := json.Unmarshal(parsed, r.Parsed); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -177,10 +186,12 @@ func (r Request) MarshalJSON() ([]byte, error) {
 		Extracts          *EmailExtracts     `json:"extracts,omitempty"`
 		EmailFields       map[string]*string `json:"emailFields,omitempty"`
 		ReplyText         string             `json:"replyText,omitempty"`
+		Parsed            *ParsedEmail       `json:"parsed,omitempty"`
 	}{
 		r.ID, r.EndpointID, r.Slug, r.Method, r.Path, r.Headers, r.Body, r.QueryParams, r.IP, r.Size,
 		millisOf(r.ReceivedAt), r.ContentType, r.BodyRaw, r.SignatureVerified, r.SignatureError,
 		r.SigningProvider, r.Kind, r.Email, r.Extracts, emailFieldValuesJSON(r.EmailFields), r.ReplyText,
+		r.Parsed,
 	})
 }
 
@@ -258,6 +269,11 @@ type EmailAttachment struct {
 	Size        int    `json:"size"`
 	ContentID   string `json:"contentId,omitempty"`
 	Inline      bool   `json:"inline"`
+	// URL is a signed download link, in deliveries whose destination sends links.
+	URL string `json:"url,omitempty"`
+	// Content is the contents, base64-encoded, in deliveries whose
+	// destination sends them inline.
+	Content string `json:"content,omitempty"`
 }
 
 // UnmarshalJSON reads an attachment as the API returns it.
@@ -276,6 +292,8 @@ func (a *EmailAttachment) UnmarshalJSON(data []byte) error {
 		Size:        int(o.num("size")),
 		ContentID:   o.str("contentId"),
 		Inline:      o.boolean("inline"),
+		URL:         o.str("url"),
+		Content:     o.str("content"),
 	}
 	return nil
 }
@@ -303,6 +321,9 @@ type EmailCapture struct {
 	SMTP         json.RawMessage   `json:"smtp,omitempty"`
 	ParseError   bool              `json:"parseError"`
 	Truncated    map[string]bool   `json:"truncated"`
+	// Stored reports that the exact message and the attachments' contents
+	// are kept: RequestsService.Raw and Attachment download them.
+	Stored bool `json:"stored,omitempty"`
 	// Raw is the JSON the email was read from.
 	Raw json.RawMessage `json:"-"`
 }
@@ -329,6 +350,7 @@ func (e *EmailCapture) UnmarshalJSON(data []byte) error {
 		TextFromHTML: o.boolean("textFromHtml"),
 		ParseError:   o.boolean("parseError"),
 		Truncated:    map[string]bool{},
+		Stored:       o.boolean("stored"),
 		Raw:          bytes.Clone(data),
 	}
 	for _, item := range o.array("attachments") {
@@ -1184,7 +1206,22 @@ type Endpoint struct {
 	ShowEmailExtracts *bool
 	// EmailFields are the named fields picked out of every email the
 	// endpoint captures (owner only).
-	EmailFields    []EmailField
+	EmailFields []EmailField
+	// RetentionDays is the days requests are kept here; nil keeps them as
+	// long as the plan does (owner only).
+	RetentionDays *int
+	// RetentionCapDays is the longest retention this endpoint may have: its
+	// plan's (owner only).
+	RetentionCapDays int
+	// DeleteAfterDelivery deletes requests once every delivery is settled
+	// (owner only).
+	DeleteAfterDelivery *bool
+	// Layouts are how the endpoint reads its emails; the first that matches
+	// applies (owner only).
+	Layouts []Layout
+	// LayoutsCap is how many layouts the plan uses; later ones are kept but
+	// not used (owner only).
+	LayoutsCap     int
 	ForwardEnabled *bool
 	ForwardURL     string
 	SharedWith     []TeamShare
@@ -1244,6 +1281,19 @@ func (e *Endpoint) UnmarshalJSON(data []byte) error {
 			e.EmailFields = append(e.EmailFields, field)
 		}
 	}
+	if days, ok := o.numOK("retentionDays"); ok {
+		value := int(days)
+		e.RetentionDays = &value
+	}
+	e.RetentionCapDays = int(o.num("retentionCapDays"))
+	e.DeleteAfterDelivery = o.optBool("deleteAfterDelivery")
+	for _, item := range o.array("layouts") {
+		var layout Layout
+		if isJSONObject(item) && json.Unmarshal(item, &layout) == nil {
+			e.Layouts = append(e.Layouts, layout)
+		}
+	}
+	e.LayoutsCap = int(o.num("layoutsCap"))
 	return nil
 }
 
@@ -1266,6 +1316,11 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 		HasSigningSecret  bool           `json:"hasSigningSecret"`
 		ShowEmailExtracts *bool          `json:"showEmailExtracts,omitempty"`
 		EmailFields       []EmailField   `json:"emailFields,omitempty"`
+		RetentionDays     *int           `json:"retentionDays,omitempty"`
+		RetentionCapDays  int            `json:"retentionCapDays,omitempty"`
+		DeleteAfter       *bool          `json:"deleteAfterDelivery,omitempty"`
+		Layouts           []Layout       `json:"layouts,omitempty"`
+		LayoutsCap        int            `json:"layoutsCap,omitempty"`
 		ForwardEnabled    *bool          `json:"forwardEnabled,omitempty"`
 		ForwardURL        string         `json:"forwardUrl,omitempty"`
 		SharedWith        []TeamShare    `json:"sharedWith,omitempty"`
@@ -1273,7 +1328,8 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 	}{
 		e.ID, e.Slug, e.Name, e.URL, e.EmailAddress, millisOf(e.CreatedAt), e.IsEphemeral, millisOf(e.ExpiresAt),
 		e.NotificationURL, e.MockResponse, e.ResponseRules, e.SigningProvider, e.HasSigningSecret,
-		e.ShowEmailExtracts, e.EmailFields, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams,
+		e.ShowEmailExtracts, e.EmailFields, e.RetentionDays, e.RetentionCapDays, e.DeleteAfterDelivery,
+		e.Layouts, e.LayoutsCap, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams,
 	})
 }
 

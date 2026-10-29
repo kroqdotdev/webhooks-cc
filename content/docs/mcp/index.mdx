@@ -1,6 +1,6 @@
 ---
 title: "Webhook MCP Server (@webhooks-cc/mcp)"
-description: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 46 MCP tools, a remote server at webhooks.cc/mcp with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
+description: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 47 MCP tools, a remote server at webhooks.cc/mcp with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 section: mcp
 order: 1
 lastUpdated: 2026-10-29
@@ -19,7 +19,7 @@ keywords:
   ]
 seo:
   ogTitle: "Webhook MCP Server (@webhooks-cc/mcp): Claude, Cursor & Codex"
-  ogDescription: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 46 MCP tools, a remote server with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
+  ogDescription: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 47 MCP tools, a remote server with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 ---
 
 There are two ways to connect an agent. Start with the [remote server](#remote-server) at `https://webhooks.cc/mcp`: any client that takes remote MCP servers can use it, coding agents such as Claude Code, Cursor, VS Code and Codex as well as claude.ai and ChatGPT, and you approve it once in the browser, with no key to paste and no code to type. The [local server](#local-server), `@webhooks-cc/mcp`, runs on your machine. Use it when the agent must send to localhost, for its prompts and resources, without an account (leave the key out and it starts in the [agent sandbox](#without-an-api-key-the-agent-sandbox)), or in CI.
@@ -80,7 +80,7 @@ claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp --he
 
 ### What differs from the local server
 
-- **44 tools.** `send_to` and `replay_request` are left out: they post to a URL you name, and a hosted server cannot reach your machine. For the same reason `render_email` and `test_webhook_flow` refuse `targetUrl`. To send to localhost, use the local server or [`whk tunnel`](/docs/cli/tunnel).
+- **45 tools.** `send_to` and `replay_request` are left out: they post to a URL you name, and a hosted server cannot reach your machine. For the same reason `render_email` and `test_webhook_flow` refuse `targetUrl`. To send to localhost, use the local server or [`whk tunnel`](/docs/cli/tunnel).
 - **Waits are capped at 50 seconds.** `wait_for_request`, `wait_for_email` and the other tools with a `timeout` return by then; call them again to keep waiting.
 - **Tools only.** The prompts and resources below come with the local server.
 - **An account is required.** There is no sandbox on the remote server, and a sandbox token is refused.
@@ -114,7 +114,7 @@ Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-c
 
 ## Available tools
 
-The local server exposes 46 tools your AI agent can call, and the remote server 44 of them. Without an API key or a saved connection, 11 sandbox tools are available (see above). The [agent skill](/docs/mcp/skills) tells your agent when to use them, and the [tool reference](/docs/mcp/tools) lists every argument.
+The local server exposes 47 tools your AI agent can call, and the remote server 45 of them. Without an API key or a saved connection, 11 sandbox tools are available (see above). The [agent skill](/docs/mcp/skills) tells your agent when to use them, and the [tool reference](/docs/mcp/tools) lists every argument.
 
 ### Endpoint management
 
@@ -293,7 +293,7 @@ Claude Code, Cursor, VS Code (GitHub Copilot) and OpenAI Codex all connect to th
 </FAQItem>
 <FAQItem question="Can I use webhooks.cc from claude.ai or ChatGPT?">
 
-Yes. Add `https://webhooks.cc/mcp` as a custom connector, sign in to webhooks.cc when the client opens it, and click Connect. The remote server has 44 of the 46 tools: it leaves out `send_to` and `replay_request`, which post to a URL on your machine that a hosted server cannot reach. You can disconnect it at any time under Account, Connected agents.
+Yes. Add `https://webhooks.cc/mcp` as a custom connector, sign in to webhooks.cc when the client opens it, and click Connect. The remote server has 45 of the 47 tools: it leaves out `send_to` and `replay_request`, which post to a URL on your machine that a hosted server cannot reach. You can disconnect it at any time under Account, Connected agents.
 
 </FAQItem>
 <FAQItem question="Can I use the Webhook MCP server without an API key?">

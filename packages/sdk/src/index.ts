@@ -246,6 +246,8 @@ export type {
   ResponseRuleCondition,
   PreviewResponseOptions,
   ResponsePreview,
+  PreviewLayoutsOptions,
+  LayoutsPreview,
   Destination,
   DestinationFilter,
   DestinationFormat,
