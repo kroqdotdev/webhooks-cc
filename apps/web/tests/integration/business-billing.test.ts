@@ -35,6 +35,7 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
 import { DELETE as keepPlanRoute } from "@/app/api/billing/change-plan/route";
 import {
+  applyCapacityWebhookEvent,
   changeMonthlyBlocks,
   getCapacityState,
   reconcileAddonsWithPlan,
@@ -694,6 +695,46 @@ describe("extra inbound domains", () => {
       { kind: "team_business", cancel_at_period_end: true, canceled_with_plan: false },
     ]);
     expect((await getCapacityState(account, "domains")).planEnding).toBe(true);
+  });
+
+  it("wait while Team Business is behind on payment, and end when it is revoked", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `dom-pd-${ts}`, created_by: owner, seats: 1, subscription_status: "active" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+    await applyAddon(account, "team_business", `sub_tdp_tb_${ts}`, "active");
+    await applyAddon(account, "domain_blocks", `sub_tdp_db_${ts}`, "active", 1);
+    const domainRow = async () =>
+      (
+        await admin
+          .from("capacity_subscriptions")
+          .select("status, cancel_at_period_end")
+          .eq("polar_subscription_id", `sub_tdp_db_${ts}`)
+          .single()
+      ).data;
+
+    // A failed card: Team Business stops counting, the extra domains wait.
+    await applyAddon(account, "team_business", `sub_tdp_tb_${ts}`, "past_due");
+    await reconcileAddonsWithPlan(account);
+    expect(await domainRow()).toEqual({ status: "active", cancel_at_period_end: false });
+    expect(await allowed(account)).toBe(0);
+    await applyAddon(account, "team_business", `sub_tdp_tb_${ts}`, "active");
+    expect(await allowed(account)).toBe(2);
+
+    // Revoked mid-period: the extra domains end now, not at their renewal.
+    await applyCapacityWebhookEvent(
+      "subscription.revoked",
+      account,
+      { resource: "team", kind: "team_business" },
+      { id: `sub_tdp_tb_${ts}`, status: "canceled", ended_at: new Date().toISOString() }
+    );
+    expect((await domainRow())?.status).toBeNull();
+    expect(await allowed(account)).toBe(0);
   });
 
   it("end with a change away from Business, and come back when Business is kept", async () => {

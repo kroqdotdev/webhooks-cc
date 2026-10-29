@@ -2,6 +2,7 @@ import { createHash, randomInt } from "node:crypto";
 import { customAlphabet } from "nanoid";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
+import { isInboundDomainAddress } from "@/lib/supabase/inbound-domains";
 import { isPlainEmailAddress } from "@/lib/request-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { signAssertion } from "./assertion";
@@ -90,6 +91,22 @@ export function normalizeLoginHint(value: unknown): string {
       400,
       "invalid_login_hint",
       `Addresses at ${serverEnv().EMAIL_CAPTURE_DOMAIN} cannot own an account.`
+    );
+  }
+  return email;
+}
+
+/**
+ * normalizeLoginHint, and never an address at a customer's verified inbound
+ * domain either: its mail is readable here too.
+ */
+export async function checkLoginHint(value: unknown): Promise<string> {
+  const email = normalizeLoginHint(value);
+  if (await isInboundDomainAddress(email)) {
+    throw new AgentError(
+      400,
+      "invalid_login_hint",
+      "Addresses at a domain that receives mail here cannot own an account."
     );
   }
   return email;

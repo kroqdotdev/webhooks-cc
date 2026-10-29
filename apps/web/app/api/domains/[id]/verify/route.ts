@@ -18,7 +18,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (limited.response) return limited.response;
   try {
     const result = await verifyDomain(context.account, id);
-    if (result.domain.status === "verified") {
+    if (result.records.txt && result.records.mx) {
       await auditDomain(request, context.userId, context.account, "domain.verified", 200, {
         domain: result.domain.domain,
       });

@@ -168,15 +168,66 @@ describe("custom inbound domains", () => {
     });
     expect(await isInboundDomainAddress(`someone@${domain.domain}`)).toBe(true);
 
-    // Another account cannot take a domain that is held.
+    // Another account cannot take a domain whose holder still proves it...
     const otherAccount = { kind: "user" as const, userId: other };
     const copy = await addDomain(otherAccount, domain.domain);
-    await expect(verifyDomain(otherAccount, copy.id, dns(inPlace(copy)))).rejects.toMatchObject({
+    const both = dns({
+      [domain.domain]: {
+        txt: [domain.records.txt.value, copy.records.txt.value],
+        mx: ["mx.mailhooks.cc"],
+      },
+    });
+    await expect(verifyDomain(otherAccount, copy.id, both)).rejects.toMatchObject({
       code: "held",
     });
 
+    // ... but once only its TXT record is there, whoever controls the DNS
+    // now has the domain, and the old holder's lapses at once.
+    const taken = await verifyDomain(otherAccount, copy.id, dns(inPlace(copy)));
+    expect(taken.domain.status).toBe("verified");
+    expect((await listDomains(account)).find((row) => row.id === domain.id)?.status).toBe("lapsed");
+    await deleteDomain(otherAccount, copy.id);
     await deleteDomain(account, domain.id);
     expect(await resolve(domain.domain, "orders")).toEqual({ status: "relay_denied" });
+  });
+
+  it("refuse a domain whose mail is not all ours or where accounts have their email", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId: owner };
+    const domain = await addDomain(account, `shared-${ts}.acme.example`);
+    // A backup MX elsewhere: its mail does not all come here.
+    const result = await verifyDomain(
+      account,
+      domain.id,
+      dns({
+        [domain.domain]: {
+          txt: [domain.records.txt.value],
+          mx: ["mx.mailhooks.cc", "mail.elsewhere.example"],
+        },
+      })
+    );
+    expect(result.records).toEqual({ txt: true, mx: false });
+    expect(result.domain.status).toBe("pending");
+
+    // Test accounts' emails are at webhooks-test.local.
+    const accounts = await addDomain(account, "webhooks-test.local");
+    await expect(verifyDomain(account, accounts.id, dns(inPlace(accounts)))).rejects.toMatchObject({
+      code: "has_accounts",
+    });
+  });
+
+  it("keep at most 20 per account, even when added at once", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const rows = Array.from({ length: 20 }, (_, i) => ({
+      user_id: owner,
+      domain: `cap${i}-${ts}.acme.example`,
+    }));
+    const { error } = await admin.from("inbound_domains").insert(rows);
+    if (error) throw error;
+    const { error: overError } = await admin
+      .from("inbound_domains")
+      .insert({ user_id: owner, domain: `cap20-${ts}.acme.example` });
+    expect(overError?.code).toBe("P0001");
   });
 
   it("count against the plan in the order they were verified, and stop with it", async () => {
@@ -201,9 +252,11 @@ describe("custom inbound domains", () => {
     await admin.from("users").update({ extra_domains: 1 }).eq("id", owner);
     expect((await resolve(second.domain, "x")).status).toBe("ok");
 
-    // Down to Pro: none receive mail.
-    await admin.from("users").update({ plan: "pro", extra_domains: 0 }).eq("id", owner);
+    // Down to Pro: none receive mail, even before the extra domains are
+    // taken off the account.
+    await admin.from("users").update({ plan: "pro" }).eq("id", owner);
     expect((await resolve(first.domain, "x")).status).toBe("relay_denied");
+    expect((await resolve(second.domain, "x")).status).toBe("relay_denied");
   });
 
   it("lapse after three failed checks and come back when the records return", async () => {
@@ -214,10 +267,10 @@ describe("custom inbound domains", () => {
     await verifyDomain(account, domain.id, dns(inPlace(domain)));
     await setDomainRouting(account, domain.id, { catchAllEndpointId: endpoint.id, routes: [] });
 
-    const due = async () =>
+    const due = async (days = 2) =>
       admin
         .from("inbound_domains")
-        .update({ last_checked_at: new Date(Date.now() - 2 * 86_400_000).toISOString() })
+        .update({ last_checked_at: new Date(Date.now() - days * 86_400_000).toISOString() })
         .eq("id", domain.id);
     const state = async () =>
       (
@@ -235,10 +288,38 @@ describe("custom inbound domains", () => {
     expect(await state()).toEqual({ status: "lapsed", failed_checks: 3 });
     expect((await resolve(domain.domain, "x")).status).toBe("relay_denied");
 
-    await due();
+    // A lapsed domain is looked up weekly, not daily.
+    await due(2);
+    await recheckDomains(dns(inPlace(domain)), 1000);
+    expect(await state()).toEqual({ status: "lapsed", failed_checks: 3 });
+    await due(8);
     await recheckDomains(dns(inPlace(domain)), 1000);
     expect(await state()).toEqual({ status: "verified", failed_checks: 0 });
     expect((await resolve(domain.domain, "x")).status).toBe("ok");
+
+    // A check the owner asks for counts too: a domain the owner no longer
+    // controls cannot be kept verified by checking it every day.
+    for (let check = 1; check <= 3; check++) {
+      await verifyDomain(account, domain.id, dns({}));
+    }
+    expect(await state()).toEqual({ status: "lapsed", failed_checks: 3 });
+
+    // A nameserver that fails is no failed check, but the domain waits its turn again.
+    await due(8);
+    const failing: DomainResolver = {
+      txt: async () => {
+        throw Object.assign(new Error("timeout"), { code: "ETIMEOUT" });
+      },
+      mx: async () => [],
+    };
+    await recheckDomains(failing, 1000);
+    const { data: stamped } = await admin
+      .from("inbound_domains")
+      .select("status, failed_checks, last_checked_at")
+      .eq("id", domain.id)
+      .single();
+    expect(stamped).toMatchObject({ status: "lapsed", failed_checks: 3 });
+    expect(Date.now() - Date.parse(stamped!.last_checked_at)).toBeLessThan(60_000);
   });
 });
 

@@ -102,7 +102,7 @@ function DomainCard({
     try {
       const result = await verifyDomainRequest(accessToken, domain.id, teamId);
       onChanged(result.domain);
-      if (result.domain.status === "verified") {
+      if (result.records.txt && result.records.mx) {
         setMessage({
           tone: "success",
           text: "Verified. Mail to this domain arrives within a minute.",
@@ -116,7 +116,11 @@ function DomainCard({
           .join(" and ");
         setMessage({
           tone: "warning",
-          text: `Not found yet: ${missing}. DNS changes can take a while to show; check again later.`,
+          text: `Not found yet: ${missing}.${
+            result.records.mx
+              ? ""
+              : ` Every MX record of the domain must point at ${domain.records.mx.value}.`
+          } DNS changes can take a while to show; check again later.`,
         });
       }
     } catch (error) {
@@ -331,6 +335,13 @@ function DomainCard({
   );
 }
 
+/** The extra domains the next renewal brings: none when they are set to end. */
+function renewingCount(state: CapacityState): number {
+  const blocks = state.blocks;
+  if (!blocks || blocks.cancelAtPeriodEnd) return 0;
+  return blocks.pendingUnits ?? blocks.units;
+}
+
 function domainCount(count: number): string {
   return `${count} ${count === 1 ? "domain" : "domains"}`;
 }
@@ -359,6 +370,9 @@ function ExtraDomains({
 }) {
   const [state, setState] = useState<CapacityState | null>(null);
   const [count, setCount] = useState<string | null>(null);
+  // Until the count is typed in, it follows the stored one (which a checkout
+  // changes a little later, when Polar's webhook lands).
+  const edited = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [returned, setReturned] = useState(false);
@@ -380,9 +394,7 @@ function ExtraDomains({
     try {
       const next = await fetchCapacity(accessToken, teamId, "domains");
       update(next);
-      setCount((current) =>
-        current === null ? String(next.blocks?.pendingUnits ?? next.blocks?.units ?? 0) : current
-      );
+      if (!edited.current) setCount(String(renewingCount(next)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load extra domains");
     }
@@ -422,7 +434,8 @@ function ExtraDomains({
         return;
       }
       update(result.state);
-      setCount(String(result.state.blocks?.pendingUnits ?? result.state.blocks?.units ?? 0));
+      edited.current = false;
+      setCount(String(renewingCount(result.state)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The change was not made");
     } finally {
@@ -443,7 +456,8 @@ function ExtraDomains({
     : state.periodEnd
       ? longDate(state.periodEnd)
       : "the renewal";
-  const current = blocks?.pendingUnits ?? blocks?.units ?? 0;
+  const current = renewingCount(state);
+  const canChange = state.offered && state.eligible && !state.planEnding;
 
   return (
     <div id="extra-domains" className="space-y-3 scroll-mt-24">
@@ -460,7 +474,7 @@ function ExtraDomains({
             <span className="text-muted-foreground">
               {" "}
               Mail to {refused === 1 ? "one verified domain" : `${refused} verified domains`} is
-              refused until you add extra domains or remove one.
+              refused{canChange ? " until you add extra domains or remove one" : ""}.
             </span>
           )}
         </p>
@@ -485,7 +499,10 @@ function ExtraDomains({
               min={0}
               max={MAX_EXTRA_DOMAINS}
               value={count ?? ""}
-              onChange={(event) => setCount(event.target.value)}
+              onChange={(event) => {
+                edited.current = true;
+                setCount(event.target.value);
+              }}
               className="ui-input w-24 text-sm py-1.5!"
             />
             <span className="text-sm text-muted-foreground">
@@ -494,15 +511,10 @@ function ExtraDomains({
             <Button
               size="sm"
               variant="outline"
-              disabled={
-                busy ||
-                !valid ||
-                state.planEnding ||
-                (units === current && !blocks?.cancelAtPeriodEnd)
-              }
+              disabled={busy || !valid || state.planEnding || units === current}
               onClick={() => void save(units)}
             >
-              {blocks?.cancelAtPeriodEnd && !state.planEnding && units > 0 ? "Keep" : "Save"}
+              Save
             </Button>
           </div>
           {blocks?.pastDue && (

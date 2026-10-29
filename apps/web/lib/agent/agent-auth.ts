@@ -10,6 +10,7 @@ import {
 } from "@/lib/supabase/api-keys";
 import { sendEmail } from "@/lib/email/mailer";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
+import { isInboundDomainAddress } from "@/lib/supabase/inbound-domains";
 import { generateClaimToken, hashClaimToken } from "./registrations";
 
 /**
@@ -322,7 +323,12 @@ export async function resolveOrProvisionUser(
 ): Promise<string> {
   // Mail to the capture domain can be read through webhooks.cc itself, so it
   // never identifies anyone: no flow may create or reach an account by it.
-  if (isCaptureDomainAddress(email, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
+  // The same for a customer's verified inbound domain (00072): checked here
+  // too, not only at registration, since a domain can be verified between.
+  if (
+    isCaptureDomainAddress(email, serverEnv().EMAIL_CAPTURE_DOMAIN) ||
+    (await isInboundDomainAddress(email))
+  ) {
     throw new AgentRequestError(400, "invalid_email");
   }
   const admin = db();

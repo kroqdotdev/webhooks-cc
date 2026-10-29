@@ -30,7 +30,7 @@ alter table public.capacity_purchases
 comment on column public.capacity_purchases.requests is
   'What the purchase granted: requests, pages for page_credits and page_block_increase, domains for domain_increase.';
 
--- 2. Applying and granting add-ons: as 00070, with the domain kinds.
+-- 2. Applying, granting and refunding add-ons: as 00070, with the domain kinds.
 create or replace function public.apply_capacity_subscription(
   p_user_id              uuid,
   p_team_id              uuid,
@@ -296,6 +296,63 @@ end;
 $$;
 
 
+create or replace function public.refund_capacity_purchase(p_order_id text)
+returns jsonb
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_purchase public.capacity_purchases;
+begin
+  select * into v_purchase
+    from public.capacity_purchases
+   where polar_order_id = p_order_id
+   for update;
+  if not found then
+    return jsonb_build_object('status', 'unknown');
+  end if;
+  if v_purchase.refunded_at is not null then
+    return jsonb_build_object('status', 'duplicate');
+  end if;
+
+  update public.capacity_purchases set refunded_at = now() where id = v_purchase.id;
+
+  if v_purchase.kind = 'page_credits' then
+    if v_purchase.team_id is not null then
+      update public.teams
+         set credit_pages = greatest(credit_pages - v_purchase.requests, 0)
+       where id = v_purchase.team_id;
+    else
+      update public.users
+         set credit_pages = greatest(credit_pages - v_purchase.requests, 0)
+       where id = v_purchase.user_id;
+    end if;
+    return jsonb_build_object('status', 'ok', 'kind', 'page_credits');
+  end if;
+
+  if v_purchase.kind = 'credits' then
+    if v_purchase.team_id is not null then
+      update public.teams
+         set credit_requests = greatest(credit_requests - v_purchase.requests, 0)
+       where id = v_purchase.team_id;
+    else
+      update public.users
+         set credit_requests = greatest(credit_requests - v_purchase.requests, 0)
+       where id = v_purchase.user_id;
+    end if;
+    return jsonb_build_object('status', 'ok', 'kind', 'credits');
+  end if;
+
+  -- An increase names the subscription it raised (null when there was none).
+  return jsonb_build_object(
+    'status', 'ok',
+    'kind', v_purchase.kind,
+    'subscription_id', v_purchase.polar_subscription_id
+  );
+end;
+$$;
+
+
 -- 3. What the live add-ons give the account: as 00070, plus extra domains
 -- with Business (custom_domains > 0) or, for teams, Team Business.
 create or replace function public.sync_capacity_account(p_user_id uuid, p_team_id uuid)
@@ -375,6 +432,7 @@ revoke all on function public.apply_capacity_subscription(
 ) from public, anon, authenticated;
 revoke all on function public.grant_capacity_purchase(text, uuid, uuid, text, integer, integer)
   from public, anon, authenticated;
+revoke all on function public.refund_capacity_purchase(text) from public, anon, authenticated;
 revoke all on function public.sync_capacity_account(uuid, uuid) from public, anon, authenticated;
 
 grant execute on function public.apply_capacity_subscription(
@@ -382,6 +440,7 @@ grant execute on function public.apply_capacity_subscription(
 ) to service_role;
 grant execute on function public.grant_capacity_purchase(text, uuid, uuid, text, integer, integer)
   to service_role;
+grant execute on function public.refund_capacity_purchase(text) to service_role;
 grant execute on function public.sync_capacity_account(uuid, uuid) to service_role;
 
 alter table public.capacity_subscriptions validate constraint capacity_subscriptions_kind_check;
