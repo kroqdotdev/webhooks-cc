@@ -95,7 +95,7 @@ export function ParsedPagesPanel({
     try {
       const result = await changeCapacity(accessToken, { ...action, resource: "pages" }, teamId);
       if ("url" in result) {
-        window.location.href = result.url;
+        window.location.assign(result.url);
         return;
       }
       setState(result.state);

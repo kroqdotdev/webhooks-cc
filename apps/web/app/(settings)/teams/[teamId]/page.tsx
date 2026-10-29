@@ -17,6 +17,8 @@ import {
 import { QuotaMeter, seatSlotsFor } from "@/components/settings/quota-meter";
 import { useSettingsData } from "@/components/settings/settings-data";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
+import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
+import { TeamBusinessPanel } from "@/components/teams/team-business-panel";
 import { TeamBillingPanel } from "@/components/teams/team-billing-panel";
 import {
   AlertDialog,
@@ -525,6 +527,25 @@ function TeamDetailContent() {
         ) : (
           // Members already see the suspended notice above; only the owner can subscribe.
           isOwner && billing
+        )}
+
+        {subscribed && (
+          <TeamBusinessPanel
+            accessToken={accessToken}
+            teamId={team.id}
+            business={team.business}
+            canManage={isOwner}
+            onChanged={settings.refresh}
+          />
+        )}
+
+        {subscribed && team.business && (
+          <ParsedPagesPanel
+            accessToken={accessToken}
+            teamId={team.id}
+            canManage={isOwner}
+            reloadKey={[team.subscriptionStatus, team.periodEnd, team.business].join(":")}
+          />
         )}
 
         {subscribed && (

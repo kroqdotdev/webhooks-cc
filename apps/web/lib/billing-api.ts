@@ -61,6 +61,15 @@ export async function changeBillingPlan(
   return readJson<{ applied: "now" | "renewal" }>(response);
 }
 
+/** Drops a plan change that waits for the renewal. */
+export async function keepBillingPlan(accessToken: string): Promise<void> {
+  const response = await fetch(
+    "/api/billing/change-plan",
+    withAuthHeaders(accessToken, { method: "DELETE" })
+  );
+  await readJson<{ ok: true }>(response);
+}
+
 /** What each paid plan costs, for display (Polar holds the charged prices). */
 export const PLAN_PRICES: Record<PaidPlan, Partial<Record<BillingInterval, string>>> = {
   pro: { month: "$8 a month" },

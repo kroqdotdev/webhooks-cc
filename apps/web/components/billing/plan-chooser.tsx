@@ -16,6 +16,7 @@ import { trackUpgradeClicked } from "@/lib/analytics";
 import {
   changeBillingPlan,
   createBillingCheckout,
+  keepBillingPlan,
   planName,
   type BillingInterval,
   type PaidPlan,
@@ -25,17 +26,18 @@ import { longDate } from "@/components/settings/format";
 
 /**
  * The plan changes an account can make from where it is: a checkout for a
- * free account, a plan change for a paying one. Going up (Pro to Business,
- * monthly to annual) restarts the billing period today and charges the new
- * price less the unused time; going down waits for the renewal. Each change
- * says which before it happens.
+ * free account, a plan change for a paying one. Pro to Business monthly
+ * applies now: the difference is charged for the rest of the period and the
+ * extra capacity comes in the same proportion. Every other change (another
+ * interval, a lower tier) waits for the renewal, and a waiting change can be
+ * dropped. Each change says which before it happens.
  */
 
 type Option = {
   plan: PaidPlan;
   interval: BillingInterval;
   label: string;
-  /** Applies now (a new billing period starts) or at the renewal. */
+  /** Applies now (charged pro rata) or at the renewal. */
   when: "now" | "renewal";
 };
 
@@ -66,13 +68,18 @@ function optionsFor(profile: AccountProfile): Option[] {
         label: "Switch to Business, $29 a month",
         when: "now",
       },
-      { plan: "business", interval: "year", label: "Business, $290 a year", when: "now" },
+      {
+        plan: "business",
+        interval: "year",
+        label: "Business, $290 a year, from the renewal",
+        when: "renewal",
+      },
     ];
   }
   // Business.
   return interval === "month"
     ? [
-        { plan: "business", interval: "year", label: "Pay yearly, $290", when: "now" },
+        { plan: "business", interval: "year", label: "Pay yearly, $290", when: "renewal" },
         { plan: "pro", interval: "month", label: "Change to Pro", when: "renewal" },
       ]
     : [
@@ -98,6 +105,29 @@ export function PlanChooser({
   // A plan set to end has to be kept before it can change.
   if (!free && profile.cancel_at_period_end) return null;
   const renewal = profile.billing_period_end ?? profile.period_end;
+  const pending =
+    !free && (profile.pending_plan === "pro" || profile.pending_plan === "business")
+      ? {
+          plan: profile.pending_plan,
+          interval: profile.pending_interval === "year" ? "year" : "month",
+        }
+      : null;
+
+  const keep = async () => {
+    if (!accessToken) return setError("Your session expired. Please sign in again.");
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await keepBillingPlan(accessToken);
+      setNotice(`Your plan stays ${planName(profile.plan)}.`);
+      await onChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The plan could not be kept.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const run = async (option: Option) => {
     if (!accessToken) return setError("Your session expired. Please sign in again.");
@@ -107,18 +137,15 @@ export function PlanChooser({
     try {
       if (free) {
         trackUpgradeClicked();
-        window.location.href = await createBillingCheckout(
-          accessToken,
-          option.plan,
-          option.interval
-        );
+        const url = await createBillingCheckout(accessToken, option.plan, option.interval);
+        window.location.assign(url);
         return;
       }
       const result = await changeBillingPlan(accessToken, option.plan, option.interval);
       setConfirm(null);
       setNotice(
         result.applied === "now"
-          ? `${planName(option.plan)} starts now.`
+          ? `${planName(option.plan)} starts now. The full allowance starts at the renewal.`
           : `Your plan changes${renewal ? ` on ${longDate(renewal)}` : " at the renewal"}.`
       );
       await onChanged?.();
@@ -131,18 +158,33 @@ export function PlanChooser({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-2">
-        {optionsFor(profile).map((option) => (
-          <Button
-            key={`${option.plan}-${option.interval}`}
-            variant={option.plan === "business" && option.when === "now" ? "default" : "outline"}
-            disabled={busy || !accessToken}
-            onClick={() => (free ? void run(option) : setConfirm(option))}
-          >
-            {option.label}
+      {pending ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm">
+            Changes to {planName(pending.plan)}
+            {pending.plan === "business"
+              ? `, billed ${pending.interval === "year" ? "yearly" : "monthly"}`
+              : ""}
+            {renewal ? ` on ${longDate(renewal)}` : " at the renewal"}.
+          </p>
+          <Button variant="outline" disabled={busy || !accessToken} onClick={() => void keep()}>
+            {busy ? "Keeping..." : `Keep ${planName(profile.plan)}`}
           </Button>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {optionsFor(profile).map((option) => (
+            <Button
+              key={`${option.plan}-${option.interval}`}
+              variant={option.plan === "business" && option.when === "now" ? "default" : "outline"}
+              disabled={busy || !accessToken}
+              onClick={() => (free ? void run(option) : setConfirm(option))}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      )}
       {notice && (
         <p className="text-sm text-muted-foreground" aria-live="polite">
           {notice}
@@ -162,11 +204,11 @@ export function PlanChooser({
             <AlertDialogTitle>
               {confirm?.when === "now"
                 ? `Start ${planName(confirm.plan)}${confirm.interval === "year" ? ", billed yearly" : ""}?`
-                : `Change to ${confirm ? planName(confirm.plan) : ""}${confirm?.interval === "month" && confirm.plan === profile.plan ? ", billed monthly" : ""}?`}
+                : `Change to ${confirm ? planName(confirm.plan) : ""}${confirm?.plan === "business" ? `, billed ${confirm.interval === "year" ? "yearly" : "monthly"}` : ""}?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm?.when === "now"
-                ? "A new billing period starts today: you are charged the new price now, less what is left of your current period, and the new allowance starts at once."
+                ? `You are charged the difference for what is left of this period, and get ${confirm ? planName(confirm.plan) : ""}'s extra requests and parsed pages for that part of it at once. The full allowance starts at your renewal${renewal ? ` on ${longDate(renewal)}` : ""}.`
                 : `It takes effect${renewal ? ` on ${longDate(renewal)}` : " at your renewal"}; until then nothing changes.${
                     profile.plan === "business" && confirm?.plan === "pro"
                       ? " Extra parsed pages end then too; one-time page blocks stay on your account."

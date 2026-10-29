@@ -22,6 +22,65 @@
 --
 -- Apply with psql in autocommit mode, as AGENTS.md says.
 
+-- 0. A plan bought up mid-period (Pro to Business) is charged by Polar for
+-- the rest of the period only ("invoice" proration), so for that period the
+-- account gets the new plan's extra pages in proportion: prorated_pages
+-- stands for the plan's pages in the window that starts at
+-- prorated_window. Its requests are set the same way on request_limit by
+-- the web app, which knows the period's bounds; both go back to the plan's
+-- own at the renewal.
+alter table public.users
+  add column if not exists prorated_pages integer,
+  add column if not exists prorated_window timestamptz,
+  -- A plan change Polar applies at the renewal (pending_update), shown on
+  -- the plan page until then.
+  add column if not exists pending_plan text,
+  add column if not exists pending_interval text;
+
+alter table public.users drop constraint if exists users_pending_plan_check;
+alter table public.users
+  add constraint users_pending_plan_check
+  check (
+    (pending_plan is null and pending_interval is null)
+    or (pending_plan in ('pro', 'business') and pending_interval in ('month', 'year'))
+  );
+
+-- The pro rata allowance belongs to one window: whatever moves the period
+-- on (the renewal webhook, or the fallback in process_billing_period_resets
+-- before it arrives) gives the plan's own requests back with it.
+create or replace function public.end_plan_proration()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.prorated_window is not null
+     and new.prorated_window is distinct from new.period_start then
+    new.request_limit := coalesce(
+      (select pe.request_limit from public.plan_entitlements pe where pe.key = new.plan),
+      new.request_limit
+    );
+    new.prorated_pages := null;
+    new.prorated_window := null;
+  end if;
+  -- A plan that lapsed has no change waiting.
+  if new.plan = 'free' then
+    new.pending_plan := null;
+    new.pending_interval := null;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.end_plan_proration() from public, anon, authenticated;
+
+drop trigger if exists users_end_plan_proration on public.users;
+create trigger users_end_plan_proration
+  before update of period_start on public.users
+  for each row
+  when (old.period_start is distinct from new.period_start)
+  execute function public.end_plan_proration();
+
 -- 1. Add-on kinds
 alter table public.capacity_subscriptions drop constraint if exists capacity_subscriptions_kind_check;
 alter table public.capacity_subscriptions
@@ -438,6 +497,67 @@ create trigger teams_request_limit
   before insert or update of seats, business, request_limit on public.teams
   for each row
   execute function public.team_request_limit();
+
+-- 4b. The pages an account has, with the pro rata pages of a plan bought up
+-- mid-window (base is 00069).
+create or replace function public.parsed_pages_balance(p_user_id uuid, p_team_id uuid)
+returns table (
+  window_start  timestamptz,
+  allowance     integer,
+  used          integer,
+  credits       bigint,
+  overage_left  integer
+)
+language plpgsql
+stable
+security definer set search_path = ''
+as $$
+declare
+  v_ent   public.plan_entitlements;
+  v_row   record;
+  v_start timestamptz;
+begin
+  v_ent := public.account_entitlements(p_user_id, p_team_id);
+  if p_team_id is not null then
+    select t.period_start, t.period_end, t.pages_used, t.pages_period_start, t.credit_pages,
+           t.page_block_pages, t.page_overage_active, t.page_overage_max, t.page_overage_used,
+           t.page_overage_period_start, 'month'::text as quota_period,
+           null::integer as prorated_pages, null::timestamptz as prorated_window
+      into v_row
+      from public.teams t where t.id = p_team_id;
+  else
+    select u.period_start, u.period_end, u.pages_used, u.pages_period_start, u.credit_pages,
+           u.page_block_pages, u.page_overage_active, u.page_overage_max, u.page_overage_used,
+           u.page_overage_period_start, v_ent.quota_period as quota_period,
+           u.prorated_pages, u.prorated_window
+      into v_row
+      from public.users u where u.id = p_user_id;
+  end if;
+  if not found then
+    return;
+  end if;
+  v_start := public.page_window_start(v_row.period_start, v_row.period_end,
+                                      v_row.quota_period, v_row.pages_period_start);
+  return query select
+    v_start,
+    -- A plan bought up mid-window has its pages pro rata until the window
+    -- ends (prorated_pages for that window), then the plan's own.
+    case when v_row.prorated_window is not null and v_row.prorated_window = v_start
+         then v_row.prorated_pages else v_ent.parsed_pages end
+      + case when v_ent.page_addons then v_row.page_block_pages else 0 end,
+    -- Usage stored at or after the window's start is this window's, so
+    -- rewriting the period start within a period never resets it.
+    case when v_row.pages_period_start >= v_start then v_row.pages_used else 0 end,
+    v_row.credit_pages,
+    case
+      when v_ent.page_addons and v_row.page_overage_active then
+        greatest(v_row.page_overage_max - case
+          when v_row.page_overage_period_start >= v_start
+            then v_row.page_overage_used else 0 end, 0)
+      else 0
+    end;
+end;
+$$;
 
 -- 5. Page overage reporting, as for requests (the reporter's event is
 -- page.overage with the pages in its metadata).

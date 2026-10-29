@@ -1,7 +1,11 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
-import { BillingActionError, changePlanForUser } from "@/lib/supabase/billing";
+import {
+  BillingActionError,
+  changePlanForUser,
+  keepCurrentPlanForUser,
+} from "@/lib/supabase/billing";
 import { reportError } from "@/lib/observability";
 
 const STATUS: Record<string, number> = {
@@ -13,9 +17,10 @@ const STATUS: Record<string, number> = {
 
 /**
  * POST /api/billing/change-plan { plan: "pro" | "business", interval: "month" | "year" }:
- * moves a paying account to another plan. Up applies now (the period
- * restarts and the new price is charged, less the unused time); down at the
- * renewal. Takes a session, never an API key.
+ * moves a paying account to another plan. A monthly tier up applies now
+ * (the difference is charged for the rest of the period, and the extra
+ * capacity granted in proportion); anything else at the renewal. DELETE
+ * drops a change waiting for the renewal. Takes a session, never an API key.
  */
 export async function POST(request: Request) {
   const auth = await authenticateSessionRequest(request);
@@ -63,5 +68,38 @@ export async function POST(request: Request) {
     }
     reportError("Plan change failed", loggablePolarError(error));
     return Response.json({ error: "Could not change the plan" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const auth = await authenticateSessionRequest(request);
+  if (!auth.success) return auth.response;
+
+  try {
+    await keepCurrentPlanForUser(auth.userId);
+    await auditUserAction(request, auth.userId, {
+      action: "billing.plan_changed",
+      status: 200,
+      metadata: { kept: true },
+    });
+    return Response.json({ ok: true });
+  } catch (error) {
+    if (error instanceof BillingActionError) {
+      const status = STATUS[error.code] ?? 400;
+      await auditUserAction(request, auth.userId, {
+        action: "billing.plan_changed",
+        status,
+        reason: error.message,
+        metadata: { kept: true },
+      });
+      return Response.json({ error: error.message, code: error.code }, { status });
+    }
+    await auditUserAction(request, auth.userId, {
+      action: "billing.plan_changed",
+      status: 500,
+      metadata: { kept: true },
+    });
+    reportError("Keeping the plan failed", loggablePolarError(error));
+    return Response.json({ error: "Could not keep the plan" }, { status: 500 });
   }
 }
