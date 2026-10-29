@@ -2,7 +2,7 @@
 
 MCP server for [webhooks.cc](https://webhooks.cc). It gives coding agents direct access to webhook testing workflows: create endpoints, send signed test webhooks, inspect captures, compare attempts, verify signatures, and read recent webhook context through MCP resources.
 
-It works with Claude Code, Cursor, VS Code, Codex, Devin Desktop (formerly Windsurf), and Claude Desktop. Hosted agents such as claude.ai and ChatGPT use the [remote server](#remote-server) at `https://webhooks.cc/mcp` instead.
+The easiest way in is the [remote server](#remote-server) at `https://webhooks.cc/mcp`, for any client that can add a remote MCP server (Claude Code, Cursor, VS Code, Codex, claude.ai, ChatGPT): you approve it once in your browser, with no key and nothing to install. This package is the local server, for sends to a handler on your machine, its prompts and resources, a keyless sandbox, and CI. It works with Claude Code, Cursor, VS Code, Codex, Devin Desktop (formerly Windsurf), and Claude Desktop.
 
 ## Install
 
@@ -27,11 +27,12 @@ For other agents, `npx skills add kroqdotdev/webhooks-cc` installs the same skil
 
 `https://webhooks.cc/mcp` serves the same tools over streamable HTTP, with nothing to install. The client opens webhooks.cc in the browser once; the human signs in and clicks Connect (OAuth 2.1 with PKCE, no code to type), and can disconnect it later under Account, Connected agents.
 
-- **claude.ai and Claude Desktop**: Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`
-- **ChatGPT**: add it as a custom connector (developer mode)
-- **Claude Code**: `claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp`
+- **Claude Code**: `claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp`, then `/mcp` in Claude Code to sign in
+- **Codex**: `codex mcp add webhooks-cc --url https://webhooks.cc/mcp` (it opens the browser to sign in; if it does not, `codex mcp login webhooks-cc`)
 - **Cursor** (`.cursor/mcp.json`): `{ "mcpServers": { "webhooks-cc": { "url": "https://webhooks.cc/mcp" } } }`
 - **VS Code** (`.vscode/mcp.json`): `{ "servers": { "webhooks-cc": { "type": "http", "url": "https://webhooks.cc/mcp" } } }`
+- **claude.ai and Claude Desktop**: Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`
+- **ChatGPT**: add it as a custom connector (developer mode)
 
 A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server has 44 tools: `send_to` and `replay_request` are left out and `targetUrl` is refused, because a hosted server cannot reach your machine, and waits are capped at 50 seconds. It needs an account (no sandbox), and serves tools only, without prompts or resources.
 
