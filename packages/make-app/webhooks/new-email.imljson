@@ -1,0 +1,39 @@
+{
+  "name": "newEmail",
+  "label": "New email",
+  "type": "dedicated",
+  "connection": "apiKey",
+  "parameters": [
+    {
+      "name": "endpoint",
+      "type": "select",
+      "label": "Endpoint",
+      "options": "rpc://listEndpoints",
+      "required": true
+    }
+  ],
+  "attach": {
+    "url": "/endpoints/{{parameters.endpoint}}/destinations",
+    "method": "POST",
+    "body": {
+      "url": "{{webhook.url}}",
+      "name": "Make",
+      "format": "json",
+      "email": true,
+      "http": false
+    },
+    "response": {
+      "data": {
+        "externalHookId": "{{body.id}}",
+        "endpoint": "{{parameters.endpoint}}"
+      }
+    }
+  },
+  "detach": {
+    "url": "/endpoints/{{webhook.endpoint}}/destinations/{{webhook.externalHookId}}",
+    "method": "DELETE"
+  },
+  "communication": {
+    "output": "{{body.data}}"
+  }
+}
