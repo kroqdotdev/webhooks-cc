@@ -178,7 +178,8 @@ export function ManageSubscriptionDialog({
             <AlertDialogTitle>Cancel subscription?</AlertDialogTitle>
             <AlertDialogDescription>
               You&apos;ll keep {name} until your billing period ends on {nextPaymentDate}. After
-              that, you&apos;ll be downgraded to the free tier.
+              that, you&apos;ll be downgraded to the free tier. Requests older than the free
+              plan&apos;s 7 days are kept one more week, then deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
