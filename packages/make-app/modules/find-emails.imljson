@@ -1,0 +1,32 @@
+{
+  "name": "findEmails",
+  "label": "Search emails",
+  "description": "Finds an endpoint's emails that contain the text you give, newest first.",
+  "type": "search",
+  "connection": "apiKey",
+  "parameters": [],
+  "expect": [
+    { "name": "endpoint", "type": "select", "label": "Endpoint", "options": "rpc://listEndpoints", "required": true },
+    { "name": "query", "type": "text", "label": "Contains", "required": true },
+    { "name": "limit", "type": "uinteger", "label": "Limit", "default": 10, "required": false }
+  ],
+  "communication": {
+    "url": "/search/requests",
+    "method": "GET",
+    "qs": {
+      "slug": "{{parameters.endpoint}}",
+      "q": "{{parameters.query}}",
+      "kind": "email",
+      "limit": "{{ifempty(parameters.limit, 10)}}"
+    },
+    "response": {
+      "iterate": "{{body}}",
+      "output": "{{item}}"
+    }
+  },
+  "interface": [
+    { "name": "id", "type": "text", "label": "Request ID" },
+    { "name": "receivedAt", "type": "number", "label": "Received at (ms)" },
+    { "name": "path", "type": "text", "label": "Address" }
+  ]
+}
