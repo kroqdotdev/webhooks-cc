@@ -16,27 +16,27 @@ function Command({ children }: { children: string }) {
   );
 }
 
-/** The Claude Code plugin and the agent skill, shown above the MCP-only setups. */
+/** The Claude Code plugin and the agent skill, shown above the local server's setups. */
 export function AgentSkillInstall({ headingClassName }: { headingClassName?: string }) {
   const heading = cn("font-bold mb-3", headingClassName ?? "text-lg");
   return (
     <>
       <section>
-        <h2 className={heading}>Claude Code plugin</h2>
+        <h3 className={heading}>Claude Code plugin</h3>
         <p className="text-sm text-muted-foreground mb-3">
           Installs the MCP server together with the webhook testing skill, which tells Claude when to
           reach for it: payload types from real captures, signed test sends to your local handler,
-          and email codes in tests. Claude Code asks for your API key when you enable it; leave it
-          empty to start in the keyless sandbox.
+          and email codes in tests. It runs the local server: Claude Code asks for your API key when
+          you enable it; leave it empty to start in the keyless sandbox.
         </p>
         <Command>{CLAUDE_PLUGIN_INSTALL}</Command>
       </section>
 
       <section>
-        <h2 className={heading}>Agent skill for Cursor, Codex, Copilot and others</h2>
+        <h3 className={heading}>Agent skill for Cursor, Codex, Copilot and others</h3>
         <p className="text-sm text-muted-foreground mb-3">
-          The same skill for every agent that reads <code>SKILL.md</code>. Add the MCP server with
-          one of the commands below as well.
+          The same skill for every agent that reads <code>SKILL.md</code>. Add the MCP server as
+          well: the remote server above, or a local one below.
         </p>
         <Command>{SKILLS_CLI_INSTALL}</Command>
         <p className="text-sm text-muted-foreground mt-2">
