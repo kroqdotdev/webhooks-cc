@@ -32,14 +32,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       "x-content-type-options": "nosniff",
     };
 
-    if (record.email.stored && isObjectStorageConfigured()) {
-      const object = await getObject(`m/${record.id}/raw.eml`);
-      if (object?.body) {
-        const length = object.headers.get("content-length");
-        return new Response(object.body, {
-          headers: length ? { ...headers, "content-length": length } : headers,
-        });
+    if (record.email.stored) {
+      // The database copy of a stored message is text, so not the exact
+      // bytes: the stored object or nothing.
+      if (!isObjectStorageConfigured()) {
+        return Response.json(
+          { error: "unavailable", message: "Stored messages cannot be read on this server." },
+          { status: 503 }
+        );
       }
+      const object = await getObject(`m/${record.id}/raw.eml`);
+      if (!object?.body) {
+        return Response.json(
+          { error: "not_kept", message: "The stored message is no longer available." },
+          { status: 404 }
+        );
+      }
+      const length = object.headers.get("content-length");
+      return new Response(object.body, {
+        headers: length ? { ...headers, "content-length": length } : headers,
+      });
     }
 
     if (record.email.truncated.raw) {

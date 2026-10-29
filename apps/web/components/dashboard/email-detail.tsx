@@ -1019,7 +1019,13 @@ export function EmailDetail({
           <button
             key={entry.id}
             type="button"
-            onClick={() => setTab(entry.id)}
+            onClick={() => {
+              // A failed load of the stored message is tried again.
+              if (entry.id === "raw" && storedRawHere && "error" in storedRawHere) {
+                setStoredRaw(null);
+              }
+              setTab(entry.id);
+            }}
             className={cn(
               "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
               activeTab === entry.id

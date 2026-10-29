@@ -151,6 +151,25 @@ impl Config {
     }
 }
 
+/// The storage endpoint must be a full URL with a host, and HTTPS unless it
+/// is on this machine (a local S3-compatible service in development): email
+/// and signed requests never cross a network in the clear.
+fn check_object_storage_endpoint(endpoint: &str) -> Result<(), &'static str> {
+    let url = url::Url::parse(endpoint).map_err(|_| "must be a full URL")?;
+    let loopback = match url.host() {
+        Some(url::Host::Domain(name)) => name.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => return Err("must name a host"),
+    };
+    match url.scheme() {
+        "https" => Ok(()),
+        "http" if loopback => Ok(()),
+        "http" => Err("must use https:// unless it is on this machine"),
+        _ => Err("must start with http:// or https://"),
+    }
+}
+
 /// OBJECT_STORAGE_ENDPOINT, _BUCKET, _ACCESS_KEY_ID and _SECRET_ACCESS_KEY
 /// together (OBJECT_STORAGE_REGION defaults to us-east-1, which most
 /// S3-compatible services accept). Setting some but not all is a mistake
@@ -169,8 +188,8 @@ fn object_store_from_env() -> Option<crate::object_store::ObjectStoreConfig> {
     match (endpoint, bucket, access_key_id, secret_access_key) {
         (None, None, None, None) => None,
         (Some(endpoint), Some(bucket), Some(access_key_id), Some(secret_access_key)) => {
-            if !(endpoint.starts_with("https://") || endpoint.starts_with("http://")) {
-                panic!("OBJECT_STORAGE_ENDPOINT must start with http:// or https://");
+            if let Err(problem) = check_object_storage_endpoint(&endpoint) {
+                panic!("OBJECT_STORAGE_ENDPOINT {problem}");
             }
             Some(crate::object_store::ObjectStoreConfig {
                 endpoint: endpoint.trim_end_matches('/').to_string(),
@@ -221,7 +240,20 @@ fn parse_mail_domains(raw: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_mail_domains;
+    use super::{check_object_storage_endpoint, parse_mail_domains};
+
+    #[test]
+    fn object_storage_endpoint_is_a_full_url_and_https_off_this_machine() {
+        assert!(check_object_storage_endpoint("https://fsn1.your-objectstorage.com").is_ok());
+        assert!(check_object_storage_endpoint("http://127.0.0.1:8333").is_ok());
+        assert!(check_object_storage_endpoint("http://localhost:9000").is_ok());
+        assert!(check_object_storage_endpoint("http://[::1]:9000").is_ok());
+        assert!(check_object_storage_endpoint("http://storage.example.com").is_err());
+        assert!(check_object_storage_endpoint("http://10.0.0.5:9000").is_err());
+        assert!(check_object_storage_endpoint("https://").is_err());
+        assert!(check_object_storage_endpoint("storage.example.com").is_err());
+        assert!(check_object_storage_endpoint("ftp://storage.example.com").is_err());
+    }
 
     #[test]
     fn mail_domains_are_normalised() {

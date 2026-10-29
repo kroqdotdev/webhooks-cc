@@ -607,13 +607,14 @@ async fn capture_for_slug(
     .await;
     drop(permit);
 
-    // Anything but a new capture leaves the objects unreferenced: a refusal,
-    // a duplicate (the earlier copy has its own), an error the sender will
-    // retry. Deleting them is best effort; the bucket's lifecycle rule
-    // removes whatever this misses.
-    let captured_here = matches!(&result, Ok(value)
-        if value.get("status").and_then(Value::as_str) == Some("ok"));
-    if !captured_here {
+    // An answer other than a new capture leaves the objects unreferenced: a
+    // refusal, or a duplicate (the earlier copy has its own). An error is
+    // ambiguous, since the row may have committed before the connection
+    // failed, so its objects stay; the bucket's lifecycle rule removes them
+    // if nothing refers to them. Deleting is best effort either way.
+    let unreferenced = matches!(&result, Ok(value)
+        if value.get("status").and_then(Value::as_str) != Some("ok"));
+    if unreferenced {
         discard_objects(state, input.prepared, stored_objects.as_ref()).await;
     }
 

@@ -28,6 +28,15 @@ export function objectStorageConfig(): ObjectStorageConfig | null {
   const bucket = env.OBJECT_STORAGE_BUCKET;
   const accessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID;
   const secretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY;
+  const set = [endpoint, bucket, accessKeyId, secretAccessKey].filter(Boolean).length;
+  if (set === 0) return null;
+  if (set < 4) {
+    // Half configured is a mistake worth stopping for, as in the receiver:
+    // stored messages would read as missing and nothing would be deleted.
+    throw new Error(
+      "set all of OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_BUCKET, OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY, or none"
+    );
+  }
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
   return {
     endpoint: endpoint.replace(/\/+$/, ""),
@@ -177,9 +186,13 @@ export async function listKeys(prefix: string, max = 1000): Promise<string[]> {
     if (!response.ok) {
       throw new ObjectStorageError(`object storage answered ${response.status}`, response.status);
     }
-    for (const match of xml.matchAll(/<Key>([^<]*)<\/Key>/g)) keys.push(xmlUnescape(match[1]));
-    const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
-    const next = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(xml);
+    // Element names may carry a namespace prefix (<s3:Key>).
+    for (const match of xml.matchAll(/<(?:[\w-]+:)?Key>([^<]*)<\/(?:[\w-]+:)?Key>/g)) {
+      keys.push(xmlUnescape(match[1]));
+    }
+    const truncated = /<(?:[\w-]+:)?IsTruncated>true<\/(?:[\w-]+:)?IsTruncated>/.test(xml);
+    const next =
+      /<(?:[\w-]+:)?NextContinuationToken>([^<]*)<\/(?:[\w-]+:)?NextContinuationToken>/.exec(xml);
     token = truncated && next ? xmlUnescape(next[1]) : null;
   } while (token && keys.length < max);
   return keys;

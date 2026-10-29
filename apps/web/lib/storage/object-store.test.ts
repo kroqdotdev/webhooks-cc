@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/env", () => ({
-  serverEnv: () => ({
-    OBJECT_STORAGE_ENDPOINT: "https://storage.example.com/",
-    OBJECT_STORAGE_REGION: "eu-central",
-    OBJECT_STORAGE_BUCKET: "mail",
-    OBJECT_STORAGE_ACCESS_KEY_ID: "AKIDEXAMPLE",
-    OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
-  }),
+const env = vi.hoisted((): Record<string, string | undefined> => ({
+  OBJECT_STORAGE_ENDPOINT: "https://storage.example.com/",
+  OBJECT_STORAGE_REGION: "eu-central",
+  OBJECT_STORAGE_BUCKET: "mail",
+  OBJECT_STORAGE_ACCESS_KEY_ID: "AKIDEXAMPLE",
+  OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
 }));
+vi.mock("@/lib/env", () => ({ serverEnv: () => env }));
 
 const { contentDisposition, deletePrefix, deleteKeys, listKeys, objectStorageConfig, presignGet } =
   await import("./object-store");
@@ -22,6 +21,16 @@ describe("object storage", () => {
       region: "eu-central",
       bucket: "mail",
     });
+  });
+
+  it("refuses half a configuration rather than reading it as none", () => {
+    const bucket = env.OBJECT_STORAGE_BUCKET;
+    env.OBJECT_STORAGE_BUCKET = undefined;
+    try {
+      expect(() => objectStorageConfig()).toThrow(/set all of OBJECT_STORAGE_ENDPOINT/);
+    } finally {
+      env.OBJECT_STORAGE_BUCKET = bucket;
+    }
   });
 
   it("presigns path-style GET links with a capped lifetime and a download name", async () => {
@@ -59,6 +68,20 @@ describe("object storage", () => {
     );
     expect(await listKeys("m/x/")).toEqual(["m/x/raw.eml", "m/x/a/0"]);
     expect(seen[1]).toContain("continuation-token=t%261");
+  });
+
+  it("lists keys whose elements carry a namespace prefix", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            `<s3:ListBucketResult xmlns:s3="http://s3.amazonaws.com/doc/2006-03-01/"><s3:Contents><s3:Key>m/x/raw.eml</s3:Key></s3:Contents><s3:IsTruncated>false</s3:IsTruncated></s3:ListBucketResult>`,
+            { status: 200 }
+          )
+      )
+    );
+    expect(await listKeys("m/x/")).toEqual(["m/x/raw.eml"]);
   });
 
   it("deletes with a Content-MD5 and fails on per-key errors", async () => {
