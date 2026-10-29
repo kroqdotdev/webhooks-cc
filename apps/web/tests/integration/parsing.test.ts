@@ -427,16 +427,6 @@ describe.skipIf(!ready)("layouts and the parse step", () => {
 });
 
 describe.skipIf(!ready)("parse jobs", () => {
-  async function requestIdOf(slug: string, subject: string): Promise<string> {
-    const { data } = await admin
-      .from("requests")
-      .select("id, endpoints!inner(slug)")
-      .eq("endpoints.slug", slug)
-      .eq("email->>subject", subject)
-      .single();
-    return (data as { id: string }).id;
-  }
-
   async function job(requestId: string) {
     const { data } = await admin
       .from("request_parses")
