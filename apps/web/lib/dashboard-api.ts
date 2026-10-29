@@ -444,6 +444,8 @@ export interface DashboardDestination {
   hasSecret: boolean;
   /** Whether a Mailgun signing key is saved (never the key). */
   hasMailgunSigningKey?: boolean;
+  /** Whether a file drop's password, private key or secret key is saved (never the secret). */
+  hasDropSecret?: boolean;
   http: boolean;
   email: boolean;
   format: DestinationFormatSetting;
@@ -460,8 +462,8 @@ export interface DashboardDestination {
   delaySeconds: number;
   /** How an email's stored attachments travel. */
   attachments?: "links" | "inline" | "none";
-  /** Settings of a Google Sheets destination. */
-  config?: SheetsDestinationConfig | null;
+  /** Settings of a Google Sheets destination, or a file drop. */
+  config?: SheetsDestinationConfig | FileDropDestinationConfig | null;
   role: "forward" | "notify" | null;
   createdAt: number;
   updatedAt: number;
@@ -478,6 +480,7 @@ export type DestinationInput = Partial<
     | "id"
     | "hasSecret"
     | "hasMailgunSigningKey"
+    | "hasDropSecret"
     | "headers"
     | "role"
     | "createdAt"
@@ -488,6 +491,8 @@ export type DestinationInput = Partial<
   headers?: { name: string; value: string | null }[];
   /** For format "mailgun": a new key to sign with, or null to remove it. */
   mailgunSigningKey?: string | null;
+  /** For format "file_drop": the password, private key or S3 secret key (write only). */
+  dropSecret?: { password?: string; privateKey?: string; secretAccessKey?: string } | null;
 };
 
 export async function fetchDestinations(
@@ -505,7 +510,8 @@ export async function fetchDestinations(
 export async function createDestination(
   accessToken: string,
   slug: string,
-  input: DestinationInput & { url: string }
+  /** A file drop has no URL: its address comes from its config. */
+  input: DestinationInput & { url?: string }
 ): Promise<DashboardDestination> {
   const response = await fetch(
     `${endpointPath(slug)}/destinations`,
@@ -1098,6 +1104,45 @@ export async function replayRequest(accessToken: string, requestId: string): Pro
     withAuthHeaders(accessToken, { method: "POST" })
   );
   return (await readJson<{ queued: boolean }>(response)).queued;
+}
+
+/** A file drop's settings (lib/drops/config.ts); its secret is never here. */
+export interface FileDropDestinationConfig {
+  protocol: "sftp" | "ftp" | "ftps" | "s3";
+  host?: string | null;
+  port?: number | null;
+  username?: string | null;
+  folder: string;
+  hostKey?: string | null;
+  tlsFingerprint?: string | null;
+  endpoint?: string | null;
+  region?: string | null;
+  bucket?: string | null;
+  accessKeyId?: string | null;
+  file: "csv" | "json" | "xml";
+  rows: "email" | "line_items";
+  columns: { header: string; value: string }[];
+  prefix: string;
+  batch: boolean;
+}
+
+/** Connects to a saved file drop and writes its test file. */
+export async function testFileDrop(
+  accessToken: string,
+  slug: string,
+  id: string
+): Promise<{ ok: boolean; error?: string; file?: string; hostKey?: string | null }> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/${encodeURIComponent(id)}/test`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+  );
+  return readJson<{ ok: boolean; error?: string; file?: string; hostKey?: string | null }>(
+    response
+  );
 }
 
 export interface SheetsDestinationConfig {

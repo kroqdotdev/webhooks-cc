@@ -1,4 +1,5 @@
 import type net from "node:net";
+import { randomBytes } from "node:crypto";
 import tls from "node:tls";
 import { CONNECT_TIMEOUT_MS, DropError, openDropSocket } from "./connect";
 import { secureSocket } from "./tls";
@@ -238,7 +239,8 @@ export class FtpSession {
 
   /** Stores a file under a temporary name, then renames it into place. */
   async put(name: string, data: Buffer): Promise<void> {
-    const partial = `${name}.part`;
+    // Unique, so two uploads of the same name at once cannot take each other's.
+    const partial = `${name}.${randomBytes(4).toString("hex")}.part`;
     const raw = await this.dataConnection();
     let socket: net.Socket | tls.TLSSocket = raw;
     try {
