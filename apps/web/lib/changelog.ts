@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.51.0";
+export const APP_VERSION = "0.52.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,17 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.52.0",
+    date: "2026-10-29",
+    title: "mailhooks.cc and Ready-made Layouts",
+    track: "web",
+    items: [
+      "mailhooks.cc is webhooks.cc with the mail first: the same account, endpoints and plans, a dashboard that opens on emails and leads with each endpoint's address",
+      "Ready-made layouts for 13 kinds of email, from Shopify and WooCommerce orders to Booking.com reservations, Stripe receipts and CSV reports: Use this layout adds one to an endpoint",
+      "Each site keeps its own sign-in; email links, checkouts and invites return to the site they were started on, and quota and alert emails link to the site you signed in on last",
+    ],
+  },
   {
     version: "0.51.0",
     date: "2026-10-29",
