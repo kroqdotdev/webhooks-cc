@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { SiteProvider } from "@/components/providers/site-provider";
 import { createPageMetadata } from "@/lib/seo";
+import { currentSite } from "@/lib/site-server";
 
 export const metadata: Metadata = createPageMetadata({
   title: "Sign In",
@@ -9,6 +11,6 @@ export const metadata: Metadata = createPageMetadata({
   noIndex: true,
 });
 
-export default function LoginLayout({ children }: { children: React.ReactNode }) {
-  return children;
+export default async function LoginLayout({ children }: { children: React.ReactNode }) {
+  return <SiteProvider site={await currentSite()}>{children}</SiteProvider>;
 }
