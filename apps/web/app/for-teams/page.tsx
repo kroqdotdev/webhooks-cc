@@ -59,7 +59,7 @@ const USE_CASES = [
 
 const CHECKLIST = [
   "Shared endpoints visible to team members only, after sign-in",
-  "31-day retention for every team-billed request, on any personal plan",
+  "31-day retention for every team-billed request, on any personal plan (90 with Team Business)",
   "Live updates in the dashboard and over SSE for every member",
   "Replay any captured request to any URL",
   "Search across path, body and headers",
@@ -68,6 +68,7 @@ const CHECKLIST = [
   "CLI, TypeScript SDK and MCP server see shared endpoints like your own",
   "Owner-only delete, sharing, invites and billing",
   "Pooled quota: 100,000 requests per seat per 30 days",
+  "Team Business add-on: +150,000 requests, 2,000 parsed attachment pages a month, 50 layouts per endpoint",
 ];
 
 const PERMISSIONS: readonly (readonly [string, boolean, boolean])[] = [
@@ -99,7 +100,7 @@ const TEAM_PRICING = [
 const STEPS = [
   {
     name: "Create a team",
-    text: "Open Teams from the avatar menu and pick a name. Any account can create one, Free or Pro; you become the owner.",
+    text: "Open Teams from the avatar menu and pick a name. Any account can create one, whatever its personal plan; you become the owner.",
   },
   {
     name: "Choose seats and subscribe",
@@ -124,17 +125,17 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How much does webhooks.cc cost for a team?",
     answer:
-      "$12 per seat per month, billed per team on a 30-day period. Each seat is one member, the owner included, and adds 100,000 requests per 30 days to a pool the whole team shares. A team of 5 pays $60 a month for 500,000 requests.",
+      "$12 per seat per month, billed per team on a 30-day period. Each seat is one member, the owner included, and adds 100,000 requests per 30 days to a pool the whole team shares. A team of 5 pays $60 a month for 500,000 requests. The optional Team Business add-on, $49 a month, adds 150,000 requests, 2,000 parsed attachment pages a month and 90-day retention.",
   },
   {
     question: "Do team members need a paid plan?",
     answer:
-      "No. Members can be on the Free plan. Requests on endpoints shared with an active team draw from the team's pool and keep 31-day retention, whatever plan the endpoint owner is on.",
+      "No. Members can be on the Free plan. Requests on endpoints shared with an active team draw from the team's pool and keep 31-day retention (90 days with Team Business), whatever plan the endpoint owner is on.",
   },
   {
     question: "Which webhook testing tools support longer retention and access control for teams?",
     answer:
-      "On webhooks.cc, team-billed requests are kept for 31 days and shared endpoints can only be read by signed-in team members. Guest URLs on any tool, webhooks.cc's included, are readable by anyone who knows the address, so a team should capture on shared account endpoints instead.",
+      "On webhooks.cc, team-billed requests are kept for 31 days, or 90 with the Team Business add-on, and shared endpoints can only be read by signed-in team members. Guest URLs on any tool, webhooks.cc's included, are readable by anyone who knows the address, so a team should capture on shared account endpoints instead.",
   },
   {
     question: "What happens when the team's quota runs out?",
@@ -277,7 +278,7 @@ export default function ForTeamsPage() {
             Billed per team, not per account, on a 30-day period that starts when the team
             subscribes. Prices include VAT where it applies.
           </p>
-          <div className="grid sm:grid-cols-3 gap-4 mb-8">
+          <div className="grid sm:grid-cols-3 gap-4 mb-6">
             {PRICE_EXAMPLES.map((example) => (
               <div key={example.seats} className="ui-card ui-card-static text-center">
                 <p className="text-sm text-muted-foreground mb-1">{example.seats} seats</p>
@@ -288,6 +289,19 @@ export default function ForTeamsPage() {
               </div>
             ))}
           </div>
+          <p className="text-muted-foreground mb-8">
+            Need more? The Team Business add-on is $49 a month on the team&apos;s subscription
+            (monthly only): 150,000 more requests in the pool, 2,000 pooled parsed attachment pages
+            a month with page blocks and page overage, up to 50 layouts per endpoint on shared
+            endpoints, and 90-day retention for team-billed requests. Members&apos; personal
+            endpoints follow their own plan.{" "}
+            <Link
+              href="/docs/plans-limits#teams-and-shared-endpoints"
+              className="text-primary font-bold hover:underline"
+            >
+              Plans and limits
+            </Link>
+          </p>
           <h3 className="text-lg font-bold mb-3">Team plans compared</h3>
           <div className="ui-card ui-card-static overflow-x-auto">
             <table className="w-full text-sm">
