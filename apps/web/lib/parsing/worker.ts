@@ -6,11 +6,7 @@ import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import { planEntitlements, teamEntitlements } from "@/lib/entitlements";
 import { reportError } from "@/lib/observability";
 import { attachmentKey } from "@/lib/storage/attachments";
-import {
-  getObjectBytes,
-  isObjectStorageConfigured,
-  putObject,
-} from "@/lib/storage/object-store";
+import { getObjectBytes, isObjectStorageConfigured, putObject } from "@/lib/storage/object-store";
 import {
   chooseLayout,
   layoutFieldValues,
@@ -51,13 +47,16 @@ function parsedKey(requestId: string, index: number): string {
   return `m/${requestId}/p/${index}.json`;
 }
 
-interface Account {
+export interface Account {
   userId: string | null;
   teamId: string | null;
   layoutsCap: number;
 }
 
-async function accountOf(requestId: string, endpointUserId: string | null): Promise<Account> {
+export async function accountOf(
+  requestId: string,
+  endpointUserId: string | null
+): Promise<Account> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("requests")
@@ -85,7 +84,12 @@ async function accountOf(requestId: string, endpointUserId: string | null): Prom
 }
 
 /** The summary of a parse that goes in the result (and the email JSON). */
-function summary(index: number, filename: string | null, output: ParserOutput, pages: number): ParsedAttachment {
+function summary(
+  index: number,
+  filename: string | null,
+  output: ParserOutput,
+  pages: number
+): ParsedAttachment {
   return {
     index,
     filename,
@@ -107,11 +111,19 @@ function summary(index: number, filename: string | null, output: ParserOutput, p
   };
 }
 
-/** Parses (or reuses the stored parse of) the email's attachments. */
+/**
+ * Parses (or reuses the stored parse of) the email's attachments. A preview
+ * (`mayCharge: false`) only reads stored parses: it never runs the parser or
+ * uses pages.
+ */
 async function parseAttachments(
   request: RequestRecord,
-  account: Account
-): Promise<{ results: { parsed: ParsedAttachment; output: ParserOutput | null }[]; pages: number }> {
+  account: Account,
+  mayCharge = true
+): Promise<{
+  results: { parsed: ParsedAttachment; output: ParserOutput | null }[];
+  pages: number;
+}> {
   const email = request.email!;
   const results: { parsed: ParsedAttachment; output: ParserOutput | null }[] = [];
   let pages = 0;
@@ -134,6 +146,10 @@ async function parseAttachments(
     if (stored) {
       const output = JSON.parse(stored.toString("utf8")) as ParserOutput;
       results.push({ parsed: summary(index, attachment.filename, output, 0), output });
+      continue;
+    }
+    if (!mayCharge) {
+      results.push({ parsed: { ...base, error: "not_parsed" }, output: null });
       continue;
     }
     const { data: available, error } = await admin.rpc("parsed_pages_available", {
@@ -178,18 +194,28 @@ export async function parseEmail(
   request: RequestRecord,
   layouts: Layout[],
   emailFields: Json,
-  account: Account
+  account: Account,
+  mayCharge = true
 ): Promise<{ result: ParsedEmail; pages: number }> {
   const fieldValues = emailFieldValues(request, storedEmailFields(emailFields), { cache: false });
   const layout = chooseLayout(layouts, account.layoutsCap, request, fieldValues);
   if (!layout) {
     return {
-      result: { status: "no_layout", layout: null, fields: {}, lineItems: [], attachments: [], pages: 0 },
+      result: {
+        status: "no_layout",
+        layout: null,
+        fields: {},
+        lineItems: [],
+        attachments: [],
+        pages: 0,
+      },
       pages: 0,
     };
   }
   const wantsFiles = layout.parseAttachments === true || layout.lineItems?.from === "attachment";
-  const files = wantsFiles ? await parseAttachments(request, account) : { results: [], pages: 0 };
+  const files = wantsFiles
+    ? await parseAttachments(request, account, mayCharge)
+    : { results: [], pages: 0 };
   const spec = layout.lineItems ?? null;
   const lineItems = !spec
     ? []
@@ -230,7 +256,11 @@ async function complete(
 }
 
 /** Parses one leased job and completes it. */
-export async function parseJob(job: { request_id: string; endpoint_id: string; attempts: number }): Promise<void> {
+export async function parseJob(job: {
+  request_id: string;
+  endpoint_id: string;
+  attempts: number;
+}): Promise<void> {
   const admin = createAdminClient();
   try {
     const [request] = await getRequestsByIds([job.request_id]);

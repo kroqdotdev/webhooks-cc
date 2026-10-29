@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/email/mailer";
 import { reportError } from "@/lib/observability";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AlertEventRow } from "@/lib/supabase/alerts";
+import { NO_LAYOUT, PARSE_FAILED } from "./state";
 import { byteaToBuffer } from "@/lib/supabase/destinations";
 import { customChatPayload, isDiscordUrl, isSlackUrl } from "@/lib/forwarding/chat";
 import { sendOptions } from "@/lib/forwarding/config";
@@ -43,25 +44,37 @@ export function describeAlert(
   const details = (event.details ?? {}) as Record<string, unknown>;
   const resolved = event.resolved_at !== null;
   if (event.kind === "fields") {
-    const missing = Array.isArray(details.missing) ? (details.missing as string[]) : [];
+    const all = Array.isArray(details.missing) ? (details.missing as string[]) : [];
+    const noLayout = all.includes(NO_LAYOUT);
+    const failed = all.includes(PARSE_FAILED);
+    const missing = all.filter((name) => name !== NO_LAYOUT && name !== PARSE_FAILED);
     const what = missing.length > 0 ? missing.join(", ") : "a required field";
-    return resolved
-      ? {
-          summary: `${endpointLabel}: email fields match again`,
-          lines: ["The latest email had every required field."],
-        }
-      : {
-          summary: `${endpointLabel}: ${what} stopped matching`,
-          lines: [
-            typeof details.streak === "number" && details.streak > 0
-              ? `${plural(details.streak, "email", "emails")} in a row missed ${what}.`
-              : `Recent emails missed ${what}.`,
-            ...(typeof details.missedPercent === "number"
-              ? [`${details.missedPercent}% of the last 20 emails missed a field.`]
-              : []),
-            "The sender may have changed its layout. Fix the pattern, then replay the emails that missed.",
-          ],
-        };
+    const streak = typeof details.streak === "number" && details.streak > 0 ? details.streak : 0;
+    if (resolved) {
+      return {
+        summary: `${endpointLabel}: email fields match again`,
+        lines: ["The latest email had every required field."],
+      };
+    }
+    const [summary, missed] = noLayout
+      ? [`${endpointLabel}: no layout matched`, "matched no layout"]
+      : failed
+        ? [`${endpointLabel}: emails could not be parsed`, "could not be parsed"]
+        : [`${endpointLabel}: ${what} stopped matching`, `missed ${what}`];
+    return {
+      summary,
+      lines: [
+        streak > 0
+          ? `${plural(streak, "email", "emails")} in a row ${missed}.`
+          : `Recent emails ${missed}.`,
+        ...(typeof details.missedPercent === "number"
+          ? [`${details.missedPercent}% of the last 20 emails missed a field.`]
+          : []),
+        noLayout
+          ? "The sender may have changed its emails. Fix a layout's match conditions, then replay the emails that missed."
+          : "The sender may have changed its layout. Fix the pattern, then replay the emails that missed.",
+      ],
+    };
   }
   if (event.kind === "silence") {
     const hours = typeof details.hours === "number" ? details.hours : null;

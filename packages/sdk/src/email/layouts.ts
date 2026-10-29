@@ -80,7 +80,11 @@ export interface ParsedAttachment {
   text?: string | null;
   /** Stopped at the per-file page cap. */
   truncated?: boolean;
-  /** Why it was not parsed or failed: "limit" (no pages left), "type", "too_large", "malformed", "encrypted", "zip_bomb", "empty". */
+  /**
+   * Why it was not parsed or failed: "limit" (no pages left), "not_kept"
+   * (the email's attachments were not stored), "not_parsed" (a preview, which
+   * never parses), "too_large", "malformed", "encrypted", "zip_bomb", "empty".
+   */
   error?: string | null;
 }
 

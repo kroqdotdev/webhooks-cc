@@ -36,11 +36,46 @@ export async function requestIdsInRange(endpointId: string, range: ReplayRange):
   return ((data ?? []) as { id: string }[]).map((row) => row.id);
 }
 
-/** Queues each request again; answers how many got at least one delivery. */
+/**
+ * Queues each request again; answers how many got at least one delivery (or,
+ * for an email on an endpoint with layouts, a new parse, whose deliveries
+ * follow as redeliveries). A re-parse reuses each attachment's stored parse,
+ * so it uses no pages twice.
+ */
 export async function replayRequests(endpointId: string, requestIds: string[]): Promise<number> {
+  const ids = requestIds.slice(0, MAX_REPLAY);
+  if (ids.length === 0) return 0;
+  const admin = createAdminClient();
+  const { data: endpoint, error } = await admin
+    .from("endpoints")
+    .select("layouts")
+    .eq("id", endpointId)
+    .maybeSingle<{ layouts: unknown }>();
+  if (error) throw error;
+  const parses = Array.isArray(endpoint?.layouts) && endpoint.layouts.length > 0;
+  const emails = new Set<string>();
+  if (parses) {
+    const { data, error: kindError } = await admin
+      .from("requests")
+      .select("id")
+      .eq("endpoint_id", endpointId)
+      .eq("kind", "email")
+      .in("id", ids);
+    if (kindError) throw kindError;
+    for (const row of (data ?? []) as { id: string }[]) emails.add(row.id);
+  }
   let queued = 0;
-  for (const requestId of requestIds.slice(0, MAX_REPLAY)) {
-    if (await queueRedelivery(requestId, endpointId)) queued++;
+  for (const requestId of ids) {
+    if (emails.has(requestId)) {
+      const { data, error: redoError } = await admin.rpc("redo_request_parse", {
+        p_request_id: requestId,
+        p_deliver: true,
+      });
+      if (redoError) throw redoError;
+      if (data) queued++;
+    } else if (await queueRedelivery(requestId, endpointId)) {
+      queued++;
+    }
   }
   return queued;
 }

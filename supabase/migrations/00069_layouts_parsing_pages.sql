@@ -37,6 +37,27 @@ alter table public.endpoints
          and jsonb_array_length(layouts) <= 50
          and pg_column_size(layouts) <= 524288) not valid;
 
+-- Layouts an endpoint may use: its billing account's entitlement (the first
+-- active team it is shared with, as retention_cap(), else its owner's plan).
+-- Layouts past it are kept but not used.
+create or replace function public.layouts_cap(e public.endpoints)
+returns integer
+language sql
+stable
+security definer set search_path = ''
+as $$
+  select coalesce(
+    (select (public.account_entitlements(null, t.id)).layouts_per_endpoint
+       from public.team_endpoints te
+       join public.teams t on t.id = te.team_id
+      where te.endpoint_id = e.id
+        and t.subscription_status is not null
+      order by te.shared_at asc
+      limit 1),
+    (public.account_entitlements(e.user_id, null)).layouts_per_endpoint
+  )
+$$;
+
 -- 1b. Alerts read when mail last arrived from the endpoint row, so they work
 -- for endpoints that delete their requests right after delivery; and the
 -- field check keeps the ids it has seen, so an email stored late (an MX
@@ -68,6 +89,9 @@ create table if not exists public.request_parses (
   -- Queue the deliveries when the parse completes (false for a parse redone
   -- in the dashboard without sending).
   deliver      boolean not null default true,
+  -- Redone by a replay: its deliveries are redeliveries (no delay, no
+  -- throttle), not a capture's.
+  redelivery   boolean not null default false,
   created_at   timestamptz not null default now(),
   finished_at  timestamptz
 );
@@ -344,7 +368,7 @@ begin
          finished_at = now()
    where request_id = p_request_id
      and status = 'pending'
-  returning endpoint_id, deliver into v_job;
+  returning endpoint_id, deliver, redelivery into v_job;
   if not found then
     return null;
   end if;
@@ -359,15 +383,17 @@ begin
        and d.email
      order by d.position, d.created_at
   loop
-    perform public.queue_destination_delivery(p_request_id, v_job.endpoint_id, v_destination.id, 'email');
+    perform public.queue_destination_delivery(
+      p_request_id, v_job.endpoint_id, v_destination.id, 'email', 1000, not v_job.redelivery
+    );
     v_count := v_count + 1;
   end loop;
   return v_count;
 end;
 $$;
 
--- Runs an email's layouts again (after they changed): back to pending, with
--- the deliveries queued again when p_deliver. Pages already parsed are not
+-- Runs an email's layouts again (after they changed, or for a replay): back
+-- to pending, with the deliveries queued again as redeliveries when p_deliver. Pages already parsed are not
 -- charged twice; the worker reuses the stored parse of each attachment.
 create or replace function public.redo_request_parse(p_request_id uuid, p_deliver boolean)
 returns boolean
@@ -383,11 +409,12 @@ begin
   if not found then
     return false;
   end if;
-  insert into public.request_parses (request_id, endpoint_id, deliver)
-  values (p_request_id, v_endpoint, p_deliver)
+  insert into public.request_parses (request_id, endpoint_id, deliver, redelivery)
+  values (p_request_id, v_endpoint, p_deliver, true)
   on conflict (request_id) do update
      set status = 'pending',
          deliver = excluded.deliver,
+         redelivery = true,
          attempts = 0,
          locked_until = null,
          error = null,
@@ -830,6 +857,7 @@ end;
 $$;
 
 -- 7. Grants: service role only.
+revoke all on function public.layouts_cap(public.endpoints) from public, anon, authenticated;
 revoke all on function public.page_window_start(timestamptz, timestamptz, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.parsed_pages_balance(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.parsed_pages_available(uuid, uuid) from public, anon, authenticated;
@@ -840,6 +868,7 @@ revoke all on function public.redo_request_parse(uuid, boolean) from public, ano
 revoke all on function public.cleanup_delivered_requests(integer) from public, anon, authenticated;
 revoke all on function public.claim_alert_notices(integer) from public, anon, authenticated;
 
+grant execute on function public.layouts_cap(public.endpoints) to service_role;
 grant execute on function public.page_window_start(timestamptz, timestamptz, text, timestamptz) to service_role;
 grant execute on function public.parsed_pages_balance(uuid, uuid) to service_role;
 grant execute on function public.parsed_pages_available(uuid, uuid) to service_role;
