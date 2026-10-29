@@ -75,7 +75,9 @@ export async function generateMagicLinkTokenHash(email: string): Promise<string>
 export async function signInTestUser(
   page: Page,
   testUser: TestUser,
-  targetPath = "/account"
+  targetPath = "/account",
+  /** Another site's origin (mailhooks.cc's); sessions are per host. Default: baseURL. */
+  origin?: string
 ): Promise<void> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!;
@@ -93,7 +95,7 @@ export async function signInTestUser(
 
   const session = data.session!;
   // Navigate to any page to establish the correct origin
-  await page.goto("/login");
+  await page.goto(origin ? `${origin}/login` : "/login");
   await page.waitForLoadState("domcontentloaded");
 
   // Set Supabase auth cookies that @supabase/ssr expects.
@@ -118,7 +120,7 @@ export async function signInTestUser(
     {
       name: `${cookieBase}.0`,
       value: `base64-${Buffer.from(sessionPayload).toString("base64")}`,
-      domain: "localhost",
+      domain: new URL(page.url()).hostname,
       path: "/",
       httpOnly: false,
       secure: false,
@@ -127,6 +129,6 @@ export async function signInTestUser(
   ]);
 
   // Navigate to target — the middleware will read the session from cookies
-  await page.goto(targetPath);
+  await page.goto(origin ? `${origin}${targetPath}` : targetPath);
   await page.waitForLoadState("networkidle");
 }

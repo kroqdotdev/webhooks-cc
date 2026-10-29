@@ -15,7 +15,10 @@ export function mailhooksMetadata({
   description,
   path,
   keywords,
+  absoluteTitle = false,
 }: {
+  /** The page title is the whole title (the home page, which no template reaches). */
+  absoluteTitle?: boolean;
   title: string;
   description: string;
   path: string;
@@ -23,7 +26,7 @@ export function mailhooksMetadata({
 }): Metadata {
   const url = mailhooksUrl(path);
   return {
-    title,
+    title: absoluteTitle ? { absolute: title } : title,
     description,
     alternates: { canonical: url },
     openGraph: {
