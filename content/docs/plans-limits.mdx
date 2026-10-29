@@ -3,7 +3,7 @@ title: "Plans & Limits"
 description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free, pro, and teams plans side by side with exact numbers, billing periods, and upgrade paths."
 section: getting-started
 order: 4
-lastUpdated: 2026-10-27
+lastUpdated: 2026-10-29
 schema: faq
 keywords:
   [
@@ -85,12 +85,14 @@ Monthly blocks and overage need the plan: if Pro or the team's subscription is c
 
 ## Data retention
 
-Captured requests are cleaned up automatically based on your plan:
+Captured requests, with any stored email and attachments, are deleted automatically, within the hour after they pass your plan's retention:
 
-- **Free** — requests older than 7 days are deleted daily at 01:30 UTC
-- **Pro** — requests older than 31 days are deleted daily at 01:00 UTC
-- **Team-billed** — requests captured on an endpoint shared with an active team are kept for 31 days, even when the endpoint owner is on Free
-- **Ephemeral** — requests are deleted when the endpoint expires (12 hours after creation)
+- **Free**: 7 days
+- **Pro**: 31 days
+- **Team-billed**: requests captured on an endpoint shared with an active team are kept for 31 days, even when the endpoint owner is on Free
+- **Ephemeral**: requests are deleted when the endpoint expires (12 hours after creation)
+
+Any endpoint can keep requests for fewer days than the plan, or delete each request once every destination has its copy ("deliver, then delete"); see [Retention](/docs/endpoints#retention). After a plan ends, its retention is kept for 7 more days before the shorter one applies.
 
 Deleted requests cannot be recovered. Export important requests as JSON or CSV from the dashboard before they expire.
 
