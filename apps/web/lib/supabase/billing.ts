@@ -477,7 +477,9 @@ async function applyPlanSubscription(
         (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
   const firstMonthEnd = currentPeriodStart !== null ? addMonthUtc(currentPeriodStart) : null;
   const period = annual
-    ? newYear && currentPeriodStart
+    ? // A renewal applied after the monthly cron already moved the period on
+      // (more than a month late) keeps the newer period.
+      newYear && currentPeriodStart && !isStalePeriod
       ? { period_start: currentPeriodStart, period_end: firstMonthEnd }
       : {}
     : {

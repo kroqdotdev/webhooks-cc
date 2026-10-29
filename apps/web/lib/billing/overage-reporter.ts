@@ -154,14 +154,18 @@ export function startOverageReporter(): void {
     if (running) return;
     running = true;
     try {
+      // Each resource on its own: a failed claim for requests must not hold
+      // page overage back until it succeeds.
       for (const resource of resources) {
-        const { sent, failed } = await reportOverage(resource);
-        if (sent || failed) {
-          console.info(`[overage] ${resource} reported=${sent} failed=${failed}`);
+        try {
+          const { sent, failed } = await reportOverage(resource);
+          if (sent || failed) {
+            console.info(`[overage] ${resource} reported=${sent} failed=${failed}`);
+          }
+        } catch (error) {
+          reportError("[overage] report poll failed", error, { resource });
         }
       }
-    } catch (error) {
-      reportError("[overage] report poll failed", error);
     } finally {
       running = false;
     }

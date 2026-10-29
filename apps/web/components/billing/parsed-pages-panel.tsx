@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Notice, Panel, PanelRow } from "@/components/settings/panel";
 import { longDate } from "@/components/settings/format";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,9 @@ export function ParsedPagesPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [monthly, setMonthly] = useState<string | null>(null);
+  // The server's count fills the field until the person edits it, so a read
+  // made before Polar's webhook landed never sticks at 0.
+  const monthlyEdited = useRef(false);
   const [oneTime, setOneTime] = useState("1");
   const [overageMax, setOverageMax] = useState(
     String(DEFAULT_PAGE_OVERAGE_MAX_PAGES / BLOCK_PAGES)
@@ -57,9 +60,9 @@ export function ParsedPagesPanel({
     try {
       const next = await fetchCapacity(accessToken, teamId, "pages");
       setState(next);
-      setMonthly((current) =>
-        current === null ? String(next.blocks?.pendingUnits ?? next.blocks?.units ?? 0) : current
-      );
+      if (!monthlyEdited.current) {
+        setMonthly(String(next.blocks?.pendingUnits ?? next.blocks?.units ?? 0));
+      }
       if (next.overage.maxRequests > 0) {
         setOverageMax(String(Math.round(next.overage.maxRequests / BLOCK_PAGES)));
       }
@@ -99,6 +102,9 @@ export function ParsedPagesPanel({
         return;
       }
       setState(result.state);
+      // Saved: the server's count is the field's again.
+      monthlyEdited.current = false;
+      setMonthly(String(result.state.blocks?.pendingUnits ?? result.state.blocks?.units ?? 0));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The change was not made");
     } finally {
@@ -192,7 +198,10 @@ export function ParsedPagesPanel({
                 min={0}
                 max={MAX_PAGE_BLOCKS}
                 value={monthly ?? ""}
-                onChange={(e) => setMonthly(e.target.value)}
+                onChange={(e) => {
+                  monthlyEdited.current = true;
+                  setMonthly(e.target.value);
+                }}
                 className="ui-input w-24 text-sm py-1.5!"
               />
               <span className="text-sm text-muted-foreground">

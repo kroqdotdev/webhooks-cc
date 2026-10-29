@@ -32,6 +32,7 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 });
 
 import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
+import { DELETE as keepPlanRoute } from "@/app/api/billing/change-plan/route";
 import {
   changeMonthlyBlocks,
   getCapacityState,
@@ -60,6 +61,7 @@ beforeAll(() => {
     POLAR_PRO_PRODUCT_ID: "prod_pro_test",
     POLAR_BUSINESS_PRODUCT_ID: "prod_business_test",
     POLAR_BUSINESS_ANNUAL_PRODUCT_ID: "prod_business_year_test",
+    POLAR_TEAM_BUSINESS_PRODUCT_ID: "prod_team_business_test",
   })) {
     saved[key] = process.env[key];
     process.env[key] = value;
@@ -188,6 +190,76 @@ describe("the Business plan webhook", () => {
     row = await user(userId);
     expect(Date.parse(row.period_start as string)).toBe(nextStart.getTime());
     expect(row.requests_used).toBe(0);
+  });
+
+  it("keeps the quota period the reset job moved on when a renewal arrives a month late", async () => {
+    const userId = await createUser();
+    const start = new Date(Date.now() - 1000);
+    const yearEnd = new Date(start.getTime() + 365 * DAY);
+    const subscription = {
+      id: `sub_late_${ts}`,
+      customer_id: `cus_late_${ts}`,
+      customer: { metadata: { userId } },
+      product_id: "prod_business_year_test",
+      status: "active",
+      current_period_start: start.toISOString(),
+      current_period_end: yearEnd.toISOString(),
+      cancel_at_period_end: false,
+    };
+    await deliver("subscription.created", subscription);
+    // The year turned and the reset job already moved the quota period into
+    // the new year's second month before Polar's renewal was applied.
+    const movedStart = new Date(yearEnd);
+    movedStart.setUTCMonth(movedStart.getUTCMonth() + 1);
+    const movedEnd = new Date(movedStart);
+    movedEnd.setUTCMonth(movedEnd.getUTCMonth() + 1);
+    await admin
+      .from("users")
+      .update({ period_start: movedStart.toISOString(), period_end: movedEnd.toISOString() })
+      .eq("id", userId);
+    await deliver("subscription.updated", {
+      ...subscription,
+      current_period_start: yearEnd.toISOString(),
+      current_period_end: new Date(yearEnd.getTime() + 365 * DAY).toISOString(),
+    });
+    const row = await user(userId);
+    expect(Date.parse(row.period_start as string)).toBe(movedStart.getTime());
+    expect(Date.parse(row.period_end as string)).toBe(movedEnd.getTime());
+  });
+
+  it("keeps the plan through the route: Polar's pending update is cleared", async () => {
+    const userId = await createUser({
+      plan: "business",
+      subscription_status: "active",
+      polar_subscription_id: `sub_keep_${ts}`,
+      pending_plan: "pro",
+      pending_interval: "month",
+    });
+    const update = vi.fn().mockResolvedValue({});
+    polarMocks.createPolarClient.mockReturnValueOnce({
+      subscriptions: { update, get: vi.fn(), revoke: vi.fn() },
+    });
+    const { data: created } = await admin.auth.admin.getUserById(userId);
+    const client = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data: session, error } = await client.auth.signInWithPassword({
+      email: created.user!.email!,
+      password: "TestPassword123!",
+    });
+    if (error) throw error;
+    const response = await keepPlanRoute(
+      new Request("https://webhooks.cc/api/billing/change-plan", {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${session.session!.access_token}` },
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(update).toHaveBeenCalledWith(`sub_keep_${ts}`, { pending_update: null });
+    expect(await user(userId)).toMatchObject({ pending_plan: null, pending_interval: null });
   });
 
   it("moves Pro to Business mid-period pro rata, and gives the full allowance when the period moves on", async () => {
@@ -446,6 +518,44 @@ describe("page add-ons when Business is about to end", () => {
       .update({ pending_plan: "business", pending_interval: "year" })
       .eq("id", userId);
     expect((await getCapacityState(account, "pages")).planEnding).toBe(false);
+  });
+
+  it("ends a team's page add-ons when Team Business is revoked", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({
+        name: `biz-revoke-${ts}`,
+        created_by: owner,
+        seats: 1,
+        subscription_status: "active",
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+    await applyAddon(account, "team_business", `sub_tb_rev_${ts}`, "active");
+    await applyAddon(account, "page_blocks", `sub_tpb_rev_${ts}`, "active", 1);
+
+    await deliver("subscription.revoked", {
+      id: `sub_tb_rev_${ts}`,
+      customer_id: `cus_tb_rev_${ts}`,
+      customer: { metadata: { teamId: team.id } },
+      product_id: "prod_team_business_test",
+      status: "canceled",
+      cancel_at_period_end: false,
+    });
+    const { data: rows } = await admin
+      .from("capacity_subscriptions")
+      .select("kind, status, units")
+      .eq("team_id", team.id)
+      .order("kind");
+    // Both ended: the page blocks do not renew without Team Business.
+    expect(rows).toEqual([
+      { kind: "page_blocks", status: null, units: 0 },
+      { kind: "team_business", status: null, units: 0 },
+    ]);
   });
 
   it("sets a team's page add-ons to end with Team Business", async () => {

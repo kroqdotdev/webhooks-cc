@@ -380,7 +380,7 @@ const preview = await client.buildRequest("https://example.com/webhook", { ... }
 
 ```typescript
 const usage = await client.usage();
-// Returns: { used, limit, remaining, plan: "free"|"pro", periodEnd }
+// Returns: { used, limit, remaining, plan: "free"|"pro"|"business", periodEnd }
 ```
 
 ### Matchers

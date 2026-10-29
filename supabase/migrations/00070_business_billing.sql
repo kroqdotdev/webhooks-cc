@@ -44,7 +44,8 @@ alter table public.users
   add constraint users_pending_plan_check
   check (
     (pending_plan is null and pending_interval is null)
-    or (pending_plan in ('pro', 'business') and pending_interval in ('month', 'year'))
+    or (pending_plan is not null and pending_interval is not null
+        and pending_plan in ('pro', 'business') and pending_interval in ('month', 'year'))
   ) not valid;
 alter table public.users validate constraint users_pending_plan_check;
 
