@@ -374,6 +374,60 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
         working-directory: apps/mx-rs
 
+  # The integration tests run the built binary, so they also check that the
+  # seccomp filter and the rlimits hold on the runner.
+  test-parser:
+    name: Test Rust Attachment Parser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/parser-rs/target
+          key: ${{ runner.os }}-cargo-parser-${{ hashFiles('apps/parser-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-parser-
+
+      - name: Run tests
+        run: cargo test --locked
+        working-directory: apps/parser-rs
+
+  lint-parser:
+    name: Lint Rust Attachment Parser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/parser-rs/target
+          key: ${{ runner.os }}-cargo-parser-${{ hashFiles('apps/parser-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-parser-
+
+      - name: Check formatting
+        run: cargo fmt --check
+        working-directory: apps/parser-rs
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: apps/parser-rs
+
   lint-cli:
     name: Lint Rust CLI
     runs-on: ubuntu-latest
