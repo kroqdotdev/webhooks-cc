@@ -268,6 +268,7 @@ describe.skipIf(!ready)("layouts and the parse step", () => {
       { sku: "S-1", qty: "1" },
       { sku: "S-2", qty: "2" },
     ]);
+    expect(result.lineItemColumns).toEqual(["sku", "qty"]);
     expect(result.attachments[0]).toMatchObject({ index: 0, format: "csv", pages: 1 });
     expect(result.pages).toBe(1);
     expect(await pagesUsed(userId)).toBe(1);
@@ -318,6 +319,7 @@ describe.skipIf(!ready)("layouts and the parse step", () => {
       { sku: "A-1", qty: "2" },
       { sku: "B-22", qty: "10" },
     ]);
+    expect(result.lineItemColumns).toEqual(["sku", "qty"]);
     expect(result.pages).toBe(0);
   });
 

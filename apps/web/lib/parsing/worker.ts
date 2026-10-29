@@ -206,6 +206,7 @@ export async function parseEmail(
         layout: null,
         fields: {},
         lineItems: [],
+        lineItemColumns: [],
         attachments: [],
         pages: 0,
       },
@@ -218,7 +219,7 @@ export async function parseEmail(
     : { results: [], pages: 0 };
   const spec = layout.lineItems ?? null;
   const lineItems = !spec
-    ? []
+    ? { rows: [], columns: [] }
     : spec.from === "attachment"
       ? lineItemsFromSheets(
           spec,
@@ -230,7 +231,8 @@ export async function parseEmail(
       status: "matched",
       layout: { id: layout.id, name: layout.name },
       fields: layoutFieldValues(request, layout),
-      lineItems,
+      lineItems: lineItems.rows,
+      lineItemColumns: lineItems.columns,
       attachments: files.results.map((item) => item.parsed),
       pages: files.pages,
     },

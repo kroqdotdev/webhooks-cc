@@ -13,6 +13,7 @@ import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/da
 
 export type SettingsSection =
   | "receiving"
+  | "layouts"
   | "retention"
   | "alerts"
   | "responses"

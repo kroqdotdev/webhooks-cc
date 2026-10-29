@@ -71,6 +71,10 @@ export interface DashboardEndpoint {
   retentionCapDays?: number;
   /** Requests are deleted once every delivery is settled. */
   deleteAfterDelivery?: boolean;
+  /** How the endpoint reads its emails; the first that matches applies (owner only to change). */
+  layouts?: Layout[];
+  /** Layouts the plan uses; later ones are kept but not used. */
+  layoutsCap?: number;
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
@@ -666,6 +670,34 @@ export async function previewEmailFields(
     })
   );
   return readJson<EmailFieldsPreview>(response);
+}
+
+export interface LayoutsPreview {
+  problems: string[];
+  layoutsCap: number;
+  request: { id: string; subject: string | null; receivedAt: number } | null;
+  parsed: ParsedEmail | null;
+}
+
+/** What layouts (the saved ones when left out) find in an email; no pages are used. */
+export async function previewLayouts(
+  accessToken: string,
+  slug: string,
+  layouts?: Layout[],
+  requestId?: string
+): Promise<LayoutsPreview> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}/layouts/preview`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(layouts ? { layouts } : {}),
+        ...(requestId ? { requestId } : {}),
+      }),
+    })
+  );
+  return readJson<LayoutsPreview>(response);
 }
 
 /** An email's named field values (null when the endpoint has none), found by the server with RE2. */
