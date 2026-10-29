@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
+import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
-import { UpgradeButton } from "@/components/billing/upgrade-button";
+import { PlanChooser } from "@/components/billing/plan-chooser";
+import { planName } from "@/lib/billing-api";
 import {
   Notice,
   Panel,
@@ -50,11 +52,12 @@ function ResetCountdown({ periodEnd }: { periodEnd: string }) {
 function UpgradeSuccessNotice() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [show, setShow] = useState(false);
+  const [show, setShow] = useState<"pro" | "business" | null>(null);
 
   useEffect(() => {
-    if (searchParams.get("upgraded") === "true") {
-      setShow(true);
+    const upgraded = searchParams.get("upgraded");
+    if (upgraded === "true" || upgraded === "pro" || upgraded === "business") {
+      setShow(upgraded === "business" ? "business" : "pro");
       trackUpgradeCompleted();
       router.replace("/account/plan", { scroll: false });
     }
@@ -65,47 +68,60 @@ function UpgradeSuccessNotice() {
   return (
     <Notice
       tone="success"
-      title="Welcome to Pro"
+      title={`Welcome to ${planName(show)}`}
       action={
-        <Button variant="ghost" size="sm" onClick={() => setShow(false)}>
+        <Button variant="ghost" size="sm" onClick={() => setShow(null)}>
           Dismiss
         </Button>
       }
     >
-      Your subscription is active: 100,000 requests every 30 days, kept for 31 days.
+      {show === "business"
+        ? "Your subscription is active: 250,000 requests and 2,000 parsed pages a month, kept for 90 days, and up to 50 layouts per endpoint."
+        : "Your subscription is active: 100,000 requests every 30 days, kept for 31 days."}
     </Notice>
   );
 }
 
-const PLAN_ROWS: { label: string; free: string; pro: string }[] = [
-  { label: "Requests", free: "50 a day", pro: "100,000 per 30 days" },
-  { label: "Requests kept for", free: "7 days", pro: "31 days" },
-  { label: "Price", free: "Free", pro: "$8 a month" },
+type PlanKey = "free" | "pro" | "business";
+
+const PLAN_ROWS: { label: string; free: string; pro: string; business: string }[] = [
+  { label: "Requests", free: "50 a day", pro: "100,000 per 30 days", business: "250,000 a month" },
+  { label: "Requests kept for", free: "7 days", pro: "31 days", business: "90 days" },
+  {
+    label: "Parsed attachment pages",
+    free: "20 a month",
+    pro: "100 a month",
+    business: "2,000 a month, then blocks or overage",
+  },
+  { label: "Layouts per endpoint", free: "2", pro: "2", business: "Up to 50" },
+  {
+    label: "Price",
+    free: "Free",
+    pro: "$8 a month",
+    business: "$29 a month, or $290 a year",
+  },
 ];
 
-function PlanTable({ current }: { current: "free" | "pro" }) {
-  const column = (plan: "free" | "pro") =>
+function PlanTable({ current }: { current: PlanKey }) {
+  const column = (plan: PlanKey) =>
     cn("px-4 py-3 text-left", current === plan && "bg-muted/60 font-medium");
+  const plans: PlanKey[] = ["free", "pro", "business"];
   return (
     <table className="w-full text-sm">
-      <caption className="sr-only">Free and Pro plans compared</caption>
+      <caption className="sr-only">Free, Pro and Business plans compared</caption>
       <thead>
         <tr className="border-b-strong border-line">
           <th scope="col" className="px-5 py-3 text-left font-medium text-muted-foreground">
             <span className="sr-only">Feature</span>
           </th>
-          <th scope="col" className={column("free")}>
-            Free
-            {current === "free" && (
-              <span className="font-normal text-muted-foreground"> (your plan)</span>
-            )}
-          </th>
-          <th scope="col" className={column("pro")}>
-            Pro
-            {current === "pro" && (
-              <span className="font-normal text-muted-foreground"> (your plan)</span>
-            )}
-          </th>
+          {plans.map((plan) => (
+            <th key={plan} scope="col" className={column(plan)}>
+              {planName(plan)}
+              {current === plan && (
+                <span className="font-normal text-muted-foreground"> (your plan)</span>
+              )}
+            </th>
+          ))}
         </tr>
       </thead>
       <tbody>
@@ -114,8 +130,11 @@ function PlanTable({ current }: { current: "free" | "pro" }) {
             <th scope="row" className="px-5 py-3 text-left font-normal text-muted-foreground">
               {row.label}
             </th>
-            <td className={column("free")}>{row.free}</td>
-            <td className={column("pro")}>{row.pro}</td>
+            {plans.map((plan) => (
+              <td key={plan} className={column(plan)}>
+                {row[plan]}
+              </td>
+            ))}
           </tr>
         ))}
       </tbody>
@@ -155,6 +174,10 @@ export default function PlanPage() {
   const emails = freePeriodExpired ? 0 : Math.min(periodEmails ?? 0, used);
   const allowance = profile.request_limit + profile.block_requests;
   const activeTeams = teams.filter((team) => !team.suspended);
+  const currentPlan: PlanKey =
+    profile.plan === "business" ? "business" : profile.plan === "pro" ? "pro" : "free";
+  // An annual plan's quota renews monthly; its payment comes with the year.
+  const billingEnd = profile.billing_period_end ?? profile.period_end;
 
   const caption = profile.period_end ? (
     isFree ? (
@@ -213,34 +236,44 @@ export default function PlanPage() {
           title="Your plan"
           flush
           footer={
-            isFree ? (
-              <UpgradeButton accessToken={accessToken} />
-            ) : (
-              <>
-                <ManageSubscriptionDialog
-                  accessToken={accessToken}
-                  profile={profile}
-                  onUpdated={refresh}
-                />
-                {profile.period_end && !profile.cancel_at_period_end && (
-                  <p className="text-sm text-muted-foreground">
-                    Next payment on {longDate(profile.period_end)}
-                  </p>
-                )}
-              </>
-            )
+            <div className="w-full space-y-3">
+              <PlanChooser accessToken={accessToken} profile={profile} onChanged={refresh} />
+              {!isFree && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <ManageSubscriptionDialog
+                    accessToken={accessToken}
+                    profile={profile}
+                    onUpdated={refresh}
+                  />
+                  {billingEnd && !profile.cancel_at_period_end && (
+                    <p className="text-sm text-muted-foreground">
+                      Next payment on {longDate(billingEnd)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           }
         >
-          {!isFree && profile.cancel_at_period_end && profile.period_end && (
+          {!isFree && profile.cancel_at_period_end && billingEnd && (
             <div className="px-5 pt-4">
-              <Notice tone="warning" title={`Pro ends on ${longDate(profile.period_end)}`}>
+              <Notice
+                tone="warning"
+                title={`${planName(profile.plan)} ends on ${longDate(billingEnd)}`}
+              >
                 After that your account moves to the free plan. Keep your subscription from Manage
                 subscription.
               </Notice>
             </div>
           )}
-          <PlanTable current={isFree ? "free" : "pro"} />
+          <PlanTable current={currentPlan} />
         </Panel>
+
+        <ParsedPagesPanel
+          accessToken={accessToken}
+          canManage
+          reloadKey={[profile.plan, profile.subscription_status, profile.period_end].join(":")}
+        />
 
         {activeTeams.length > 0 && (
           <Panel

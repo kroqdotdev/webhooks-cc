@@ -29,6 +29,8 @@ export interface Team {
   requestLimit: number;
   /** Requests monthly blocks add to requestLimit this period (migration 00065). */
   blockRequests: number;
+  /** Team Business is on: Business features for shared endpoints, a larger pool (migration 00070). */
+  business: boolean;
   /** End of the current billing period in millis; null when unsubscribed. */
   periodEnd: number | null;
   cancelAtPeriodEnd: boolean;

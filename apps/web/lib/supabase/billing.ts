@@ -40,6 +40,7 @@ type BillingUser = Pick<
   | "polar_subscription_id"
   | "cancel_at_period_end"
   | "billing_interval"
+  | "pending_plan"
 >;
 
 interface BillingPeriodResetRow {
@@ -53,7 +54,7 @@ export async function getBillingUser(userId: string): Promise<BillingUser> {
   const { data, error } = await admin
     .from("users")
     .select(
-      "id, email, name, plan, polar_customer_id, polar_subscription_id, cancel_at_period_end, billing_interval"
+      "id, email, name, plan, polar_customer_id, polar_subscription_id, cancel_at_period_end, billing_interval, pending_plan"
     )
     .eq("id", userId)
     .maybeSingle<BillingUser>();
@@ -216,11 +217,13 @@ export async function createCheckoutForUser(
 const PLAN_RANK: Record<string, number> = { free: 0, pro: 1, business: 2 };
 
 /**
- * Moves a paying account to another plan or interval. Going up (Pro to
- * Business, monthly to annual) restarts the billing period now: Polar
- * credits the unused time and charges the new price at once, so the new
- * allowance is paid for in full ("reset"). Going down waits for the
- * renewal ("next_period"), and the page add-ons that only Business allows
+ * Moves a paying account to another plan or interval. A monthly plan going
+ * up a tier (Pro to Business) changes now: Polar charges the difference for
+ * the rest of the period ("invoice"), and the webhook grants the new plan's
+ * extra requests and pages in the same proportion, so a charge for part of
+ * a period never buys a whole period's capacity. Everything else (another
+ * interval, a lower tier) waits for the renewal ("next_period", shown as
+ * pending_plan until then), and the page add-ons that only Business allows
  * are set to end with the period.
  */
 export async function changePlanForUser(
@@ -246,19 +249,41 @@ export async function changePlanForUser(
   if (plan === user.plan && interval === currentInterval) {
     throw new BillingActionError("unchanged", "That is your plan already");
   }
-  const up =
-    PLAN_RANK[plan] > PLAN_RANK[user.plan] ||
-    (plan === user.plan && interval === "year" && currentInterval === "month");
+  const now =
+    PLAN_RANK[plan] > PLAN_RANK[user.plan] && interval === "month" && currentInterval === "month";
 
   await createPolarClient().subscriptions.update(user.polar_subscription_id, {
     product_id: productId,
-    proration_behavior: up ? "reset" : "next_period",
+    proration_behavior: now ? "invoice" : "next_period",
   });
-  if (!up && plan !== "business") {
-    const { endPageAddonsWithPeriod } = await import("./capacity-billing");
-    await endPageAddonsWithPeriod({ kind: "user", userId });
+  if (!now) {
+    // The webhook records it too; this shows it before that arrives.
+    await updateUserById(user.id, { pending_plan: plan, pending_interval: interval });
+    if (plan !== "business") {
+      const { endPageAddonsWithPeriod } = await import("./capacity-billing");
+      await endPageAddonsWithPeriod({ kind: "user", userId });
+    }
   }
-  return { applied: up ? "now" : "renewal" };
+  return { applied: now ? "now" : "renewal" };
+}
+
+/**
+ * Drops a plan change waiting for the renewal, so the plan renews as it
+ * is. Page add-ons a move away from Business set to end stay set to end;
+ * the account turns them back on itself.
+ */
+export async function keepCurrentPlanForUser(userId: string): Promise<void> {
+  const user = await getBillingUser(userId);
+  if (!user.polar_subscription_id || user.plan === "free") {
+    throw new BillingActionError("no_subscription", "Choose a plan first");
+  }
+  if (!user.pending_plan) {
+    throw new BillingActionError("unchanged", "No plan change is waiting");
+  }
+  await createPolarClient().subscriptions.update(user.polar_subscription_id, {
+    pending_update: null,
+  });
+  await updateUserById(user.id, { pending_plan: null, pending_interval: null });
 }
 
 export async function cancelSubscriptionForUser(userId: string): Promise<void> {
@@ -292,6 +317,14 @@ export async function resubscribeForUser(userId: string): Promise<void> {
   });
 }
 
+/** The share of the period [start, end) still to come at `now`, 0 to 1. */
+export function remainingShare(start: string, end: string, now: number): number {
+  const from = Date.parse(start);
+  const to = Date.parse(end);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return 0;
+  return Math.min(1, Math.max(0, (to - now) / (to - from)));
+}
+
 export async function applyPolarWebhookEvent(eventType: string, payload: unknown): Promise<void> {
   const data = asRecord(payload);
   if (!data) {
@@ -319,15 +352,18 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       const { data: stored, error: storedError } = await admin
         .from("users")
         .select(
-          "polar_subscription_id, subscription_status, period_start, billing_interval, billing_period_end"
+          "polar_subscription_id, subscription_status, plan, period_start, period_end, billing_interval, billing_period_end, prorated_window"
         )
         .eq("id", userId)
         .maybeSingle<{
           polar_subscription_id: string | null;
           subscription_status: "active" | "canceled" | "past_due" | null;
+          plan: string;
           period_start: string | null;
+          period_end: string | null;
           billing_interval: "month" | "year" | null;
           billing_period_end: string | null;
+          prorated_window: string | null;
         }>();
 
       if (storedError) throw storedError;
@@ -402,6 +438,45 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
           };
       const resetsUsage = annual ? newYear : isNewSubscription || isRenewal;
 
+      // The allowance. A tier up within the period (changePlanForUser's
+      // "invoice" change) adds the new plan's extra requests and pages in
+      // proportion to what is left of the period, as Polar charged; the
+      // window's own requests come back when the period moves on (trigger
+      // users_end_plan_proration). Later events in the same window keep it.
+      const entitlement = planEntitlements(sold.plan);
+      const sameWindow = !resetsUsage && !isStalePeriod;
+      let allowance: Database["public"]["Tables"]["users"]["Update"] = {
+        request_limit: entitlement.requestLimit,
+        prorated_pages: null,
+        prorated_window: null,
+      };
+      if (
+        sameWindow &&
+        (PLAN_RANK[sold.plan] ?? 0) > (PLAN_RANK[stored.plan] ?? 0) &&
+        stored.plan !== "free" &&
+        stored.period_start &&
+        stored.period_end
+      ) {
+        const before = planEntitlements(stored.plan);
+        const left = remainingShare(stored.period_start, stored.period_end, Date.now());
+        allowance = {
+          request_limit:
+            before.requestLimit +
+            Math.round((entitlement.requestLimit - before.requestLimit) * left),
+          prorated_pages:
+            before.parsedPages + Math.round((entitlement.parsedPages - before.parsedPages) * left),
+          prorated_window: stored.period_start,
+        };
+      } else if (
+        sameWindow &&
+        sold.plan === stored.plan &&
+        stored.prorated_window !== null &&
+        stored.prorated_window === stored.period_start
+      ) {
+        allowance = {};
+      }
+      const pending = planForProduct(asNonEmptyString(asRecord(data.pending_update)?.product_id));
+
       const patch: Database["public"]["Tables"]["users"]["Update"] = {
         polar_customer_id: customerId ?? undefined,
         polar_subscription_id: subscriptionId ?? undefined,
@@ -410,7 +485,9 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         subscription_status:
           normalizeStoredSubscriptionStatus(data.status) ?? stored.subscription_status ?? "active",
         plan: sold.plan,
-        request_limit: planEntitlements(sold.plan).requestLimit,
+        ...allowance,
+        pending_plan: pending?.plan ?? null,
+        pending_interval: pending?.interval ?? null,
         billing_interval: sold.interval,
         billing_period_end: isStalePeriod && !annual ? undefined : currentPeriodEnd,
         ...period,
@@ -488,6 +565,10 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         period_end: null,
         billing_interval: null,
         billing_period_end: null,
+        prorated_pages: null,
+        prorated_window: null,
+        pending_plan: null,
+        pending_interval: null,
         polar_subscription_id: null,
         // Recurring blocks and overage need the plan; one-time blocks stay.
         block_requests: 0,

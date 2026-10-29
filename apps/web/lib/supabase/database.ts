@@ -637,6 +637,10 @@ export interface Database {
           overage_report_lease: string | null;
           billing_interval: "month" | "year" | null;
           billing_period_end: string | null;
+          prorated_pages: number | null;
+          prorated_window: string | null;
+          pending_plan: string | null;
+          pending_interval: string | null;
           retention_floor_days: number | null;
           retention_floor_until: string | null;
           pages_used: number;
@@ -683,6 +687,10 @@ export interface Database {
           overage_report_lease?: string | null;
           billing_interval?: "month" | "year" | null;
           billing_period_end?: string | null;
+          prorated_pages?: number | null;
+          prorated_window?: string | null;
+          pending_plan?: string | null;
+          pending_interval?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -729,6 +737,10 @@ export interface Database {
           overage_report_lease?: string | null;
           billing_interval?: "month" | "year" | null;
           billing_period_end?: string | null;
+          prorated_pages?: number | null;
+          prorated_window?: string | null;
+          pending_plan?: string | null;
+          pending_interval?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
