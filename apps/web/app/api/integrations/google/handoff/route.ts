@@ -24,13 +24,12 @@ export function GET(request: Request) {
     back.searchParams.set("google", "expired");
     location = back.toString();
   }
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location,
-      "set-cookie": clearHandoffCookie(secure),
-      "cache-control": "no-store",
-      "referrer-policy": "no-referrer",
-    },
+  // The cookie stays for the finish; a refused handoff ends the flow.
+  const headers = new Headers({
+    location,
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
   });
+  if (!ok) headers.append("set-cookie", clearHandoffCookie(secure));
+  return new Response(null, { status: 303, headers });
 }
