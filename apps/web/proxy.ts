@@ -116,11 +116,13 @@ export async function proxy(request: NextRequest) {
   }
 
   // --- Site ---
+  // Temporary redirects (307) while the paths mailhooks.cc serves may still
+  // change: a permanent one would stay cached in browsers.
   // The header is ours to set, like the markdown marker below.
   request.headers.delete(SITE_HEADER);
   const site = siteForHost(request.headers.get("host") ?? request.nextUrl.host);
   if (site === "mailhooks" && !servedOnMailhooks(pathname)) {
-    return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 308);
+    return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 307);
   }
   if (site === "webhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
     const mail = mailhooksOrigin();
@@ -130,7 +132,7 @@ export async function proxy(request: NextRequest) {
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
     }
-    return NextResponse.redirect(`${mail}${pathname.slice("/mailhooks".length) || "/"}`, 308);
+    return NextResponse.redirect(`${mail}${pathname.slice("/mailhooks".length) || "/"}`, 307);
   }
   request.headers.set(SITE_HEADER, site);
 

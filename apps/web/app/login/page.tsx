@@ -8,6 +8,7 @@ import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import { EmailPasswordForm } from "@/components/auth/email-password-form";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
+import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { describeLoginError } from "@/lib/auth-errors";
 
 export default function LoginPage() {
@@ -38,10 +39,8 @@ function LoginContent() {
   }, []);
 
   const rawRedirect = searchParams.get("redirect");
-  const redirectTo =
-    rawRedirect && rawRedirect.startsWith("/") && !rawRedirect.startsWith("//")
-      ? rawRedirect
-      : "/dashboard";
+  // A path on this site only (lib/auth-redirect.ts).
+  const redirectTo = sanitizeNextPath(rawRedirect);
   // Set by /auth/callback (OAuth errors) and /auth/confirm (bad email links).
   const urlError = describeLoginError(searchParams.get("error"));
 

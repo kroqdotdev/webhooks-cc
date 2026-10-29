@@ -1,4 +1,6 @@
 import { auditUserAction } from "@/lib/audit";
+import { SITE_HEADER, parseSite } from "@/lib/site";
+import { rememberHomeSite } from "@/lib/supabase/home-site";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
@@ -20,6 +22,13 @@ import { reportError } from "@/lib/observability";
 export async function GET(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
+
+  // The dashboard loads this on every visit: a browser session records the
+  // site it is on, so later emails link there (password sign-ins never pass
+  // through a route of ours). API keys leave it alone.
+  if (!auth.keyId) {
+    void rememberHomeSite(auth.userId, parseSite(request.headers.get(SITE_HEADER)));
+  }
 
   try {
     // Only endpoints shared WITH the caller are gated (they are the paid

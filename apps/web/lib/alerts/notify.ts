@@ -116,14 +116,18 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     .maybeSingle<{ slug: string; name: string | null; user_id: string | null }>();
   if (error) throw error;
   if (!endpoint) return null;
-  const [{ data: owner }, { data: settings }, { data: destinations }] = await Promise.all([
+  const [
+    { data: owner, error: ownerError },
+    { data: settings, error: settingsError },
+    { data: destinations, error: destinationsError },
+  ] = await Promise.all([
     endpoint.user_id
       ? admin
           .from("users")
           .select("email, home_site")
           .eq("id", endpoint.user_id)
           .maybeSingle<{ email: string; home_site: string }>()
-      : Promise.resolve({ data: null }),
+      : Promise.resolve({ data: null, error: null }),
     admin
       .from("endpoint_alerts")
       .select("notify_email, notify_destination_ids")
@@ -131,6 +135,10 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
       .maybeSingle<{ notify_email: boolean; notify_destination_ids: string[] }>(),
     admin.from("endpoint_destinations").select("id, name, url").eq("endpoint_id", endpointId),
   ]);
+  // A failed read must not look like "no owner" or "notify no one".
+  if (ownerError) throw ownerError;
+  if (settingsError) throw settingsError;
+  if (destinationsError) throw destinationsError;
   const names = new Map<string, string>();
   for (const row of (destinations ?? []) as { id: string; name: string | null; url: string }[]) {
     let label = row.name;

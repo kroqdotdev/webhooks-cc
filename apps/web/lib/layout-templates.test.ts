@@ -9,7 +9,11 @@ import {
   lineItemsFromText,
 } from "./parsing/layouts";
 
-function sampleRequest(template: LayoutTemplate): RequestRecord {
+/**
+ * The sample as the receiver stores it: mail's text part keeps its CRLF line
+ * endings, so every layout must read that as well as LF.
+ */
+function sampleRequest(template: LayoutTemplate, lineEnding = "\n"): RequestRecord {
   const { sample } = template;
   return {
     id: "r1",
@@ -24,8 +28,8 @@ function sampleRequest(template: LayoutTemplate): RequestRecord {
     kind: "email",
     email: {
       subject: sample.subject,
-      text: sample.text,
-      html: null,
+      text: sample.text.replace(/\n/g, lineEnding),
+      html: sample.html ?? null,
       from: [sample.from],
       to: [{ name: null, address: "acme@mailhooks.cc" }],
       cc: [],
@@ -61,40 +65,42 @@ describe("layout templates", () => {
     expect(layoutsProblems(LAYOUT_TEMPLATES.map((template) => template.layout))).toEqual([]);
   });
 
-  it.each(LAYOUT_TEMPLATES.map((template) => [template.id, template] as const))(
-    "%s reads its sample as its page shows",
-    (_id, template) => {
-      const request = sampleRequest(template);
-      expect(chooseLayout([template.layout], 50, request)?.id).toBe(template.id);
-      expect(layoutFieldValues(request, template.layout)).toEqual(template.result.fields);
+  it.each(
+    LAYOUT_TEMPLATES.flatMap((template) => [
+      [template.id, "LF", template] as const,
+      [template.id, "CRLF", template] as const,
+    ])
+  )("%s reads its sample (%s line endings) as its page shows", (_id, ending, template) => {
+    const request = sampleRequest(template, ending === "CRLF" ? "\r\n" : "\n");
+    expect(chooseLayout([template.layout], 50, request)?.id).toBe(template.id);
+    expect(layoutFieldValues(request, template.layout)).toEqual(template.result.fields);
 
-      const spec = template.layout.lineItems;
-      if (!spec) {
-        expect(template.result.lineItems).toEqual([]);
-      } else if (spec.from === "attachment") {
-        // The parser is a separate binary: the sheet it would give stands in.
-        const rows = [
-          ["SKU", "Product", "Qty", "Revenue"],
-          ["LS-01", "Linen shirt", "4", "156.00"],
-          ["CT-02", "Canvas tote", "2", "48.00"],
-        ];
-        const parsed = lineItemsFromSheets(spec, [
-          {
-            parsed: {
-              index: 0,
-              filename: template.sample.attachment ?? "",
-              format: "csv",
-              pages: 1,
-            },
-            sheets: [{ name: null, rows, rowCount: rows.length, truncated: false }],
+    const spec = template.layout.lineItems;
+    if (!spec) {
+      expect(template.result.lineItems).toEqual([]);
+    } else if (spec.from === "attachment") {
+      // The parser is a separate binary: the sheet it would give stands in.
+      const rows = [
+        ["SKU", "Product", "Qty", "Revenue"],
+        ["LS-01", "Linen shirt", "4", "156.00"],
+        ["CT-02", "Canvas tote", "2", "48.00"],
+      ];
+      const parsed = lineItemsFromSheets(spec, [
+        {
+          parsed: {
+            index: 0,
+            filename: template.sample.attachment ?? "",
+            format: "csv",
+            pages: 1,
           },
-        ]);
-        expect(parsed.rows).toEqual(template.result.lineItems);
-      } else {
-        expect(lineItemsFromText(request, spec).rows).toEqual(template.result.lineItems);
-      }
+          sheets: [{ name: null, rows, rowCount: rows.length, truncated: false }],
+        },
+      ]);
+      expect(parsed.rows).toEqual(template.result.lineItems);
+    } else {
+      expect(lineItemsFromText(request, spec).rows).toEqual(template.result.lineItems);
     }
-  );
+  });
 
   it("do not match each other's samples", () => {
     for (const template of LAYOUT_TEMPLATES) {

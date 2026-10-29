@@ -91,6 +91,8 @@ export interface OAuthState {
    * one person cannot link the Google account of another who opens it.
    */
   browser: string;
+  /** The site the flow started on (lib/site.ts), where it returns to. */
+  site?: "webhooks" | "mailhooks";
 }
 
 /** The cookie that ties a callback to the browser that started it. */
@@ -131,6 +133,66 @@ export function openState(sealed: string, now = Date.now()): OAuthState | null {
   }
 }
 
+/**
+ * Starting on mailhooks.cc: Google returns to webhooks.cc's callback (the
+ * one redirect URI registered), which reads the nonce cookie of its own
+ * host. So the browser first visits a webhooks.cc link that sets the cookie
+ * there and goes on to Google: the link carries the consent URL and the
+ * nonce, sealed (under a key of its own, so it never passes for a state)
+ * and good for two minutes.
+ */
+const TICKET_LIFETIME_MS = 2 * 60 * 1000;
+
+function ticketKey(): Buffer {
+  const raw = process.env.SIGNING_SECRET_KEY;
+  if (!raw) throw new GoogleError("SIGNING_SECRET_KEY is not configured");
+  return createHash("sha256")
+    .update(Buffer.from(raw, "base64"))
+    .update("google oauth begin ticket")
+    .digest();
+}
+
+export function sealBeginTicket(url: string, browserNonce: string, now = Date.now()): string {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", ticketKey(), nonce);
+  const body = Buffer.concat([
+    cipher.update(JSON.stringify({ url, browserNonce, expires: now + TICKET_LIFETIME_MS }), "utf8"),
+    cipher.final(),
+  ]);
+  return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString("base64url");
+}
+
+export function openBeginTicket(
+  sealed: string,
+  now = Date.now()
+): { url: string; browserNonce: string } | null {
+  try {
+    const bytes = Buffer.from(sealed, "base64url");
+    if (bytes.length < 29) return null;
+    const decipher = createDecipheriv("aes-256-gcm", ticketKey(), bytes.subarray(0, 12));
+    decipher.setAuthTag(bytes.subarray(bytes.length - 16));
+    const ticket = JSON.parse(
+      Buffer.concat([
+        decipher.update(bytes.subarray(12, bytes.length - 16)),
+        decipher.final(),
+      ]).toString("utf8")
+    ) as { url?: unknown; browserNonce?: unknown; expires?: unknown };
+    if (
+      typeof ticket.url !== "string" ||
+      typeof ticket.browserNonce !== "string" ||
+      typeof ticket.expires !== "number" ||
+      ticket.expires <= now ||
+      // Only ever on to Google's consent page.
+      new URL(ticket.url).origin !== new URL(urls().auth).origin
+    ) {
+      return null;
+    }
+    return { url: ticket.url, browserNonce: ticket.browserNonce };
+  } catch {
+    return null;
+  }
+}
+
 /** Only paths on this app: a return address must never leave it. */
 export function safeReturnPath(value: unknown): string {
   return typeof value === "string" && /^\/(?!\/)[^\s\\]*$/.test(value) && value.length <= 500
@@ -145,7 +207,8 @@ export function safeReturnPath(value: unknown): string {
 export function authorizationUrl(
   config: GoogleConfig,
   userId: string,
-  returnTo: string
+  returnTo: string,
+  site: "webhooks" | "mailhooks" = "webhooks"
 ): { url: string; browserNonce: string } {
   const verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -156,6 +219,7 @@ export function authorizationUrl(
     returnTo: safeReturnPath(returnTo),
     expires: Date.now() + STATE_LIFETIME_MS,
     browser: browserHash(browserNonce),
+    site,
   });
   const url = new URL(urls().auth);
   url.searchParams.set("client_id", config.clientId);
