@@ -93,7 +93,7 @@ for name, n in (("invoice-1-page.pdf", 1), ("statement-7-pages.pdf", 7)):
 # Text attachments.
 (out / "calendar.ics").write_text("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:Booking 1001\r\nDTSTART:20261101T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
 add("calendar.ics", "text", 1, "calendar invite")
-(out / "payload.json").write_text(json.dumps({"order": 1001, "items": [{"sku": "A-1", "qty": 2}]}, indent=2))
+(out / "payload.json").write_text(json.dumps({"order": 1001, "items": [{"sku": "A-1", "qty": 2}]}, indent=2) + "\n")
 add("payload.json", "text", 1, "JSON export")
 
 (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
