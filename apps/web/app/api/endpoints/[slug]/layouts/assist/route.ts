@@ -7,7 +7,7 @@ import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { reportError } from "@/lib/observability";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getRequestsByIds } from "@/lib/supabase/requests";
+import { getRequestByIdForUser } from "@/lib/supabase/requests";
 import { isUuid } from "@/lib/uuid";
 
 /**
@@ -73,6 +73,16 @@ function parseAsk(value: unknown): AssistAsk | string {
     ) {
       return "ask.field is the field to repair: { name, from, pattern }.";
     }
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(field.name)) {
+      return "ask.field.name is a field name.";
+    }
+    if (
+      field.from === "header" &&
+      (typeof field.header !== "string" ||
+        !/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}$/.test(field.header))
+    ) {
+      return "ask.field.header is the header the field reads.";
+    }
     return {
       kind: "repair",
       field: {
@@ -124,12 +134,13 @@ export async function POST(request: Request, { params }: Params) {
   try {
     const endpoint = await ownedEndpoint(auth.userId, slug);
     if (!endpoint) return Response.json({ error: "Endpoint not found" }, { status: 404 });
-    const requests = await getRequestsByIds(ids as string[]);
-    // Only this endpoint's own emails, every one of them.
-    const samples = (ids as string[]).map((id) =>
-      requests.find(
-        (item) => item.id === id && item.endpointId === endpoint.id && item.kind === "email"
-      )
+    // Only this endpoint's own emails, every one of them, and only those
+    // still within retention (the reader the request routes use).
+    const samples = await Promise.all(
+      (ids as string[]).map(async (id) => {
+        const item = await getRequestByIdForUser(auth.userId, id);
+        return item && item.endpointId === endpoint.id && item.kind === "email" ? item : undefined;
+      })
     );
     if (samples.some((sample) => !sample?.email)) {
       return Response.json(
@@ -152,10 +163,12 @@ export async function POST(request: Request, { params }: Params) {
           error:
             take.status === "none_left"
               ? `No AI assists left: your plan has ${take.allowed} in 30 days.`
-              : "Endpoint not found",
+              : take.status === "busy"
+                ? "Another AI ask of yours is still running. Try again when it is done."
+                : "Endpoint not found",
           code: take.status,
         },
-        { status: take.status === "none_left" ? 429 : 404 }
+        { status: take.status === "none_left" ? 429 : take.status === "busy" ? 409 : 404 }
       );
     }
     useId = take.id;
@@ -164,8 +177,9 @@ export async function POST(request: Request, { params }: Params) {
     try {
       result = await runAssist(ask, samples as NonNullable<(typeof samples)[number]>[]);
     } catch (error) {
-      // On our side or the model's: the assist is given back.
-      await admin.rpc("finish_ai_assist", { p_id: useId, p_outcome: "failed" });
+      // Given back when it cost nothing; kept when the model may have run.
+      const billed = error instanceof AssistModelError && error.billed;
+      await admin.rpc("finish_ai_assist", { p_id: useId, p_outcome: billed ? "error" : "failed" });
       useId = null;
       if (error instanceof AssistModelError) {
         return Response.json({ error: error.message }, { status: error.temporary ? 503 : 422 });

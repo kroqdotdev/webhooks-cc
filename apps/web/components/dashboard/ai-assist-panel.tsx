@@ -208,7 +208,8 @@ export function AiAssistPanel({
             <span>
               Send {picked.length === 1 ? "this email" : `these ${picked.length} emails`} (subject,
               sender, recipients, text and headers, never attachments) to Anthropic, our AI
-              provider, to propose patterns. We do not keep what is sent; see our{" "}
+              provider, to propose patterns. We do not keep what is sent, and Anthropic handles it
+              under its commercial terms; see our{" "}
               <a href="/subprocessors" target="_blank" className="underline">
                 subprocessors
               </a>

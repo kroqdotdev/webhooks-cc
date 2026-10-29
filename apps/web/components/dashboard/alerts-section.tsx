@@ -21,13 +21,16 @@ import { cn } from "@/lib/utils";
 import { AiAssistPanel } from "./ai-assist-panel";
 import { Field, SaveFooter, Section, SwitchRow } from "./settings-primitives";
 
+/** A field to repair and where it is defined: the endpoint's own fields, or one layout. */
+type FieldAt = { field: EmailField; layoutIndex: number | null };
+
 /** Where a field is defined: the endpoint's own fields, or the first layout that has it. */
-function fieldDefinition(endpoint: DashboardEndpoint, name: string): EmailField | null {
+function fieldDefinition(endpoint: DashboardEndpoint, name: string): FieldAt | null {
   const own = (endpoint.emailFields ?? []).find((field) => field.name === name);
-  if (own) return own;
-  for (const layout of endpoint.layouts ?? []) {
+  if (own) return { field: own, layoutIndex: null };
+  for (const [layoutIndex, layout] of (endpoint.layouts ?? []).entries()) {
     const found = (layout.fields ?? []).find((field) => field.name === name);
-    if (found) return found;
+    if (found) return { field: found, layoutIndex };
   }
   return null;
 }
@@ -93,7 +96,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const [replayNote, setReplayNote] = useState<string | null>(null);
   // AI repair: a field an open alert says stopped matching, from recent emails.
   const [aiOffered, setAiOffered] = useState(false);
-  const [repair, setRepair] = useState<EmailField | null>(null);
+  const [repair, setRepair] = useState<FieldAt | null>(null);
   const [recent, setRecent] = useState<{ id: string; subject: string }[]>([]);
   const [repairNote, setRepairNote] = useState<string | null>(null);
 
@@ -104,7 +107,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       .catch(() => setAiOffered(false));
   }, [accessToken, endpoint.slug]);
 
-  const startRepair = async (field: EmailField) => {
+  const startRepair = async (field: FieldAt) => {
     if (!accessToken) return;
     setRepairNote(null);
     const requests = await fetchDashboardRequests(accessToken, endpoint.slug, 10, "email").catch(
@@ -119,27 +122,28 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     setRepair(field);
   };
 
-  /** Replaces the field where it is defined, and saves the endpoint. */
+  /** Replaces the field where it was found (that one place only), and saves the endpoint. */
   const applyRepair = async (field: EmailField) => {
-    if (!accessToken) return;
-    const own = (endpoint.emailFields ?? []).some((item) => item.name === field.name);
-    const updates = own
-      ? {
-          emailFields: (endpoint.emailFields ?? []).map((item) =>
-            item.name === field.name ? field : item
-          ),
-        }
-      : {
-          layouts: (endpoint.layouts ?? []).map((layout) => {
-            const at = (layout.fields ?? []).findIndex((item) => item.name === field.name);
-            return at < 0
-              ? layout
-              : {
-                  ...layout,
-                  fields: (layout.fields ?? []).map((item, i) => (i === at ? field : item)),
-                };
-          }),
-        };
+    if (!accessToken || !repair) return;
+    const updates =
+      repair.layoutIndex === null
+        ? {
+            emailFields: (endpoint.emailFields ?? []).map((item) =>
+              item.name === field.name ? field : item
+            ),
+          }
+        : {
+            layouts: (endpoint.layouts ?? []).map((layout, layoutIndex) => {
+              if (layoutIndex !== repair.layoutIndex) return layout;
+              const at = (layout.fields ?? []).findIndex((item) => item.name === field.name);
+              return at < 0
+                ? layout
+                : {
+                    ...layout,
+                    fields: (layout.fields ?? []).map((item, i) => (i === at ? field : item)),
+                  };
+            }),
+          };
     try {
       await updateDashboardEndpoint(accessToken, endpoint.slug, updates);
       emitDashboardEndpointsChanged();
@@ -418,16 +422,16 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         : []
                       )
                         .map((name) => fieldDefinition(endpoint, name))
-                        .filter((field): field is EmailField => field !== null)
+                        .filter((found): found is FieldAt => found !== null)
                         .slice(0, 3)
-                        .map((field) => (
+                        .map((found) => (
                           <button
-                            key={field.name}
+                            key={found.field.name}
                             type="button"
-                            onClick={() => void startRepair(field)}
+                            onClick={() => void startRepair(found)}
                             className="ui-btn-outline py-1! px-2! text-xs"
                           >
-                            Fix {field.name} with AI
+                            Fix {found.field.name} with AI
                           </button>
                         ))}
                     <button
@@ -448,7 +452,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
               <AiAssistPanel
                 slug={endpoint.slug}
                 samples={recent}
-                mode={{ kind: "repair", field: repair }}
+                mode={{ kind: "repair", field: repair.field }}
                 onAddField={(field) => void applyRepair(field)}
                 onClose={() => setRepair(null)}
               />

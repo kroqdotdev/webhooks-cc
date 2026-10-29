@@ -68,7 +68,7 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     entity: "Anthropic, PBC, United States",
     purpose:
       "AI setup and repair: proposes patterns for email fields and layouts, only when a person asks for it and agrees to send the emails, each time.",
-    data: "The emails picked for that request (subject, sender, recipients, text and headers, never attachments) and what the person describes they want. We do not keep what is sent.",
+    data: "The emails picked for that request (subject, sender, recipients, text and headers, never attachments) and what the person describes they want. We do not keep what is sent; Anthropic processes it under its commercial terms.",
     location: "United States",
     safeguard: "Standard Contractual Clauses",
   },

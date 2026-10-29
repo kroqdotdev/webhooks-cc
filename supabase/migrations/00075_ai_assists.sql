@@ -19,7 +19,9 @@ create table if not exists public.ai_assist_uses (
   actor_id    uuid references public.users(id) on delete set null,
   endpoint_id uuid references public.endpoints(id) on delete set null,
   kind        text not null check (kind in ('field', 'layout', 'repair')),
-  outcome     text check (outcome in ('proposed', 'none', 'failed')),
+  -- proposed: something passed; none: nothing did; error: the model may
+  -- have run (it is kept). A failure that cost nothing is deleted instead.
+  outcome     text check (outcome in ('proposed', 'none', 'error')),
   created_at  timestamptz not null default now(),
   constraint ai_assist_uses_owner check ((user_id is null) <> (team_id is null))
 );
@@ -32,6 +34,12 @@ create index if not exists ai_assist_uses_actor on public.ai_assist_uses (actor_
 create index if not exists ai_assist_uses_endpoint on public.ai_assist_uses (endpoint_id)
   where endpoint_id is not null;
 
+-- Earlier runs of this file allowed 'failed' (always deleted, never stored).
+alter table public.ai_assist_uses drop constraint if exists ai_assist_uses_outcome_check;
+alter table public.ai_assist_uses
+  add constraint ai_assist_uses_outcome_check
+  check (outcome in ('proposed', 'none', 'error'));
+
 alter table public.ai_assist_uses enable row level security;
 revoke all on table public.ai_assist_uses from anon, authenticated;
 
@@ -43,11 +51,14 @@ language sql
 stable
 security definer set search_path = ''
 as $$
-  select null::uuid, t.id, (public.account_entitlements(null, t.id)).ai_assists
+  (select null::uuid, t.id, (public.account_entitlements(null, t.id)).ai_assists
     from public.team_endpoints te
     join public.teams t on t.id = te.team_id
    where te.endpoint_id = p_endpoint_id
      and t.subscription_status is not null
+   -- The team capture_webhook() bills: the oldest live share.
+   order by te.shared_at asc
+   limit 1)
   union all
   select e.user_id, null::uuid, (public.account_entitlements(e.user_id, null)).ai_assists
     from public.endpoints e
@@ -116,6 +127,15 @@ begin
     from public.ai_assist_uses u
    where u.created_at > now() - interval '30 days'
      and (u.user_id = v_account.user_id or u.team_id = v_account.team_id);
+  -- One ask at a time per person: another is still waiting for the model.
+  perform 1
+     from public.ai_assist_uses u
+    where u.actor_id = p_actor_id
+      and u.outcome is null
+      and u.created_at > now() - interval '3 minutes';
+  if found then
+    return jsonb_build_object('status', 'busy');
+  end if;
   if v_used >= v_account.allowed then
     return jsonb_build_object('status', 'none_left', 'allowed', v_account.allowed, 'used', v_used);
   end if;
@@ -128,7 +148,8 @@ begin
 end;
 $$;
 
--- How an ask ended; one that failed on our side or the model's is given back.
+-- How an ask ended. 'failed' (it cost nothing: refused before the model
+-- ran, or our side failed first) gives the assist back.
 create or replace function public.finish_ai_assist(p_id uuid, p_outcome text)
 returns void
 language plpgsql
