@@ -13,8 +13,8 @@ import { reportError } from "@/lib/observability";
  */
 
 export const AI_MODEL = "claude-opus-5-5";
-/** One request, answer included; the SDK retries a 429, a 5xx or a timeout once. */
-const REQUEST_TIMEOUT_MS = 90_000;
+/** One request, answer included, at most; the caller's deadline usually ends it sooner. */
+const REQUEST_TIMEOUT_MS = 75_000;
 /** Patterns, names and a condition: a few thousand tokens with the thinking. */
 const MAX_TOKENS = 8000;
 
@@ -87,7 +87,14 @@ export interface ModelAsk {
   feedback?: string;
 }
 
-function client(): Anthropic {
+export interface ModelCallOptions {
+  /** Ends the call (and any retry) when the ask's deadline passes. */
+  signal: AbortSignal;
+  /** The SDK's retries of a 429, a 5xx or a lost connection. */
+  maxRetries: number;
+}
+
+function client(fetchImpl: typeof fetch): Anthropic {
   return new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
     // A fake model for tests, never in production (where the SDK's own
@@ -97,12 +104,12 @@ function client(): Anthropic {
         ? "https://api.anthropic.com"
         : process.env.AI_API_BASE_URL || undefined,
     timeout: REQUEST_TIMEOUT_MS,
-    maxRetries: 1,
+    fetch: fetchImpl,
   });
 }
 
 /** Asks the model once. Throws AssistModelError with a message for the person. */
-export async function proposePatterns(ask: ModelAsk): Promise<Proposal> {
+export async function proposePatterns(ask: ModelAsk, options: ModelCallOptions): Promise<Proposal> {
   // The samples go in as JSON, which no email text can break out of.
   const user = [
     ask.instruction,
@@ -111,18 +118,29 @@ export async function proposePatterns(ask: ModelAsk): Promise<Proposal> {
     JSON.stringify(ask.samples, null, 1),
     ...(ask.feedback ? ["", ask.feedback] : []),
   ].join("\n");
+  // Whether the service answered at all: what decides, for a failure no
+  // error class names, if the model may have run.
+  let answered = false;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const response = await fetch(input, init);
+    answered = true;
+    return response;
+  };
   try {
-    const response = await client().beta.messages.parse({
-      model: AI_MODEL,
-      max_tokens: MAX_TOKENS,
-      // A request a safety classifier declines is run again on the
-      // recommended fallback model instead of failing.
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { format: betaZodOutputFormat(ProposalSchema), effort: "medium" },
-      system: SYSTEM,
-      messages: [{ role: "user", content: user }],
-    });
+    const response = await client(fetchImpl).beta.messages.parse(
+      {
+        model: AI_MODEL,
+        max_tokens: MAX_TOKENS,
+        // A request a safety classifier declines is run again on the
+        // recommended fallback model instead of failing.
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        output_config: { format: betaZodOutputFormat(ProposalSchema), effort: "medium" },
+        system: SYSTEM,
+        messages: [{ role: "user", content: user }],
+      },
+      { signal: options.signal, maxRetries: options.maxRetries }
+    );
     if (response.stop_reason === "refusal") {
       throw new AssistModelError("The model declined to read these emails.", false, true);
     }
@@ -144,7 +162,11 @@ export async function proposePatterns(ask: ModelAsk): Promise<Proposal> {
       reportError("[ai] the AI service refused our request", error);
       throw new AssistModelError("AI setup is not available right now.", true, false);
     }
-    if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    if (
+      error instanceof Anthropic.APIConnectionTimeoutError ||
+      error instanceof Anthropic.APIUserAbortError
+    ) {
+      // The deadline passed: the model may have been working on it.
       throw new AssistModelError("The AI service took too long. Try again.", true, true);
     }
     if (error instanceof Anthropic.APIError || error instanceof Anthropic.APIConnectionError) {
@@ -154,7 +176,12 @@ export async function proposePatterns(ask: ModelAsk): Promise<Proposal> {
         false
       );
     }
-    // An answer that came back but cut short or not JSON (the SDK's parse).
-    throw new AssistModelError("The model's answer could not be read. Try again.", true, true);
+    if (answered) {
+      // An answer that came back but cut short or not JSON (the SDK's parse).
+      throw new AssistModelError("The model's answer could not be read. Try again.", true, true);
+    }
+    // Nothing was sent: our side failed first.
+    reportError("[ai] the AI request failed before it was sent", error);
+    throw new AssistModelError("AI setup is not available right now.", true, false);
   }
 }

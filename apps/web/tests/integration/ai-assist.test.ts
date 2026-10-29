@@ -337,6 +337,97 @@ describe("AI setup and repair", () => {
     expect(JSON.stringify(asked[0].body.messages)).toContain("no longer finds a value");
   });
 
+  it("tries a field's alternatives in order and shows the first that finds it", async () => {
+    const owner = await signedIn();
+    const id = await capture(owner.slug, "Order #5001 confirmed", "x");
+    answers = [
+      {
+        proposal: {
+          fields: [
+            { name: "a", from: "subject", header: null, pattern: "Ref (\\d+)" },
+            { name: "b", from: "subject", header: null, pattern: "Order #(\\d+)" },
+            { name: "c", from: "subject", header: null, pattern: "#(\\d+)" },
+          ],
+          match: null,
+          layoutName: null,
+        },
+      },
+    ];
+    const response = await call("POST", owner.slug, owner.token, {
+      ask: { kind: "field", name: "order", description: "the order number" },
+      requestIds: [id],
+      consent: true,
+    });
+    const result = await response.json();
+    expect(result.fields).toEqual([
+      { field: { name: "order", from: "subject", pattern: "Order #(\\d+)" }, values: ["5001"] },
+    ]);
+    // The miss before it counts; the one after was never needed.
+    expect(result.dropped).toBe(1);
+    expect(asked).toHaveLength(1);
+  });
+
+  it("keeps what it sends within the budget, and never splits a character", async () => {
+    const owner = await signedIn();
+    const big = (n: number) => `x${"\u{1F600}".repeat(n)}`;
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const { data, error } = await admin.rpc("capture_webhook", {
+        p_slug: owner.slug,
+        p_method: "EMAIL",
+        p_path: `${owner.slug}@mailhooks.cc`,
+        p_headers: Object.fromEntries(
+          Array.from({ length: 60 }, (_, h) => [`x-${"h".repeat(250)}-${h}`, big(400)])
+        ),
+        p_body: "raw",
+        p_query_params: {},
+        p_content_type: "message/rfc822",
+        p_ip: "192.0.2.10",
+        p_received_at: new Date().toISOString(),
+        p_kind: "email",
+        p_email: {
+          subject: big(3000),
+          text: big(60_000),
+          html: `<p>${big(60_000)}</p>`,
+          from: [{ name: big(2000), address: "orders@acme.example" }],
+        },
+      });
+      if (error) throw error;
+      ids.push((data as { request_id: string }).request_id);
+    }
+    answers = [{ proposal: field("(x)") }];
+    const response = await call("POST", owner.slug, owner.token, {
+      ask: { kind: "field", name: "order", description: "the order" },
+      requestIds: ids,
+      consent: true,
+    });
+    expect(response.status).toBe(200);
+    const content = String((asked[0].body.messages as { content: string }[])[0].content);
+    expect(content.length).toBeLessThan(65_000);
+    expect(content).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+    );
+  });
+
+  it("leaves an ask that has ended as it is", async () => {
+    const owner = await signedIn();
+    const { data: taken } = await admin.rpc("take_ai_assist", {
+      p_endpoint_id: owner.endpointId,
+      p_actor_id: owner.userId,
+      p_kind: "field",
+    });
+    const useId = (taken as { id: string }).id;
+    await admin.rpc("finish_ai_assist", { p_id: useId, p_outcome: "proposed" });
+    // A late "failed" (the route's last resort) does not give it back.
+    await admin.rpc("finish_ai_assist", { p_id: useId, p_outcome: "failed" });
+    const { data: row } = await admin
+      .from("ai_assist_uses")
+      .select("outcome")
+      .eq("id", useId)
+      .single();
+    expect(row?.outcome).toBe("proposed");
+  });
+
   it("takes one ask at a time per person", async () => {
     const owner = await signedIn();
     const id = await capture(owner.slug, "Order #4001", "x");
