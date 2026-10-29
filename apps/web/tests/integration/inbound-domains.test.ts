@@ -85,8 +85,9 @@ async function resolve(domain: string, local: string) {
 describe("custom inbound domains", () => {
   it("are part of Business, and never the capture domain or this app's hosts", async () => {
     const free = await createUser();
-    await expect(addDomain({ kind: "user", userId: free }, `in-${ts}.acme.example`)).rejects
-      .toMatchObject({ code: "plan_required" });
+    await expect(
+      addDomain({ kind: "user", userId: free }, `in-${ts}.acme.example`)
+    ).rejects.toMatchObject({ code: "plan_required" });
 
     const business = await createUser({ plan: "business", subscription_status: "active" });
     const account = { kind: "user" as const, userId: business };
