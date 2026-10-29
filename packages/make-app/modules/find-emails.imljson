@@ -1,14 +1,31 @@
 {
   "name": "findEmails",
   "label": "Search emails",
-  "description": "Finds an endpoint's emails that contain the text you give, newest first.",
+  "description": "Finds an endpoint's emails that contain the text you give, newest first (at most 60 searches per 10 minutes per account).",
   "type": "search",
   "connection": "apiKey",
   "parameters": [],
   "expect": [
-    { "name": "endpoint", "type": "select", "label": "Endpoint", "options": "rpc://listEndpoints", "required": true },
-    { "name": "query", "type": "text", "label": "Contains", "required": true },
-    { "name": "limit", "type": "uinteger", "label": "Limit", "default": 10, "required": false }
+    {
+      "name": "endpoint",
+      "type": "select",
+      "label": "Endpoint",
+      "options": "rpc://listEndpoints",
+      "required": true
+    },
+    {
+      "name": "query",
+      "type": "text",
+      "label": "Contains",
+      "required": true
+    },
+    {
+      "name": "limit",
+      "type": "uinteger",
+      "label": "Limit",
+      "default": 10,
+      "required": false
+    }
   ],
   "communication": {
     "url": "/search/requests",
@@ -21,12 +38,117 @@
     },
     "response": {
       "iterate": "{{body}}",
-      "output": "{{item}}"
+      "output": {
+        "id": "{{item.id}}",
+        "endpoint": "{{item.slug}}",
+        "receivedAt": "{{parseDate(item.receivedAt, 'x')}}",
+        "address": "{{item.path}}",
+        "subject": "{{item.email.subject}}",
+        "from": "{{first(item.email.from)}}",
+        "to": "{{item.email.to}}",
+        "text": "{{item.email.text}}",
+        "html": "{{item.email.html}}",
+        "attachments": "{{item.email.attachments}}"
+      }
     }
   },
   "interface": [
-    { "name": "id", "type": "text", "label": "Request ID" },
-    { "name": "receivedAt", "type": "number", "label": "Received at (ms)" },
-    { "name": "path", "type": "text", "label": "Address" }
+    {
+      "name": "id",
+      "type": "text",
+      "label": "Request ID"
+    },
+    {
+      "name": "endpoint",
+      "type": "text",
+      "label": "Endpoint"
+    },
+    {
+      "name": "receivedAt",
+      "type": "date",
+      "label": "Received at"
+    },
+    {
+      "name": "address",
+      "type": "text",
+      "label": "Address it was sent to"
+    },
+    {
+      "name": "subject",
+      "type": "text",
+      "label": "Subject"
+    },
+    {
+      "name": "from",
+      "type": "collection",
+      "label": "From",
+      "spec": [
+        {
+          "name": "name",
+          "type": "text",
+          "label": "Name"
+        },
+        {
+          "name": "address",
+          "type": "text",
+          "label": "Address"
+        }
+      ]
+    },
+    {
+      "name": "to",
+      "type": "array",
+      "label": "To",
+      "spec": {
+        "type": "collection",
+        "spec": [
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name"
+          },
+          {
+            "name": "address",
+            "type": "text",
+            "label": "Address"
+          }
+        ]
+      }
+    },
+    {
+      "name": "text",
+      "type": "text",
+      "label": "Text"
+    },
+    {
+      "name": "html",
+      "type": "text",
+      "label": "HTML"
+    },
+    {
+      "name": "attachments",
+      "type": "array",
+      "label": "Attachments",
+      "spec": {
+        "type": "collection",
+        "spec": [
+          {
+            "name": "filename",
+            "type": "text",
+            "label": "File name"
+          },
+          {
+            "name": "contentType",
+            "type": "text",
+            "label": "Content type"
+          },
+          {
+            "name": "size",
+            "type": "uinteger",
+            "label": "Size (bytes)"
+          }
+        ]
+      }
+    }
   ]
 }

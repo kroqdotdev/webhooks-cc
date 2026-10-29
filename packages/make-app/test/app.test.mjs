@@ -9,8 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * and rpc a module names exists, and the requests they describe work
  * against a running web app (WHK_BASE_URL, the dev server by default, and
  * the Supabase stack in apps/web/.env.local), evaluated with the few IML
- * forms the files use: {{a.b}} and {{ifempty(a.b, x)}}. Make itself runs
- * the real thing; this keeps the paths and shapes honest.
+ * forms the request templates use: {{a.b}}, {{ifempty(a.b, x)}},
+ * {{encodeURL(a.b)}} and comparisons of statusCode. Make itself runs the
+ * real thing; this keeps the paths and shapes honest.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,16 @@ const rpcs = load("rpcs");
 
 /** The value of a {{...}} expression in a context, or undefined to leave the key out. */
 function evaluate(expression, context) {
+  const encoded = /^encodeURL\(([^)]+)\)$/.exec(expression.trim());
+  // fill() encodes what goes into a URL, as encodeURL does.
+  if (encoded) return evaluate(encoded[1], context);
+  if (
+    expression.includes("statusCode") &&
+    /^[\s0-9<>=|&!]+$/.test(expression.replaceAll("statusCode", ""))
+  ) {
+    // Our own files' comparisons of the status, nothing else.
+    return new Function("statusCode", `return (${expression});`)(context.statusCode);
+  }
   const ifempty = /^ifempty\(([^,]+),\s*([^)]+)\)$/.exec(expression.trim());
   if (ifempty) {
     const value = evaluate(ifempty[1], context);
@@ -218,6 +229,11 @@ describe("the Make app against the web app", () => {
     expect(data).toEqual({ externalHookId: attached.body.id, endpoint: slug });
     const detached = await run(hook.detach, { connection, webhook: data });
     expect(detached.status).toBeLessThan(300);
+    // Removed already (in the dashboard, say): detaching still succeeds.
+    const again = await run(hook.detach, { connection, webhook: data });
+    expect(again.status).toBe(404);
+    expect(fill(hook.detach.response.valid, { statusCode: again.status })).toBe(true);
+    expect(fill(hook.detach.response.valid, { statusCode: 500 })).toBe(false);
 
     const found = await run(modules["find-emails.imljson"].communication, {
       connection,

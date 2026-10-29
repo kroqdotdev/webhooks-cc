@@ -1,7 +1,7 @@
 import { isValidEmailTag } from "@webhooks-cc/sdk/email";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { publicEnv, serverEnv } from "@/lib/env";
-import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
+import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { buildTestEmail, DELIVER_PATH, signMailRequest, testDeliveryBody } from "@/lib/test-email";
 import { reportError } from "@/lib/observability";
@@ -19,7 +19,9 @@ export async function POST(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
-  const rateLimit = await checkRateLimitWithInfo(request, "send-test-email", 10);
+  // Per account, not per address: Zapier and Make send every customer's
+  // calls from a few shared addresses.
+  const rateLimit = await checkRateLimitByKeyWithInfo(`user:send-test-email:${auth.userId}`, 10);
   if (rateLimit.response) return rateLimit.response;
 
   const env = serverEnv();

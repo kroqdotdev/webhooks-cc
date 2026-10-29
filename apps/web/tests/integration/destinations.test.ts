@@ -49,7 +49,9 @@ beforeAll(async () => {
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       received.push({ url: req.url ?? "", headers: req.headers, body });
-      res.writeHead(200).end("ok");
+      // A hook whose Zap or scenario was removed answers 410.
+      if (req.url?.startsWith("/gone")) res.writeHead(410).end("gone");
+      else res.writeHead(200).end("ok");
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -127,6 +129,25 @@ describe("destinations", () => {
     const rows = await deliveries(e.id);
     expect(rows.map((row) => row.destination_id)).toEqual([a.id]);
     expect([b.id, c.id]).not.toContain(rows[0].destination_id);
+  });
+
+  it("turns a destination off when its URL answers 410, without retrying", async () => {
+    const e = await endpoint();
+    const gone = await createDestination(e.id, { url: `${base}/gone` });
+    await capture(e.slug, { type: "x" });
+    const rows = await drain(e.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "failed", attempts: 1 });
+    expect(rows[0].last_error).toContain("410");
+    const { data: destination } = await admin
+      .from("endpoint_destinations")
+      .select("enabled")
+      .eq("id", gone.id)
+      .single();
+    expect(destination?.enabled).toBe(false);
+    // Nothing more is queued for it.
+    await capture(e.slug, { type: "y" });
+    expect(await deliveries(e.id)).toHaveLength(1);
   });
 
   it("skips what the filter turns down, and logs it", async () => {

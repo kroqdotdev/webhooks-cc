@@ -13,7 +13,7 @@
     }
   ],
   "attach": {
-    "url": "/endpoints/{{parameters.endpoint}}/destinations",
+    "url": "/endpoints/{{encodeURL(parameters.endpoint)}}/destinations",
     "method": "POST",
     "body": {
       "url": "{{webhook.url}}",
@@ -30,8 +30,11 @@
     }
   },
   "detach": {
-    "url": "/endpoints/{{webhook.endpoint}}/destinations/{{webhook.externalHookId}}",
-    "method": "DELETE"
+    "url": "/endpoints/{{encodeURL(webhook.endpoint)}}/destinations/{{encodeURL(webhook.externalHookId)}}",
+    "method": "DELETE",
+    "response": {
+      "valid": "{{statusCode < 300 || statusCode == 404}}"
+    }
   },
   "communication": {
     "output": "{{body.data}}"
