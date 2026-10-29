@@ -3,6 +3,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseDestinationInput,
   sheetsProblem,
+  fileDropProblem,
   templateProblem,
 } from "@/lib/forwarding/destination-input";
 import {
@@ -16,8 +17,10 @@ import {
   DestinationHeaderValueMissingError,
   getDestination,
   updateDestination,
+  getDestinationDropSecret,
 } from "@/lib/supabase/destinations";
 import { reportError } from "@/lib/observability";
+import type { Json } from "@/lib/supabase/database";
 
 type Params = { params: Promise<{ slug: string; id: string }> };
 
@@ -62,7 +65,12 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!endpoint || !current) return reply({ error: "Destination not found" }, 404);
     const parsed = parseDestinationInput(body, {
       creating: false,
-      current: { http: current.http, email: current.email },
+      current: {
+        http: current.http,
+        email: current.email,
+        format: current.format,
+        config: current.config,
+      },
     });
     if (!parsed.ok) return reply({ error: parsed.error }, 400);
     const problem = templateProblem({
@@ -78,6 +86,26 @@ export async function PATCH(request: Request, { params }: Params) {
       config: parsed.changes.config !== undefined ? parsed.changes.config : current.config,
     });
     if (sheets) return reply({ error: sheets }, 400);
+    const nextFormat = parsed.changes.format ?? current.format;
+    if (nextFormat === "file_drop" && parsed.changes.config) {
+      // Another server: the key pinned for the old one does not carry over.
+      const before = current.config as { host?: unknown; port?: unknown } | null;
+      const after = parsed.changes.config as { host?: unknown; port?: unknown; hostKey?: unknown };
+      if (before && (before.host !== after.host || before.port !== after.port)) {
+        parsed.changes.config = { ...(after as Record<string, Json>), hostKey: null };
+      }
+    }
+    const drop = await fileDropProblem(endpoint.id, {
+      format: nextFormat,
+      config: parsed.changes.config !== undefined ? parsed.changes.config : current.config,
+      secret:
+        parsed.changes.dropSecret !== undefined
+          ? parsed.changes.dropSecret
+          : nextFormat === "file_drop"
+            ? await getDestinationDropSecret(endpoint.id, id)
+            : null,
+    });
+    if (drop) return reply({ error: drop }, 400);
 
     const destination = await updateDestination(endpoint.id, id, parsed.changes);
     if (!destination) return reply({ error: "Destination not found" }, 404);

@@ -1,3 +1,5 @@
+import { encryptDropSecret, decryptDropSecret } from "@/lib/drops/target";
+import type { DropSecret } from "@/lib/drops/config";
 import type { Condition } from "@webhooks-cc/sdk";
 import { decryptSigningSecret, encryptSigningSecret, isSigningKeyConfigured } from "@/lib/crypto";
 import {
@@ -44,6 +46,7 @@ export const DESTINATION_FORMAT_SETTINGS: readonly DestinationFormatSetting[] = 
   "mailgun",
   "cloudmailin",
   "sheets",
+  "file_drop",
 ];
 
 export interface DestinationFilter {
@@ -62,6 +65,8 @@ export interface Destination {
   hasSecret: boolean;
   /** Whether a Mailgun signing key is saved (never the key). */
   hasMailgunSigningKey: boolean;
+  /** Whether a file drop's password, private key or secret key is saved (never the secret). */
+  hasDropSecret: boolean;
   http: boolean;
   email: boolean;
   /** "auto" picks from the URL. */
@@ -81,7 +86,10 @@ export interface Destination {
   delaySeconds: number;
   /** How an email's stored attachments travel: signed links, inline base64, or not at all. */
   attachments: DestinationAttachments;
-  /** Settings of the kinds that are not a URL (format "sheets": lib/integrations/sheets.ts). */
+  /**
+   * Settings of the kinds that are not a URL (format "sheets":
+   * lib/integrations/sheets.ts; "file_drop": lib/drops/config.ts).
+   */
   config: Json | null;
   /** Which old endpoint field this destination stands for, if any. */
   role: "forward" | "notify" | null;
@@ -118,6 +126,8 @@ export interface DestinationChanges {
   config?: Json | null;
   /** The owner's Mailgun signing key (format "mailgun"); null removes it. */
   mailgunSigningKey?: string | null;
+  /** A file drop's secret (format "file_drop"), stored encrypted; null removes it. */
+  dropSecret?: DropSecret | null;
 }
 
 /** Thrown when a submitted header keeps a value (null) that is not stored under its name. */
@@ -131,7 +141,7 @@ export class TooManyDestinationsError extends Error {
 }
 
 const COLUMNS =
-  "id, endpoint_id, position, name, enabled, url, secret_encrypted, http, email, format, filter, body_template, message_template, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, throttle_seconds, delay_seconds, last_queued_at, legacy_role, created_at, updated_at, mailgun_key_encrypted, attachments, config";
+  "id, endpoint_id, position, name, enabled, url, secret_encrypted, http, email, format, filter, body_template, message_template, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, throttle_seconds, delay_seconds, last_queued_at, legacy_role, created_at, updated_at, mailgun_key_encrypted, attachments, config, drop_secret_encrypted";
 
 /** PostgREST returns bytea as "\\x..." hex text. */
 export function byteaToBuffer(value: string): Buffer {
@@ -178,6 +188,7 @@ export function toDestination(row: DestinationRow): Destination {
     url: row.url,
     hasSecret: !!row.secret_encrypted,
     hasMailgunSigningKey: !!row.mailgun_key_encrypted,
+    hasDropSecret: !!row.drop_secret_encrypted,
     http: row.http,
     email: row.email,
     format: row.format ?? "auto",
@@ -284,6 +295,11 @@ function columnsFor(changes: DestinationChanges, storedHeaders: string | null): 
   if (changes.mailgunSigningKey !== undefined) {
     update.mailgun_key_encrypted = changes.mailgunSigningKey
       ? toBytea(encryptSigningSecret(changes.mailgunSigningKey))
+      : null;
+  }
+  if (changes.dropSecret !== undefined) {
+    update.drop_secret_encrypted = changes.dropSecret
+      ? toBytea(encryptDropSecret(changes.dropSecret))
       : null;
   }
   return update;
@@ -412,6 +428,30 @@ export async function getDestinationMailgunKey(
   const row = await rowFor(endpointId, id);
   return row?.mailgun_key_encrypted
     ? decryptSigningSecret(byteaToBuffer(row.mailgun_key_encrypted))
+    : null;
+}
+
+/** A file drop's secret, decrypted; null when none is saved. */
+export async function getDestinationDropSecret(
+  endpointId: string,
+  id: string
+): Promise<DropSecret | null> {
+  const row = await rowFor(endpointId, id);
+  return row?.drop_secret_encrypted
+    ? decryptDropSecret(byteaToBuffer(row.drop_secret_encrypted))
+    : null;
+}
+
+/** A file drop's secret by the destination alone, for the delivery worker. */
+export async function dropSecretForDestination(id: string): Promise<DropSecret | null> {
+  const { data, error } = await createAdminClient()
+    .from("endpoint_destinations")
+    .select("drop_secret_encrypted")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.drop_secret_encrypted
+    ? decryptDropSecret(byteaToBuffer(data.drop_secret_encrypted))
     : null;
 }
 
