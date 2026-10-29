@@ -1085,8 +1085,10 @@ export async function createGoogleSpreadsheet(
     spreadsheetId?: string;
     sheet: string;
     headers: string[];
+    /** The headers this destination wrote before, which may be replaced. */
+    previousHeaders?: string[];
   }
-): Promise<{ id: string; url?: string }> {
+): Promise<{ id: string; url?: string; headerWritten?: boolean }> {
   const response = await fetch(
     "/api/integrations/google/spreadsheets",
     withAuthHeaders(accessToken, {

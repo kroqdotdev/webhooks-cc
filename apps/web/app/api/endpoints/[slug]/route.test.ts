@@ -149,6 +149,21 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
   });
 
+  test("rejects retention updates from team members", async () => {
+    mockFns.resolveEndpointAccess.mockResolvedValue({
+      ownerId: "owner_123",
+      endpointId: "endpoint_123",
+      isOwner: false,
+    });
+
+    const { PATCH } = await import("./route");
+    for (const body of [{ deleteAfterDelivery: true }, { retentionDays: 1 }]) {
+      const response = await PATCH(patchRequest(body), params);
+      expect(response.status).toBe(403);
+    }
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
   test("rejects owner-only signing updates from team members", async () => {
     mockFns.resolveEndpointAccess.mockResolvedValue({
       ownerId: "owner_123",

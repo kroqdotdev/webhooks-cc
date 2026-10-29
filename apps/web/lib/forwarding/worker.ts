@@ -758,7 +758,12 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
       : "";
     // Links or inline contents for a stored email's attachments; a storage
     // outage throws here and the delivery is retried on the usual schedule.
-    const withAttachments = await withAttachmentPayloads(request, claim.attachments);
+    // A standard chat message shows only the subject and text; a template
+    // (JSON or a chat message template) can name attachments.
+    const usesAttachments = format !== "chat" || !!claim.message_template;
+    const withAttachments = usesAttachments
+      ? await withAttachmentPayloads(request, claim.attachments)
+      : request;
     prepared = prepare(claim, withAttachments, secret);
   } catch (error) {
     // A server problem (SIGNING_SECRET_KEY missing or changed): retried on the

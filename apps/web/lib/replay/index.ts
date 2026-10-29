@@ -27,8 +27,9 @@ export async function requestIdsInRange(endpointId: string, range: ReplayRange):
     .eq("endpoint_id", endpointId)
     .order("received_at", { ascending: true })
     .limit(MAX_REPLAY);
-  if (range.since) query = query.gte("received_at", new Date(range.since).toISOString());
-  if (range.until) query = query.lte("received_at", new Date(range.until).toISOString());
+  // A bound of 0 is a bound (until: 0 replays nothing), not a missing one.
+  if (range.since != null) query = query.gte("received_at", new Date(range.since).toISOString());
+  if (range.until != null) query = query.lte("received_at", new Date(range.until).toISOString());
   if (range.kind) query = query.eq("kind", range.kind);
   const { data, error } = await query;
   if (error) throw error;

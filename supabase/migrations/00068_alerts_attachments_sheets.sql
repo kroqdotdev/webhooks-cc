@@ -63,7 +63,9 @@ alter table public.endpoint_destinations
   check (format is null or format in (
     'as_received', 'json', 'chat', 'template', 'postmark', 'sendgrid', 'mailgun', 'cloudmailin',
     'sheets'
-  ));
+  )) not valid;
+-- Checked without blocking writes to the table (a plain ADD CONSTRAINT would).
+alter table public.endpoint_destinations validate constraint endpoint_destinations_format_check;
 
 -- 00064's claim with the attachment mode and the destination's config.
 drop function if exists public.claim_email_deliveries(integer, integer, integer);
@@ -255,6 +257,14 @@ as $$
         and x.attempts < 12
         and x.next_attempt_at <= now()
         and (x.locked_until is null or x.locked_until <= now())
+        -- Still wanted: the destination is on and still takes this kind
+        -- (the owner may have changed it since the first claim).
+        and exists (
+          select 1 from public.endpoint_destinations dest
+           where dest.id = p_destination_id
+             and dest.enabled
+             and (case x.kind when 'email' then dest.email else dest.http end)
+        )
       order by x.created_at, x.id
       limit least(greatest(p_limit, 1), 500)
       for update skip locked

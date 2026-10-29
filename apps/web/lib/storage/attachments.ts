@@ -18,7 +18,11 @@ export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 /** The name a download gets: the attachment's own, or a stand-in. */
 export function attachmentFilename(attachment: EmailAttachment, index: number): string {
   const name = attachment.filename?.trim();
-  return name ? name.slice(0, 255) : `attachment-${index + 1}`;
+  if (!name) return `attachment-${index + 1}`;
+  // Never between the halves of a surrogate pair: encodeURIComponent throws
+  // on a lone half.
+  const end = name.length > 255 && /[\uD800-\uDBFF]/.test(name[254]) ? 254 : 255;
+  return name.slice(0, end);
 }
 
 /**

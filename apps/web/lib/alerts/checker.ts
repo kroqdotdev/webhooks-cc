@@ -261,6 +261,7 @@ async function checkDestinations(
 export async function checkEndpointAlerts(alert: AlertRow): Promise<void> {
   const admin = createAdminClient();
   const update: AlertUpdate = {};
+  let checked = false;
   try {
     const { data: endpoint, error } = await admin
       .from("endpoints")
@@ -272,11 +273,15 @@ export async function checkEndpointAlerts(alert: AlertRow): Promise<void> {
     await checkFields(alert, endpoint, update);
     await checkSilence(alert, endpoint);
     await checkDestinations(alert, endpoint, update);
+    checked = true;
   } finally {
+    // A check that failed part way (an alert that could not be written)
+    // keeps the old cursors, so the same emails and deliveries are looked at
+    // again next time rather than skipped.
     const { error } = await admin
       .from("endpoint_alerts")
       .update({
-        ...update,
+        ...(checked ? update : {}),
         locked_until: null,
         next_check_at: new Date(Date.now() + CHECK_EVERY_MS).toISOString(),
       })
