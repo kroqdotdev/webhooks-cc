@@ -43,9 +43,10 @@ function hostnameOf(value: string | undefined): string | null {
   }
 }
 const mailhooksHost = hostnameOf(process.env.NEXT_PUBLIC_MAILHOOKS_URL);
-// The value is a regular expression: dots are escaped to match the host exactly.
+// The value is a regular expression: every special character is escaped
+// (a hostname has dots), so it matches the host exactly.
 const onMailhooks = mailhooksHost
-  ? [{ type: "host" as const, value: mailhooksHost.replace(/\./g, "\\.") }]
+  ? [{ type: "host" as const, value: mailhooksHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }]
   : [];
 const mailhooksRewrites = mailhooksHost
   ? [
