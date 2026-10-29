@@ -1688,6 +1688,18 @@ export interface Database {
         Args: { p_endpoint_id: string };
         Returns: boolean;
       };
+      ai_assists_left: {
+        Args: { p_endpoint_id: string };
+        Returns: Json;
+      };
+      take_ai_assist: {
+        Args: { p_endpoint_id: string; p_actor_id: string; p_kind: string };
+        Returns: Json;
+      };
+      finish_ai_assist: {
+        Args: { p_id: string; p_outcome: string };
+        Returns: undefined;
+      };
       pin_drop_host_key: {
         Args: {
           p_destination_id: string;
