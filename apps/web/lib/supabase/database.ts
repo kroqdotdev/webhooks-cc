@@ -458,6 +458,7 @@ export interface Database {
           retention_days: number | null;
           delete_after_delivery: boolean;
           layouts: Json;
+          last_email_at: string | null;
         };
         Insert: {
           id?: string;
@@ -491,6 +492,7 @@ export interface Database {
           retention_days?: number | null;
           delete_after_delivery?: boolean;
           layouts?: Json;
+          last_email_at?: string | null;
         };
         Update: {
           id?: string;
@@ -524,6 +526,7 @@ export interface Database {
           retention_days?: number | null;
           delete_after_delivery?: boolean;
           layouts?: Json;
+          last_email_at?: string | null;
         };
         Relationships: [];
       };
@@ -1345,6 +1348,7 @@ export interface Database {
           locked_until: string | null;
           created_at: string;
           updated_at: string;
+          seen_ids: string[];
         };
         Insert: {
           endpoint_id: string;
@@ -1364,6 +1368,7 @@ export interface Database {
           next_check_at?: string;
           locked_until?: string | null;
           updated_at?: string;
+          seen_ids?: string[];
         };
         Update: {
           enabled?: boolean;
@@ -1382,6 +1387,7 @@ export interface Database {
           next_check_at?: string;
           locked_until?: string | null;
           updated_at?: string;
+          seen_ids?: string[];
         };
         Relationships: [];
       };
@@ -1397,6 +1403,7 @@ export interface Database {
           notified_open_at: string | null;
           notified_resolve_at: string | null;
           notify_attempts: number;
+          notify_claimed_until: string | null;
         };
         Insert: {
           endpoint_id: string;
@@ -1405,6 +1412,7 @@ export interface Database {
           opened_at?: string;
           resolved_at?: string | null;
           details?: Json;
+          notify_claimed_until?: string | null;
         };
         Update: {
           resolved_at?: string | null;
@@ -1412,6 +1420,7 @@ export interface Database {
           notified_open_at?: string | null;
           notified_resolve_at?: string | null;
           notify_attempts?: number;
+          notify_claimed_until?: string | null;
         };
         Relationships: [];
       };
@@ -1463,6 +1472,10 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      claim_alert_notices: {
+        Args: { p_limit?: number };
+        Returns: Database["public"]["Tables"]["alert_events"]["Row"][];
+      };
       parsed_pages_available: {
         Args: { p_user_id: string | null; p_team_id: string | null };
         Returns: number;
@@ -1506,6 +1519,8 @@ export interface Database {
           request_id: string;
           attempt: number;
           kind: "email" | "http";
+          queued_at: string;
+          bypass_filter: boolean;
         }[];
       };
       claim_alert_checks: {

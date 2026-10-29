@@ -93,11 +93,16 @@ export async function deleteGoogleConnection(
 }
 
 /** A connection's refresh token by id alone, for the worker; null when it is gone. */
-export async function googleRefreshTokenById(connectionId: string): Promise<string | null> {
+/** A connection's refresh token, only when it belongs to `userId` (the endpoint's owner). */
+export async function googleRefreshTokenById(
+  connectionId: string,
+  userId: string
+): Promise<string | null> {
   const { data, error } = await createAdminClient()
     .from("google_connections")
     .select("refresh_token_encrypted")
     .eq("id", connectionId)
+    .eq("user_id", userId)
     .maybeSingle<{ refresh_token_encrypted: string }>();
   if (error) throw error;
   return data ? decryptSigningSecret(byteaToBuffer(data.refresh_token_encrypted)) : null;

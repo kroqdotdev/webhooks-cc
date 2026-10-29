@@ -20,7 +20,6 @@ import { forwardHeaders, FORWARD_USER_AGENT } from "@/lib/forwarding/sign";
  */
 
 const BATCH = 50;
-const MAX_ATTEMPTS = 5;
 
 interface AlertContext {
   slug: string;
@@ -157,7 +156,7 @@ async function sendToDestination(
     }>();
   if (error) throw error;
   // Gone or switched off: nothing to send, and nothing to retry.
-  if (!data || !data.enabled) return true;
+  if (!data || !data.enabled || data.format === "sheets") return true;
   const chat = data.format === "chat" || isSlackUrl(data.url) || isDiscordUrl(data.url);
   let outgoing;
   if (chat) {
@@ -237,49 +236,34 @@ async function notifyOne(event: AlertEventRow): Promise<boolean> {
   return ok;
 }
 
-/** Sends what opened or resolved since the last pass. */
+/** Sends what opened or resolved since the last pass; notices are leased, so each goes once. */
 export async function notifyAlerts(): Promise<number> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("alert_events")
-    .select("*")
-    .or("notified_open_at.is.null,and(resolved_at.not.is.null,notified_resolve_at.is.null)")
-    .lt("notify_attempts", MAX_ATTEMPTS)
-    .order("opened_at", { ascending: true })
-    .limit(BATCH)
-    .returns<AlertEventRow[]>();
+  const { data, error } = await admin.rpc("claim_alert_notices", { p_limit: BATCH });
   if (error) throw error;
   let sent = 0;
-  for (const event of data ?? []) {
+  for (const event of (data ?? []) as AlertEventRow[]) {
     const now = new Date().toISOString();
     // Opened and resolved before anyone was told: nothing worth saying.
     if (event.notified_open_at === null && event.resolved_at !== null) {
       await admin
         .from("alert_events")
-        .update({ notified_open_at: now, notified_resolve_at: now })
+        .update({ notified_open_at: now, notified_resolve_at: now, notify_claimed_until: null })
         .eq("id", event.id);
       continue;
     }
-    // Claimed by counting the attempt first, only if nobody else did since
-    // this pass read it: two processes never send the same notice.
-    const { data: claimed, error: claimError } = await admin
-      .from("alert_events")
-      .update({ notify_attempts: event.notify_attempts + 1 })
-      .eq("id", event.id)
-      .eq("notify_attempts", event.notify_attempts)
-      .select("id");
-    if (claimError) throw claimError;
-    if (!claimed || claimed.length === 0) continue;
     const ok = await notifyOne(event);
-    if (!ok) continue;
+    const update = ok
+      ? event.notified_open_at === null
+        ? { notified_open_at: now, notify_claimed_until: null }
+        : { notified_resolve_at: now, notify_claimed_until: null }
+      : { notify_attempts: event.notify_attempts + 1, notify_claimed_until: null };
     const { error: updateError } = await admin
       .from("alert_events")
-      .update(
-        event.notified_open_at === null ? { notified_open_at: now } : { notified_resolve_at: now }
-      )
+      .update(update)
       .eq("id", event.id);
     if (updateError) throw updateError;
-    sent++;
+    if (ok) sent++;
   }
   return sent;
 }

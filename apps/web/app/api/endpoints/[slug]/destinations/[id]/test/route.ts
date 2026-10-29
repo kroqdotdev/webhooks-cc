@@ -46,6 +46,16 @@ export async function POST(request: Request, { params }: Params) {
     const endpoint = await ownedEndpoint(auth.userId, slug);
     const destination = endpoint ? await getDestination(endpoint.id, id) : null;
     if (!endpoint || !destination) return reply({ error: "Destination not found" }, 404);
+    if (destination.format === "sheets") {
+      // A test would post to the spreadsheet's web address; rows come from captures.
+      return reply(
+        {
+          error:
+            "Google Sheets destinations are not tested this way. Send a request to the endpoint.",
+        },
+        400
+      );
+    }
     const picked = await pickRequest(endpoint, {
       requestId: (body.requestId as string | undefined) ?? null,
       kind: (body.kind as "http" | "email" | undefined) ?? null,

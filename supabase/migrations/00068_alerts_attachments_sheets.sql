@@ -19,9 +19,9 @@
 --   4. google_connections: a user's Google account, for Sheets destinations;
 --      the refresh token is encrypted by the web app (lib/crypto.ts).
 --
--- Apply in autocommit mode (see AGENTS.md).
+-- Every statement runs on its own (autocommit; see 00067 for why), except
+-- the claim's drop and create. Apply in autocommit mode (see AGENTS.md).
 
-begin;
 
 -- 1. Retention cap per endpoint
 create or replace function public.retention_cap(e public.endpoints)
@@ -68,6 +68,8 @@ alter table public.endpoint_destinations
 alter table public.endpoint_destinations validate constraint endpoint_destinations_format_check;
 
 -- 00064's claim with the attachment mode and the destination's config.
+begin;
+
 drop function if exists public.claim_email_deliveries(integer, integer, integer);
 drop function if exists public.claim_email_deliveries(integer, integer, integer, boolean);
 create function public.claim_email_deliveries(
@@ -234,22 +236,34 @@ revoke all on function public.claim_email_deliveries(integer, integer, integer, 
 grant execute on function public.claim_email_deliveries(integer, integer, integer, boolean)
   to service_role;
 
+commit;
+
 -- More due deliveries of one destination, for a worker that sends several at
 -- once (Google Sheets appends a batch of rows in one call, which keeps inside
 -- its quotas). Leased like the main claim.
-create or replace function public.claim_destination_deliveries(
+drop function if exists public.claim_destination_deliveries(uuid, integer, integer);
+create function public.claim_destination_deliveries(
   p_destination_id uuid,
   p_limit          integer default 49,
   p_lease_seconds  integer default 60
 )
-returns table (delivery_id uuid, request_id uuid, attempt integer, kind text)
+returns table (
+  delivery_id uuid,
+  request_id uuid,
+  attempt integer,
+  kind text,
+  queued_at timestamptz,
+  bypass_filter boolean
+)
 language sql
 security definer set search_path = ''
 as $$
   update public.email_deliveries d
      set locked_until = now() + make_interval(secs => greatest(p_lease_seconds, 5)),
          attempts = d.attempts + 1
-   where d.id in (
+    from public.endpoint_destinations dest
+   where dest.id = p_destination_id
+     and d.id in (
      select x.id
        from public.email_deliveries x
       where x.destination_id = p_destination_id
@@ -269,7 +283,9 @@ as $$
       limit least(greatest(p_limit, 1), 500)
       for update skip locked
    )
-  returning d.id, d.request_id, d.attempts, d.kind;
+  -- queued_at as claim_email_deliveries() gives it: when the delay ran out.
+  returning d.id, d.request_id, d.attempts, d.kind,
+            d.created_at + make_interval(secs => dest.delay_seconds), d.bypass_filter;
 $$;
 
 -- 3. Alerts
@@ -383,7 +399,6 @@ grant execute on function public.claim_destination_deliveries(uuid, integer, int
 revoke all on function public.claim_alert_checks(integer, integer) from public, anon, authenticated;
 grant execute on function public.claim_alert_checks(integer, integer) to service_role;
 
-commit;
 
 alter table public.endpoint_destinations validate constraint endpoint_destinations_attachments_check;
 alter table public.endpoint_destinations validate constraint endpoint_destinations_config_check;

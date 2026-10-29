@@ -1309,7 +1309,10 @@ export async function applyTeamPolarWebhookEvent(
         pending_checkout: null,
         pending_seats: null,
         pending_seats_as_of: null,
-        // Recurring blocks and overage need an active team; one-time blocks stay.
+        // Recurring blocks, overage and Team Business need an active team;
+        // one-time blocks stay. Dropping Team Business keeps its retention
+        // for 7 days (a trigger, migration 00067).
+        business: false,
         block_requests: 0,
         overage_active: false,
       });

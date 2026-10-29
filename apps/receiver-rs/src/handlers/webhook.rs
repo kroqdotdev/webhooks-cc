@@ -768,7 +768,8 @@ async fn handle_webhook_inner(
                     // Pick the response and fill in its placeholders before any
                     // delay: the parsed body is not held across the await.
                     let effective_mock = {
-                        let content_type = (!content_type.is_empty()).then_some(content_type.as_str());
+                        let content_type =
+                            (!content_type.is_empty()).then_some(content_type.as_str());
                         let lazy_body = LazyBody::new(&body_str, content_type);
                         let chosen = if let Some(ref rules) = parsed_rules {
                             let ctx = RequestContext {
@@ -915,7 +916,10 @@ mod tests {
                 .to_string(),
             headers: HashMap::from([
                 ("x-request-id".to_string(), "{{ id }}".to_string()),
-                ("x-event".to_string(), "{{ headers.X-Event | upper }}".to_string()),
+                (
+                    "x-event".to_string(),
+                    "{{ headers.X-Event | upper }}".to_string(),
+                ),
             ]),
             delay: None,
         };
@@ -1345,5 +1349,4 @@ mod tests {
         let url = build_verification_request_url("https://go.webhooks.cc", "abc123", "/", Some(""));
         assert_eq!(url, "https://go.webhooks.cc/w/abc123");
     }
-
 }
