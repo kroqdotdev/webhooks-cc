@@ -293,7 +293,13 @@ fn lookup(request: &TemplateRequest<'_>, keys: &[String]) -> Option<Value> {
             string_map(request.headers)
         }
         "body" => Value::String(request.body_text.to_string()),
-        "json" => return request.body.get().and_then(|root| values::walk(root, rest)).cloned(),
+        "json" => {
+            return request
+                .body
+                .get()
+                .and_then(|root| values::walk(root, rest))
+                .cloned();
+        }
         "contentType" => request
             .content_type
             .map_or(Value::Null, |ct| Value::String(ct.to_string())),
@@ -327,7 +333,10 @@ fn truncate(text: &str, max: usize) -> String {
 }
 
 fn text_of(value: &Option<Value>) -> String {
-    value.as_ref().map(values::value_to_text).unwrap_or_default()
+    value
+        .as_ref()
+        .map(values::value_to_text)
+        .unwrap_or_default()
 }
 
 fn fill(placeholder: &Placeholder, request: &TemplateRequest<'_>) -> Filled {

@@ -156,6 +156,23 @@ export function SheetsDestinationEditor({
     }
   };
 
+  // Row 1 of the owner's sheet is theirs: written only when they ask.
+  const [headerWritten, setHeaderWritten] = useState(false);
+  const writeHeaders = async () => {
+    if (!accessToken || !connectionId || !spreadsheetId) return;
+    setBusy("Writing the headers...");
+    setError(null);
+    setHeaderWritten(false);
+    try {
+      await createGoogleSpreadsheet(accessToken, { connectionId, spreadsheetId, sheet, headers });
+      setHeaderWritten(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The headers could not be written.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const pick = async () => {
     if (!accessToken || !connectionId) return;
     setError(null);
@@ -209,15 +226,6 @@ export function SheetsDestinationEditor({
       const result = destination
         ? await updateDestination(accessToken, slug, destination.id, input)
         : await createDestination(accessToken, slug, input);
-      // Keep the sheet's header row in step with the columns.
-      if (JSON.stringify(stored?.columns.map((c) => c.header)) !== JSON.stringify(headers)) {
-        await createGoogleSpreadsheet(accessToken, {
-          connectionId,
-          spreadsheetId,
-          sheet,
-          headers,
-        }).catch(() => undefined);
-      }
       setSaved(true);
       onSaved(result);
     } catch (err) {
@@ -418,6 +426,19 @@ export function SheetsDestinationEditor({
             >
               Reset to the standard columns
             </button>
+            {spreadsheetId && connectionId ? (
+              <button
+                type="button"
+                onClick={writeHeaders}
+                disabled={busy !== null || headers.some((header) => !header.trim())}
+                className="text-xs text-muted-foreground underline disabled:opacity-50"
+              >
+                Write these headers to row 1 of {sheet || "Sheet1"}
+              </button>
+            ) : null}
+            {headerWritten ? (
+              <span className="text-xs text-muted-foreground">Headers written.</span>
+            ) : null}
           </div>
         </div>
       </div>

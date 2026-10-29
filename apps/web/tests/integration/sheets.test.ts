@@ -218,6 +218,99 @@ describe("Google Sheets destination", () => {
   });
 });
 
+describe("Google Sheets batches", () => {
+  async function sheetsEndpoint(name: string, connectionId: string, filter: unknown = null) {
+    const endpoint = await createEndpointForUser({ userId, name });
+    endpointIds.push(endpoint.id);
+    const destination = await createDestination(endpoint.id, {
+      url: `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`,
+      format: "sheets",
+      email: true,
+      http: false,
+      filter: filter as never,
+      config: {
+        connectionId,
+        spreadsheetId: SHEET_ID,
+        sheet: "Sheet1",
+        rows: "email",
+        columns: [{ header: "Subject", value: "{{ subject }}" }],
+      },
+    });
+    return { endpoint, destination };
+  }
+
+  it("filters each row, but sends a hand redelivery whatever the filter says", async () => {
+    const connection = await saveGoogleConnection(userId, {
+      sub: "sub-filter",
+      email: null,
+      refreshToken: "rt-filter",
+      scopes: "drive.file",
+    });
+    const { endpoint, destination } = await sheetsEndpoint("sheets filter", connection.id, {
+      logic: "and",
+      conditions: [{ field: "email", name: "subject", op: "contains", value: "Order" }],
+    });
+    await capture(endpoint.slug, "Order #3001");
+    await capture(endpoint.slug, "Newsletter");
+    let before = calls.length;
+    await drain(endpoint.id);
+    let appends = calls.slice(before).filter((call) => call.path.includes(":append"));
+    expect(appends.flatMap((call) => JSON.parse(call.body).values)).toEqual([["Order #3001"]]);
+
+    const { data: newsletter } = await admin
+      .from("requests")
+      .select("id")
+      .eq("endpoint_id", endpoint.id)
+      .eq("email->>subject", "Newsletter")
+      .single();
+    const { error } = await admin.rpc("queue_destination_delivery", {
+      p_request_id: newsletter!.id,
+      p_endpoint_id: endpoint.id,
+      p_destination_id: destination.id,
+      p_kind: "email",
+      p_bypass_filter: true,
+    });
+    if (error) throw error;
+    // A second capture that the filter turns down rides in the same batch.
+    await capture(endpoint.slug, "Another newsletter");
+    before = calls.length;
+    await drain(endpoint.id);
+    appends = calls.slice(before).filter((call) => call.path.includes(":append"));
+    expect(appends.flatMap((call) => JSON.parse(call.body).values)).toEqual([["Newsletter"]]);
+  });
+
+  it("never writes with a Google account that is not the endpoint owner's", async () => {
+    const { data: other, error } = await admin.auth.admin.createUser({
+      email: `test-sheets-other-${Date.now()}@webhooks-test.local`,
+      password: "TestPassword123!",
+      email_confirm: true,
+    });
+    if (error) throw error;
+    try {
+      const foreign = await saveGoogleConnection(other.user!.id, {
+        sub: "sub-other",
+        email: null,
+        refreshToken: "rt-other",
+        scopes: "drive.file",
+      });
+      const { endpoint } = await sheetsEndpoint("sheets foreign", foreign.id);
+      await capture(endpoint.slug, "Hello");
+      const before = calls.length;
+      await runForwardingBatch(16);
+      expect(calls.slice(before).filter((call) => call.path.includes(":append"))).toHaveLength(0);
+      const { data } = await admin
+        .from("email_deliveries")
+        .select("status, last_error")
+        .eq("endpoint_id", endpoint.id)
+        .single();
+      expect(data?.status).toBe("pending");
+      expect(data?.last_error).toContain("disconnected");
+    } finally {
+      await admin.auth.admin.deleteUser(other.user!.id);
+    }
+  });
+});
+
 describe("connecting a Google account", () => {
   it("returns from consent with a stored connection", async () => {
     const config = googleConfig()!;

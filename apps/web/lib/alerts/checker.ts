@@ -42,7 +42,16 @@ type EndpointRow = {
   id: string;
   slug: string;
   email_fields: Json;
+  last_email_at: string | null;
 };
+
+/**
+ * How far back each check looks again: an email the MX host retried keeps
+ * its first arrival time (up to an hour old), so it can be stored after the
+ * cursor passed it. Ids already checked are skipped.
+ */
+const LATE_ARRIVAL_MS = 65 * 60_000;
+const SEEN_IDS = 500;
 
 async function openAlert(
   endpointId: string,
@@ -103,33 +112,37 @@ async function checkFields(
     fields.map((field) => field.name),
     alert.required_fields
   );
-  const since = alert.checked_through ?? alert.created_at;
-  let query = createAdminClient()
+  const since = alert.checked_through
+    ? new Date(Date.parse(alert.checked_through) - LATE_ARRIVAL_MS).toISOString()
+    : alert.created_at;
+  const seen = new Set(alert.seen_ids ?? []);
+  const { data, error } = await createAdminClient()
     .from("requests")
     .select("id, kind, email, headers, received_at")
     .eq("endpoint_id", endpoint.id)
     .eq("kind", "email")
+    .gt("received_at", since)
     .order("received_at", { ascending: true })
     .order("id", { ascending: true })
-    .limit(EMAILS_PER_CHECK);
-  query = alert.checked_through_id
-    ? query.or(
-        `received_at.gt.${since},and(received_at.eq.${since},id.gt.${alert.checked_through_id})`
-      )
-    : query.gt("received_at", since);
-  const { data, error } = await query;
+    .limit(EMAILS_PER_CHECK + seen.size);
   if (error) throw error;
-  const rows = (data ?? []) as {
-    id: string;
-    kind: string;
-    email: Json;
-    headers: Json;
-    received_at: string;
-  }[];
+  const rows = (
+    (data ?? []) as {
+      id: string;
+      kind: string;
+      email: Json;
+      headers: Json;
+      received_at: string;
+    }[]
+  )
+    .filter((row) => !seen.has(row.id))
+    .slice(0, EMAILS_PER_CHECK);
   if (rows.length === 0) return;
-  const last = rows[rows.length - 1];
-  update.checked_through = last.received_at;
-  update.checked_through_id = last.id;
+  const newest = rows.reduce((max, row) => (row.received_at > max ? row.received_at : max), "");
+  update.checked_through =
+    alert.checked_through && alert.checked_through > newest ? alert.checked_through : newest;
+  update.checked_through_id = rows[rows.length - 1].id;
+  update.seen_ids = [...(alert.seen_ids ?? []), ...rows.map((row) => row.id)].slice(-SEEN_IDS);
 
   // Without fields there is nothing to miss.
   if (
@@ -184,24 +197,27 @@ async function checkSilence(alert: AlertRow, endpoint: EndpointRow): Promise<voi
     await resolveAlert(endpoint.id, "silence", null);
     return;
   }
-  const { data, error } = await createAdminClient()
-    .from("requests")
-    .select("received_at")
-    .eq("endpoint_id", endpoint.id)
-    .eq("kind", "email")
-    .order("received_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ received_at: string }>();
-  if (error) throw error;
+  // The endpoint row says when mail last arrived, also for endpoints that
+  // delete their requests once delivered; older rows fall back to the newest
+  // stored email.
+  let lastEmailAt = endpoint.last_email_at;
+  if (!lastEmailAt) {
+    const { data, error } = await createAdminClient()
+      .from("requests")
+      .select("received_at")
+      .eq("endpoint_id", endpoint.id)
+      .eq("kind", "email")
+      .order("received_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ received_at: string }>();
+    if (error) throw error;
+    lastEmailAt = data?.received_at ?? null;
+  }
   // Counted from the last email, or from when alerts were set up.
-  const since = Math.max(
-    Date.parse(data?.received_at ?? alert.created_at),
-    Date.parse(alert.created_at)
-  );
-  const quietMs = Date.now() - since;
-  if (quietMs >= alert.silence_hours * 3_600_000) {
+  const since = Math.max(Date.parse(lastEmailAt ?? alert.created_at), Date.parse(alert.created_at));
+  if (Date.now() - since >= alert.silence_hours * 3_600_000) {
     await openAlert(endpoint.id, "silence", null, {
-      lastEmailAt: data?.received_at ?? null,
+      lastEmailAt,
       hours: alert.silence_hours,
     });
   } else {
@@ -264,7 +280,7 @@ export async function checkEndpointAlerts(alert: AlertRow): Promise<void> {
   try {
     const { data: endpoint, error } = await admin
       .from("endpoints")
-      .select("id, slug, email_fields")
+      .select("id, slug, email_fields, last_email_at")
       .eq("id", alert.endpoint_id)
       .maybeSingle<EndpointRow>();
     if (error) throw error;
