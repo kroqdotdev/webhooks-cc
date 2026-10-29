@@ -105,15 +105,34 @@ export async function PATCH(request: Request, { params }: Params) {
     if (nextFormat === "file_drop" && parsed.changes.config) {
       const before = (current.config ?? {}) as Record<string, unknown>;
       const after = parsed.changes.config as Record<string, Json>;
-      // Where the secret is sent: changing any of it needs the secret typed
-      // again, so a stolen API key cannot point a drop at its own server
+      // A pinned host key is kept unless the change names one (an SDK or an
+      // editor opened before the first connection pinned it leaves it out).
+      const sent = body.config as Record<string, unknown>;
+      if (!("hostKey" in sent) && typeof before.hostKey === "string") {
+        after.hostKey = before.hostKey;
+      }
+      // Where the secret is sent, and which server is trusted with it:
+      // changing any of it needs the secret typed again, so a stolen API key
+      // cannot point a drop at its own server (or trust its certificate)
       // and collect the stored password.
-      const target = ["protocol", "host", "port", "username", "endpoint", "accessKeyId"];
+      const target = [
+        "protocol",
+        "host",
+        "port",
+        "username",
+        "endpoint",
+        "accessKeyId",
+        "hostKey",
+        "tlsFingerprint",
+      ];
       const moved =
         current.format !== "file_drop" || target.some((key) => before[key] !== after[key]);
       if (moved && parsed.changes.dropSecret === undefined) {
         return reply(
-          { error: "Enter the password or key again: the drop now goes to another server." },
+          {
+            error:
+              "Enter the password or key again: the drop now goes to another server, or trusts another key.",
+          },
           400
         );
       }

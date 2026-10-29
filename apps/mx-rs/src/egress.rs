@@ -30,19 +30,30 @@ const BLOCKED_PORTS: &[u16] = &[
     27017, 27018, 27019,
 ];
 
+/// Addresses of a name tried at most, within one CONNECT_TIMEOUT.
+const MAX_ADDRESSES: usize = 4;
+
 #[derive(Clone)]
 pub struct Egress {
     secret: Arc<String>,
     /// Development only: let loopback and private addresses through.
     allow_private: bool,
+    /// Public addresses never to connect to: this host's own and the web
+    /// host's (a connection to them stays inside the box, past the firewall).
+    deny: Arc<Vec<IpAddr>>,
 }
 
 impl Egress {
-    pub fn new(secret: String, allow_private: bool) -> Self {
+    pub fn new(secret: String, allow_private: bool, deny: Vec<IpAddr>) -> Self {
         Self {
             secret: Arc::new(secret),
             allow_private,
+            deny: Arc::new(deny),
         }
+    }
+
+    fn refuses(&self, ip: IpAddr) -> bool {
+        self.deny.contains(&ip) || (!self.allow_private && is_blocked(ip))
     }
 }
 
@@ -66,6 +77,7 @@ pub fn is_blocked(ip: IpAddr) -> bool {
                 || s[0] == 0x2002 // 6to4
                 || (s[0] == 0x2001 && s[1] == 0) // Teredo
                 || (s[0] == 0x2001 && s[1] == 0x0db8) // documentation
+                || (s[0] == 0x0100 && s[1] == 0 && s[2] == 0 && s[3] == 0) // discard 100::/64
         }
     }
 }
@@ -263,16 +275,17 @@ async fn handle(mut stream: TcpStream, egress: &Egress) -> Result<(), &'static s
     };
     // Any blocked address refuses the whole name, as the web app does: a
     // name that mixes public and private addresses is not a drop target.
-    if addresses.is_empty()
-        || (!egress.allow_private && addresses.iter().any(|a| is_blocked(a.ip())))
-    {
+    if addresses.is_empty() || addresses.iter().any(|a| egress.refuses(a.ip())) {
         send_reply(&mut stream, reply::NOT_ALLOWED, None).await;
         return Err("blocked address");
     }
+    // One deadline for every address of the name, and only a few of them:
+    // the web app has given up by then, and the slot must not stay taken.
     let mut upstream = None;
     let mut last = reply::HOST_UNREACHABLE;
-    for address in &addresses {
-        match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(address)).await {
+    let deadline = tokio::time::Instant::now() + CONNECT_TIMEOUT;
+    for address in addresses.iter().take(MAX_ADDRESSES) {
+        match tokio::time::timeout_at(deadline, TcpStream::connect(address)).await {
             Ok(Ok(connected)) => {
                 upstream = Some(connected);
                 break;
@@ -281,7 +294,10 @@ async fn handle(mut stream: TcpStream, egress: &Egress) -> Result<(), &'static s
                 last = reply::REFUSED;
             }
             Ok(Err(_)) => last = reply::HOST_UNREACHABLE,
-            Err(_) => last = reply::TIMED_OUT,
+            Err(_) => {
+                last = reply::TIMED_OUT;
+                break;
+            }
         }
     }
     let Some(mut upstream) = upstream else {
@@ -289,8 +305,11 @@ async fn handle(mut stream: TcpStream, egress: &Egress) -> Result<(), &'static s
         return Err("connect");
     };
     let _ = upstream.set_nodelay(true);
-    let bound = upstream.local_addr().ok();
-    send_reply(&mut stream, reply::OK, bound).await;
+    // The address reached, where RFC 1928 has the bound one: the web app
+    // sends an FTP data connection to that same address, never to the name
+    // again (which could resolve elsewhere by then).
+    let reached = upstream.peer_addr().ok();
+    send_reply(&mut stream, reply::OK, reached).await;
     let _ = tokio::time::timeout(
         MAX_LIFETIME,
         tokio::io::copy_bidirectional(&mut stream, &mut upstream),
@@ -360,7 +379,7 @@ mod tests {
             let _keep = _stop;
             serve(
                 listener,
-                Egress::new("s3cret-value".into(), allow_private),
+                Egress::new("s3cret-value".into(), allow_private, Vec::new()),
                 stopped,
             )
             .await;

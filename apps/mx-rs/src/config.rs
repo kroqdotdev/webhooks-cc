@@ -70,6 +70,8 @@ pub struct EgressConfig {
     pub secret: String,
     /// Development only: let drops reach loopback and private addresses.
     pub allow_private: bool,
+    /// Public addresses never to connect to (this host's and the web host's).
+    pub deny: Vec<std::net::IpAddr>,
 }
 
 /// Limits applied before mail is accepted (see `limits`).
@@ -249,10 +251,29 @@ fn egress_from_env() -> Option<EgressConfig> {
             if secret.len() < 24 || secret.len() > 255 {
                 panic!("MX_EGRESS_SECRET must be 24 to 255 characters");
             }
+            let allow_private = parse_env_or("MX_EGRESS_ALLOW_PRIVATE", false);
+            // Only a debug build may let drops reach private addresses: a
+            // release build ignores the setting, whatever the environment.
+            if allow_private && !cfg!(debug_assertions) {
+                tracing::warn!("MX_EGRESS_ALLOW_PRIVATE is ignored in a release build");
+            }
+            let deny = non_empty("MX_EGRESS_DENY")
+                .map(|raw| {
+                    raw.split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| {
+                            s.trim().parse().unwrap_or_else(|_| {
+                                panic!("MX_EGRESS_DENY: '{s}' is not an address")
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             Some(EgressConfig {
                 listen,
                 secret,
-                allow_private: parse_env_or("MX_EGRESS_ALLOW_PRIVATE", false),
+                allow_private: allow_private && cfg!(debug_assertions),
+                deny,
             })
         }
         _ => panic!("MX_EGRESS_LISTEN and MX_EGRESS_SECRET must be set together"),

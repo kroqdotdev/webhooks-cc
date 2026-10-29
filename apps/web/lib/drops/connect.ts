@@ -123,40 +123,40 @@ function withTimeout<T>(promise: Promise<T>, socket: net.Socket, ms: number): Pr
   });
 }
 
-/** Reads exactly n bytes from a socket that is not yet handed to anyone else. */
+/**
+ * Reads exactly n bytes at a time from a socket not yet handed to anyone
+ * else, in paused mode: what arrives past the handshake (an SSH server's
+ * banner comes right behind the proxy's reply) stays in the socket's buffer
+ * for whoever reads next, rather than being emitted to no listener.
+ */
 function reader(socket: net.Socket) {
-  let buffered = Buffer.alloc(0);
-  let waiting: { n: number; resolve: (data: Buffer) => void; reject: (e: Error) => void } | null =
-    null;
-  const pump = () => {
-    if (waiting && buffered.length >= waiting.n) {
-      const data = buffered.subarray(0, waiting.n);
-      buffered = buffered.subarray(waiting.n);
-      const { resolve } = waiting;
-      waiting = null;
-      resolve(data);
-    }
-  };
-  const onData = (chunk: Buffer) => {
-    buffered = Buffer.concat([buffered, chunk]);
-    pump();
-  };
-  const onEnd = () => waiting?.reject(new DropError("The file drop proxy closed the connection."));
-  socket.on("data", onData);
-  socket.on("end", onEnd);
-  socket.on("error", (error) => waiting?.reject(error));
   return {
     read(n: number): Promise<Buffer> {
       return new Promise((resolve, reject) => {
-        waiting = { n, resolve, reject };
-        pump();
+        const cleanup = () => {
+          socket.off("readable", attempt);
+          socket.off("end", onEnd);
+          socket.off("error", onError);
+        };
+        const attempt = () => {
+          const chunk = socket.read(n) as Buffer | null;
+          if (chunk === null) return;
+          cleanup();
+          resolve(chunk);
+        };
+        const onEnd = () => {
+          cleanup();
+          reject(new DropError("The file drop proxy closed the connection."));
+        };
+        const onError = (error: Error) => {
+          cleanup();
+          reject(error);
+        };
+        socket.on("readable", attempt);
+        socket.on("end", onEnd);
+        socket.on("error", onError);
+        attempt();
       });
-    },
-    /** Stops reading; anything already read past the handshake is handed back. */
-    release(): Buffer {
-      socket.off("data", onData);
-      socket.off("end", onEnd);
-      return buffered;
     },
   };
 }
@@ -169,8 +169,85 @@ const SOCKS_REPLIES: Record<number, string> = {
   6: "The connection timed out.",
 };
 
-/** A SOCKS5 CONNECT (RFC 1928) with username and password (RFC 1929), by host name. */
-async function viaProxy(proxy: ProxyConfig, host: string, port: number): Promise<net.Socket> {
+/**
+ * A connection a drop made, and the address it reached: an FTP data
+ * connection goes to that address, never to the name again (which could
+ * resolve elsewhere by then).
+ */
+export interface DropSocket {
+  socket: net.Socket;
+  address: string | null;
+}
+
+/**
+ * Every connection one drop opens, so a deadline can end them all: a server
+ * that answers slowly, or never, then fails the drop instead of holding a
+ * worker.
+ */
+export class DropConnections {
+  private readonly sockets = new Set<net.Socket>();
+  private aborted = false;
+
+  add(socket: net.Socket): void {
+    if (this.aborted) {
+      socket.destroy();
+      return;
+    }
+    this.sockets.add(socket);
+    socket.once("close", () => this.sockets.delete(socket));
+  }
+
+  get isAborted(): boolean {
+    return this.aborted;
+  }
+
+  abort(): void {
+    this.aborted = true;
+    for (const socket of this.sockets) socket.destroy();
+    this.sockets.clear();
+  }
+}
+
+function addressBytes(host: string): Buffer | null {
+  const family = net.isIP(host);
+  if (family === 4) return Buffer.from([1, ...host.split(".").map(Number)]);
+  if (family === 6) {
+    const groups = new net.SocketAddress({ address: host, family: "ipv6" }).address;
+    const full = expandV6(groups);
+    const out = Buffer.alloc(17);
+    out[0] = 4;
+    full.forEach((group, i) => out.writeUInt16BE(group, 1 + i * 2));
+    return out;
+  }
+  return null;
+}
+
+function expandV6(address: string): number[] {
+  const [head, tail = ""] = address.split("::");
+  const parse = (part: string) => (part ? part.split(":").map((g) => parseInt(g, 16)) : []);
+  const left = parse(head);
+  const right = address.includes("::") ? parse(tail) : [];
+  const zeros = new Array(8 - left.length - right.length).fill(0);
+  return [...left, ...zeros, ...right];
+}
+
+function readAddress(addressType: number, bytes: Buffer): string | null {
+  if (addressType === 1 && bytes.length === 4) return Array.from(bytes).join(".");
+  if (addressType === 4 && bytes.length === 16) {
+    const groups: string[] = [];
+    for (let i = 0; i < 16; i += 2) groups.push(bytes.readUInt16BE(i).toString(16));
+    return groups.join(":");
+  }
+  return null;
+}
+
+/**
+ * A SOCKS5 CONNECT (RFC 1928) with username and password (RFC 1929), by host
+ * name, or by address for a connection that must reach the address another
+ * one did. Our egress answers with the address it connected to (not its own
+ * bound address), which the FTP client uses for data connections.
+ */
+async function viaProxy(proxy: ProxyConfig, host: string, port: number): Promise<DropSocket> {
   const socket = net.connect({ host: proxy.host, port: proxy.port });
   socket.setNoDelay(true);
   const handshake = async () => {
@@ -192,19 +269,24 @@ async function viaProxy(proxy: ProxyConfig, host: string, port: number): Promise
     const [, status] = await input.read(2);
     if (status !== 0) throw new DropError("The file drop proxy refused our credentials.", true);
 
-    const name = Buffer.from(host);
     const portBytes = Buffer.alloc(2);
     portBytes.writeUInt16BE(port);
-    socket.write(Buffer.concat([Buffer.from([5, 1, 0, 3, name.length]), name, portBytes]));
+    const literal = addressBytes(host);
+    const name = Buffer.from(host);
+    socket.write(
+      Buffer.concat([
+        Buffer.from([5, 1, 0]),
+        literal ?? Buffer.concat([Buffer.from([3, name.length]), name]),
+        portBytes,
+      ])
+    );
     const [, reply, , addressType] = await input.read(4);
     if (reply !== 0) {
       throw new DropError(SOCKS_REPLIES[reply] ?? "The file drop proxy could not connect.");
     }
     const boundLength = addressType === 1 ? 4 : addressType === 4 ? 16 : (await input.read(1))[0];
-    await input.read(boundLength + 2);
-    const rest = input.release();
-    if (rest.length > 0) socket.unshift(rest);
-    return socket;
+    const bound = await input.read(boundLength + 2);
+    return { socket, address: readAddress(addressType, bound.subarray(0, boundLength)) };
   };
   try {
     return await withTimeout(handshake(), socket, CONNECT_TIMEOUT_MS);
@@ -216,7 +298,7 @@ async function viaProxy(proxy: ProxyConfig, host: string, port: number): Promise
   }
 }
 
-async function direct(host: string, port: number): Promise<net.Socket> {
+async function direct(host: string, port: number): Promise<DropSocket> {
   const allowPrivate = allowPrivateTargets();
   let addresses;
   try {
@@ -241,8 +323,8 @@ async function direct(host: string, port: number): Promise<net.Socket> {
   socket.setNoDelay(true);
   try {
     return await withTimeout(
-      new Promise<net.Socket>((resolve, reject) => {
-        socket.once("connect", () => resolve(socket));
+      new Promise<DropSocket>((resolve, reject) => {
+        socket.once("connect", () => resolve({ socket, address: target.address }));
         socket.once("error", reject);
       }),
       socket,
@@ -262,21 +344,35 @@ async function direct(host: string, port: number): Promise<net.Socket> {
 
 /**
  * A TCP connection to a drop server's host and port, checked, through the
- * egress proxy when one is set. Throws DropError with a message for the
- * dashboard.
+ * egress proxy when one is set. `reached` is an address an earlier
+ * connection of the same drop reached (an FTP data connection), which may be
+ * an IP literal; the proxy checks it like any other. Throws DropError with a
+ * message for the dashboard.
  */
-export async function openDropSocket(host: string, port: number): Promise<net.Socket> {
+export async function openDropSocket(
+  host: string,
+  port: number,
+  options: { connections?: DropConnections; reached?: boolean } = {}
+): Promise<DropSocket> {
+  if (options.connections?.isAborted) throw new DropError("The drop took too long.");
   const name = host
     .trim()
     .replace(/^\[|\]$/g, "")
     .toLowerCase()
     .replace(/\.$/, "");
-  const problem = dropHostProblem(name, port);
+  const problem =
+    options.reached && net.isIP(name) !== 0
+      ? Number.isInteger(port) && port > 0 && port < 65536 && !DROP_BLOCKED_PORTS.has(port)
+        ? null
+        : `Port ${port} is not allowed.`
+      : dropHostProblem(name, port);
   if (problem) throw new DropError(problem, false);
   const proxy = proxyConfig();
-  if (proxy) return viaProxy(proxy, name, port);
-  if (process.env.NODE_ENV === "production") {
+  let opened: DropSocket;
+  if (proxy) opened = await viaProxy(proxy, name, port);
+  else if (process.env.NODE_ENV === "production") {
     throw new DropError("File drops are not set up on this server.");
-  }
-  return direct(name, port);
+  } else opened = await direct(name, port);
+  options.connections?.add(opened.socket);
+  return opened;
 }

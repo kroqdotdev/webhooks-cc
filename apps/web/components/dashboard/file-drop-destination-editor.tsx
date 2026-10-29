@@ -70,6 +70,9 @@ export function FileDropDestinationEditor({
   const [username, setUsername] = useState(stored?.username ?? "");
   const [folder, setFolder] = useState(stored?.folder ?? "");
   const [hostKey, setHostKey] = useState(stored?.hostKey ?? null);
+  // Sent only to forget the pinned key: otherwise the stored one is kept
+  // (it may have been pinned since this editor opened).
+  const [forgetHostKey, setForgetHostKey] = useState(false);
   const [tlsFingerprint, setTlsFingerprint] = useState(stored?.tlsFingerprint ?? "");
   const [endpoint, setEndpoint] = useState(stored?.endpoint ?? "");
   const [region, setRegion] = useState(stored?.region ?? "");
@@ -126,7 +129,7 @@ export function FileDropDestinationEditor({
           host: host.trim(),
           port: Number(port),
           username: username.trim(),
-          hostKey: protocol === "sftp" ? hostKey : null,
+          ...(forgetHostKey ? { hostKey: null } : {}),
         }),
   });
 
@@ -168,6 +171,7 @@ export function FileDropDestinationEditor({
         ? await updateDestination(accessToken, slug, destination.id, input)
         : await createDestination(accessToken, slug, input);
       setSecret("");
+      setForgetHostKey(false);
       setSaved(true);
       onSaved(result);
     } catch (err) {
@@ -393,7 +397,10 @@ export function FileDropDestinationEditor({
             </span>
             <button
               type="button"
-              onClick={() => setHostKey(null)}
+              onClick={() => {
+                setHostKey(null);
+                setForgetHostKey(true);
+              }}
               className="underline"
               title="Accept the key the server shows next time"
             >
