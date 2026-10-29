@@ -69,10 +69,10 @@ Emails sent to an endpoint's address count against the same quota: one request p
 
 Pro accounts and subscribed teams can go past the plan's quota in three ways, all in blocks of 25,000 requests. Manage them under **Account > Plan and usage > Extra requests**, or on the team's page (the owner).
 
-| Option          | Price                          | How it works                                                                                   |
-| --------------- | ------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Monthly blocks  | $2 per 25,000 a month          | Raise the quota every period and renew together with the plan                                  |
-| One-time blocks | $3 per 25,000                  | Bought once, kept until used, and used only after the quota and monthly blocks run out          |
+| Option          | Price                           | How it works                                                                                   |
+| --------------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Monthly blocks  | $2 per 25,000 a month           | Raise the quota every period and renew together with the plan                                  |
+| One-time blocks | $3 per 25,000                   | Bought once, kept until used, and used only after the quota and monthly blocks run out         |
 | Overage         | $4 per 25,000 ($0.16 per 1,000) | Counted past everything else, up to a monthly maximum you set, billed at the end of the period |
 
 Requests are used in this order: the plan's quota, monthly blocks, one-time blocks, then overage. Only when all of them are used up does the receiver answer `429 Too Many Requests`.
@@ -94,7 +94,7 @@ Captured requests, with any stored email and attachments, are deleted automatica
 - **Team-billed**: requests captured on an endpoint shared with an active team are kept for 31 days, even when the endpoint owner is on Free
 - **Ephemeral**: requests are deleted when the endpoint expires (12 hours after creation)
 
-Any endpoint can keep requests for fewer days than the plan, or delete each request once every destination has its copy ("deliver, then delete"); see [Retention](/docs/endpoints#retention). After a plan ends, its retention is kept for 7 more days before the shorter one applies.
+An endpoint's owner can keep its requests for fewer days than the plan, or delete each request a minute after every destination has its copy or has given up ("deliver, then delete"); see [Retention](/docs/endpoints#retention). After a plan ends, its retention is kept for 7 more days before the shorter one applies.
 
 Deleted requests cannot be recovered. Export important requests as JSON or CSV from the dashboard before they expire.
 
@@ -135,25 +135,25 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 
 ## Other limits
 
-| Resource                       | Limit                 |
-| ------------------------------ | --------------------- |
-| API keys per user              | 10                    |
-| API key default TTL            | 365 days              |
-| Mock response delay            | 30,000ms (30 seconds) |
-| Test webhook body size         | 1 MB                  |
-| Email message size             | 10 MB                 |
-| Recipients per email           | 20                    |
-| Original email kept up to      | 1 MB                  |
-| Forwarding answer timeout      | 15 seconds            |
-| Forwarding retries             | 8, over about a day (or 4 within an hour, or none) |
-| Deliveries waiting per endpoint | 1,000 |
-| Paginated request listing      | 100 per page          |
-| Ephemeral endpoints (per user) | 25 concurrent         |
-| SSE stream connection          | 30 minutes max        |
-| SSE keepalive interval         | 30 seconds            |
-| Teams owned per user           | 10                    |
-| Members per team               | = purchased seats     |
-| Seats per team                 | 1,000                 |
+| Resource                        | Limit                                              |
+| ------------------------------- | -------------------------------------------------- |
+| API keys per user               | 10                                                 |
+| API key default TTL             | 365 days                                           |
+| Mock response delay             | 30,000ms (30 seconds)                              |
+| Test webhook body size          | 1 MB                                               |
+| Email message size              | 10 MB                                              |
+| Recipients per email            | 20                                                 |
+| Original email kept up to       | 1 MB                                               |
+| Forwarding answer timeout       | 15 seconds                                         |
+| Forwarding retries              | 8, over about a day (or 4 within an hour, or none) |
+| Deliveries waiting per endpoint | 1,000                                              |
+| Paginated request listing       | 100 per page                                       |
+| Ephemeral endpoints (per user)  | 25 concurrent                                      |
+| SSE stream connection           | 30 minutes max                                     |
+| SSE keepalive interval          | 30 seconds                                         |
+| Teams owned per user            | 10                                                 |
+| Members per team                | = purchased seats                                  |
+| Seats per team                  | 1,000                                              |
 
 <FAQ>
 <FAQItem question="Do sendTo calls count toward my quota?">

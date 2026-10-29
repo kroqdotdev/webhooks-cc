@@ -4,6 +4,7 @@ import {
   createSpreadsheet,
   googleConfig,
   GoogleError,
+  readFirstRow,
   writeHeader,
 } from "@/lib/integrations/google";
 import { MAX_COLUMNS } from "@/lib/integrations/sheets";
@@ -50,8 +51,22 @@ export async function POST(request: Request) {
       if (!/^[A-Za-z0-9_-]{20,100}$/.test(body.spreadsheetId)) {
         return reply({ error: "That is not a Google Sheets id." }, 400);
       }
+      // An existing sheet's first row is written only when it is empty or
+      // still holds this destination's earlier headers: someone's own data
+      // or header row is never overwritten.
+      const previous = Array.isArray(body.previousHeaders)
+        ? body.previousHeaders.filter((h): h is string => typeof h === "string")
+        : [];
+      const first = (await readFirstRow(token, body.spreadsheetId, sheet)).filter(
+        (cell, i, row) => cell !== "" || row.slice(i).some((c) => c !== "")
+      );
+      const same = (a: string[], b: string[]) =>
+        a.length === b.length && a.every((value, i) => value === b[i]);
+      if (first.length > 0 && !same(first, previous) && !same(first, headers)) {
+        return reply({ id: body.spreadsheetId, headerWritten: false });
+      }
       await writeHeader(token, body.spreadsheetId, sheet, headers);
-      return reply({ id: body.spreadsheetId });
+      return reply({ id: body.spreadsheetId, headerWritten: true });
     }
     const title =
       typeof body.title === "string" && body.title.trim() ? body.title.trim() : "webhooks.cc";

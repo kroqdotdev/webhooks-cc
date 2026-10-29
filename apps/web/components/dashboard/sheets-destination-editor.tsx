@@ -196,6 +196,20 @@ export function SheetsDestinationEditor({
     }
     setBusy("Saving...");
     try {
+      // The sheet's header row first, so a Google failure stops the save with
+      // nothing half done. The server leaves a first row that holds anything
+      // but this destination's own earlier headers as it is.
+      const sameSheet = stored?.spreadsheetId === spreadsheetId && stored?.sheet === sheet;
+      const previous = sameSheet ? (stored?.columns.map((c) => c.header) ?? []) : [];
+      if (!sameSheet || JSON.stringify(previous) !== JSON.stringify(headers)) {
+        await createGoogleSpreadsheet(accessToken, {
+          connectionId,
+          spreadsheetId,
+          sheet,
+          headers,
+          previousHeaders: previous,
+        });
+      }
       const input = {
         name: name.trim() || null,
         url: spreadsheetUrl(spreadsheetId),
@@ -209,15 +223,6 @@ export function SheetsDestinationEditor({
       const result = destination
         ? await updateDestination(accessToken, slug, destination.id, input)
         : await createDestination(accessToken, slug, input);
-      // Keep the sheet's header row in step with the columns.
-      if (JSON.stringify(stored?.columns.map((c) => c.header)) !== JSON.stringify(headers)) {
-        await createGoogleSpreadsheet(accessToken, {
-          connectionId,
-          spreadsheetId,
-          sheet,
-          headers,
-        }).catch(() => undefined);
-      }
       setSaved(true);
       onSaved(result);
     } catch (err) {

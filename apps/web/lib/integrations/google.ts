@@ -321,7 +321,7 @@ async function sheetsCall<T>(
   return data;
 }
 
-/** Creates a spreadsheet with one sheet and the header row. */
+/** Creates a spreadsheet with one sheet and the header row, in one call (nothing half made). */
 export async function createSpreadsheet(
   token: string,
   title: string,
@@ -335,11 +335,27 @@ export async function createSpreadsheet(
       method: "POST",
       body: {
         properties: { title: title.slice(0, 200) },
-        sheets: [{ properties: { title: sheetTitle, gridProperties: { frozenRowCount: 1 } } }],
+        sheets: [
+          {
+            properties: { title: sheetTitle, gridProperties: { frozenRowCount: 1 } },
+            ...(headers.length > 0
+              ? {
+                  data: [
+                    {
+                      startRow: 0,
+                      startColumn: 0,
+                      rowData: [
+                        { values: headers.map((h) => ({ userEnteredValue: { stringValue: h } })) },
+                      ],
+                    },
+                  ],
+                }
+              : {}),
+          },
+        ],
       },
     }
   );
-  if (headers.length > 0) await writeHeader(token, created.spreadsheetId, sheetTitle, headers);
   return { id: created.spreadsheetId, url: created.spreadsheetUrl };
 }
 
@@ -360,6 +376,21 @@ export async function writeHeader(
     `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${range}?valueInputOption=RAW`,
     { method: "PUT", body: { values: [headers] } }
   );
+}
+
+/** The sheet's first row as text (empty when the row is). */
+export async function readFirstRow(
+  token: string,
+  spreadsheetId: string,
+  sheet: string
+): Promise<string[]> {
+  const range = encodeURIComponent(`${quotedSheet(sheet)}!1:1`);
+  const result = await sheetsCall<{ values?: unknown[][] }>(
+    token,
+    `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${range}?majorDimension=ROWS`,
+    { method: "GET" }
+  );
+  return (result.values?.[0] ?? []).map((cell) => String(cell ?? ""));
 }
 
 /** Appends rows below the sheet's table, as text (never formulas). */

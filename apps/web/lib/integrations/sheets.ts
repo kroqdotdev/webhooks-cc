@@ -86,7 +86,7 @@ export function parseSheetsConfig(
   const columns: SheetsColumn[] = [];
   for (const [index, column] of (config.columns as unknown[]).entries()) {
     const c = column as Record<string, unknown> | null;
-    if (!c || typeof c.header !== "string" || typeof c.value !== "string") {
+    if (!c || typeof c.header !== "string" || typeof c.value !== "string" || !c.header.trim()) {
       return `Column ${index + 1} needs a header and a value.`;
     }
     if (c.header.length > MAX_HEADER_CHARS || c.value.length > MAX_VALUE_CHARS) {

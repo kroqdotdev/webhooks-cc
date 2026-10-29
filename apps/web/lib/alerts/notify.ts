@@ -260,18 +260,26 @@ export async function notifyAlerts(): Promise<number> {
         .eq("id", event.id);
       continue;
     }
+    // Claimed by counting the attempt first, only if nobody else did since
+    // this pass read it: two processes never send the same notice.
+    const { data: claimed, error: claimError } = await admin
+      .from("alert_events")
+      .update({ notify_attempts: event.notify_attempts + 1 })
+      .eq("id", event.id)
+      .eq("notify_attempts", event.notify_attempts)
+      .select("id");
+    if (claimError) throw claimError;
+    if (!claimed || claimed.length === 0) continue;
     const ok = await notifyOne(event);
-    const update = ok
-      ? event.notified_open_at === null
-        ? { notified_open_at: now }
-        : { notified_resolve_at: now }
-      : { notify_attempts: event.notify_attempts + 1 };
+    if (!ok) continue;
     const { error: updateError } = await admin
       .from("alert_events")
-      .update(update)
+      .update(
+        event.notified_open_at === null ? { notified_open_at: now } : { notified_resolve_at: now }
+      )
       .eq("id", event.id);
     if (updateError) throw updateError;
-    if (ok) sent++;
+    sent++;
   }
   return sent;
 }

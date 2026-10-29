@@ -8,7 +8,8 @@ import { runForwardingBatch } from "@/lib/forwarding/worker";
 import { getObjectBytes, isObjectStorageConfigured, putObject } from "@/lib/storage/object-store";
 import { saveAlertSettings, DEFAULT_ALERT_SETTINGS } from "@/lib/supabase/alerts";
 import { runAlertChecks } from "@/lib/alerts/checker";
-import { replayRequests } from "@/lib/replay";
+import { replayRequests, requestIdsInRange } from "@/lib/replay";
+import { notifyAlerts } from "@/lib/alerts/notify";
 import { getLastMessageForEmail } from "@/lib/email/dev-transport";
 import { GET as attachmentLinkRoute } from "@/app/api/attachments/[id]/[index]/route";
 
@@ -231,12 +232,22 @@ describe("replay", () => {
       forwardUrl: `${base}/replay`,
       forwardEnabled: true,
     });
+    await createDestination(target.id, { url: `${base}/replay-b`, format: "json", email: true });
     const requestId = await captureEmail(target.slug, "Replay me");
     await drain(target.id);
-    const before = received.filter((r) => r.path === "/replay").length;
+    const count = (path: string) => received.filter((r) => r.path === path).length;
+    const before = [count("/replay"), count("/replay-b")];
     expect(await replayRequests(target.id, [requestId])).toBe(1);
     await drain(target.id);
-    expect(received.filter((r) => r.path === "/replay").length).toBe(before + 1);
+    // Each destination gets it once more.
+    expect([count("/replay"), count("/replay-b")]).toEqual([before[0] + 1, before[1] + 1]);
+  });
+
+  it("treats a bound of 0 as a bound", async () => {
+    const target = await endpoint("replay range");
+    await captureEmail(target.slug, "In range");
+    expect(await requestIdsInRange(target.id, { until: 0 })).toEqual([]);
+    expect(await requestIdsInRange(target.id, { since: 0 })).toHaveLength(1);
   });
 });
 
@@ -257,6 +268,28 @@ async function openAlerts(endpointId: string) {
 }
 
 describe("alerts", () => {
+  it("sends a notice once when two passes run at the same time", async () => {
+    const target = await endpoint("alerts once");
+    const notify = await createDestination(target.id, {
+      url: `${base}/alerts-once`,
+      format: "json",
+      email: false,
+      http: false,
+    });
+    await saveAlertSettings(target.id, {
+      ...DEFAULT_ALERT_SETTINGS,
+      enabled: true,
+      notifyEmail: false,
+      notifyDestinationIds: [notify.id],
+    });
+    const { error } = await admin
+      .from("alert_events")
+      .insert({ endpoint_id: target.id, kind: "silence", details: { hours: 6 } });
+    if (error) throw error;
+    await Promise.all([notifyAlerts(), notifyAlerts()]);
+    expect(received.filter((r) => r.path === "/alerts-once")).toHaveLength(1);
+  });
+
   it("opens when fields stop matching, notifies, and resolves when they match again", async () => {
     const target = await endpoint("alerts fields");
     await updateEndpointBySlugForUser({

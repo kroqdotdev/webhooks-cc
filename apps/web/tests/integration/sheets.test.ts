@@ -8,6 +8,8 @@ import { saveGoogleConnection, listGoogleConnections } from "@/lib/supabase/goog
 import { runForwardingBatch } from "@/lib/forwarding/worker";
 import { authorizationUrl, googleConfig } from "@/lib/integrations/google";
 import { GET as callbackRoute } from "@/app/api/integrations/google/callback/route";
+import { POST as spreadsheetsRoute } from "@/app/api/integrations/google/spreadsheets/route";
+import { createHash, randomBytes } from "node:crypto";
 
 /**
  * The Google Sheets destination (migration 00068) against a local fake of
@@ -30,6 +32,7 @@ let server: Server;
 const calls: { method: string; path: string; auth: string | undefined; body: string }[] = [];
 const SHEET_ID = "a".repeat(44);
 const BROKEN_SHEET_ID = "b".repeat(44);
+const FILLED_SHEET_ID = "c".repeat(44);
 
 function idToken(claims: Record<string, unknown>): string {
   const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -67,6 +70,10 @@ beforeAll(async () => {
         return res
           .writeHead(403)
           .end(JSON.stringify({ error: { message: "The caller does not have permission" } }));
+      }
+      // A sheet whose first row already holds someone's own values.
+      if (req.method === "GET" && req.url?.includes(FILLED_SHEET_ID)) {
+        return res.writeHead(200).end(JSON.stringify({ values: [["Their", "Own"]] }));
       }
       const rows = req.url?.includes(":append") ? (JSON.parse(body).values as unknown[]).length : 0;
       res.writeHead(200).end(JSON.stringify({ updates: { updatedRows: rows } }));
@@ -272,5 +279,83 @@ describe("connecting a Google account", () => {
       )
     );
     expect(new URL(forged.headers.get("location")!).searchParams.get("google")).toBe("expired");
+  });
+
+  it("writes a header row only over an empty row or its own earlier headers", async () => {
+    const connection = await saveGoogleConnection(userId, {
+      sub: "sub-headers",
+      email: "owner@acme.example",
+      refreshToken: "rt-good",
+      scopes: "drive.file",
+    });
+    const apiKey = `whcc_${randomBytes(24).toString("hex")}`;
+    const { error } = await admin.from("api_keys").insert({
+      user_id: userId,
+      key_hash: createHash("sha256").update(apiKey).digest("hex"),
+      key_prefix: apiKey.slice(0, 12),
+      name: "Sheets headers test",
+    });
+    if (error) throw error;
+    const write = async (spreadsheetId: string, previousHeaders: string[]) => {
+      const response = await spreadsheetsRoute(
+        new Request("http://localhost/api/integrations/google/spreadsheets", {
+          method: "POST",
+          headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            connectionId: connection.id,
+            spreadsheetId,
+            sheet: "Orders",
+            headers: ["Subject", "Order"],
+            previousHeaders,
+          }),
+        })
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as { headerWritten: boolean };
+    };
+    const puts = (id: string) =>
+      calls.filter((c) => c.method === "PUT" && c.path.includes(id)).length;
+
+    // Someone's own first row stays as it is.
+    expect(await write(FILLED_SHEET_ID, [])).toMatchObject({ headerWritten: false });
+    expect(puts(FILLED_SHEET_ID)).toBe(0);
+    // This destination's own earlier headers are replaced.
+    expect(await write(FILLED_SHEET_ID, ["Their", "Own"])).toMatchObject({ headerWritten: true });
+    expect(puts(FILLED_SHEET_ID)).toBe(1);
+    // An empty first row gets the headers.
+    const before = puts(SHEET_ID);
+    expect(await write(SHEET_ID, [])).toMatchObject({ headerWritten: true });
+    expect(puts(SHEET_ID)).toBe(before + 1);
+  });
+
+  it("claims no more rows for a destination that was turned off", async () => {
+    const connection = await saveGoogleConnection(userId, {
+      sub: "sub-off",
+      email: "owner@acme.example",
+      refreshToken: "rt-good",
+      scopes: "drive.file",
+    });
+    const endpoint = await createEndpointForUser({ userId, name: "sheets off" });
+    endpointIds.push(endpoint.id);
+    const destination = await createDestination(endpoint.id, {
+      url: `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`,
+      format: "sheets",
+      email: true,
+      http: false,
+      config: {
+        connectionId: connection.id,
+        spreadsheetId: SHEET_ID,
+        sheet: "Orders",
+        rows: "email",
+        columns: [{ header: "Subject", value: "{{ subject }}" }],
+      },
+    });
+    await capture(endpoint.slug, "Queued before the switch");
+    await admin.from("endpoint_destinations").update({ enabled: false }).eq("id", destination.id);
+    const { data, error } = await admin.rpc("claim_destination_deliveries", {
+      p_destination_id: destination.id,
+    });
+    if (error) throw error;
+    expect(data).toEqual([]);
   });
 });

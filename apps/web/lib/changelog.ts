@@ -35,7 +35,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Alerts tell you by email, and in a chat or webhook destination if you like, when an endpoint's email fields stop matching, when mail stops arriving, or when deliveries to a destination fail for good",
       "Replay sends emails through their destinations again after you fix a pattern, from an open alert or through the API",
       "A Google Sheets destination adds a row per email or request, with the columns you choose; webhooks.cc only touches the spreadsheets it creates or you pick",
-      "Every endpoint can keep requests for fewer days than its plan, or delete each one once every destination has its copy",
+      "Every endpoint's owner can keep its requests for fewer days than the plan, or delete each one a minute after every destination has its copy or has given up",
     ],
   },
   {
