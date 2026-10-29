@@ -132,6 +132,7 @@ describe("the Zapier app", () => {
       authData,
       inputData: { endpoint: slug },
       targetUrl: "https://hooks.zapier.com/hooks/standard/1/abc/",
+      meta: { zap: { id: 4242 } },
     });
     expect(subscription).toMatchObject({ endpoint: slug });
     const destinations = await fetch(
@@ -142,6 +143,7 @@ describe("the Zapier app", () => {
       expect.objectContaining({
         id: subscription.id,
         url: "https://hooks.zapier.com/hooks/standard/1/abc/",
+        name: "Zapier (Zap 4242)",
         format: "json",
         email: true,
         http: false,
@@ -161,6 +163,11 @@ describe("the Zapier app", () => {
       headers: { Authorization: `Bearer ${apiKey}` },
     }).then((r) => r.json());
     expect(after.some((d) => d.id === subscription.id)).toBe(false);
+    // Removed already (in the dashboard, say): turning the Zap off still works.
+    await appTester(App.triggers.new_email.operation.performUnsubscribe, {
+      authData,
+      subscribeData: subscription,
+    });
 
     const words = samples[0].subject.split(/\s+/).filter((w) => w.length > 3);
     const found = await appTester(App.searches.find_email.operation.perform, {
@@ -169,6 +176,20 @@ describe("the Zapier app", () => {
     });
     expect(found[0]).toMatchObject({ id: samples[0].id, type: "email.received" });
   }, 60_000);
+
+  it("asks Zapier to wait when the API says to slow down", () => {
+    const explain = App.afterResponse[0];
+    const z = { errors: zapier.errors };
+    const response = { status: 429, getHeader: (name) => (name === "retry-after" ? "17" : null) };
+    let thrown;
+    try {
+      explain(response, z);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(zapier.errors.ThrottledError);
+    expect(JSON.parse(thrown.message).delay).toBe(17);
+  });
 
   it("explains a key that is not accepted", async (context) => {
     if (!running) context.skip();

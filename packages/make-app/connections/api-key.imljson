@@ -22,11 +22,13 @@
         "value": "{{body.plan}}"
       },
       "error": {
-        "message": "The API key was not accepted. Create a new one under Account > API keys."
+        "message": "{{if(statusCode == 401, 'The API key was not accepted. Create a new one under Account > API keys.', ifempty(body.error, 'webhooks.cc answered ' + statusCode))}}"
       }
     },
     "log": {
-      "sanitize": ["request.headers.authorization"]
+      "sanitize": [
+        "request.headers.authorization"
+      ]
     }
   }
 }

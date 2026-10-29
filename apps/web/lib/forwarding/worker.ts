@@ -1113,7 +1113,32 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   if (facts.format === "chat" && result.status === 429) {
     holdChat(url, result.retryAfterSeconds ?? 1);
   }
+  // 410 Gone: the URL is gone for good (Zapier and Make answer it for the
+  // hook of a Zap or scenario that was removed). Not retried, and the
+  // destination is turned off rather than sent every email again.
+  if (result.status === 410 && claim.destination_id) {
+    await record(
+      claim,
+      {
+        ...result,
+        error: result.error ?? "The URL answered 410 Gone: the destination was turned off.",
+      },
+      false,
+      facts
+    );
+    await turnOffGoneDestination(claim.destination_id);
+    return;
+  }
   await record(claim, result, true, facts);
+}
+
+async function turnOffGoneDestination(destinationId: string): Promise<void> {
+  const { error } = await createAdminClient()
+    .from("endpoint_destinations")
+    .update({ enabled: false })
+    .eq("id", destinationId)
+    .eq("enabled", true);
+  if (error) reportError("[forwarding] could not turn off a gone destination", error);
 }
 
 /** Claims up to `limit` due deliveries, with the requests they forward. */

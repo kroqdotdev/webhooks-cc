@@ -27,6 +27,14 @@ function explainErrors(response, z) {
       401
     );
   }
+  if (response.status === 429) {
+    // Limits are per account; Zapier tries again after the wait.
+    const wait = Number(response.getHeader && response.getHeader("retry-after"));
+    throw new z.errors.ThrottledError(
+      "webhooks.cc asked to slow down; trying again shortly.",
+      Number.isFinite(wait) && wait > 0 ? wait : 60
+    );
+  }
   if (response.status >= 400 && !response.skipThrowForStatus) {
     let message = `webhooks.cc answered ${response.status}`;
     try {

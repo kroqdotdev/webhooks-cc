@@ -11,7 +11,7 @@ import {
   jsonObject,
   ownedEndpoint,
 } from "@/lib/forwarding/destination-routes";
-import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
+import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import {
   deleteDestination,
   DestinationHeaderValueMissingError,
@@ -48,7 +48,7 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!auth.success) return auth.response;
   const { slug, id } = await params;
 
-  const rateLimit = await checkRateLimitWithInfo(request, "destinations", 60);
+  const rateLimit = await checkRateLimitByKeyWithInfo(`user:destinations:${auth.userId}`, 60);
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(Response.json(body, { status }), rateLimit);
