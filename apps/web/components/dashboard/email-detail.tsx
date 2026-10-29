@@ -13,7 +13,7 @@ import {
   type ExtractedLink,
 } from "@webhooks-cc/sdk/email";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { fetchEmailFieldValues, fetchRawEmail } from "@/lib/dashboard-api";
+import { fetchAttachment, fetchEmailFieldValues, fetchRawEmail } from "@/lib/dashboard-api";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { highlightBody } from "@/lib/highlight";
 import { JsonTree } from "./json-tree";
@@ -898,6 +898,26 @@ export function EmailDetail({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [raw, requestId, stored, storedRawHere, loadStoredRaw]);
 
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const downloadAttachment = useCallback(
+    async (index: number) => {
+      setAttachmentError(null);
+      if (!accessToken) return setAttachmentError("Sign in again to download.");
+      try {
+        const { blob, filename } = await fetchAttachment(accessToken, requestId, index);
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) {
+        setAttachmentError(error instanceof Error ? error.message : "Download failed.");
+      }
+    },
+    [accessToken, requestId]
+  );
+
   useEffect(() => {
     if (!stored || tab !== "raw" || storedRawHere) return;
     loadStoredRaw().catch((error) =>
@@ -1213,11 +1233,25 @@ export function EmailDetail({
                   <span className="ml-auto font-mono text-xs text-muted-foreground shrink-0">
                     {formatBytes(attachment.size)}
                   </span>
+                  {stored && (
+                    <button
+                      type="button"
+                      onClick={() => void downloadAttachment(index)}
+                      className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1.5 shrink-0"
+                      aria-label={`Download ${attachment.filename ?? `attachment ${index + 1}`}`}
+                    >
+                      <FileDown className="h-3 w-3" />
+                      Download
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
+            {attachmentError && <p className="text-xs text-destructive mt-3">{attachmentError}</p>}
             <p className="text-xs text-muted-foreground mt-3">
-              Attachments are listed with their name, type and size. Their contents are not kept.
+              {stored
+                ? "Attachments are kept with the email and deleted with it."
+                : "Attachments are listed with their name, type and size. Their contents are not kept."}
               {email.truncated.attachments && " This email had more attachments than are listed."}
             </p>
           </div>

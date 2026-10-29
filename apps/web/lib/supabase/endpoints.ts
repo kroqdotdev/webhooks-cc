@@ -36,6 +36,10 @@ type SelectedEndpointRow = Pick<
   signing_header?: string | null;
   show_email_extracts?: boolean;
   email_fields?: Json;
+  retention_days?: number | null;
+  delete_after_delivery?: boolean;
+  /** Computed column (migration 00068): the billing account's retention. */
+  retention_cap?: number | null;
   /** Embedded: the old forward* fields and notificationUrl read from these (migration 00063). */
   endpoint_destinations?: EmbeddedDestination[];
 };
@@ -60,7 +64,7 @@ type EmbeddedDestination = Pick<
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 const ENDPOINT_COLUMNS =
-  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
+  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, retention_days, delete_after_delivery, retention_cap, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -121,6 +125,12 @@ export interface EndpointRecord {
   forwardSentField: string | null;
   /** How many destinations captures go to (lib/supabase/destinations.ts). */
   destinationCount: number;
+  /** Days requests are kept here; null keeps them as long as the plan does. */
+  retentionDays: number | null;
+  /** The longest retention allowed: the billing account's plan. */
+  retentionCapDays: number;
+  /** Requests are deleted once every delivery is settled. */
+  deleteAfterDelivery: boolean;
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
@@ -186,6 +196,9 @@ interface UpdateEndpointInput {
   forwardHeaders?: ForwardHeaderInput[];
   /** Validated by the route (lib/forwarding/timing.ts); null clears it. */
   forwardSentField?: string | null;
+  /** Validated by the route against the account's retention; null keeps the plan's. */
+  retentionDays?: number | null;
+  deleteAfterDelivery?: boolean;
 }
 
 /** Endpoints without an owner get no email: guest captures are readable by anyone with the slug. */
@@ -275,6 +288,9 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     forwardHeaders: maskedForwardHeaders(primary?.headers_encrypted),
     forwardSentField: primary?.sent_field ?? null,
     destinationCount: destinations.length,
+    retentionDays: row.retention_days ?? null,
+    retentionCapDays: row.retention_cap ?? 7,
+    deleteAfterDelivery: row.delete_after_delivery ?? false,
   };
 }
 
@@ -540,6 +556,8 @@ export async function updateEndpointBySlugForUser({
   forwardKeepOrder,
   forwardHeaders,
   forwardSentField,
+  retentionDays,
+  deleteAfterDelivery,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
@@ -618,6 +636,12 @@ export async function updateEndpointBySlugForUser({
   }
   if (emailFields !== undefined) {
     updates.email_fields = (emailFields ?? []) as unknown as Json;
+  }
+  if (retentionDays !== undefined) {
+    updates.retention_days = retentionDays;
+  }
+  if (deleteAfterDelivery !== undefined) {
+    updates.delete_after_delivery = deleteAfterDelivery;
   }
   // Handle signing config
   if (signingProvider !== undefined) {
@@ -864,4 +888,16 @@ export async function deleteSandboxEndpointBySlug(
     .maybeSingle();
   if (error) throw error;
   return data?.id ?? null;
+}
+
+/** The longest retention an endpoint may have (its billing account's), or null when it does not exist. */
+export async function endpointRetentionCap(slug: string): Promise<number | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("endpoints")
+    .select("retention_cap")
+    .eq("slug", slug.toLowerCase())
+    .maybeSingle<{ retention_cap: number | null }>();
+  if (error) throw error;
+  return data?.retention_cap ?? null;
 }

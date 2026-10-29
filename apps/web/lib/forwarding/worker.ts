@@ -33,6 +33,7 @@ import { isDelivered, jsonForward, sendForward, type SendResult } from "./send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "./sign";
 import { senderTimestamp, type SenderTime } from "./timing";
 import { reportError } from "@/lib/observability";
+import { withAttachmentPayloads } from "./attachments";
 
 /**
  * Sends forwarded requests. capture_webhook() queues a delivery for every
@@ -622,7 +623,10 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
     const secret = claim.forward_secret_encrypted
       ? decryptSigningSecret(Buffer.from(claim.forward_secret_encrypted, "base64"))
       : "";
-    prepared = prepare(claim, request, secret);
+    // Links or inline contents for a stored email's attachments; a storage
+    // outage throws here and the delivery is retried on the usual schedule.
+    const withAttachments = await withAttachmentPayloads(request, claim.attachments);
+    prepared = prepare(claim, withAttachments, secret);
   } catch (error) {
     // A server problem (SIGNING_SECRET_KEY missing or changed): retried on the
     // usual schedule, so deliveries resume once it is fixed.

@@ -117,6 +117,7 @@ interface Draft {
   sentField: string;
   throttle: string;
   delay: string;
+  attachments: "links" | "inline" | "none";
   /** A new Mailgun signing key; empty keeps the saved one. */
   mailgunKey: string;
 }
@@ -144,6 +145,7 @@ function draftFrom(destination: DashboardDestination | null, preset: Destination
       sentField: destination.sentField ?? "",
       throttle: destination.throttleSeconds ? String(destination.throttleSeconds) : "",
       delay: destination.delaySeconds ? String(destination.delaySeconds) : "",
+      attachments: destination.attachments ?? "links",
       mailgunKey: "",
     };
   }
@@ -173,6 +175,7 @@ function draftFrom(destination: DashboardDestination | null, preset: Destination
     sentField: "",
     throttle: "",
     delay: "",
+    attachments: "links",
     mailgunKey: "",
   };
 }
@@ -206,6 +209,7 @@ function inputOf(draft: Draft, headersChanged: boolean): DestinationInput | { er
     sentField: draft.sentField.trim() || null,
     throttleSeconds: seconds(draft.throttle),
     delaySeconds: seconds(draft.delay),
+    attachments: draft.attachments,
     ...(headersChanged ? { headers: headersInput(draft.rows) } : {}),
     ...(draft.format === "mailgun" && draft.mailgunKey.trim()
       ? { mailgunSigningKey: draft.mailgunKey.trim() }
@@ -895,6 +899,29 @@ export function DestinationEditor({
               options={RETRY_OPTIONS}
             />
           </Field>
+          {draft.email && draft.format !== "chat" && (
+            <Field
+              label="Email attachments"
+              help={
+                draft.attachments === "inline"
+                  ? "Contents as base64 in each delivery, up to 1 MB in all; larger ones as links. Postmark and CloudMailin shapes carry them too; SendGrid and Mailgun forms do not."
+                  : draft.attachments === "links"
+                    ? "A signed link per attachment (url), which downloads it while the email is kept."
+                    : "Only each attachment's name, type and size."
+              }
+            >
+              <Segmented<"links" | "inline" | "none">
+                name="Email attachments"
+                value={draft.attachments}
+                onChange={(attachments) => set({ attachments })}
+                options={[
+                  { value: "links", label: "Links" },
+                  { value: "inline", label: "Inline" },
+                  { value: "none", label: "Names only" },
+                ]}
+              />
+            </Field>
+          )}
           <SwitchRow
             id={`${idPrefix}-keep-order`}
             label="Keep order"

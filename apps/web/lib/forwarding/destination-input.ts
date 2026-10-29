@@ -8,7 +8,9 @@ import {
 import { conditionProblems } from "@/lib/rules";
 import type { Json } from "@/lib/supabase/database";
 import {
+  ATTACHMENT_MODES,
   DESTINATION_FORMAT_SETTINGS,
+  type DestinationAttachments,
   type DestinationChanges,
   type DestinationFormatSetting,
   type DestinationHeaderInput,
@@ -227,6 +229,13 @@ export function parseDestinationInput(
     const value = seconds(body, key);
     if (typeof value === "string") return fail(value);
     if (value !== undefined) changes[key] = value;
+  }
+
+  if (body.attachments !== undefined) {
+    if (!(ATTACHMENT_MODES as readonly unknown[]).includes(body.attachments)) {
+      return fail('attachments must be "links", "inline" or "none".');
+    }
+    changes.attachments = body.attachments as DestinationAttachments;
   }
 
   return { ok: true, changes };
