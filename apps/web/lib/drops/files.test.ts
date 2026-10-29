@@ -20,11 +20,11 @@ describe("file drop files", () => {
       ["Subject", "Total", "Note"],
       [
         ['Order "42", paid', "-12.50", '=HYPERLINK("x")'],
-        ["Line\nbreak", "+45 1234", "-cmd"],
+        ["Line\nbreak", "+45 1234", "-1+cmd|' /C calc'!A0"],
       ]
     ).toString("utf8");
     expect(csv).toBe(
-      'Subject,Total,Note\r\n"Order ""42"", paid",-12.50,"\'=HYPERLINK(""x"")"\r\n"Line\nbreak",+45 1234,\'-cmd\r\n'
+      'Subject,Total,Note\r\n"Order ""42"", paid",-12.50,"\'=HYPERLINK(""x"")"\r\n"Line\nbreak",\'+45 1234,\'-1+cmd|\' /C calc\'!A0\r\n'
     );
   });
 
