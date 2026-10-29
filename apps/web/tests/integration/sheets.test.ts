@@ -41,7 +41,12 @@ beforeAll(async () => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      calls.push({ method: req.method ?? "", path: req.url ?? "", auth: req.headers.authorization, body });
+      calls.push({
+        method: req.method ?? "",
+        path: req.url ?? "",
+        auth: req.headers.authorization,
+        body,
+      });
       res.setHeader("content-type", "application/json");
       if (req.url === "/token") {
         const params = new URLSearchParams(body);
@@ -59,7 +64,9 @@ beforeAll(async () => {
         );
       }
       if (req.url?.includes(BROKEN_SHEET_ID)) {
-        return res.writeHead(403).end(JSON.stringify({ error: { message: "The caller does not have permission" } }));
+        return res
+          .writeHead(403)
+          .end(JSON.stringify({ error: { message: "The caller does not have permission" } }));
       }
       const rows = req.url?.includes(":append") ? (JSON.parse(body).values as unknown[]).length : 0;
       res.writeHead(200).end(JSON.stringify({ updates: { updatedRows: rows } }));
@@ -214,7 +221,9 @@ describe("Google Sheets destination", () => {
 describe("connecting a Google account", () => {
   it("returns from consent with a stored connection", async () => {
     const config = googleConfig()!;
-    const url = new URL(authorizationUrl(config, userId, "/dashboard?endpoint=x"));
+    const started = authorizationUrl(config, userId, "/dashboard?endpoint=x");
+    const url = new URL(started.url);
+    const cookie = { cookie: `whcc_google_oauth=${started.browserNonce}` };
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("scope")).toBe(
       "openid email https://www.googleapis.com/auth/drive.file"
@@ -222,9 +231,23 @@ describe("connecting a Google account", () => {
     expect(url.searchParams.get("access_type")).toBe("offline");
     const state = url.searchParams.get("state")!;
 
-    const response = await callbackRoute(
+    // Without the starting browser's cookie, nothing is linked.
+    const elsewhere = await callbackRoute(
       new Request(`http://localhost:3000/api/integrations/google/callback?code=abc&state=${state}`)
     );
+    expect(new URL(elsewhere.headers.get("location")!).searchParams.get("google")).toBe("expired");
+    const before = calls.filter((call) => call.path === "/token").length;
+    expect(calls.filter((call) => call.path === "/token").length).toBe(before);
+
+    const response = await callbackRoute(
+      new Request(
+        `http://localhost:3000/api/integrations/google/callback?code=abc&state=${state}`,
+        {
+          headers: cookie,
+        }
+      )
+    );
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
     expect(response.status).toBe(303);
     const location = new URL(response.headers.get("location")!);
     expect(location.pathname).toBe("/dashboard");
@@ -241,7 +264,12 @@ describe("connecting a Google account", () => {
     const tampered =
       state.slice(0, middle) + (state[middle] === "A" ? "B" : "A") + state.slice(middle + 1);
     const forged = await callbackRoute(
-      new Request(`http://localhost:3000/api/integrations/google/callback?code=abc&state=${tampered}`)
+      new Request(
+        `http://localhost:3000/api/integrations/google/callback?code=abc&state=${tampered}`,
+        {
+          headers: cookie,
+        }
+      )
     );
     expect(new URL(forged.headers.get("location")!).searchParams.get("google")).toBe("expired");
   });
