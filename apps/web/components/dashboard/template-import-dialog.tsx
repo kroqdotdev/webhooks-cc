@@ -36,7 +36,26 @@ export function TemplateImportDialog({
   const [slug, setSlug] = useState(endpoints[0]?.slug ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (!template) return null;
+  if (!template) {
+    // An old or mistyped link: say so, and let it be dismissed (onClose
+    // takes the template out of the URL).
+    return (
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="border-strong border-line shadow-raised">
+          <DialogHeader>
+            <DialogTitle className="font-bold">That layout is not available</DialogTitle>
+            <DialogDescription>
+              The link names a layout this site does not have. Pick one from the sender pages
+              instead.
+            </DialogDescription>
+          </DialogHeader>
+          <Button type="button" variant="outline" className="ui-btn-outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const add = async () => {
     if (!accessToken || !slug) return;
@@ -101,7 +120,13 @@ export function TemplateImportDialog({
           >
             {busy ? "Adding..." : "Add layout"}
           </Button>
-          <Button type="button" variant="outline" className="ui-btn-outline" onClick={onClose}>
+          <Button
+            type="button"
+            variant="outline"
+            className="ui-btn-outline"
+            disabled={busy}
+            onClick={onClose}
+          >
             Cancel
           </Button>
         </div>

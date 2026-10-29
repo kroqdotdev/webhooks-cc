@@ -45,6 +45,12 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
         <pre className="px-5 py-4 text-xs font-mono overflow-x-auto leading-relaxed">
           {JSON.stringify(json, null, 2)}
         </pre>
+        {sample.attachment && (
+          <p className="px-5 pb-4 text-xs text-muted-foreground">
+            Shortened: the delivery also carries parsed.attachments, with the text or rows read from{" "}
+            {sample.attachment}.
+          </p>
+        )}
       </figure>
     </div>
   );

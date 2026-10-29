@@ -277,7 +277,14 @@ export async function notifyAlerts(): Promise<number> {
         .eq("id", event.id);
       continue;
     }
-    const ok = await notifyOne(event);
+    let ok = false;
+    try {
+      ok = await notifyOne(event);
+    } catch (error) {
+      // One alert's failed read is retried with its attempts; the rest of the
+      // batch is still sent.
+      reportError("[alerts] notice failed", error, { alert: event.id });
+    }
     const update = ok
       ? event.notified_open_at === null
         ? { notified_open_at: now, notify_claimed_until: null }

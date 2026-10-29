@@ -1494,6 +1494,10 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      append_endpoint_layout: {
+        Args: { p_endpoint_id: string; p_layout: Json; p_expected_count: number };
+        Returns: boolean;
+      };
       claim_alert_notices: {
         Args: { p_limit?: number };
         Returns: Database["public"]["Tables"]["alert_events"]["Row"][];

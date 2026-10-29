@@ -131,6 +131,48 @@ test("a sender page's layout is added to an endpoint", async ({ page }) => {
   expect((data?.layouts as { id: string }[]).map((layout) => layout.id)).toEqual(["etsy-sales"]);
 });
 
+test("a layout added to another endpoint opens that endpoint's Layouts", async ({ page }) => {
+  const { data: other, error } = await admin
+    .from("endpoints")
+    .insert({ slug: `e2e-mail-other-${Date.now()}`, name: "Receipts", user_id: user.id })
+    .select("id, slug")
+    .single();
+  if (error) throw error;
+  try {
+    // Open the dashboard on the first endpoint, then import into the other one.
+    await signInTestUser(
+      page,
+      user,
+      `/dashboard?endpoint=${endpointSlug}&template=shopify-orders`,
+      MAIL
+    );
+    const dialog = page.getByRole("dialog");
+    await expect(
+      dialog.getByRole("heading", { name: "Add the Shopify orders layout" })
+    ).toBeVisible({
+      timeout: 15000,
+    });
+    await dialog.getByLabel("Endpoint").selectOption(other.slug);
+    await dialog.getByRole("button", { name: "Add layout" }).click();
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+    await expect(page).toHaveURL(new RegExp(`endpoint=${other.slug}`));
+    await expect(page.getByRole("region", { name: "Layouts" })).toBeVisible({ timeout: 15000 });
+  } finally {
+    await admin.from("endpoints").delete().eq("id", other.id);
+  }
+});
+
+test("a link naming an unknown layout says so and can be closed", async ({ page }) => {
+  await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}&template=nope`, MAIL);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "That layout is not available" })).toBeVisible({
+    timeout: 15000,
+  });
+  await dialog.getByRole("button", { name: "Close" }).first().click();
+  await expect(dialog).toBeHidden();
+  await expect(page).not.toHaveURL(/template=/);
+});
+
 test("an email link asked for on mailhooks.cc signs in there, even opened on webhooks.cc", async ({
   page,
   baseURL,

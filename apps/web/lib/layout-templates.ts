@@ -88,16 +88,16 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       fields: [
         { name: "order", from: "subject", pattern: "Order #(\\d+)" },
         { name: "customer", from: "subject", pattern: "placed by (.+)$" },
-        { name: "subtotal", from: "text", pattern: `Subtotal\\s+\\$?${MONEY}` },
-        { name: "shipping", from: "text", pattern: `Shipping\\s+\\$?${MONEY}` },
-        { name: "total", from: "text", pattern: `(?m)^Total\\s+\\$?${MONEY}` },
+        { name: "subtotal", from: "text", pattern: `Subtotal\\s+[$€£]?${MONEY}` },
+        { name: "shipping", from: "text", pattern: `Shipping\\s+[$€£]?${MONEY}` },
+        { name: "total", from: "text", pattern: `(?m)^Total\\s+[$€£]?${MONEY}` },
         { name: "currency", from: "text", pattern: "(?m)^Total\\s+\\S+\\s+([A-Z]{3})" },
       ],
       lineItems: {
         from: "text",
         start: "Order summary",
         end: "Subtotal",
-        pattern: `(?m)^(?P<product>.+?) × (?P<quantity>\\d+)\\s+\\$?(?P<price>${MONEY.slice(1, -1)})\\s*$`,
+        pattern: `(?m)^(?P<product>.+?) × (?P<quantity>\\d+)\\s+[$€£]?(?P<price>${MONEY.slice(1, -1)})\\s*$`,
       },
     },
     result: {
@@ -116,7 +116,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
     },
     tips: [
       "A store set to another language words the subject differently: change the match condition and the customer pattern to your subject.",
-      "Prices without a dollar sign (€, £) still match; the currency field reads the code after the total.",
+      "Prices in dollars, euros or pounds match, with the sign in front or none; the currency field reads the code after the total.",
     ],
   },
   {

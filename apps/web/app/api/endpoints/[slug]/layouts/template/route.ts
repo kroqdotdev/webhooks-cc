@@ -5,7 +5,8 @@ import { withTemplateLayout } from "@/lib/layout-template-import";
 import { layoutsProblems } from "@/lib/parsing/layouts";
 import { reportError } from "@/lib/observability";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
-import { updateEndpointBySlugForUser } from "@/lib/supabase/endpoints";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Json } from "@/lib/supabase/database";
 
 /**
  * POST /api/endpoints/{slug}/layouts/template { template }: adds one of the
@@ -27,25 +28,36 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   }
 
   try {
-    const endpoint = await ownedEndpoint(auth.userId, slug);
-    if (!endpoint) return Response.json({ error: "Endpoint not found" }, { status: 404 });
-    const added = withTemplateLayout(endpoint.layouts, body.template);
+    // Appended in the database under the row's lock, only while the layouts
+    // are still the ones checked here: an import or edit at the same moment
+    // makes this read and check again rather than write over it.
+    let added: ReturnType<typeof withTemplateLayout> = null;
+    for (let attempt = 0; attempt < 3 && !added; attempt++) {
+      const endpoint = await ownedEndpoint(auth.userId, slug);
+      if (!endpoint) return Response.json({ error: "Endpoint not found" }, { status: 404 });
+      const next = withTemplateLayout(endpoint.layouts, body.template);
+      if (!next) {
+        return Response.json(
+          { error: "Unknown template, or the endpoint has no room for another layout." },
+          { status: 400 }
+        );
+      }
+      const [problem] = layoutsProblems(next.layouts);
+      if (problem) return Response.json({ error: `layouts: ${problem}` }, { status: 400 });
+      const { data: appended, error } = await createAdminClient().rpc("append_endpoint_layout", {
+        p_endpoint_id: endpoint.id,
+        p_layout: next.layout as unknown as Json,
+        p_expected_count: endpoint.layouts.length,
+      });
+      if (error) throw error;
+      if (appended === true) added = next;
+    }
     if (!added) {
       return Response.json(
-        { error: "Unknown template, or the endpoint has no room for another layout." },
-        { status: 400 }
+        { error: "The endpoint's layouts changed while this ran. Try again." },
+        { status: 409 }
       );
     }
-    const [problem] = layoutsProblems(added.layouts);
-    if (problem) return Response.json({ error: `layouts: ${problem}` }, { status: 400 });
-
-    const updated = await updateEndpointBySlugForUser({
-      userId: auth.userId,
-      slug,
-      layouts: added.layouts,
-    });
-    // Deleted while this ran.
-    if (!updated) return Response.json({ error: "Endpoint not found" }, { status: 404 });
     await auditUserAction(request, auth.userId, {
       action: "endpoint.updated",
       status: 200,

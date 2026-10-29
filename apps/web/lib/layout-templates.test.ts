@@ -112,6 +112,24 @@ describe("layout templates", () => {
   });
 });
 
+describe("the Shopify layout", () => {
+  it.each([
+    ["euro", "€"],
+    ["pound", "£"],
+  ])("reads prices with a %s sign in front", (_name, sign) => {
+    const template = layoutTemplate("shopify-orders")!;
+    const priced = {
+      ...template,
+      sample: { ...template.sample, text: template.sample.text.replaceAll("$", sign) },
+    };
+    const request = sampleRequest(priced);
+    expect(layoutFieldValues(request, template.layout)).toEqual(template.result.fields);
+    expect(lineItemsFromText(request, template.layout.lineItems!).rows).toEqual(
+      template.result.lineItems
+    );
+  });
+});
+
 describe("withTemplateLayout", () => {
   it("adds the template's layout at the end under a free id", async () => {
     const { withTemplateLayout } = await import("./layout-template-import");
