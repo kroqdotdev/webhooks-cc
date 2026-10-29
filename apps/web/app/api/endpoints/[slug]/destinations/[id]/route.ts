@@ -111,7 +111,8 @@ export async function PATCH(request: Request, { params }: Params) {
         "tlsFingerprint",
       ];
       const moved =
-        current.format !== "file_drop" || target.some((key) => before[key] !== after[key]);
+        current.format !== "file_drop" ||
+        target.some((key) => (before[key] ?? null) !== (after[key] ?? null));
       if (moved && parsed.changes.dropSecret === undefined) {
         return reply(
           {

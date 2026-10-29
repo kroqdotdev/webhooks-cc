@@ -28,22 +28,47 @@ const HANDSHAKE_TIMEOUT_MS = 20_000;
 /** One SFTP operation (a stat, a file written, a rename) may take this long. */
 const OPERATION_TIMEOUT_MS = 120_000;
 
-/** An SFTP operation that fails after OPERATION_TIMEOUT_MS instead of waiting forever. */
-function operation<T>(
-  what: string,
-  run: (done: (error: unknown, value?: T) => void) => void
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new DropError(`The server took too long to answer (${what}).`)),
-      OPERATION_TIMEOUT_MS
-    );
-    run((error, value) => {
-      clearTimeout(timer);
-      if (error) reject(error);
-      else resolve(value as T);
+/**
+ * Whether an SSH connection has closed, and the operations waiting on it:
+ * ssh2 never calls back an operation started on (or caught by) a closed
+ * connection, so they are failed here at once instead of each waiting out
+ * its timer.
+ */
+class Liveness {
+  closed = false;
+  private readonly waiting = new Set<(error: Error) => void>();
+
+  watch(client: Client) {
+    const close = () => {
+      this.closed = true;
+      for (const fail of this.waiting) fail(new DropError("The SFTP connection closed."));
+      this.waiting.clear();
+    };
+    client.once("close", close);
+    client.once("end", close);
+  }
+
+  /** An SFTP operation that fails when the connection closes, or after OPERATION_TIMEOUT_MS. */
+  operation<T>(what: string, run: (done: (error: unknown, value?: T) => void) => void): Promise<T> {
+    if (this.closed) return Promise.reject(new DropError("The SFTP connection closed."));
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiting.delete(fail);
+        reject(new DropError(`The server took too long to answer (${what}).`));
+      }, OPERATION_TIMEOUT_MS);
+      const fail = (error: Error) => {
+        clearTimeout(timer);
+        reject(error);
+      };
+      this.waiting.add(fail);
+      run((error, value) => {
+        clearTimeout(timer);
+        this.waiting.delete(fail);
+        if (error) reject(error);
+        else resolve(value as T);
+      });
     });
-  });
+  }
 }
 
 /** A host key's fingerprint, as OpenSSH prints it: SHA256: and unpadded base64. */
@@ -56,7 +81,8 @@ export class SftpSession {
     private readonly client: Client,
     private readonly sftp: SFTPWrapper,
     /** The fingerprint of the key the server showed. */
-    readonly hostKey: string
+    readonly hostKey: string,
+    private readonly live: Liveness
   ) {}
 
   static async connect(options: SftpOptions): Promise<SftpSession> {
@@ -114,10 +140,12 @@ export class SftpSession {
       throw new DropError("The SFTP connection failed.");
     }
     try {
-      const sftp = await operation<SFTPWrapper>("starting SFTP", (done) =>
+      const live = new Liveness();
+      live.watch(client);
+      const sftp = await live.operation<SFTPWrapper>("starting SFTP", (done) =>
         client.sftp((error, wrapper) => done(error, wrapper))
       );
-      return new SftpSession(client, sftp, seenKey!);
+      return new SftpSession(client, sftp, seenKey!, live);
     } catch {
       client.end();
       throw new DropError("The server does not offer SFTP.", false);
@@ -127,8 +155,9 @@ export class SftpSession {
   /** Throws unless the folder exists. */
   async checkFolder(folder: string): Promise<void> {
     const path = folder || ".";
-    const stats = await operation<import("ssh2").Stats | null>("checking the folder", (done) =>
-      this.sftp.stat(path, (error, found) => done(null, error ? null : found))
+    const stats = await this.live.operation<import("ssh2").Stats | null>(
+      "checking the folder",
+      (done) => this.sftp.stat(path, (error, found) => done(null, error ? null : found))
     );
     if (!stats || !stats.isDirectory()) {
       throw new DropError(`The folder ${path} is not there.`, false);
@@ -140,13 +169,13 @@ export class SftpSession {
     const target = posix.join(folder || ".", name);
     // Unique, so two uploads of the same name at once cannot take each other's.
     const partial = `${target}.${randomBytes(4).toString("hex")}.part`;
-    await operation<void>("writing the file", (done) =>
+    await this.live.operation<void>("writing the file", (done) =>
       this.sftp.writeFile(partial, data, (error) =>
         done(error ? new DropError(`The file could not be written: ${error.message}`) : null)
       )
     );
     const rename = () =>
-      operation<void>("renaming the file", (done) => {
+      this.live.operation<void>("renaming the file", (done) => {
         // The OpenSSH extension replaces an existing file in one step.
         const finish = (error: Error | null | undefined) => done(error ?? null);
         if (this.sftp.ext_openssh_rename) this.sftp.ext_openssh_rename(partial, target, finish);
@@ -157,7 +186,7 @@ export class SftpSession {
     } catch {
       // A server without the extension will not rename over a file (a retry
       // after an upload that went through): remove the old one first.
-      await operation<void>("removing the old file", (done) =>
+      await this.live.operation<void>("removing the old file", (done) =>
         this.sftp.unlink(target, () => done(null))
       );
       try {

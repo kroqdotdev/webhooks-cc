@@ -49,6 +49,7 @@ export async function openDropTarget(
     return {
       ...target,
       put: async (name, data, contentType) => {
+        if (connections.isAborted) throw new DropError("The drop took too long.");
         try {
           return await target.put(name, data, contentType);
         } catch (error) {
@@ -56,8 +57,9 @@ export async function openDropTarget(
         }
       },
       close: async () => {
-        if (timer) clearTimeout(timer);
+        // The deadline still holds while closing (an FTP QUIT can wait).
         await target.close().catch(() => undefined);
+        if (timer) clearTimeout(timer);
         connections.abort();
       },
     };
