@@ -4,7 +4,7 @@ import { emailFieldsProblems, emailFieldValues } from "@/lib/email-fields";
 import { ruleSubjectFor } from "@/lib/request-context";
 import { conditionsHold } from "@/lib/rules";
 import type { RequestRecord } from "@/lib/supabase/requests";
-import { proposePatterns, type Proposal } from "./model";
+import { AssistModelError, proposePatterns, type Proposal } from "./model";
 
 /**
  * AI setup and repair: from emails a person picked, propose a field, a whole
@@ -37,7 +37,14 @@ export interface AssistResult {
 /** Samples at most, and how much of each part the model reads. */
 export const MAX_SAMPLES = 5;
 const MAX_PART_CHARS = 8_000;
+const MAX_LINE_CHARS = 1_000;
 const MAX_HEADERS = 40;
+/** The samples together, as JSON: what one ask may send at most. */
+const MAX_PROMPT_CHARS = 60_000;
+/** Checking proposals runs in the web process: it stops after this long. */
+const CHECK_BUDGET_MS = 1_500;
+/** A layout's match text: shorter would pick up mail it was never meant for. */
+const MIN_MATCH_CHARS = 3;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
 
 function cut(text: string | null | undefined, max = MAX_PART_CHARS): string {
@@ -54,7 +61,10 @@ function addressText(
 }
 
 /** A sample as the parts patterns read, cut to size; never attachments. */
-export function sampleFor(request: RequestRecord): Record<string, unknown> {
+export function sampleFor(
+  request: RequestRecord,
+  partChars = MAX_PART_CHARS
+): Record<string, unknown> {
   const email = request.email!;
   const text = email.text ?? null;
   const html = email.html ? htmlToText(email.html) : null;
@@ -64,13 +74,24 @@ export function sampleFor(request: RequestRecord): Record<string, unknown> {
       .map(([name, value]) => [name, cut(String(value), 200)])
   );
   return {
-    subject: email.subject ?? "",
-    from: addressText(email.from),
-    to: addressText([...(email.to ?? []), ...(email.cc ?? [])]),
-    text: cut(text ?? html),
-    ...(html && html !== text ? { html: cut(html) } : {}),
+    subject: cut(email.subject ?? "", MAX_LINE_CHARS),
+    from: cut(addressText(email.from), MAX_LINE_CHARS),
+    to: cut(addressText([...(email.to ?? []), ...(email.cc ?? [])]), MAX_LINE_CHARS),
+    text: cut(text ?? html, partChars),
+    ...(html && html !== text ? { html: cut(html, partChars) } : {}),
     headers,
   };
+}
+
+/** The samples within the prompt's budget: the texts are cut shorter when they do not fit. */
+function samplesWithinBudget(requests: RequestRecord[]): Record<string, unknown>[] {
+  let partChars = MAX_PART_CHARS;
+  let samples = requests.map((request) => sampleFor(request, partChars));
+  while (JSON.stringify(samples).length > MAX_PROMPT_CHARS && partChars > 500) {
+    partChars = Math.floor(partChars / 2);
+    samples = requests.map((request) => sampleFor(request, partChars));
+  }
+  return samples;
 }
 
 function instructionFor(ask: AssistAsk, count: number): string {
@@ -90,9 +111,10 @@ function check(
   ask: AssistAsk,
   requests: RequestRecord[]
 ): { passed: ProposedField[]; failures: string[] } {
-  const passed: ProposedField[] = [];
   const failures: string[] = [];
   const seen = new Set<string>();
+  // First what needs no email: names, sources, RE2, size.
+  const candidates: EmailField[] = [];
   for (const raw of proposal.fields.slice(0, 10)) {
     // A field asked for by name keeps that name, whatever the model called it.
     const name =
@@ -112,29 +134,50 @@ function check(
       failures.push(`${name}: ${problems[0]}`);
       continue;
     }
-    const values = requests.map(
-      (request) => emailFieldValues(request, [field], { cache: false })?.[name] ?? null
-    );
-    const missed = values.flatMap((value, i) => (value === null ? [i + 1] : []));
-    if (missed.length > 0) {
+    seen.add(name);
+    candidates.push(field);
+  }
+  // Together they must stay small enough to run on every email, checked
+  // before any of them runs.
+  while (candidates.length > 0 && emailFieldsProblems(candidates).length > 0) {
+    failures.push(`${candidates.pop()!.name}: the patterns together are too large.`);
+  }
+
+  // Then each on the samples, stopping at the first one it misses, within a
+  // time budget (this runs in the web process).
+  const passed: ProposedField[] = [];
+  const started = Date.now();
+  for (const field of candidates) {
+    if (Date.now() - started > CHECK_BUDGET_MS) {
+      failures.push(`${field.name}: not checked (the patterns took too long to run).`);
+      continue;
+    }
+    const values: string[] = [];
+    let missed = 0;
+    for (const [i, request] of requests.entries()) {
+      const value = emailFieldValues(request, [field], { cache: false })?.[field.name] ?? null;
+      if (value === null) {
+        missed = i + 1;
+        break;
+      }
+      values.push(value);
+    }
+    if (missed > 0) {
       failures.push(
-        `${name} (${JSON.stringify(field.pattern)} on ${field.from}) found nothing in sample${missed.length === 1 ? "" : "s"} ${missed.join(", ")}.`
+        `${field.name} (${JSON.stringify(field.pattern)} on ${field.from}) found nothing in sample ${missed}.`
       );
       continue;
     }
-    seen.add(name);
-    passed.push({ field, values: values as string[] });
-  }
-  // Together they must stay small enough to run on every email.
-  while (passed.length > 0 && emailFieldsProblems(passed.map((p) => p.field)).length > 0) {
-    passed.pop();
+    passed.push({ field, values });
   }
   return { passed, failures };
 }
 
 function matchFor(proposal: Proposal, requests: RequestRecord[]): Condition | null {
   const contains = proposal.match?.contains.trim();
-  if (!proposal.match || !contains || contains.length > 200) return null;
+  if (!proposal.match || !contains || contains.length < MIN_MATCH_CHARS || contains.length > 200) {
+    return null;
+  }
   const condition: Condition = {
     field: "email",
     name: proposal.match.part,
@@ -153,18 +196,26 @@ function matchFor(proposal: Proposal, requests: RequestRecord[]): Condition | nu
  * cannot be asked.
  */
 export async function runAssist(ask: AssistAsk, requests: RequestRecord[]): Promise<AssistResult> {
-  const samples = requests.map(sampleFor);
+  const samples = samplesWithinBudget(requests);
   const instruction = instructionFor(ask, samples.length);
   let proposal = await proposePatterns({ instruction, samples });
   let { passed, failures } = check(proposal, ask, requests);
 
   if (passed.length === 0 && failures.length > 0) {
-    // Once more, with what went wrong.
-    proposal = await proposePatterns({
-      instruction,
-      samples,
-      feedback: `An earlier proposal failed when tested on the samples:\n- ${failures.slice(0, 10).join("\n- ")}\nPropose patterns that find the value in every sample.`,
-    });
+    // Once more, with what went wrong. The first answer was paid for, so a
+    // failure now keeps the assist.
+    try {
+      proposal = await proposePatterns({
+        instruction,
+        samples,
+        feedback: `An earlier proposal failed when tested on the samples:\n- ${failures.slice(0, 10).join("\n- ")}\nPropose patterns that find the value in every sample.`,
+      });
+    } catch (error) {
+      if (error instanceof AssistModelError) {
+        throw new AssistModelError(error.message, error.temporary, true);
+      }
+      throw error;
+    }
     const retry = check(proposal, ask, requests);
     passed = retry.passed;
     failures = [...failures, ...retry.failures];
