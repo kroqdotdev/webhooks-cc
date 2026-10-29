@@ -15,6 +15,7 @@ import {
   updateEndpointBySlugForUser,
   type ForwardFormatSetting,
   type ForwardHeaderInput,
+  endpointLayoutsCap,
   endpointRetentionCap,
 } from "@/lib/supabase/endpoints";
 import { checkOwnerHeaders } from "@/lib/forwarding/owner-headers";
@@ -25,7 +26,8 @@ import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { checkForwardUrl } from "@/lib/forwarding/target";
 import { TooManyDestinationsError } from "@/lib/supabase/destinations";
 import { emailFieldsProblems, normalizedEmailFields } from "@/lib/email-fields";
-import type { EmailField } from "@webhooks-cc/sdk/email";
+import type { EmailField, Layout } from "@webhooks-cc/sdk/email";
+import { layoutsProblems } from "@/lib/parsing/layouts";
 import { getWebProviderCredentialLabel } from "@/lib/provider-catalog";
 import { reportError } from "@/lib/observability";
 
@@ -70,6 +72,7 @@ const AUDITED_ENDPOINT_FIELDS = [
   "signingHeader",
   "showEmailExtracts",
   "emailFields",
+  "layouts",
   "retentionDays",
   "deleteAfterDelivery",
   "forwardEnabled",
@@ -113,7 +116,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   const { slug } = await params;
 
-  const parsed = await parseJsonBody(request);
+  // Layouts may be up to 512 KB (migration 00069).
+  const parsed = await parseJsonBody(request, 600 * 1024);
   if ("error" in parsed) return parsed.error;
   const body = parsed.data as Record<string, unknown>;
 
@@ -255,6 +259,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       body.notificationUrl !== undefined ||
       body.showEmailExtracts !== undefined ||
       body.emailFields !== undefined ||
+      body.layouts !== undefined ||
       body.retentionDays !== undefined ||
       body.deleteAfterDelivery !== undefined ||
       signingConfigTouched ||
@@ -364,6 +369,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       }
     }
 
+    if (body.layouts !== undefined && body.layouts !== null) {
+      const problems = layoutsProblems(body.layouts, await endpointLayoutsCap(slug));
+      if (problems.length > 0) {
+        return Response.json({ error: `layouts: ${problems[0]}` }, { status: 400 });
+      }
+    }
+
     if (typeof body.retentionDays === "number") {
       const cap = await endpointRetentionCap(slug);
       if (cap !== null && body.retentionDays > cap) {
@@ -403,6 +415,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         body.emailFields === undefined || body.emailFields === null
           ? (body.emailFields as null | undefined)
           : normalizedEmailFields(body.emailFields as EmailField[]),
+      layouts: body.layouts as Layout[] | null | undefined,
       forwardEnabled: body.forwardEnabled as boolean | undefined,
       forwardUrl:
         body.forwardUrl === undefined ? undefined : (body.forwardUrl as string | null) || null,

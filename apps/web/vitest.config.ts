@@ -24,6 +24,7 @@ const FORWARDING_SUITES = [
   "tests/integration/http-forwarding.test.ts",
   "tests/integration/attachments-alerts.test.ts",
   "tests/integration/sheets.test.ts",
+  "tests/integration/parsing.test.ts",
 ];
 
 export default defineConfig({

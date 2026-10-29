@@ -5,9 +5,12 @@ import type { Database, Json } from "@/lib/supabase/database";
 type AlertUpdate = Database["public"]["Tables"]["endpoint_alerts"]["Update"];
 import { toEmailCapture } from "@/lib/email-capture";
 import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
+import { storedLayouts } from "@/lib/parsing/stored";
+import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 import { reportError } from "@/lib/observability";
 import {
   fieldAlertDue,
+  layoutMissing,
   missingFields,
   missShare,
   nextFieldState,
@@ -20,9 +23,11 @@ import { notifyAlerts } from "./notify";
  * with alerts on is leased (claim_alert_checks) and checked:
  *
  * - fields: the emails that arrived since the last check, in order, each
- *   found or missing a required email field; an alert opens after N misses
- *   in a row or when a share of the last 20 missed, and resolves once an
- *   email has every field again and the share is below the line;
+ *   found or missing a required email field (on an endpoint with layouts:
+ *   matched a layout and found its fields, once the parse is done); an
+ *   alert opens after N misses in a row or when a share of the last 20
+ *   missed, and resolves once an email has every field again and the share
+ *   is below the line;
  * - silence: no email for N hours (counted from the last email, or from when
  *   alerts were set up); resolves when one arrives;
  * - destinations: a delivery that failed for good opens an alert for its
@@ -43,6 +48,17 @@ type EndpointRow = {
   slug: string;
   email_fields: Json;
   last_email_at: string | null;
+  layouts: Json;
+};
+
+type EmailRow = {
+  id: string;
+  kind: string;
+  email: Json;
+  headers: Json;
+  received_at: string;
+  request_parses?:
+    { status: string; result: Json | null } | { status: string; result: Json | null }[] | null;
 };
 
 /**
@@ -116,9 +132,14 @@ async function checkFields(
     ? new Date(Date.parse(alert.checked_through) - LATE_ARRIVAL_MS).toISOString()
     : alert.created_at;
   const seen = new Set(alert.seen_ids ?? []);
+  const layouts = storedLayouts(endpoint.layouts);
   const { data, error } = await createAdminClient()
     .from("requests")
-    .select("id, kind, email, headers, received_at")
+    .select(
+      layouts.length > 0
+        ? "id, kind, email, headers, received_at, request_parses(status, result)"
+        : "id, kind, email, headers, received_at"
+    )
     .eq("endpoint_id", endpoint.id)
     .eq("kind", "email")
     .gt("received_at", since)
@@ -126,17 +147,15 @@ async function checkFields(
     .order("id", { ascending: true })
     .limit(EMAILS_PER_CHECK + seen.size);
   if (error) throw error;
-  const rows = (
-    (data ?? []) as {
-      id: string;
-      kind: string;
-      email: Json;
-      headers: Json;
-      received_at: string;
-    }[]
-  )
+  let rows = ((data ?? []) as unknown as EmailRow[])
     .filter((row) => !seen.has(row.id))
     .slice(0, EMAILS_PER_CHECK);
+  if (layouts.length > 0) {
+    // An email whose parse is still running is checked once it is done,
+    // and so is every later one, so outcomes stay in order.
+    const pending = rows.findIndex((row) => parseOf(row) === "pending");
+    if (pending >= 0) rows = rows.slice(0, pending);
+  }
   if (rows.length === 0) return;
   const newest = rows.reduce((max, row) => (row.received_at > max ? row.received_at : max), "");
   update.checked_through =
@@ -144,16 +163,18 @@ async function checkFields(
   update.checked_through_id = rows[rows.length - 1].id;
   update.seen_ids = [...(alert.seen_ids ?? []), ...rows.map((row) => row.id)].slice(-SEEN_IDS);
 
-  // Without fields there is nothing to miss.
+  // Without fields (or layouts, where no match is a miss) there is nothing to miss.
   if (
-    required.length === 0 ||
+    (required.length === 0 && layouts.length === 0) ||
     (alert.field_failures === null && alert.field_failure_share === null)
   ) {
     return;
   }
   let lastMissing: string[] = [];
   let lastMissingId: string | null = null;
-  const outcomes = rows.map((row) => {
+  const counted = layouts.length > 0 ? rows.filter((row) => parseOf(row) !== "none") : rows;
+  if (counted.length === 0) return;
+  const outcomes = counted.map((row) => {
     const values = emailFieldValues(
       {
         id: row.id,
@@ -163,7 +184,15 @@ async function checkFields(
       },
       fields
     );
-    const missing = missingFields(values, required);
+    const missing =
+      layouts.length > 0
+        ? layoutMissing(
+            parseOf(row),
+            values,
+            fields.map((field) => field.name),
+            alert.required_fields
+          )
+        : missingFields(values, required);
     if (missing.length > 0) {
       lastMissing = missing;
       lastMissingId = row.id;
@@ -190,6 +219,16 @@ async function checkFields(
   } else if (state.streak === 0) {
     await resolveAlert(endpoint.id, "fields", null);
   }
+}
+
+/** The parse of an email on an endpoint with layouts: pending, failed, or its result. */
+function parseOf(row: EmailRow): "none" | "pending" | "failed" | ParsedEmail {
+  const parse = Array.isArray(row.request_parses) ? row.request_parses[0] : row.request_parses;
+  // No job at all: captured before the endpoint had layouts; not counted.
+  if (!parse) return "none";
+  if (parse.status === "pending") return "pending";
+  if (parse.status !== "done" || !parse.result || typeof parse.result !== "object") return "failed";
+  return parse.result as unknown as ParsedEmail;
 }
 
 async function checkSilence(alert: AlertRow, endpoint: EndpointRow): Promise<void> {
@@ -280,7 +319,7 @@ export async function checkEndpointAlerts(alert: AlertRow): Promise<void> {
   try {
     const { data: endpoint, error } = await admin
       .from("endpoints")
-      .select("id, slug, email_fields, last_email_at")
+      .select("id, slug, email_fields, last_email_at, layouts")
       .eq("id", alert.endpoint_id)
       .maybeSingle<EndpointRow>();
     if (error) throw error;

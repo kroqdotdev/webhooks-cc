@@ -62,11 +62,14 @@ export function parserFormatFor(filename: string | null, contentType: string): P
     return "xlsx";
   }
   if (extension === "xls" || type === "application/vnd.ms-excel") return "xls";
-  if (extension === "ods" || type === "application/vnd.oasis.opendocument.spreadsheet") return "ods";
+  if (extension === "ods" || type === "application/vnd.oasis.opendocument.spreadsheet")
+    return "ods";
   if (extension === "pdf" || type === "application/pdf") return "pdf";
   if (
     ["txt", "json", "xml", "ics"].includes(extension) ||
-    ["text/plain", "application/json", "application/xml", "text/xml", "text/calendar"].includes(type)
+    ["text/plain", "application/json", "application/xml", "text/xml", "text/calendar"].includes(
+      type
+    )
   ) {
     return "text";
   }
@@ -92,7 +95,8 @@ export async function runParser(
 ): Promise<ParserOutput> {
   const bin = parserPath();
   if (!bin) return failed(format, "unavailable", "The parser is not installed on this server.");
-  if (bytes.byteLength > MAX_PARSE_BYTES) return failed(format, "too_large", "The file is too large to parse.");
+  if (bytes.byteLength > MAX_PARSE_BYTES)
+    return failed(format, "too_large", "The file is too large to parse.");
   const pages = Math.max(1, Math.min(Math.floor(maxPages), MAX_PAGES_PER_FILE));
   return new Promise((resolve) => {
     const child = spawn(bin, ["--format", format, "--max-pages", String(pages)], {
