@@ -57,9 +57,11 @@ type EmailRow = {
   email: Json;
   headers: Json;
   received_at: string;
-  request_parses?:
-    { status: string; result: Json | null } | { status: string; result: Json | null }[] | null;
+  request_parses?: ParseSummary | ParseSummary[] | null;
 };
+
+/** What alerts read of a parse: its status and the fields it found, never the whole result. */
+type ParseSummary = { status: string; summary_status?: string | null; summary_fields?: Json };
 
 /**
  * How far back each check looks again: an email the MX host retried keeps
@@ -128,39 +130,65 @@ async function checkFields(
     fields.map((field) => field.name),
     alert.required_fields
   );
-  const since = alert.checked_through
-    ? new Date(Date.parse(alert.checked_through) - LATE_ARRIVAL_MS).toISOString()
-    : alert.created_at;
-  const seen = new Set(alert.seen_ids ?? []);
   const layouts = storedLayouts(endpoint.layouts);
-  const { data, error } = await createAdminClient()
-    .from("requests")
-    .select(
-      layouts.length > 0
-        ? "id, kind, email, headers, received_at, request_parses(status, result)"
-        : "id, kind, email, headers, received_at"
-    )
-    .eq("endpoint_id", endpoint.id)
-    .eq("kind", "email")
-    .gt("received_at", since)
+  const admin = createAdminClient();
+  const columns =
+    layouts.length > 0
+      ? "id, kind, email, headers, received_at, request_parses(status, summary_status:result->>status, summary_fields:result->fields)"
+      : "id, kind, email, headers, received_at";
+  const emails = () =>
+    admin.from("requests").select(columns).eq("endpoint_id", endpoint.id).eq("kind", "email");
+
+  // New emails past the cursor, in order.
+  const cursor = alert.checked_through ?? alert.created_at;
+  let fresh = emails()
     .order("received_at", { ascending: true })
     .order("id", { ascending: true })
-    .limit(EMAILS_PER_CHECK + seen.size);
+    .limit(EMAILS_PER_CHECK);
+  fresh = alert.checked_through_id
+    ? fresh.or(
+        `received_at.gt.${cursor},and(received_at.eq.${cursor},id.gt.${alert.checked_through_id})`
+      )
+    : fresh.gt("received_at", cursor);
+  const { data: freshData, error } = await fresh;
   if (error) throw error;
-  let rows = ((data ?? []) as unknown as EmailRow[])
-    .filter((row) => !seen.has(row.id))
-    .slice(0, EMAILS_PER_CHECK);
+  let rows = (freshData ?? []) as unknown as EmailRow[];
   if (layouts.length > 0) {
     // An email whose parse is still running is checked once it is done,
     // and so is every later one, so outcomes stay in order.
     const pending = rows.findIndex((row) => parseOf(row) === "pending");
     if (pending >= 0) rows = rows.slice(0, pending);
   }
-  if (rows.length === 0) return;
-  const newest = rows.reduce((max, row) => (row.received_at > max ? row.received_at : max), "");
-  update.checked_through =
-    alert.checked_through && alert.checked_through > newest ? alert.checked_through : newest;
-  update.checked_through_id = rows[rows.length - 1].id;
+
+  // Late arrivals: a message the MX host retried keeps its first arrival
+  // time, so it can be stored behind the cursor. The window behind it is
+  // read whole when seen_ids can cover it; a busier endpoint skips this,
+  // since retried mail is rare and scoring an email twice is worse.
+  const seen = new Set(alert.seen_ids ?? []);
+  let late: EmailRow[] = [];
+  if (alert.checked_through) {
+    const from = Math.max(
+      Date.parse(alert.checked_through) - LATE_ARRIVAL_MS,
+      Date.parse(alert.created_at)
+    );
+    const { data: windowData, error: windowError } = await emails()
+      .gt("received_at", new Date(from).toISOString())
+      .lte("received_at", alert.checked_through)
+      .order("received_at", { ascending: true })
+      .limit(SEEN_IDS + 1);
+    if (windowError) throw windowError;
+    const window = (windowData ?? []) as unknown as EmailRow[];
+    if (window.length <= SEEN_IDS) {
+      late = window.filter((row) => !seen.has(row.id) && parseOf(row) !== "pending");
+    }
+  }
+  if (rows.length === 0 && late.length === 0) return;
+  if (rows.length > 0) {
+    const last = rows[rows.length - 1];
+    update.checked_through = last.received_at;
+    update.checked_through_id = last.id;
+  }
+  rows = [...late, ...rows];
   update.seen_ids = [...(alert.seen_ids ?? []), ...rows.map((row) => row.id)].slice(-SEEN_IDS);
 
   // Without fields (or layouts, where no match is a miss) there is nothing to miss.
@@ -227,8 +255,20 @@ function parseOf(row: EmailRow): "none" | "pending" | "failed" | ParsedEmail {
   // No job at all: captured before the endpoint had layouts; not counted.
   if (!parse) return "none";
   if (parse.status === "pending") return "pending";
-  if (parse.status !== "done" || !parse.result || typeof parse.result !== "object") return "failed";
-  return parse.result as unknown as ParsedEmail;
+  if (parse.status !== "done") return "failed";
+  if (parse.summary_status !== "matched" && parse.summary_status !== "no_layout") return "failed";
+  return {
+    status: parse.summary_status,
+    layout: null,
+    fields:
+      parse.summary_fields && typeof parse.summary_fields === "object"
+        ? (parse.summary_fields as Record<string, string | null>)
+        : {},
+    lineItems: [],
+    lineItemColumns: [],
+    attachments: [],
+    pages: 0,
+  };
 }
 
 async function checkSilence(alert: AlertRow, endpoint: EndpointRow): Promise<void> {

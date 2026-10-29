@@ -1462,6 +1462,10 @@ export interface Database {
           pages: number;
           error: string | null;
           deliver: boolean;
+          redelivery: boolean;
+          claim: string | null;
+          /** Pages charged per attachment index (charge_parsed_file). */
+          charged: Json;
           created_at: string;
           finished_at: string | null;
         };
@@ -1496,11 +1500,22 @@ export interface Database {
       };
       claim_request_parses: {
         Args: { p_limit?: number; p_lease_seconds?: number };
-        Returns: { request_id: string; endpoint_id: string; attempts: number }[];
+        Returns: { request_id: string; endpoint_id: string; attempts: number; claim: string }[];
+      };
+      charge_parsed_file: {
+        Args: {
+          p_request_id: string;
+          p_index: number;
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_pages: number;
+        };
+        Returns: Json;
       };
       complete_request_parse: {
         Args: {
           p_request_id: string;
+          p_claim: string;
           p_status: "done" | "failed";
           p_result: Json;
           p_pages: number;

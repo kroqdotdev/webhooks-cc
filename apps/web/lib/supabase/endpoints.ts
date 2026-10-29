@@ -917,14 +917,3 @@ export async function endpointRetentionCap(slug: string): Promise<number | null>
   if (error) throw error;
   return data?.retention_cap ?? null;
 }
-
-/** Layouts the billing account's plan lets the endpoint use. */
-export async function endpointLayoutsCap(slug: string): Promise<number> {
-  const { data, error } = await createAdminClient()
-    .from("endpoints")
-    .select("layouts_cap")
-    .eq("slug", slug.toLowerCase())
-    .maybeSingle<{ layouts_cap: number | null }>();
-  if (error) throw error;
-  return data?.layouts_cap ?? 0;
-}

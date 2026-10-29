@@ -344,7 +344,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const draftKey = JSON.stringify(layouts);
   const dirty = draftKey !== initialKey;
   const local = useMemo(() => layoutIssues(layouts), [layouts]);
-  const problems = problemsByLayout([...local, ...(preview?.problems ?? [])]);
+  const allProblems = [...local, ...(preview?.problems ?? [])];
+  const problems = problemsByLayout(allProblems);
+  // Problems with the list as a whole (too many, too large together).
+  const listProblems = allProblems.filter((problem) => !/^layout \d+: /.test(problem));
 
   useEffect(() => {
     if (!accessToken) return;
@@ -552,6 +555,11 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             );
           })}
         </ol>
+      )}
+      {listProblems.length > 0 && (
+        <p className="text-xs text-destructive" aria-live="polite">
+          {listProblems[0]}
+        </p>
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <button

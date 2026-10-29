@@ -98,6 +98,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const access = endpoint ? await resolveEndpointAccess(auth.userId, endpoint.slug) : null;
     if (!endpoint || !access?.isOwner) return reply({ error: "Request not found" }, 404);
 
+    if (captured.kind === "email") {
+      // Its deliveries go once the layouts have read it; one sent now would
+      // lack the parsed result, and the parse would queue it again.
+      const { data: parse, error: parseError } = await createAdminClient()
+        .from("request_parses")
+        .select("status")
+        .eq("request_id", captured.id)
+        .maybeSingle<{ status: string }>();
+      if (parseError) throw parseError;
+      if (parse?.status === "pending") {
+        return reply(
+          { error: "This email is still being parsed; its deliveries go when it is done." },
+          409
+        );
+      }
+    }
+
     const destinations = await listDestinations(captured.endpointId);
     const takesKind = (destination: (typeof destinations)[number]) =>
       destination.enabled && (captured.kind === "email" ? destination.email : destination.http);

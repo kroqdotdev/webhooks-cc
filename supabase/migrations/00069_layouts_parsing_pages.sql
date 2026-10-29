@@ -92,8 +92,17 @@ create table if not exists public.request_parses (
   -- Redone by a replay: its deliveries are redeliveries (no delay, no
   -- throttle), not a capture's.
   redelivery   boolean not null default false,
+  -- The worker's claim: only the claim that is current may complete the job,
+  -- so a parse that outlived its lease, or ran while the job was redone,
+  -- is discarded.
+  claim        uuid,
+  -- Pages charged per attachment index, so a retry or a replay never charges
+  -- a file twice (only pages beyond what it already paid for).
+  charged      jsonb not null default '{}'::jsonb,
   created_at   timestamptz not null default now(),
-  finished_at  timestamptz
+  finished_at  timestamptz,
+  -- The worker keeps the result to about 1 MB; this is the backstop.
+  constraint request_parses_result_size check (result is null or pg_column_size(result) <= 4194304)
 );
 
 commit;
@@ -160,10 +169,15 @@ language sql
 stable
 set search_path = ''
 as $$
+  -- A monthly period that ended before the renewal moved it starts the next
+  -- window at its end, the start the renewal will give it, so the window
+  -- does not restart twice.
   select case
     when p_quota_period = 'month' and p_period_start is not null
          and (p_period_end is null or p_period_end > now())
       then p_period_start
+    when p_quota_period = 'month' and p_period_start is not null
+      then p_period_end
     when p_pages_start is not null and p_pages_start + interval '1 month' > now()
       then p_pages_start
     else now()
@@ -211,12 +225,14 @@ begin
   return query select
     v_start,
     v_ent.parsed_pages + case when v_ent.page_addons then v_row.page_block_pages else 0 end,
-    case when v_row.pages_period_start is not distinct from v_start then v_row.pages_used else 0 end,
+    -- Usage stored at or after the window's start is this window's, so
+    -- rewriting the period start within a period never resets it.
+    case when v_row.pages_period_start >= v_start then v_row.pages_used else 0 end,
     v_row.credit_pages,
     case
       when v_ent.page_addons and v_row.page_overage_active then
         greatest(v_row.page_overage_max - case
-          when v_row.page_overage_period_start is not distinct from v_start
+          when v_row.page_overage_period_start >= v_start
             then v_row.page_overage_used else 0 end, 0)
       else 0
     end;
@@ -278,32 +294,38 @@ begin
 
   if p_team_id is not null then
     update public.teams
-       set pages_used = case when pages_period_start is not distinct from v_b.window_start
+       set pages_used = case when pages_period_start >= v_b.window_start
                              then pages_used else 0 end + v_allowance,
-           pages_period_start = v_b.window_start,
+           pages_period_start = case when pages_period_start >= v_b.window_start
+                                     then pages_period_start else v_b.window_start end,
            credit_pages = credit_pages - v_credits,
            page_overage_used = case
              when v_overage = 0 then page_overage_used
-             when page_overage_period_start is not distinct from v_b.window_start
+             when page_overage_period_start >= v_b.window_start
                then page_overage_used + v_overage
              else v_overage end,
            page_overage_period_start = case
-             when v_overage = 0 then page_overage_period_start else v_b.window_start end,
+             when v_overage = 0 then page_overage_period_start
+             when page_overage_period_start >= v_b.window_start then page_overage_period_start
+             else v_b.window_start end,
            page_overage_total = page_overage_total + v_overage
      where id = p_team_id;
   else
     update public.users
-       set pages_used = case when pages_period_start is not distinct from v_b.window_start
+       set pages_used = case when pages_period_start >= v_b.window_start
                              then pages_used else 0 end + v_allowance,
-           pages_period_start = v_b.window_start,
+           pages_period_start = case when pages_period_start >= v_b.window_start
+                                     then pages_period_start else v_b.window_start end,
            credit_pages = credit_pages - v_credits,
            page_overage_used = case
              when v_overage = 0 then page_overage_used
-             when page_overage_period_start is not distinct from v_b.window_start
+             when page_overage_period_start >= v_b.window_start
                then page_overage_used + v_overage
              else v_overage end,
            page_overage_period_start = case
-             when v_overage = 0 then page_overage_period_start else v_b.window_start end,
+             when v_overage = 0 then page_overage_period_start
+             when page_overage_period_start >= v_b.window_start then page_overage_period_start
+             else v_b.window_start end,
            page_overage_total = page_overage_total + v_overage
      where id = p_user_id;
   end if;
@@ -312,35 +334,121 @@ begin
 end;
 $$;
 
--- Parse jobs that are due, leased so several web processes can parse.
-create or replace function public.claim_request_parses(
-  p_limit integer default 4,
-  p_lease_seconds integer default 120
+-- Charges a parsed attachment's pages once: a retry or a replay of the same
+-- email pays only for pages beyond what that file already paid for (a file
+-- parsed again in full after it was cut off at the balance).
+create or replace function public.charge_parsed_file(
+  p_request_id uuid,
+  p_index      integer,
+  p_user_id    uuid,
+  p_team_id    uuid,
+  p_pages      integer
 )
-returns table (request_id uuid, endpoint_id uuid, attempts integer)
-language sql
+returns jsonb
+language plpgsql
 security definer set search_path = ''
 as $$
+declare
+  v_charged jsonb;
+  v_paid    integer;
+  v_result  jsonb;
+begin
+  select charged into v_charged
+    from public.request_parses
+   where request_id = p_request_id
+   for update;
+  if not found then
+    return jsonb_build_object('granted', false);
+  end if;
+  v_paid := coalesce((v_charged ->> p_index::text)::integer, 0);
+  if coalesce(p_pages, 0) <= v_paid then
+    return jsonb_build_object('granted', true, 'charged', 0);
+  end if;
+  v_result := public.take_parsed_pages(p_user_id, p_team_id, p_pages - v_paid);
+  if coalesce((v_result ->> 'granted')::boolean, false) then
+    update public.request_parses
+       set charged = charged || jsonb_build_object(p_index::text, p_pages)
+     where request_id = p_request_id;
+    return v_result || jsonb_build_object('charged', p_pages - v_paid);
+  end if;
+  return v_result;
+end;
+$$;
+
+-- Parse jobs that are due, leased so several web processes can parse.
+drop function if exists public.claim_request_parses(integer, integer);
+create function public.claim_request_parses(
+  p_limit integer default 4,
+  p_lease_seconds integer default 600
+)
+returns table (request_id uuid, endpoint_id uuid, attempts integer, claim uuid)
+language plpgsql
+security definer set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  v_job record;
+begin
+  -- A job that was claimed five times and never completed (its process died
+  -- each time) completes without a result, so its deliveries still go.
+  for v_job in
+    select x.request_id
+      from public.request_parses x
+     where x.status = 'pending'
+       and x.attempts >= 5
+       and (x.locked_until is null or x.locked_until <= now())
+     limit 50
+     for update skip locked
+  loop
+    perform public.finish_request_parse(
+      v_job.request_id, 'failed', null, 0, 'The email could not be parsed.'
+    );
+  end loop;
+
+  -- Fair across accounts: each endpoint owner has at most one job in flight
+  -- and gets its oldest due job, so one account's queue (a flood of mail or
+  -- a large replay) never holds back everyone else's. The lease is checked
+  -- again under the row lock, so two workers cannot claim the same job.
+  return query
   update public.request_parses p
      set locked_until = now() + make_interval(secs => greatest(p_lease_seconds, 10)),
-         attempts = p.attempts + 1
-   where p.request_id in (
-     select x.request_id
-       from public.request_parses x
-      where x.status = 'pending'
-        and (x.locked_until is null or x.locked_until <= now())
-      order by x.created_at
-      limit least(greatest(p_limit, 1), 50)
-      for update skip locked
-   )
-  returning p.request_id, p.endpoint_id, p.attempts;
+         attempts = p.attempts + 1,
+         claim = gen_random_uuid()
+   where p.status = 'pending'
+     and p.attempts < 5
+     and (p.locked_until is null or p.locked_until <= now())
+     and p.request_id in (
+       select ranked.request_id
+         from (
+           select x.request_id, x.created_at,
+                  row_number() over (partition by e.user_id order by x.created_at) as rn
+             from public.request_parses x
+             join public.endpoints e on e.id = x.endpoint_id
+            where x.status = 'pending'
+              and x.attempts < 5
+              and (x.locked_until is null or x.locked_until <= now())
+              and not exists (
+                select 1
+                  from public.request_parses y
+                  join public.endpoints e2 on e2.id = y.endpoint_id
+                 where e2.user_id = e.user_id
+                   and y.status = 'pending'
+                   and y.locked_until > now()
+              )
+         ) ranked
+        where ranked.rn = 1
+        order by ranked.created_at
+        limit least(greatest(p_limit, 1), 50)
+     )
+  returning p.request_id, p.endpoint_id, p.attempts, p.claim;
+end;
 $$;
 
 -- Stores a parse and queues the email's deliveries in one transaction, so
 -- the parsed result is in place before anything is sent. Returns how many
 -- deliveries were queued; null when the job was not pending (completed
 -- twice, or the request went).
-create or replace function public.complete_request_parse(
+create or replace function public.finish_request_parse(
   p_request_id uuid,
   p_status     text,
   p_result     jsonb,
@@ -355,6 +463,7 @@ declare
   v_job         record;
   v_destination record;
   v_count       integer := 0;
+  v_delivery    uuid;
 begin
   if p_status not in ('done', 'failed') then
     raise exception 'invalid parse status: %', p_status using errcode = '22023';
@@ -365,7 +474,8 @@ begin
          pages = pages + greatest(coalesce(p_pages, 0), 0),
          error = left(p_error, 1000),
          locked_until = null,
-         finished_at = now()
+         finished_at = now(),
+         claim = null
    where request_id = p_request_id
      and status = 'pending'
   returning endpoint_id, deliver, redelivery into v_job;
@@ -376,19 +486,60 @@ begin
     return 0;
   end if;
   for v_destination in
-    select d.id
+    select d.id, d.delay_seconds
       from public.endpoint_destinations d
      where d.endpoint_id = v_job.endpoint_id
        and d.enabled
        and d.email
      order by d.position, d.created_at
   loop
-    perform public.queue_destination_delivery(
+    v_delivery := public.queue_destination_delivery(
       p_request_id, v_job.endpoint_id, v_destination.id, 'email', 1000, not v_job.redelivery
     );
+    -- A capture's deliveries count from the capture, as they would without
+    -- a parse: queued at its time and delayed from it, so parses finishing
+    -- out of order do not reorder a keep-order destination.
+    if v_delivery is not null and not v_job.redelivery then
+      update public.email_deliveries d
+         set created_at = r.received_at,
+             next_attempt_at = least(d.next_attempt_at,
+                                     r.received_at + make_interval(secs => v_destination.delay_seconds))
+        from public.requests r
+       where d.id = v_delivery
+         and d.status = 'pending'
+         and r.id = p_request_id;
+    end if;
     v_count := v_count + 1;
   end loop;
   return v_count;
+end;
+$$;
+
+-- The worker's completion: only the current claim completes the job.
+drop function if exists public.complete_request_parse(uuid, text, jsonb, integer, text);
+create function public.complete_request_parse(
+  p_request_id uuid,
+  p_claim      uuid,
+  p_status     text,
+  p_result     jsonb,
+  p_pages      integer,
+  p_error      text default null
+)
+returns integer
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  perform 1
+    from public.request_parses
+   where request_id = p_request_id
+     and status = 'pending'
+     and claim = p_claim
+   for update;
+  if not found then
+    return null;
+  end if;
+  return public.finish_request_parse(p_request_id, p_status, p_result, p_pages, p_error);
 end;
 $$;
 
@@ -409,16 +560,28 @@ begin
   if not found then
     return false;
   end if;
+  -- A job still pending from its capture keeps the capture's deliveries (and
+  -- their delay and throttle); a parse running now is discarded (its claim
+  -- no longer matches) and the job goes to the back of the queue.
   insert into public.request_parses (request_id, endpoint_id, deliver, redelivery)
   values (p_request_id, v_endpoint, p_deliver, true)
   on conflict (request_id) do update
-     set status = 'pending',
-         deliver = excluded.deliver,
-         redelivery = true,
-         attempts = 0,
+     set deliver = case when public.request_parses.status = 'pending'
+                        then public.request_parses.deliver or excluded.deliver
+                        else excluded.deliver end,
+         redelivery = case when public.request_parses.status = 'pending'
+                           then public.request_parses.redelivery
+                           else true end,
+         status = 'pending',
+         -- A job that already ran out of tries (its parse killed the
+         -- process each time) stays out of them: replaying it cannot loop.
+         attempts = case when public.request_parses.attempts >= 5
+                         then public.request_parses.attempts else 0 end,
          locked_until = null,
+         claim = null,
          error = null,
-         finished_at = null;
+         finished_at = null,
+         created_at = now();
   return true;
 end;
 $$;
@@ -498,7 +661,9 @@ begin
          request_count,
          signing_provider, signing_secret_encrypted, signing_header,
          agent_registration_id,
-         jsonb_array_length(layouts) > 0 as has_layouts
+         -- Read only for email, so an HTTP capture never loads the layouts.
+         case when v_kind = 'email' then jsonb_array_length(layouts) > 0 else false end
+           as has_layouts
     into v_endpoint
     from public.endpoints
    where slug = v_slug;
@@ -727,12 +892,12 @@ begin
   returning id into v_request_id;
 
   -- 5. Increment endpoint request count (ephemeral already incremented above)
+  -- (the count and when mail last arrived, in one update of the row)
   if not (v_endpoint.is_ephemeral and v_endpoint.user_id is null) then
-    perform public.increment_endpoint_request_count(v_endpoint.id, 1);
-  end if;
-  if v_kind = 'email' then
-    -- The row is already locked by the count above.
-    update public.endpoints set last_email_at = now() where id = v_endpoint.id;
+    update public.endpoints
+       set request_count = request_count + 1,
+           last_email_at = case when v_kind = 'email' then now() else last_email_at end
+     where id = v_endpoint.id;
   end if;
 
   -- 5b. Forwarding: queue one delivery per enabled destination that takes
@@ -863,7 +1028,9 @@ revoke all on function public.parsed_pages_balance(uuid, uuid) from public, anon
 revoke all on function public.parsed_pages_available(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.take_parsed_pages(uuid, uuid, integer) from public, anon, authenticated;
 revoke all on function public.claim_request_parses(integer, integer) from public, anon, authenticated;
-revoke all on function public.complete_request_parse(uuid, text, jsonb, integer, text) from public, anon, authenticated;
+revoke all on function public.complete_request_parse(uuid, uuid, text, jsonb, integer, text) from public, anon, authenticated;
+revoke all on function public.finish_request_parse(uuid, text, jsonb, integer, text) from public, anon, authenticated;
+revoke all on function public.charge_parsed_file(uuid, integer, uuid, uuid, integer) from public, anon, authenticated;
 revoke all on function public.redo_request_parse(uuid, boolean) from public, anon, authenticated;
 revoke all on function public.cleanup_delivered_requests(integer) from public, anon, authenticated;
 revoke all on function public.claim_alert_notices(integer) from public, anon, authenticated;
@@ -874,7 +1041,9 @@ grant execute on function public.parsed_pages_balance(uuid, uuid) to service_rol
 grant execute on function public.parsed_pages_available(uuid, uuid) to service_role;
 grant execute on function public.take_parsed_pages(uuid, uuid, integer) to service_role;
 grant execute on function public.claim_request_parses(integer, integer) to service_role;
-grant execute on function public.complete_request_parse(uuid, text, jsonb, integer, text) to service_role;
+grant execute on function public.complete_request_parse(uuid, uuid, text, jsonb, integer, text) to service_role;
+grant execute on function public.finish_request_parse(uuid, text, jsonb, integer, text) to service_role;
+grant execute on function public.charge_parsed_file(uuid, integer, uuid, uuid, integer) to service_role;
 grant execute on function public.redo_request_parse(uuid, boolean) to service_role;
 grant execute on function public.cleanup_delivered_requests(integer) to service_role;
 grant execute on function public.claim_alert_notices(integer) to service_role;

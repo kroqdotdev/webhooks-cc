@@ -44,12 +44,23 @@ type OwnedEndpointRow = Pick<Database["public"]["Tables"]["endpoints"]["Row"], "
 type SelectedRequestRowWithQuery = SelectedRequestRow & {
   query_raw?: string | null;
   /** Embedded (migration 00069): the parse of an email on an endpoint with layouts. */
-  request_parses?:
-    | { status: string; result: Json | null }
-    | { status: string; result: Json | null }[]
-    | null;
+  request_parses?: SelectedParse | SelectedParse[] | null;
 };
 type UserPlan = Database["public"]["Tables"]["users"]["Row"]["plan"];
+
+/**
+ * An email's parse as a select embeds it: the whole result (one request),
+ * or for lists only its summary, since a result can be about 1 MB.
+ */
+type SelectedParse = {
+  status: string;
+  result?: Json | null;
+  summary_status?: string | null;
+  summary_layout?: Json | null;
+  summary_fields?: Json | null;
+  summary_pages?: number | null;
+  summary_truncated?: boolean | null;
+};
 
 export interface RequestRecord {
   id: string;
@@ -188,10 +199,23 @@ function parsedOf(
   value: NonNullable<SelectedRequestRowWithQuery["request_parses"]>
 ): ParsedEmail | null {
   const parse = Array.isArray(value) ? value[0] : value;
-  if (!parse || parse.status !== "done" || !parse.result || typeof parse.result !== "object") {
-    return null;
+  if (!parse || parse.status !== "done") return null;
+  if (parse.result && typeof parse.result === "object") {
+    return parse.result as unknown as ParsedEmail;
   }
-  return parse.result as unknown as ParsedEmail;
+  if (parse.summary_status !== "matched" && parse.summary_status !== "no_layout") return null;
+  // A list's summary: line items and attachments are fetched with the request.
+  return {
+    status: parse.summary_status,
+    layout: (parse.summary_layout as ParsedEmail["layout"]) ?? null,
+    fields: (parse.summary_fields as ParsedEmail["fields"]) ?? {},
+    lineItems: [],
+    lineItemColumns: [],
+    attachments: [],
+    pages: Number(parse.summary_pages ?? 0),
+    ...(parse.summary_truncated ? { truncated: true } : {}),
+    partial: true,
+  };
 }
 
 /**
@@ -458,7 +482,7 @@ export async function listRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -528,7 +552,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -591,7 +615,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -679,7 +703,7 @@ export async function listRequestsForSandboxEndpoint(
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary_status:result->>status, summary_layout:result->layout, summary_fields:result->fields, summary_pages:result->pages, summary_truncated:result->truncated)"
     )
     .eq("endpoint_id", endpointId);
   if (input.since !== undefined) {

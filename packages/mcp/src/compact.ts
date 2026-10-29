@@ -107,6 +107,10 @@ export function capLists(holder: JsonObject): void {
 
 /** Line items kept of a parsed email once it has to shrink. */
 const MAX_PARSED_ITEMS = 20;
+/** Longest field or line item value kept once it has to shrink. */
+const MAX_PARSED_VALUE = 200;
+/** Sheets listed per attachment once it has to shrink. */
+const MAX_PARSED_SHEETS = 10;
 
 /**
  * Shrinks `holder.parsed` (what the endpoint's layouts found): the first line
@@ -118,9 +122,27 @@ export function trimParsed(holder: JsonObject): void {
   const parsed = holder.parsed;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
   const next: JsonObject = { ...(parsed as JsonObject) };
-  if (Array.isArray(next.lineItems) && next.lineItems.length > MAX_PARSED_ITEMS) {
-    next.lineItemsTotal = next.lineItems.length;
-    next.lineItems = next.lineItems.slice(0, MAX_PARSED_ITEMS);
+  if (Array.isArray(next.lineItems)) {
+    if (next.lineItems.length > MAX_PARSED_ITEMS) {
+      next.lineItemsTotal = next.lineItems.length;
+    }
+    // Values cut too: 20 rows of 30 long columns would still be too big.
+    next.lineItems = (next.lineItems.slice(0, MAX_PARSED_ITEMS) as JsonObject[]).map((row) =>
+      Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [
+          key,
+          typeof value === "string" ? sliceText(value, MAX_PARSED_VALUE) : value,
+        ])
+      )
+    );
+  }
+  if (next.fields && typeof next.fields === "object") {
+    next.fields = Object.fromEntries(
+      Object.entries(next.fields as JsonObject).map(([key, value]) => [
+        key,
+        typeof value === "string" ? sliceText(value, MAX_PARSED_VALUE) : value,
+      ])
+    );
   }
   if (Array.isArray(next.attachments)) {
     next.attachments = (next.attachments as JsonObject[]).map((attachment) => {
@@ -129,10 +151,13 @@ export function trimParsed(holder: JsonObject): void {
         ...rest,
         ...(Array.isArray(sheets)
           ? {
-              sheets: (sheets as JsonObject[]).map((sheet) => ({
+              sheets: (sheets as JsonObject[]).slice(0, MAX_PARSED_SHEETS).map((sheet) => ({
                 name: sheet.name,
                 rowCount: sheet.rowCount,
               })),
+              ...((sheets as unknown[]).length > MAX_PARSED_SHEETS
+                ? { sheetsTotal: (sheets as unknown[]).length }
+                : {}),
             }
           : {}),
         ...(typeof text === "string" ? { textLength: text.length } : {}),
