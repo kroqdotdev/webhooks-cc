@@ -22,9 +22,9 @@
 --
 -- capture_webhook() and check_email_recipient() change together, as always;
 -- check_email_recipient() is unchanged here (parsing never refuses mail).
--- Apply in autocommit mode (see AGENTS.md).
+-- Every statement runs on its own (autocommit; see 00067 for why). Apply in
+-- autocommit mode (see AGENTS.md).
 
-begin;
 
 -- 1. Layouts
 alter table public.endpoints
@@ -37,7 +37,23 @@ alter table public.endpoints
          and jsonb_array_length(layouts) <= 50
          and pg_column_size(layouts) <= 524288) not valid;
 
+-- 1b. Alerts read when mail last arrived from the endpoint row, so they work
+-- for endpoints that delete their requests right after delivery; and the
+-- field check keeps the ids it has seen, so an email stored late (an MX
+-- retry carries its first arrival time, up to an hour old) is still checked.
+alter table public.endpoints
+  add column if not exists last_email_at timestamptz;
+alter table public.endpoint_alerts
+  add column if not exists seen_ids uuid[] not null default '{}';
+alter table public.alert_events
+  add column if not exists notify_claimed_until timestamptz;
+
 -- 2. Parse jobs
+-- Its foreign keys lock requests and endpoints; taken in the order a capture
+-- takes them (requests, then endpoints), so the two cannot deadlock.
+begin;
+lock table public.requests in share row exclusive mode;
+lock table public.endpoints in share row exclusive mode;
 create table if not exists public.request_parses (
   request_id   uuid primary key references public.requests(id) on delete cascade,
   endpoint_id  uuid not null references public.endpoints(id) on delete cascade,
@@ -55,6 +71,8 @@ create table if not exists public.request_parses (
   created_at   timestamptz not null default now(),
   finished_at  timestamptz
 );
+
+commit;
 
 create index if not exists request_parses_due
   on public.request_parses (created_at) where status = 'pending';
@@ -685,6 +703,10 @@ begin
   if not (v_endpoint.is_ephemeral and v_endpoint.user_id is null) then
     perform public.increment_endpoint_request_count(v_endpoint.id, 1);
   end if;
+  if v_kind = 'email' then
+    -- The row is already locked by the count above.
+    update public.endpoints set last_email_at = now() where id = v_endpoint.id;
+  end if;
 
   -- 5b. Forwarding: queue one delivery per enabled destination that takes
   -- this kind, in the capture's own transaction, so a captured request is
@@ -753,7 +775,31 @@ grant execute on function public.capture_webhook(
   text, boolean, integer, text, uuid, text
 ) to service_role;
 
--- 6. "Deliver, then delete" waits for the parse too (base is 00067).
+-- 5b. Alert notices, leased so two web processes never send the same one.
+create or replace function public.claim_alert_notices(p_limit integer default 50)
+returns setof public.alert_events
+language sql
+security definer set search_path = ''
+as $$
+  update public.alert_events a
+     set notify_claimed_until = now() + interval '2 minutes'
+   where a.id in (
+     select x.id
+       from public.alert_events x
+      where (x.notified_open_at is null
+             or (x.resolved_at is not null and x.notified_resolve_at is null))
+        and x.notify_attempts < 5
+        and (x.notify_claimed_until is null or x.notify_claimed_until <= now())
+      order by x.opened_at
+      limit least(greatest(p_limit, 1), 200)
+      for update skip locked
+   )
+  returning a.*;
+$$;
+
+-- 6. "Deliver, then delete" waits for the parse too, and for three minutes
+-- after the last delivery settled, so the alert checker (every minute) sees
+-- a delivery that failed for good before its row goes (base is 00067).
 create or replace function public.cleanup_delivered_requests(p_limit integer default 1000)
 returns integer
 language plpgsql
@@ -772,7 +818,7 @@ begin
         and not exists (
           select 1 from public.email_deliveries d
            where d.request_id = r.id
-             and d.status = 'pending')
+             and (d.status = 'pending' or d.finished_at > now() - interval '3 minutes'))
         and not exists (
           select 1 from public.request_parses p
            where p.request_id = r.id
@@ -792,6 +838,7 @@ revoke all on function public.claim_request_parses(integer, integer) from public
 revoke all on function public.complete_request_parse(uuid, text, jsonb, integer, text) from public, anon, authenticated;
 revoke all on function public.redo_request_parse(uuid, boolean) from public, anon, authenticated;
 revoke all on function public.cleanup_delivered_requests(integer) from public, anon, authenticated;
+revoke all on function public.claim_alert_notices(integer) from public, anon, authenticated;
 
 grant execute on function public.page_window_start(timestamptz, timestamptz, text, timestamptz) to service_role;
 grant execute on function public.parsed_pages_balance(uuid, uuid) to service_role;
@@ -801,8 +848,8 @@ grant execute on function public.claim_request_parses(integer, integer) to servi
 grant execute on function public.complete_request_parse(uuid, text, jsonb, integer, text) to service_role;
 grant execute on function public.redo_request_parse(uuid, boolean) to service_role;
 grant execute on function public.cleanup_delivered_requests(integer) to service_role;
+grant execute on function public.claim_alert_notices(integer) to service_role;
 
-commit;
 
 alter table public.endpoints validate constraint endpoints_layouts_check;
 alter table public.users validate constraint users_pages_check;

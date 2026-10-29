@@ -578,11 +578,9 @@ async fn capture_for_slug(
         discard_objects(state, input.prepared, stored_objects.as_ref()).await;
         return ("transient", None);
     };
-    // With object storage the exact bytes are there, so body_raw stays empty.
-    let body_raw = match stored_objects {
-        Some(_) => None,
-        None => input.prepared.stored.raw.as_ref(),
-    };
+    // body_raw keeps the exact bytes of a non-UTF-8 message up to 1 MiB, as
+    // before object storage: API, SDK and CLI readers use it.
+    let body_raw = input.prepared.stored.raw.as_ref();
     let result: Result<Value, sqlx::Error> = sqlx::query_scalar(
         "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL, $16::uuid, $17)",
     )
@@ -607,14 +605,12 @@ async fn capture_for_slug(
     .await;
     drop(permit);
 
-    // An answer other than a new capture leaves the objects unreferenced: a
-    // refusal, or a duplicate (the earlier copy has its own). An error is
-    // ambiguous, since the row may have committed before the connection
-    // failed, so its objects stay; the bucket's lifecycle rule removes them
-    // if nothing refers to them. Deleting is best effort either way.
-    let unreferenced = matches!(&result, Ok(value)
-        if value.get("status").and_then(Value::as_str) != Some("ok"));
-    if unreferenced {
+    // Objects a capture certainly did not record are unreferenced: a refusal,
+    // a duplicate (the earlier copy has its own), or a query that never ran.
+    // Any other error may have committed before the reply was lost, and the
+    // sender's retry then finds that row as a duplicate, so its objects stay
+    // (the bucket's lifecycle rule removes them if no row ever names them).
+    if !capture_may_have_committed(&result) {
         discard_objects(state, input.prepared, stored_objects.as_ref()).await;
     }
 
@@ -680,6 +676,15 @@ async fn capture_for_slug(
             );
             ("transient", None)
         }
+    }
+}
+
+/// Whether a capture query's outcome could include a committed row.
+fn capture_may_have_committed(result: &Result<Value, sqlx::Error>) -> bool {
+    match result {
+        Ok(value) => value.get("status").and_then(Value::as_str) == Some("ok"),
+        Err(sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed) => false,
+        Err(_) => true,
     }
 }
 
@@ -1206,5 +1211,20 @@ mod tests {
         assert_eq!(objects.attachments.len(), 1);
         assert_eq!(objects.attachments[0].as_ref(), b"a,b");
         assert!(prepare(encoded, false).ok().unwrap().objects.is_none());
+    }
+
+    #[test]
+    fn keeps_objects_unless_the_capture_certainly_did_not_record_them() {
+        assert!(capture_may_have_committed(&Ok(json!({ "status": "ok" }))));
+        assert!(!capture_may_have_committed(&Ok(
+            json!({ "status": "duplicate" })
+        )));
+        assert!(!capture_may_have_committed(&Ok(
+            json!({ "status": "quota_exceeded" })
+        )));
+        assert!(!capture_may_have_committed(&Err(sqlx::Error::PoolTimedOut)));
+        assert!(capture_may_have_committed(&Err(sqlx::Error::Io(
+            std::io::Error::other("connection reset")
+        ))));
     }
 }

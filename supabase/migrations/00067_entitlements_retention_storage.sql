@@ -29,9 +29,13 @@
 --      out of it.
 --
 -- capture_webhook() and check_email_recipient() change together, as always.
--- Apply in autocommit mode (see AGENTS.md).
+-- Every statement runs on its own (autocommit), so no statement holds a lock
+-- on one table while waiting for another: captures lock endpoints, users and
+-- requests in that order, and a migration holding them in another order
+-- would deadlock with them. Only capture_webhook()'s drop and create share a
+-- transaction, so there is never a moment without it. Every statement can be
+-- run again. Apply in autocommit mode (see AGENTS.md).
 
-begin;
 
 -- 1. Entitlements
 create table if not exists public.plan_entitlements (
@@ -156,6 +160,56 @@ as $$
   )
 $$;
 
+-- A downgrade keeps the old retention for 7 days, whichever path made it
+-- (the renewal job, a Polar revoke, a hand edit), so a lapsed payment or a
+-- plan change never deletes a week of requests the moment it lands.
+create or replace function public.keep_retention_floor()
+returns trigger
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_old_key text;
+  v_new_key text;
+  v_old_days integer;
+  v_new_days integer;
+begin
+  if tg_table_name = 'users' then
+    v_old_key := old.plan;
+    v_new_key := new.plan;
+  else
+    v_old_key := case when old.business then 'team_business' else 'team' end;
+    v_new_key := case when new.business then 'team_business' else 'team' end;
+  end if;
+  select pe.retention_days into v_old_days from public.plan_entitlements pe where pe.key = v_old_key;
+  select pe.retention_days into v_new_days from public.plan_entitlements pe where pe.key = v_new_key;
+  if v_old_days is not null and v_new_days is not null and v_new_days < v_old_days then
+    new.retention_floor_days := greatest(
+      coalesce(case when old.retention_floor_until > now() then old.retention_floor_days end, 0),
+      v_old_days
+    );
+    new.retention_floor_until := now() + interval '7 days';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.keep_retention_floor() from public, anon, authenticated;
+
+drop trigger if exists users_keep_retention_floor on public.users;
+create trigger users_keep_retention_floor
+  before update of plan on public.users
+  for each row
+  when (old.plan is distinct from new.plan)
+  execute function public.keep_retention_floor();
+
+drop trigger if exists teams_keep_retention_floor on public.teams;
+create trigger teams_keep_retention_floor
+  before update of business on public.teams
+  for each row
+  when (old.business is distinct from new.business)
+  execute function public.keep_retention_floor();
+
 -- 3. Retention per endpoint
 alter table public.endpoints
   add column if not exists retention_days integer,
@@ -248,6 +302,8 @@ $$;
 -- id and pass the object-storage prefix it stored the message under; the
 -- free plan's lazy daily period comes from the entitlements (quota_period
 -- 'day') instead of the plan's name. A new signature needs drop and create.
+begin;
+
 drop function if exists public.capture_webhook(
   text, text, text, jsonb, text, jsonb, text, text, timestamptz, bytea, text, jsonb,
   text, boolean, integer, text
@@ -616,6 +672,8 @@ grant execute on function public.capture_webhook(
   text, text, text, jsonb, text, jsonb, text, text, timestamptz, bytea, text, jsonb,
   text, boolean, integer, text, uuid, text
 ) to service_role;
+
+commit;
 
 -- 6. check_email_recipient(): base is 00065, mirroring the above (the daily
 -- period comes from the entitlements).
@@ -1173,11 +1231,6 @@ begin
       billing_interval = null,
       billing_period_end = null,
       polar_subscription_id = null,
-      retention_floor_days = greatest(
-        coalesce(case when u.retention_floor_until > now() then u.retention_floor_days end, 0),
-        (select pe.retention_days from public.plan_entitlements pe where pe.key = u.plan)
-      ),
-      retention_floor_until = now() + interval '7 days',
       -- Add-ons need a plan; one-time blocks stay.
       block_requests = 0,
       overage_active = false
@@ -1245,12 +1298,6 @@ begin
       cancel_at_period_end = false,
       period_start = null,
       period_end = null,
-      retention_floor_days = greatest(
-        coalesce(case when t.retention_floor_until > now() then t.retention_floor_days end, 0),
-        (select pe.retention_days from public.plan_entitlements pe
-          where pe.key = case when t.business then 'team_business' else 'team' end)
-      ),
-      retention_floor_until = now() + interval '7 days',
       business = false,
       block_requests = 0,
       overage_active = false
@@ -1478,7 +1525,6 @@ grant execute on function public.process_billing_period_resets() to service_role
 grant execute on function public.cleanup_expired_requests(integer, integer) to service_role;
 grant execute on function public.cleanup_delivered_requests(integer) to service_role;
 
-commit;
 
 -- Guests' rows, for the retention cleanup's 31-day step. An invalid leftover
 -- of an interrupted run is dropped first, as in 00034.
@@ -1508,16 +1554,18 @@ alter table public.teams validate constraint teams_retention_floor_check;
 alter table public.endpoints validate constraint endpoints_retention_days_check;
 alter table public.requests validate constraint requests_object_prefix_check;
 
--- 14. Jobs: the hourly retention cleanup replaces the two daily ones (their
--- functions stay, unscheduled).
+-- 14. Jobs: the retention cleanup every 10 minutes (smaller passes, so no
+-- single run holds the WAL and the I/O for long) replaces the two daily ones
+-- (their functions stay, unscheduled).
 select cron.unschedule(jobid) from cron.job
  where jobname in ('cleanup-old-requests-daily', 'cleanup-free-user-requests-daily',
-                   'cleanup-expired-requests-hourly', 'cleanup-delivered-requests');
+                   'cleanup-expired-requests-hourly', 'cleanup-expired-requests',
+                   'cleanup-delivered-requests');
 
 select cron.schedule(
-  'cleanup-expired-requests-hourly',
-  '7 * * * *',
-  $$select public.cleanup_expired_requests()$$
+  'cleanup-expired-requests',
+  '*/10 * * * *',
+  $$select public.cleanup_expired_requests(5000, 100000)$$
 );
 
 select cron.schedule(

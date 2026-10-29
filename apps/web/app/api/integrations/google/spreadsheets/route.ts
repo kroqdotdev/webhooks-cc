@@ -1,4 +1,4 @@
-import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { authenticateSessionRequest } from "@/lib/api-auth";
 import {
   accessToken,
   createSpreadsheet,
@@ -17,10 +17,11 @@ import { googleRefreshToken } from "@/lib/supabase/google-connections";
  * POST /api/integrations/google/spreadsheets {connectionId, title, sheet,
  * headers}: creates a spreadsheet in that Google account with the header
  * row, for a Sheets destination. With `spreadsheetId` instead of a title it
- * writes the header row of an existing one (after the columns change).
+ * writes the header row of an existing one, when the owner asks. Takes a
+ * session, never an API key: it writes to the person's Google Drive.
  */
 export async function POST(request: Request) {
-  const auth = await authenticateRequestRequireUser(request);
+  const auth = await authenticateSessionRequest(request);
   if (!auth.success) return auth.response;
   const rateLimit = await checkRateLimitWithInfo(request, "google-sheets", 20);
   if (rateLimit.response) return rateLimit.response;
