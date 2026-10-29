@@ -1,0 +1,32 @@
+{
+  "name": "apiKey",
+  "label": "webhooks.cc API key",
+  "type": "basic",
+  "parameters": [
+    {
+      "name": "apiKey",
+      "type": "password",
+      "label": "API key",
+      "help": "Create one on webhooks.cc (or mailhooks.cc) under Account > API keys. Keys start with whcc_.",
+      "required": true
+    }
+  ],
+  "communication": {
+    "url": "https://webhooks.cc/api/usage",
+    "headers": {
+      "Authorization": "Bearer {{parameters.apiKey}}"
+    },
+    "response": {
+      "metadata": {
+        "type": "text",
+        "value": "{{body.plan}}"
+      },
+      "error": {
+        "message": "The API key was not accepted. Create a new one under Account > API keys."
+      }
+    },
+    "log": {
+      "sanitize": ["request.headers.authorization"]
+    }
+  }
+}
