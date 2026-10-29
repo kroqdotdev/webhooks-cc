@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { mailhooksOrigin } from "@/lib/site";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import {
@@ -47,6 +48,10 @@ const googleSiteVerification =
   process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || process.env.GOOGLE_SITE_VERIFICATION;
 const bingSiteVerification =
   process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION || process.env.BING_SITE_VERIFICATION;
+
+// The announcement banner is webhooks.cc's: its offset is never reserved on mailhooks.cc.
+const mailhooksUrl = mailhooksOrigin();
+const MAILHOOKS_HOST = mailhooksUrl ? new URL(mailhooksUrl).hostname : null;
 
 export const metadata: Metadata = {
   title: {
@@ -133,7 +138,7 @@ export default function RootLayout({
         {ANNOUNCEMENTS.length > 0 && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){var d=null;try{d=localStorage.getItem(${JSON.stringify(ANNOUNCEMENTS[0].id).replace(/</g, "\\u003c").replace(/>/g, "\\u003e")})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
+              __html: `(function(){${MAILHOOKS_HOST ? `if(location.hostname===${JSON.stringify(MAILHOOKS_HOST)})return;` : ""}var d=null;try{d=localStorage.getItem(${JSON.stringify(ANNOUNCEMENTS[0].id).replace(/</g, "\\u003c").replace(/>/g, "\\u003e")})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
             }}
           />
         )}

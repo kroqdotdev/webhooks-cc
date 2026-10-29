@@ -23,6 +23,7 @@ import { reportError } from "@/lib/observability";
 import { planEntitlements, teamEntitlements } from "@/lib/entitlements";
 import { createAdminClient } from "./admin";
 import { addMonthUtc, ensurePolarCustomerId, getBillingUser } from "./billing";
+import { returnOrigin } from "@/lib/site-server";
 import { asNonEmptyString, asRecord, parseEventTimestamp } from "./billing-shared";
 import type { Database } from "./database";
 import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
@@ -307,8 +308,12 @@ async function ensureCustomer(account: CapacityAccount, ownerUserId: string): Pr
   return ensurePolarCustomerId(await getBillingUser(account.userId));
 }
 
-function successUrl(account: CapacityAccount, what: string, anchor = "extra-requests"): string {
-  const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
+async function successUrl(
+  account: CapacityAccount,
+  what: string,
+  anchor = "extra-requests"
+): Promise<string> {
+  const appUrl = await returnOrigin(publicEnv().NEXT_PUBLIC_APP_URL);
   return account.kind === "team"
     ? `${appUrl}/teams/${account.teamId}?capacity=${what}#${anchor}`
     : `${appUrl}/account/plan?capacity=${what}#${anchor}`;
@@ -530,7 +535,7 @@ export async function createOneTimeBlocksCheckout(
     min_units: 1,
     max_units: spec.maxBlocks,
     customer_id: customerId,
-    success_url: successUrl(account, "blocks", spec.anchor),
+    success_url: await successUrl(account, "blocks", spec.anchor),
     metadata: { capacity: "one_time", resource },
   });
   return checkout.url;
@@ -566,7 +571,7 @@ export async function changeMonthlyBlocks(
       min_units: 1,
       max_units: spec.maxBlocks,
       customer_id: customerId,
-      success_url: successUrl(account, "monthly", spec.anchor),
+      success_url: await successUrl(account, "monthly", spec.anchor),
       metadata: { capacity: "monthly", resource },
     });
     return { kind: "checkout", url: checkout.url };
@@ -601,7 +606,7 @@ export async function changeMonthlyBlocks(
       min_units: blocks - current.units,
       max_units: blocks - current.units,
       customer_id: customerId,
-      success_url: successUrl(account, "monthly", spec.anchor),
+      success_url: await successUrl(account, "monthly", spec.anchor),
       metadata: {
         capacity: "monthly_add",
         resource,
@@ -707,7 +712,7 @@ export async function setOverage(
     const checkout = await polar.checkouts.create({
       products: [products.overage],
       customer_id: customerId,
-      success_url: successUrl(account, "overage", spec.anchor),
+      success_url: await successUrl(account, "overage", spec.anchor),
       metadata: { capacity: "overage", resource },
     });
     return { kind: "checkout", url: checkout.url };
@@ -757,7 +762,7 @@ export async function createTeamBusinessCheckout(
   const checkout = await createPolarClient().checkouts.create({
     products: [productId],
     customer_id: customerId,
-    success_url: successUrl(account, "business", "team-business"),
+    success_url: await successUrl(account, "business", "team-business"),
     metadata: { capacity: "team_business" },
   });
   return checkout.url;

@@ -105,3 +105,25 @@ describe("layout templates", () => {
     }
   });
 });
+
+describe("withTemplateLayout", () => {
+  it("adds the template's layout at the end under a free id", async () => {
+    const { withTemplateLayout } = await import("./layout-template-import");
+    const first = withTemplateLayout([], "shopify-orders");
+    expect(first?.layout.id).toBe("shopify-orders");
+    const second = withTemplateLayout(first!.layouts, "shopify-orders");
+    expect(second?.layouts.map((layout) => layout.id)).toEqual([
+      "shopify-orders",
+      "shopify-orders-2",
+    ]);
+    // The template itself is never changed.
+    expect(layoutTemplate("shopify-orders")?.layout.id).toBe("shopify-orders");
+  });
+
+  it("refuses an unknown template and a full endpoint", async () => {
+    const { withTemplateLayout } = await import("./layout-template-import");
+    expect(withTemplateLayout([], "nope")).toBeNull();
+    const full = Array.from({ length: 50 }, (_, i) => ({ id: `l${i}`, name: `L${i}` }));
+    expect(withTemplateLayout(full, "shopify-orders")).toBeNull();
+  });
+});

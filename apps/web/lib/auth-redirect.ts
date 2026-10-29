@@ -1,3 +1,5 @@
+import { siteForHost, siteOrigin } from "@/lib/site";
+
 /**
  * Redirect helpers shared by the auth route handlers (/auth/callback for
  * OAuth PKCE, /auth/confirm for email token-hash links).
@@ -13,14 +15,16 @@ export function sanitizeNextPath(raw: string | null, fallback = "/dashboard"): s
 }
 
 /**
- * Base URL to redirect to after a successful auth handoff. Behind the
- * production proxy the request origin is the internal host, so prefer
- * x-forwarded-host; in development trust the request origin as-is.
+ * Base URL to redirect to after a successful auth handoff: the origin of the
+ * site the request came to (lib/site.ts), from x-forwarded-host or Host,
+ * so a session set on mailhooks.cc lands on mailhooks.cc. Only the two
+ * configured origins can come out, never a host a request names. In
+ * development the request origin is trusted as-is.
  */
 export function resolveRedirectBase(request: Request, origin: string): string {
   if (process.env.NODE_ENV === "development") return origin;
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  return forwardedHost ? `https://${forwardedHost}` : origin;
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  return siteOrigin(siteForHost(host));
 }
 
 /**

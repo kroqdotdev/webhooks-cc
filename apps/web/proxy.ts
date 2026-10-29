@@ -118,7 +118,7 @@ export async function proxy(request: NextRequest) {
   // --- Site ---
   // The header is ours to set, like the markdown marker below.
   request.headers.delete(SITE_HEADER);
-  const site = siteForHost(request.headers.get("host"));
+  const site = siteForHost(request.headers.get("host") ?? request.nextUrl.host);
   if (site === "mailhooks" && !servedOnMailhooks(pathname)) {
     return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 308);
   }

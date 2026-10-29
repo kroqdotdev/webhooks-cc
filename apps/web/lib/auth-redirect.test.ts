@@ -40,15 +40,33 @@ describe("resolveRedirectBase", () => {
     ).toBe("http://localhost:3000");
   });
 
-  it("prefers https://<x-forwarded-host> outside development", () => {
+  it("answers with the forwarded host's site outside development", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
     expect(
       resolveRedirectBase(req({ "x-forwarded-host": "webhooks.cc" }), "http://internal:3000")
     ).toBe("https://webhooks.cc");
+    expect(
+      resolveRedirectBase(req({ "x-forwarded-host": "mailhooks.cc" }), "http://internal:3000")
+    ).toBe("https://mailhooks.cc");
   });
 
-  it("falls back to the origin when no forwarded host is present", () => {
+  it("never answers with a host the request names that is not ours", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    expect(
+      resolveRedirectBase(req({ "x-forwarded-host": "evil.example" }), "http://internal:3000")
+    ).toBe("https://webhooks.cc");
+  });
+
+  it("reads Host when no forwarded host is present", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
+    expect(resolveRedirectBase(req({ host: "mailhooks.cc" }), "http://internal:3000")).toBe(
+      "https://mailhooks.cc"
+    );
     expect(resolveRedirectBase(req(), "https://webhooks.cc")).toBe("https://webhooks.cc");
   });
 });
