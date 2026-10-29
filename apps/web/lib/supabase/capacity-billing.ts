@@ -1284,11 +1284,22 @@ async function settleEndedIncrease(account: CapacityAccount, orderId: string): P
   const admin = createAdminClient();
   const { data: purchase, error } = await admin
     .from("capacity_purchases")
-    .select("kind, units")
+    .select("kind, units, polar_subscription_id")
     .eq("polar_order_id", orderId)
     .maybeSingle();
   if (error) throw error;
   if (!purchase) return;
+  // The plan's reconcile may have kept the subscription's blocks, this
+  // increase included, as one-time blocks already: nothing more to keep.
+  if (purchase.polar_subscription_id) {
+    const { data: kept, error: keptError } = await admin
+      .from("capacity_purchases")
+      .select("id")
+      .eq("polar_order_id", `subscription:${purchase.polar_subscription_id}`)
+      .maybeSingle();
+    if (keptError) throw keptError;
+    if (kept) return;
+  }
   const credits: PurchaseKind | null =
     purchase.kind === "block_increase"
       ? "credits"
@@ -1365,12 +1376,13 @@ export async function applyCapacityWebhookEvent(
       });
       if (error) throw error;
       const refunded = asRecord(result)?.kind;
-      // Only an increase that raised a subscription changed its renewal count.
+      // Only an increase that raised a subscription still renewing changed
+      // a renewal count anyone needs to look at.
       if (
         (refunded === "block_increase" ||
           refunded === "page_block_increase" ||
           refunded === "domain_increase") &&
-        asNonEmptyString(asRecord(result)?.subscription_id)
+        asRecord(result)?.subscription_live === true
       ) {
         reportError(
           "[capacity] refunded monthly blocks: check the renewal count in Polar",
@@ -1475,7 +1487,10 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
   const domainsLeaving = plan.domains_ending || teamBusinessEnding;
   // A Team Business payment that failed stops it counting, but it is not
   // gone: Polar retries the card, and what needs it waits rather than ends.
-  const teamBusinessPastDue = teamBusiness?.status === "past_due";
+  // Only while the team's plan goes on: with the plan gone or ending, Team
+  // Business ends in this same pass and what needs it must end with it.
+  const teamBusinessPastDue =
+    teamBusiness?.status === "past_due" && plan.plan_active && !plan.cancel_at_period_end;
 
   for (const row of rows) {
     if (teamBusinessPastDue && (PAGE_KINDS.has(row.kind) || DOMAIN_KINDS.has(row.kind))) {

@@ -1531,6 +1531,8 @@ export interface Database {
           last_checked_at: string | null;
           failed_checks: number;
           catch_all_endpoint_id: string | null;
+          released_at: string | null;
+          lookup_failures: number;
           created_at: string;
         };
         Insert: {
@@ -1544,6 +1546,8 @@ export interface Database {
           last_checked_at?: string | null;
           failed_checks?: number;
           catch_all_endpoint_id?: string | null;
+          released_at?: string | null;
+          lookup_failures?: number;
           created_at?: string;
         };
         Update: {
@@ -1557,6 +1561,8 @@ export interface Database {
           last_checked_at?: string | null;
           failed_checks?: number;
           catch_all_endpoint_id?: string | null;
+          released_at?: string | null;
+          lookup_failures?: number;
           created_at?: string;
         };
         Relationships: [];

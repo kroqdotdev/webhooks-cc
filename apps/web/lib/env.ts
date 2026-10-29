@@ -103,6 +103,10 @@ const serverEnvSchema = z
     // mid-period add; offered only when both are set (getDomainProductIds()).
     POLAR_DOMAINS_PRODUCT_ID: z.string().optional(),
     POLAR_DOMAINS_ADD_PRODUCT_ID: z.string().optional(),
+    // Resolvers for custom inbound domain checks (lib/supabase/inbound-domains.ts),
+    // comma separated; public ones by default, so a customer's nameservers
+    // never see this host.
+    DOMAIN_DNS_SERVERS: z.string().optional(),
     // S3-compatible object storage where the receiver keeps captured email
     // (raw message and attachments, lib/storage). All four, or none; region
     // defaults to us-east-1, which S3-compatible services accept.
@@ -267,6 +271,7 @@ export function serverEnv() {
       POLAR_PAGE_OVERAGE_PRODUCT_ID: process.env.POLAR_PAGE_OVERAGE_PRODUCT_ID,
       POLAR_DOMAINS_PRODUCT_ID: process.env.POLAR_DOMAINS_PRODUCT_ID,
       POLAR_DOMAINS_ADD_PRODUCT_ID: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
+      DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,

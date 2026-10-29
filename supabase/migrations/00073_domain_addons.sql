@@ -303,6 +303,7 @@ security definer set search_path = ''
 as $$
 declare
   v_purchase public.capacity_purchases;
+  v_kept     public.capacity_purchases;
 begin
   select * into v_purchase
     from public.capacity_purchases
@@ -316,6 +317,34 @@ begin
   end if;
 
   update public.capacity_purchases set refunded_at = now() where id = v_purchase.id;
+
+  -- An increase whose subscription ended before it could ride on it was kept
+  -- as one-time blocks under 'increase:<order>': refunding the order takes
+  -- those back too.
+  if v_purchase.kind in ('block_increase', 'page_block_increase') then
+    update public.capacity_purchases kept
+       set refunded_at = now()
+     where kept.polar_order_id = 'increase:' || p_order_id
+       and kept.refunded_at is null
+    returning kept.* into v_kept;
+    if found then
+      if v_kept.kind = 'page_credits' then
+        if v_kept.team_id is not null then
+          update public.teams set credit_pages = greatest(credit_pages - v_kept.requests, 0)
+           where id = v_kept.team_id;
+        else
+          update public.users set credit_pages = greatest(credit_pages - v_kept.requests, 0)
+           where id = v_kept.user_id;
+        end if;
+      elsif v_kept.team_id is not null then
+        update public.teams set credit_requests = greatest(credit_requests - v_kept.requests, 0)
+         where id = v_kept.team_id;
+      else
+        update public.users set credit_requests = greatest(credit_requests - v_kept.requests, 0)
+         where id = v_kept.user_id;
+      end if;
+    end if;
+  end if;
 
   if v_purchase.kind = 'page_credits' then
     if v_purchase.team_id is not null then
@@ -343,11 +372,17 @@ begin
     return jsonb_build_object('status', 'ok', 'kind', 'credits');
   end if;
 
-  -- An increase names the subscription it raised (null when there was none).
+  -- An increase names the subscription it raised (null when there was none),
+  -- and whether it is still live, the only case whose renewal count matters.
   return jsonb_build_object(
     'status', 'ok',
     'kind', v_purchase.kind,
-    'subscription_id', v_purchase.polar_subscription_id
+    'subscription_id', v_purchase.polar_subscription_id,
+    'subscription_live', exists (
+      select 1 from public.capacity_subscriptions cs
+       where cs.polar_subscription_id = v_purchase.polar_subscription_id
+         and cs.status is not null
+    )
   );
 end;
 $$;
