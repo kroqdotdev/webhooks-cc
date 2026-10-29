@@ -1,7 +1,7 @@
 import type net from "node:net";
 import { randomBytes } from "node:crypto";
 import tls from "node:tls";
-import { CONNECT_TIMEOUT_MS, DropError, openDropSocket } from "./connect";
+import { CONNECT_TIMEOUT_MS, DropError, openDropSocket, type DropConnections } from "./connect";
 import { secureSocket } from "./tls";
 
 /**
@@ -25,7 +25,8 @@ export interface FtpOptions {
   secure: boolean;
   /** SHA-256 fingerprint of a self-signed certificate to accept (hex, colons optional). */
   tlsFingerprint?: string | null;
-  timeoutMs?: number;
+  /** The drop's connections, which its deadline ends. */
+  connections?: DropConnections;
 }
 
 interface Reply {
@@ -34,6 +35,11 @@ interface Reply {
 }
 
 const COMMAND_TIMEOUT_MS = 20_000;
+/** A file's upload over the data connection may take this long. */
+const UPLOAD_TIMEOUT_MS = 120_000;
+/** A server that sends more than this without a reply is not an FTP server we talk to. */
+const MAX_LINE_CHARS = 8 * 1024;
+const MAX_REPLY_LINES = 200;
 
 class Control {
   private socket: net.Socket | tls.TLSSocket;
@@ -42,14 +48,29 @@ class Control {
   private waiter: { resolve: (reply: Reply) => void; reject: (error: Error) => void } | null = null;
   private closedError: Error | null = null;
   private readonly onData = (chunk: Buffer) => {
-    this.buffer += chunk.toString("utf8");
+    const text = chunk.toString("utf8");
+    let start = 0;
     let index;
-    while ((index = this.buffer.indexOf("\n")) >= 0) {
-      this.lines.push(this.buffer.slice(0, index).replace(/\r$/, ""));
-      this.buffer = this.buffer.slice(index + 1);
+    // Only the new text is searched; the partial line before it has no newline.
+    while ((index = text.indexOf("\n", start)) >= 0) {
+      this.lines.push((this.buffer + text.slice(start, index)).replace(/\r$/, ""));
+      this.buffer = "";
+      start = index + 1;
+    }
+    this.buffer += text.slice(start);
+    if (this.buffer.length > MAX_LINE_CHARS || this.lines.length > MAX_REPLY_LINES) {
+      this.fail(new DropError("The FTP server sent more than a reply.", false));
+      return;
     }
     this.flush();
   };
+  private fail(error: DropError) {
+    this.closedError = error;
+    this.waiter?.reject(error);
+    this.waiter = null;
+    this.socket.destroy();
+  }
+
   private readonly onClose = () => {
     this.closedError = new DropError("The FTP server closed the connection.");
     this.waiter?.reject(this.closedError);
@@ -81,13 +102,11 @@ class Control {
 
   /** A complete reply from the lines read so far: "123 text", or "123-" lines up to "123 ". */
   private takeReply(): Reply | null {
+    // Lines that do not start a reply are skipped (a loop: there can be many).
+    while (this.lines.length > 0 && !/^\d{3}[ -]/.test(this.lines[0])) this.lines.shift();
     if (this.lines.length === 0) return null;
     const first = this.lines[0];
-    const match = /^(\d{3})([ -])/.exec(first);
-    if (!match) {
-      this.lines.shift();
-      return this.takeReply();
-    }
+    const match = /^(\d{3})([ -])/.exec(first)!;
     if (match[2] === " ") {
       this.lines.shift();
       return { code: Number(match[1]), text: first.slice(4) };
@@ -140,6 +159,12 @@ class Control {
 
   /** Switches the connection to TLS after AUTH TLS was accepted. */
   async upgrade(host: string, fingerprint: string | null | undefined): Promise<tls.TLSSocket> {
+    // Anything that came after the 234 in the clear would be read as an
+    // answer to what is sent under TLS: refuse it.
+    if (this.buffer || this.lines.length > 0) {
+      this.close();
+      throw new DropError("The FTP server sent more than it should before TLS.", false);
+    }
     this.detach();
     const secure = await secureSocket(this.socket as net.Socket, host, fingerprint);
     this.socket = secure;
@@ -171,10 +196,16 @@ export class FtpSession {
     private readonly options: FtpOptions
   ) {}
 
+  /** The address the control connection reached; data connections go there too. */
+  private address: string | null = null;
+
   static async connect(options: FtpOptions): Promise<FtpSession> {
-    const socket = await openDropSocket(options.host, options.port);
+    const { socket, address } = await openDropSocket(options.host, options.port, {
+      connections: options.connections,
+    });
     const control = new Control(socket);
     const session = new FtpSession(control, options);
+    session.address = address;
     try {
       expect(await control.read(), [220], "The FTP server did not greet us");
       if (options.secure) {
@@ -234,7 +265,15 @@ export class FtpSession {
       // Only the port: the address is the control connection's host.
       port = Number(numbers[5]) * 256 + Number(numbers[6]);
     }
-    return openDropSocket(this.options.host, port);
+    // The control connection's address, not its name again: a name can
+    // resolve elsewhere by now, and the data would go there.
+    const opened = this.address
+      ? await openDropSocket(this.address, port, {
+          connections: this.options.connections,
+          reached: true,
+        })
+      : await openDropSocket(this.options.host, port, { connections: this.options.connections });
+    return opened.socket;
   }
 
   /** Stores a file under a temporary name, then renames it into place. */
@@ -269,13 +308,19 @@ export class FtpSession {
       socket.once("close", () => resolve());
       socket.once("error", () => resolve());
     });
-    await new Promise<void>((resolve, reject) => {
-      socket.end(data, () => resolve());
-      socket.once("error", () => reject(new DropError("The data connection broke.")));
-    });
-    const timer = setTimeout(() => socket.destroy(), CONNECT_TIMEOUT_MS);
-    await done;
-    clearTimeout(timer);
+    const uploadTimer = setTimeout(() => socket.destroy(), UPLOAD_TIMEOUT_MS);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.end(data, () => resolve());
+        socket.once("error", () => reject(new DropError("The data connection broke.")));
+        socket.once("close", () => resolve());
+      });
+      const timer = setTimeout(() => socket.destroy(), CONNECT_TIMEOUT_MS);
+      await done;
+      clearTimeout(timer);
+    } finally {
+      clearTimeout(uploadTimer);
+    }
     expect(await this.control.read(), [226, 250], "The upload did not complete");
     expect(await this.control.send(`RNFR ${partial}`), [350], "The file could not be renamed");
     const renamed = await this.control.send(`RNTO ${name}`);

@@ -3,7 +3,7 @@ import https from "node:https";
 import type net from "node:net";
 import { AwsClient } from "aws4fetch";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
-import { DropError, openDropSocket } from "./connect";
+import { DropError, openDropSocket, type DropConnections } from "./connect";
 import { secureSocket } from "./tls";
 
 /**
@@ -22,9 +22,12 @@ export interface S3Options {
   accessKeyId: string;
   secretAccessKey: string;
   tlsFingerprint?: string | null;
+  /** The drop's connections, which its deadline ends. */
+  connections?: DropConnections;
 }
 
-const REQUEST_TIMEOUT_MS = 30_000;
+/** One object's whole request, answer included, however slowly it trickles. */
+const REQUEST_TIMEOUT_MS = 120_000;
 
 /** The endpoint as a URL, or why it cannot be one. */
 export function s3EndpointProblem(raw: string): string | null {
@@ -107,7 +110,9 @@ export async function s3Put(
   });
 
   const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
-  const raw = await openDropSocket(url.hostname, port);
+  const { socket: raw } = await openDropSocket(url.hostname, port, {
+    connections: options.connections,
+  });
   let socket: net.Socket = raw;
   if (url.protocol === "https:") {
     socket = await secureSocket(raw, url.hostname, options.tlsFingerprint);
@@ -122,7 +127,6 @@ export async function s3Put(
         headers,
         // The connection is ours: checked, maybe through the proxy, TLS done.
         createConnection: () => socket,
-        timeout: REQUEST_TIMEOUT_MS,
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -145,9 +149,11 @@ export async function s3Put(
         response.on("error", () => reject(new DropError("The storage connection broke.")));
       }
     );
-    request.on("timeout", () =>
-      request.destroy(new DropError("The storage did not answer in time."))
+    const deadline = setTimeout(
+      () => request.destroy(new DropError("The storage did not answer in time.")),
+      REQUEST_TIMEOUT_MS
     );
+    request.on("close", () => clearTimeout(deadline));
     request.on("error", (error) =>
       reject(
         error instanceof DropError ? error : new DropError("The storage could not be reached.")

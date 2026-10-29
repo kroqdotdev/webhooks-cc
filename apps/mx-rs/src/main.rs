@@ -203,7 +203,11 @@ async fn run(statoss: bool) {
         tracing::info!(addr = %egress.listen, "listening for file drop egress");
         tokio::spawn(egress::serve(
             listener,
-            egress::Egress::new(egress.secret.clone(), egress.allow_private),
+            egress::Egress::new(
+                egress.secret.clone(),
+                egress.allow_private,
+                egress.deny.clone(),
+            ),
             stopped.clone(),
         ));
     }

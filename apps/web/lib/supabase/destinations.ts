@@ -442,17 +442,44 @@ export async function getDestinationDropSecret(
     : null;
 }
 
-/** A file drop's secret by the destination alone, for the delivery worker. */
-export async function dropSecretForDestination(id: string): Promise<DropSecret | null> {
+/**
+ * A file drop's config and secret by the destination alone, for the delivery
+ * worker and the test, read together: a secret is only ever used with the
+ * config it was saved for.
+ */
+export async function dropForDestination(
+  id: string
+): Promise<{ config: Json | null; secret: DropSecret | null; format: string | null } | null> {
   const { data, error } = await createAdminClient()
     .from("endpoint_destinations")
-    .select("drop_secret_encrypted")
+    .select("config, format, drop_secret_encrypted")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  return data?.drop_secret_encrypted
-    ? decryptDropSecret(byteaToBuffer(data.drop_secret_encrypted))
-    : null;
+  if (!data) return null;
+  return {
+    config: data.config,
+    format: data.format,
+    secret: data.drop_secret_encrypted
+      ? decryptDropSecret(byteaToBuffer(data.drop_secret_encrypted))
+      : null,
+  };
+}
+
+/** Pins an SFTP drop's host key if it still goes to that server and none is pinned. */
+export async function pinDropHostKey(
+  id: string,
+  target: { host: string; port: number; username: string },
+  hostKey: string
+): Promise<void> {
+  const { error } = await createAdminClient().rpc("pin_drop_host_key", {
+    p_destination_id: id,
+    p_host: target.host,
+    p_port: target.port,
+    p_username: target.username,
+    p_host_key: hostKey,
+  });
+  if (error) throw error;
 }
 
 /** A new signing secret; deliveries are signed with it from now on. */

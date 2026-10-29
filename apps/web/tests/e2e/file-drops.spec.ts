@@ -134,7 +134,7 @@ test("a Business account adds an SFTP drop, tests it, and the password stays hid
   await section.getByLabel("Host", { exact: true }).fill("localhost");
   await section.getByRole("button", { name: "Save destination" }).click();
   await expect(
-    section.getByText("Enter the password or key again: the drop now goes to another server.")
+    section.getByText(/^Enter the password or key again: the drop now goes to another server/)
   ).toBeVisible();
 });
 

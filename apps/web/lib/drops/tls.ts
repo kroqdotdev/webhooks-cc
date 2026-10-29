@@ -12,6 +12,8 @@ import { DropError } from "./connect";
  * after the handshake instead.
  */
 
+const HANDSHAKE_TIMEOUT_MS = 15_000;
+
 /** A fingerprint as stored: upper-case hex pairs joined by colons, as Node prints them. */
 export function normalizeFingerprint(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -58,14 +60,21 @@ export async function secureSocket(
     rejectUnauthorized: pinned === null,
     ...(session ? { session } : {}),
   });
+  const timer = setTimeout(
+    () => secure.destroy(new DropError("The TLS handshake took too long.")),
+    HANDSHAKE_TIMEOUT_MS
+  );
   try {
     await new Promise<void>((resolve, reject) => {
       secure.once("secureConnect", resolve);
       secure.once("error", reject);
+      secure.once("close", () => reject(new DropError("The server closed the connection.")));
     });
   } catch (error) {
     secure.destroy();
     throw handshakeError(error);
+  } finally {
+    clearTimeout(timer);
   }
   // A resumed session (an FTPS data connection) carries no certificate; it
   // resumes only with the server whose certificate the first one checked.

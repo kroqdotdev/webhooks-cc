@@ -261,9 +261,41 @@ as $$
   )
 $$;
 
+-- 5. Pins an SFTP drop's host key on its first connection: only while none
+-- is pinned and the drop still goes to the server the connection reached,
+-- so a pin can never undo an edit made while it connected.
+create or replace function public.pin_drop_host_key(
+  p_destination_id uuid,
+  p_host           text,
+  p_port           integer,
+  p_username       text,
+  p_host_key       text
+)
+returns boolean
+language sql
+security definer set search_path = ''
+as $$
+  with pinned as (
+    update public.endpoint_destinations
+       set config = jsonb_set(config, '{hostKey}', to_jsonb(p_host_key)),
+           updated_at = now()
+     where id = p_destination_id
+       and format = 'file_drop'
+       and config->>'protocol' = 'sftp'
+       and coalesce(config->>'hostKey', '') = ''
+       and config->>'host' = p_host
+       and (config->>'port')::integer = p_port
+       and config->>'username' = p_username
+    returning 1
+  )
+  select exists (select 1 from pinned)
+$$;
+
 revoke all on function public.claim_drop_batch(uuid, integer, integer) from public, anon, authenticated;
+revoke all on function public.pin_drop_host_key(uuid, text, integer, text, text) from public, anon, authenticated;
 revoke all on function public.file_drops_allowed(uuid) from public, anon, authenticated;
 grant execute on function public.claim_drop_batch(uuid, integer, integer) to service_role;
 grant execute on function public.file_drops_allowed(uuid) to service_role;
+grant execute on function public.pin_drop_host_key(uuid, text, integer, text, text) to service_role;
 
 notify pgrst, 'reload schema';
