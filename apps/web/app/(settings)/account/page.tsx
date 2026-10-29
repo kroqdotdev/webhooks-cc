@@ -235,7 +235,7 @@ export default function ProfilePage() {
           id="delete-account"
           tone="danger"
           title="Delete account"
-          description="Deletes your endpoints, captured requests, API keys and connected agents. A Pro subscription, and the subscriptions of teams you own, are cancelled at once."
+          description="Deletes your endpoints, captured requests, API keys and connected agents. Your paid plan and its add-ons, and the subscriptions of teams you own, are cancelled at once."
           footer={<DeleteAccountDialog accessToken={accessToken} />}
         />
       </div>

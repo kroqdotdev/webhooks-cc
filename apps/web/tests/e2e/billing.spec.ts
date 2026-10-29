@@ -150,3 +150,24 @@ test("the Team Business panel offers the action its state allows", async ({ page
   await expect(panel.getByRole("button", { name: "End at the renewal" })).toHaveCount(0);
   await expect(page.locator("#extra-pages").getByText(/Extra pages end on /)).toBeVisible();
 });
+
+test("after a move down, the plan page says when older requests go", async ({ page }) => {
+  const user = await userWith({
+    plan: "pro",
+    request_limit: 100_000,
+    subscription_status: "active",
+    billing_interval: "month",
+  });
+  // Set after the plan, so the downgrade trigger cannot overwrite it.
+  await admin
+    .from("users")
+    .update({
+      retention_floor_days: 90,
+      retention_floor_until: new Date(Date.now() + 5 * DAY).toISOString(),
+    })
+    .eq("id", user.id);
+  await signInTestUser(page, user, "/account/plan");
+
+  await expect(page.getByText(/Requests are kept 90 days until /)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/Pro keeps them for 31 days/)).toBeVisible();
+});
