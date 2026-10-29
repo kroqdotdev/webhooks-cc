@@ -4,6 +4,7 @@ import {
   loggablePolarError,
   polarErrorCode,
 } from "@/lib/polar";
+import { returnOrigin } from "@/lib/site-server";
 import { errors } from "@polar-sh/sdk/2026-10";
 import { creditBalanceFromOrders, quoteSeatChange, type SeatChangeQuote } from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
@@ -352,7 +353,7 @@ export async function createTeamCheckout(
     const checkout = await polar.checkouts.create({
       products: [teamsProductId],
       seats,
-      success_url: `${appUrl}/teams/${teamId}?subscribed=true`,
+      success_url: `${await returnOrigin(appUrl)}/teams/${teamId}?subscribed=true`,
       customer_id: customerId,
     });
 

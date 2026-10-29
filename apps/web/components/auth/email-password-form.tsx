@@ -115,7 +115,10 @@ export function EmailPasswordForm({
         return;
       }
 
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+      // The site the reset was asked on: the link opens it there (/auth/confirm).
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
       if (error) {
         setError(mapAuthError(error));
         return;

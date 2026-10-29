@@ -69,13 +69,14 @@ function hostOf(url: string | undefined): string | null {
 }
 
 /**
- * Hosts a client can never be on or send the human to: this app and the
- * receiver. Anyone can serve a document from a capture endpoint, which would
- * then read as "identified by go.webhooks.cc".
+ * Hosts a client can never be on or send the human to: this app on both of
+ * its sites and the receiver. Anyone can serve a document from a capture
+ * endpoint, which would then read as "identified by go.webhooks.cc".
  */
 function ownHosts(): string[] {
   return [
     hostOf(process.env.NEXT_PUBLIC_APP_URL),
+    hostOf(process.env.NEXT_PUBLIC_MAILHOOKS_URL),
     hostOf(process.env.NEXT_PUBLIC_WEBHOOK_URL),
   ].filter((host): host is string => host !== null);
 }
