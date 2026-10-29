@@ -21,13 +21,13 @@
             </tr>
             <tr>
               <td style="padding: 8px 0 24px;">
-                <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=recovery&amp;next=/auth/reset-password" style="display: inline-block; background: #18181b; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px; padding: 12px 20px; border: 2px solid #18181b;">Reset my password</a>
+                <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=recovery&amp;next=/auth/reset-password&amp;redirect_to={{ .RedirectTo }}" style="display: inline-block; background: #18181b; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px; padding: 12px 20px; border: 2px solid #18181b;">Reset my password</a>
               </td>
             </tr>
             <tr>
               <td style="font-size: 14px; line-height: 22px; color: #52525b; padding-bottom: 16px;">
                 Or paste this into your browser:<br />
-                <span style="word-break: break-all;">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=recovery&amp;next=/auth/reset-password</span>
+                <span style="word-break: break-all;">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=recovery&amp;next=/auth/reset-password&amp;redirect_to={{ .RedirectTo }}</span>
               </td>
             </tr>
             <tr>

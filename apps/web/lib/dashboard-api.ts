@@ -337,6 +337,23 @@ export async function previewResponses(
   return readJson<ResponsePreviewResult>(response);
 }
 
+/** Adds a ready-made layout (lib/layout-templates.ts) to the end of the endpoint's layouts. */
+export async function addLayoutTemplate(
+  accessToken: string,
+  slug: string,
+  template: string
+): Promise<{ layoutId: string }> {
+  const response = await fetch(
+    `${endpointPath(slug)}/layouts/template`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ template }),
+    })
+  );
+  return readJson<{ layoutId: string }>(response);
+}
+
 export async function fetchForwardSecret(accessToken: string, slug: string): Promise<string> {
   const response = await fetch(`${endpointPath(slug)}/forwarding`, withAuthHeaders(accessToken));
   return (await readJson<{ secret: string }>(response)).secret;

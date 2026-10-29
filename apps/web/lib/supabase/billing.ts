@@ -10,6 +10,7 @@ import {
 } from "@/lib/polar";
 import { planEntitlements } from "@/lib/entitlements";
 import { reportError } from "@/lib/observability";
+import { returnOrigin } from "@/lib/site-server";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
@@ -210,7 +211,7 @@ export async function createCheckoutForUser(
 
   const checkout = await polar.checkouts.create({
     products: [productId],
-    success_url: `${appUrl}/account/plan?upgraded=${plan}`,
+    success_url: `${await returnOrigin(appUrl)}/account/plan?upgraded=${plan}`,
     customer_id: customerId,
   });
 

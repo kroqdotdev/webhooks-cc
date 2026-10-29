@@ -3,6 +3,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { nextFromRedirectTo, resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
 import { SIGNUP_SIGNAL_COOKIE, SIGNUP_SIGNAL_COOKIE_OPTIONS } from "@/lib/signup-signal";
+import { mailhooksOrigin, siteForHost } from "@/lib/site";
 
 /**
  * Email link landing for signup confirmation and password recovery.
@@ -20,9 +21,11 @@ import { SIGNUP_SIGNAL_COOKIE, SIGNUP_SIGNAL_COOKIE_OPTIONS } from "@/lib/signup
  */
 const ALLOWED_TYPES = new Set<EmailOtpType>(["email", "signup", "recovery"]);
 
-/** Origins a redirect_to may point at: the resolved public base, the request origin, and the configured app URL. */
+/** Origins a redirect_to may point at: the resolved public base, the request origin, and the two sites' URLs. */
 function ownOrigins(base: string, origin: string): string[] {
   const origins = new Set([base, origin]);
+  const mail = mailhooksOrigin();
+  if (mail) origins.add(mail);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (appUrl) {
     try {
@@ -39,6 +42,23 @@ export async function GET(request: Request) {
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
   const base = resolveRedirectBase(request, origin);
+
+  // GoTrue's links all start at its site URL, webhooks.cc's. A link asked
+  // for on mailhooks.cc (its redirect_to points there) is verified there
+  // instead, where its session has to live: sessions are per host.
+  const mail = mailhooksOrigin();
+  const redirectTo = searchParams.get("redirect_to");
+  if (mail && redirectTo && siteForHost(new URL(base).host) !== "mailhooks") {
+    let target: string | null = null;
+    try {
+      target = new URL(redirectTo).origin;
+    } catch {
+      target = null;
+    }
+    if (target === mail) {
+      return NextResponse.redirect(`${mail}/auth/confirm?${searchParams.toString()}`);
+    }
+  }
   // Where to land: the sign-up form passes the login page's ?redirect= through
   // GoTrue as emailRedirectTo, which the template renders as redirect_to (so a
   // CLI-verify or agent-claim flow survives email confirmation); otherwise the

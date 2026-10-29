@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUser = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { user: null }, error: null }));
 
@@ -169,5 +169,43 @@ describe("proxy: remote MCP server", () => {
   it("keeps the OAuth consent page out of search results", async () => {
     const res = await proxy(new NextRequest("https://webhooks.cc/oauth/authorize"));
     expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+  });
+});
+
+describe("proxy: two sites", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("serves mailhooks.cc's own paths and marks the request's site", async () => {
+    for (const path of ["/", "/pricing", "/parse/shopify-orders", "/dashboard", "/api/endpoints"]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-site"), path).toBe("mailhooks");
+    }
+  });
+
+  it("sends webhooks.cc's pages from mailhooks.cc to webhooks.cc", async () => {
+    const res = await proxy(new NextRequest("https://mailhooks.cc/docs/layouts?x=1"));
+    expect(res.status).toBe(308);
+    expect(res.headers.get("location")).toBe("https://webhooks.cc/docs/layouts?x=1");
+  });
+
+  it("keeps mailhooks.cc's pages off webhooks.cc", async () => {
+    const res = await proxy(new NextRequest("https://webhooks.cc/mailhooks/pricing"));
+    expect(res.status).toBe(308);
+    expect(res.headers.get("location")).toBe("https://mailhooks.cc/pricing");
+  });
+
+  it("overwrites a site a client claims", async () => {
+    const res = await proxy(
+      new NextRequest("https://webhooks.cc/dashboard", { headers: { "x-whk-site": "mailhooks" } })
+    );
+    expect(res.headers.get("x-middleware-request-x-whk-site")).toBe("webhooks");
   });
 });

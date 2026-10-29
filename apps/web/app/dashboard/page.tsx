@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSite } from "@/components/providers/site-provider";
+import { TemplateImportDialog } from "@/components/dashboard/template-import-dialog";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { cn } from "@/lib/utils";
@@ -81,12 +83,17 @@ export default function DashboardPage() {
   const { session, isLoading: authLoading } = useAuth();
   const accessToken = session?.access_token ?? null;
   const [endpoints, setEndpoints] = useState<DashboardEndpoint[] | undefined>(undefined);
+  // The account's own endpoints (layouts are the owner's to change).
+  const [ownedSlugs, setOwnedSlugs] = useState<Set<string>>(new Set());
+  const site = useSite();
   const [recentRequests, setRecentRequests] = useState<Request[]>([]);
   // The endpoint whose first page of requests has arrived; until then an
   // empty list means "loading", not "nothing captured yet".
   const [requestsLoadedFor, setRequestsLoadedFor] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const endpointSlug = searchParams.get("endpoint");
+  // A ready-made layout to add, from a mailhooks.cc sender page.
+  const templateParam = searchParams.get("template");
 
   const currentEndpoint = endpoints?.find((ep) => ep.slug === endpointSlug) ?? endpoints?.[0];
   const currentEndpointId = currentEndpoint?.id;
@@ -101,7 +108,10 @@ export default function DashboardPage() {
   const prevTopSummaryId = useRef<string | null>(null);
   const [newCount, setNewCount] = useState(0);
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  // mailhooks.cc is mail-first: its list opens on emails.
+  const [kindFilter, setKindFilter] = useState<KindFilter>(
+    site.key === "mailhooks" ? "email" : "all"
+  );
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -362,6 +372,7 @@ export default function DashboardPage() {
     try {
       const response = await fetchDashboardEndpoints(accessToken);
       setEndpoints([...response.owned, ...response.shared]);
+      setOwnedSlugs(new Set(response.owned.map((endpoint) => endpoint.slug)));
     } catch (error) {
       console.error("Failed to load dashboard endpoints:", error);
       setEndpoints([]);
@@ -1132,6 +1143,27 @@ export default function DashboardPage() {
   return (
     <ErrorBoundary resetKey={currentEndpoint.id}>
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      {templateParam && (
+        <TemplateImportDialog
+          accessToken={accessToken}
+          templateId={templateParam}
+          endpoints={endpoints.filter(
+            (endpoint) => ownedSlugs.has(endpoint.slug) && endpoint.emailAddress
+          )}
+          onAdded={(slug) => {
+            setSettingsFocus("layouts");
+            setEndpointTab("settings");
+            router.replace(`${pathname}?endpoint=${encodeURIComponent(slug)}`);
+            void loadEndpoints();
+          }}
+          onClose={() => {
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("template");
+            const query = params.toString();
+            router.replace(query ? `${pathname}?${query}` : pathname);
+          }}
+        />
+      )}
 
       <EndpointBar
         name={currentEndpoint.name || currentEndpoint.slug}
