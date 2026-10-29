@@ -143,6 +143,8 @@ pub fn install_seccomp() -> Result<(), SandboxError> {
         ALLOWED.iter().map(|&nr| (nr, Vec::new())).collect();
     rules.insert(libc::SYS_tgkill, vec![own_pid()?]);
     rules.insert(libc::SYS_kill, vec![own_pid()?]);
+    // musl's abort() raises with tkill on the (only) thread, whose id is the pid.
+    rules.insert(libc::SYS_tkill, vec![own_pid()?]);
     // A syscall that matches a rule is allowed; any other fails with EPERM.
     // x32 numbers (bit 30 set) are never listed, so they fail too.
     let filter = SeccompFilter::new(

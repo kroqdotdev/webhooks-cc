@@ -63,6 +63,16 @@ export async function replayRequests(endpointId: string, requestIds: string[]): 
     if (kindError) throw kindError;
     for (const row of (data ?? []) as { id: string }[]) emails.add(row.id);
   }
+  // An email still waiting for its parse gets its deliveries when that is
+  // done; queueing them again here would send it twice.
+  const { data: pending, error: pendingError } = await admin
+    .from("request_parses")
+    .select("request_id")
+    .eq("status", "pending")
+    .in("request_id", ids);
+  if (pendingError) throw pendingError;
+  for (const row of (pending ?? []) as { request_id: string }[]) emails.add(row.request_id);
+
   let queued = 0;
   for (const requestId of ids) {
     if (emails.has(requestId)) {
