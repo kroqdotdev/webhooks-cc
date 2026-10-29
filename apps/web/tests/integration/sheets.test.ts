@@ -9,7 +9,6 @@ import { runForwardingBatch } from "@/lib/forwarding/worker";
 import { authorizationUrl, googleConfig } from "@/lib/integrations/google";
 import { GET as callbackRoute } from "@/app/api/integrations/google/callback/route";
 import { POST as spreadsheetsRoute } from "@/app/api/integrations/google/spreadsheets/route";
-import { createHash, randomBytes } from "node:crypto";
 
 /**
  * The Google Sheets destination (migration 00068) against a local fake of
@@ -288,19 +287,24 @@ describe("connecting a Google account", () => {
       refreshToken: "rt-good",
       scopes: "drive.file",
     });
-    const apiKey = `whcc_${randomBytes(24).toString("hex")}`;
-    const { error } = await admin.from("api_keys").insert({
-      user_id: userId,
-      key_hash: createHash("sha256").update(apiKey).digest("hex"),
-      key_prefix: apiKey.slice(0, 12),
-      name: "Sheets headers test",
+    // The route takes a session, never an API key (it writes to Google Drive).
+    const { data: user } = await admin.auth.admin.getUserById(userId);
+    const client = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data: session, error } = await client.auth.signInWithPassword({
+      email: user.user!.email!,
+      password: "TestPassword123!",
     });
     if (error) throw error;
+    const token = session.session!.access_token;
     const write = async (spreadsheetId: string, previousHeaders: string[]) => {
       const response = await spreadsheetsRoute(
         new Request("http://localhost/api/integrations/google/spreadsheets", {
           method: "POST",
-          headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
           body: JSON.stringify({
             connectionId: connection.id,
             spreadsheetId,
