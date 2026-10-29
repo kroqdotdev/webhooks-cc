@@ -506,11 +506,15 @@ describe("add-ons on an annual plan", () => {
     expect(await ending()).toBe(false);
     expect((await getCapacityState(account, "pages")).planEnding).toBe(false);
 
-    // The year's last month: they end with it.
+    // The year's last month: the add-on's renewal moved its period there.
     await admin
       .from("users")
       .update({ period_start: new Date(Date.now() - DAY).toISOString(), period_end: yearEnd })
       .eq("id", userId);
+    await admin
+      .from("capacity_subscriptions")
+      .update({ period_end: yearEnd })
+      .eq("polar_subscription_id", `sub_pb_year_${ts}`);
     await reconcileAddonsWithPlan(account);
     expect(await ending()).toBe(true);
     expect((await getCapacityState(account, "pages")).planEnding).toBe(true);
@@ -522,6 +526,62 @@ describe("add-ons on an annual plan", () => {
       .eq("id", userId);
     await reconcileAddonsWithPlan(account);
     expect(await ending()).toBe(false);
+  });
+
+  it("ends an add-on whose next renewal would pass a plan end that drifted from its window", async () => {
+    // The monthly windows drifted: this one ends 3 days before the year does,
+    // and the next would end a month later, past it.
+    const userId = await createUser({
+      plan: "business",
+      subscription_status: "active",
+      billing_interval: "year",
+      billing_period_end: new Date(Date.now() + 4 * DAY).toISOString(),
+      period_start: new Date(Date.now() - 29 * DAY).toISOString(),
+      period_end: new Date(Date.now() + DAY).toISOString(),
+      cancel_at_period_end: true,
+    });
+    const account = { kind: "user" as const, userId };
+    await applyAddon(account, "page_blocks", `sub_pb_drift_${ts}`, "active", 1);
+    await admin
+      .from("capacity_subscriptions")
+      .update({ period_end: new Date(Date.now() + DAY).toISOString() })
+      .eq("polar_subscription_id", `sub_pb_drift_${ts}`);
+
+    await reconcileAddonsWithPlan(account);
+    const { data } = await admin
+      .from("capacity_subscriptions")
+      .select("cancel_at_period_end")
+      .eq("polar_subscription_id", `sub_pb_drift_${ts}`)
+      .single();
+    expect(data?.cancel_at_period_end).toBe(true);
+  });
+
+  it("keeps overage off when it was turned off while ending with the plan", async () => {
+    const userId = await createUser({
+      plan: "business",
+      subscription_status: "active",
+      pending_plan: "pro",
+      pending_interval: "month",
+      period_start: new Date(Date.now() - DAY).toISOString(),
+      period_end: new Date(Date.now() + 29 * DAY).toISOString(),
+    });
+    const account = { kind: "user" as const, userId };
+    await applyAddon(account, "page_overage", `sub_po_off_${ts}`, "active");
+    await reconcileAddonsWithPlan(account);
+
+    await setOverage(account, userId, { enabled: false }, "pages");
+    await admin
+      .from("users")
+      .update({ pending_plan: null, pending_interval: null })
+      .eq("id", userId);
+    await reconcileAddonsWithPlan(account);
+
+    const { data } = await admin
+      .from("capacity_subscriptions")
+      .select("cancel_at_period_end, canceled_with_plan")
+      .eq("polar_subscription_id", `sub_po_off_${ts}`)
+      .single();
+    expect(data).toEqual({ cancel_at_period_end: true, canceled_with_plan: false });
   });
 
   it("brings a team's page add-ons back when Team Business is kept", async () => {

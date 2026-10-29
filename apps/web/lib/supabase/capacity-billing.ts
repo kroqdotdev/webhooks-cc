@@ -183,6 +183,8 @@ interface AccountRow {
    * plan, whose add-ons renew monthly until then.
    */
   last_period: boolean;
+  /** An annual plan's billing period end (null for monthly plans and teams). */
+  annual_end: string | null;
   /** Pages count per quota period; otherwise (Free) a month from the first parse. */
   pages_follow_period: boolean;
   /** The plan's own pages per window (its entitlements). */
@@ -235,6 +237,7 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
       // Set from the Team Business add-on by requireEligible when it matters.
       pages_ending: false,
       last_period: true,
+      annual_end: null,
       pages_follow_period: true,
       plan_pages: teamEntitlements(data.business).parsedPages,
     };
@@ -261,14 +264,21 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
     plan_active: entitlements.requestAddons && row.subscription_status !== null,
     pages_active: entitlements.pageAddons && row.subscription_status !== null,
     pages_ending: pendingPlan !== null && !planEntitlements(pendingPlan).pageAddons,
-    last_period:
-      interval !== "year" ||
-      !billingEnd ||
-      !row.period_end ||
-      Date.parse(row.period_end) >= Date.parse(billingEnd) - 60_000,
+    last_period: interval !== "year" || endsBeforeNextWindow(billingEnd, row.period_end),
+    annual_end: interval === "year" ? billingEnd : null,
     plan_pages: entitlements.parsedPages,
     pages_follow_period: entitlements.quotaPeriod === "month",
   };
+}
+
+/**
+ * Whether an annual plan ends before the window after `windowEnd` would:
+ * the window ending then is its last (the monthly windows can drift a few
+ * days from the yearly date, so the next window is what counts).
+ */
+function endsBeforeNextWindow(planEnd: string | null, windowEnd: string | null): boolean {
+  if (!planEnd || !windowEnd) return true;
+  return Date.parse(planEnd) < Date.parse(addMonthUtc(windowEnd)) - 60_000;
 }
 
 async function liveSubscriptions(account: CapacityAccount): Promise<CapacitySubscriptionRow[]> {
@@ -662,6 +672,9 @@ export async function setOverage(
         cancel_at_period_end: true,
       });
       await markSubscription(current.id, { cancel_at_period_end: true, canceled_with_plan: false });
+    } else if (current?.canceled_with_plan) {
+      // Ending with the plan already: turned off, it must not come back with it.
+      await markSubscription(current.id, { canceled_with_plan: false });
     }
     return { kind: "updated" };
   }
@@ -1297,9 +1310,12 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
         await markSubscription(row.id, { canceled_with_plan: false });
       }
     } else if (leaving) {
-      // An annual plan's add-ons renew monthly: they end in its last month,
-      // checked again at each of their renewals.
-      if (!row.cancel_at_period_end && plan.last_period) {
+      // An annual plan's add-ons renew monthly: each ends in the month its
+      // next renewal would pass the plan's end, decided from its own period
+      // (just written by its renewal) and checked again at each renewal.
+      const lastRenewal =
+        plan.annual_end === null || endsBeforeNextWindow(plan.annual_end, row.period_end);
+      if (!row.cancel_at_period_end && lastRenewal) {
         await setAddonEnding(account, row, true, true);
       }
     } else if (row.cancel_at_period_end && row.canceled_with_plan) {

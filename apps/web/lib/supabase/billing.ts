@@ -1,6 +1,7 @@
 import {
   createPolarClient,
   getPolarCheckoutConfig,
+  isEndedSubscriptionError,
   loggablePolarError,
   planForProduct,
   planProductId,
@@ -341,6 +342,8 @@ async function revokeSubscriptionQuietly(id: string): Promise<void> {
   try {
     await createPolarClient().subscriptions.revoke(id);
   } catch (error) {
+    // Revoked by an earlier delivery of the same event.
+    if (isEndedSubscriptionError(error)) return;
     reportError(
       "[billing] could not revoke a second plan subscription",
       loggablePolarError(error),
@@ -374,6 +377,211 @@ export function remainingShare(start: string, end: string, now: number): number 
   return Math.min(1, Math.max(0, (to - now) / (to - from)));
 }
 
+/**
+ * Writes a plan subscription's state to its account, compare-and-swapped on
+ * the row it read. False when another write got there first (the caller
+ * reads again and retries); true when written or when there is nothing to
+ * write.
+ */
+async function applyPlanSubscription(
+  userId: string,
+  data: Record<string, unknown>
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data: stored, error: storedError } = await admin
+    .from("users")
+    .select(
+      "polar_subscription_id, subscription_status, plan, period_start, period_end, billing_interval, billing_period_end, prorated_window"
+    )
+    .eq("id", userId)
+    .maybeSingle<{
+      polar_subscription_id: string | null;
+      subscription_status: "active" | "canceled" | "past_due" | null;
+      plan: string;
+      period_start: string | null;
+      period_end: string | null;
+      billing_interval: "month" | "year" | null;
+      billing_period_end: string | null;
+      prorated_window: string | null;
+    }>();
+
+  if (storedError) throw storedError;
+  if (!stored) return true;
+
+  const currentPeriodStart = parseEventTimestamp(data.current_period_start);
+  const currentPeriodEnd = parseEventTimestamp(data.current_period_end);
+  const customerId = asNonEmptyString(data.customer_id);
+  const subscriptionId = asNonEmptyString(data.id);
+
+  // Same renewal semantics as applyTeamSubscriptionState in team-billing.ts.
+  // A new subscription id starts a fresh quota. A same-subscription event
+  // whose period start moved forward is a renewal and must clear usage HERE:
+  // this same write pushes period_end into the future, which blinds the
+  // per-minute cron fallback reset (it only touches rows with
+  // period_end <= now()). A period start older than the stored one is a
+  // stale out-of-order delivery whose bounds must not roll the period back.
+  const isNewSubscription =
+    subscriptionId !== null && subscriptionId !== stored.polar_subscription_id;
+
+  if (isNewSubscription) {
+    // An ended subscription that is not the account's (an old one's late
+    // event) changes nothing.
+    if (!LIVE_STATUSES.has(String(data.status))) return true;
+    // A second live plan subscription (two checkouts completed in two
+    // tabs): the account keeps the one it has, and the new one ends
+    // before it charges again. Someone refunds what it charged.
+    if (stored.polar_subscription_id && (await isLiveSubscription(stored.polar_subscription_id))) {
+      await revokeSubscriptionQuietly(subscriptionId);
+      reportError("[billing] a second plan subscription was revoked; refund it", undefined, {
+        subscriptionId,
+      });
+      return true;
+    }
+  }
+
+  const incomingPeriodStartMs = currentPeriodStart ? Date.parse(currentPeriodStart) : null;
+  const storedPeriodStartMs = stored.period_start ? Date.parse(stored.period_start) : null;
+
+  const isRenewal =
+    !isNewSubscription &&
+    incomingPeriodStartMs !== null &&
+    storedPeriodStartMs !== null &&
+    incomingPeriodStartMs > storedPeriodStartMs;
+
+  const isStalePeriod =
+    !isNewSubscription &&
+    incomingPeriodStartMs !== null &&
+    storedPeriodStartMs !== null &&
+    incomingPeriodStartMs < storedPeriodStartMs;
+
+  // The plan and interval come from the product; a product that is none
+  // of today's plans is the original Pro.
+  const sold = planForProduct(
+    asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id)
+  ) ?? { plan: "pro" as const, interval: "month" as const };
+  const annual = sold.interval === "year";
+
+  // An annual plan's quota renews monthly (process_billing_period_resets)
+  // while Polar's period runs for the year: its period moves only when
+  // Polar's year starts (a new subscription, a yearly renewal, or a
+  // switch to annual that restarted the billing period).
+  const incomingBillingEndMs = currentPeriodEnd ? Date.parse(currentPeriodEnd) : null;
+  const storedBillingEndMs = stored.billing_period_end
+    ? Date.parse(stored.billing_period_end)
+    : null;
+  const newYear =
+    annual &&
+    (isNewSubscription ||
+      stored.billing_interval !== "year" ||
+      (incomingBillingEndMs !== null &&
+        (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
+  const firstMonthEnd = currentPeriodStart !== null ? addMonthUtc(currentPeriodStart) : null;
+  const period = annual
+    ? newYear && currentPeriodStart
+      ? { period_start: currentPeriodStart, period_end: firstMonthEnd }
+      : {}
+    : {
+        period_start: isStalePeriod ? undefined : currentPeriodStart,
+        period_end: isStalePeriod ? undefined : currentPeriodEnd,
+      };
+  // A year that starts after the cron fallback already moved the quota
+  // period there keeps the usage counted since.
+  const resetsUsage = annual
+    ? isNewSubscription ||
+      (newYear &&
+        (storedPeriodStartMs === null ||
+          incomingPeriodStartMs === null ||
+          storedPeriodStartMs < incomingPeriodStartMs))
+    : isNewSubscription || isRenewal;
+
+  // The allowance. A tier up within the period (changePlanForUser's
+  // "invoice" change) adds the new plan's extra requests and pages in
+  // proportion to what is left of the period, as Polar charged; the
+  // window's own requests come back when the period moves on (trigger
+  // users_end_plan_proration). Later events in the same window keep it.
+  const entitlement = planEntitlements(sold.plan);
+  const sameWindow = !resetsUsage && !isStalePeriod;
+  let allowance: Database["public"]["Tables"]["users"]["Update"] = {
+    request_limit: entitlement.requestLimit,
+    prorated_pages: null,
+    prorated_window: null,
+  };
+  if (
+    sameWindow &&
+    (PLAN_RANK[sold.plan] ?? 0) > (PLAN_RANK[stored.plan] ?? 0) &&
+    stored.plan !== "free" &&
+    stored.period_start &&
+    stored.period_end
+  ) {
+    const before = planEntitlements(stored.plan);
+    // Polar charged for the rest of its own period from the change. Its
+    // modified_at does not move with a product change, so the time the
+    // event is applied stands in: a retry grants a little less, never more.
+    const left = remainingShare(
+      currentPeriodStart ?? stored.period_start,
+      currentPeriodEnd ?? stored.period_end,
+      Date.now()
+    );
+    allowance = {
+      request_limit:
+        before.requestLimit + Math.round((entitlement.requestLimit - before.requestLimit) * left),
+      prorated_pages:
+        before.parsedPages + Math.round((entitlement.parsedPages - before.parsedPages) * left),
+      prorated_window: stored.period_start,
+    };
+  } else if (
+    sameWindow &&
+    sold.plan === stored.plan &&
+    stored.prorated_window !== null &&
+    stored.prorated_window === stored.period_start
+  ) {
+    allowance = {};
+  }
+  const pending = planForProduct(asNonEmptyString(asRecord(data.pending_update)?.product_id));
+
+  const patch: Database["public"]["Tables"]["users"]["Update"] = {
+    polar_customer_id: customerId ?? undefined,
+    polar_subscription_id: subscriptionId ?? undefined,
+    // An unrecognized status value keeps the stored status instead of
+    // nulling it, mirroring the team handler.
+    subscription_status:
+      normalizeStoredSubscriptionStatus(data.status) ?? stored.subscription_status ?? "active",
+    plan: sold.plan,
+    ...allowance,
+    pending_plan: pending?.plan ?? null,
+    pending_interval: pending?.interval ?? null,
+    billing_interval: sold.interval,
+    billing_period_end: isStalePeriod && !annual ? undefined : currentPeriodEnd,
+    ...period,
+    cancel_at_period_end:
+      typeof data.cancel_at_period_end === "boolean" ? data.cancel_at_period_end : false,
+  };
+
+  // Every write is compare-and-swapped on the state that was read. This
+  // keeps two failure modes out: overlapping deliveries of the same
+  // renewal both zeroing requests_used (erasing usage captured between the
+  // writes), and an updated/active event read before a concurrent revoke
+  // resurrecting the revoked subscription's state after it. The loser's
+  // write matches no rows and throws, so Polar delivers the event again
+  // and it is applied to the state that won.
+  let guarded = admin
+    .from("users")
+    .update(resetsUsage ? { ...patch, requests_used: 0 } : patch)
+    .eq("id", userId);
+  guarded =
+    stored.polar_subscription_id === null
+      ? guarded.is("polar_subscription_id", null)
+      : guarded.eq("polar_subscription_id", stored.polar_subscription_id);
+  guarded =
+    stored.period_start === null
+      ? guarded.is("period_start", null)
+      : guarded.eq("period_start", stored.period_start);
+
+  const { data: written, error: guardedError } = await guarded.select("id");
+  if (guardedError) throw guardedError;
+  return written !== null && written.length > 0;
+}
+
 export async function applyPolarWebhookEvent(eventType: string, payload: unknown): Promise<void> {
   const event = asRecord(payload);
   if (!event) {
@@ -402,232 +610,35 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         return;
       }
 
-      const admin = createAdminClient();
-      const { data: stored, error: storedError } = await admin
-        .from("users")
-        .select(
-          "polar_subscription_id, subscription_status, plan, period_start, period_end, billing_interval, billing_period_end, prorated_window"
-        )
-        .eq("id", userId)
-        .maybeSingle<{
-          polar_subscription_id: string | null;
-          subscription_status: "active" | "canceled" | "past_due" | null;
-          plan: string;
-          period_start: string | null;
-          period_end: string | null;
-          billing_interval: "month" | "year" | null;
-          billing_period_end: string | null;
-          prorated_window: string | null;
-        }>();
-
-      if (storedError) throw storedError;
-      if (!stored) return;
-
-      const currentPeriodStart = parseEventTimestamp(data.current_period_start);
-      const currentPeriodEnd = parseEventTimestamp(data.current_period_end);
-      const customerId = asNonEmptyString(data.customer_id);
-      const subscriptionId = asNonEmptyString(data.id);
-
-      // Same renewal semantics as applyTeamSubscriptionState in team-billing.ts.
-      // A new subscription id starts a fresh quota. A same-subscription event
-      // whose period start moved forward is a renewal and must clear usage HERE:
-      // this same write pushes period_end into the future, which blinds the
-      // per-minute cron fallback reset (it only touches rows with
-      // period_end <= now()). A period start older than the stored one is a
-      // stale out-of-order delivery whose bounds must not roll the period back.
-      const isNewSubscription =
-        subscriptionId !== null && subscriptionId !== stored.polar_subscription_id;
-
-      if (isNewSubscription) {
-        // An ended subscription that is not the account's (an old one's late
-        // event) changes nothing.
-        if (!LIVE_STATUSES.has(String(data.status))) return;
-        // A second live plan subscription (two checkouts completed in two
-        // tabs): the account keeps the one it has, and the new one ends
-        // before it charges again. Someone refunds what it charged.
-        if (
-          stored.polar_subscription_id &&
-          (await isLiveSubscription(stored.polar_subscription_id))
-        ) {
-          await revokeSubscriptionQuietly(subscriptionId);
-          reportError("[billing] a second plan subscription was revoked; refund it", undefined, {
-            subscriptionId,
-          });
-          return;
-        }
+      // A lost compare-and-swap (two deliveries at once) reads again; only a
+      // run of them goes back to Polar for a later delivery.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (await applyPlanSubscription(userId, data)) return;
       }
-
-      const incomingPeriodStartMs = currentPeriodStart ? Date.parse(currentPeriodStart) : null;
-      const storedPeriodStartMs = stored.period_start ? Date.parse(stored.period_start) : null;
-
-      const isRenewal =
-        !isNewSubscription &&
-        incomingPeriodStartMs !== null &&
-        storedPeriodStartMs !== null &&
-        incomingPeriodStartMs > storedPeriodStartMs;
-
-      const isStalePeriod =
-        !isNewSubscription &&
-        incomingPeriodStartMs !== null &&
-        storedPeriodStartMs !== null &&
-        incomingPeriodStartMs < storedPeriodStartMs;
-
-      // The plan and interval come from the product; a product that is none
-      // of today's plans is the original Pro.
-      const sold = planForProduct(
-        asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id)
-      ) ?? { plan: "pro" as const, interval: "month" as const };
-      const annual = sold.interval === "year";
-
-      // An annual plan's quota renews monthly (process_billing_period_resets)
-      // while Polar's period runs for the year: its period moves only when
-      // Polar's year starts (a new subscription, a yearly renewal, or a
-      // switch to annual that restarted the billing period).
-      const incomingBillingEndMs = currentPeriodEnd ? Date.parse(currentPeriodEnd) : null;
-      const storedBillingEndMs = stored.billing_period_end
-        ? Date.parse(stored.billing_period_end)
-        : null;
-      const newYear =
-        annual &&
-        (isNewSubscription ||
-          stored.billing_interval !== "year" ||
-          (incomingBillingEndMs !== null &&
-            (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
-      const firstMonthEnd = currentPeriodStart !== null ? addMonthUtc(currentPeriodStart) : null;
-      const period = annual
-        ? newYear && currentPeriodStart
-          ? { period_start: currentPeriodStart, period_end: firstMonthEnd }
-          : {}
-        : {
-            period_start: isStalePeriod ? undefined : currentPeriodStart,
-            period_end: isStalePeriod ? undefined : currentPeriodEnd,
-          };
-      // A year that starts after the cron fallback already moved the quota
-      // period there keeps the usage counted since.
-      const resetsUsage = annual
-        ? isNewSubscription ||
-          (newYear &&
-            (storedPeriodStartMs === null ||
-              incomingPeriodStartMs === null ||
-              storedPeriodStartMs < incomingPeriodStartMs))
-        : isNewSubscription || isRenewal;
-
-      // The allowance. A tier up within the period (changePlanForUser's
-      // "invoice" change) adds the new plan's extra requests and pages in
-      // proportion to what is left of the period, as Polar charged; the
-      // window's own requests come back when the period moves on (trigger
-      // users_end_plan_proration). Later events in the same window keep it.
-      const entitlement = planEntitlements(sold.plan);
-      const sameWindow = !resetsUsage && !isStalePeriod;
-      let allowance: Database["public"]["Tables"]["users"]["Update"] = {
-        request_limit: entitlement.requestLimit,
-        prorated_pages: null,
-        prorated_window: null,
-      };
-      if (
-        sameWindow &&
-        (PLAN_RANK[sold.plan] ?? 0) > (PLAN_RANK[stored.plan] ?? 0) &&
-        stored.plan !== "free" &&
-        stored.period_start &&
-        stored.period_end
-      ) {
-        const before = planEntitlements(stored.plan);
-        // Polar charged for the rest of its own period from the change. Its
-        // modified_at does not move with a product change, so the time the
-        // event is applied stands in: a retry grants a little less, never more.
-        const left = remainingShare(
-          currentPeriodStart ?? stored.period_start,
-          currentPeriodEnd ?? stored.period_end,
-          Date.now()
-        );
-        allowance = {
-          request_limit:
-            before.requestLimit +
-            Math.round((entitlement.requestLimit - before.requestLimit) * left),
-          prorated_pages:
-            before.parsedPages + Math.round((entitlement.parsedPages - before.parsedPages) * left),
-          prorated_window: stored.period_start,
-        };
-      } else if (
-        sameWindow &&
-        sold.plan === stored.plan &&
-        stored.prorated_window !== null &&
-        stored.prorated_window === stored.period_start
-      ) {
-        allowance = {};
-      }
-      const pending = planForProduct(asNonEmptyString(asRecord(data.pending_update)?.product_id));
-
-      const patch: Database["public"]["Tables"]["users"]["Update"] = {
-        polar_customer_id: customerId ?? undefined,
-        polar_subscription_id: subscriptionId ?? undefined,
-        // An unrecognized status value keeps the stored status instead of
-        // nulling it, mirroring the team handler.
-        subscription_status:
-          normalizeStoredSubscriptionStatus(data.status) ?? stored.subscription_status ?? "active",
-        plan: sold.plan,
-        ...allowance,
-        pending_plan: pending?.plan ?? null,
-        pending_interval: pending?.interval ?? null,
-        billing_interval: sold.interval,
-        billing_period_end: isStalePeriod && !annual ? undefined : currentPeriodEnd,
-        ...period,
-        cancel_at_period_end:
-          typeof data.cancel_at_period_end === "boolean" ? data.cancel_at_period_end : false,
-      };
-
-      // Every write is compare-and-swapped on the state that was read. This
-      // keeps two failure modes out: overlapping deliveries of the same
-      // renewal both zeroing requests_used (erasing usage captured between the
-      // writes), and an updated/active event read before a concurrent revoke
-      // resurrecting the revoked subscription's state after it. The loser's
-      // write matches no rows and throws, so Polar delivers the event again
-      // and it is applied to the state that won.
-      let guarded = admin
-        .from("users")
-        .update(resetsUsage ? { ...patch, requests_used: 0 } : patch)
-        .eq("id", userId);
-      guarded =
-        stored.polar_subscription_id === null
-          ? guarded.is("polar_subscription_id", null)
-          : guarded.eq("polar_subscription_id", stored.polar_subscription_id);
-      guarded =
-        stored.period_start === null
-          ? guarded.is("period_start", null)
-          : guarded.eq("period_start", stored.period_start);
-
-      const { data: written, error: guardedError } = await guarded.select("id");
-      if (guardedError) throw guardedError;
-      if (!written || written.length === 0) {
-        throw new Error("The account changed while a plan event was applied; retry it");
-      }
-      return;
+      throw new Error("The account kept changing while a plan event was applied; retry it");
     }
 
-    case "subscription.canceled": {
-      const customerId = asNonEmptyString(data.customer_id);
-      if (!customerId) return;
-
-      const userId = await findUserIdByPolarCustomerId(customerId);
-      if (!userId) return;
-
-      await updateUserForSubscription(userId, asNonEmptyString(data.id), {
-        cancel_at_period_end: true,
-        subscription_status: "canceled",
-      });
-      return;
-    }
-
+    case "subscription.canceled":
     case "subscription.uncanceled": {
-      const customerId = asNonEmptyString(data.customer_id);
+      // Polar can deliver a cancel and an uncancel out of order: the
+      // subscription as it is now decides.
+      const current = await currentSubscription(event);
+      const customerId = asNonEmptyString(current.customer_id);
       if (!customerId) return;
 
       const userId = await findUserIdByPolarCustomerId(customerId);
       if (!userId) return;
 
-      await updateUserForSubscription(userId, asNonEmptyString(data.id), {
-        cancel_at_period_end: false,
-        subscription_status: normalizeStoredSubscriptionStatus(data.status) ?? "active",
+      // Without the flag (an event that carries no state), the event says it.
+      const ending =
+        typeof current.cancel_at_period_end === "boolean"
+          ? current.cancel_at_period_end || current.status === "canceled"
+          : eventType === "subscription.canceled";
+      await updateUserForSubscription(userId, asNonEmptyString(current.id), {
+        cancel_at_period_end: ending,
+        subscription_status: ending
+          ? "canceled"
+          : (normalizeStoredSubscriptionStatus(current.status) ?? "active"),
       });
       return;
     }
