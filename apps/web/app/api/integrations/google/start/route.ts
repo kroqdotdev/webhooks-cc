@@ -1,5 +1,10 @@
 import { authenticateSessionRequest } from "@/lib/api-auth";
-import { authorizationUrl, googleConfig, safeReturnPath } from "@/lib/integrations/google";
+import {
+  authorizationUrl,
+  browserCookie,
+  googleConfig,
+  safeReturnPath,
+} from "@/lib/integrations/google";
 import { parseJsonBody } from "@/lib/request-validation";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
 
@@ -22,5 +27,16 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request);
   if ("error" in parsed) return parsed.error;
   const body = (parsed.data ?? {}) as { returnTo?: unknown };
-  return reply({ url: authorizationUrl(config, auth.userId, safeReturnPath(body.returnTo)) });
+  const { url, browserNonce } = authorizationUrl(
+    config,
+    auth.userId,
+    safeReturnPath(body.returnTo)
+  );
+  const response = reply({ url });
+  // Only this browser can finish the flow (see OAuthState.browser).
+  response.headers.append(
+    "set-cookie",
+    browserCookie(browserNonce, new URL(request.url).protocol === "https:")
+  );
+  return response;
 }

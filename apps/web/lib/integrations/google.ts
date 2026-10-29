@@ -85,6 +85,19 @@ export interface OAuthState {
   verifier: string;
   returnTo: string;
   expires: number;
+  /**
+   * The hash of a nonce kept in an HttpOnly cookie of the browser that
+   * started the flow. The callback needs both, so a consent URL started by
+   * one person cannot link the Google account of another who opens it.
+   */
+  browser: string;
+}
+
+/** The cookie that ties a callback to the browser that started it. */
+export const BROWSER_COOKIE = "whcc_google_oauth";
+
+export function browserHash(nonce: string): string {
+  return createHash("sha256").update(`google oauth browser ${nonce}`).digest("base64url");
 }
 
 export function sealState(state: OAuthState): string {
@@ -105,7 +118,13 @@ export function openState(sealed: string, now = Date.now()): OAuthState | null {
       decipher.final(),
     ]).toString("utf8");
     const state = JSON.parse(json) as OAuthState;
-    if (typeof state.userId !== "string" || typeof state.verifier !== "string") return null;
+    if (
+      typeof state.userId !== "string" ||
+      typeof state.verifier !== "string" ||
+      typeof state.browser !== "string"
+    ) {
+      return null;
+    }
     return state.expires > now ? state : null;
   } catch {
     return null;
@@ -119,15 +138,24 @@ export function safeReturnPath(value: unknown): string {
     : "/dashboard";
 }
 
-/** Where to send the browser to connect a Google account. */
-export function authorizationUrl(config: GoogleConfig, userId: string, returnTo: string): string {
+/**
+ * Where to send the browser to connect a Google account, and the nonce to
+ * set as the BROWSER_COOKIE in that browser.
+ */
+export function authorizationUrl(
+  config: GoogleConfig,
+  userId: string,
+  returnTo: string
+): { url: string; browserNonce: string } {
   const verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const browserNonce = randomBytes(24).toString("base64url");
   const state = sealState({
     userId,
     verifier,
     returnTo: safeReturnPath(returnTo),
     expires: Date.now() + STATE_LIFETIME_MS,
+    browser: browserHash(browserNonce),
   });
   const url = new URL(urls().auth);
   url.searchParams.set("client_id", config.clientId);
@@ -141,7 +169,27 @@ export function authorizationUrl(config: GoogleConfig, userId: string, returnTo:
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
-  return url.toString();
+  return { url: url.toString(), browserNonce };
+}
+
+/** The cookie header value that holds the nonce for the callback, for 15 minutes. */
+export function browserCookie(nonce: string, secure: boolean): string {
+  return `${BROWSER_COOKIE}=${nonce}; Path=/api/integrations/google/callback; Max-Age=${STATE_LIFETIME_MS / 1000}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+/** A cookie header that removes the nonce. */
+export function clearBrowserCookie(secure: boolean): string {
+  return `${BROWSER_COOKIE}=; Path=/api/integrations/google/callback; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+/** The nonce cookie of a request, if any. */
+export function browserNonceOf(request: Request): string | null {
+  const header = request.headers.get("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === BROWSER_COOKIE) return rest.join("=") || null;
+  }
+  return null;
 }
 
 interface TokenResponse {
