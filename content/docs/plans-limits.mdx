@@ -39,7 +39,7 @@ seo:
 | **Teams**                | 100,000 per seat  | 30 days  | 31 days   | Endpoints shared to the team | $12/seat/month         |
 | **Team Business** add-on | +150,000 per team | 30 days  | 90 days   | Endpoints shared to the team | $49/month per team     |
 
-Free has every Pro feature. Webhook and [email capture](/docs/email-capture), inspection, replay, mock responses and response rules, [forwarding destinations](/docs/forwarding) (Google Sheets included), attachment contents in deliveries, failure alerts, [layouts](/docs/layouts), CLI tunneling, the TypeScript, Python and Go SDKs, and the MCP server work on every plan. Paid plans raise the volume and the retention, and Business adds attachment parsing at volume, more layouts per endpoint and 90-day retention (see [Email parsing](#email-parsing)).
+Free has every Pro feature. Webhook and [email capture](/docs/email-capture), inspection, replay, mock responses and response rules, [forwarding destinations](/docs/forwarding) (Google Sheets included), attachment contents in deliveries, failure alerts, [layouts](/docs/layouts), CLI tunneling, the TypeScript, Python and Go SDKs, and the MCP server work on every plan. Paid plans raise the volume and the retention, and Business adds attachment parsing at volume, more layouts per endpoint, a [custom inbound domain](#custom-inbound-domains), [file drops](/docs/forwarding#file-drops) to SFTP, FTP and S3, and 90-day retention (see [Email parsing](#email-parsing)).
 
 **Teams** is a separate, per-team subscription rather than a tier of your personal plan. Any account (Free, Pro or Business) can create a team, and the team's own subscription decides what it can do. See [Teams and shared endpoints](#teams-and-shared-endpoints) below.
 
@@ -166,7 +166,7 @@ Teams are billed per team at **$12/seat/month**. Any account can create a team, 
 
 When the pool is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset.
 
-**Team Business add-on.** For **$49/month** on the team's subscription (monthly only), Team Business adds 150,000 requests to the team's pool, 2,000 pooled parsed attachment pages a month with [page blocks and page overage](#page-blocks-and-page-overage), up to 50 layouts per endpoint on endpoints shared to the team, one [custom inbound domain](#custom-inbound-domains), and 90-day retention for team-billed requests. Members' personal endpoints follow their own plan.
+**Team Business add-on.** For **$49/month** on the team's subscription (monthly only), Team Business adds 150,000 requests to the team's pool, 2,000 pooled parsed attachment pages a month with [page blocks and page overage](#page-blocks-and-page-overage), up to 50 layouts per endpoint on endpoints shared to the team, one [custom inbound domain](#custom-inbound-domains), [file drops](/docs/forwarding#file-drops) for endpoints shared with the team, and 90-day retention for team-billed requests. Members' personal endpoints follow their own plan.
 
 **Without an active subscription** (never subscribed, or canceled and past the period end) a team is suspended: its data is kept, but invites, endpoint sharing, and member access to shared endpoints are all blocked until it subscribes again. Requests captured while a team is suspended fall back to the endpoint owner's personal quota.
 

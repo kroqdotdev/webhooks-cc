@@ -1480,8 +1480,11 @@ export class WebhooksCC {
         },
         create: {
           description:
-            "Add a destination: url, name, http/email (kinds), filter ({ logic, conditions } like response rules plus kind, email, spam_score, email_auth, signature), format (auto, as_received, json, template, chat), bodyTemplate (JSON with {{ placeholders }}), messageTemplate (chat text), headers, retrySeconds, keepOrder, throttleSeconds, delaySeconds",
-          params: { endpointSlug: "string", input: "DestinationInput (url required)" },
+            "Add a destination: url, name, http/email (kinds), filter ({ logic, conditions } like response rules plus kind, email, spam_score, email_auth, signature), format (auto, as_received, json, template, chat, postmark, sendgrid, mailgun, cloudmailin, sheets, file_drop), bodyTemplate (JSON with {{ placeholders }}), messageTemplate (chat text), headers, retrySeconds, keepOrder, throttleSeconds, delaySeconds, config (sheets, file_drop), dropSecret (file_drop)",
+          params: {
+            endpointSlug: "string",
+            input: "DestinationInput (url required, except for sheets' and file drops' config)",
+          },
         },
         update: {
           description: "Change a destination; only the fields you pass change",
