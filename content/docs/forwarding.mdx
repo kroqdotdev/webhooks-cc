@@ -3,7 +3,7 @@ title: "Forwarding"
 description: "Send what an endpoint captures to your servers and chat channels: each destination with its own conditions, format (as received, signed JSON, your own JSON or a chat message), timing and log. Retried, logged and timed."
 section: dashboard
 order: 5
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-29
 schema: none
 keywords:
   [
@@ -327,6 +327,47 @@ The Mailgun form is signed as Mailgun signs it when you enter your **Mailgun sig
 
 What differs from the real thing: attachment contents are never stored, so no attachments are included (the [email JSON](#an-email) lists them); the text and HTML are what webhooks.cc kept (up to 256 KB each); and fields a provider computes for itself (Postmark's `MessageID`, SendGrid's SpamAssassin report) come from webhooks.cc's own checks or the request id. HTTP requests to such a destination go as received. To try a shape on one email, use `whk tunnel --email-format postmark` [on localhost](/docs/cli/tunnel), `client.emails.render()` in the SDK, or `render_email` in the [MCP server](/docs/mcp/tools#render_email).
 
+## Attachments
+
+A destination that takes emails sends their attachments too. Under **Advanced**, **Email attachments** says how:
+
+- **Links** (the default): each attachment in the JSON gets a `url`, a signed link that downloads it for as long as the email is kept. Anyone holding the link can download that one attachment, so treat it like the email itself.
+- **Inline**: each attachment's `content`, base64, while the attachments of one delivery add up to 1 MB; larger ones get a `url` instead.
+- **Names only**: the name, type and size, as before attachments were kept.
+
+```json
+"attachments": [
+  {
+    "filename": "orders.csv",
+    "contentType": "text/csv",
+    "size": 2048,
+    "contentId": null,
+    "inline": false,
+    "content": "c2t1LHF0eQpBLTEsMgo="
+  },
+  {
+    "filename": "manual.pdf",
+    "contentType": "application/pdf",
+    "size": 4194304,
+    "contentId": null,
+    "inline": false,
+    "url": "https://webhooks.cc/api/attachments/6f1c.../1?e=1801234567&s=..."
+  }
+]
+```
+
+The Postmark shape sends inline contents as `Attachments[].Content` and CloudMailin's as `attachments[].content` or `attachments[].url`; the SendGrid and Mailgun forms list no attachments. Templates read them as `{{ attachments.0.url }}`. An endpoint that deletes requests after delivery deletes the attachments with them, so use **Inline** there: a link stops working once the email is gone.
+
+## Google Sheets
+
+A **Google Sheets** destination adds a row to a spreadsheet for each email or request it takes.
+
+1. Add a destination and pick **Google Sheets**, then **Connect a Google account**. webhooks.cc asks only for access to the spreadsheets it creates or that you pick for it (Google's `drive.file` permission), never the rest of your Drive.
+2. **Create it** makes a new spreadsheet with your columns as its header row; **Choose from Drive** picks one you have.
+3. Set the columns: each has a header and a value written with the same [placeholders](#your-own-json) as templates, such as `{{ subject }}`, `{{ from.address }}` or one of your [fields](/docs/email-capture#fields-you-pick-out), `{{ fields.order }}`.
+
+Rows are written as plain text, so a value that starts with `=` stays text and never becomes a formula. Rows that arrive close together are added in one call, and a delivery Google refuses is retried like any other; if you disconnect the account or remove webhooks.cc's access in Google, connect it again and the waiting rows go through.
+
 ## Send only some captures
 
 Add conditions under **What it gets** to send only the requests that match, with **all** or **any** of them. They work like [response rule conditions](/docs/mock-responses#what-a-condition-can-check) (method, path, a header, a query parameter, a body field, body text, content type, size), and also read:
@@ -472,6 +513,21 @@ await client.destinations.delete(slug, zap.id);
 ```
 
 `update()` changes only the fields you pass. `client.forwarding.configure()`, `secret()` and `test()` still work on the endpoint's primary destination, the one its `forwardUrl` stands for. In your handler, `verifyRelayedRequest()`, `verifyForwardedRequest()` and `verifyForwardedEmail()` check deliveries ([Forwarded requests](/docs/sdk/signatures#forwarded-requests)); `verifyForwardedJson()` checks a delivery of your own JSON and returns its body. See the [SDK reference](/docs/sdk/api#destinations) for every method and type.
+
+## Replay
+
+After fixing a field's pattern or a destination, send captures through the destinations again: **Replay these emails** on an open [alert](#alerts) sends what arrived since it opened, **Redeliver** on a request sends that one, and the API takes a time range (`POST /api/endpoints/{slug}/replay` with `since` and `until` in milliseconds, at most 500 requests, oldest first). Replayed deliveries use each destination's current settings and the email's fields as they read now.
+
+## Alerts
+
+An endpoint can tell you when something stops working. Under **Settings**, **Alerts**:
+
+- **Misses in a row**: this many emails in a row missed one of the endpoint's [fields](/docs/email-capture#fields-you-pick-out) (all of them, or the ones you mark as required).
+- **Share missed**: this share of the last 20 emails missed one. Useful when a sender changes its layout for some mail only.
+- **Quiet for**: no email arrived for this many hours, for an endpoint that should hear from a device or a system regularly.
+- **Failed deliveries**: a delivery failed after every retry; one alert per destination.
+
+Alerts are checked about once a minute. You get one notice when an alert opens and one when it resolves: an email from webhooks.cc to your account's address (never from the capture domain), and, if you choose, a message to any of the endpoint's destinations: a chat message for Slack or Discord, otherwise a signed `alert.opened` or `alert.resolved` JSON event. Alerts carry field names and delivery errors, never an email's contents. Alerts are on every plan.
 
 ## Limits
 

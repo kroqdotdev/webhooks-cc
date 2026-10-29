@@ -14,12 +14,7 @@ import { isDiscordUrl, isSlackUrl } from "./chat";
  */
 
 export type ForwardFormat =
-  | "as_received"
-  | "json"
-  | "chat"
-  | "template"
-  | "sheets"
-  | InboundEmailFormat;
+  "as_received" | "json" | "chat" | "template" | "sheets" | InboundEmailFormat;
 
 export function isChatUrl(url: string): boolean {
   return isSlackUrl(url) || isDiscordUrl(url);

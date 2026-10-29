@@ -1721,7 +1721,14 @@ describe("WebhooksCC", () => {
       expect(description.requests.count).toBeDefined();
       expect(description.requests.clear).toBeDefined();
       expect(description.requests.subscribe.params.reconnect).toBe("boolean?");
-      expect(Object.keys(description.requests)).toHaveLength(11);
+      expect(Object.keys(description.requests)).toHaveLength(14);
+      expect(description.requests.redeliver.params).toEqual({ requestId: "string" });
+      expect(description.requests.attachment.params).toEqual({
+        requestId: "string",
+        index: "number",
+      });
+      expect(Object.keys(description.alerts)).toEqual(["get", "update"]);
+      expect(description.endpoints.redeliver).toBeDefined();
       expect(description.endpoints.list.params.team).toContain("team id or unique name");
       expect(Object.keys(description.teams)).toHaveLength(8);
       expect(description.teams.share.params).toEqual({ teamId: "string", slug: "string" });

@@ -604,7 +604,8 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
       format: "sheets",
       target: "Google Sheets",
     });
-  if (!config) return fail(claim, "The destination has no spreadsheet. Open it and choose one.", false);
+  if (!config)
+    return fail(claim, "The destination has no spreadsheet. Open it and choose one.", false);
   if (!google) return fail(claim, "Google Sheets is not set up on this server.", true);
 
   const { data: more, error } = await createAdminClient().rpc("claim_destination_deliveries", {
@@ -625,7 +626,13 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
     ...extra.map(
       (row) =>
         [
-          { ...claim, delivery_id: row.delivery_id, request_id: row.request_id, attempt: row.attempt, kind: row.kind },
+          {
+            ...claim,
+            delivery_id: row.delivery_id,
+            request_id: row.request_id,
+            attempt: row.attempt,
+            kind: row.kind,
+          },
           extraRequests.get(row.request_id),
         ] as const
     ),

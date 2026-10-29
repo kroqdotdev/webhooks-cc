@@ -2,11 +2,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { reportError } from "@/lib/observability";
 import { getRequestByIdForUser } from "@/lib/supabase/requests";
 import { getObject, isObjectStorageConfigured } from "@/lib/storage/object-store";
-import {
-  attachmentHeaders,
-  attachmentKey,
-  parseAttachmentIndex,
-} from "@/lib/storage/attachments";
+import { attachmentHeaders, attachmentKey, parseAttachmentIndex } from "@/lib/storage/attachments";
 
 /**
  * GET /api/requests/{id}/attachments/{index}: one attachment of a captured
