@@ -532,15 +532,13 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         stored.period_end
       ) {
         const before = planEntitlements(stored.plan);
-        // Polar charged for the rest of its own period from the change.
-        const changedAt = Math.min(
-          Date.parse(String(data.modified_at ?? "")) || Date.now(),
-          Date.now()
-        );
+        // Polar charged for the rest of its own period from the change. Its
+        // modified_at does not move with a product change, so the time the
+        // event is applied stands in: a retry grants a little less, never more.
         const left = remainingShare(
           currentPeriodStart ?? stored.period_start,
           currentPeriodEnd ?? stored.period_end,
-          changedAt
+          Date.now()
         );
         allowance = {
           request_limit:
