@@ -62,6 +62,7 @@ function text(value: unknown, max: number): string | null {
 function cleanFolder(value: unknown): string | null {
   if (value === undefined || value === null || value === "") return "";
   if (typeof value !== "string" || value.length > 512) return null;
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f\\]/.test(value)) return null;
   const parts = value.split("/").filter((part) => part !== "" && part !== ".");
   if (parts.some((part) => part === "..")) return null;
@@ -163,6 +164,7 @@ export function parseFileDropConfig(
   const hostProblem = dropHostProblem(host, port);
   if (hostProblem) return hostProblem;
   const username = text(config.username, 128);
+  // eslint-disable-next-line no-control-regex
   if (!username || /[\r\n\u0000]/.test(username)) return "config.username is the login name.";
   const hostKey =
     protocol === "sftp" &&

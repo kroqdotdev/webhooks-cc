@@ -28,11 +28,14 @@ DestinationFormat = Literal[
     "sendgrid",
     "mailgun",
     "cloudmailin",
+    "sheets",
+    "file_drop",
 ]
 """How a destination sends. ``"auto"`` picks from the URL: a chat message for Slack and
 Discord, otherwise HTTP requests as received and emails as signed JSON. The
 :data:`InboundEmailFormat` shapes apply to emails; HTTP requests to such a destination go
-as received."""
+as received. ``"sheets"`` (rows in a Google Sheet) and ``"file_drop"`` (files on an SFTP,
+FTP or S3 server, Business) are set up in the dashboard."""
 
 EmailFieldSource = Literal["subject", "text", "html", "from", "to", "header"]
 """The part of an email a named field reads: ``"html"`` is the HTML as text, ``"to"`` the

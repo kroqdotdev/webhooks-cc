@@ -138,6 +138,10 @@ const serverEnvSchema = z
         )
         .optional()
     ),
+    // File drops (lib/drops): the SOCKS5 egress on the MX host,
+    // socks5://user:secret@<private address>:<port>. Required in production
+    // for drops to be offered; without it, development connects directly.
+    FILE_DROP_PROXY_URL: blankToUndefined(z.string().url().optional()),
     // S3-compatible object storage where the receiver keeps captured email
     // (raw message and attachments, lib/storage). All four, or none; region
     // defaults to us-east-1, which S3-compatible services accept.
@@ -303,6 +307,7 @@ export function serverEnv() {
       POLAR_DOMAINS_PRODUCT_ID: process.env.POLAR_DOMAINS_PRODUCT_ID,
       POLAR_DOMAINS_ADD_PRODUCT_ID: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
       DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
+      FILE_DROP_PROXY_URL: process.env.FILE_DROP_PROXY_URL,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,

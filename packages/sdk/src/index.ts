@@ -254,6 +254,8 @@ export type {
   DestinationInput,
   DestinationAttachments,
   SheetsConfig,
+  FileDropConfig,
+  FileDropSecret,
   AlertSettings,
   AlertEvent,
   AttachmentDownload,
