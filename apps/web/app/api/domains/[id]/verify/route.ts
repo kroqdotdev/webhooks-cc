@@ -21,6 +21,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (result.records.txt && result.records.mx) {
       await auditDomain(request, context.userId, context.account, "domain.verified", 200, {
         domain: result.domain.domain,
+        // Another account's row lost the domain to this one (its records moved).
+        ...(result.tookOver ? { tookOver: true } : {}),
       });
     }
     return Response.json(result);

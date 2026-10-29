@@ -34,6 +34,14 @@ create table if not exists public.inbound_domains (
   )
 );
 
+-- When another account proved the domain and this row lost it (no manual
+-- check takes it back for a day, so stale resolver caches cannot bounce it),
+-- and lookups that errored in a row (a domain whose nameservers never answer
+-- lapses too, after seven).
+alter table public.inbound_domains add column if not exists released_at timestamptz;
+alter table public.inbound_domains
+  add column if not exists lookup_failures integer not null default 0;
+
 -- A verified domain belongs to one owner; others may add it, pending, but
 -- never verify it while it is held. A lapsed one holds nothing, so whoever
 -- controls the domain's DNS now can verify it.
@@ -213,14 +221,14 @@ declare
   v_count integer;
 begin
   if new.user_id is not null then
-    perform 1 from public.users where id = new.user_id for update;
+    perform 1 from public.users where id = new.user_id for no key update;
     select count(*) into v_count from public.inbound_domains where user_id = new.user_id;
   else
-    perform 1 from public.teams where id = new.team_id for update;
+    perform 1 from public.teams where id = new.team_id for no key update;
     select count(*) into v_count from public.inbound_domains where team_id = new.team_id;
   end if;
   if v_count >= 20 then
-    raise exception 'too many inbound domains' using errcode = 'P0001';
+    raise exception 'too many inbound domains' using errcode = 'WHD01';
   end if;
   return new;
 end;

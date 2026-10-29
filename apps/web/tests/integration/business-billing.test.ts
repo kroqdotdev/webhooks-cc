@@ -737,6 +737,46 @@ describe("extra inbound domains", () => {
     expect(await allowed(account)).toBe(0);
   });
 
+  it("keep a paid increase on blocks that ended meanwhile, and take it back on a refund", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId };
+    const subscriptionId = `sub_pb_gone_${ts}`;
+    const orderId = `ord_pb_gone_${ts}`;
+    await applyAddon(account, "page_blocks", subscriptionId, "active", 1);
+    // Polar ended the subscription before the order's event arrived.
+    polarMocks.createPolarClient.mockReturnValueOnce({
+      subscriptions: {
+        update: vi.fn().mockRejectedValue(new Error("Subscription is already canceled.")),
+        get: vi.fn(),
+        revoke: vi.fn(),
+      },
+    });
+    const order = { id: orderId, units: 1, total_amount: 500 };
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      account,
+      { resource: "pages", kind: "monthly_add" },
+      order
+    );
+    expect((await user(userId)).credit_pages).toBe(1000);
+    // Redelivered: kept once.
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      account,
+      { resource: "pages", kind: "monthly_add" },
+      order
+    );
+    expect((await user(userId)).credit_pages).toBe(1000);
+
+    await applyCapacityWebhookEvent(
+      "order.refunded",
+      account,
+      { resource: "pages", kind: "monthly_add" },
+      { id: orderId, status: "refunded" }
+    );
+    expect((await user(userId)).credit_pages).toBe(0);
+  });
+
   it("end with a change away from Business, and come back when Business is kept", async () => {
     const userId = await createUser({ plan: "business", subscription_status: "active" });
     await applyAddon({ userId }, "domain_blocks", `sub_db_end_${ts}`, "active", 1);
