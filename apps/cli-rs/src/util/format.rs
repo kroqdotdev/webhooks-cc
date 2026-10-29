@@ -68,19 +68,21 @@ enum Word {
     Text(String),
 }
 
-/// RFC 2047 caps an encoded word at 75 characters; some senders run longer,
-/// so a little more is read. Bounding the scan keeps decoding linear in the
-/// subject even when it is full of `=?` that never close.
-const MAX_ENCODED_WORD_CHARS: usize = 256;
+/// RFC 2047 caps an encoded word at 75 characters, all of them ASCII; some
+/// senders run longer, so a little more is read. Bounding the scan keeps
+/// decoding linear in the subject even when it is full of `=?` that never
+/// close, and cutting it by bytes finds the bound without walking the
+/// characters.
+const MAX_ENCODED_WORD_BYTES: usize = 256;
 
 /// One encoded word at the start of `s` and its length in bytes.
 fn decode_word(s: &str) -> Option<(Word, usize)> {
     use base64::Engine;
 
-    let end = s
-        .char_indices()
-        .nth(MAX_ENCODED_WORD_CHARS)
-        .map_or(s.len(), |(index, _)| index);
+    let mut end = s.len().min(MAX_ENCODED_WORD_BYTES);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
     let s = &s[..end];
     let inner = s.strip_prefix("=?")?;
     let (charset, inner) = inner.split_once('?')?;
@@ -185,15 +187,28 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    // Decoding stays linear because no attempt looks further than
+    // MAX_ENCODED_WORD_BYTES past its `=?`. These check that bound itself,
+    // which a wall-clock limit could not do reliably in a debug build.
     #[test]
-    fn decodes_a_long_run_of_unclosed_words_quickly() {
-        let hostile = "=?a".repeat(200_000);
-        let started = std::time::Instant::now();
-        assert_eq!(decode_encoded_words(&hostile), hostile);
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    fn stops_looking_for_the_end_of_a_word_at_the_cap() {
+        let word = |text_len: usize| format!("=?UTF-8?Q?{}?=", "a".repeat(text_len));
+        let longest = MAX_ENCODED_WORD_BYTES - "=?UTF-8?Q??=".len();
+        assert_eq!(decode_encoded_words(&word(longest)), "a".repeat(longest));
+        assert_eq!(decode_encoded_words(&word(longest + 1)), word(longest + 1));
+        // A cap that lands inside a character does not panic.
+        let split = format!("=?a{}", "\u{e9}".repeat(500));
+        assert!(!split.is_char_boundary(MAX_ENCODED_WORD_BYTES));
+        assert_eq!(decode_encoded_words(&split), split);
     }
 
-    use super::*;
+    #[test]
+    fn decodes_a_long_run_of_unclosed_words() {
+        let hostile = "=?a".repeat(200_000);
+        assert_eq!(decode_encoded_words(&hostile), hostile);
+    }
 
     #[test]
     fn test_format_bytes() {
