@@ -197,7 +197,7 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "How do I connect an AI coding agent?",
     answer:
-      "Install the MCP server with npx @webhooks-cc/mcp and add it to Claude Code, Cursor, VS Code, Codex, or Windsurf. Your agent creates endpoints, sends test webhooks, inspects requests, and replays them — through natural language.",
+      "Add the remote MCP server at https://webhooks.cc/mcp to Claude Code, Cursor, VS Code, Codex, claude.ai or ChatGPT and approve it once in your browser, with no key or code to copy. Your agent creates endpoints, sends signed test webhooks and inspects what arrives, through natural language. To send straight to a handler on your machine, run the local server with npx @webhooks-cc/mcp instead.",
   },
 ];
 

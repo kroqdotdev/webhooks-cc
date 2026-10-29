@@ -13,13 +13,13 @@ check stays switched on.
 ## Which interface to use
 
 1. **MCP tools** (the `webhooks-cc` server): use them whenever they are
-   available. The tool names below are theirs. Locally the server is
-   `npx -y @webhooks-cc/mcp`. Hosted agents (claude.ai, ChatGPT, cloud
-   agents) use the remote server at `https://webhooks.cc/mcp`, which the
-   human adds as a custom connector and approves once. It cannot reach the
-   developer's machine, so it has no `send_to` or `replay_request` and
-   refuses `targetUrl`; for localhost, the developer runs the local server
-   or `whk tunnel`.
+   available. The tool names below are theirs. The remote server at
+   `https://webhooks.cc/mcp` works in any client that can add a remote MCP
+   server, coding agents included: the human adds it and approves it once
+   in the browser, with no key and no code. It cannot reach the developer's
+   machine, so it has no `send_to` or `replay_request` and refuses
+   `targetUrl`; for localhost, the developer runs the local server
+   (`npx -y @webhooks-cc/mcp`) or `whk tunnel`.
 2. **SDKs** (`@webhooks-cc/sdk`; `webhooks-cc` for Python, `webhooks.cc/go`
    for Go): for tests that run in CI, and when the MCP tools are missing.
    TypeScript recipes are in [references/sdk-tests.md](references/sdk-tests.md).

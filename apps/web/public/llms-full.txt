@@ -548,9 +548,8 @@ Remote server: https://webhooks.cc/mcp (streamable HTTP, OAuth). Local server: t
 # Claude Code (then /mcp in Claude Code to sign in)
 claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp
 
-# Codex
+# Codex (opens the browser to sign in)
 codex mcp add webhooks-cc --url https://webhooks.cc/mcp
-codex mcp login webhooks-cc
 ```
 
 Cursor, in `.cursor/mcp.json`:

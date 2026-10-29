@@ -296,15 +296,18 @@ Take the first option that fits.
 1. **Your client can add a remote MCP server, and a human is around: use
    the remote server.** This is the default for coding agents (Claude Code,
    Cursor, VS Code, Codex) as much as for hosted ones (claude.ai, ChatGPT).
-   The server is \`${u.mcp}\` (streamable HTTP, OAuth). Your human signs in,
+   The one exception is a task that sends to a handler on this machine
+   (\`send_to\`, \`replay_request\`, \`targetUrl\`), which the remote server
+   cannot reach: take option 2 for that, or send to a capture URL and
+   forward it with \`whk tunnel <port>\`. The server is \`${u.mcp}\` (streamable HTTP, OAuth). Your human signs in,
    or signs up, and clicks Connect once in the browser: no code to type,
    nothing that expires after ${hours(UNCLAIMED_LIFETIME_SECONDS)}, and their account's tools (mock
    responses, forwarding, signature checks, email). Suggest it with the line
    for your client:
    - Claude Code: \`claude mcp add -s user --transport http webhooks-cc ${u.mcp}\`,
      then \`/mcp\` in Claude Code to sign in
-   - Codex: \`codex mcp add webhooks-cc --url ${u.mcp}\`, then
-     \`codex mcp login webhooks-cc\`
+   - Codex: \`codex mcp add webhooks-cc --url ${u.mcp}\` (it opens the
+     browser to sign in; if it does not, \`codex mcp login webhooks-cc\`)
    - Cursor, in \`.cursor/mcp.json\`:
      \`{ "mcpServers": { "webhooks-cc": { "url": "${u.mcp}" } } }\`
    - VS Code, in \`.vscode/mcp.json\`:

@@ -282,8 +282,11 @@ console.log(endpoint.url);`}
 
                   <section>
                     <h3 className="text-lg font-bold mb-3">OpenAI Codex</h3>
-                    <CodeBlock>{`codex mcp add webhooks-cc --url ${REMOTE_MCP_URL}
-codex mcp login webhooks-cc`}</CodeBlock>
+                    <CodeBlock>{`codex mcp add webhooks-cc --url ${REMOTE_MCP_URL}`}</CodeBlock>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Codex opens your browser to sign in. If it does not, run{" "}
+                      <code className="font-mono font-bold">codex mcp login webhooks-cc</code>.
+                    </p>
                   </section>
 
                   <section>

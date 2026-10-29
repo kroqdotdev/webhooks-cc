@@ -71,9 +71,9 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 
 Take the first option that fits.
 
-1. Your client can add a remote MCP server, and a human is around: use the remote server. This is the default for coding agents (Claude Code, Cursor, VS Code, Codex) as much as for hosted ones (claude.ai, ChatGPT). The server is https://webhooks.cc/mcp (streamable HTTP, OAuth). Your human signs in, or signs up, and clicks Connect once in the browser: no code to type, nothing that expires after 24 hours, and their account's tools (mock responses, forwarding, signature checks, email). Suggest it with the line for your client:
+1. Your client can add a remote MCP server, and a human is around: use the remote server. This is the default for coding agents (Claude Code, Cursor, VS Code, Codex) as much as for hosted ones (claude.ai, ChatGPT). The one exception is a task that sends to a handler on this machine (`send_to`, `replay_request`, `targetUrl`), which the remote server cannot reach: take option 2 for that, or send to a capture URL and forward it with `whk tunnel <port>`. The server is https://webhooks.cc/mcp (streamable HTTP, OAuth). Your human signs in, or signs up, and clicks Connect once in the browser: no code to type, nothing that expires after 24 hours, and their account's tools (mock responses, forwarding, signature checks, email). Suggest it with the line for your client:
    - Claude Code: `claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp`, then `/mcp` in Claude Code to sign in
-   - Codex: `codex mcp add webhooks-cc --url https://webhooks.cc/mcp`, then `codex mcp login webhooks-cc`
+   - Codex: `codex mcp add webhooks-cc --url https://webhooks.cc/mcp` (it opens the browser to sign in; if it does not, `codex mcp login webhooks-cc`)
    - Cursor, in `.cursor/mcp.json`: `{ "mcpServers": { "webhooks-cc": { "url": "https://webhooks.cc/mcp" } } }`
    - VS Code, in `.vscode/mcp.json`: `{ "servers": { "webhooks-cc": { "type": "http", "url": "https://webhooks.cc/mcp" } } }`
    - claude.ai and Claude Desktop: in Settings, Connectors, add a custom connector with the URL https://webhooks.cc/mcp. ChatGPT: add it as a custom connector (in developer mode)
@@ -188,9 +188,8 @@ The remote server at https://webhooks.cc/mcp is the recommended way in: no key a
 # Claude Code, remote MCP server (then /mcp in Claude Code to sign in)
 claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp
 
-# Codex, remote MCP server
+# Codex, remote MCP server (opens the browser to sign in)
 codex mcp add webhooks-cc --url https://webhooks.cc/mcp
-codex mcp login webhooks-cc
 ```
 
 Cursor, in `.cursor/mcp.json`:
