@@ -36,10 +36,20 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
     let is_1904 = book.has_1904_epoch();
     // Hidden sheets are left out: the sender never sees them in Excel, and
     // they often hold large lookup tables that would only cost pages.
+    // Each part is read once: sheets that name a part another sheet already
+    // named are left out (a crafted workbook lists one large part a thousand
+    // times, which the zip guard counts once but the reader would walk once
+    // per sheet).
+    let targets = sheet_targets(input);
+    let mut read_parts = std::collections::HashSet::new();
     let names: Vec<String> = book
         .sheets_metadata()
         .iter()
         .filter(|s| s.typ == SheetType::WorkSheet && s.visible == SheetVisible::Visible)
+        .filter(|s| match targets.as_ref().and_then(|t| t.get(&s.name)) {
+            Some(target) => read_parts.insert(target.clone()),
+            None => true,
+        })
         .map(|s| s.name.clone())
         .collect();
 
@@ -66,10 +76,12 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
             };
             visited += 1;
             if visited > MAX_CELLS_VISITED {
-                return Err(Failure::new(
-                    ErrorCode::TooLarge,
-                    "the workbook has too many cells to read",
-                ));
+                // Keep what was read, marked truncated, as for any budget.
+                if row_index.is_some() {
+                    sheets.push_row(std::mem::take(&mut row));
+                }
+                sheets.give_up();
+                break;
             }
             let (r, c) = cell.get_position();
             match row_index {
@@ -115,6 +127,66 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
         ErrorCode::Empty,
         "the workbook has no cells with values",
     ))
+}
+
+/// Which part each sheet names, by sheet name, from the workbook and its
+/// relationships; None when they cannot be read (every sheet is read then).
+fn sheet_targets(input: &[u8]) -> Option<std::collections::HashMap<String, String>> {
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
+
+    fn read(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> Option<Vec<u8>> {
+        let mut file = archive.by_name(name).ok()?;
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut std::io::Read::take(&mut file, 4 << 20), &mut buf).ok()?;
+        Some(buf)
+    }
+    // Attributes by local name, so a prefix (r:id) does not matter.
+    fn attr(e: &quick_xml::events::BytesStart<'_>, key: &str) -> Option<String> {
+        e.attributes()
+            .with_checks(false)
+            .flatten()
+            .find(|a| a.key.local_name().as_ref() == key)
+            .and_then(|a| a.normalized_value(quick_xml::XmlVersion::Implicit1_0).ok())
+            .map(|v| v.into_owned())
+    }
+
+    let mut archive = zip::ZipArchive::new(Cursor::new(input)).ok()?;
+    let rels = read(&mut archive, "xl/_rels/workbook.xml.rels")?;
+    let workbook = read(&mut archive, "xl/workbook.xml")?;
+
+    let mut by_id = std::collections::HashMap::new();
+    let mut reader = Reader::from_reader(rels.as_slice());
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf).ok()? {
+            Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == "Relationship" => {
+                if let (Some(id), Some(target)) = (attr(&e, "Id"), attr(&e, "Target")) {
+                    by_id.insert(id, target.trim_start_matches('/').to_string());
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    let mut targets = std::collections::HashMap::new();
+    let mut reader = Reader::from_reader(workbook.as_slice());
+    loop {
+        match reader.read_event_into(&mut buf).ok()? {
+            Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == "sheet" => {
+                let target = attr(&e, "id").and_then(|id| by_id.get(&id));
+                if let (Some(name), Some(target)) = (attr(&e, "name"), target) {
+                    targets.insert(name, target.clone());
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Some(targets)
 }
 
 fn render(value: &DataRef<'_>, is_1904: bool) -> String {
@@ -355,12 +427,31 @@ mod tests {
     }
 
     #[test]
-    fn sheets_sharing_one_part_stop_at_the_cell_budget() {
+    fn sheets_sharing_one_part_are_read_once() {
         let input = one_part_many_sheets(1000, 90_000);
         let started = std::time::Instant::now();
+        // The part's one row is empty of values: nothing to give, quickly.
         let failure = parse(&input, 100).unwrap_err();
-        assert_eq!(failure.code, ErrorCode::TooLarge);
-        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert_eq!(failure.code, ErrorCode::Empty);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn the_cell_budget_truncates_instead_of_failing() {
+        // More cells than the budget allows, in one sheet: what was read is kept.
+        let rows: String = (1..=1_200_000u32)
+            .step_by(1)
+            .take(1_000_001)
+            .map(|r| {
+                format!(
+                    r#"<row r="{r}"><c r="A{r}"/><c r="B{r}"/><c r="C{r}"/><c r="D{r}"/><c r="E{r}"><v>{r}</v></c></row>"#
+                )
+            })
+            .collect();
+        let input = raw_xlsx(&[rows.as_bytes()]);
+        let (sheets, _pages, truncated) = parse(&input, 100_000).unwrap();
+        assert!(truncated);
+        assert!(!sheets[0].rows.is_empty());
     }
 
     #[test]

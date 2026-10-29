@@ -3,6 +3,7 @@ import { globToRegexSource, layoutIssues } from "@webhooks-cc/sdk";
 import {
   extractEmailFields,
   htmlToText,
+  MAX_LINE_ITEM_COLUMNS,
   MAX_LINE_ITEMS,
   type Layout,
   type LineItemsSpec,
@@ -13,7 +14,7 @@ import { fieldPatternProblem, re2Find, MAX_FIELD_PROGRAM } from "@/lib/email-fie
 import { ruleSubjectFor } from "@/lib/request-context";
 import type { RequestRecord } from "@/lib/supabase/requests";
 import type { ParserSheet } from "./parser";
-import { clipText } from "./fit";
+import { clipText, uniqueNames } from "./fit";
 
 /**
  * Layouts as the server runs them: which one an email matches (the rule
@@ -126,7 +127,8 @@ function clip(value: string | null): string | null {
 
 /** The text between the start and end markers, when the spec has them. */
 function region(text: string, spec: LineItemsSpec): string {
-  let out = text.slice(0, MAX_LINE_ITEM_TEXT);
+  // Cut on a code point: a capture running to the cut must not end in half an emoji.
+  let out = clipText(text, MAX_LINE_ITEM_TEXT);
   const start = compile(spec.start);
   if (start) {
     const matcher = start.matcher(out);
@@ -145,10 +147,29 @@ function region(text: string, spec: LineItemsSpec): string {
 export interface LineItems {
   rows: Record<string, string | null>[];
   columns: string[];
+  /** The scan stopped at its time or find limit. */
+  truncated?: boolean;
 }
 
-/** Rows from a pattern with named groups found again and again in the email's text or HTML. */
-export function lineItemsFromText(request: RequestRecord, spec: LineItemsSpec): LineItems {
+/** A sheet's columns kept without a mapping, and a column name's length. */
+const MAX_SHEET_COLUMNS = MAX_LINE_ITEM_COLUMNS;
+const MAX_COLUMN_NAME = 100;
+
+/** Line items read from text stop after this long; the regex runs on the server's main thread. */
+export const LINE_ITEMS_BUDGET_MS = 2_000;
+/** Finds of a line-item pattern per email, empty ones included. */
+const MAX_FINDS = MAX_LINE_ITEMS * 4;
+
+/**
+ * Rows from a pattern with named groups found again and again in the email's
+ * text or HTML. Bounded in time (`deadline`) and in finds, so no pattern can
+ * hold the server; a scan cut short says so (`truncated`).
+ */
+export function lineItemsFromText(
+  request: RequestRecord,
+  spec: LineItemsSpec,
+  deadline = Date.now() + LINE_ITEMS_BUDGET_MS
+): LineItems {
   const email = request.email;
   const regex = compile(spec.pattern);
   if (!email || !regex) return { rows: [], columns: [] };
@@ -158,10 +179,15 @@ export function lineItemsFromText(request: RequestRecord, spec: LineItemsSpec): 
   const names = Object.keys(groups).sort((a, b) => groups[a] - groups[b]);
   const rows: Record<string, string | null>[] = [];
   const matcher = regex.matcher(text);
-  // An empty match is skipped; the matcher moves past it, and the count of
-  // finds is bounded by the text's length.
   let finds = 0;
-  while (rows.length < MAX_LINE_ITEMS && finds++ <= text.length && matcher.find()) {
+  let truncated = false;
+  while (rows.length < MAX_LINE_ITEMS) {
+    if (finds++ >= MAX_FINDS || Date.now() > deadline) {
+      truncated = true;
+      break;
+    }
+    if (!matcher.find()) break;
+    // An empty match is skipped; the matcher moves on past it.
     if (matcher.end() === matcher.start()) continue;
     // Entries, not assignment: a group named __proto__ stays a column.
     rows.push(
@@ -172,7 +198,11 @@ export function lineItemsFromText(request: RequestRecord, spec: LineItemsSpec): 
       )
     );
   }
-  return { rows, columns: names.length === 0 ? ["value"] : names };
+  return {
+    rows,
+    columns: names.length === 0 ? ["value"] : names,
+    ...(truncated ? { truncated: true } : {}),
+  };
 }
 
 /** A file-name wildcard as RE2 (never RegExp: file names come from senders). */
@@ -210,12 +240,15 @@ export function lineItemsFromSheets(
   attachments: { parsed: ParsedAttachment; sheets: ParserSheet[] }[]
 ): LineItems {
   const pattern = spec.attachment ? globToRegex(spec.attachment) : null;
-  const candidate = attachments.find(
+  const usable = attachments.filter(
     (item) =>
       item.sheets.length > 0 &&
       !item.parsed.error &&
       (!pattern || pattern.test(item.parsed.filename ?? ""))
   );
+  // The first with rows past its header, as the worker parses until it finds one.
+  const candidate =
+    usable.find((item) => item.sheets.some((sheet) => sheet.rows.length > 1)) ?? usable[0];
   if (!candidate) return { rows: [], columns: [] };
   const sheet = spec.sheet
     ? candidate.sheets.find((s) => (s.name ?? "").toLowerCase() === spec.sheet!.toLowerCase())
@@ -233,7 +266,12 @@ export function lineItemsFromSheets(
             index: byHeader >= 0 ? byHeader : columnLetterIndex(column.column),
           };
         })
-      : header.map((cell, index) => ({ name: cell || `column${index + 1}`, index }));
+      : // Every column by its header, as many as a mapping may have, with
+        // short and distinct names: the header is the sender's.
+        uniqueNames(
+          header.slice(0, MAX_SHEET_COLUMNS).map((cell, index) => cell || `column${index + 1}`),
+          MAX_COLUMN_NAME
+        ).map((name, index) => ({ name, index }));
   // Entries, not assignment: a header named __proto__ stays a column.
   const rows = sheet.rows
     .slice(1, MAX_LINE_ITEMS + 1)
