@@ -1,6 +1,6 @@
 import { decryptSigningSecret, encryptSigningSecret } from "@/lib/crypto";
 import type { FileDropConfig, DropSecret } from "./config";
-import { DropError } from "./connect";
+import { DropConnections, DropError } from "./connect";
 import { FtpSession } from "./ftp";
 import { s3Put } from "./s3";
 import { SftpSession } from "./sftp";
@@ -30,9 +30,50 @@ export function decryptDropSecret(encrypted: Buffer): DropSecret | null {
   }
 }
 
+/**
+ * Opens a drop's connection. With `deadlineMs`, every connection the drop
+ * makes is ended when it runs out, so a server that answers slowly, or
+ * never, fails the drop instead of holding a worker; what was waiting fails
+ * with "The drop took too long".
+ */
 export async function openDropTarget(
   config: FileDropConfig,
-  secret: DropSecret
+  secret: DropSecret,
+  deadlineMs?: number
+): Promise<DropTarget> {
+  const connections = new DropConnections();
+  const timer = deadlineMs ? setTimeout(() => connections.abort(), deadlineMs) : null;
+  timer?.unref();
+  try {
+    const target = await openWith(config, secret, connections);
+    return {
+      ...target,
+      put: async (name, data, contentType) => {
+        try {
+          return await target.put(name, data, contentType);
+        } catch (error) {
+          throw connections.isAborted ? new DropError("The drop took too long.") : error;
+        }
+      },
+      close: async () => {
+        if (timer) clearTimeout(timer);
+        await target.close().catch(() => undefined);
+        connections.abort();
+      },
+    };
+  } catch (error) {
+    if (timer) clearTimeout(timer);
+    // Whether the deadline ended it, asked before the cleanup ends the rest.
+    const timedOut = connections.isAborted;
+    connections.abort();
+    throw timedOut ? new DropError("The drop took too long.") : error;
+  }
+}
+
+async function openWith(
+  config: FileDropConfig,
+  secret: DropSecret,
+  connections: DropConnections
 ): Promise<DropTarget> {
   if (config.protocol === "s3") {
     if (!config.endpoint || !config.bucket || !config.accessKeyId || !secret.secretAccessKey) {
@@ -45,6 +86,7 @@ export async function openDropTarget(
       accessKeyId: config.accessKeyId,
       secretAccessKey: secret.secretAccessKey,
       tlsFingerprint: config.tlsFingerprint,
+      connections,
     };
     return {
       put: (name, data, contentType) =>
@@ -64,6 +106,7 @@ export async function openDropTarget(
       password: secret.password,
       privateKey: secret.privateKey,
       hostKey: config.hostKey,
+      connections,
     });
     try {
       await session.checkFolder(config.folder);
@@ -84,6 +127,7 @@ export async function openDropTarget(
     password: secret.password ?? "",
     secure: config.protocol === "ftps",
     tlsFingerprint: config.tlsFingerprint,
+    connections,
   });
   try {
     await session.cd(config.folder);
@@ -109,7 +153,8 @@ export async function testDropTarget(
   config: FileDropConfig,
   secret: DropSecret
 ): Promise<{ hostKey: string | null; file: string }> {
-  const target = await openDropTarget(config, secret);
+  // A test holds a request open: a minute at most.
+  const target = await openDropTarget(config, secret, 60_000);
   try {
     await target.put(
       TEST_FILE_NAME,

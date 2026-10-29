@@ -1688,6 +1688,16 @@ export interface Database {
         Args: { p_endpoint_id: string };
         Returns: boolean;
       };
+      pin_drop_host_key: {
+        Args: {
+          p_destination_id: string;
+          p_host: string;
+          p_port: number;
+          p_username: string;
+          p_host_key: string;
+        };
+        Returns: boolean;
+      };
       claim_alert_checks: {
         Args: { p_limit?: number; p_lease_seconds?: number };
         Returns: Database["public"]["Tables"]["endpoint_alerts"]["Row"][];

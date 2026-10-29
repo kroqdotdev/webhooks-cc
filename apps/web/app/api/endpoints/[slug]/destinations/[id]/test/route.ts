@@ -5,7 +5,8 @@ import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit"
 import {
   getDestination,
   getDestinationHeaders,
-  getDestinationDropSecret,
+  dropForDestination,
+  pinDropHostKey,
   getDestinationMailgunKey,
   getDestinationSecret,
 } from "@/lib/supabase/destinations";
@@ -114,18 +115,25 @@ async function testFileDrop(
   destination: Destination
 ): Promise<{ ok: boolean; error?: string; file?: string; hostKey?: string | null }> {
   if (!dropsOffered()) return { ok: false, error: "File drops are not set up on this server." };
-  const config = storedFileDropConfig(destination.config);
-  const secret = await getDestinationDropSecret(endpointId, destination.id);
-  if (!config || !secret) return { ok: false, error: "Save the drop's settings and secret first." };
+  const { data: allowed, error: planError } = await createAdminClient().rpc("file_drops_allowed", {
+    p_endpoint_id: endpointId,
+  });
+  if (planError) throw planError;
+  if (allowed !== true) return { ok: false, error: "File drops are part of Business." };
+  // The config and the secret from one read: the secret goes only where it was saved for.
+  const row = await dropForDestination(destination.id);
+  const config = row?.format === "file_drop" ? storedFileDropConfig(row.config) : null;
+  if (!config || !row?.secret) {
+    return { ok: false, error: "Save the drop's settings and secret first." };
+  }
   try {
-    const result = await testDropTarget(config, secret);
+    const result = await testDropTarget(config, row.secret);
     if (config.protocol === "sftp" && !config.hostKey && result.hostKey) {
-      const { error } = await createAdminClient()
-        .from("endpoint_destinations")
-        .update({ config: { ...config, hostKey: result.hostKey } as never })
-        .eq("id", destination.id)
-        .eq("endpoint_id", endpointId);
-      if (error) throw error;
+      await pinDropHostKey(
+        destination.id,
+        { host: config.host!, port: config.port!, username: config.username! },
+        result.hostKey
+      );
     }
     return { ok: true, file: result.file, hostKey: result.hostKey };
   } catch (error) {
