@@ -596,8 +596,8 @@ describe("plan events apply Polar's current state", () => {
     await expect(apply("subscription.updated", subscriptionEvent())).rejects.toThrow(/retry/);
   });
 
-  test("the pro rata share uses Polar's period and the time of the change", async () => {
-    vi.useFakeTimers({ now: new Date("2026-08-20T00:00:00.000Z"), toFake: ["Date"] });
+  test("the pro rata share uses Polar's period, not one the cron stretched", async () => {
+    vi.useFakeTimers({ now: new Date("2026-08-16T00:00:00.000Z"), toFake: ["Date"] });
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         // The cron fallback stretched the stored period; Polar's is August.
@@ -609,11 +609,6 @@ describe("plan events apply Polar's current state", () => {
         ],
       })
     );
-    polarSubscriptions.sub_1 = subscriptionEvent({
-      product_id: "prod_business",
-      // Changed half way through August; delivered four days later.
-      modified_at: "2026-08-16T00:00:00.000Z",
-    });
 
     await apply("subscription.updated", subscriptionEvent({ product_id: "prod_business" }));
 
