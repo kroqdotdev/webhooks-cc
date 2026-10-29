@@ -59,17 +59,7 @@ export function layoutsProblems(layouts: unknown, cap: number): string[] {
     : [];
 }
 
-/** A stored list as layouts; anything malformed is left out. */
-export function storedLayouts(value: unknown): Layout[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (layout): layout is Layout =>
-      !!layout &&
-      typeof layout === "object" &&
-      typeof (layout as Layout).id === "string" &&
-      typeof (layout as Layout).name === "string"
-  );
-}
+export { storedLayouts } from "./stored";
 
 /**
  * The first enabled layout among the first `cap` (layouts past the plan's
@@ -211,7 +201,10 @@ export function lineItemsFromSheets(
           const byHeader = header.findIndex(
             (cell) => cell.toLowerCase() === column.column.trim().toLowerCase()
           );
-          return { name: column.name, index: byHeader >= 0 ? byHeader : columnLetterIndex(column.column) };
+          return {
+            name: column.name,
+            index: byHeader >= 0 ? byHeader : columnLetterIndex(column.column),
+          };
         })
       : header.map((cell, index) => ({ name: cell || `column${index + 1}`, index }));
   return sheet.rows.slice(1, MAX_LINE_ITEMS + 1).map((row) => {
