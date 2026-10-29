@@ -348,10 +348,33 @@ async function getOwnedEndpoint(userId: string, slug: string): Promise<OwnedEndp
 async function getAccessibleEndpoint(
   userId: string,
   slug: string
-): Promise<{ id: string; slug: string; ownerId: string } | null> {
+): Promise<{ id: string; slug: string; ownerId: string; retentionDays: number | null } | null> {
   const access = await resolveEndpointAccess(userId, slug);
   if (!access) return null;
-  return { id: access.endpointId, slug, ownerId: access.ownerId };
+  return {
+    id: access.endpointId,
+    slug,
+    ownerId: access.ownerId,
+    retentionDays: access.retentionDays,
+  };
+}
+
+/**
+ * Where an endpoint that keeps its requests fewer days than its plan stops
+ * showing them, or null. cleanup_expired_requests() deletes them, team-billed
+ * rows too, every 10 minutes; reads hide what it has not reached yet.
+ */
+function endpointCutoff(retentionDays: number | null): number | null {
+  return retentionDays ? Date.now() - retentionDays * DAY_MS : null;
+}
+
+/** Hides rows past the endpoint's own retention, whoever is billed for them. */
+function applyEndpointCutoff<Q extends { gte: (column: string, value: string) => unknown }>(
+  query: Q,
+  retentionDays: number | null
+): void {
+  const cutoff = endpointCutoff(retentionDays);
+  if (cutoff !== null) query.gte("received_at", new Date(cutoff).toISOString());
 }
 
 interface Retention {
@@ -463,6 +486,8 @@ export async function getRequestByIdForUser(
   ) {
     return null;
   }
+  const ownCutoff = endpointCutoff(access.retentionDays);
+  if (ownCutoff !== null && parseMillis(row.received_at) < ownCutoff) return null;
 
   return normalizeRequest(row);
 }
@@ -500,6 +525,7 @@ export async function listRequestsForEndpointByUser(input: {
       input.since === undefined ? retention.cutoff : Math.max(input.since, retention.cutoff);
     query.gte("received_at", new Date(floor).toISOString());
   }
+  applyEndpointCutoff(query, endpoint.retentionDays);
   if (input.kind) {
     query.eq("kind", input.kind);
   }
@@ -572,6 +598,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   } else {
     query.gte("received_at", new Date(retention.cutoff).toISOString());
   }
+  applyEndpointCutoff(query, endpoint.retentionDays);
 
   const { data, error } = await query
     .order("received_at", { ascending: true })
@@ -628,6 +655,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   } else {
     query.gte("received_at", new Date(cutoff).toISOString());
   }
+  applyEndpointCutoff(query, endpoint.retentionDays);
   if (input.kind) {
     query.eq("kind", input.kind);
   }
