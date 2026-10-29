@@ -2,6 +2,7 @@ import { sendEmail } from "@/lib/email/mailer";
 import { isUuid } from "@/lib/uuid";
 import { buildTeamInviteEmail } from "@/lib/email/team-invite-email";
 import { publicEnv } from "@/lib/env";
+import { returnOrigin } from "@/lib/site-server";
 import { polarErrorCode } from "@/lib/polar";
 import { createAdminClient } from "./admin";
 import { assignTeamSeat, revokeTeamSeat } from "./team-billing";
@@ -219,7 +220,8 @@ export async function createInvite(
         inviterEmail: inviterUser?.email ?? "A webhooks.cc user",
         teamName: teamData.name,
         invitedEmail: normalizedEmail,
-        appUrl: publicEnv().NEXT_PUBLIC_APP_URL,
+        // The inviter's site: the invite opens where it was sent from.
+        appUrl: await returnOrigin(publicEnv().NEXT_PUBLIC_APP_URL),
       })
     );
   } catch (error) {

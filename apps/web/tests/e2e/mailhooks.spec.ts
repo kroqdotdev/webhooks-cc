@@ -142,4 +142,8 @@ test("an email link asked for on mailhooks.cc signs in there, even opened on web
   );
   await expect(page).toHaveURL(redirectTo, { timeout: 15000 });
   await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
+
+  // Emails sent later (quota, alerts) link to the site it signed in on.
+  const { data } = await admin.from("users").select("home_site").eq("id", user.id).single();
+  expect(data?.home_site).toBe("mailhooks");
 });
