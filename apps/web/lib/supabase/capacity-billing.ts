@@ -959,6 +959,13 @@ async function applySubscriptionEvent(
     return;
   }
 
+  if (status === "ok" && ended && kind === "team_business") {
+    // Team Business is what lets a team's page add-ons run: they end with it
+    // (kept as one-time pages where they were paid up), not renew on.
+    await reconcileAddonsWithPlan(account);
+    return;
+  }
+
   if (status === "ok" && !ended) {
     // Polar only moves the period of an active subscription.
     if (addonStatus(subscription) === "active") {
