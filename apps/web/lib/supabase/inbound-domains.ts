@@ -347,6 +347,15 @@ async function ownedRow(account: DomainAccount, id: string): Promise<DomainRow> 
  * holds the domain.
  */
 async function recordCheck(row: DomainRow, ok: boolean): Promise<DomainRow["status"]> {
+  // Every way to verified passes here, a lapsed domain coming back too: an
+  // account may have signed up at the domain while it was not verified.
+  if (ok && row.status !== "verified" && (await domainHasAccounts(row.domain))) {
+    throw new DomainError(
+      "has_accounts",
+      "An account here uses an email address at this domain, and its mail would become readable through your endpoints. Use a subdomain that receives no other mail.",
+      409
+    );
+  }
   const now = new Date().toISOString();
   const failed = ok ? 0 : row.status === "pending" ? 0 : row.failed_checks + 1;
   const status: DomainRow["status"] = ok
@@ -367,6 +376,14 @@ async function recordCheck(row: DomainRow, ok: boolean): Promise<DomainRow["stat
     .eq("id", row.id);
   if (error) throw error;
   return status;
+}
+
+async function domainHasAccounts(domain: string): Promise<boolean> {
+  const { data, error } = await createAdminClient().rpc("inbound_domain_has_accounts", {
+    p_domain: domain,
+  });
+  if (error) throw error;
+  return data === true;
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -426,20 +443,6 @@ export async function verifyDomain(
     throw new DomainError("dns_failed", "The DNS lookup failed. Try again in a minute.", 503);
   }
   const ok = records.txt && records.mx;
-  if (ok && row.status !== "verified") {
-    const { data: hasAccounts, error: accountsError } = await createAdminClient().rpc(
-      "inbound_domain_has_accounts",
-      { p_domain: row.domain }
-    );
-    if (accountsError) throw accountsError;
-    if (hasAccounts === true) {
-      throw new DomainError(
-        "has_accounts",
-        "An account here uses an email address at this domain, and its mail would become readable through your endpoints. Use a subdomain that receives no other mail.",
-        409
-      );
-    }
-  }
   try {
     await recordCheck(row, ok);
   } catch (error) {
@@ -598,9 +601,15 @@ export async function recheckDomains(
       if (status === "lapsed" && row.status !== "lapsed") lapsed++;
       if (status === "verified" && row.status === "lapsed") restored++;
     } catch (updateError) {
-      // Restoring collides with another account that verified it meanwhile:
-      // it stays lapsed, checked again in a week.
-      if (!isUniqueViolation(updateError)) throw updateError;
+      // Restoring collides with another account that verified it meanwhile,
+      // or an account signed up at the domain meanwhile: it stays lapsed,
+      // checked again in a week.
+      if (
+        !isUniqueViolation(updateError) &&
+        !(updateError instanceof DomainError && updateError.code === "has_accounts")
+      ) {
+        throw updateError;
+      }
       const { error: stampError } = await admin
         .from("inbound_domains")
         .update({ last_checked_at: new Date().toISOString() })

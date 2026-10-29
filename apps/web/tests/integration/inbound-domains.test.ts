@@ -216,6 +216,36 @@ describe("custom inbound domains", () => {
     });
   });
 
+  it("stay lapsed when an account signed up at the domain while it was lapsed", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId: owner };
+    const domain = await addDomain(account, `signup-${ts}.acme.example`);
+    await verifyDomain(account, domain.id, dns(inPlace(domain)));
+    await admin
+      .from("inbound_domains")
+      .update({
+        status: "lapsed",
+        failed_checks: 3,
+        last_checked_at: new Date(Date.now() - 8 * 86_400_000).toISOString(),
+      })
+      .eq("id", domain.id);
+
+    // Lapsed, it blocks no signups.
+    const { data, error } = await admin.auth.admin.createUser({
+      email: `someone@${domain.domain}`,
+      password: "TestPassword123!",
+      email_confirm: true,
+    });
+    if (error) throw error;
+    userIds.push(data.user!.id);
+
+    await recheckDomains(dns(inPlace(domain)), 1000);
+    expect((await listDomains(account)).find((row) => row.id === domain.id)?.status).toBe("lapsed");
+    await expect(verifyDomain(account, domain.id, dns(inPlace(domain)))).rejects.toMatchObject({
+      code: "has_accounts",
+    });
+  });
+
   it("keep at most 20 per account, even when added at once", async () => {
     const owner = await createUser({ plan: "business", subscription_status: "active" });
     const rows = Array.from({ length: 20 }, (_, i) => ({
