@@ -10,6 +10,7 @@ const mockFns = vi.hoisted(() => ({
   updateEndpointBySlugForUser: vi.fn(),
   deleteEndpointBySlugForUser: vi.fn(),
   isSigningKeyConfigured: vi.fn(),
+  endpointRetentionCap: vi.fn(),
 }));
 
 vi.mock("@/lib/api-auth", () => ({
@@ -38,6 +39,7 @@ vi.mock("@/lib/supabase/endpoints", () => ({
   getEndpointBySlugForUser: mockFns.getEndpointBySlugForUser,
   updateEndpointBySlugForUser: mockFns.updateEndpointBySlugForUser,
   deleteEndpointBySlugForUser: mockFns.deleteEndpointBySlugForUser,
+  endpointRetentionCap: mockFns.endpointRetentionCap,
 }));
 
 vi.mock("@/lib/crypto", () => ({
@@ -74,6 +76,18 @@ describe("PATCH /api/endpoints/[slug]", () => {
     });
     mockFns.updateEndpointBySlugForUser.mockResolvedValue({ slug: "demo" });
     mockFns.isSigningKeyConfigured.mockReturnValue(true);
+    mockFns.endpointRetentionCap.mockResolvedValue(31);
+  });
+
+  test("refuses a retention longer than the plan's, and changes nothing", async () => {
+    const { PATCH } = await import("./route");
+    const response = await PATCH(patchRequest({ retentionDays: 32 }), params);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "retentionDays: at most 31 days on this endpoint's plan",
+    });
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
   });
 
   test("rejects SendGrid as a signing provider", async () => {
