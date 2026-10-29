@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.54.0";
+export const APP_VERSION = "0.55.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,17 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.55.0",
+    date: "2026-10-29",
+    title: "AI Setup and Repair",
+    track: "web",
+    items: [
+      "Draft a layout, or find a field, from a few of your emails: AI proposes the patterns, and only those that find a value in every email you picked are shown",
+      "When an alert says a field stopped matching, fix it with AI from the latest emails, under the field's own name",
+      "Opt in each time: the emails you pick (never their attachments) go to Anthropic only when you ask; 5 assists every 30 days on Free, 20 on Pro and Teams, 500 on Business",
+    ],
+  },
   {
     version: "0.54.0",
     date: "2026-10-29",
