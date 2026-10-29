@@ -52,6 +52,12 @@ export interface Endpoint {
   showEmailExtracts?: boolean;
   /** Named fields picked out of every email (owner only): `fields` in its JSON */
   emailFields?: EmailField[];
+  /** Days requests are kept; null keeps them as long as the plan does (owner only) */
+  retentionDays?: number | null;
+  /** The longest retention this endpoint may have: its plan's (owner only) */
+  retentionCapDays?: number;
+  /** Requests are deleted once every delivery is settled (owner only) */
+  deleteAfterDelivery?: boolean;
   /** Whether forwarding is on: the kinds below go to `forwardUrl` */
   forwardEnabled?: boolean;
   /** Where captured requests are forwarded (only returned to the endpoint's owner) */
@@ -408,6 +414,10 @@ export interface UpdateEndpointOptions {
   showEmailExtracts?: boolean;
   /** Named fields to pick out of every email, at most 20, or null for none (owner only) */
   emailFields?: EmailField[] | null;
+  /** Keep requests this many days (1 up to the plan's), or null for the plan's (owner only) */
+  retentionDays?: number | null;
+  /** Delete each request once every delivery is settled (owner only) */
+  deleteAfterDelivery?: boolean;
   /** Forward captured requests to `forwardUrl` (owner only; needs a URL) */
   forwardEnabled?: boolean;
   /** Where to forward, or null to remove it once forwarding is off (owner only) */

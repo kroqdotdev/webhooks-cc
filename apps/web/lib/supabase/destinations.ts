@@ -7,7 +7,10 @@ import {
 } from "@/lib/forwarding/owner-headers";
 import { generateForwardSecret } from "@/lib/forwarding/sign";
 import { createAdminClient } from "./admin";
-import type { Database, DestinationFormat, Json } from "./database";
+import type { Database, DestinationAttachments, DestinationFormat, Json } from "./database";
+
+export type { DestinationAttachments };
+export const ATTACHMENT_MODES: readonly DestinationAttachments[] = ["links", "inline", "none"];
 
 /**
  * Where an endpoint's captures go (migration 00063): any number of
@@ -75,6 +78,8 @@ export interface Destination {
   sentField: string | null;
   throttleSeconds: number;
   delaySeconds: number;
+  /** How an email's stored attachments travel: signed links, inline base64, or not at all. */
+  attachments: DestinationAttachments;
   /** Which old endpoint field this destination stands for, if any. */
   role: "forward" | "notify" | null;
   createdAt: number;
@@ -106,6 +111,7 @@ export interface DestinationChanges {
   sentField?: string | null;
   throttleSeconds?: number;
   delaySeconds?: number;
+  attachments?: DestinationAttachments;
   /** The owner's Mailgun signing key (format "mailgun"); null removes it. */
   mailgunSigningKey?: string | null;
 }
@@ -121,7 +127,7 @@ export class TooManyDestinationsError extends Error {
 }
 
 const COLUMNS =
-  "id, endpoint_id, position, name, enabled, url, secret_encrypted, http, email, format, filter, body_template, message_template, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, throttle_seconds, delay_seconds, last_queued_at, legacy_role, created_at, updated_at, mailgun_key_encrypted";
+  "id, endpoint_id, position, name, enabled, url, secret_encrypted, http, email, format, filter, body_template, message_template, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, throttle_seconds, delay_seconds, last_queued_at, legacy_role, created_at, updated_at, mailgun_key_encrypted, attachments, config";
 
 /** PostgREST returns bytea as "\\x..." hex text. */
 export function byteaToBuffer(value: string): Buffer {
@@ -181,6 +187,7 @@ export function toDestination(row: DestinationRow): Destination {
     sentField: row.sent_field,
     throttleSeconds: row.throttle_seconds,
     delaySeconds: row.delay_seconds,
+    attachments: row.attachments ?? "links",
     role: row.legacy_role,
     createdAt: millis(row.created_at),
     updatedAt: millis(row.updated_at),
@@ -267,6 +274,7 @@ function columnsFor(changes: DestinationChanges, storedHeaders: string | null): 
   if (changes.sentField !== undefined) update.sent_field = changes.sentField;
   if (changes.throttleSeconds !== undefined) update.throttle_seconds = changes.throttleSeconds;
   if (changes.delaySeconds !== undefined) update.delay_seconds = changes.delaySeconds;
+  if (changes.attachments !== undefined) update.attachments = changes.attachments;
   if (changes.mailgunSigningKey !== undefined) {
     update.mailgun_key_encrypted = changes.mailgunSigningKey
       ? toBytea(encryptSigningSecret(changes.mailgunSigningKey))

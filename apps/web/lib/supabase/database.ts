@@ -9,7 +9,11 @@ export type DestinationFormat =
   | "postmark"
   | "sendgrid"
   | "mailgun"
-  | "cloudmailin";
+  | "cloudmailin"
+  | "sheets";
+
+/** How a destination's deliveries carry attachments (migration 00068). */
+export type DestinationAttachments = "none" | "links" | "inline";
 
 /** Rows of plan_entitlements (migration 00067). */
 export type PlanKey = "free" | "pro" | "business" | "team" | "team_business";
@@ -1108,6 +1112,8 @@ export interface Database {
           legacy_role: "forward" | "notify" | null;
           created_at: string;
           updated_at: string;
+          attachments: DestinationAttachments;
+          config: Json | null;
         };
         Insert: {
           id?: string;
@@ -1133,6 +1139,8 @@ export interface Database {
           delay_seconds?: number;
           legacy_role?: "forward" | "notify" | null;
           updated_at?: string;
+          attachments?: DestinationAttachments;
+          config?: Json | null;
         };
         Update: {
           position?: number;
@@ -1156,6 +1164,8 @@ export interface Database {
           delay_seconds?: number;
           legacy_role?: "forward" | "notify" | null;
           updated_at?: string;
+          attachments?: DestinationAttachments;
+          config?: Json | null;
         };
         Relationships: [
           {
@@ -1240,9 +1250,130 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      endpoint_alerts: {
+        Row: {
+          endpoint_id: string;
+          enabled: boolean;
+          field_failures: number | null;
+          field_failure_share: number | null;
+          required_fields: string[] | null;
+          silence_hours: number | null;
+          destination_failures: boolean;
+          notify_email: boolean;
+          notify_destination_ids: string[];
+          checked_through: string | null;
+          checked_through_id: string | null;
+          deliveries_checked_through: string | null;
+          failure_streak: number;
+          recent_outcomes: string;
+          next_check_at: string;
+          locked_until: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          endpoint_id: string;
+          enabled?: boolean;
+          field_failures?: number | null;
+          field_failure_share?: number | null;
+          required_fields?: string[] | null;
+          silence_hours?: number | null;
+          destination_failures?: boolean;
+          notify_email?: boolean;
+          notify_destination_ids?: string[];
+          checked_through?: string | null;
+          checked_through_id?: string | null;
+          deliveries_checked_through?: string | null;
+          failure_streak?: number;
+          recent_outcomes?: string;
+          next_check_at?: string;
+          locked_until?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          enabled?: boolean;
+          field_failures?: number | null;
+          field_failure_share?: number | null;
+          required_fields?: string[] | null;
+          silence_hours?: number | null;
+          destination_failures?: boolean;
+          notify_email?: boolean;
+          notify_destination_ids?: string[];
+          checked_through?: string | null;
+          checked_through_id?: string | null;
+          deliveries_checked_through?: string | null;
+          failure_streak?: number;
+          recent_outcomes?: string;
+          next_check_at?: string;
+          locked_until?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      alert_events: {
+        Row: {
+          id: string;
+          endpoint_id: string;
+          kind: "fields" | "silence" | "destination";
+          subject: string | null;
+          opened_at: string;
+          resolved_at: string | null;
+          details: Json;
+          notified_open_at: string | null;
+          notified_resolve_at: string | null;
+          notify_attempts: number;
+        };
+        Insert: {
+          endpoint_id: string;
+          kind: "fields" | "silence" | "destination";
+          subject?: string | null;
+          opened_at?: string;
+          resolved_at?: string | null;
+          details?: Json;
+        };
+        Update: {
+          resolved_at?: string | null;
+          details?: Json;
+          notified_open_at?: string | null;
+          notified_resolve_at?: string | null;
+          notify_attempts?: number;
+        };
+        Relationships: [];
+      };
+      google_connections: {
+        Row: {
+          id: string;
+          user_id: string;
+          google_sub: string;
+          google_email: string | null;
+          refresh_token_encrypted: string;
+          scopes: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          google_sub: string;
+          google_email?: string | null;
+          refresh_token_encrypted: string;
+          scopes?: string;
+          updated_at?: string;
+        };
+        Update: {
+          google_email?: string | null;
+          refresh_token_encrypted?: string;
+          scopes?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      claim_alert_checks: {
+        Args: { p_limit?: number; p_lease_seconds?: number };
+        Returns: Database["public"]["Tables"]["endpoint_alerts"]["Row"][];
+      };
       claim_storage_deletions: {
         Args: { p_limit?: number; p_lease_seconds?: number };
         Returns: { id: number; prefix: string; attempts: number }[];
@@ -1396,6 +1527,8 @@ export interface Database {
           email_fields: Json;
           /** base64 of the AES-GCM ciphertext of the owner's Mailgun signing key. */
           mailgun_key_encrypted: string | null;
+          attachments: DestinationAttachments;
+          destination_config: Json | null;
         }>;
       };
       queue_email_redelivery: {
