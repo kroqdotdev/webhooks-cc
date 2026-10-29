@@ -656,6 +656,7 @@ export interface Database {
           page_overage_reported: number;
           page_overage_reporting_to: number | null;
           page_overage_report_lease: string | null;
+          extra_domains: number;
         };
         Insert: {
           id: string;
@@ -707,6 +708,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Update: {
           id?: string;
@@ -758,6 +760,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Relationships: [];
       };
@@ -885,6 +888,7 @@ export interface Database {
           page_overage_reported: number;
           page_overage_reporting_to: number | null;
           page_overage_report_lease: string | null;
+          extra_domains: number;
         };
         Insert: {
           id?: string;
@@ -928,6 +932,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Update: {
           id?: string;
@@ -971,6 +976,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Relationships: [];
       };
@@ -1491,9 +1497,80 @@ export interface Database {
         Update: { locked_until?: string | null };
         Relationships: [];
       };
+      inbound_domains: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          team_id: string | null;
+          domain: string;
+          token: string;
+          status: "pending" | "verified" | "lapsed";
+          verified_at: string | null;
+          last_checked_at: string | null;
+          failed_checks: number;
+          catch_all_endpoint_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          domain: string;
+          token?: string;
+          status?: "pending" | "verified" | "lapsed";
+          verified_at?: string | null;
+          last_checked_at?: string | null;
+          failed_checks?: number;
+          catch_all_endpoint_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          domain?: string;
+          token?: string;
+          status?: "pending" | "verified" | "lapsed";
+          verified_at?: string | null;
+          last_checked_at?: string | null;
+          failed_checks?: number;
+          catch_all_endpoint_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      inbound_domain_routes: {
+        Row: {
+          domain_id: string;
+          local_part: string;
+          endpoint_id: string;
+          created_at: string;
+        };
+        Insert: {
+          domain_id: string;
+          local_part: string;
+          endpoint_id: string;
+          created_at?: string;
+        };
+        Update: {
+          domain_id?: string;
+          local_part?: string;
+          endpoint_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      inbound_domains_allowed: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: number;
+      };
+      resolve_inbound_recipient: {
+        Args: { p_domain: string; p_local: string };
+        Returns: Json;
+      };
       claim_alert_notices: {
         Args: { p_limit?: number };
         Returns: Database["public"]["Tables"]["alert_events"]["Row"][];
