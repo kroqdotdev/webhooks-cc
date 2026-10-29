@@ -59,6 +59,17 @@ pub struct Config {
     pub rspamd_url: Option<String>,
     pub limits: Limits,
     pub timeouts: Timeouts,
+    /// The file drop egress proxy (see `egress`), when set: its address on
+    /// the private network and the password the web app logs in with.
+    pub egress: Option<EgressConfig>,
+}
+
+#[derive(Clone)]
+pub struct EgressConfig {
+    pub listen: String,
+    pub secret: String,
+    /// Development only: let drops reach loopback and private addresses.
+    pub allow_private: bool,
 }
 
 /// Limits applied before mail is accepted (see `limits`).
@@ -146,6 +157,13 @@ impl std::fmt::Debug for Config {
             .field("rspamd_url", &self.rspamd_url)
             .field("limits", &self.limits)
             .field("timeouts", &self.timeouts)
+            .field(
+                "egress",
+                &self
+                    .egress
+                    .as_ref()
+                    .map(|egress| (&egress.listen, "[REDACTED]")),
+            )
             .finish()
     }
 }
@@ -215,7 +233,29 @@ impl Config {
             rspamd_url: non_empty("MX_RSPAMD_URL"),
             limits: Limits::default(),
             timeouts: Timeouts::default(),
+            egress: egress_from_env(),
         }
+    }
+}
+
+fn egress_from_env() -> Option<EgressConfig> {
+    let listen = non_empty("MX_EGRESS_LISTEN");
+    let secret = env::var("MX_EGRESS_SECRET").ok().filter(|v| !v.is_empty());
+    match (listen, secret) {
+        (None, None) => None,
+        (Some(listen), Some(secret)) => {
+            // The password travels in the clear on the private network; a
+            // short one could be guessed by anything else on it.
+            if secret.len() < 24 || secret.len() > 255 {
+                panic!("MX_EGRESS_SECRET must be 24 to 255 characters");
+            }
+            Some(EgressConfig {
+                listen,
+                secret,
+                allow_private: parse_env_or("MX_EGRESS_ALLOW_PRIVATE", false),
+            })
+        }
+        _ => panic!("MX_EGRESS_LISTEN and MX_EGRESS_SECRET must be set together"),
     }
 }
 

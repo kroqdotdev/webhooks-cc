@@ -88,11 +88,23 @@ export async function PATCH(request: Request, { params }: Params) {
     if (sheets) return reply({ error: sheets }, 400);
     const nextFormat = parsed.changes.format ?? current.format;
     if (nextFormat === "file_drop" && parsed.changes.config) {
+      const before = (current.config ?? {}) as Record<string, unknown>;
+      const after = parsed.changes.config as Record<string, Json>;
+      // Where the secret is sent: changing any of it needs the secret typed
+      // again, so a stolen API key cannot point a drop at its own server
+      // and collect the stored password.
+      const target = ["protocol", "host", "port", "username", "endpoint", "accessKeyId"];
+      const moved =
+        current.format !== "file_drop" || target.some((key) => before[key] !== after[key]);
+      if (moved && parsed.changes.dropSecret === undefined) {
+        return reply(
+          { error: "Enter the password or key again: the drop now goes to another server." },
+          400
+        );
+      }
       // Another server: the key pinned for the old one does not carry over.
-      const before = current.config as { host?: unknown; port?: unknown } | null;
-      const after = parsed.changes.config as { host?: unknown; port?: unknown; hostKey?: unknown };
-      if (before && (before.host !== after.host || before.port !== after.port)) {
-        parsed.changes.config = { ...(after as Record<string, Json>), hostKey: null };
+      if (before.host !== after.host || before.port !== after.port) {
+        parsed.changes.config = { ...after, hostKey: null };
       }
     }
     const drop = await fileDropProblem(endpoint.id, {
