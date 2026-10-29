@@ -1022,8 +1022,17 @@ export default function DashboardPage() {
     setSettingsFocus(null);
     setEndpointTab(tab);
   }, []);
-  // A different endpoint starts on its requests.
+  // A different endpoint starts on its requests, unless a layout was just
+  // imported into it: then its Layouts open.
+  const pendingLayoutsIdRef = useRef<string | null>(null);
   useEffect(() => {
+    const pendingId = pendingLayoutsIdRef.current;
+    pendingLayoutsIdRef.current = null;
+    if (pendingId !== null && pendingId === currentEndpointId) {
+      setSettingsFocus("layouts");
+      setEndpointTab("settings");
+      return;
+    }
     setEndpointTab("requests");
     setSettingsFocus(null);
   }, [currentEndpointId]);
@@ -1150,8 +1159,13 @@ export default function DashboardPage() {
             (endpoint) => ownedSlugs.has(endpoint.slug) && endpoint.emailAddress
           )}
           onAdded={(slug) => {
-            setSettingsFocus("layouts");
-            setEndpointTab("settings");
+            const targetId = endpoints.find((endpoint) => endpoint.slug === slug)?.id;
+            if (targetId === currentEndpointId) {
+              setSettingsFocus("layouts");
+              setEndpointTab("settings");
+            } else {
+              pendingLayoutsIdRef.current = targetId ?? null;
+            }
             router.replace(`${pathname}?endpoint=${encodeURIComponent(slug)}`);
             void loadEndpoints();
           }}

@@ -132,7 +132,10 @@ export async function proxy(request: NextRequest) {
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
     }
-    return NextResponse.redirect(`${mail}${pathname.slice("/mailhooks".length) || "/"}`, 307);
+    return NextResponse.redirect(
+      `${mail}${pathname.slice("/mailhooks".length) || "/"}${request.nextUrl.search}`,
+      307
+    );
   }
   request.headers.set(SITE_HEADER, site);
 

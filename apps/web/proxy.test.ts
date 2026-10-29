@@ -210,9 +210,9 @@ describe("proxy: two sites", () => {
   });
 
   it("keeps mailhooks.cc's pages off webhooks.cc", async () => {
-    const res = await proxy(new NextRequest("https://webhooks.cc/mailhooks/pricing"));
+    const res = await proxy(new NextRequest("https://webhooks.cc/mailhooks/pricing?plan=business"));
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toBe("https://mailhooks.cc/pricing");
+    expect(res.headers.get("location")).toBe("https://mailhooks.cc/pricing?plan=business");
   });
 
   it("overwrites a site a client claims", async () => {

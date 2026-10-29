@@ -27,7 +27,9 @@ export async function GET(request: Request) {
   // site it is on, so later emails link there (password sign-ins never pass
   // through a route of ours). API keys leave it alone.
   if (!auth.keyId) {
-    void rememberHomeSite(auth.userId, parseSite(request.headers.get(SITE_HEADER)));
+    // Awaited, so emails sent after the page loads link to this site; it
+    // never throws.
+    await rememberHomeSite(auth.userId, parseSite(request.headers.get(SITE_HEADER)));
   }
 
   try {
