@@ -1,6 +1,10 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { parseDestinationInput, templateProblem } from "@/lib/forwarding/destination-input";
+import {
+  parseDestinationInput,
+  sheetsProblem,
+  templateProblem,
+} from "@/lib/forwarding/destination-input";
 import {
   forwardingUnavailable,
   jsonObject,
@@ -81,6 +85,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   try {
     const endpoint = await ownedEndpoint(auth.userId, slug);
     if (!endpoint) return reply({ error: "Endpoint not found" }, 404);
+    const sheets = await sheetsProblem(auth.userId, {
+      format: parsed.changes.format ?? "auto",
+      config: parsed.changes.config ?? null,
+    });
+    if (sheets) return reply({ error: sheets }, 400);
     const destination = await createDestination(endpoint.id, {
       ...parsed.changes,
       url: parsed.changes.url!,

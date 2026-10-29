@@ -44,6 +44,7 @@ import {
 } from "./forwarding-parts";
 import { PlaceholderMenu, forwardingPlaceholders, insertAtCursor } from "./placeholder-menu";
 import { Field, Segmented, Switch, SwitchRow } from "./settings-primitives";
+import { SheetsDestinationEditor } from "./sheets-destination-editor";
 
 /**
  * One destination's settings, grouped by the questions they answer: where
@@ -55,7 +56,7 @@ import { Field, Segmented, Switch, SwitchRow } from "./settings-primitives";
 
 type Retry = 0 | 3600 | 86400;
 
-export type DestinationPreset = "server" | "chat" | "template" | "inbound";
+export type DestinationPreset = "server" | "chat" | "template" | "inbound" | "sheets";
 
 /** "provider" stands for the four inbound shapes, chosen below it. */
 type FormatChoice = Exclude<DestinationFormatSetting, InboundEmailFormat> | "provider";
@@ -402,7 +403,17 @@ function DeliveryPreview({
   );
 }
 
-export function DestinationEditor({
+type EditorProps = Parameters<typeof GenericDestinationEditor>[0];
+
+/** The editor for a destination: Google Sheets has its own, every other kind shares one. */
+export function DestinationEditor(props: EditorProps) {
+  if (props.preset === "sheets" || props.destination?.format === "sheets") {
+    return <SheetsDestinationEditor {...props} />;
+  }
+  return <GenericDestinationEditor {...props} />;
+}
+
+function GenericDestinationEditor({
   slug,
   destination,
   preset = "server",

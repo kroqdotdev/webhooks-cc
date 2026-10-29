@@ -1,6 +1,10 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { parseDestinationInput, templateProblem } from "@/lib/forwarding/destination-input";
+import {
+  parseDestinationInput,
+  sheetsProblem,
+  templateProblem,
+} from "@/lib/forwarding/destination-input";
 import {
   forwardingUnavailable,
   jsonObject,
@@ -69,6 +73,11 @@ export async function PATCH(request: Request, { params }: Params) {
           : current.bodyTemplate,
     });
     if (problem) return reply({ error: problem }, 400);
+    const sheets = await sheetsProblem(auth.userId, {
+      format: parsed.changes.format ?? current.format,
+      config: parsed.changes.config !== undefined ? parsed.changes.config : current.config,
+    });
+    if (sheets) return reply({ error: sheets }, 400);
 
     const destination = await updateDestination(endpoint.id, id, parsed.changes);
     if (!destination) return reply({ error: "Destination not found" }, 404);

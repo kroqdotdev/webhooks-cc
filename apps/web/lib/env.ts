@@ -93,6 +93,14 @@ const serverEnvSchema = z
     OBJECT_STORAGE_BUCKET: blankToUndefined(z.string().optional()),
     OBJECT_STORAGE_ACCESS_KEY_ID: blankToUndefined(z.string().optional()),
     OBJECT_STORAGE_SECRET_ACCESS_KEY: blankToUndefined(z.string().optional()),
+    // Google Sheets destinations (lib/integrations/google.ts): an OAuth web
+    // client whose redirect URI is {APP_URL}/api/integrations/google/callback.
+    // Without both, Sheets is not offered. The Drive picker also needs an API
+    // key and the Cloud project number.
+    GOOGLE_OAUTH_CLIENT_ID: blankToUndefined(z.string().optional()),
+    GOOGLE_OAUTH_CLIENT_SECRET: blankToUndefined(z.string().optional()),
+    GOOGLE_PICKER_API_KEY: blankToUndefined(z.string().optional()),
+    GOOGLE_CLOUD_PROJECT_NUMBER: blankToUndefined(z.string().optional()),
     // Agent auth (auth.md) — all optional with defaults so existing deploys are unaffected.
     RESEND_API_KEY: z.string().optional(),
     // SMTP transport for agent OTP email (used in production when SMTP_HOST is set;
@@ -235,6 +243,10 @@ export function serverEnv() {
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,
       OBJECT_STORAGE_ACCESS_KEY_ID: process.env.OBJECT_STORAGE_ACCESS_KEY_ID,
       OBJECT_STORAGE_SECRET_ACCESS_KEY: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+      GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
+      GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+      GOOGLE_PICKER_API_KEY: process.env.GOOGLE_PICKER_API_KEY,
+      GOOGLE_CLOUD_PROJECT_NUMBER: process.env.GOOGLE_CLOUD_PROJECT_NUMBER,
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       SMTP_HOST: process.env.SMTP_HOST,
       SMTP_PORT: process.env.SMTP_PORT,
