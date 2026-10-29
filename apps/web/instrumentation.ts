@@ -45,6 +45,14 @@ export async function register() {
     const { startStorageDeleter } = await import("./lib/storage/deleter");
     startStorageDeleter();
 
+    // Look customers' inbound domains up again once a day, lapsing those
+    // whose records are gone (lib/supabase/inbound-domains.ts); off with
+    // DOMAIN_CHECKER=false.
+    if (process.env.DOMAIN_CHECKER !== "false" && process.env.DOMAIN_CHECKER !== "0") {
+      const { startDomainChecker } = await import("./lib/supabase/inbound-domains");
+      startDomainChecker();
+    }
+
     // Send counted overage to Polar's meter (lib/billing/overage-reporter.ts);
     // starts only when the extra-request products are configured.
     const { startOverageReporter } = await import("./lib/billing/overage-reporter");

@@ -4,6 +4,7 @@ import { serverEnv } from "@/lib/env";
 import { AgentRequestError, issueVerifiedEmailClaim } from "@/lib/agent/agent-auth";
 import { deprecated, endpointMoved } from "@/lib/agent/legacy";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
+import { isInboundDomainAddress } from "@/lib/supabase/inbound-domains";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import { isPlainEmailAddress } from "@/lib/request-validation";
 import { reportError } from "@/lib/observability";
@@ -91,7 +92,11 @@ async function verifiedEmail(
     // Codes sent to the capture domain can be read through webhooks.cc
     // itself, so one account could verify any number of +tag addresses and
     // mint a new account for each.
-    if (isCaptureDomainAddress(emailValue, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
+    // Mail to a customer's own inbound domain is readable here the same way.
+    if (
+      isCaptureDomainAddress(emailValue, serverEnv().EMAIL_CAPTURE_DOMAIN) ||
+      (await isInboundDomainAddress(emailValue))
+    ) {
       await auditAgentEvent(request, {
         action: "agent.registration.refused",
         status: 400,
@@ -100,7 +105,7 @@ async function verifiedEmail(
       return Response.json(
         {
           error: "invalid_email",
-          error_description: `Addresses at ${serverEnv().EMAIL_CAPTURE_DOMAIN} cannot be used to register`,
+          error_description: `Addresses at ${serverEnv().EMAIL_CAPTURE_DOMAIN}, or at a domain that receives mail through it, cannot be used to register`,
         },
         { status: 400 }
       );
