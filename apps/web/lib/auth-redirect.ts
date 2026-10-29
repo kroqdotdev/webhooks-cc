@@ -19,10 +19,15 @@ export function sanitizeNextPath(raw: string | null, fallback = "/dashboard"): s
  * site the request came to (lib/site.ts), from x-forwarded-host or Host,
  * so a session set on mailhooks.cc lands on mailhooks.cc. Only the two
  * configured origins can come out, never a host a request names. In
- * development the request origin is trusted as-is.
+ * development the request's own host is trusted as-is.
  */
 export function resolveRedirectBase(request: Request, origin: string): string {
-  if (process.env.NODE_ENV === "development") return origin;
+  if (process.env.NODE_ENV === "development") {
+    // The host the browser used: Next reports a local request's origin as
+    // localhost, which is another cookie host than webhooks.localhost.
+    const host = request.headers.get("host");
+    return host ? `${new URL(origin).protocol}//${host}` : origin;
+  }
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   return siteOrigin(siteForHost(host));
 }

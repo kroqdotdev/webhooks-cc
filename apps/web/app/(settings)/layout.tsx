@@ -4,7 +4,15 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SiteProvider } from "@/components/providers/site-provider";
+import type { Metadata } from "next";
+import { SITES } from "@/lib/site";
 import { currentSite } from "@/lib/site-server";
+
+/** Settings pages' titles name the site they are shown on. */
+export async function generateMetadata(): Promise<Metadata> {
+  const site = SITES[await currentSite()];
+  return { title: { template: `%s | ${site.name}`, default: site.name } };
+}
 import { SettingsDataProvider } from "@/components/settings/settings-data";
 import { SettingsShell } from "@/components/settings/settings-shell";
 
