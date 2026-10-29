@@ -4,7 +4,7 @@ const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   createPolarClient: vi.fn(),
   getPolarCheckoutConfig: vi.fn(),
-  endPageAddonsWithPeriod: vi.fn(),
+  reconcileAddonsWithPlan: vi.fn(),
 }));
 
 vi.mock("@/lib/polar", async (importOriginal) => ({
@@ -17,7 +17,7 @@ vi.mock("@/lib/polar", async (importOriginal) => ({
 }));
 
 vi.mock("./capacity-billing", () => ({
-  endPageAddonsWithPeriod: mockFns.endPageAddonsWithPeriod,
+  reconcileAddonsWithPlan: mockFns.reconcileAddonsWithPlan,
 }));
 
 vi.mock("./admin", () => ({
@@ -25,11 +25,23 @@ vi.mock("./admin", () => ({
 }));
 
 import {
+  addMonthUtc,
   applyPolarWebhookEvent,
   changePlanForUser,
   keepCurrentPlanForUser,
   remainingShare,
 } from "./billing";
+
+// Plan events apply the subscription as Polar has it now: by default the
+// event's own payload, or what a test puts here.
+let polarSubscriptions: Record<string, Record<string, unknown>> = {};
+const polarRevoke = vi.fn();
+
+async function apply(type: string, payload: Record<string, unknown>) {
+  const id = String(payload.id);
+  if (!polarSubscriptions[id]) polarSubscriptions[id] = payload;
+  return applyPolarWebhookEvent(type, payload);
+}
 
 // ---------------------------------------------------------------------------
 // Minimal supabase-js query-builder double (same shape as team-billing.test.ts).
@@ -61,7 +73,9 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
       const take = (): QueryResult => {
         const queue = responses[`${table}:${op}`];
         const next = queue?.shift();
-        return { data: null, error: null, ...next };
+        // An update reads back the row it wrote, unless a test says otherwise.
+        const written = op === "update" ? [{ id: "user_1" }] : null;
+        return { data: written, error: null, ...next };
       };
 
       const builder: Record<string, unknown> = {};
@@ -143,6 +157,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
   vi.useRealTimers();
+  polarSubscriptions = {};
+  mockFns.createPolarClient.mockReturnValue({
+    subscriptions: {
+      get: async (id: string) => polarSubscriptions[id],
+      revoke: polarRevoke,
+    },
+  });
 });
 
 describe("applyPolarWebhookEvent subscription.created/updated", () => {
@@ -151,7 +172,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       createFakeAdmin({ "users:select": [storedUser()], "users:update": [{}] })
     );
 
-    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+    await apply("subscription.updated", subscriptionEvent());
 
     const payload = userUpdatePayload();
     expect(payload).toMatchObject({
@@ -170,7 +191,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       })
     );
 
-    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+    await apply("subscription.updated", subscriptionEvent());
 
     const payload = userUpdatePayload();
     expect(payload).toBeDefined();
@@ -185,7 +206,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       })
     );
 
-    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+    await apply("subscription.updated", subscriptionEvent());
 
     const payload = userUpdatePayload();
     expect(payload).toBeDefined();
@@ -202,7 +223,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       })
     );
 
-    await applyPolarWebhookEvent("subscription.created", subscriptionEvent());
+    await apply("subscription.created", subscriptionEvent());
 
     const payload = userUpdatePayload();
     expect(payload).toMatchObject({
@@ -219,10 +240,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       })
     );
 
-    await applyPolarWebhookEvent(
-      "subscription.updated",
-      subscriptionEvent({ status: "some_future_status" })
-    );
+    await apply("subscription.updated", subscriptionEvent({ status: "some_future_status" }));
 
     expect(userUpdatePayload()).toMatchObject({ subscription_status: "canceled" });
   });
@@ -232,7 +250,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       createFakeAdmin({ "users:select": [storedUser()], "users:update": [{}] })
     );
 
-    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+    await apply("subscription.updated", subscriptionEvent());
 
     // Two overlapping deliveries of the same renewal must not both zero the
     // usage counter: the write carries optimistic filters on the state that
@@ -251,7 +269,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       })
     );
 
-    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+    await apply("subscription.updated", subscriptionEvent());
 
     // An updated event read before a concurrent revoke must not resurrect the
     // revoked subscription's state after it.
@@ -267,7 +285,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       createFakeAdmin({ "users:select": [{ data: null }] })
     );
 
-    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+    await apply("subscription.updated", subscriptionEvent());
 
     expect(userUpdatePayload()).toBeUndefined();
   });
@@ -303,10 +321,7 @@ describe("plan changes within a period", () => {
       })
     );
 
-    await applyPolarWebhookEvent(
-      "subscription.updated",
-      subscriptionEvent({ product_id: "prod_business" })
-    );
+    await apply("subscription.updated", subscriptionEvent({ product_id: "prod_business" }));
 
     const payload = userUpdatePayload();
     expect(payload).toMatchObject({
@@ -330,10 +345,7 @@ describe("plan changes within a period", () => {
       })
     );
 
-    await applyPolarWebhookEvent(
-      "subscription.updated",
-      subscriptionEvent({ product_id: "prod_business" })
-    );
+    await apply("subscription.updated", subscriptionEvent({ product_id: "prod_business" }));
 
     const payload = userUpdatePayload();
     expect(payload).toMatchObject({ plan: "business" });
@@ -354,10 +366,7 @@ describe("plan changes within a period", () => {
       })
     );
 
-    await applyPolarWebhookEvent(
-      "subscription.updated",
-      subscriptionEvent({ product_id: "prod_business" })
-    );
+    await apply("subscription.updated", subscriptionEvent({ product_id: "prod_business" }));
 
     expect(userUpdatePayload()).toMatchObject({
       requests_used: 0,
@@ -375,7 +384,7 @@ describe("plan changes within a period", () => {
       })
     );
 
-    await applyPolarWebhookEvent(
+    await apply(
       "subscription.updated",
       subscriptionEvent({
         product_id: "prod_business",
@@ -399,7 +408,7 @@ describe("plan changes within a period", () => {
       })
     );
 
-    await applyPolarWebhookEvent(
+    await apply(
       "subscription.updated",
       subscriptionEvent({ product_id: "prod_business", pending_update: null })
     );
@@ -462,7 +471,10 @@ describe("changePlanForUser", () => {
       proration_behavior: "next_period",
     });
     expect(userUpdatePayload()).toEqual({ pending_plan: "business", pending_interval: "year" });
-    expect(mockFns.endPageAddonsWithPeriod).not.toHaveBeenCalled();
+    expect(mockFns.reconcileAddonsWithPlan).toHaveBeenCalledWith({
+      kind: "user",
+      userId: "user_1",
+    });
   });
 
   test("Business to Pro waits for the renewal", async () => {
@@ -481,7 +493,7 @@ describe("changePlanForUser", () => {
       proration_behavior: "next_period",
     });
     // Extra pages need Business: they are set to end with the period.
-    expect(mockFns.endPageAddonsWithPeriod).toHaveBeenCalledWith({
+    expect(mockFns.reconcileAddonsWithPlan).toHaveBeenCalledWith({
       kind: "user",
       userId: "user_1",
     });
@@ -497,6 +509,11 @@ describe("changePlanForUser", () => {
 
     await keepCurrentPlanForUser("user_1");
     expect(update).toHaveBeenCalledWith("sub_1", { pending_update: null });
+    // Page add-ons a move away from Business set to end come back.
+    expect(mockFns.reconcileAddonsWithPlan).toHaveBeenCalledWith({
+      kind: "user",
+      userId: "user_1",
+    });
     expect(userUpdatePayload()).toEqual({ pending_plan: null, pending_interval: null });
   });
 
@@ -507,5 +524,136 @@ describe("changePlanForUser", () => {
 
     await expect(keepCurrentPlanForUser("user_1")).rejects.toMatchObject({ code: "unchanged" });
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("plan events apply Polar's current state", () => {
+  beforeEach(() => {
+    vi.stubEnv("POLAR_PRO_PRODUCT_ID", "prod_pro");
+    vi.stubEnv("POLAR_BUSINESS_PRODUCT_ID", "prod_business");
+    vi.stubEnv("POLAR_BUSINESS_ANNUAL_PRODUCT_ID", "prod_business_year");
+  });
+
+  test("a late event for an older state applies the subscription as it is now", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          storedUser({ plan: "business", period_start: "2026-08-01T00:00:00.000Z" }),
+        ],
+      })
+    );
+    // Polar has Business; the late event still says Pro.
+    polarSubscriptions.sub_1 = subscriptionEvent({ product_id: "prod_business" });
+
+    await apply("subscription.updated", subscriptionEvent({ product_id: "prod_pro" }));
+
+    expect(userUpdatePayload()).toMatchObject({ plan: "business" });
+  });
+
+  test("a late event for an ended subscription that is not the account's changes nothing", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_new" })] })
+    );
+    polarSubscriptions.sub_1 = subscriptionEvent({ status: "canceled" });
+
+    await apply("subscription.updated", subscriptionEvent());
+
+    expect(userUpdatePayload()).toBeUndefined();
+  });
+
+  test("a second live plan subscription is revoked and reported, and the account keeps its own", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_first" })] })
+    );
+    polarSubscriptions.sub_first = subscriptionEvent({ id: "sub_first" });
+
+    await apply("subscription.created", subscriptionEvent({ id: "sub_second" }));
+
+    expect(polarRevoke).toHaveBeenCalledWith("sub_second");
+    expect(userUpdatePayload()).toBeUndefined();
+  });
+
+  test("a new subscription replaces one Polar no longer has live", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_old" })] })
+    );
+    polarSubscriptions.sub_old = subscriptionEvent({ id: "sub_old", status: "canceled" });
+
+    await apply("subscription.created", subscriptionEvent());
+
+    expect(polarRevoke).not.toHaveBeenCalled();
+    expect(userUpdatePayload()).toMatchObject({ polar_subscription_id: "sub_1", requests_used: 0 });
+  });
+
+  test("a write that lost a race throws, so Polar delivers the event again", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [storedUser({ period_start: "2026-08-01T00:00:00.000Z" })],
+        "users:update": [{ data: [] }],
+      })
+    );
+
+    await expect(apply("subscription.updated", subscriptionEvent())).rejects.toThrow(/retry/);
+  });
+
+  test("the pro rata share uses Polar's period and the time of the change", async () => {
+    vi.useFakeTimers({ now: new Date("2026-08-20T00:00:00.000Z"), toFake: ["Date"] });
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        // The cron fallback stretched the stored period; Polar's is August.
+        "users:select": [
+          storedUser({
+            period_start: "2026-08-01T00:00:00.000Z",
+            period_end: "2026-09-30T00:00:00.000Z",
+          }),
+        ],
+      })
+    );
+    polarSubscriptions.sub_1 = subscriptionEvent({
+      product_id: "prod_business",
+      // Changed half way through August; delivered four days later.
+      modified_at: "2026-08-16T00:00:00.000Z",
+    });
+
+    await apply("subscription.updated", subscriptionEvent({ product_id: "prod_business" }));
+
+    expect(userUpdatePayload()).toMatchObject({ request_limit: 175_000, prorated_pages: 1_050 });
+  });
+
+  test("a year that starts after the cron already moved the quota period keeps its usage", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          storedUser({
+            plan: "business",
+            billing_interval: "year",
+            billing_period_end: "2026-08-01T00:00:00.000Z",
+            period_start: "2026-08-01T00:00:00.000Z",
+          }),
+        ],
+      })
+    );
+
+    await apply(
+      "subscription.updated",
+      subscriptionEvent({
+        product_id: "prod_business_year",
+        current_period_start: "2026-08-01T00:00:00.000Z",
+        current_period_end: "2027-08-01T00:00:00.000Z",
+      })
+    );
+
+    const payload = userUpdatePayload();
+    expect(payload).toMatchObject({
+      billing_period_end: "2027-08-01T00:00:00.000Z",
+      period_end: "2026-09-01T00:00:00.000Z",
+    });
+    expect(payload).not.toHaveProperty("requests_used");
+  });
+
+  test("a month added to the 31st lands on the last day of a shorter month", () => {
+    expect(addMonthUtc("2027-01-31T10:00:00.000Z")).toBe("2027-02-28T10:00:00.000Z");
+    expect(addMonthUtc("2028-01-31T10:00:00.000Z")).toBe("2028-02-29T10:00:00.000Z");
+    expect(addMonthUtc("2026-12-15T00:00:00.000Z")).toBe("2027-01-15T00:00:00.000Z");
   });
 });

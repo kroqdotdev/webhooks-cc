@@ -87,7 +87,7 @@ export function TeamBusinessPanel({
     <Panel
       id="team-business"
       title="Team Business"
-      description="Business for the endpoints you share with this team: 150,000 more requests in the pool, 2,000 pooled parsed pages a month, up to 50 layouts per endpoint and 90-day retention. $49 a month, renewed with the team."
+      description="Business for the endpoints you share with this team: 150,000 more requests in the pool, 2,000 pooled parsed pages a month, up to 50 layouts per endpoint and 90-day retention. $49 a month, renewed with the team; added mid-period, the first month is charged in full and ends with the team's."
       footer={
         canManage ? (
           business ? (

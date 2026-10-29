@@ -22,7 +22,7 @@ import {
 import { reportError } from "@/lib/observability";
 import { planEntitlements, teamEntitlements } from "@/lib/entitlements";
 import { createAdminClient } from "./admin";
-import { ensurePolarCustomerId, getBillingUser } from "./billing";
+import { addMonthUtc, ensurePolarCustomerId, getBillingUser } from "./billing";
 import { asNonEmptyString, asRecord, parseEventTimestamp } from "./billing-shared";
 import type { Database } from "./database";
 import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
@@ -177,6 +177,14 @@ interface AccountRow {
   pages_active: boolean;
   /** Extra pages end at the renewal: the plan changes to one without them. */
   pages_ending: boolean;
+  /**
+   * The quota period is the plan's last before it ends or changes: always
+   * for monthly plans and teams, only the year's last month on an annual
+   * plan, whose add-ons renew monthly until then.
+   */
+  last_period: boolean;
+  /** Pages count per quota period; otherwise (Free) a month from the first parse. */
+  pages_follow_period: boolean;
   /** The plan's own pages per window (its entitlements). */
   plan_pages: number;
   credit_pages: number;
@@ -226,25 +234,40 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
       pages_active: live && data.business,
       // Set from the Team Business add-on by requireEligible when it matters.
       pages_ending: false,
+      last_period: true,
+      pages_follow_period: true,
       plan_pages: teamEntitlements(data.business).parsedPages,
     };
   }
 
   const { data, error } = await admin
     .from("users")
-    .select(`${ACCOUNT_COLUMNS}, plan, subscription_status, pending_plan`)
+    .select(
+      `${ACCOUNT_COLUMNS}, plan, subscription_status, pending_plan, billing_interval, billing_period_end`
+    )
     .eq("id", account.userId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { pending_plan: pendingPlan, ...row } = data;
+  const {
+    pending_plan: pendingPlan,
+    billing_interval: interval,
+    billing_period_end: billingEnd,
+    ...row
+  } = data;
   const entitlements = planEntitlements(row.plan);
   return {
     ...row,
     plan_active: entitlements.requestAddons && row.subscription_status !== null,
     pages_active: entitlements.pageAddons && row.subscription_status !== null,
     pages_ending: pendingPlan !== null && !planEntitlements(pendingPlan).pageAddons,
+    last_period:
+      interval !== "year" ||
+      !billingEnd ||
+      !row.period_end ||
+      Date.parse(row.period_end) >= Date.parse(billingEnd) - 60_000,
     plan_pages: entitlements.parsedPages,
+    pages_follow_period: entitlements.quotaPeriod === "month",
   };
 }
 
@@ -333,7 +356,7 @@ async function requireEligible(
         ? (liveOfKind(await liveSubscriptions(account), "team_business")?.cancel_at_period_end ??
           false)
         : row.pages_ending;
-    if (ending) {
+    if (ending && row.last_period) {
       throw new CapacityError(
         "plan_ending",
         account.kind === "team"
@@ -342,7 +365,7 @@ async function requireEligible(
       );
     }
   }
-  if (renewing && row.cancel_at_period_end) {
+  if (renewing && row.cancel_at_period_end && row.last_period) {
     throw new CapacityError(
       "plan_ending",
       account.kind === "team"
@@ -385,7 +408,7 @@ export async function getCapacityState(
   return {
     offered: getCapacityProductIds() !== null,
     eligible: row.plan_active,
-    planEnding: row.plan_active && row.cancel_at_period_end,
+    planEnding: row.plan_active && row.cancel_at_period_end && row.last_period,
     periodStart: row.period_start,
     periodEnd: row.period_end,
     planRequests: row.request_limit,
@@ -441,9 +464,15 @@ async function pageState(account: CapacityAccount, row: AccountRow): Promise<Cap
     // Extra pages end with the plan, a change away from Business, or the
     // end of Team Business.
     planEnding:
-      row.pages_active && (row.cancel_at_period_end || row.pages_ending || teamBusinessEnding),
+      row.pages_active &&
+      row.last_period &&
+      (row.cancel_at_period_end || row.pages_ending || teamBusinessEnding),
     periodStart: balance?.window_start ?? row.period_start,
-    periodEnd: row.period_end,
+    periodEnd: row.pages_follow_period
+      ? row.period_end
+      : balance?.window_start && Number(balance.used) > 0
+        ? addMonthUtc(balance.window_start)
+        : null,
     // The window's own pages, pro rata after a mid-period upgrade.
     planRequests: balance ? Math.max(balance.allowance - row.page_block_pages, 0) : row.plan_pages,
     blockRequests: row.page_block_pages,
@@ -742,20 +771,8 @@ export async function setTeamBusinessEnding(
   if (!current) throw new CapacityError("not_found", "The team has no Team Business", 404);
   if (!ending) await requireEligible(account, { renewing: true });
   await setAddonEnding(account, current, ending, false);
-  // Extra pages need Team Business; they would otherwise renew without it.
-  if (ending) await endPageAddonsWithPeriod(account);
-}
-
-/**
- * Sets the account's page add-ons to end with its period: a plan change
- * away from Business takes effect at the renewal, and they renew with it.
- */
-export async function endPageAddonsWithPeriod(account: CapacityAccount): Promise<void> {
-  for (const row of await liveSubscriptions(account)) {
-    if (PAGE_KINDS.has(row.kind) && !row.cancel_at_period_end) {
-      await setAddonEnding(account, row, true, false);
-    }
-  }
+  // Extra pages need Team Business: they end with it, and come back with it.
+  await reconcileAddonsWithPlan(account);
 }
 
 async function markSubscription(
@@ -1000,6 +1017,15 @@ async function settleDuplicate(
       kind === "page_blocks" ? "page_credits" : "credits"
     );
   }
+  if (kind === "team_business") {
+    reportError(
+      "[capacity] a second Team Business subscription was revoked; refund it",
+      undefined,
+      {
+        subscriptionId,
+      }
+    );
+  }
   await revokeQuietly(subscriptionId);
 }
 
@@ -1224,14 +1250,27 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
   const plan = await readAccount(account);
   if (!plan) return;
 
+  // Page add-ons also end when the account leaves Business at the renewal
+  // or the team's Team Business ends.
+  const pagesLeaving =
+    plan.pages_ending || (liveOfKind(rows, "team_business")?.cancel_at_period_end ?? false);
+
   for (const row of rows) {
     // Page add-ons need Business (or Team Business); the rest the plan.
     const active = PAGE_KINDS.has(row.kind) ? plan.pages_active : plan.plan_active;
+    const leaving = plan.cancel_at_period_end || (PAGE_KINDS.has(row.kind) && pagesLeaving);
     if (!active) {
       // The plan is gone, not merely ending: a later plan is a new decision,
       // so nothing here is marked to come back with it.
       if (row.kind === "team_business") {
         // It is the team's plan's add-on: nothing to keep once that is gone.
+        // One that was going to renew lost a period it paid for (bought
+        // after the plan ended, or the plan was revoked mid-period).
+        if (!row.cancel_at_period_end && row.status === "active") {
+          reportError("[capacity] Team Business ended with its team's plan; refund it", undefined, {
+            subscriptionId: row.polar_subscription_id,
+          });
+        }
         await revokeQuietly(row.polar_subscription_id);
         await markEnded(account, row);
       } else if (BLOCK_KINDS.has(row.kind)) {
@@ -1257,8 +1296,10 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
       } else if (row.canceled_with_plan) {
         await markSubscription(row.id, { canceled_with_plan: false });
       }
-    } else if (plan.cancel_at_period_end) {
-      if (!row.cancel_at_period_end) {
+    } else if (leaving) {
+      // An annual plan's add-ons renew monthly: they end in its last month,
+      // checked again at each of their renewals.
+      if (!row.cancel_at_period_end && plan.last_period) {
         await setAddonEnding(account, row, true, true);
       }
     } else if (row.cancel_at_period_end && row.canceled_with_plan) {

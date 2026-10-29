@@ -1,12 +1,14 @@
 import {
   createPolarClient,
   getPolarCheckoutConfig,
+  loggablePolarError,
   planForProduct,
   planProductId,
   type BillingInterval,
   type PaidPlan,
 } from "@/lib/polar";
 import { planEntitlements } from "@/lib/entitlements";
+import { reportError } from "@/lib/observability";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
@@ -259,18 +261,16 @@ export async function changePlanForUser(
   if (!now) {
     // The webhook records it too; this shows it before that arrives.
     await updateUserById(user.id, { pending_plan: plan, pending_interval: interval });
-    if (plan !== "business") {
-      const { endPageAddonsWithPeriod } = await import("./capacity-billing");
-      await endPageAddonsWithPeriod({ kind: "user", userId });
-    }
+    // Page add-ons need Business: leaving it, they end with the period.
+    const { reconcileAddonsWithPlan } = await import("./capacity-billing");
+    await reconcileAddonsWithPlan({ kind: "user", userId });
   }
   return { applied: now ? "now" : "renewal" };
 }
 
 /**
  * Drops a plan change waiting for the renewal, so the plan renews as it
- * is. Page add-ons a move away from Business set to end stay set to end;
- * the account turns them back on itself.
+ * is, and page add-ons a move away from Business set to end come back.
  */
 export async function keepCurrentPlanForUser(userId: string): Promise<void> {
   const user = await getBillingUser(userId);
@@ -284,6 +284,8 @@ export async function keepCurrentPlanForUser(userId: string): Promise<void> {
     pending_update: null,
   });
   await updateUserById(user.id, { pending_plan: null, pending_interval: null });
+  const { reconcileAddonsWithPlan } = await import("./capacity-billing");
+  await reconcileAddonsWithPlan({ kind: "user", userId });
 }
 
 export async function cancelSubscriptionForUser(userId: string): Promise<void> {
@@ -317,6 +319,53 @@ export async function resubscribeForUser(userId: string): Promise<void> {
   });
 }
 
+const LIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
+
+/** The subscription as Polar has it now; the event's own copy for one without an id. */
+async function currentSubscription(
+  event: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const id = asNonEmptyString(event.id);
+  if (!id) return event;
+  const current = await createPolarClient().subscriptions.get(id);
+  return (asRecord(current) ?? event) as Record<string, unknown>;
+}
+
+/** Polar's errors propagate, so the event is delivered again later. */
+async function isLiveSubscription(id: string): Promise<boolean> {
+  const subscription = asRecord(await createPolarClient().subscriptions.get(id));
+  return LIVE_STATUSES.has(String(subscription?.status));
+}
+
+async function revokeSubscriptionQuietly(id: string): Promise<void> {
+  try {
+    await createPolarClient().subscriptions.revoke(id);
+  } catch (error) {
+    reportError(
+      "[billing] could not revoke a second plan subscription",
+      loggablePolarError(error),
+      {
+        subscriptionId: id,
+      }
+    );
+    throw error;
+  }
+}
+
+/**
+ * One month after an ISO time, in UTC, kept on the last day of a shorter
+ * month as Postgres does (Jan 31 gives Feb 28, not Mar 3).
+ */
+export function addMonthUtc(iso: string): string {
+  const from = new Date(iso);
+  const next = new Date(from);
+  next.setUTCDate(1);
+  next.setUTCMonth(from.getUTCMonth() + 1);
+  const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+  next.setUTCDate(Math.min(from.getUTCDate(), lastDay));
+  return next.toISOString();
+}
+
 /** The share of the period [start, end) still to come at `now`, 0 to 1. */
 export function remainingShare(start: string, end: string, now: number): number {
   const from = Date.parse(start);
@@ -326,10 +375,11 @@ export function remainingShare(start: string, end: string, now: number): number 
 }
 
 export async function applyPolarWebhookEvent(eventType: string, payload: unknown): Promise<void> {
-  const data = asRecord(payload);
-  if (!data) {
+  const event = asRecord(payload);
+  if (!event) {
     return;
   }
+  const data = event;
 
   switch (eventType) {
     case "customer.created":
@@ -343,6 +393,10 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
 
     case "subscription.created":
     case "subscription.updated": {
+      // Polar's payloads cannot be ordered against each other (a late one
+      // would put back a plan or interval already changed), so the
+      // subscription's current state is applied, as for the add-ons.
+      const data = await currentSubscription(event);
       const userId = await resolveWebhookUserId(data);
       if (!userId) {
         return;
@@ -384,6 +438,25 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       const isNewSubscription =
         subscriptionId !== null && subscriptionId !== stored.polar_subscription_id;
 
+      if (isNewSubscription) {
+        // An ended subscription that is not the account's (an old one's late
+        // event) changes nothing.
+        if (!LIVE_STATUSES.has(String(data.status))) return;
+        // A second live plan subscription (two checkouts completed in two
+        // tabs): the account keeps the one it has, and the new one ends
+        // before it charges again. Someone refunds what it charged.
+        if (
+          stored.polar_subscription_id &&
+          (await isLiveSubscription(stored.polar_subscription_id))
+        ) {
+          await revokeSubscriptionQuietly(subscriptionId);
+          reportError("[billing] a second plan subscription was revoked; refund it", undefined, {
+            subscriptionId,
+          });
+          return;
+        }
+      }
+
       const incomingPeriodStartMs = currentPeriodStart ? Date.parse(currentPeriodStart) : null;
       const storedPeriodStartMs = stored.period_start ? Date.parse(stored.period_start) : null;
 
@@ -420,14 +493,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
           stored.billing_interval !== "year" ||
           (incomingBillingEndMs !== null &&
             (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
-      const firstMonthEnd =
-        currentPeriodStart !== null
-          ? new Date(
-              new Date(currentPeriodStart).setUTCMonth(
-                new Date(currentPeriodStart).getUTCMonth() + 1
-              )
-            ).toISOString()
-          : null;
+      const firstMonthEnd = currentPeriodStart !== null ? addMonthUtc(currentPeriodStart) : null;
       const period = annual
         ? newYear && currentPeriodStart
           ? { period_start: currentPeriodStart, period_end: firstMonthEnd }
@@ -436,7 +502,15 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
             period_start: isStalePeriod ? undefined : currentPeriodStart,
             period_end: isStalePeriod ? undefined : currentPeriodEnd,
           };
-      const resetsUsage = annual ? newYear : isNewSubscription || isRenewal;
+      // A year that starts after the cron fallback already moved the quota
+      // period there keeps the usage counted since.
+      const resetsUsage = annual
+        ? isNewSubscription ||
+          (newYear &&
+            (storedPeriodStartMs === null ||
+              incomingPeriodStartMs === null ||
+              storedPeriodStartMs < incomingPeriodStartMs))
+        : isNewSubscription || isRenewal;
 
       // The allowance. A tier up within the period (changePlanForUser's
       // "invoice" change) adds the new plan's extra requests and pages in
@@ -458,7 +532,16 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         stored.period_end
       ) {
         const before = planEntitlements(stored.plan);
-        const left = remainingShare(stored.period_start, stored.period_end, Date.now());
+        // Polar charged for the rest of its own period from the change.
+        const changedAt = Math.min(
+          Date.parse(String(data.modified_at ?? "")) || Date.now(),
+          Date.now()
+        );
+        const left = remainingShare(
+          currentPeriodStart ?? stored.period_start,
+          currentPeriodEnd ?? stored.period_end,
+          changedAt
+        );
         allowance = {
           request_limit:
             before.requestLimit +
@@ -500,8 +583,8 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       // renewal both zeroing requests_used (erasing usage captured between the
       // writes), and an updated/active event read before a concurrent revoke
       // resurrecting the revoked subscription's state after it. The loser's
-      // write matches no rows; events carry full state and Polar redelivers,
-      // so a skipped write converges on the next delivery.
+      // write matches no rows and throws, so Polar delivers the event again
+      // and it is applied to the state that won.
       let guarded = admin
         .from("users")
         .update(resetsUsage ? { ...patch, requests_used: 0 } : patch)
@@ -515,8 +598,11 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
           ? guarded.is("period_start", null)
           : guarded.eq("period_start", stored.period_start);
 
-      const { error: guardedError } = await guarded;
+      const { data: written, error: guardedError } = await guarded.select("id");
       if (guardedError) throw guardedError;
+      if (!written || written.length === 0) {
+        throw new Error("The account changed while a plan event was applied; retry it");
+      }
       return;
     }
 
