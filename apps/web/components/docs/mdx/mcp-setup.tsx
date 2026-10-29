@@ -36,6 +36,7 @@ function CodeBlock({ children, copyText }: { children: string; copyText?: string
   );
 }
 
+/** The local server's setup; the remote server's comes first in the MDX around it. */
 export function McpInstallGuide() {
   const [apiKey, setApiKey] = useState("");
   const trimmed = apiKey.trim();
@@ -45,10 +46,10 @@ export function McpInstallGuide() {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-xl font-bold mb-3">Your API key</h2>
+        <h3 className="text-xl font-bold mb-3">Your API key</h3>
         <p className="text-muted-foreground mb-3">
-          Paste your API key to fill it into every command below. It stays in your browser only —
-          nothing is sent or stored.
+          Paste your API key to fill it into every command below. It stays in your browser only.
+          Nothing is sent or stored.
         </p>
         <input
           type="password"
@@ -72,7 +73,7 @@ export function McpInstallGuide() {
       <AgentSkillInstall headingClassName="text-xl" />
 
       <section>
-        <h2 className="text-xl font-bold mb-3">One-click install</h2>
+        <h3 className="text-xl font-bold mb-3">One-click install</h3>
         <div className="space-y-3">
           <div>
             <a href={cursorUrl} target="_blank" rel="noopener noreferrer" className={BTN}>
@@ -80,8 +81,8 @@ export function McpInstallGuide() {
             </a>
             <p className="text-sm text-muted-foreground mt-1.5">
               {key !== KEY_PLACEHOLDER
-                ? "Your key is included in the link — do not share this URL."
-                : "Paste your key above first — it gets baked into the install link."}
+                ? "Your key is included in the link, so do not share this URL."
+                : "Paste your key above first. It gets baked into the install link."}
             </p>
           </div>
           <div>
@@ -96,37 +97,37 @@ export function McpInstallGuide() {
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">Claude Code</h2>
+        <h3 className="text-xl font-bold mb-3">Claude Code</h3>
         <CodeBlock>{`claude mcp add -s user webhooks-cc -e WHK_API_KEY=${key} -- npx -y @webhooks-cc/mcp`}</CodeBlock>
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">Cursor (CLI)</h2>
+        <h3 className="text-xl font-bold mb-3">Cursor (CLI)</h3>
         <CodeBlock>{`npx @webhooks-cc/mcp setup cursor --api-key ${key}`}</CodeBlock>
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">VS Code (CLI)</h2>
+        <h3 className="text-xl font-bold mb-3">VS Code (CLI)</h3>
         <CodeBlock>{`npx @webhooks-cc/mcp setup vscode --api-key ${key}`}</CodeBlock>
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">OpenAI Codex</h2>
+        <h3 className="text-xl font-bold mb-3">OpenAI Codex</h3>
         <CodeBlock>{`codex mcp add webhooks-cc -e WHK_API_KEY=${key} -- npx -y @webhooks-cc/mcp`}</CodeBlock>
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">Windsurf</h2>
+        <h3 className="text-xl font-bold mb-3">Windsurf</h3>
         <CodeBlock>{`npx @webhooks-cc/mcp setup windsurf --api-key ${key}`}</CodeBlock>
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">Claude Desktop</h2>
+        <h3 className="text-xl font-bold mb-3">Claude Desktop</h3>
         <CodeBlock>{`npx @webhooks-cc/mcp setup claude-desktop --api-key ${key}`}</CodeBlock>
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">Manual config</h2>
+        <h3 className="text-xl font-bold mb-3">Manual config</h3>
         <p className="text-muted-foreground mb-3">
           For any tool that reads an MCP config JSON file:
         </p>

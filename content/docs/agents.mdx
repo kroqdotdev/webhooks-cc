@@ -3,7 +3,7 @@ title: "AI Agents: Sandbox and Registration"
 description: "How AI agents use webhooks.cc: the remote MCP server with one-click OAuth, a 24-hour sandbox without an account through the auth.md protocol, connecting an agent to your account once, and the credential file every tool shares."
 section: getting-started
 order: 6
-lastUpdated: 2026-10-28
+lastUpdated: 2026-10-29
 schema: tech-article
 keywords:
   [
@@ -18,24 +18,33 @@ keywords:
   ]
 seo:
   ogTitle: "AI Agents on webhooks.cc: Sandbox and Registration"
-  ogDescription: "Hosted agents connect to the remote MCP server with one approval; local agents capture webhooks in a 24-hour sandbox without an account and connect to yours once."
+  ogDescription: "Agents connect to the remote MCP server with one approval in your browser, or capture webhooks in a 24-hour sandbox without an account and connect to yours later."
 ---
 
-An AI agent can use webhooks.cc before anyone signs up. It registers itself through [auth.md](/auth.md), the agent registration protocol webhooks.cc implements (version 0.6), and gets a **sandbox**: a few temporary endpoints that capture webhooks for a day and that only the agent can read. When you want to keep what it made, or let it work in your account, you connect it once.
+The easiest way to give an AI agent webhooks.cc is the remote MCP server at `https://webhooks.cc/mcp`: you add it to the agent's client, whether that is Claude Code, Cursor, VS Code, Codex, claude.ai or ChatGPT, and click **Connect** once in your browser. There is no code to type, and the agent works in your account from the start.
 
-Hosted agents, such as claude.ai or ChatGPT, use the remote MCP server instead and connect with a single approval in your browser.
+An agent can also use webhooks.cc before anyone signs up. It registers itself through [auth.md](/auth.md), the agent registration protocol webhooks.cc implements (version 0.6), and gets a **sandbox**: a few temporary endpoints that capture webhooks for a day and that only the agent can read. When you want to keep what it made, or let it work in your account, you connect it once.
 
 The full protocol, with request and response examples, is at [webhooks.cc/auth.md](/auth.md). Agents read that document directly; this page explains the same flows for people.
 
 ## Start here
 
-The sandbox needs nothing from you: it is free, anonymous, isolated from every account, and deleted after 24 hours. An agent involves you only to keep what it made, or for what the sandbox lacks: more than 3 endpoints, mock responses, forwarding, signature checks, and email.
+An agent takes the first of these that fits:
 
-An agent takes the first of these it can use:
+1. **Its client can add a remote MCP server, and you are there to approve it.** This is the default for coding agents (Claude Code, Cursor, VS Code, Codex) as much as for claude.ai and ChatGPT. The one exception is a task that sends to a handler on your machine (`send_to`, `replay_request`, `targetUrl`), which the remote server cannot reach: the agent takes option 2 for that, or sends to a capture URL and forwards it with `whk tunnel <port>`. Add `https://webhooks.cc/mcp` (streamable HTTP), then sign in, or sign up, and click **Connect** once in your browser: there is no code to type, nothing expires after 24 hours, and the agent gets your account's tools, including mock responses, forwarding, signature checks and email. The agent suggests the line for its client and stops there, because a newly added server's tools appear only after the client reconnects or restarts:
+   - Claude Code: `claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp`, then `/mcp` in Claude Code to sign in
+   - Codex: `codex mcp add webhooks-cc --url https://webhooks.cc/mcp` (it opens the browser to sign in; if it does not, `codex mcp login webhooks-cc`)
+   - Cursor, in `.cursor/mcp.json`: `{ "mcpServers": { "webhooks-cc": { "url": "https://webhooks.cc/mcp" } } }`
+   - VS Code, in `.vscode/mcp.json`: `{ "servers": { "webhooks-cc": { "type": "http", "url": "https://webhooks.cc/mcp" } } }`
+   - claude.ai and Claude Desktop: in Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`. ChatGPT: add it as a custom connector (in developer mode)
+   - Any other client: add `https://webhooks.cc/mcp` as a remote (streamable HTTP) server; the [setup for each client](/docs/mcp#remote-server) has more
 
-1. **Hosted agents (claude.ai, ChatGPT, cloud coding agents) and clients that take remote MCP servers.** Add `https://webhooks.cc/mcp` (streamable HTTP) as a custom connector and approve it once in your browser; there is no code to type. See [apps connected with OAuth](#apps-connected-with-oauth) and the [setup for each client](/docs/mcp#remote-server).
-2. **Clients that run local MCP servers** (Claude Code, Cursor, Codex, VS Code, Windsurf): `claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`, or `npx -y @webhooks-cc/mcp setup cursor` (or `vscode`, `codex`, `windsurf`, `claude-desktop`). No key is needed: the first `create_endpoint` registers a sandbox, and `connect_account` then `wait_for_connection` connect it to your account.
-3. **Claude Code with plugins:** `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc` installs the MCP server with the [webhook testing skill](/docs/mcp/skills).
+   See [apps connected with OAuth](#apps-connected-with-oauth) for what the app gets.
+
+Options 2 to 5 are the fallback, and they start in the sandbox. It needs nothing from you: it is free, anonymous, isolated from every account, and deleted after 24 hours, but it lacks more than 3 endpoints, mock responses, forwarding, signature checks, and email. It suits throwaway captures, CI, and agents working with nobody there to approve, and you need no account for it. You can still keep what an agent made there by [connecting it](#connecting-an-agent-to-your-account); the remote server does not move sandbox endpoints into your account.
+
+2. **The local MCP server**, for clients that run local (stdio) servers: `claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`, or `npx -y @webhooks-cc/mcp setup cursor` (or `vscode`, `codex`, `windsurf`, `claude-desktop`). No key is needed: the first `create_endpoint` registers a sandbox, and `connect_account` then `wait_for_connection` connect it to your account. Connected to your account, with an API key or through the claim, the local server is also the one to use when the agent must send to localhost (`send_to`, `replay_request`, `targetUrl`) or needs the prompts and resources, which the remote server lacks.
+3. **Claude Code with plugins:** `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc` installs the local MCP server with the [webhook testing skill](/docs/mcp/skills).
 4. **Agents that run code.** Each of these registers, solves the proof of work, and reuses the sandbox on the next run:
    - TypeScript: `npm i @webhooks-cc/sdk`, then `WebhooksCC.sandbox()` ([SDK](/docs/sdk))
    - Python: `pip install webhooks-cc`, then `WebhooksCC.sandbox()` ([Python SDK](/docs/sdk/python#no-account-the-agent-sandbox))
@@ -96,9 +105,9 @@ Only the process that registered a sandbox can move its endpoints into your acco
 
 ## Apps connected with OAuth
 
-Hosted agents cannot run a local server or keep a file, so they use the remote MCP server at `https://webhooks.cc/mcp` and connect with OAuth:
+Any client that can add a remote MCP server, coding agents such as Claude Code, Cursor, VS Code and Codex as much as hosted agents such as claude.ai and ChatGPT, can use the remote server at `https://webhooks.cc/mcp` and connect with OAuth. For hosted agents, which cannot run a local server or keep a file, it is the way in.
 
-1. Add `https://webhooks.cc/mcp` to the client, for example as a custom connector in claude.ai. The [MCP server page](/docs/mcp#remote-server) has the setup for each client.
+1. Add `https://webhooks.cc/mcp` to the client, for example with `claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp` in Claude Code or as a custom connector in claude.ai. The [MCP server page](/docs/mcp#remote-server) has the setup for each client.
 2. The client opens webhooks.cc in your browser. Sign in, or sign up.
 3. The page shows which app asks, where it will send you back to, and what it gets. An app that publishes a Client ID Metadata Document is identified by its own host; an app that registered itself shows its name as unverified. Click **Connect**, or **Decline**. There is no code to type.
 
