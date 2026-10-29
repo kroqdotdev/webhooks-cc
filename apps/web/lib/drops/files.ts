@@ -66,7 +66,9 @@ function csvSafe(value: string): string {
 
 function csvCell(value: string): string {
   const safe = csvSafe(value);
-  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  // A semicolon or tab is quoted too: spreadsheets in many locales split on
+  // them, and the part after one would start a cell (and maybe a formula).
+  return /[",;\t\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 export function buildCsv(headers: string[], rows: string[][]): Buffer {

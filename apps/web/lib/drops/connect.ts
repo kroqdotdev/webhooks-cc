@@ -208,7 +208,7 @@ export class DropConnections {
   }
 }
 
-function addressBytes(host: string): Buffer | null {
+export function addressBytes(host: string): Buffer | null {
   const family = net.isIP(host);
   if (family === 4) return Buffer.from([1, ...host.split(".").map(Number)]);
   if (family === 6) {
@@ -223,6 +223,12 @@ function addressBytes(host: string): Buffer | null {
 }
 
 function expandV6(address: string): number[] {
+  // A dotted IPv4 tail (::ffff:203.0.113.5) is two groups.
+  const dotted = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(address);
+  if (dotted) {
+    const [a, b, c, d] = dotted[2].split(".").map(Number);
+    address = `${dotted[1]}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
   const [head, tail = ""] = address.split("::");
   const parse = (part: string) => (part ? part.split(":").map((g) => parseInt(g, 16)) : []);
   const left = parse(head);

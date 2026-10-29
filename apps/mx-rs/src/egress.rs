@@ -48,11 +48,14 @@ impl Egress {
         Self {
             secret: Arc::new(secret),
             allow_private,
-            deny: Arc::new(deny),
+            deny: Arc::new(deny.into_iter().map(|ip| ip.to_canonical()).collect()),
         }
     }
 
+    /// Judged in canonical form: an IPv4-mapped IPv6 answer
+    /// (`::ffff:a.b.c.d`) is the IPv4 address, for the deny list too.
     fn refuses(&self, ip: IpAddr) -> bool {
+        let ip = ip.to_canonical();
         self.deny.contains(&ip) || (!self.allow_private && is_blocked(ip))
     }
 }
@@ -414,6 +417,14 @@ mod tests {
         let mut bound = vec![0u8; rest];
         stream.read_exact(&mut bound).await.unwrap();
         (head[1], stream)
+    }
+
+    #[test]
+    fn refuses_denied_addresses_however_they_are_written() {
+        let egress = Egress::new("s".into(), false, vec!["203.0.113.7".parse().unwrap()]);
+        assert!(egress.refuses("203.0.113.7".parse().unwrap()));
+        assert!(egress.refuses("::ffff:203.0.113.7".parse().unwrap()));
+        assert!(!egress.refuses("203.0.113.8".parse().unwrap()));
     }
 
     #[tokio::test]

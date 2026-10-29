@@ -858,7 +858,11 @@ async function runFileDrop(
     return fail(claim, "The drop has no password or key. Open it and enter one.", false, facts);
   }
 
-  // One lease for the whole batch, the delivery that started it included.
+  // One lease for the whole batch, the delivery that started it included,
+  // and one deadline inside it: what is not written by then waits for the
+  // next try rather than outliving the lease (and being written twice).
+  const deadlineAt = Date.now() + DROP_DEADLINE_MS;
+  const pastDeadline = () => Date.now() >= deadlineAt;
   const { error: leaseError } = await admin
     .from("email_deliveries")
     .update({ locked_until: new Date(Date.now() + DROP_LEASE_SECONDS * 1000).toISOString() })
@@ -914,7 +918,7 @@ async function runFileDrop(
   const connect = async (): Promise<DropTarget | null> => {
     if (target || openError) return target;
     try {
-      target = await openDropTarget(config, secret, DROP_DEADLINE_MS);
+      target = await openDropTarget(config, secret, Math.max(deadlineAt - Date.now(), 1000));
       // The first SFTP connection pins the server's key, if the drop still
       // goes there and none was pinned meanwhile.
       if (config.protocol === "sftp" && !config.hostKey && target.hostKey) {
@@ -922,6 +926,9 @@ async function runFileDrop(
           claim.destination_id!,
           { host: config.host!, port: config.port!, username: config.username! },
           target.hostKey
+        ).catch((pinError) =>
+          // The files can still go: the key is pinned on a later connection.
+          reportError("[drops] pinning a host key failed", pinError)
         );
       }
     } catch (connectError) {
@@ -952,12 +959,18 @@ async function runFileDrop(
       const documents: unknown[] = [];
       let first: RequestRecord | null = null;
       let size = 0;
+      let full = false;
       await admitBatch(claim, request, more ?? [], fail, async (item) => {
+        // The next batch takes what does not fit in this one, or comes after
+        // the deadline, without building it.
+        if (full || pastDeadline()) return release(item.claim, 0);
         const content = await dropContent(item, config, endpoint);
         const added = Buffer.byteLength(JSON.stringify(content));
         if (added > MAX_DROP_FILE_BYTES) return tooLarge([item.claim]);
-        // The next batch takes what does not fit in this one.
-        if (size + added > MAX_DROP_FILE_BYTES) return release(item.claim, 0);
+        if (size + added > MAX_DROP_FILE_BYTES) {
+          full = true;
+          return release(item.claim, 0);
+        }
         size += added;
         held.push(item.claim);
         first ??= item.request;
@@ -976,9 +989,16 @@ async function runFileDrop(
         ),
         { headers, rows, documents, batch: true }
       );
+      if (pastDeadline()) {
+        for (const heldClaim of held) await release(heldClaim, 0);
+        return;
+      }
       await write(file, held);
     } else {
       await admitBatch(claim, request, more ?? [], fail, async (item) => {
+        // Past the deadline, or the connection is gone: the rest waits for
+        // the next try (a failure to connect fails them all, as it should).
+        if (pastDeadline() && !openError) return release(item.claim, 0);
         const content = await dropContent(item, config, endpoint);
         const file = dropFile(
           config.file,

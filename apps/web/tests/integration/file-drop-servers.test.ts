@@ -13,7 +13,12 @@ import { openDropTarget, testDropTarget } from "@/lib/drops/target";
  * not running. Local addresses pass because FORWARDING_ALLOW_PRIVATE_TARGETS
  * is set in development.
  *
- *   docker run -d --name whdev-sftp -p 127.0.0.1:2222:22 atmoz/sftp:alpine "acme:$PW:1001::upload"
+ *   docker run -d --name whdev-sftp -p 127.0.0.1:2222:22 \
+ *     -v ./no-penalties.sh:/etc/sftp.d/no-penalties.sh:ro atmoz/sftp:alpine "acme:$PW:1001::upload"
+ *
+ * no-penalties.sh appends "PerSourcePenalties no" to /etc/ssh/sshd_config:
+ * these tests log in with wrong passwords on purpose, and OpenSSH 9.8 and
+ * later would then refuse every connection from the test host for a while.
  *   docker run -d --name whdev-ftp -p 127.0.0.1:2121:21 -p 127.0.0.1:21000-21010:21000-21010 \
  *     -e USERS="acme|$PW|/home/acme|1001" -e ADDRESS=127.0.0.1 -e MIN_PORT=21000 -e MAX_PORT=21010 \
  *     delfer/alpine-ftp-server
