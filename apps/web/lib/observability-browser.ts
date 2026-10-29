@@ -1,6 +1,7 @@
 import * as StatOSS from "@statoss/sdk";
 import type { Breadcrumb, Event } from "@statoss/sdk";
 import { redactEvent } from "./observability-redact";
+import { pageWasTranslated } from "./translated-page";
 
 /**
  * Browser errors to StatOSS: uncaught errors, unhandled rejections and what
@@ -13,7 +14,8 @@ import { redactEvent } from "./observability-redact";
  * What is sent loses query strings and fragments (a guest endpoint's slug or
  * a token can ride in one) and email addresses. Errors that are not ours
  * (browser extensions, cross-origin scripts, a link scanner's browser, a
- * dropped connection, a stale tab after a deploy) are dropped.
+ * dropped connection, a stale tab after a deploy, a translator rewriting the
+ * page before it hydrated) are dropped.
  */
 
 /** Messages that say the network, the browser or a stale tab failed, not our code. */
@@ -46,6 +48,15 @@ export function isNoise(event: Event): boolean {
     if (files.some((file) => EXTENSION.test(file))) return true;
   }
   return false;
+}
+
+const HYDRATION_MISMATCH = /Minified React error #418\b|^Hydration failed\b/;
+
+/** True for React's report that the server HTML did not match the first client render. */
+export function isHydrationMismatch(event: Event): boolean {
+  return (event.exception?.values ?? []).some((exception) =>
+    HYDRATION_MISMATCH.test(exception.value ?? "")
+  );
 }
 
 /** True if an error indicates a missing or failed chunk/module (e.g. stale tab after deploy). */
@@ -99,6 +110,8 @@ function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
 /** The event as it may leave the browser, or null to drop it. */
 export function prepareBrowserEvent(event: Event): Event | null {
   if (isNoise(event)) return null;
+  // The translator changed the HTML before React read it; see translated-page.ts.
+  if (isHydrationMismatch(event) && pageWasTranslated()) return null;
   const scrubbed: Event = { ...event };
   if (scrubbed.request) {
     const request = { ...scrubbed.request };

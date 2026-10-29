@@ -3,9 +3,12 @@ import type { Event } from "@statoss/sdk";
 
 const sdk = vi.hoisted(() => ({ init: vi.fn(), captureException: vi.fn() }));
 vi.mock("@statoss/sdk", () => sdk);
+const page = vi.hoisted(() => ({ translated: false }));
+vi.mock("./translated-page", () => ({ pageWasTranslated: () => page.translated }));
 
 import {
   isChunkLoadError,
+  isHydrationMismatch,
   isNoise,
   prepareBrowserEvent,
   reportBoundaryError,
@@ -24,7 +27,10 @@ function exception(type: string, value: string, files: string[] = [ours]): Event
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  page.translated = false;
+});
 afterEach(() => vi.unstubAllEnvs());
 
 describe("isNoise", () => {
@@ -176,6 +182,28 @@ describe("prepareBrowserEvent", () => {
 
   it("drops noise", () => {
     expect(prepareBrowserEvent(exception("TypeError", "Failed to fetch"))).toBeNull();
+  });
+
+  it("drops a hydration mismatch only on a translated page", () => {
+    const mismatch = exception(
+      "Error",
+      "Minified React error #418; visit https://react.dev/errors/418 for the full message"
+    );
+    expect(isHydrationMismatch(mismatch)).toBe(true);
+    expect(prepareBrowserEvent(mismatch)).not.toBeNull();
+    page.translated = true;
+    expect(prepareBrowserEvent(mismatch)).toBeNull();
+    // Other errors on a translated page are still ours.
+    expect(prepareBrowserEvent(exception("TypeError", "x is undefined"))).not.toBeNull();
+  });
+
+  it("recognises the development build's hydration message", () => {
+    expect(
+      isHydrationMismatch(
+        exception("Error", "Hydration failed because the server rendered text didn't match")
+      )
+    ).toBe(true);
+    expect(isHydrationMismatch(exception("Error", "Minified React error #4180"))).toBe(false);
   });
 
   it("withoutQuery leaves a plain URL alone", () => {

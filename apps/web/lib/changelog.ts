@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.48.1";
+export const APP_VERSION = "0.48.2";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.15.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.48.2",
+    date: "2026-10-29",
+    title: "Translated Pages Keep Working",
+    track: "web",
+    items: [
+      "A page your browser translated (Chrome's built-in translation, for example) no longer breaks into an error screen when you open a menu, switch pages or something on it changes",
+    ],
+  },
   {
     version: "0.48.1",
     date: "2026-10-29",
