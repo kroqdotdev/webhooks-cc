@@ -33,16 +33,18 @@ export async function POST(request: Request) {
   if ("error" in parsed) return parsed.error;
   const body = (parsed.data ?? {}) as { returnTo?: unknown };
   const site = parseSite(request.headers.get(SITE_HEADER));
+  // Started on mailhooks.cc: this browser proves itself there on the way out
+  // (handoff) and on the way back (finish) with this cookie.
+  const handoff = site === "mailhooks" ? randomBytes(24).toString("base64url") : null;
   const { url, browserNonce } = authorizationUrl(
     config,
     auth.userId,
     safeReturnPath(body.returnTo),
-    site
+    site,
+    handoff ? handoffHash(handoff) : undefined
   );
-  if (site === "mailhooks") {
-    // The callback is webhooks.cc's: its cookie is set there on the way, and
-    // this browser proves itself at mailhooks.cc's handoff with this one.
-    const handoff = randomBytes(24).toString("base64url");
+  if (handoff) {
+    // The callback is webhooks.cc's: its cookie is set there on the way.
     const ticket = sealBeginTicket(url, browserNonce, handoffHash(handoff));
     const response = reply({
       url: `${webhooksOrigin()}/api/integrations/google/begin?ticket=${encodeURIComponent(ticket)}`,

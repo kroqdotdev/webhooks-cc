@@ -93,6 +93,11 @@ export interface OAuthState {
   browser: string;
   /** The site the flow started on (lib/site.ts), where it returns to. */
   site?: "webhooks" | "mailhooks";
+  /**
+   * Started on mailhooks.cc: the hash of the handoff cookie set there. The
+   * connection is saved on mailhooks.cc only for the browser holding it.
+   */
+  handoff?: string;
 }
 
 /** The cookie that ties a callback to the browser that started it. */
@@ -136,23 +141,28 @@ export function openState(sealed: string, now = Date.now()): OAuthState | null {
 /**
  * Starting on mailhooks.cc: Google returns to webhooks.cc's callback (the
  * one redirect URI registered), which reads the nonce cookie of its own
- * host. So the browser makes two stops first: webhooks.cc's begin sets
- * that cookie, then mailhooks.cc's handoff checks a cookie the start set on
- * mailhooks.cc (HANDOFF_COOKIE) and only then goes on to Google. The ticket
- * both stops read carries the consent URL, the callback nonce and the
- * handoff nonce's hash, sealed (under a key of its own, so it never passes
- * for a state) and good for two minutes; the consent URL never leaves it, so
- * a ticket someone else gets hold of leads nowhere without that browser's
- * handoff cookie.
+ * host. So the browser makes two stops on the way out: webhooks.cc's begin
+ * sets that cookie, then mailhooks.cc's handoff checks a cookie the start
+ * set on mailhooks.cc (HANDOFF_COOKIE) and only then goes on to Google. On
+ * the way back, webhooks.cc's callback saves nothing: it seals the code for
+ * mailhooks.cc's finish, which saves the connection only for the browser
+ * holding that same handoff cookie. So completing a flow needs the browser
+ * that started it, whatever links someone else plants.
+ *
+ * The begin ticket carries the consent URL, the callback nonce and the
+ * handoff nonce's hash; the finish ticket the code and the state. Both are
+ * sealed under keys of their own (neither passes for the other or for a
+ * state) and good for two minutes.
  */
 export const HANDOFF_COOKIE = "whcc_google_handoff";
 
+/** For the handoff and the finish, as long as the state lasts. */
 export function handoffCookie(nonce: string, secure: boolean): string {
-  return `${HANDOFF_COOKIE}=${nonce}; Path=/api/integrations/google/handoff; Max-Age=120; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+  return `${HANDOFF_COOKIE}=${nonce}; Path=/api/integrations/google; Max-Age=${STATE_LIFETIME_MS / 1000}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
 export function clearHandoffCookie(secure: boolean): string {
-  return `${HANDOFF_COOKIE}=; Path=/api/integrations/google/handoff; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+  return `${HANDOFF_COOKIE}=; Path=/api/integrations/google; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
 export function handoffNonceOf(request: Request): string | null {
@@ -169,13 +179,65 @@ export function handoffHash(nonce: string): string {
 }
 const TICKET_LIFETIME_MS = 2 * 60 * 1000;
 
-function ticketKey(): Buffer {
+function ticketKey(purpose = "google oauth begin ticket"): Buffer {
   const raw = process.env.SIGNING_SECRET_KEY;
   if (!raw) throw new GoogleError("SIGNING_SECRET_KEY is not configured");
-  return createHash("sha256")
-    .update(Buffer.from(raw, "base64"))
-    .update("google oauth begin ticket")
-    .digest();
+  return createHash("sha256").update(Buffer.from(raw, "base64")).update(purpose).digest();
+}
+
+function sealWith(purpose: string, value: unknown): string {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", ticketKey(purpose), nonce);
+  const body = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
+  return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString("base64url");
+}
+
+function openWith(purpose: string, sealed: string): unknown {
+  try {
+    const bytes = Buffer.from(sealed, "base64url");
+    if (bytes.length < 29) return null;
+    const decipher = createDecipheriv("aes-256-gcm", ticketKey(purpose), bytes.subarray(0, 12));
+    decipher.setAuthTag(bytes.subarray(bytes.length - 16));
+    return JSON.parse(
+      Buffer.concat([
+        decipher.update(bytes.subarray(12, bytes.length - 16)),
+        decipher.final(),
+      ]).toString("utf8")
+    );
+  } catch {
+    return null;
+  }
+}
+
+const FINISH = "google oauth finish ticket";
+
+/** The way back to mailhooks.cc: Google's code and the flow's state. */
+export function sealFinishTicket(code: string, state: OAuthState, now = Date.now()): string {
+  return sealWith(FINISH, { code, state, expires: now + TICKET_LIFETIME_MS });
+}
+
+export function openFinishTicket(
+  sealed: string,
+  now = Date.now()
+): { code: string; state: OAuthState } | null {
+  const ticket = openWith(FINISH, sealed) as {
+    code?: unknown;
+    state?: OAuthState;
+    expires?: unknown;
+  } | null;
+  if (
+    !ticket ||
+    typeof ticket.code !== "string" ||
+    typeof ticket.expires !== "number" ||
+    ticket.expires <= now ||
+    !ticket.state ||
+    typeof ticket.state.userId !== "string" ||
+    typeof ticket.state.verifier !== "string" ||
+    typeof ticket.state.handoff !== "string"
+  ) {
+    return null;
+  }
+  return { code: ticket.code, state: ticket.state };
 }
 
 export function sealBeginTicket(
@@ -243,7 +305,8 @@ export function authorizationUrl(
   config: GoogleConfig,
   userId: string,
   returnTo: string,
-  site: "webhooks" | "mailhooks" = "webhooks"
+  site: "webhooks" | "mailhooks" = "webhooks",
+  handoff?: string
 ): { url: string; browserNonce: string } {
   const verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -255,6 +318,7 @@ export function authorizationUrl(
     expires: Date.now() + STATE_LIFETIME_MS,
     browser: browserHash(browserNonce),
     site,
+    ...(handoff ? { handoff } : {}),
   });
   const url = new URL(urls().auth);
   url.searchParams.set("client_id", config.clientId);
