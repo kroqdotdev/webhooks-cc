@@ -29,6 +29,8 @@ pub struct AppState {
     pub mail_deliver_slots: std::sync::Arc<tokio::sync::Semaphore>,
     /// Object storage for captured email, when configured.
     pub object_store: Option<std::sync::Arc<object_store::ObjectStore>>,
+    /// Customers' verified inbound domains, read once a minute.
+    pub inbound_domains: std::sync::Arc<mail::domains::InboundDomains>,
 }
 
 fn main() {
@@ -104,6 +106,7 @@ async fn run(statoss: bool) {
         mail_deliver_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
             mail::handlers::DELIVER_CONCURRENCY,
         )),
+        inbound_domains: std::sync::Arc::new(mail::domains::InboundDomains::new()),
         object_store: config
             .object_store
             .clone()
