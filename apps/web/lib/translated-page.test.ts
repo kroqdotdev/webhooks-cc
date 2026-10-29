@@ -152,3 +152,42 @@ describe("pageWasTranslated", () => {
     expect(page.pageWasTranslated()).toBe(true);
   });
 });
+
+describe("startTranslationGuard", () => {
+  it("remembers a translation that starts after the page loaded", async () => {
+    const observers: { callback: () => void; observe: unknown; disconnect: unknown }[] = [];
+    vi.stubGlobal(
+      "MutationObserver",
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+        constructor(readonly callback: () => void) {
+          observers.push(this);
+        }
+      }
+    );
+    class Guarded extends FakeNode {}
+    vi.stubGlobal("Node", Guarded);
+    vi.stubGlobal("window", {});
+    vi.resetModules();
+    const page = await import("./translated-page");
+    page.startTranslationGuard();
+
+    const [observer] = observers;
+    expect(observer.observe).toHaveBeenCalledWith(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    // The guard sits on Node.prototype, inert until the page is translated.
+    const parent = new Guarded("p");
+    expect(() => parent.removeChild(new Guarded("x"))).toThrow("not a child");
+
+    document.documentElement.className = "font-variable translated-ltr";
+    observer.callback();
+    expect(observer.disconnect).toHaveBeenCalled();
+    // Gone again, as after a client render; only the observer can have noted it.
+    document.documentElement.className = "font-variable";
+    expect(page.pageWasTranslated()).toBe(true);
+    expect(() => parent.removeChild(new Guarded("x"))).not.toThrow();
+  });
+});
