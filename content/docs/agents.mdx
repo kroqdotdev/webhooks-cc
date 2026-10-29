@@ -32,9 +32,12 @@ The full protocol, with request and response examples, is at [webhooks.cc/auth.m
 An agent takes the first of these that fits:
 
 1. **Its client can add a remote MCP server, and you are there to approve it.** This is the default for coding agents (Claude Code, Cursor, VS Code, Codex) as much as for claude.ai and ChatGPT. Add `https://webhooks.cc/mcp` (streamable HTTP), then sign in, or sign up, and click **Connect** once in your browser: there is no code to type, nothing expires after 24 hours, and the agent gets your account's tools, including mock responses, forwarding, signature checks and email. The agent suggests the line for its client and stops there, because a newly added server's tools appear only after the client reconnects or restarts:
-   - Claude Code: `claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp`, then `/mcp` in Claude Code to sign in
+   - Claude Code: `claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp`, then `/mcp` in Claude Code to sign in
    - Codex: `codex mcp add webhooks-cc --url https://webhooks.cc/mcp`, then `codex mcp login webhooks-cc`
-   - Cursor, VS Code, claude.ai, Claude Desktop and ChatGPT: see the [setup for each client](/docs/mcp#remote-server)
+   - Cursor, in `.cursor/mcp.json`: `{ "mcpServers": { "webhooks-cc": { "url": "https://webhooks.cc/mcp" } } }`
+   - VS Code, in `.vscode/mcp.json`: `{ "servers": { "webhooks-cc": { "type": "http", "url": "https://webhooks.cc/mcp" } } }`
+   - claude.ai and Claude Desktop: in Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`. ChatGPT: add it as a custom connector (in developer mode)
+   - Any other client: add `https://webhooks.cc/mcp` as a remote (streamable HTTP) server; the [setup for each client](/docs/mcp#remote-server) has more
 
    See [apps connected with OAuth](#apps-connected-with-oauth) for what the app gets.
 
@@ -104,7 +107,7 @@ Only the process that registered a sandbox can move its endpoints into your acco
 
 Any client that can add a remote MCP server, coding agents such as Claude Code, Cursor, VS Code and Codex as much as hosted agents such as claude.ai and ChatGPT, can use the remote server at `https://webhooks.cc/mcp` and connect with OAuth. For hosted agents, which cannot run a local server or keep a file, it is the way in.
 
-1. Add `https://webhooks.cc/mcp` to the client, for example with `claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp` in Claude Code or as a custom connector in claude.ai. The [MCP server page](/docs/mcp#remote-server) has the setup for each client.
+1. Add `https://webhooks.cc/mcp` to the client, for example with `claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp` in Claude Code or as a custom connector in claude.ai. The [MCP server page](/docs/mcp#remote-server) has the setup for each client.
 2. The client opens webhooks.cc in your browser. Sign in, or sign up.
 3. The page shows which app asks, where it will send you back to, and what it gets. An app that publishes a Client ID Metadata Document is identified by its own host; an app that registered itself shows its name as unverified. Click **Connect**, or **Decline**. There is no code to type.
 

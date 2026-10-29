@@ -35,10 +35,10 @@ Client menus change, so treat these paths as a guide.
 **Claude Code:**
 
 ```bash
-claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp
+claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp
 ```
 
-Then run `/mcp` in Claude Code and pick `webhooks-cc` to sign in.
+Then run `/mcp` in Claude Code and pick `webhooks-cc` to sign in. `-s user` adds the server for every project; leave it out to add it to the current one only.
 
 **Codex:**
 
@@ -74,7 +74,7 @@ To disconnect, open [Account, Connected agents](/account/agents). The app is lis
 A client that can send headers can skip the browser and use an API key from your [API keys page](/account/api-keys) instead:
 
 ```bash
-claude mcp add --transport http webhooks-cc https://webhooks.cc/mcp --header "Authorization: Bearer whcc_..."
+claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp --header "Authorization: Bearer whcc_..."
 ```
 
 ### What differs from the local server

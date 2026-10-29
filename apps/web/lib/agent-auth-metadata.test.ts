@@ -183,7 +183,7 @@ describe("agent auth.md: hosted /auth.md document", () => {
   });
 
   test("starts with the remote MCP server, before the local server and the sandbox", () => {
-    const remote = md.indexOf(`claude mcp add --transport http webhooks-cc ${APP_URL}/mcp`);
+    const remote = md.indexOf(`claude mcp add -s user --transport http webhooks-cc ${APP_URL}/mcp`);
     const local = md.indexOf("claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp");
     expect(remote).toBeGreaterThan(-1);
     expect(md.indexOf(`${APP_URL}/mcp`)).toBeLessThan(md.indexOf("## Start here"));

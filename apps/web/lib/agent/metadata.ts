@@ -301,7 +301,7 @@ Take the first option that fits.
    nothing that expires after ${hours(UNCLAIMED_LIFETIME_SECONDS)}, and their account's tools (mock
    responses, forwarding, signature checks, email). Suggest it with the line
    for your client:
-   - Claude Code: \`claude mcp add --transport http webhooks-cc ${u.mcp}\`,
+   - Claude Code: \`claude mcp add -s user --transport http webhooks-cc ${u.mcp}\`,
      then \`/mcp\` in Claude Code to sign in
    - Codex: \`codex mcp add webhooks-cc --url ${u.mcp}\`, then
      \`codex mcp login webhooks-cc\`

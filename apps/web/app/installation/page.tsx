@@ -273,7 +273,7 @@ console.log(endpoint.url);`}
 
                   <section>
                     <h3 className="text-lg font-bold mb-3">Claude Code</h3>
-                    <CodeBlock>{`claude mcp add --transport http webhooks-cc ${REMOTE_MCP_URL}`}</CodeBlock>
+                    <CodeBlock>{`claude mcp add -s user --transport http webhooks-cc ${REMOTE_MCP_URL}`}</CodeBlock>
                     <p className="text-sm text-muted-foreground mt-2">
                       Then run <code className="font-mono font-bold">/mcp</code> in Claude Code and
                       pick webhooks-cc to sign in.
