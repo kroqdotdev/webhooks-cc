@@ -186,7 +186,11 @@ export async function authenticateRequest(request: Request): Promise<AuthResult>
  * is where the api-auth boundary enforces the "claim before you write" rule
  * documented on {@link AuthResult}.
  */
-export async function authenticateRequestRequireUser(request: Request): Promise<SessionAuthResult> {
+export async function authenticateRequestRequireUser(
+  request: Request
+): Promise<
+  { success: true; userId: string; keyId?: string } | { success: false; response: Response }
+> {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth;
 
@@ -203,7 +207,8 @@ export async function authenticateRequestRequireUser(request: Request): Promise<
     };
   }
 
-  return { success: true, userId: auth.userId };
+  // keyId: set for an API key, absent for a browser session.
+  return { success: true, userId: auth.userId, keyId: auth.keyId };
 }
 
 /**

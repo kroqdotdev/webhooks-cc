@@ -10,6 +10,7 @@ import {
   openState,
 } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
+import { siteOrigin } from "@/lib/site";
 import { saveGoogleConnection } from "@/lib/supabase/google-connections";
 
 /**
@@ -20,7 +21,11 @@ import { saveGoogleConnection } from "@/lib/supabase/google-connections";
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const appUrl = publicEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, "");
+  const state = openState(url.searchParams.get("state") ?? "");
+  // Back to the site the flow started on (mailhooks.cc goes through begin).
+  const appUrl = (
+    state?.site === "mailhooks" ? siteOrigin("mailhooks") : publicEnv().NEXT_PUBLIC_APP_URL
+  ).replace(/\/+$/, "");
   const secure = url.protocol === "https:";
   const back = (path: string, outcome: string) => {
     const target = new URL(path, `${appUrl}/`);
@@ -30,7 +35,6 @@ export async function GET(request: Request) {
       headers: { location: target.toString(), "set-cookie": clearBrowserCookie(secure) },
     });
   };
-  const state = openState(url.searchParams.get("state") ?? "");
   if (!state) return back("/dashboard", "expired");
   // The browser that finishes must be the one that started (a consent URL
   // someone else made would otherwise link your Google account to theirs).

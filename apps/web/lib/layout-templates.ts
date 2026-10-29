@@ -15,7 +15,10 @@ import type { Layout } from "@webhooks-cc/sdk/email";
 export interface TemplateSample {
   subject: string;
   from: { name: string; address: string };
+  /** The text as a reader sees it (and the text part, for text layouts). */
   text: string;
+  /** The HTML part, for layouts that read the HTML. */
+  html?: string;
   /** An attachment the sample carries, by name (parsing is shown, not run). */
   attachment?: string;
 }
@@ -130,17 +133,26 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       from: { name: "Acme Store", address: "wordpress@acme-store.example" },
       text: [
         "You've received the following order from Jane Doe:",
-        "",
         "[Order #2187] (October 29, 2026)",
-        "",
-        "Product\tQuantity\tPrice",
-        "Linen shirt\t2\t$78.00",
-        "Canvas tote\t1\t$24.00",
-        "Subtotal:\t$102.00",
-        "Shipping:\t$6.00 via Flat rate",
-        "Payment method:\tCredit card",
-        "Total:\t$108.00",
+        "Product Quantity Price",
+        "Linen shirt 2 $78.00",
+        "Canvas tote 1 $24.00",
+        "Subtotal: $102.00",
+        "Shipping: $6.00 via Flat rate",
+        "Payment method: Credit card",
+        "Total: $108.00",
       ].join("\n"),
+      html: [
+        "<p>You've received the following order from Jane Doe:</p>",
+        "<h2>[Order #2187] (October 29, 2026)</h2>",
+        "<table><thead><tr><th>Product</th><th>Quantity</th><th>Price</th></tr></thead>",
+        "<tbody><tr><td>Linen shirt</td><td>2</td><td>$78.00</td></tr>",
+        "<tr><td>Canvas tote</td><td>1</td><td>$24.00</td></tr></tbody>",
+        "<tfoot><tr><th>Subtotal:</th><td>$102.00</td></tr>",
+        "<tr><th>Shipping:</th><td>$6.00 via Flat rate</td></tr>",
+        "<tr><th>Payment method:</th><td>Credit card</td></tr>",
+        "<tr><th>Total:</th><td>$108.00</td></tr></tfoot></table>",
+      ].join(""),
     },
     layout: {
       id: "woocommerce-orders",
@@ -150,16 +162,15 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       },
       fields: [
         { name: "order", from: "subject", pattern: "#(\\d+)" },
-        { name: "customer", from: "text", pattern: "order from (.+?):" },
-        { name: "payment", from: "text", pattern: "Payment method:\\s*(.+)" },
-        { name: "total", from: "text", pattern: `Total:\\s*\\$?${MONEY}` },
+        { name: "customer", from: "html", pattern: "order from ([^\\r\\n:]+):" },
+        { name: "payment", from: "html", pattern: "Payment method:[ \\t]*([^\\r\\n]+)" },
+        { name: "total", from: "html", pattern: `Total:\\s*\\$?${MONEY}` },
       ],
       lineItems: {
-        from: "text",
-        start: "Product\\s+Quantity\\s+Price",
+        from: "html",
+        start: "Product Quantity Price",
         end: "Subtotal:",
-        pattern:
-          "(?m)^(?P<product>[^\\t\\n]+)\\t(?P<quantity>\\d+)\\t\\$?(?P<price>[0-9][0-9.,]*)$",
+        pattern: "(?m)^(?P<product>.+?) (?P<quantity>\\d+) \\$?(?P<price>[0-9][0-9.,]*)$",
       },
     },
     result: {
@@ -170,7 +181,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       ],
     },
     tips: [
-      "The HTML email's table becomes tab-separated text; if your theme changes the columns, adjust the line-item pattern in the preview.",
+      "It reads the HTML email's order table, a row per product; if your theme adds columns (an SKU, a discount), add them to the line-item pattern in the preview.",
     ],
   },
   {
@@ -211,14 +222,14 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       },
       fields: [
         { name: "order", from: "text", pattern: "Order number:\\s*(\\d+)" },
-        { name: "buyer", from: "text", pattern: "Buyer:\\s*(.+)" },
+        { name: "buyer", from: "text", pattern: "Buyer:[ \\t]*([^\\r\\n]+)" },
         { name: "total", from: "text", pattern: `Order total:\\s*\\$?${MONEY}` },
-        { name: "ship_by", from: "text", pattern: "Ship by:\\s*(.+)" },
+        { name: "ship_by", from: "text", pattern: "Ship by:[ \\t]*([^\\r\\n]+)" },
       ],
       lineItems: {
         from: "text",
         pattern:
-          "Item: (?P<item>.+)\\nQuantity: (?P<quantity>\\d+)\\nPrice: \\$?(?P<price>[0-9][0-9.,]*)",
+          "Item: (?P<item>[^\\r\\n]+)\\r?\\nQuantity: (?P<quantity>\\d+)\\r?\\nPrice: \\$?(?P<price>[0-9][0-9.,]*)",
       },
     },
     result: {
@@ -268,11 +279,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       },
       fields: [
         { name: "order_id", from: "text", pattern: "Order ID:\\s*([0-9-]+)" },
-        { name: "item", from: "text", pattern: "Item:\\s*(.+)" },
+        { name: "item", from: "text", pattern: "Item:[ \\t]*([^\\r\\n]+)" },
         { name: "sku", from: "text", pattern: "SKU:\\s*(\\S+)" },
         { name: "quantity", from: "text", pattern: "Quantity:\\s*(\\d+)" },
         { name: "price", from: "text", pattern: `Price:\\s*\\$?${MONEY}` },
-        { name: "ship_by", from: "text", pattern: "Ship by:\\s*(.+)" },
+        { name: "ship_by", from: "text", pattern: "Ship by:[ \\t]*([^\\r\\n]+)" },
       ],
     },
     result: {
@@ -320,7 +331,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         conditions: [{ field: "email", name: "subject", op: "starts_with", value: "You sold" }],
       },
       fields: [
-        { name: "item", from: "subject", pattern: "You sold:\\s*(.+)" },
+        { name: "item", from: "subject", pattern: "You sold:[ \\t]*([^\\r\\n]+)" },
         { name: "price", from: "text", pattern: `Sold for:\\s*\\$?${MONEY}` },
         { name: "buyer", from: "text", pattern: "Buyer:\\s*(\\S+)" },
         { name: "order", from: "text", pattern: "Order number:\\s*([0-9-]+)" },
@@ -377,8 +388,8 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       fields: [
         { name: "receipt", from: "text", pattern: "Receipt #([0-9-]+)" },
         { name: "amount", from: "text", pattern: `Amount paid\\s+\\$?${MONEY}` },
-        { name: "date", from: "text", pattern: "Date paid\\s+(.+)" },
-        { name: "card", from: "text", pattern: "Payment method\\s+(.+)" },
+        { name: "date", from: "text", pattern: "Date paid\\s+([^\\r\\n]+)" },
+        { name: "card", from: "text", pattern: "Payment method\\s+([^\\r\\n]+)" },
       ],
       lineItems: {
         from: "text",
@@ -429,7 +440,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         { name: "amount", from: "text", pattern: `sent you \\$?${MONEY}` },
         { name: "currency", from: "text", pattern: "sent you \\S+ ([A-Z]{3})" },
         { name: "transaction", from: "text", pattern: "Transaction ID:\\s*([A-Z0-9]+)" },
-        { name: "note", from: "text", pattern: "Note:\\s*(.+)" },
+        { name: "note", from: "text", pattern: "Note:[ \\t]*([^\\r\\n]+)" },
       ],
     },
     result: {
@@ -476,12 +487,12 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       },
       fields: [
         { name: "booking", from: "text", pattern: "Booking number:\\s*(\\d+)" },
-        { name: "guest", from: "text", pattern: "Guest name:\\s*(.+)" },
-        { name: "check_in", from: "text", pattern: "Check-in:\\s*(.+)" },
-        { name: "check_out", from: "text", pattern: "Check-out:\\s*(.+)" },
-        { name: "room", from: "text", pattern: "Room:\\s*(.+)" },
+        { name: "guest", from: "text", pattern: "Guest name:[ \\t]*([^\\r\\n]+)" },
+        { name: "check_in", from: "text", pattern: "Check-in:[ \\t]*([^\\r\\n]+)" },
+        { name: "check_out", from: "text", pattern: "Check-out:[ \\t]*([^\\r\\n]+)" },
+        { name: "room", from: "text", pattern: "Room:[ \\t]*([^\\r\\n]+)" },
         { name: "guests", from: "text", pattern: "Number of guests:\\s*(\\d+)" },
-        { name: "price", from: "text", pattern: "Total price:\\s*(.+)" },
+        { name: "price", from: "text", pattern: "Total price:[ \\t]*([^\\r\\n]+)" },
       ],
     },
     result: {
@@ -542,11 +553,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       },
       fields: [
         { name: "guest", from: "subject", pattern: "confirmed - (.+?) arrives" },
-        { name: "check_in", from: "text", pattern: "Check-in\\n(.+)" },
-        { name: "checkout", from: "text", pattern: "Checkout\\n(.+)" },
-        { name: "guests", from: "text", pattern: "Guests\\n(.+)" },
-        { name: "code", from: "text", pattern: "Confirmation code\\n(\\S+)" },
-        { name: "payout", from: "text", pattern: `You earn\\n\\$?${MONEY}` },
+        { name: "check_in", from: "text", pattern: "Check-in\\r?\\n([^\\r\\n]+)" },
+        { name: "checkout", from: "text", pattern: "Checkout\\r?\\n([^\\r\\n]+)" },
+        { name: "guests", from: "text", pattern: "Guests\\r?\\n([^\\r\\n]+)" },
+        { name: "code", from: "text", pattern: "Confirmation code\\r?\\n(\\S+)" },
+        { name: "payout", from: "text", pattern: `You earn\\r?\\n\\$?${MONEY}` },
       ],
     },
     result: {
@@ -604,11 +615,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         conditions: [{ field: "email", name: "subject", op: "starts_with", value: "New Event" }],
       },
       fields: [
-        { name: "event_type", from: "text", pattern: "Event Type:\\n(.+)" },
-        { name: "invitee", from: "text", pattern: "Invitee:\\n(.+)" },
-        { name: "email", from: "text", pattern: "Invitee Email:\\n(\\S+)" },
-        { name: "when", from: "text", pattern: "Event Date/Time:\\n(.+)" },
-        { name: "location", from: "text", pattern: "Location:\\n(.+)" },
+        { name: "event_type", from: "text", pattern: "Event Type:\\r?\\n([^\\r\\n]+)" },
+        { name: "invitee", from: "text", pattern: "Invitee:\\r?\\n([^\\r\\n]+)" },
+        { name: "email", from: "text", pattern: "Invitee Email:\\r?\\n(\\S+)" },
+        { name: "when", from: "text", pattern: "Event Date/Time:\\r?\\n([^\\r\\n]+)" },
+        { name: "location", from: "text", pattern: "Location:\\r?\\n([^\\r\\n]+)" },
       ],
     },
     result: {
@@ -653,11 +664,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         conditions: [{ field: "email", name: "subject", op: "contains", value: "response" }],
       },
       fields: [
-        { name: "form", from: "subject", pattern: "response:\\s*(.+)" },
-        { name: "name", from: "text", pattern: "(?m)^Name:\\s*(.+)" },
+        { name: "form", from: "subject", pattern: "response:[ \\t]*([^\\r\\n]+)" },
+        { name: "name", from: "text", pattern: "(?m)^Name:[ \\t]*([^\\r\\n]+)" },
         { name: "email", from: "text", pattern: "(?m)^Email:\\s*(\\S+)" },
-        { name: "company", from: "text", pattern: "(?m)^Company:\\s*(.+)" },
-        { name: "message", from: "text", pattern: "(?m)^Message:\\s*(.+)" },
+        { name: "company", from: "text", pattern: "(?m)^Company:[ \\t]*([^\\r\\n]+)" },
+        { name: "message", from: "text", pattern: "(?m)^Message:[ \\t]*([^\\r\\n]+)" },
       ],
     },
     result: {

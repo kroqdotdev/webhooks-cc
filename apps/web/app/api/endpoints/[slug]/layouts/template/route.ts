@@ -4,6 +4,7 @@ import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { withTemplateLayout } from "@/lib/layout-template-import";
 import { layoutsProblems } from "@/lib/parsing/layouts";
 import { reportError } from "@/lib/observability";
+import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { updateEndpointBySlugForUser } from "@/lib/supabase/endpoints";
 
 /**
@@ -16,6 +17,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   const { slug } = await params;
+  const limited = await checkRateLimitByKeyWithInfo(`user:layout-templates:${auth.userId}`, 30);
+  if (limited.response) return limited.response;
 
   const body = await jsonObject(request, 1024);
   if (body instanceof Response) return body;
@@ -36,11 +39,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     const [problem] = layoutsProblems(added.layouts);
     if (problem) return Response.json({ error: `layouts: ${problem}` }, { status: 400 });
 
-    await updateEndpointBySlugForUser({ userId: auth.userId, slug, layouts: added.layouts });
+    const updated = await updateEndpointBySlugForUser({
+      userId: auth.userId,
+      slug,
+      layouts: added.layouts,
+    });
+    // Deleted while this ran.
+    if (!updated) return Response.json({ error: "Endpoint not found" }, { status: 404 });
     await auditUserAction(request, auth.userId, {
       action: "endpoint.updated",
       status: 200,
-      targetId: endpoint.id,
+      targetId: slug,
       metadata: { layoutTemplate: body.template },
     });
     return Response.json({ layoutId: added.layout.id }, { status: 201 });

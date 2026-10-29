@@ -4,8 +4,10 @@ import {
   browserCookie,
   googleConfig,
   safeReturnPath,
+  sealBeginTicket,
 } from "@/lib/integrations/google";
 import { parseJsonBody } from "@/lib/request-validation";
+import { SITE_HEADER, parseSite, webhooksOrigin } from "@/lib/site";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
 
 /**
@@ -27,11 +29,20 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request);
   if ("error" in parsed) return parsed.error;
   const body = (parsed.data ?? {}) as { returnTo?: unknown };
+  const site = parseSite(request.headers.get(SITE_HEADER));
   const { url, browserNonce } = authorizationUrl(
     config,
     auth.userId,
-    safeReturnPath(body.returnTo)
+    safeReturnPath(body.returnTo),
+    site
   );
+  if (site === "mailhooks") {
+    // The callback is webhooks.cc's: the cookie must be set there first.
+    const ticket = sealBeginTicket(url, browserNonce);
+    return reply({
+      url: `${webhooksOrigin()}/api/integrations/google/begin?ticket=${encodeURIComponent(ticket)}`,
+    });
+  }
   const response = reply({ url });
   // Only this browser can finish the flow (see OAuthState.browser).
   response.headers.append(
