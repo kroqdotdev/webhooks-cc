@@ -3,6 +3,7 @@ import {
   BLOCK_PAGES,
   BLOCK_REQUESTS,
   MAX_BLOCKS,
+  MAX_EXTRA_DOMAINS,
   MAX_PAGE_BLOCKS,
   parseBlockCount,
 } from "@/lib/capacity";
@@ -28,7 +29,9 @@ import { TeamBillingError } from "@/lib/supabase/team-billing";
  *   { action: "set_overage", enabled, maxBlocks? }
  *
  * with `resource: "pages"` for parsed pages (Business), "requests" when left
- * out. Every answer without a checkout carries the new { state }.
+ * out. `resource: "domains"` (extra custom domains, Business) takes only
+ * set_monthly_blocks, a block being one domain. Every answer without a
+ * checkout carries the new { state }.
  */
 export type CapacityAction = { resource?: CapacityResource } & (
   | { action: "buy_blocks"; blocks: number }
@@ -39,7 +42,7 @@ export type CapacityAction = { resource?: CapacityResource } & (
 /** The resource a request names, or null when it names something else. */
 export function parseResource(value: unknown): CapacityResource | null {
   if (value === undefined || value === null || value === "requests") return "requests";
-  return value === "pages" ? "pages" : null;
+  return value === "pages" || value === "domains" ? value : null;
 }
 
 export function parseCapacityAction(body: unknown): CapacityAction | null {
@@ -47,7 +50,14 @@ export function parseCapacityAction(body: unknown): CapacityAction | null {
   const input = body as Record<string, unknown>;
   const resource = parseResource(input.resource);
   if (!resource) return null;
-  const max = resource === "pages" ? MAX_PAGE_BLOCKS : MAX_BLOCKS;
+  const max =
+    resource === "pages"
+      ? MAX_PAGE_BLOCKS
+      : resource === "domains"
+        ? MAX_EXTRA_DOMAINS
+        : MAX_BLOCKS;
+  // Domains are only ever recurring.
+  if (resource === "domains" && input.action !== "set_monthly_blocks") return null;
   switch (input.action) {
     case "buy_blocks": {
       const blocks = parseBlockCount(input.blocks, { max });
@@ -85,10 +95,13 @@ function errorResponse(error: unknown, label: string): Response {
     return Response.json({ error: "Billing is not configured" }, { status: 500 });
   }
   reportError(`${label} failed`, loggablePolarError(error));
-  return Response.json({ error: "Could not update extra requests" }, { status: 500 });
+  return Response.json({ error: "Could not update extra capacity" }, { status: 500 });
 }
 
-/** GET: the account's extra capacity (`?resource=pages` for parsed pages). Teams: any member may look. */
+/**
+ * GET: the account's extra capacity (`?resource=pages` for parsed pages,
+ * `?resource=domains` for custom domains). Teams: any member may look.
+ */
 export async function handleCapacityGet(
   account: CapacityAccount,
   request?: Request

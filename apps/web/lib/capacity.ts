@@ -146,3 +146,16 @@ export const MAX_PAGE_BLOCKS = 1000;
 export const DEFAULT_PAGE_OVERAGE_MAX_PAGES = 2 * BLOCK_PAGES;
 /** The meter event page overage is reported under. */
 export const PAGE_OVERAGE_EVENT_NAME = "page.overage";
+
+// ---------------------------------------------------------------------------
+// Extra inbound domains (migration 00073): recurring only, one unit per
+// domain, for Business and Team Business, which include one.
+// ---------------------------------------------------------------------------
+
+/** An extra domain, per billing period. */
+export const MONTHLY_DOMAIN_CENTS = 300;
+/**
+ * Upper bound for extra domains on one account: it holds at most 20
+ * (MAX_DOMAINS_PER_ACCOUNT in lib/supabase/inbound-domains.ts), one included.
+ */
+export const MAX_EXTRA_DOMAINS = 19;
