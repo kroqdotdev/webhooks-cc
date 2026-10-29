@@ -52,7 +52,7 @@ const ROWS = [
   ["Non-HTTP protocols", "Email capture (no TCP tunnels)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "None"],
-  ["Free tier features", "Every individual feature", "Fully free"],
+  ["Free tier features", "Every Pro feature", "Fully free"],
 ] as const;
 
 export const metadata = createPageMetadata({

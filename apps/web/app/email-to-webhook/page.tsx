@@ -150,7 +150,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Are attachments forwarded?",
     answer:
-      "Their name, type and size are. The contents are not kept, so they are not forwarded either.",
+      "Yes. Each destination sends them as signed download links (the default), inline as base64 up to 1 MB per delivery, or as names only.",
   },
   {
     question: "Does forwarding cost extra?",
@@ -290,7 +290,7 @@ export default function EmailToWebhookPage() {
               "8 retries over about a day, then marked failed",
               "Every try logged, with a Redeliver button",
               "https URLs on public host names only",
-              "Text and HTML up to 256 KB each; attachment contents not included",
+              "Text and HTML up to 256 KB each; attachments as signed links or inline",
               "Every plan, Free included",
               "No extra quota: each email counted once when it arrived",
             ].map((item) => (

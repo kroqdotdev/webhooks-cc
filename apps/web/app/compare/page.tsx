@@ -30,7 +30,7 @@ const COMPARISONS = [
     href: "/compare/webhook-site",
     title: "webhooks.cc vs Webhook.site",
     summary:
-      "Both capture webhooks and email. webhooks.cc adds an SDK for CI assertions, MCP for AI agents, email forwarded as signed JSON, and every individual feature on both tiers, with Teams billed separately at $12/seat/mo.",
+      "Both capture webhooks and email. webhooks.cc adds an SDK for CI assertions, MCP for AI agents, email forwarded as signed JSON, and every Pro feature on the free plan, with Teams billed separately at $12/seat/mo.",
   },
   {
     href: "/compare/ngrok",
@@ -185,7 +185,7 @@ const FAQ_ITEMS: FAQItem[] = [
     question:
       "What are the best alternatives to Webhook.site for capturing and inspecting webhook payloads?",
     answer:
-      "webhooks.cc works the same way (an instant URL and a live page of every request) and adds a CLI tunnel to localhost, a TypeScript SDK for assertions in CI and an MCP server, with every individual feature on the free plan. Beeceptor suits API mocking, RequestBin now lives inside Pipedream's workflow platform, and Hookdeck is production delivery infrastructure.",
+      "webhooks.cc works the same way (an instant URL and a live page of every request) and adds a CLI tunnel to localhost, a TypeScript SDK for assertions in CI and an MCP server, with every Pro feature on the free plan. Beeceptor suits API mocking, RequestBin now lives inside Pipedream's workflow platform, and Hookdeck is production delivery infrastructure.",
   },
   {
     question: "Which webhook tools have a CLI tunnel to localhost and a free tier?",

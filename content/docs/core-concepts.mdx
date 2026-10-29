@@ -3,7 +3,7 @@ title: "Core Concepts"
 description: "Learn the core concepts of webhooks.cc — endpoints, slugs, request capture, mock responses, CLI tunneling, and quotas — and how they fit your webhook testing workflow."
 section: getting-started
 order: 3
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-29
 schema: none
 keywords: ["webhook concepts", "webhook endpoint", "webhook testing concepts", "webhook capture"]
 seo:
@@ -19,7 +19,7 @@ A webhook endpoint is a unique URL that captures incoming HTTP requests. Each en
 https://go.webhooks.cc/w/{slug}
 ```
 
-Endpoints can be **permanent** or **ephemeral**. Permanent endpoints (the default for logged-in users) never expire -- they persist until you explicitly delete them, whether you are on the Free or Pro plan. Ephemeral endpoints auto-delete after 12 hours. Create endpoints from the dashboard, CLI, SDK, or MCP server.
+Endpoints can be **permanent** or **ephemeral**. Permanent endpoints (the default for logged-in users) never expire: they persist until you explicitly delete them, whatever your plan. Ephemeral endpoints auto-delete after 12 hours. Create endpoints from the dashboard, CLI, SDK, or MCP server.
 
 ```ts
 // SDK
@@ -159,11 +159,12 @@ Verification requires the provider's signing secret or verification credential, 
 
 Quotas limit how many webhook requests your endpoints can capture within a billing period. Limits vary by plan:
 
-| Plan    | Requests | Period   |
-| ------- | -------- | -------- |
-| Guest   | 25       | 12 hours |
-| Free    | 50       | 24 hours |
-| **Pro** | 100,000  | 30 days  |
+| Plan         | Requests | Period   |
+| ------------ | -------- | -------- |
+| Guest        | 25       | 12 hours |
+| Free         | 50       | 24 hours |
+| **Pro**      | 100,000  | 30 days  |
+| **Business** | 250,000  | 1 month  |
 
 Quotas are enforced at the receiver level atomically, ensuring accuracy even under high concurrency. When your quota is exhausted, the receiver returns `429 Too Many Requests` to the sender.
 

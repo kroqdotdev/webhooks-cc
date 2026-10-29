@@ -75,7 +75,7 @@ Parsing attachments is metered in pages:
 - each PDF page is a page;
 - a text file is a page (its first 1 MB is read).
 
-Email bodies, fields and line items read from the text never count. A file uses at most 100 pages. The Free plan includes 20 parsed pages a month and Pro 100. When an account has no pages left, emails are still captured and delivered with their attachments as files, unparsed, and the attachment says `error: "limit"`; a file that would go past what is left is cut at the pages that remain.
+Email bodies, fields and line items read from the text never count. A file uses at most 100 pages. The Free plan includes 20 parsed pages a month, Pro 100 and Business 2,000; Business, and teams with the Team Business add-on (2,000 pooled pages a month), can buy page blocks or turn on page overage for more (see [Page blocks and page overage](/docs/plans-limits#page-blocks-and-page-overage)). When an account has no pages left, emails are still captured and delivered with their attachments as files, unparsed, and the attachment says `error: "limit"`; a file that would go past what is left is cut at the pages that remain.
 
 ## The result
 
@@ -104,7 +104,7 @@ Emails on an endpoint with layouts are delivered once they are parsed, usually w
 
 ## Limits
 
-Your plan uses 2 layouts per endpoint on Free and Pro. An endpoint keeps up to 50, and layouts past what the plan uses are kept but not matched, shown as such in the list. Every pattern is RE2 with a bounded size, a line item pattern reads at most the first 512 KB of the text, and a line item's value is cut at 1,000 characters.
+Your plan uses 2 layouts per endpoint on Free and Pro, and up to 50 on Business and on endpoints shared with a team that has the Team Business add-on. An endpoint keeps up to 50, and layouts past what the plan uses are kept but not matched, shown as such in the list. Every pattern is RE2 with a bounded size, a line item pattern reads at most the first 512 KB of the text, and a line item's value is cut at 1,000 characters.
 
 ## From code
 
