@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
+import { reportError } from "@/lib/observability";
 
 /**
  * The model behind AI setup and repair (lib/ai/assist.ts): one request that
@@ -12,8 +13,10 @@ import { z } from "zod";
  */
 
 export const AI_MODEL = "claude-opus-5-5";
-/** One request, answer included; the SDK retries a timeout or a 5xx twice. */
-const REQUEST_TIMEOUT_MS = 120_000;
+/** One request, answer included; the SDK retries a 429, a 5xx or a timeout once. */
+const REQUEST_TIMEOUT_MS = 90_000;
+/** Patterns, names and a condition: a few thousand tokens with the thinking. */
+const MAX_TOKENS = 8000;
 
 /** Whether this server can make assists (an API key; tests point AI_API_BASE_URL at a fake). */
 export function aiOffered(): boolean {
@@ -48,8 +51,14 @@ export type Proposal = z.infer<typeof ProposalSchema>;
 export class AssistModelError extends Error {
   constructor(
     message: string,
-    /** Worth trying again later (busy, a timeout), so the assist is given back. */
-    readonly temporary: boolean
+    /** Worth trying again later (busy, a timeout). */
+    readonly temporary: boolean,
+    /**
+     * The model may have run (and been paid for): a refusal, an answer cut
+     * short or unreadable, a timeout. The assist is kept; only a failure
+     * that cost nothing is given back.
+     */
+    readonly billed: boolean
   ) {
     super(message);
     this.name = "AssistModelError";
@@ -81,9 +90,14 @@ export interface ModelAsk {
 function client(): Anthropic {
   return new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    baseURL: process.env.AI_API_BASE_URL || undefined,
+    // A fake model for tests, never in production (where the SDK's own
+    // ANTHROPIC_BASE_URL fallback is overridden too).
+    baseURL:
+      process.env.NODE_ENV === "production"
+        ? "https://api.anthropic.com"
+        : process.env.AI_API_BASE_URL || undefined,
     timeout: REQUEST_TIMEOUT_MS,
-    maxRetries: 2,
+    maxRetries: 1,
   });
 }
 
@@ -100,42 +114,47 @@ export async function proposePatterns(ask: ModelAsk): Promise<Proposal> {
   try {
     const response = await client().beta.messages.parse({
       model: AI_MODEL,
-      max_tokens: 16000,
+      max_tokens: MAX_TOKENS,
       // A request a safety classifier declines is run again on the
       // recommended fallback model instead of failing.
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { format: betaZodOutputFormat(ProposalSchema), effort: "high" },
+      output_config: { format: betaZodOutputFormat(ProposalSchema), effort: "medium" },
       system: SYSTEM,
       messages: [{ role: "user", content: user }],
     });
     if (response.stop_reason === "refusal") {
-      throw new AssistModelError("The model declined to read these emails.", false);
+      throw new AssistModelError("The model declined to read these emails.", false, true);
     }
     if (!response.parsed_output) {
-      throw new AssistModelError("The model's answer could not be read. Try again.", true);
+      throw new AssistModelError("The model's answer could not be read. Try again.", true, true);
     }
     return response.parsed_output;
   } catch (error) {
     if (error instanceof AssistModelError) throw error;
     if (error instanceof Anthropic.RateLimitError) {
-      throw new AssistModelError("The AI service is busy. Try again in a minute.", true);
+      throw new AssistModelError("The AI service is busy. Try again in a minute.", true, false);
     }
     if (
       error instanceof Anthropic.AuthenticationError ||
-      error instanceof Anthropic.PermissionDeniedError
+      error instanceof Anthropic.PermissionDeniedError ||
+      error instanceof Anthropic.BadRequestError
     ) {
-      throw new AssistModelError("AI setup is not available right now.", true);
+      // Our key or our request: someone needs to look.
+      reportError("[ai] the AI service refused our request", error);
+      throw new AssistModelError("AI setup is not available right now.", true, false);
     }
-    if (error instanceof Anthropic.BadRequestError) {
-      throw new AssistModelError("The AI service refused the request.", true);
+    if (error instanceof Anthropic.APIConnectionTimeoutError) {
+      throw new AssistModelError("The AI service took too long. Try again.", true, true);
     }
     if (error instanceof Anthropic.APIError || error instanceof Anthropic.APIConnectionError) {
       throw new AssistModelError(
         "The AI service could not be reached. Try again in a minute.",
-        true
+        true,
+        false
       );
     }
-    throw error;
+    // An answer that came back but cut short or not JSON (the SDK's parse).
+    throw new AssistModelError("The model's answer could not be read. Try again.", true, true);
   }
 }

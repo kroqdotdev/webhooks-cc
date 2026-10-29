@@ -262,8 +262,8 @@ describe("AI setup and repair", () => {
       used: 0,
     });
 
-    // The model is down: the assist comes back.
-    answers = [{ status: 500 }, { status: 500 }, { status: 500 }];
+    // The model is down (the SDK tries twice): the assist comes back.
+    answers = [{ status: 500 }, { status: 500 }];
     const down = await call("POST", owner.slug, owner.token, {
       ask,
       requestIds: [id],
@@ -272,7 +272,7 @@ describe("AI setup and repair", () => {
     expect(down.status).toBe(503);
     expect((await (await call("GET", owner.slug, owner.token)).json()).used).toBe(0);
 
-    // A refusal is not retried and also comes back.
+    // A refusal is not retried, and is kept: the model ran.
     answers = [{ refusal: true }];
     const refused = await call("POST", owner.slug, owner.token, {
       ask,
@@ -280,10 +280,12 @@ describe("AI setup and repair", () => {
       consent: true,
     });
     expect(refused.status).toBe(422);
+    expect(asked).toHaveLength(3);
+    expect((await (await call("GET", owner.slug, owner.token)).json()).used).toBe(1);
 
-    // Four used already; the fifth is the last.
+    // Four used now; the fifth is the last.
     await admin.from("ai_assist_uses").insert(
-      Array.from({ length: 4 }, () => ({
+      Array.from({ length: 3 }, () => ({
         user_id: owner.userId,
         kind: "field",
         outcome: "proposed",
@@ -333,5 +335,21 @@ describe("AI setup and repair", () => {
       },
     ]);
     expect(JSON.stringify(asked[0].body.messages)).toContain("no longer finds a value");
+  });
+
+  it("takes one ask at a time per person", async () => {
+    const owner = await signedIn();
+    const id = await capture(owner.slug, "Order #4001", "x");
+    // An ask of theirs is still waiting for the model.
+    await admin
+      .from("ai_assist_uses")
+      .insert({ user_id: owner.userId, actor_id: owner.userId, kind: "field" });
+    const busy = await call("POST", owner.slug, owner.token, {
+      ask: { kind: "field", name: "order", description: "the order" },
+      requestIds: [id],
+      consent: true,
+    });
+    expect(busy.status).toBe(409);
+    expect(asked).toHaveLength(0);
   });
 });

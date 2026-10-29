@@ -30,6 +30,11 @@ const LAYOUT = {
   match: { part: "subject", contains: "confirmed" },
   layoutName: "Acme orders",
 };
+const REPAIRED = {
+  fields: [{ name: "order", from: "subject", header: null, pattern: "order (AC-\\d+)" }],
+  match: null,
+  layoutName: null,
+};
 const TOTAL = {
   fields: [{ name: "total", from: "text", header: null, pattern: "Total: \\$([0-9.]+)" }],
   match: null,
@@ -52,7 +57,11 @@ test.beforeAll(async ({}, testInfo) => {
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => {
       // The answer follows the ask, so any order of requests works.
-      const proposal = raw.includes('field named \\"total\\"') ? TOTAL : LAYOUT;
+      const proposal = raw.includes("no longer finds a value")
+        ? REPAIRED
+        : raw.includes('field named \\"total\\"')
+          ? TOTAL
+          : LAYOUT;
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -81,7 +90,9 @@ test.afterAll(async () => {
 });
 
 /** A Business account with an endpoint that has two order emails. */
-async function setup(): Promise<{ user: TestUser; endpointId: string; endpointSlug: string }> {
+async function setup(
+  subjects = ["Order #1001 confirmed", "Order #1002 confirmed"]
+): Promise<{ user: TestUser; endpointId: string; endpointSlug: string }> {
   const user = await createTestUser();
   users.push(user);
   await admin
@@ -97,15 +108,15 @@ async function setup(): Promise<{ user: TestUser; endpointId: string; endpointSl
   const endpointId = data.id;
   const endpointSlug = data.slug;
   endpointIds.push(endpointId);
-  for (const [order, total] of [
-    ["1001", "12.50"],
-    ["1002", "8.00"],
+  for (const [subject, total] of [
+    [subjects[0], "12.50"],
+    [subjects[1], "8.00"],
   ]) {
     const { error: captureError } = await admin.rpc("capture_webhook", {
       p_slug: endpointSlug,
       p_method: "EMAIL",
       p_path: `${endpointSlug}@mailhooks.cc`,
-      p_headers: { subject: `Order #${order} confirmed` },
+      p_headers: { subject },
       p_body: "raw",
       p_query_params: {},
       p_content_type: "message/rfc822",
@@ -113,7 +124,7 @@ async function setup(): Promise<{ user: TestUser; endpointId: string; endpointSl
       p_received_at: new Date().toISOString(),
       p_kind: "email",
       p_email: {
-        subject: `Order #${order} confirmed`,
+        subject,
         text: `Thanks for your order.\nTotal: $${total}\n`,
         from: [{ name: "Acme Store", address: "orders@acme.example" }],
       },
@@ -123,7 +134,7 @@ async function setup(): Promise<{ user: TestUser; endpointId: string; endpointSl
   return { user, endpointId, endpointSlug };
 }
 
-async function openLayouts(page: Page, user: TestUser, endpointSlug: string) {
+async function openSettings(page: Page, user: TestUser, endpointSlug: string) {
   await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
   await expect(page.locator("span.font-bold.caps", { hasText: "AI E2E" })).toBeVisible({
     timeout: 15000,
@@ -132,6 +143,10 @@ async function openLayouts(page: Page, user: TestUser, endpointSlug: string) {
     .getByRole("navigation", { name: "Endpoint" })
     .getByRole("button", { name: "Settings" })
     .click();
+}
+
+async function openLayouts(page: Page, user: TestUser, endpointSlug: string) {
+  await openSettings(page, user, endpointSlug);
   const section = page.getByRole("region", { name: "Layouts" });
   await expect(section).toBeVisible();
   return section;
@@ -211,4 +226,58 @@ test("the same in the classic style", async ({ page }) => {
     localStorage.setItem("ui-style-source", "chosen");
   });
   await draftAndFind(page);
+});
+
+test("fix a field an open alert names, in the layout that has it", async ({ page }) => {
+  // The sender changed its subjects; the order field no longer finds a value.
+  const { user, endpointId, endpointSlug } = await setup([
+    "Your order AC-7781 shipped",
+    "Your order AC-7790 shipped",
+  ]);
+  const order = { name: "order", from: "subject", pattern: "Order #(\\d+)" };
+  const layouts = [
+    { id: "acme", name: "Acme orders", fields: [order] },
+    { id: "other", name: "Other", fields: [{ ...order, pattern: "Ref (\\d+)" }] },
+  ];
+  await admin.from("endpoints").update({ layouts }).eq("id", endpointId);
+  const { error } = await admin
+    .from("alert_events")
+    .insert({ endpoint_id: endpointId, kind: "fields", details: { missing: ["order"] } });
+  if (error) throw error;
+
+  await openSettings(page, user, endpointSlug);
+  const alerts = page.getByRole("region", { name: "Alerts" });
+  const fix = alerts.getByRole("button", { name: "Fix order with AI" });
+  const offered = await fix.waitFor({ timeout: 15000 }).then(
+    () => true,
+    () => false
+  );
+  test.skip(!offered, "AI setup is not offered");
+  await fix.click();
+
+  const panel = alerts.getByRole("region", { name: "Fix order with AI" });
+  await panel.getByRole("checkbox", { name: /to Anthropic, our AI provider/ }).check();
+  await panel.getByRole("button", { name: "Propose" }).click();
+  await expect(panel.getByText("AC-7781", { exact: true })).toBeVisible({ timeout: 15000 });
+  await panel.getByRole("button", { name: "Use this pattern" }).click();
+  await expect(
+    alerts.getByText("Saved the new pattern for order.", { exact: false })
+  ).toBeVisible();
+
+  // Only the layout the field was found in changed.
+  await expect
+    .poll(
+      async () => {
+        const { data } = await admin
+          .from("endpoints")
+          .select("layouts")
+          .eq("id", endpointId)
+          .single();
+        return (data?.layouts as { fields: { pattern: string }[] }[]).map(
+          (layout) => layout.fields[0].pattern
+        );
+      },
+      { timeout: 10000 }
+    )
+    .toEqual(["order (AC-\\d+)", "Ref (\\d+)"]);
 });
