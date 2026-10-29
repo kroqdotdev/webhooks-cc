@@ -45,6 +45,7 @@ import {
 import { PlaceholderMenu, forwardingPlaceholders, insertAtCursor } from "./placeholder-menu";
 import { Field, Segmented, Switch, SwitchRow } from "./settings-primitives";
 import { SheetsDestinationEditor } from "./sheets-destination-editor";
+import { FileDropDestinationEditor } from "./file-drop-destination-editor";
 
 /**
  * One destination's settings, grouped by the questions they answer: where
@@ -56,7 +57,7 @@ import { SheetsDestinationEditor } from "./sheets-destination-editor";
 
 type Retry = 0 | 3600 | 86400;
 
-export type DestinationPreset = "server" | "chat" | "template" | "inbound" | "sheets";
+export type DestinationPreset = "server" | "chat" | "template" | "inbound" | "sheets" | "file_drop";
 
 /** "provider" stands for the four inbound shapes, chosen below it. */
 type FormatChoice = Exclude<DestinationFormatSetting, InboundEmailFormat> | "provider";
@@ -405,10 +406,13 @@ function DeliveryPreview({
 
 type EditorProps = Parameters<typeof GenericDestinationEditor>[0];
 
-/** The editor for a destination: Google Sheets has its own, every other kind shares one. */
+/** The editor for a destination: Google Sheets and file drops have their own, every other kind shares one. */
 export function DestinationEditor(props: EditorProps) {
   if (props.preset === "sheets" || props.destination?.format === "sheets") {
     return <SheetsDestinationEditor {...props} />;
+  }
+  if (props.preset === "file_drop" || props.destination?.format === "file_drop") {
+    return <FileDropDestinationEditor {...props} />;
   }
   return <GenericDestinationEditor {...props} />;
 }
