@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { posix } from "node:path";
 import { Client, type SFTPWrapper } from "ssh2";
 import { DropError, openDropSocket } from "./connect";
@@ -114,7 +114,8 @@ export class SftpSession {
   /** Writes a file under a temporary name, then renames it into place (replacing one of that name). */
   async put(folder: string, name: string, data: Buffer): Promise<void> {
     const target = posix.join(folder || ".", name);
-    const partial = `${target}.part`;
+    // Unique, so two uploads of the same name at once cannot take each other's.
+    const partial = `${target}.${randomBytes(4).toString("hex")}.part`;
     await new Promise<void>((resolve, reject) => {
       this.sftp.writeFile(partial, data, (error) =>
         error ? reject(new DropError(`The file could not be written: ${error.message}`)) : resolve()
