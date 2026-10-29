@@ -6,7 +6,7 @@ export function MailhooksFooter() {
   const webhooks = webhooksOrigin();
   const columns = [
     {
-      title: "mailhooks.cc",
+      title: "Product",
       links: [
         { href: "/parse", label: "Senders" },
         { href: "/pricing", label: "Pricing" },
