@@ -11,6 +11,7 @@ import {
   isInboundDomainAddress,
   type DomainResolver,
 } from "@/lib/supabase/inbound-domains";
+import { checkLoginHint } from "@/lib/agent/claims";
 
 /**
  * Custom inbound domains (migration 00072) against the local database: who
@@ -167,6 +168,10 @@ describe("custom inbound domains", () => {
       slug: everything.slug,
     });
     expect(await isInboundDomainAddress(`someone@${domain.domain}`)).toBe(true);
+    // Nor can an agent name a person there.
+    await expect(checkLoginHint(`someone@${domain.domain}`)).rejects.toMatchObject({
+      code: "invalid_login_hint",
+    });
 
     // Another account cannot take a domain whose holder still proves it...
     const otherAccount = { kind: "user" as const, userId: other };
@@ -186,6 +191,11 @@ describe("custom inbound domains", () => {
     const taken = await verifyDomain(otherAccount, copy.id, dns(inPlace(copy)));
     expect(taken.domain.status).toBe("verified");
     expect((await listDomains(account)).find((row) => row.id === domain.id)?.status).toBe("lapsed");
+    // The old holder, still seeing the old records somewhere, cannot take
+    // it straight back.
+    await expect(verifyDomain(account, domain.id, dns(inPlace(domain)))).rejects.toMatchObject({
+      code: "held",
+    });
     await deleteDomain(otherAccount, copy.id);
     await deleteDomain(account, domain.id);
     expect(await resolve(domain.domain, "orders")).toEqual({ status: "relay_denied" });
@@ -257,7 +267,7 @@ describe("custom inbound domains", () => {
     const { error: overError } = await admin
       .from("inbound_domains")
       .insert({ user_id: owner, domain: `cap20-${ts}.acme.example` });
-    expect(overError?.code).toBe("P0001");
+    expect(overError?.code).toBe("WHD01");
   });
 
   it("count against the plan in the order they were verified, and stop with it", async () => {
@@ -350,6 +360,30 @@ describe("custom inbound domains", () => {
       .single();
     expect(stamped).toMatchObject({ status: "lapsed", failed_checks: 3 });
     expect(Date.now() - Date.parse(stamped!.last_checked_at)).toBeLessThan(60_000);
+  });
+
+  it("lapse when the nameservers stop answering for a week", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId: owner };
+    const domain = await addDomain(account, `silent-${ts}.acme.example`);
+    await verifyDomain(account, domain.id, dns(inPlace(domain)));
+    const failing: DomainResolver = {
+      txt: async () => {
+        throw Object.assign(new Error("timeout"), { code: "ETIMEOUT" });
+      },
+      mx: async () => [],
+    };
+    const status = async () =>
+      (await admin.from("inbound_domains").select("status").eq("id", domain.id).single()).data
+        ?.status;
+    for (let day = 1; day <= 7; day++) {
+      await admin
+        .from("inbound_domains")
+        .update({ last_checked_at: new Date(Date.now() - 2 * 86_400_000).toISOString() })
+        .eq("id", domain.id);
+      await recheckDomains(failing, 1000);
+      expect(await status()).toBe(day < 7 ? "verified" : "lapsed");
+    }
   });
 });
 
