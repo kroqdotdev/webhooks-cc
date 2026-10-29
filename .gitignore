@@ -12,6 +12,7 @@ apps/cli/
 apps/cli-rs/target/
 apps/receiver-rs/target/
 apps/mx-rs/target/
+apps/parser-rs/target/
 
 # Environment
 .env
