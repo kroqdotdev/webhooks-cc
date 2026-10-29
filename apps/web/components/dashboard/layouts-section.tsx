@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { layoutIssues } from "@webhooks-cc/sdk";
 import {
   MAX_LAYOUTS,
@@ -14,11 +14,13 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
+  fetchAiAssists,
   fetchDashboardRequests,
   previewLayouts,
   type DashboardEndpoint,
   type LayoutsPreview,
 } from "@/lib/dashboard-api";
+import { AiAssistPanel } from "./ai-assist-panel";
 import { ConditionList } from "./condition-list";
 import { EmailFieldsEditor } from "./email-fields-editor";
 import { SaveFooter, Section, Segmented, SwitchRow, useSave } from "./settings-primitives";
@@ -336,6 +338,18 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const [sampleId, setSampleId] = useState("");
   const [samples, setSamples] = useState<{ id: string; subject: string }[]>([]);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
+  // AI setup: a layout drafted from emails, or a field found for an open layout.
+  const [aiOffered, setAiOffered] = useState(false);
+  const [assist, setAssist] = useState<
+    { kind: "layout" } | { kind: "field"; index: number } | null
+  >(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    fetchAiAssists(accessToken, endpoint.slug)
+      .then((info) => setAiOffered(info.offered))
+      .catch(() => setAiOffered(false));
+  }, [accessToken, endpoint.slug]);
 
   useEffect(() => {
     setLayouts(JSON.parse(initialKey) as Layout[]);
@@ -533,6 +547,31 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         emailAddress={endpoint.emailAddress ?? ""}
                         requestId={sampleId || undefined}
                       />
+                      {aiOffered &&
+                        (assist?.kind === "field" && assist.index === index ? (
+                          <AiAssistPanel
+                            slug={endpoint.slug}
+                            samples={samples}
+                            mode={{ kind: "field" }}
+                            onAddField={(field) =>
+                              update(index, {
+                                fields: [
+                                  ...(layout.fields ?? []).filter((f) => f.name !== field.name),
+                                  field,
+                                ],
+                              })
+                            }
+                            onClose={() => setAssist(null)}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setAssist({ kind: "field", index })}
+                            className="text-xs text-muted-foreground underline inline-flex items-center gap-1"
+                          >
+                            <Sparkles className="h-3 w-3" /> Find a field with AI
+                          </button>
+                        ))}
                     </div>
                     <div className="space-y-1.5">
                       <h4 className="text-sm font-semibold">Line items</h4>
@@ -574,12 +613,43 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <Plus className="h-3 w-3" />
           Add layout
         </button>
+        {aiOffered && layouts.length < MAX_LAYOUTS && assist?.kind !== "layout" && (
+          <button
+            type="button"
+            onClick={() => setAssist({ kind: "layout" })}
+            className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
+          >
+            <Sparkles className="h-3 w-3" />
+            Draft a layout with AI
+          </button>
+        )}
         {layouts.length === 0 && (
           <span className="text-xs text-muted-foreground">
             Without layouts, emails are delivered as they arrive, with your fields.
           </span>
         )}
       </div>
+      {assist?.kind === "layout" && (
+        <AiAssistPanel
+          slug={endpoint.slug}
+          samples={samples}
+          mode={{ kind: "layout" }}
+          onUseLayout={(drafted) => {
+            const base = newLayout(layouts);
+            setLayouts([
+              ...layouts,
+              {
+                ...base,
+                name: drafted.name ?? base.name,
+                match: { logic: "and", conditions: drafted.match ? [drafted.match] : [] },
+                fields: drafted.fields,
+              },
+            ]);
+            setOpen(layouts.length);
+          }}
+          onClose={() => setAssist(null)}
+        />
+      )}
       {layouts.length > 0 && preview && (
         <div className="pt-4 border-t border-line/20 space-y-2" aria-live="polite">
           {preview.request ? (

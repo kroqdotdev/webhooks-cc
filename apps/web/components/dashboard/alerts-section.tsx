@@ -2,18 +2,35 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import type { EmailField } from "@webhooks-cc/sdk/email";
 import {
+  emitDashboardEndpointsChanged,
+  fetchAiAssists,
   fetchAlerts,
+  fetchDashboardRequests,
   fetchDestinations,
   replayEndpoint,
   saveAlerts,
+  updateDashboardEndpoint,
   type DashboardAlertEvent,
   type DashboardAlertSettings,
   type DashboardDestination,
   type DashboardEndpoint,
 } from "@/lib/dashboard-api";
 import { cn } from "@/lib/utils";
+import { AiAssistPanel } from "./ai-assist-panel";
 import { Field, SaveFooter, Section, SwitchRow } from "./settings-primitives";
+
+/** Where a field is defined: the endpoint's own fields, or the first layout that has it. */
+function fieldDefinition(endpoint: DashboardEndpoint, name: string): EmailField | null {
+  const own = (endpoint.emailFields ?? []).find((field) => field.name === name);
+  if (own) return own;
+  for (const layout of endpoint.layouts ?? []) {
+    const found = (layout.fields ?? []).find((field) => field.name === name);
+    if (found) return found;
+  }
+  return null;
+}
 
 /** "" for an empty input (the rule is off), else the number. */
 function numberOrNull(text: string): number | null {
@@ -74,6 +91,65 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [replayNote, setReplayNote] = useState<string | null>(null);
+  // AI repair: a field an open alert says stopped matching, from recent emails.
+  const [aiOffered, setAiOffered] = useState(false);
+  const [repair, setRepair] = useState<EmailField | null>(null);
+  const [recent, setRecent] = useState<{ id: string; subject: string }[]>([]);
+  const [repairNote, setRepairNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    fetchAiAssists(accessToken, endpoint.slug)
+      .then((info) => setAiOffered(info.offered))
+      .catch(() => setAiOffered(false));
+  }, [accessToken, endpoint.slug]);
+
+  const startRepair = async (field: EmailField) => {
+    if (!accessToken) return;
+    setRepairNote(null);
+    const requests = await fetchDashboardRequests(accessToken, endpoint.slug, 10, "email").catch(
+      () => []
+    );
+    setRecent(
+      requests.map((request) => ({
+        id: request._id,
+        subject: request.email?.subject || "(no subject)",
+      }))
+    );
+    setRepair(field);
+  };
+
+  /** Replaces the field where it is defined, and saves the endpoint. */
+  const applyRepair = async (field: EmailField) => {
+    if (!accessToken) return;
+    const own = (endpoint.emailFields ?? []).some((item) => item.name === field.name);
+    const updates = own
+      ? {
+          emailFields: (endpoint.emailFields ?? []).map((item) =>
+            item.name === field.name ? field : item
+          ),
+        }
+      : {
+          layouts: (endpoint.layouts ?? []).map((layout) => {
+            const at = (layout.fields ?? []).findIndex((item) => item.name === field.name);
+            return at < 0
+              ? layout
+              : {
+                  ...layout,
+                  fields: (layout.fields ?? []).map((item, i) => (i === at ? field : item)),
+                };
+          }),
+        };
+    try {
+      await updateDashboardEndpoint(accessToken, endpoint.slug, updates);
+      emitDashboardEndpointsChanged();
+      setRepairNote(
+        `Saved the new pattern for ${field.name}. Replay these emails to read them again.`
+      );
+    } catch (err) {
+      setRepairNote(err instanceof Error ? err.message : "The field was not saved.");
+    }
+  };
   const fieldNames = useMemo(
     () => (endpoint.emailFields ?? []).map((field) => field.name),
     [endpoint.emailFields]
@@ -335,18 +411,50 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 <span>{describe(event, destinations)}</span>
                 <span className="text-xs text-muted-foreground">since {when(event.openedAt)}</span>
                 {event.kind === "fields" && event.resolvedAt === null && (
-                  <button
-                    type="button"
-                    onClick={() => void replaySince(event)}
-                    className="ui-btn-outline py-1! px-2! text-xs ml-auto"
-                  >
-                    Replay these emails
-                  </button>
+                  <span className="ml-auto flex flex-wrap gap-2">
+                    {aiOffered &&
+                      (Array.isArray(event.details?.missing)
+                        ? (event.details.missing as string[])
+                        : []
+                      )
+                        .map((name) => fieldDefinition(endpoint, name))
+                        .filter((field): field is EmailField => field !== null)
+                        .slice(0, 3)
+                        .map((field) => (
+                          <button
+                            key={field.name}
+                            type="button"
+                            onClick={() => void startRepair(field)}
+                            className="ui-btn-outline py-1! px-2! text-xs"
+                          >
+                            Fix {field.name} with AI
+                          </button>
+                        ))}
+                    <button
+                      type="button"
+                      onClick={() => void replaySince(event)}
+                      className="ui-btn-outline py-1! px-2! text-xs"
+                    >
+                      Replay these emails
+                    </button>
+                  </span>
                 )}
               </li>
             ))}
           </ul>
           {replayNote && <p className="text-xs text-muted-foreground mt-2">{replayNote}</p>}
+          {repair && (
+            <div className="mt-3">
+              <AiAssistPanel
+                slug={endpoint.slug}
+                samples={recent}
+                mode={{ kind: "repair", field: repair }}
+                onAddField={(field) => void applyRepair(field)}
+                onClose={() => setRepair(null)}
+              />
+            </div>
+          )}
+          {repairNote && <p className="text-xs text-muted-foreground mt-2">{repairNote}</p>}
         </div>
       )}
     </Section>
