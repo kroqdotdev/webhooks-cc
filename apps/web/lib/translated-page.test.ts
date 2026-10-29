@@ -155,7 +155,8 @@ describe("pageWasTranslated", () => {
 
 describe("startTranslationGuard", () => {
   it("remembers a translation that starts after the page loaded", async () => {
-    const observers: { callback: () => void; observe: unknown; disconnect: unknown }[] = [];
+    type Mock = ReturnType<typeof vi.fn>;
+    const observers: { callback: () => void; observe: Mock; disconnect: Mock }[] = [];
     vi.stubGlobal(
       "MutationObserver",
       class {
@@ -181,6 +182,12 @@ describe("startTranslationGuard", () => {
     // The guard sits on Node.prototype, inert until the page is translated.
     const parent = new Guarded("p");
     expect(() => parent.removeChild(new Guarded("x"))).toThrow("not a child");
+
+    // Switching to dark mode changes the class too, and is not a translation.
+    document.documentElement.className = "font-variable dark";
+    observer.callback();
+    expect(page.pageWasTranslated()).toBe(false);
+    expect(observer.disconnect).not.toHaveBeenCalled();
 
     document.documentElement.className = "font-variable translated-ltr";
     observer.callback();
