@@ -42,6 +42,19 @@ Under the list, **Tried on** runs your draft on a captured email (the newest, or
 
 [mailhooks.cc](https://mailhooks.cc/parse) has layouts for common senders: order emails from Shopify, WooCommerce, Etsy, Amazon and eBay, Stripe and PayPal payments, Booking.com and Airbnb reservations, Calendly bookings, form responses, and CSV and PDF attachments. **Use this layout** on a sender's page adds it to the end of one of your endpoints' layouts (you choose which), with the id the page shows. The example emails on those pages are illustrations: send one of your own and check it in the preview, then change a pattern where a field comes back empty.
 
+### Set it up with AI
+
+Writing the patterns yourself is optional: **Draft a layout with AI** (under **Add layout**) and **Find a field with AI** (in an open layout) propose them from a few of the endpoint's emails.
+
+1. Pick up to 5 emails that look alike, and say what you need: a field's name and what it is, or (for a whole layout) optionally which values matter.
+2. Tick the box to send those emails to Anthropic, our AI provider. Only their subject, sender, recipients, text and headers are sent, never attachments, and only when you ask; we do not keep what is sent.
+3. **Propose** shows the patterns, each with the value it found in every email you picked. Every pattern is compiled with RE2 and run on each of those emails first: one that misses an email, or does not compile, is never shown. A layout comes with a match condition that every picked email meets.
+4. **Add field** or **Add this layout** puts it in the editor; nothing is saved until you save the layouts.
+
+When an [alert](/docs/email-capture) says a field stopped matching, **Fix _field_ with AI** next to the alert proposes a corrected pattern from the latest emails, under the field's own name, and saves it when you accept it. Replay the emails afterwards to read them again.
+
+Each ask uses one AI assist: 5 every 30 days on Free, 20 on Pro and Teams, and 500 on Business and Team Business. An ask that fails on our side or the AI service's is not counted. The patterns run on our servers with RE2 like any others; the AI only writes them, and never reads your mail after that.
+
 ## Line items
 
 Line items turn a list in an email (the products of an order, the rows of a report) into rows of the same columns.

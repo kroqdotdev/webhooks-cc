@@ -186,7 +186,9 @@ describe("AI setup and repair", () => {
     expect(prompt).toContain("Order #1001 confirmed");
     // Attachments never go to the model.
     expect(prompt).not.toContain("invoice.pdf");
-    expect(JSON.stringify(asked[1].body.messages)).toContain("lookahead and lookbehind are not supported");
+    expect(JSON.stringify(asked[1].body.messages)).toContain(
+      "lookahead and lookbehind are not supported"
+    );
   });
 
   it("proposes a layout with a match every sample meets", async () => {
@@ -280,15 +282,13 @@ describe("AI setup and repair", () => {
     expect(refused.status).toBe(422);
 
     // Four used already; the fifth is the last.
-    await admin
-      .from("ai_assist_uses")
-      .insert(
-        Array.from({ length: 4 }, () => ({
-          user_id: owner.userId,
-          kind: "field",
-          outcome: "proposed",
-        }))
-      );
+    await admin.from("ai_assist_uses").insert(
+      Array.from({ length: 4 }, () => ({
+        user_id: owner.userId,
+        kind: "field",
+        outcome: "proposed",
+      }))
+    );
     answers = [{ proposal: field("Order #(\\d+)") }];
     expect(
       (await call("POST", owner.slug, owner.token, { ask, requestIds: [id], consent: true })).status
@@ -300,5 +300,38 @@ describe("AI setup and repair", () => {
     });
     expect(none.status).toBe(429);
     expect((await none.json()).code).toBe("none_left");
+  });
+
+  it("repairs a field under its own name from the emails it missed", async () => {
+    const owner = await signedIn();
+    const ids = [
+      await capture(owner.slug, "Your order AC-7781 shipped", "x"),
+      await capture(owner.slug, "Your order AC-7790 shipped", "y"),
+    ];
+    // The model calls it something else; the repair keeps the field's name.
+    answers = [
+      {
+        proposal: {
+          fields: [
+            { name: "orderNumber", from: "subject", header: null, pattern: "order (AC-\\d+)" },
+          ],
+          match: null,
+          layoutName: null,
+        },
+      },
+    ];
+    const response = await call("POST", owner.slug, owner.token, {
+      ask: { kind: "repair", field: { name: "order", from: "subject", pattern: "Order #(\\d+)" } },
+      requestIds: ids,
+      consent: true,
+    });
+    const result = await response.json();
+    expect(result.fields).toEqual([
+      {
+        field: { name: "order", from: "subject", pattern: "order (AC-\\d+)" },
+        values: ["AC-7781", "AC-7790"],
+      },
+    ]);
+    expect(JSON.stringify(asked[0].body.messages)).toContain("no longer finds a value");
   });
 });
