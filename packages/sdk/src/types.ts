@@ -1,6 +1,7 @@
 import type { Condition } from "./rules";
 import type { EmailCapture, RequestKind } from "./email/types";
 import type { EmailField } from "./email/fields";
+import type { Layout, ParsedEmail } from "./email/layouts";
 import type { InboundEmailFormat } from "./email/inbound";
 
 /**
@@ -58,6 +59,10 @@ export interface Endpoint {
   retentionCapDays?: number;
   /** Requests are deleted once every delivery is settled (owner only) */
   deleteAfterDelivery?: boolean;
+  /** How the endpoint reads its emails; the first that matches applies (owner only) */
+  layouts?: Layout[];
+  /** Layouts the plan uses; later ones are kept but not used (owner only) */
+  layoutsCap?: number;
   /** Whether forwarding is on: the kinds below go to `forwardUrl` */
   forwardEnabled?: boolean;
   /** Where captured requests are forwarded (only returned to the endpoint's owner) */
@@ -210,6 +215,8 @@ export interface Request {
   kind?: RequestKind;
   /** The parsed message, for a captured email */
   email?: EmailCapture | null;
+  /** What the endpoint's layouts found, once the parse is done (emails on endpoints with layouts) */
+  parsed?: ParsedEmail | null;
 }
 
 /**
@@ -418,6 +425,12 @@ export interface UpdateEndpointOptions {
   retentionDays?: number | null;
   /** Delete each request once every delivery is settled (owner only) */
   deleteAfterDelivery?: boolean;
+  /**
+   * How the endpoint reads its emails, at most 50 (the plan uses the first
+   * `layoutsCap`), or null for none (owner only). Emails on an endpoint with
+   * layouts are parsed before their deliveries go.
+   */
+  layouts?: Layout[] | null;
   /** Forward captured requests to `forwardUrl` (owner only; needs a URL) */
   forwardEnabled?: boolean;
   /** Where to forward, or null to remove it once forwarding is off (owner only) */
@@ -1430,4 +1443,21 @@ export interface RenderedEmail {
   /** Content-Type and the rest a provider would send */
   headers: Record<string, string>;
   body: string;
+}
+
+/** Options for `endpoints.previewLayouts()`. */
+export interface PreviewLayoutsOptions {
+  /** Try these instead of the saved layouts */
+  layouts?: Layout[];
+  /** A captured email (default: the endpoint's newest) */
+  requestId?: string;
+}
+
+/** What layouts find in a captured email; attachments show an earlier parse, never a new one. */
+export interface LayoutsPreview {
+  /** What is wrong with `layouts`, if given; empty when they are valid */
+  problems: string[];
+  layoutsCap: number;
+  request: { id: string; subject: string | null; receivedAt: number } | null;
+  parsed: ParsedEmail | null;
 }

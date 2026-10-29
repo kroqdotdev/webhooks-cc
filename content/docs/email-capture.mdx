@@ -97,6 +97,8 @@ A field reads the subject, the text, the HTML as text, the sender, the recipient
 
 Patterns are [RE2](https://github.com/google/re2/wiki/Syntax): they run in time linear in the email, whatever a sender writes, so lookahead, lookbehind and backreferences are not available; match the text around the value and put the value in a group instead. An endpoint has up to 20 fields, each pattern up to 300 characters; a field reads the first 64 KB of its part, and a pattern with very large repeat counts (such as `[a-z]{500}`) is refused, because it would be slow on every email. Like codes and links, they are found when an email is shown or forwarded, and nothing extra is stored. Only the owner can change them.
 
+For an endpoint that receives several kinds of mail, [layouts](/docs/layouts) give each kind its own fields, turn lists into line items and parse attachments.
+
 ### Reply text
 
 When an email quotes an earlier message (a reply), `replyText` in its JSON holds only what the sender wrote above the quote, without their signature, the way inbound mail services ship it (Postmark's `StrippedTextReply`, Mailgun's `stripped-text`). It is `null` for an email that quotes nothing. The **Text** tab shows it with **Reply only**. The quote is recognised by the line clients write above it ("On ... wrote:" and its translations, Outlook's header block, "Original Message" and forwarding separators) or a closing run of `>` lines.

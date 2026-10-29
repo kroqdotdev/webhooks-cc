@@ -101,6 +101,15 @@ type UpdateEndpointOptions struct {
 	EmailFields    Field[[]EmailField]
 	ForwardEnabled Field[bool]
 	ForwardURL     Field[string]
+	// RetentionDays keeps requests fewer days than the plan does; Null keeps
+	// them as long as the plan does (owner only).
+	RetentionDays Field[int]
+	// DeleteAfterDelivery deletes each request once every delivery is
+	// settled (owner only).
+	DeleteAfterDelivery Field[bool]
+	// Layouts replaces how the endpoint reads its emails, at most 50; Null
+	// removes them all (owner only). The server checks them, RE2 included.
+	Layouts Field[[]Layout]
 }
 
 // Update changes an endpoint's settings.
@@ -108,8 +117,8 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	if err := validateSegment(slug, "slug"); err != nil {
 		return nil, err
 	}
-	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.ForwardEnabled.isNull() {
-		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts and ForwardEnabled cannot be cleared; set them with Value")
+	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.ForwardEnabled.isNull() || opts.DeleteAfterDelivery.isNull() {
+		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts, ForwardEnabled and DeleteAfterDelivery cannot be cleared; set them with Value")
 	}
 	if opts.EmailFields.IsSet() && !opts.EmailFields.isNull() {
 		if issues := EmailFieldIssues(opts.EmailFields.value); len(issues) > 0 {
@@ -128,6 +137,9 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	opts.EmailFields.put(body, "emailFields")
 	opts.ForwardEnabled.put(body, "forwardEnabled")
 	opts.ForwardURL.put(body, "forwardUrl")
+	opts.RetentionDays.put(body, "retentionDays")
+	opts.DeleteAfterDelivery.put(body, "deleteAfterDelivery")
+	opts.Layouts.put(body, "layouts")
 	var endpoint Endpoint
 	if err := s.c.api(ctx, http.MethodPatch, "/endpoints/"+slug, nil, body, &endpoint); err != nil {
 		return nil, err
