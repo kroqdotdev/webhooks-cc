@@ -1,4 +1,12 @@
-import { createPolarClient, getPolarCheckoutConfig } from "@/lib/polar";
+import {
+  createPolarClient,
+  getPolarCheckoutConfig,
+  planForProduct,
+  planProductId,
+  type BillingInterval,
+  type PaidPlan,
+} from "@/lib/polar";
+import { planEntitlements } from "@/lib/entitlements";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
@@ -9,7 +17,6 @@ import {
 import type { Database } from "./database";
 
 const FREE_REQUEST_LIMIT = 50;
-const PRO_REQUEST_LIMIT = 100_000;
 
 type UserRow = Database["public"]["Tables"]["users"]["Row"];
 
@@ -32,6 +39,7 @@ type BillingUser = Pick<
   | "polar_customer_id"
   | "polar_subscription_id"
   | "cancel_at_period_end"
+  | "billing_interval"
 >;
 
 interface BillingPeriodResetRow {
@@ -44,7 +52,9 @@ export async function getBillingUser(userId: string): Promise<BillingUser> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("users")
-    .select("id, email, name, plan, polar_customer_id, polar_subscription_id, cancel_at_period_end")
+    .select(
+      "id, email, name, plan, polar_customer_id, polar_subscription_id, cancel_at_period_end, billing_interval"
+    )
     .eq("id", userId)
     .maybeSingle<BillingUser>();
 
@@ -168,23 +178,87 @@ async function callUntypedRpc<T>(
   return rpc(fn, params);
 }
 
-export async function createCheckoutForUser(userId: string): Promise<string> {
+/**
+ * A checkout for a paid plan, for an account without one. An account that
+ * already pays changes plan with changePlanForUser() instead, so it never
+ * ends up with two plan subscriptions.
+ */
+export async function createCheckoutForUser(
+  userId: string,
+  plan: PaidPlan = "pro",
+  interval: BillingInterval = "month"
+): Promise<string> {
   const user = await getBillingUser(userId);
-  if (user.plan === "pro") {
-    throw new BillingActionError("already_pro", "Already on Pro plan");
+  if (user.plan !== "free" && user.polar_subscription_id) {
+    throw new BillingActionError(
+      user.plan === "pro" ? "already_pro" : "already_subscribed",
+      "You already have a plan; change it instead"
+    );
+  }
+  const productId = planProductId(plan, interval);
+  if (!productId) {
+    throw new BillingActionError("not_offered", "That plan is not available");
   }
 
   const polar = createPolarClient();
-  const { appUrl, proProductId } = getPolarCheckoutConfig();
+  const { appUrl } = getPolarCheckoutConfig();
   const customerId = await ensurePolarCustomerId(user);
 
   const checkout = await polar.checkouts.create({
-    products: [proProductId],
-    success_url: `${appUrl}/account/plan?upgraded=true`,
+    products: [productId],
+    success_url: `${appUrl}/account/plan?upgraded=${plan}`,
     customer_id: customerId,
   });
 
   return checkout.url;
+}
+
+const PLAN_RANK: Record<string, number> = { free: 0, pro: 1, business: 2 };
+
+/**
+ * Moves a paying account to another plan or interval. Going up (Pro to
+ * Business, monthly to annual) restarts the billing period now: Polar
+ * credits the unused time and charges the new price at once, so the new
+ * allowance is paid for in full ("reset"). Going down waits for the
+ * renewal ("next_period"), and the page add-ons that only Business allows
+ * are set to end with the period.
+ */
+export async function changePlanForUser(
+  userId: string,
+  plan: PaidPlan,
+  interval: BillingInterval
+): Promise<{ applied: "now" | "renewal" }> {
+  const user = await getBillingUser(userId);
+  if (!user.polar_subscription_id || user.plan === "free") {
+    throw new BillingActionError("no_subscription", "Choose a plan first");
+  }
+  if (user.cancel_at_period_end) {
+    throw new BillingActionError(
+      "plan_ending",
+      "Your plan is set to end. Keep it first, then change it."
+    );
+  }
+  const productId = planProductId(plan, interval);
+  if (!productId) {
+    throw new BillingActionError("not_offered", "That plan is not available");
+  }
+  const currentInterval: BillingInterval = user.billing_interval === "year" ? "year" : "month";
+  if (plan === user.plan && interval === currentInterval) {
+    throw new BillingActionError("unchanged", "That is your plan already");
+  }
+  const up =
+    PLAN_RANK[plan] > PLAN_RANK[user.plan] ||
+    (plan === user.plan && interval === "year" && currentInterval === "month");
+
+  await createPolarClient().subscriptions.update(user.polar_subscription_id, {
+    product_id: productId,
+    proration_behavior: up ? "reset" : "next_period",
+  });
+  if (!up && plan !== "business") {
+    const { endPageAddonsWithPeriod } = await import("./capacity-billing");
+    await endPageAddonsWithPeriod({ kind: "user", userId });
+  }
+  return { applied: up ? "now" : "renewal" };
 }
 
 export async function cancelSubscriptionForUser(userId: string): Promise<void> {
@@ -244,12 +318,16 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       const admin = createAdminClient();
       const { data: stored, error: storedError } = await admin
         .from("users")
-        .select("polar_subscription_id, subscription_status, period_start")
+        .select(
+          "polar_subscription_id, subscription_status, period_start, billing_interval, billing_period_end"
+        )
         .eq("id", userId)
         .maybeSingle<{
           polar_subscription_id: string | null;
           subscription_status: "active" | "canceled" | "past_due" | null;
           period_start: string | null;
+          billing_interval: "month" | "year" | null;
+          billing_period_end: string | null;
         }>();
 
       if (storedError) throw storedError;
@@ -285,6 +363,45 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         storedPeriodStartMs !== null &&
         incomingPeriodStartMs < storedPeriodStartMs;
 
+      // The plan and interval come from the product; a product that is none
+      // of today's plans is the original Pro.
+      const sold = planForProduct(
+        asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id)
+      ) ?? { plan: "pro" as const, interval: "month" as const };
+      const annual = sold.interval === "year";
+
+      // An annual plan's quota renews monthly (process_billing_period_resets)
+      // while Polar's period runs for the year: its period moves only when
+      // Polar's year starts (a new subscription, a yearly renewal, or a
+      // switch to annual that restarted the billing period).
+      const incomingBillingEndMs = currentPeriodEnd ? Date.parse(currentPeriodEnd) : null;
+      const storedBillingEndMs = stored.billing_period_end
+        ? Date.parse(stored.billing_period_end)
+        : null;
+      const newYear =
+        annual &&
+        (isNewSubscription ||
+          stored.billing_interval !== "year" ||
+          (incomingBillingEndMs !== null &&
+            (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
+      const firstMonthEnd =
+        currentPeriodStart !== null
+          ? new Date(
+              new Date(currentPeriodStart).setUTCMonth(
+                new Date(currentPeriodStart).getUTCMonth() + 1
+              )
+            ).toISOString()
+          : null;
+      const period = annual
+        ? newYear && currentPeriodStart
+          ? { period_start: currentPeriodStart, period_end: firstMonthEnd }
+          : {}
+        : {
+            period_start: isStalePeriod ? undefined : currentPeriodStart,
+            period_end: isStalePeriod ? undefined : currentPeriodEnd,
+          };
+      const resetsUsage = annual ? newYear : isNewSubscription || isRenewal;
+
       const patch: Database["public"]["Tables"]["users"]["Update"] = {
         polar_customer_id: customerId ?? undefined,
         polar_subscription_id: subscriptionId ?? undefined,
@@ -292,10 +409,11 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         // nulling it, mirroring the team handler.
         subscription_status:
           normalizeStoredSubscriptionStatus(data.status) ?? stored.subscription_status ?? "active",
-        plan: "pro",
-        request_limit: PRO_REQUEST_LIMIT,
-        period_start: isStalePeriod ? undefined : currentPeriodStart,
-        period_end: isStalePeriod ? undefined : currentPeriodEnd,
+        plan: sold.plan,
+        request_limit: planEntitlements(sold.plan).requestLimit,
+        billing_interval: sold.interval,
+        billing_period_end: isStalePeriod && !annual ? undefined : currentPeriodEnd,
+        ...period,
         cancel_at_period_end:
           typeof data.cancel_at_period_end === "boolean" ? data.cancel_at_period_end : false,
       };
@@ -309,7 +427,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       // so a skipped write converges on the next delivery.
       let guarded = admin
         .from("users")
-        .update(isNewSubscription || isRenewal ? { ...patch, requests_used: 0 } : patch)
+        .update(resetsUsage ? { ...patch, requests_used: 0 } : patch)
         .eq("id", userId);
       guarded =
         stored.polar_subscription_id === null
@@ -368,6 +486,8 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         cancel_at_period_end: false,
         period_start: null,
         period_end: null,
+        billing_interval: null,
+        billing_period_end: null,
         polar_subscription_id: null,
         // Recurring blocks and overage need the plan; one-time blocks stay.
         block_requests: 0,

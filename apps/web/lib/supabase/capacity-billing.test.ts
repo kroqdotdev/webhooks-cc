@@ -71,6 +71,9 @@ vi.mock("@/lib/polar", () => ({
   }),
   getCapacityProductIds: () => PRODUCTS,
   configuredCapacityProductIds: () => PRODUCTS,
+  getPageProductIds: () => null,
+  configuredPageProductIds: () => ({}),
+  teamBusinessProductId: () => null,
   loggablePolarError: (error: unknown) => error,
   isEndedSubscriptionError: (error: unknown) =>
     (error as { code?: string } | null)?.code === "AlreadyCanceledSubscription",
@@ -291,11 +294,16 @@ describe("applyCapacityWebhookEvent: a paid mid-period increase", () => {
       error: null,
     });
 
-    await applyCapacityWebhookEvent("order.paid", USER, "monthly_add", {
-      id: "ord_1",
-      units: 2,
-      total_amount: 400,
-    });
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "requests", kind: "monthly_add" },
+      {
+        id: "ord_1",
+        units: 2,
+        total_amount: 400,
+      }
+    );
 
     expect(mockFns.rpc).toHaveBeenCalledWith("grant_capacity_purchase", {
       p_order_id: "ord_1",
@@ -320,7 +328,12 @@ describe("applyCapacityWebhookEvent: a paid mid-period increase", () => {
       data: { status: "ok", kind: "block_increase", subscription_id: "sub_blocks", synced: false },
       error: null,
     });
-    await applyCapacityWebhookEvent("order.paid", USER, "monthly_add", { id: "ord_2", units: 1 });
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "requests", kind: "monthly_add" },
+      { id: "ord_2", units: 1 }
+    );
     expect(mockFns.subscriptionsUpdate).toHaveBeenCalledWith("sub_blocks", {
       cancel_at_period_end: false,
     });
@@ -334,7 +347,12 @@ describe("applyCapacityWebhookEvent: a paid mid-period increase", () => {
       error: null,
     });
 
-    await applyCapacityWebhookEvent("order.paid", USER, "monthly_add", { id: "ord_4", units: 1 });
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "requests", kind: "monthly_add" },
+      { id: "ord_4", units: 1 }
+    );
 
     expect(mockFns.subscriptionsUpdate).not.toHaveBeenCalledWith("sub_blocks", {
       cancel_at_period_end: false,
@@ -352,7 +370,12 @@ describe("applyCapacityWebhookEvent: a paid mid-period increase", () => {
       error: null,
     });
     mockFns.subscriptionsUpdate.mockRejectedValueOnce({ code: "AlreadyCanceledSubscription" });
-    await applyCapacityWebhookEvent("order.paid", USER, "monthly_add", { id: "ord_3", units: 1 });
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "requests", kind: "monthly_add" },
+      { id: "ord_3", units: 1 }
+    );
     expect(updates.some((u) => u.table === "capacity_purchases" && "synced_at" in u.patch)).toBe(
       true
     );
@@ -369,7 +392,12 @@ describe("applyCapacityWebhookEvent: a paid mid-period increase", () => {
       },
       error: null,
     });
-    await applyCapacityWebhookEvent("order.paid", USER, "monthly_add", { id: "ord_1", units: 2 });
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "requests", kind: "monthly_add" },
+      { id: "ord_1", units: 2 }
+    );
     expect(mockFns.subscriptionsUpdate).not.toHaveBeenCalled();
   });
 });
@@ -386,7 +414,12 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     });
     mockFns.rpc.mockResolvedValueOnce({ data: { status: "duplicate" }, error: null });
 
-    await applyCapacityWebhookEvent("subscription.created", USER, "monthly", { id: "sub_second" });
+    await applyCapacityWebhookEvent(
+      "subscription.created",
+      USER,
+      { resource: "requests", kind: "monthly" },
+      { id: "sub_second" }
+    );
 
     expect(mockFns.subscriptionsRevoke).toHaveBeenCalledWith("sub_second");
     expect(mockFns.rpc).toHaveBeenCalledWith("grant_capacity_purchase", {
@@ -412,14 +445,24 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
       .mockResolvedValueOnce({ data: null, error: new Error("connection reset") });
 
     await expect(
-      applyCapacityWebhookEvent("subscription.created", USER, "monthly", { id: "sub_second" })
+      applyCapacityWebhookEvent(
+        "subscription.created",
+        USER,
+        { resource: "requests", kind: "monthly" },
+        { id: "sub_second" }
+      )
     ).rejects.toThrow("connection reset");
     expect(mockFns.subscriptionsRevoke).not.toHaveBeenCalled();
   });
 
   it("ignores a subscription still waiting for its first payment", async () => {
     mockFns.subscriptionsGet.mockResolvedValue({ id: "sub_pending", status: "incomplete" });
-    await applyCapacityWebhookEvent("subscription.created", USER, "monthly", { id: "sub_pending" });
+    await applyCapacityWebhookEvent(
+      "subscription.created",
+      USER,
+      { resource: "requests", kind: "monthly" },
+      { id: "sub_pending" }
+    );
     expect(mockFns.rpc).not.toHaveBeenCalled();
     expect(mockFns.subscriptionsRevoke).not.toHaveBeenCalled();
   });
@@ -428,7 +471,12 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     mockFns.subscriptionsGet.mockResolvedValue({ id: "sub_orphan", status: "active" });
     mockFns.rpc.mockResolvedValueOnce({ data: { status: "no_account" }, error: null });
 
-    await applyCapacityWebhookEvent("subscription.created", USER, "overage", { id: "sub_orphan" });
+    await applyCapacityWebhookEvent(
+      "subscription.created",
+      USER,
+      { resource: "requests", kind: "overage" },
+      { id: "sub_orphan" }
+    );
 
     expect(mockFns.subscriptionsRevoke).toHaveBeenCalledWith("sub_orphan");
   });
@@ -444,7 +492,12 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
       current_period_end: "2026-11-15T00:00:00Z",
     });
 
-    await applyCapacityWebhookEvent("subscription.created", USER, "monthly", { id: "sub_blocks" });
+    await applyCapacityWebhookEvent(
+      "subscription.created",
+      USER,
+      { resource: "requests", kind: "monthly" },
+      { id: "sub_blocks" }
+    );
 
     expect(mockFns.subscriptionsUpdate).toHaveBeenCalledWith("sub_blocks", {
       cancel_at_period_end: true,

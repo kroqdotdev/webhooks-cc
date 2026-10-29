@@ -85,6 +85,17 @@ const serverEnvSchema = z
     POLAR_MONTHLY_BLOCKS_PRODUCT_ID: z.string().optional(),
     POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: z.string().optional(),
     POLAR_OVERAGE_PRODUCT_ID: z.string().optional(),
+    // Business (monthly and annual) and the Team Business add-on (migration
+    // 00070). Optional: without them Business is not offered.
+    POLAR_BUSINESS_PRODUCT_ID: z.string().optional(),
+    POLAR_BUSINESS_ANNUAL_PRODUCT_ID: z.string().optional(),
+    POLAR_TEAM_BUSINESS_PRODUCT_ID: z.string().optional(),
+    // Parsed-page add-ons, the same four kinds as extra requests; offered
+    // only when all four are set (getPageProductIds()).
+    POLAR_PAGE_BLOCKS_PRODUCT_ID: z.string().optional(),
+    POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID: z.string().optional(),
+    POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID: z.string().optional(),
+    POLAR_PAGE_OVERAGE_PRODUCT_ID: z.string().optional(),
     // S3-compatible object storage where the receiver keeps captured email
     // (raw message and attachments, lib/storage). All four, or none; region
     // defaults to us-east-1, which S3-compatible services accept.
@@ -238,6 +249,14 @@ export function serverEnv() {
       POLAR_MONTHLY_BLOCKS_PRODUCT_ID: process.env.POLAR_MONTHLY_BLOCKS_PRODUCT_ID,
       POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: process.env.POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID,
       POLAR_OVERAGE_PRODUCT_ID: process.env.POLAR_OVERAGE_PRODUCT_ID,
+      POLAR_BUSINESS_PRODUCT_ID: process.env.POLAR_BUSINESS_PRODUCT_ID,
+      POLAR_BUSINESS_ANNUAL_PRODUCT_ID: process.env.POLAR_BUSINESS_ANNUAL_PRODUCT_ID,
+      POLAR_TEAM_BUSINESS_PRODUCT_ID: process.env.POLAR_TEAM_BUSINESS_PRODUCT_ID,
+      POLAR_PAGE_BLOCKS_PRODUCT_ID: process.env.POLAR_PAGE_BLOCKS_PRODUCT_ID,
+      POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID: process.env.POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID,
+      POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID:
+        process.env.POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID,
+      POLAR_PAGE_OVERAGE_PRODUCT_ID: process.env.POLAR_PAGE_OVERAGE_PRODUCT_ID,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,

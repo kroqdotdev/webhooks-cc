@@ -1,19 +1,26 @@
 import {
+  BLOCK_PAGES,
   BLOCK_REQUESTS,
   DEFAULT_OVERAGE_MAX_REQUESTS,
+  DEFAULT_PAGE_OVERAGE_MAX_PAGES,
   MAX_BLOCKS,
+  MAX_PAGE_BLOCKS,
   periodOverageUsed,
 } from "@/lib/capacity";
 import { publicEnv } from "@/lib/env";
 import {
   configuredCapacityProductIds,
+  configuredPageProductIds,
   createPolarClient,
   getCapacityProductIds,
+  getPageProductIds,
   isEndedSubscriptionError,
   loggablePolarError,
+  teamBusinessProductId,
+  type CapacityProductIds,
 } from "@/lib/polar";
 import { reportError } from "@/lib/observability";
-import { planEntitlements } from "@/lib/entitlements";
+import { planEntitlements, teamEntitlements } from "@/lib/entitlements";
 import { createAdminClient } from "./admin";
 import { ensurePolarCustomerId, getBillingUser } from "./billing";
 import { asNonEmptyString, asRecord, parseEventTimestamp } from "./billing-shared";
@@ -36,6 +43,12 @@ import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
  *   period, and the reporter (lib/billing/overage-reporter.ts) sends the
  *   count to Polar's meter, which bills it at the end of the period.
  *
+ * Parsed pages (migration 00070) are bought the same three ways, for
+ * Business accounts and teams with Team Business: the same functions with
+ * `resource: "pages"`. The Team Business add-on is a monthly subscription
+ * on the team's customer, aligned and ended with the team's plan the same
+ * way; while it is live the team is a Business team (sync_capacity_account).
+ *
  * Polar's subscription events for these products never reach the plan
  * handlers: the webhook routes them here by product.
  */
@@ -45,7 +58,62 @@ export type CapacityAccount = { kind: "user"; userId: string } | { kind: "team";
 type CapacitySubscriptionRow = Database["public"]["Tables"]["capacity_subscriptions"]["Row"];
 type CapacityKind = CapacitySubscriptionRow["kind"];
 
-export type CapacityProductKind = "one_time" | "monthly" | "monthly_add" | "overage";
+type PurchaseKind = Database["public"]["Tables"]["capacity_purchases"]["Row"]["kind"];
+
+/** What an add-on adds to: the request quota or the parsed pages. */
+export type CapacityResource = "requests" | "pages";
+
+/** An add-on product, as the webhook routes it. */
+export type CapacityProductKind =
+  | { resource: CapacityResource; kind: "one_time" | "monthly" | "monthly_add" | "overage" }
+  | { resource: "team"; kind: "team_business" };
+
+interface ResourceSpec {
+  /** The recurring blocks' and overage's subscription kinds. */
+  blocks: CapacityKind;
+  overage: CapacityKind;
+  /** One-time blocks, and blocks added to the subscription mid-period. */
+  credits: PurchaseKind;
+  increase: PurchaseKind;
+  blockSize: number;
+  maxBlocks: number;
+  defaultOverageMax: number;
+  /** Where the account page shows them. */
+  anchor: string;
+  products: () => CapacityProductIds | null;
+  /** In the customer's words. */
+  noun: string;
+}
+
+const RESOURCES: Record<CapacityResource, ResourceSpec> = {
+  requests: {
+    blocks: "blocks",
+    overage: "overage",
+    credits: "credits",
+    increase: "block_increase",
+    blockSize: BLOCK_REQUESTS,
+    maxBlocks: MAX_BLOCKS,
+    defaultOverageMax: DEFAULT_OVERAGE_MAX_REQUESTS,
+    anchor: "extra-requests",
+    products: getCapacityProductIds,
+    noun: "requests",
+  },
+  pages: {
+    blocks: "page_blocks",
+    overage: "page_overage",
+    credits: "page_credits",
+    increase: "page_block_increase",
+    blockSize: BLOCK_PAGES,
+    maxBlocks: MAX_PAGE_BLOCKS,
+    defaultOverageMax: DEFAULT_PAGE_OVERAGE_MAX_PAGES,
+    anchor: "extra-pages",
+    products: getPageProductIds,
+    noun: "parsed pages",
+  },
+};
+
+const PAGE_KINDS = new Set<CapacityKind>(["page_blocks", "page_overage"]);
+const BLOCK_KINDS = new Set<CapacityKind>(["blocks", "page_blocks"]);
 
 export class CapacityError extends Error {
   code: string;
@@ -105,6 +173,14 @@ export interface CapacityState {
 
 interface AccountRow {
   plan_active: boolean;
+  /** Page add-ons count: Business, or a team with Team Business, on a live plan. */
+  pages_active: boolean;
+  /** The plan's own pages per window (its entitlements). */
+  plan_pages: number;
+  credit_pages: number;
+  page_block_pages: number;
+  page_overage_active: boolean;
+  page_overage_max: number;
   cancel_at_period_end: boolean;
   polar_customer_id: string | null;
   requests_used: number;
@@ -120,7 +196,7 @@ interface AccountRow {
 }
 
 const ACCOUNT_COLUMNS =
-  "polar_customer_id, cancel_at_period_end, requests_used, request_limit, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start, period_start, period_end";
+  "polar_customer_id, cancel_at_period_end, requests_used, request_limit, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start, period_start, period_end, credit_pages, page_block_pages, page_overage_active, page_overage_max";
 
 function accountIds(account: CapacityAccount): {
   p_user_id: string | null;
@@ -136,12 +212,18 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
   if (account.kind === "team") {
     const { data, error } = await admin
       .from("teams")
-      .select(`${ACCOUNT_COLUMNS}, subscription_status`)
+      .select(`${ACCOUNT_COLUMNS}, subscription_status, business`)
       .eq("id", account.teamId)
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
-    return { ...data, plan_active: data.subscription_status !== null };
+    const live = data.subscription_status !== null;
+    return {
+      ...data,
+      plan_active: live,
+      pages_active: live && data.business,
+      plan_pages: teamEntitlements(data.business).parsedPages,
+    };
   }
 
   const { data, error } = await admin
@@ -151,9 +233,12 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
+  const entitlements = planEntitlements(data.plan);
   return {
     ...data,
-    plan_active: planEntitlements(data.plan).requestAddons && data.subscription_status !== null,
+    plan_active: entitlements.requestAddons && data.subscription_status !== null,
+    pages_active: entitlements.pageAddons && data.subscription_status !== null,
+    plan_pages: entitlements.parsedPages,
   };
 }
 
@@ -183,17 +268,23 @@ async function ensureCustomer(account: CapacityAccount, ownerUserId: string): Pr
   return ensurePolarCustomerId(await getBillingUser(account.userId));
 }
 
-function successUrl(account: CapacityAccount, what: string): string {
+function successUrl(account: CapacityAccount, what: string, anchor = "extra-requests"): string {
   const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
   return account.kind === "team"
-    ? `${appUrl}/teams/${account.teamId}?capacity=${what}#extra-requests`
-    : `${appUrl}/account/plan?capacity=${what}#extra-requests`;
+    ? `${appUrl}/teams/${account.teamId}?capacity=${what}#${anchor}`
+    : `${appUrl}/account/plan?capacity=${what}#${anchor}`;
 }
 
-function requireProducts() {
-  const products = getCapacityProductIds();
+function requireProducts(resource: CapacityResource = "requests") {
+  const products = RESOURCES[resource].products();
   if (!products) {
-    throw new CapacityError("not_offered", "Extra requests are not available yet", 404);
+    throw new CapacityError(
+      "not_offered",
+      resource === "pages"
+        ? "Extra parsed pages are not available yet"
+        : "Extra requests are not available yet",
+      404
+    );
   }
   return products;
 }
@@ -205,11 +296,22 @@ function requireProducts() {
  */
 async function requireEligible(
   account: CapacityAccount,
-  { renewing = false }: { renewing?: boolean } = {}
+  {
+    renewing = false,
+    resource = "requests",
+  }: { renewing?: boolean; resource?: CapacityResource } = {}
 ): Promise<AccountRow> {
   const row = await readAccount(account);
   if (!row) {
     throw new CapacityError("not_found", "Account not found", 404);
+  }
+  if (resource === "pages" && !row.pages_active) {
+    throw new CapacityError(
+      "plan_required",
+      account.kind === "team"
+        ? "Extra parsed pages come with Team Business. Add it to the team first."
+        : "Extra parsed pages are part of Business. Upgrade first."
+    );
   }
   if (!row.plan_active) {
     throw new CapacityError(
@@ -246,11 +348,15 @@ export async function assertCanManage(account: CapacityAccount, userId: string):
 // State
 // ---------------------------------------------------------------------------
 
-export async function getCapacityState(account: CapacityAccount): Promise<CapacityState> {
+export async function getCapacityState(
+  account: CapacityAccount,
+  resource: CapacityResource = "requests"
+): Promise<CapacityState> {
   const row = await readAccount(account);
   if (!row) {
     throw new CapacityError("not_found", "Account not found", 404);
   }
+  if (resource === "pages") return pageState(account, row);
   const subscriptions = await liveSubscriptions(account);
   const blocks = liveOfKind(subscriptions, "blocks");
   const overage = liveOfKind(subscriptions, "overage");
@@ -285,6 +391,57 @@ export async function getCapacityState(account: CapacityAccount): Promise<Capaci
   };
 }
 
+/**
+ * Parsed pages in the same shape: the plan's pages and blocks this window,
+ * what was used, credits, and page overage (the request names stand for
+ * pages here). The window and its usage come from parsed_pages_balance(),
+ * the same numbers a parse is charged against.
+ */
+async function pageState(account: CapacityAccount, row: AccountRow): Promise<CapacityState> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("parsed_pages_balance", accountIds(account));
+  if (error) throw error;
+  const balance = (Array.isArray(data) ? data[0] : data) as {
+    window_start: string | null;
+    allowance: number;
+    used: number;
+    credits: number;
+    overage_left: number;
+  } | null;
+  const subscriptions = await liveSubscriptions(account);
+  const blocks = liveOfKind(subscriptions, "page_blocks");
+  const overage = liveOfKind(subscriptions, "page_overage");
+  const overageMax = row.page_overage_max;
+  return {
+    offered: getPageProductIds() !== null,
+    eligible: row.pages_active,
+    planEnding: row.pages_active && row.cancel_at_period_end,
+    periodStart: balance?.window_start ?? row.period_start,
+    periodEnd: row.period_end,
+    planRequests: row.plan_pages,
+    blockRequests: row.page_block_pages,
+    used: Number(balance?.used ?? 0),
+    creditRequests: Number(row.credit_pages),
+    blocks: blocks
+      ? {
+          units: blocks.units,
+          pendingUnits: blocks.pending_units,
+          cancelAtPeriodEnd: blocks.cancel_at_period_end,
+          pastDue: blocks.status === "past_due",
+          periodEnd: blocks.period_end,
+        }
+      : null,
+    overage: {
+      subscribed: overage !== null,
+      active: row.page_overage_active,
+      cancelAtPeriodEnd: overage?.cancel_at_period_end ?? false,
+      pastDue: overage?.status === "past_due",
+      maxRequests: overageMax,
+      usedRequests: Math.max(overageMax - Number(balance?.overage_left ?? overageMax), 0),
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Customer actions
 // ---------------------------------------------------------------------------
@@ -293,20 +450,22 @@ export async function getCapacityState(account: CapacityAccount): Promise<Capaci
 export async function createOneTimeBlocksCheckout(
   account: CapacityAccount,
   actingUserId: string,
-  blocks: number
+  blocks: number,
+  resource: CapacityResource = "requests"
 ): Promise<string> {
-  const products = requireProducts();
-  await requireEligible(account);
+  const spec = RESOURCES[resource];
+  const products = requireProducts(resource);
+  await requireEligible(account, { resource });
   const customerId = await ensureCustomer(account, actingUserId);
 
   const checkout = await createPolarClient().checkouts.create({
     products: [products.oneTime],
     units: blocks,
     min_units: 1,
-    max_units: MAX_BLOCKS,
+    max_units: spec.maxBlocks,
     customer_id: customerId,
-    success_url: successUrl(account, "blocks"),
-    metadata: { capacity: "one_time" },
+    success_url: successUrl(account, "blocks", spec.anchor),
+    metadata: { capacity: "one_time", resource },
   });
   return checkout.url;
 }
@@ -322,12 +481,14 @@ export type MonthlyBlocksResult =
 export async function changeMonthlyBlocks(
   account: CapacityAccount,
   actingUserId: string,
-  blocks: number
+  blocks: number,
+  resource: CapacityResource = "requests"
 ): Promise<MonthlyBlocksResult> {
-  const products = requireProducts();
+  const spec = RESOURCES[resource];
+  const products = requireProducts(resource);
   // Ending them never needs the plan.
-  if (blocks > 0) await requireEligible(account, { renewing: true });
-  const current = liveOfKind(await liveSubscriptions(account), "blocks");
+  if (blocks > 0) await requireEligible(account, { renewing: true, resource });
+  const current = liveOfKind(await liveSubscriptions(account), spec.blocks);
   const polar = createPolarClient();
 
   if (!current) {
@@ -337,10 +498,10 @@ export async function changeMonthlyBlocks(
       products: [products.monthly],
       units: blocks,
       min_units: 1,
-      max_units: MAX_BLOCKS,
+      max_units: spec.maxBlocks,
       customer_id: customerId,
-      success_url: successUrl(account, "monthly"),
-      metadata: { capacity: "monthly" },
+      success_url: successUrl(account, "monthly", spec.anchor),
+      metadata: { capacity: "monthly", resource },
     });
     return { kind: "checkout", url: checkout.url };
   }
@@ -374,8 +535,12 @@ export async function changeMonthlyBlocks(
       min_units: blocks - current.units,
       max_units: blocks - current.units,
       customer_id: customerId,
-      success_url: successUrl(account, "monthly"),
-      metadata: { capacity: "monthly_add", subscription_id: current.polar_subscription_id },
+      success_url: successUrl(account, "monthly", spec.anchor),
+      metadata: {
+        capacity: "monthly_add",
+        resource,
+        subscription_id: current.polar_subscription_id,
+      },
     });
     return { kind: "checkout", url: checkout.url };
   }
@@ -426,14 +591,16 @@ export type OverageResult = { kind: "checkout"; url: string } | { kind: "updated
 export async function setOverage(
   account: CapacityAccount,
   actingUserId: string,
-  options: { enabled: boolean; maxRequests?: number }
+  options: { enabled: boolean; maxRequests?: number },
+  resource: CapacityResource = "requests"
 ): Promise<OverageResult> {
-  const products = requireProducts();
-  const current = liveOfKind(await liveSubscriptions(account), "overage");
+  const spec = RESOURCES[resource];
+  const products = requireProducts(resource);
+  const current = liveOfKind(await liveSubscriptions(account), spec.overage);
   const polar = createPolarClient();
 
   if (!options.enabled) {
-    await writeOverageMax(account, 0);
+    await writeOverageMax(account, 0, resource);
     if (current && !current.cancel_at_period_end) {
       await polar.subscriptions.update(current.polar_subscription_id, {
         cancel_at_period_end: true,
@@ -443,13 +610,18 @@ export async function setOverage(
     return { kind: "updated" };
   }
 
-  const row = await requireEligible(account, { renewing: true });
-  const maxRequests =
-    options.maxRequests ?? (row.overage_max > 0 ? row.overage_max : DEFAULT_OVERAGE_MAX_REQUESTS);
-  if (!Number.isInteger(maxRequests) || maxRequests <= 0 || maxRequests % BLOCK_REQUESTS !== 0) {
+  const row = await requireEligible(account, { renewing: true, resource });
+  const storedMax = resource === "pages" ? row.page_overage_max : row.overage_max;
+  const maxRequests = options.maxRequests ?? (storedMax > 0 ? storedMax : spec.defaultOverageMax);
+  if (
+    !Number.isInteger(maxRequests) ||
+    maxRequests <= 0 ||
+    maxRequests % spec.blockSize !== 0 ||
+    maxRequests > spec.maxBlocks * spec.blockSize
+  ) {
     throw new CapacityError(
       "invalid_max",
-      "The maximum must be a whole number of 25,000 blocks",
+      `The maximum must be a whole number of ${spec.blockSize.toLocaleString("en-US")} blocks`,
       400
     );
   }
@@ -459,15 +631,15 @@ export async function setOverage(
       "The last overage payment failed. Update your card from the Polar receipt email first."
     );
   }
-  await writeOverageMax(account, maxRequests);
+  await writeOverageMax(account, maxRequests, resource);
 
   if (!current) {
     const customerId = await ensureCustomer(account, actingUserId);
     const checkout = await polar.checkouts.create({
       products: [products.overage],
       customer_id: customerId,
-      success_url: successUrl(account, "overage"),
-      metadata: { capacity: "overage" },
+      success_url: successUrl(account, "overage", spec.anchor),
+      metadata: { capacity: "overage", resource },
     });
     return { kind: "checkout", url: checkout.url };
   }
@@ -481,13 +653,68 @@ export async function setOverage(
   return { kind: "updated" };
 }
 
-async function writeOverageMax(account: CapacityAccount, maxRequests: number): Promise<void> {
+async function writeOverageMax(
+  account: CapacityAccount,
+  max: number,
+  resource: CapacityResource = "requests"
+): Promise<void> {
   const admin = createAdminClient();
+  const patch = resource === "pages" ? { page_overage_max: max } : { overage_max: max };
   const { error } =
     account.kind === "team"
-      ? await admin.from("teams").update({ overage_max: maxRequests }).eq("id", account.teamId)
-      : await admin.from("users").update({ overage_max: maxRequests }).eq("id", account.userId);
+      ? await admin.from("teams").update(patch).eq("id", account.teamId)
+      : await admin.from("users").update(patch).eq("id", account.userId);
   if (error) throw error;
+}
+
+/**
+ * Adds Team Business to a subscribed team: a checkout for the add-on on the
+ * team's customer. Bought mid-period it is charged in full and its first
+ * period ends with the team's (alignWithPlan), and it counts at once.
+ */
+export async function createTeamBusinessCheckout(
+  account: Extract<CapacityAccount, { kind: "team" }>,
+  actingUserId: string
+): Promise<string> {
+  const productId = teamBusinessProductId();
+  if (!productId) {
+    throw new CapacityError("not_offered", "Team Business is not available yet", 404);
+  }
+  await requireEligible(account, { renewing: true });
+  if (liveOfKind(await liveSubscriptions(account), "team_business")) {
+    throw new CapacityError("already_business", "The team already has Team Business");
+  }
+  const customerId = await ensureCustomer(account, actingUserId);
+  const checkout = await createPolarClient().checkouts.create({
+    products: [productId],
+    customer_id: customerId,
+    success_url: successUrl(account, "business", "team-business"),
+    metadata: { capacity: "team_business" },
+  });
+  return checkout.url;
+}
+
+/** Ends Team Business at the period end, or keeps it when it was set to end. */
+export async function setTeamBusinessEnding(
+  account: Extract<CapacityAccount, { kind: "team" }>,
+  ending: boolean
+): Promise<void> {
+  const current = liveOfKind(await liveSubscriptions(account), "team_business");
+  if (!current) throw new CapacityError("not_found", "The team has no Team Business", 404);
+  if (!ending) await requireEligible(account, { renewing: true });
+  await setAddonEnding(account, current, ending, false);
+}
+
+/**
+ * Sets the account's page add-ons to end with its period: a plan change
+ * away from Business takes effect at the renewal, and they renew with it.
+ */
+export async function endPageAddonsWithPeriod(account: CapacityAccount): Promise<void> {
+  for (const row of await liveSubscriptions(account)) {
+    if (PAGE_KINDS.has(row.kind) && !row.cancel_at_period_end) {
+      await setAddonEnding(account, row, true, false);
+    }
+  }
 }
 
 async function markSubscription(
@@ -510,12 +737,17 @@ async function markSubscription(
 export function capacityProductKind(productId: string | null): CapacityProductKind | null {
   // Each set id on its own: with one id missing, the others' events must
   // still stay away from the plan handlers.
-  const products = configuredCapacityProductIds();
   if (!productId) return null;
-  if (productId === products.oneTime) return "one_time";
-  if (productId === products.monthly) return "monthly";
-  if (productId === products.monthlyAdd) return "monthly_add";
-  if (productId === products.overage) return "overage";
+  if (productId === teamBusinessProductId()) return { resource: "team", kind: "team_business" };
+  for (const [resource, products] of [
+    ["requests", configuredCapacityProductIds()],
+    ["pages", configuredPageProductIds()],
+  ] as const) {
+    if (productId === products.oneTime) return { resource, kind: "one_time" };
+    if (productId === products.monthly) return { resource, kind: "monthly" };
+    if (productId === products.monthlyAdd) return { resource, kind: "monthly_add" };
+    if (productId === products.overage) return { resource, kind: "overage" };
+  }
   return null;
 }
 
@@ -563,10 +795,10 @@ async function applySubscriptionState(
     p_kind: kind,
     p_subscription_id: subscriptionId,
     p_status: ended ? null : addonStatus(subscription),
-    p_units: kind === "blocks" ? units : 0,
+    p_units: BLOCK_KINDS.has(kind) ? units : 0,
     // The count Polar renews at, which after a paid mid-period increase is
     // not the same as the units granted for this period.
-    p_pending_units: kind === "blocks" ? (pendingUnits(subscription) ?? units) : null,
+    p_pending_units: BLOCK_KINDS.has(kind) ? (pendingUnits(subscription) ?? units) : null,
     p_cancel_at_period_end: subscription.cancel_at_period_end === true,
     p_period_start: parseEventTimestamp(subscription.current_period_start),
     p_period_end: parseEventTimestamp(subscription.current_period_end),
@@ -610,12 +842,11 @@ async function alignWithPlan(
 async function applySubscriptionEvent(
   eventType: string,
   account: CapacityAccount,
-  productKind: "monthly" | "overage",
+  kind: CapacityKind,
   data: Record<string, unknown>
 ): Promise<void> {
   const subscriptionId = asNonEmptyString(data.id);
   if (!subscriptionId) return;
-  const kind: CapacityKind = productKind === "monthly" ? "blocks" : "overage";
 
   // Polar's payloads cannot be ordered against each other and it does not
   // bump modified_at for a scheduled change, so apply its current state. A
@@ -691,13 +922,14 @@ async function keepAsOneTimeBlocks(
   account: CapacityAccount,
   subscriptionId: string,
   units: number,
-  amount: number | null = null
+  amount: number | null = null,
+  credits: PurchaseKind = "credits"
 ): Promise<void> {
   const admin = createAdminClient();
   const { error } = await admin.rpc("grant_capacity_purchase", {
     p_order_id: `subscription:${subscriptionId}`,
     ...accountIds(account),
-    p_kind: "credits",
+    p_kind: credits,
     p_units: units,
     p_amount: amount,
   });
@@ -718,12 +950,13 @@ async function settleDuplicate(
   // as ended and never comes back here. The grant is recorded once under the
   // subscription's id, so a retry grants nothing twice.
   const units = typeof subscription.units === "number" ? subscription.units : 0;
-  if (kind === "blocks" && units >= 1) {
+  if (BLOCK_KINDS.has(kind) && units >= 1) {
     await keepAsOneTimeBlocks(
       account,
       subscriptionId,
       units,
-      typeof subscription.amount === "number" ? subscription.amount : null
+      typeof subscription.amount === "number" ? subscription.amount : null,
+      kind === "page_blocks" ? "page_credits" : "credits"
     );
   }
   await revokeQuietly(subscriptionId);
@@ -731,9 +964,11 @@ async function settleDuplicate(
 
 async function applyPaidOrder(
   account: CapacityAccount,
+  resource: CapacityResource,
   productKind: "one_time" | "monthly_add",
   data: Record<string, unknown>
 ): Promise<void> {
+  const spec = RESOURCES[resource];
   const orderId = asNonEmptyString(data.id);
   const units = typeof data.units === "number" && Number.isInteger(data.units) ? data.units : 0;
   if (!orderId || units < 1) {
@@ -745,7 +980,7 @@ async function applyPaidOrder(
   const { data: result, error } = await admin.rpc("grant_capacity_purchase", {
     p_order_id: orderId,
     ...accountIds(account),
-    p_kind: productKind === "one_time" ? "credits" : "block_increase",
+    p_kind: productKind === "one_time" ? spec.credits : spec.increase,
     p_units: units,
     p_amount: typeof data.total_amount === "number" ? data.total_amount : null,
   });
@@ -756,7 +991,7 @@ async function applyPaidOrder(
     reportError("[capacity] paid order for a deleted account: refund it", undefined, { orderId });
     return;
   }
-  if (granted?.kind !== "block_increase" || granted.synced === true) return;
+  if (granted?.kind !== spec.increase || granted.synced === true) return;
   const subscriptionId = asNonEmptyString(granted.subscription_id);
   if (!subscriptionId) return;
   await syncIncreaseToPolar(account, orderId, subscriptionId);
@@ -834,14 +1069,25 @@ export async function applyCapacityWebhookEvent(
     case "subscription.past_due":
     case "subscription.cycled":
     case "subscription.revoked":
-      if (productKind === "monthly" || productKind === "overage") {
-        await applySubscriptionEvent(eventType, account, productKind, data);
+      if (productKind.resource === "team") {
+        await applySubscriptionEvent(eventType, account, "team_business", data);
+      } else if (productKind.kind === "monthly" || productKind.kind === "overage") {
+        const spec = RESOURCES[productKind.resource];
+        await applySubscriptionEvent(
+          eventType,
+          account,
+          productKind.kind === "monthly" ? spec.blocks : spec.overage,
+          data
+        );
       }
       return;
 
     case "order.paid":
-      if (productKind === "one_time" || productKind === "monthly_add") {
-        await applyPaidOrder(account, productKind, data);
+      if (
+        productKind.resource !== "team" &&
+        (productKind.kind === "one_time" || productKind.kind === "monthly_add")
+      ) {
+        await applyPaidOrder(account, productKind.resource, productKind.kind, data);
       }
       return;
 
@@ -853,7 +1099,8 @@ export async function applyCapacityWebhookEvent(
         p_order_id: orderId,
       });
       if (error) throw error;
-      if (asRecord(result)?.kind === "block_increase") {
+      const refunded = asRecord(result)?.kind;
+      if (refunded === "block_increase" || refunded === "page_block_increase") {
         reportError(
           "[capacity] refunded monthly blocks: check the renewal count in Polar",
           undefined,
@@ -937,10 +1184,16 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
   if (!plan) return;
 
   for (const row of rows) {
-    if (!plan.plan_active) {
+    // Page add-ons need Business (or Team Business); the rest the plan.
+    const active = PAGE_KINDS.has(row.kind) ? plan.pages_active : plan.plan_active;
+    if (!active) {
       // The plan is gone, not merely ending: a later plan is a new decision,
       // so nothing here is marked to come back with it.
-      if (row.kind === "blocks") {
+      if (row.kind === "team_business") {
+        // It is the team's plan's add-on: nothing to keep once that is gone.
+        await revokeQuietly(row.polar_subscription_id);
+        await markEnded(account, row);
+      } else if (BLOCK_KINDS.has(row.kind)) {
         // Paid-up blocks that were going to renew lost a period they paid
         // for (the plan was revoked mid-period, or they were bought just
         // after it ended): what was paid stays as one-time blocks. Blocks
@@ -948,7 +1201,13 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
         // behind on payment were not paid for. Granted first, while the row
         // is still live, so a failure here is retried with the webhook.
         if (!row.cancel_at_period_end && row.status === "active" && row.units > 0) {
-          await keepAsOneTimeBlocks(account, row.polar_subscription_id, row.units);
+          await keepAsOneTimeBlocks(
+            account,
+            row.polar_subscription_id,
+            row.units,
+            null,
+            row.kind === "page_blocks" ? "page_credits" : "credits"
+          );
         }
         await revokeQuietly(row.polar_subscription_id);
         await markEnded(account, row);
