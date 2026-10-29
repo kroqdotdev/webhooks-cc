@@ -1,4 +1,4 @@
-import { publicEnv } from "@/lib/env";
+import { homeOrigin } from "@/lib/supabase/home-site";
 import { buildQuotaExhaustedEmail } from "@/lib/email/quota-exhausted-email";
 import { sendEmail } from "@/lib/email/mailer";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -25,11 +25,31 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
   });
   if (error) throw new Error(`claim_quota_exhausted_users failed: ${error.message}`);
 
-  const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
+  // Each account's site, where its links lead (sessions are per host). The
+  // links fall back to webhooks.cc when it cannot be read.
+  const users = data ?? [];
+  const siteOf = new Map<string, string>();
+  try {
+    if (users.length > 0) {
+      const { data: sites, error: sitesError } = await admin
+        .from("users")
+        .select("id, home_site")
+        .in(
+          "id",
+          users.map((user: { id: string }) => user.id)
+        );
+      if (sitesError) throw sitesError;
+      for (const row of (sites ?? []) as { id: string; home_site: string }[]) {
+        siteOf.set(row.id, row.home_site);
+      }
+    }
+  } catch (sitesError) {
+    reportError("[quota-emails] account sites could not be read", sitesError);
+  }
   let sent = 0;
   let failed = 0;
 
-  for (const user of data ?? []) {
+  for (const user of users) {
     // The counts are extra detail: if they cannot be read, the generic email
     // still goes out rather than the user hearing nothing.
     let rejections: QuotaRejections | null = null;
@@ -47,7 +67,7 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
           periodEnd: new Date(user.period_end),
           teamBilledEndpoints: user.team_billed_endpoints,
           rejections,
-          appUrl,
+          appUrl: homeOrigin(siteOf.get(user.id)),
         })
       );
       sent++;
