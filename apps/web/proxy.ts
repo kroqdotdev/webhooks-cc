@@ -6,6 +6,13 @@ import {
   isMarkdownTwinPath,
   negotiatesMarkdown,
 } from "@/lib/markdown-negotiation";
+import {
+  SITE_HEADER,
+  mailhooksOrigin,
+  servedOnMailhooks,
+  siteForHost,
+  webhooksOrigin,
+} from "@/lib/site";
 
 /**
  * Proxy: markdown twins, Supabase session refresh, security headers.
@@ -14,6 +21,10 @@ import {
  * 2. Marks requests that prefer a page's markdown twin (next.config.ts rewrites them).
  * 3. Otherwise refreshes the Supabase JWT so server components get fresh cookies.
  * 4. Sets Content-Security-Policy and related headers on every response.
+ *
+ * Before all of that it settles the site (lib/site.ts): mailhooks.cc answers
+ * only its own paths and sends the rest to webhooks.cc, and the pages behind
+ * its host rewrites (app/mailhooks) are not served on webhooks.cc.
  */
 
 function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
@@ -103,6 +114,25 @@ export async function proxy(request: NextRequest) {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
+
+  // --- Site ---
+  // The header is ours to set, like the markdown marker below.
+  request.headers.delete(SITE_HEADER);
+  const site = siteForHost(request.headers.get("host"));
+  if (site === "mailhooks" && !servedOnMailhooks(pathname)) {
+    return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 308);
+  }
+  if (site === "webhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
+    const mail = mailhooksOrigin();
+    if (!mail) {
+      return new NextResponse("Not Found", {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+    return NextResponse.redirect(`${mail}${pathname.slice("/mailhooks".length) || "/"}`, 308);
+  }
+  request.headers.set(SITE_HEADER, site);
 
   // --- Markdown for agents ---
   // A page asked for with an Accept header that prefers text/markdown is
