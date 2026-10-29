@@ -43,6 +43,7 @@ export const DESTINATION_FORMAT_SETTINGS: readonly DestinationFormatSetting[] = 
   "sendgrid",
   "mailgun",
   "cloudmailin",
+  "sheets",
 ];
 
 export interface DestinationFilter {
@@ -80,6 +81,8 @@ export interface Destination {
   delaySeconds: number;
   /** How an email's stored attachments travel: signed links, inline base64, or not at all. */
   attachments: DestinationAttachments;
+  /** Settings of the kinds that are not a URL (format "sheets": lib/integrations/sheets.ts). */
+  config: Json | null;
   /** Which old endpoint field this destination stands for, if any. */
   role: "forward" | "notify" | null;
   createdAt: number;
@@ -112,6 +115,7 @@ export interface DestinationChanges {
   throttleSeconds?: number;
   delaySeconds?: number;
   attachments?: DestinationAttachments;
+  config?: Json | null;
   /** The owner's Mailgun signing key (format "mailgun"); null removes it. */
   mailgunSigningKey?: string | null;
 }
@@ -188,6 +192,7 @@ export function toDestination(row: DestinationRow): Destination {
     throttleSeconds: row.throttle_seconds,
     delaySeconds: row.delay_seconds,
     attachments: row.attachments ?? "links",
+    config: row.config ?? null,
     role: row.legacy_role,
     createdAt: millis(row.created_at),
     updatedAt: millis(row.updated_at),
@@ -275,6 +280,7 @@ function columnsFor(changes: DestinationChanges, storedHeaders: string | null): 
   if (changes.throttleSeconds !== undefined) update.throttle_seconds = changes.throttleSeconds;
   if (changes.delaySeconds !== undefined) update.delay_seconds = changes.delaySeconds;
   if (changes.attachments !== undefined) update.attachments = changes.attachments;
+  if (changes.config !== undefined) update.config = changes.config;
   if (changes.mailgunSigningKey !== undefined) {
     update.mailgun_key_encrypted = changes.mailgunSigningKey
       ? toBytea(encryptSigningSecret(changes.mailgunSigningKey))

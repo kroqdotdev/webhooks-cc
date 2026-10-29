@@ -14,6 +14,8 @@
 --      checker's state, alert_events every alert opened and when it was
 --      resolved. The web app's checker leases endpoints with
 --      claim_alert_checks() and writes the rest itself.
+--      claim_destination_deliveries() leases more of one destination's due
+--      deliveries, so Sheets appends a batch of rows per call.
 --   4. google_connections: a user's Google account, for Sheets destinations;
 --      the refresh token is encrypted by the web app (lib/crypto.ts).
 --
@@ -159,7 +161,9 @@ as $$
   ),
   pending as (
     select d.id, d.destination_id, d.created_at, d.next_attempt_at, d.locked_until,
-           dest.keep_order,
+           -- Sheets goes one claim at a time: that claim appends the rest
+           -- of what is due in the same call (claim_destination_deliveries).
+           dest.keep_order or dest.format = 'sheets' as keep_order,
            row_number() over (
              partition by d.destination_id order by d.created_at, d.id
            ) as rn_order
@@ -227,6 +231,36 @@ revoke all on function public.claim_email_deliveries(integer, integer, integer, 
   from public, anon, authenticated;
 grant execute on function public.claim_email_deliveries(integer, integer, integer, boolean)
   to service_role;
+
+-- More due deliveries of one destination, for a worker that sends several at
+-- once (Google Sheets appends a batch of rows in one call, which keeps inside
+-- its quotas). Leased like the main claim.
+create or replace function public.claim_destination_deliveries(
+  p_destination_id uuid,
+  p_limit          integer default 49,
+  p_lease_seconds  integer default 60
+)
+returns table (delivery_id uuid, request_id uuid, attempt integer, kind text)
+language sql
+security definer set search_path = ''
+as $$
+  update public.email_deliveries d
+     set locked_until = now() + make_interval(secs => greatest(p_lease_seconds, 5)),
+         attempts = d.attempts + 1
+   where d.id in (
+     select x.id
+       from public.email_deliveries x
+      where x.destination_id = p_destination_id
+        and x.status = 'pending'
+        and x.attempts < 12
+        and x.next_attempt_at <= now()
+        and (x.locked_until is null or x.locked_until <= now())
+      order by x.created_at, x.id
+      limit least(greatest(p_limit, 1), 500)
+      for update skip locked
+   )
+  returning d.id, d.request_id, d.attempts, d.kind;
+$$;
 
 -- 3. Alerts
 create table if not exists public.endpoint_alerts (
@@ -334,6 +368,8 @@ grant select, insert, update, delete on table public.google_connections to servi
 -- 5. Grants
 revoke all on function public.retention_cap(public.endpoints) from public, anon, authenticated;
 grant execute on function public.retention_cap(public.endpoints) to service_role;
+revoke all on function public.claim_destination_deliveries(uuid, integer, integer) from public, anon, authenticated;
+grant execute on function public.claim_destination_deliveries(uuid, integer, integer) to service_role;
 revoke all on function public.claim_alert_checks(integer, integer) from public, anon, authenticated;
 grant execute on function public.claim_alert_checks(integer, integer) to service_role;
 

@@ -1370,6 +1370,10 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      claim_destination_deliveries: {
+        Args: { p_destination_id: string; p_limit?: number; p_lease_seconds?: number };
+        Returns: { delivery_id: string; request_id: string; attempt: number; kind: "email" | "http" }[];
+      };
       claim_alert_checks: {
         Args: { p_limit?: number; p_lease_seconds?: number };
         Returns: Database["public"]["Tables"]["endpoint_alerts"]["Row"][];
