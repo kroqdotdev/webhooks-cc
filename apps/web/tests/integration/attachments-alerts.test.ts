@@ -311,6 +311,56 @@ describe("alerts", () => {
     expect(getLastMessageForEmail(ownerEmail)?.subject).toMatch(/^Resolved:/);
   });
 
+  it("scores each email once, however many arrive within the hour", async () => {
+    const target = await endpoint("alerts burst");
+    await updateEndpointBySlugForUser({
+      userId,
+      slug: target.slug,
+      emailFields: [{ name: "order", from: "subject", pattern: "Order #(\\d+)" }],
+    });
+    // Counts misses only: the alert never opens at this threshold.
+    await saveAlertSettings(target.id, {
+      ...DEFAULT_ALERT_SETTINGS,
+      enabled: true,
+      fieldFailures: 100,
+      destinationFailures: false,
+      notifyEmail: false,
+    });
+    // 800 emails in the last 40 minutes, more than the 500 ids the checker
+    // remembers: before the fix, older ones were scored again and the cursor
+    // stopped moving.
+    const start = Date.now() - 40 * 60_000;
+    const rows = Array.from({ length: 800 }, (_, i) => ({
+      endpoint_id: target.id,
+      user_id: userId,
+      method: "EMAIL",
+      path: `${target.slug}@mailhooks.cc`,
+      ip: "192.0.2.10",
+      kind: "email",
+      received_at: new Date(start + i * 3000).toISOString(),
+      email: { subject: `Receipt ${i}`, text: "no order here" },
+    }));
+    for (let i = 0; i < rows.length; i += 200) {
+      const { error } = await admin.from("requests").insert(rows.slice(i, i + 200));
+      if (error) throw error;
+    }
+    await admin
+      .from("endpoint_alerts")
+      .update({ created_at: new Date(start - 60_000).toISOString() })
+      .eq("endpoint_id", target.id);
+    for (let i = 0; i < 6; i++) {
+      await dueNow(target.id);
+      await runAlertChecks();
+    }
+    const { data } = await admin
+      .from("endpoint_alerts")
+      .select("failure_streak, checked_through")
+      .eq("endpoint_id", target.id)
+      .single();
+    expect(data!.failure_streak).toBe(800);
+    expect(Date.parse(data!.checked_through!)).toBe(Date.parse(rows[799].received_at));
+  });
+
   it("opens a silence alert when no email arrives for the hours set", async () => {
     const target = await endpoint("alerts silence");
     await saveAlertSettings(target.id, {

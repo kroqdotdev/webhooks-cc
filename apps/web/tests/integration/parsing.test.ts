@@ -13,6 +13,7 @@ import { runParseBatch } from "@/lib/parsing/worker";
 import { parserPath } from "@/lib/parsing/parser";
 import { replayRequests } from "@/lib/replay";
 import { isObjectStorageConfigured, putObject } from "@/lib/storage/object-store";
+import { getRequestByIdForUser, listRequestsForEndpointByUser } from "@/lib/supabase/requests";
 
 /**
  * Layouts and the parse step (migration 00069) against the local database,
@@ -422,5 +423,205 @@ describe.skipIf(!ready)("layouts and the parse step", () => {
     await createDestination(a.id, { url: `${base}/cap`, format: "json", email: true, http: false });
     const id = await captureEmail(a.slug, "Invoice 9");
     expect((await parsed(id)).result?.status).toBe("no_layout");
+  });
+});
+
+describe.skipIf(!ready)("parse jobs", () => {
+  async function requestIdOf(slug: string, subject: string): Promise<string> {
+    const { data } = await admin
+      .from("requests")
+      .select("id, endpoints!inner(slug)")
+      .eq("endpoints.slug", slug)
+      .eq("email->>subject", subject)
+      .single();
+    return (data as { id: string }).id;
+  }
+
+  async function job(requestId: string) {
+    const { data } = await admin
+      .from("request_parses")
+      .select("status, attempts, claim, charged, created_at")
+      .eq("request_id", requestId)
+      .single();
+    return data as {
+      status: string;
+      attempts: number;
+      claim: string | null;
+      charged: Record<string, number>;
+      created_at: string;
+    };
+  }
+
+  it("charges each file once, and only pages beyond what it paid for", async () => {
+    const userId = await proUser();
+    const endpoint = await endpointWithLayouts(userId, "charge once");
+    const id = await captureEmail(endpoint.slug, "Order 7001");
+    const charge = async (pages: number) => {
+      const { data, error } = await admin.rpc("charge_parsed_file", {
+        p_request_id: id,
+        p_index: 0,
+        p_user_id: userId,
+        p_team_id: null,
+        p_pages: pages,
+      });
+      if (error) throw error;
+      return data as { granted: boolean; charged: number };
+    };
+    expect(await charge(3)).toMatchObject({ granted: true, charged: 3 });
+    // A retry of the same file charges nothing more.
+    expect(await charge(3)).toMatchObject({ granted: true, charged: 0 });
+    // Parsed again further after the balance grew: only the difference.
+    expect(await charge(5)).toMatchObject({ granted: true, charged: 2 });
+    expect(await pagesUsed(userId)).toBe(5);
+    expect((await job(id)).charged).toEqual({ "0": 5 });
+    await parsed(id);
+  });
+
+  it("completes a job only with its current claim, and gives it up after five tries", async () => {
+    const userId = await proUser();
+    const endpoint = await endpointWithLayouts(userId, "claims");
+    const id = await captureEmail(endpoint.slug, "Order 7002");
+    const { data: claimed, error } = await admin.rpc("claim_request_parses", {
+      p_limit: 50,
+      p_lease_seconds: 600,
+    });
+    if (error) throw error;
+    const mine = (claimed as { request_id: string; claim: string }[]).find(
+      (row) => row.request_id === id
+    );
+    expect(mine?.claim).toBeTruthy();
+
+    const { data: stale } = await admin.rpc("complete_request_parse", {
+      p_request_id: id,
+      p_claim: crypto.randomUUID(),
+      p_status: "done",
+      p_result: null,
+      p_pages: 0,
+    });
+    expect(stale).toBeNull();
+    expect((await job(id)).status).toBe("pending");
+
+    // Its process died five times: the next claim settles it as failed and
+    // its deliveries go without a result.
+    await admin
+      .from("request_parses")
+      .update({ attempts: 5, locked_until: null })
+      .eq("request_id", id);
+    await admin.rpc("claim_request_parses", { p_limit: 1, p_lease_seconds: 600 });
+    expect((await job(id)).status).toBe("failed");
+    expect(await deliveries(id)).toHaveLength(1);
+
+    // A replay cannot reset its tries: it stays given up.
+    await replayRequests(endpoint.id, [id]);
+    expect((await job(id)).attempts).toBe(5);
+    await admin.rpc("claim_request_parses", { p_limit: 1, p_lease_seconds: 600 });
+    expect((await job(id)).status).toBe("failed");
+  });
+
+  it("claims one job per account at a time, oldest first", async () => {
+    const [a, b] = [await proUser(), await proUser()];
+    const ea = await endpointWithLayouts(a, "fair a");
+    const eb = await endpointWithLayouts(b, "fair b");
+    const ids = [
+      await captureEmail(ea.slug, "Order A1"),
+      await captureEmail(ea.slug, "Order A2"),
+      await captureEmail(eb.slug, "Order B1"),
+    ];
+    const { data } = await admin.rpc("claim_request_parses", { p_limit: 10, p_lease_seconds: 600 });
+    const claimed = (data as { request_id: string; claim: string }[]).filter((row) =>
+      ids.includes(row.request_id)
+    );
+    expect(claimed.map((row) => row.request_id).sort()).toEqual([ids[0], ids[2]].sort());
+    // A has a job in flight, so its second waits.
+    const { data: again } = await admin.rpc("claim_request_parses", {
+      p_limit: 10,
+      p_lease_seconds: 600,
+    });
+    expect((again as { request_id: string }[]).some((row) => ids.includes(row.request_id))).toBe(
+      false
+    );
+    // Let the worker finish them.
+    await admin.from("request_parses").update({ locked_until: null }).in("request_id", ids);
+    for (const id of ids) await parsed(id);
+  });
+
+  it("queues an HTTP capture's deliveries at once on an endpoint with layouts", async () => {
+    const userId = await proUser();
+    const endpoint = await endpointWithLayouts(userId, "http too");
+    await createDestination(endpoint.id, {
+      url: `${base}/http-${endpoint.slug}`,
+      format: "json",
+      email: false,
+      http: true,
+    });
+    const { data, error } = await admin.rpc("capture_webhook", {
+      p_slug: endpoint.slug,
+      p_method: "POST",
+      p_path: "/hook",
+      p_headers: {},
+      p_body: "{}",
+      p_query_params: {},
+      p_content_type: "application/json",
+      p_ip: "192.0.2.10",
+      p_received_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+    const id = (data as { request_id: string }).request_id;
+    expect(await deliveries(id)).toHaveLength(1);
+    const { data: parse } = await admin
+      .from("request_parses")
+      .select("request_id")
+      .eq("request_id", id)
+      .maybeSingle();
+    expect(parse).toBeNull();
+  });
+
+  it("parses only the spreadsheet line items read, and queues deliveries at the capture's time", async () => {
+    const userId = await proUser();
+    const endpoint = await endpointWithLayouts(userId, "sheet only", [LAYOUTS[0]]);
+    const id = await captureEmail(endpoint.slug, "Order 7003", "See attached.", [
+      { filename: "terms.pdf", contentType: "application/pdf", bytes: simplePdf(["A", "B", "C"]) },
+      { filename: "order.csv", contentType: "text/csv", bytes: csv(2) },
+    ]);
+    const result = (await parsed(id)).result!;
+    expect(result.attachments.map((item) => item.filename)).toEqual(["order.csv"]);
+    expect(result.lineItems).toHaveLength(2);
+    expect(await pagesUsed(userId)).toBe(1);
+
+    const { data: request } = await admin
+      .from("requests")
+      .select("received_at")
+      .eq("id", id)
+      .single();
+    const { data: queued } = await admin
+      .from("email_deliveries")
+      .select("created_at")
+      .eq("request_id", id)
+      .single();
+    expect(Date.parse(queued!.created_at)).toBe(Date.parse(request!.received_at));
+  });
+
+  it("cuts a large result to about 1 MB, and lists carry only its summary", async () => {
+    const userId = await proUser();
+    const endpoint = await endpointWithLayouts(userId, "big result", [LAYOUTS[2]]);
+    const wide = Buffer.from(
+      ["a,b,c,d,e", ...Array.from({ length: 999 }, (_, i) => `${i},${"x".repeat(900)},y,z,w`)].join(
+        "\n"
+      )
+    );
+    const id = await captureEmail(endpoint.slug, "Invoice 8001", "x", [
+      { filename: "wide.csv", contentType: "text/csv", bytes: wide },
+    ]);
+    const parse = await parsed(id);
+    expect(parse.status).toBe("done");
+    expect(Buffer.byteLength(JSON.stringify(parse.result))).toBeLessThanOrEqual(1024 * 1024);
+    expect(parse.result!.attachments[0].truncated).toBe(true);
+
+    const list = await listRequestsForEndpointByUser({ userId, slug: endpoint.slug, limit: 10 });
+    const listed = list!.find((request) => request.id === id)!;
+    expect(listed.parsed).toMatchObject({ status: "matched", partial: true, attachments: [] });
+    const detail = await getRequestByIdForUser(userId, id);
+    expect(detail!.parsed!.partial).toBeUndefined();
+    expect(detail!.parsed!.attachments).toHaveLength(1);
   });
 });

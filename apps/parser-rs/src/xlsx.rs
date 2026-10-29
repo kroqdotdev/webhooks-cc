@@ -15,6 +15,12 @@ use crate::zipguard;
 
 const MALFORMED: Failure = Failure::malformed("the file is not a readable XLSX workbook");
 
+/// Cells read across the whole workbook, empty ones included. Sheets can all
+/// point at one large part, which the zip guard counts once but the reader
+/// would inflate and walk once per sheet; this bounds that work. A hundred
+/// pages of thirty columns is three million cells.
+pub(crate) const MAX_CELLS_VISITED: u64 = 5_000_000;
+
 pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bool), Failure> {
     zipguard::check(input)?;
     let mut book: Xlsx<_> = match Xlsx::new(Cursor::new(input)) {
@@ -38,6 +44,7 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
         .collect();
 
     let mut sheets = SheetsBuilder::new(max_pages);
+    let mut visited: u64 = 0;
     for name in names {
         let mut reader = match book.worksheet_cells_reader(&name) {
             Ok(reader) => reader,
@@ -57,6 +64,13 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
                 Ok(None) => break,
                 Err(_) => return Err(MALFORMED),
             };
+            visited += 1;
+            if visited > MAX_CELLS_VISITED {
+                return Err(Failure::new(
+                    ErrorCode::TooLarge,
+                    "the workbook has too many cells to read",
+                ));
+            }
             let (r, c) = cell.get_position();
             match row_index {
                 None => {
@@ -297,5 +311,61 @@ mod tests {
             parse(&wb.save_to_buffer().unwrap(), 100).unwrap_err().code,
             ErrorCode::Empty
         );
+    }
+
+    /// Many sheets naming one large part: each would be walked again.
+    fn one_part_many_sheets(sheets: usize, cells: usize) -> Vec<u8> {
+        use std::io::Write;
+        let part = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1">{}</row></sheetData></worksheet>"#,
+            r#"<c r="A1"/>"#.repeat(cells)
+        );
+        let list: String = (0..sheets)
+            .map(|i| format!(r#"<sheet name="S{i}" sheetId="{}" r:id="rId1"/>"#, i + 1))
+            .collect();
+        let files = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#.to_string(),
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#.to_string(),
+            ),
+            (
+                "xl/workbook.xml",
+                format!(
+                    r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>{list}</sheets></workbook>"#
+                ),
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#.to_string(),
+            ),
+            ("xl/worksheets/sheet1.xml", part),
+        ];
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, body) in files {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(body.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn sheets_sharing_one_part_stop_at_the_cell_budget() {
+        let input = one_part_many_sheets(1000, 90_000);
+        let started = std::time::Instant::now();
+        let failure = parse(&input, 100).unwrap_err();
+        assert_eq!(failure.code, ErrorCode::TooLarge);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn output_counts_escaped_bytes() {
+        assert_eq!(crate::sheet::json_len(r#"a"b\c"#), 7);
+        assert_eq!(crate::sheet::json_len("x\ny"), 8);
     }
 }

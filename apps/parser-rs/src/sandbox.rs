@@ -4,12 +4,10 @@
 //! rlimits go on before stdin is read; the filter goes on after, so the
 //! only file the process ever opens is the one it was handed.
 //!
-//! The filter allows by default and refuses (EPERM) what a parser has no
-//! use for: networking, opening or changing files, starting processes or
-//! threads, and a few kernel interfaces that would reach around the list
-//! (io_uring can open files without `openat`; user namespaces widen the
-//! kernel's attack surface). Nothing in the parser starts a thread, so
-//! `clone` is refused outright.
+//! The filter is an allowlist: once the input is read, the parser only
+//! computes, allocates memory and writes its result, so every other syscall
+//! (networking, files, processes, threads, other processes' signals and
+//! limits, shared memory, io_uring) fails with EPERM.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -63,106 +61,36 @@ fn set_limit(resource: Resource, value: u64) -> io::Result<()> {
     Ok(())
 }
 
-/// Syscalls the filter refuses on every architecture.
-const DENIED: &[libc::c_long] = &[
-    // Networking.
-    libc::SYS_socket,
-    libc::SYS_socketpair,
-    libc::SYS_connect,
-    libc::SYS_bind,
-    libc::SYS_listen,
-    libc::SYS_accept,
-    libc::SYS_accept4,
-    libc::SYS_sendto,
-    libc::SYS_sendmsg,
-    libc::SYS_sendmmsg,
-    libc::SYS_recvfrom,
-    libc::SYS_recvmsg,
-    libc::SYS_recvmmsg,
-    // Opening and changing files.
-    libc::SYS_openat,
-    libc::SYS_openat2,
-    libc::SYS_open_by_handle_at,
-    libc::SYS_name_to_handle_at,
-    libc::SYS_mknodat,
-    libc::SYS_unlinkat,
-    libc::SYS_renameat,
-    libc::SYS_renameat2,
-    libc::SYS_mkdirat,
-    libc::SYS_symlinkat,
-    libc::SYS_linkat,
-    libc::SYS_fchmod,
-    libc::SYS_fchmodat,
-    libc::SYS_fchownat,
-    libc::SYS_fchown,
-    libc::SYS_truncate,
-    libc::SYS_mount,
-    libc::SYS_umount2,
-    // New processes and threads.
-    libc::SYS_execve,
-    libc::SYS_execveat,
-    libc::SYS_clone,
-    libc::SYS_clone3,
-    // Reaching other processes and around the list.
-    libc::SYS_ptrace,
-    libc::SYS_process_vm_readv,
-    libc::SYS_process_vm_writev,
-    libc::SYS_pidfd_getfd,
-    libc::SYS_io_uring_setup,
-    libc::SYS_io_uring_enter,
-    libc::SYS_io_uring_register,
-    libc::SYS_unshare,
-    libc::SYS_setns,
-    libc::SYS_bpf,
-    libc::SYS_perf_event_open,
-    libc::SYS_userfaultfd,
-    libc::SYS_keyctl,
-    libc::SYS_add_key,
-    libc::SYS_request_key,
+/// Syscalls the parser may make once the filter is on: it has read its
+/// input and only computes, allocates and writes its result. Everything
+/// else fails with EPERM. Measured with strace over the test corpus (brk,
+/// mmap, mremap, munmap, getrandom, sigaltstack, write, exit_group), plus
+/// what the allocator, locks, clocks and a panic's abort may need.
+const ALLOWED: &[libc::c_long] = &[
+    libc::SYS_read,
+    libc::SYS_write,
+    libc::SYS_writev,
+    libc::SYS_close,
+    libc::SYS_brk,
+    libc::SYS_mmap,
+    libc::SYS_munmap,
+    libc::SYS_mremap,
+    libc::SYS_madvise,
+    libc::SYS_mprotect,
+    libc::SYS_futex,
+    libc::SYS_getrandom,
+    libc::SYS_clock_gettime,
+    libc::SYS_clock_getres,
+    libc::SYS_sched_yield,
+    libc::SYS_sigaltstack,
+    libc::SYS_rt_sigaction,
+    libc::SYS_rt_sigprocmask,
+    libc::SYS_rt_sigreturn,
+    libc::SYS_getpid,
+    libc::SYS_gettid,
+    libc::SYS_exit,
+    libc::SYS_exit_group,
 ];
-
-/// Older syscalls that only x86_64 still has (aarch64 has the `*at` forms).
-#[cfg(target_arch = "x86_64")]
-const DENIED_LEGACY: &[libc::c_long] = &[
-    libc::SYS_open,
-    libc::SYS_creat,
-    libc::SYS_fork,
-    libc::SYS_vfork,
-    libc::SYS_mknod,
-    libc::SYS_unlink,
-    libc::SYS_rename,
-    libc::SYS_mkdir,
-    libc::SYS_rmdir,
-    libc::SYS_symlink,
-    libc::SYS_link,
-    libc::SYS_chmod,
-    libc::SYS_chown,
-    libc::SYS_lchown,
-];
-#[cfg(not(target_arch = "x86_64"))]
-const DENIED_LEGACY: &[libc::c_long] = &[];
-
-/// The x32 ABI reaches the same kernel with syscall numbers that have bit
-/// 30 set, and has its own numbers for a few calls, under the same audit
-/// architecture as x86_64. A default-allow filter that only lists x86_64
-/// numbers would let them through on kernels built with x32 support.
-#[cfg(target_arch = "x86_64")]
-fn x32_variants(denied: &[libc::c_long]) -> Vec<libc::c_long> {
-    const X32_BIT: libc::c_long = 0x4000_0000;
-    // recvfrom, sendmsg, recvmsg, execve, ptrace, execveat, recvmmsg,
-    // sendmmsg: the x32-specific numbers of calls on the list.
-    const X32_ONLY: &[libc::c_long] = &[517, 518, 519, 520, 521, 545, 537, 538];
-    denied
-        .iter()
-        .map(|nr| nr | X32_BIT)
-        .chain(X32_ONLY.iter().map(|nr| nr | X32_BIT))
-        .collect()
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-fn x32_variants(_denied: &[libc::c_long]) -> Vec<libc::c_long> {
-    Vec::new()
-}
 
 #[derive(Debug)]
 pub enum SandboxError {
@@ -183,7 +111,10 @@ impl std::fmt::Display for SandboxError {
 
 /// Installs the seccomp filter for the rest of the process's life.
 pub fn install_seccomp() -> Result<(), SandboxError> {
-    use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, SeccompRule, TargetArch};
+    use seccompiler::{
+        BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter,
+        SeccompRule, TargetArch,
+    };
 
     let arch = if cfg!(target_arch = "x86_64") {
         TargetArch::x86_64
@@ -200,17 +131,24 @@ pub fn install_seccomp() -> Result<(), SandboxError> {
         return Err(SandboxError::NoNewPrivs(io::Error::last_os_error()));
     }
 
-    let numbers: Vec<libc::c_long> = DENIED.iter().chain(DENIED_LEGACY).copied().collect();
-    let rules: BTreeMap<i64, Vec<SeccompRule>> = numbers
-        .iter()
-        .copied()
-        .chain(x32_variants(&numbers))
-        .map(|nr| (nr, Vec::new()))
-        .collect();
+    // Signals only to this process itself (abort() raises SIGABRT with
+    // tgkill); kill(-1) or a signal to the web server is refused.
+    let pid = u64::from(std::process::id());
+    let own_pid = || {
+        SeccompCondition::new(0, SeccompCmpArgLen::Dword, SeccompCmpOp::Eq, pid)
+            .and_then(|condition| SeccompRule::new(vec![condition]))
+            .map_err(|e| SandboxError::Filter(e.to_string()))
+    };
+    let mut rules: BTreeMap<i64, Vec<SeccompRule>> =
+        ALLOWED.iter().map(|&nr| (nr, Vec::new())).collect();
+    rules.insert(libc::SYS_tgkill, vec![own_pid()?]);
+    rules.insert(libc::SYS_kill, vec![own_pid()?]);
+    // A syscall that matches a rule is allowed; any other fails with EPERM.
+    // x32 numbers (bit 30 set) are never listed, so they fail too.
     let filter = SeccompFilter::new(
         rules,
-        SeccompAction::Allow,
         SeccompAction::Errno(libc::EPERM as u32),
+        SeccompAction::Allow,
         arch,
     )
     .map_err(|e| SandboxError::Filter(e.to_string()))?;

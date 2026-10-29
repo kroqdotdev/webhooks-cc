@@ -34,8 +34,9 @@ export interface ParserOutput {
 export const MAX_PAGES_PER_FILE = 100;
 /** The most bytes one file may have to be parsed. */
 export const MAX_PARSE_BYTES = 32 * 1024 * 1024;
-const TIMEOUT_MS = 20_000;
-const MAX_OUTPUT_BYTES = 128 * 1024 * 1024;
+export const TIMEOUT_MS = 20_000;
+/** The parser caps its own output at 32 MB; a little room for the JSON around it. */
+const MAX_OUTPUT_BYTES = 40 * 1024 * 1024;
 
 /** The parser's path: PARSER_BIN, the copy in the image, or a local build. */
 export function parserPath(): string | null {
@@ -91,7 +92,8 @@ function failed(format: ParserFormat, code: string, message: string): ParserOutp
 export async function runParser(
   bytes: Uint8Array,
   format: ParserFormat,
-  maxPages: number
+  maxPages: number,
+  timeoutMs = TIMEOUT_MS
 ): Promise<ParserOutput> {
   const bin = parserPath();
   if (!bin) return failed(format, "unavailable", "The parser is not installed on this server.");
@@ -112,10 +114,13 @@ export async function runParser(
       clearTimeout(timer);
       resolve(output);
     };
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(failed(format, "malformed", "The file took too long to parse."));
-    }, TIMEOUT_MS);
+    const timer = setTimeout(
+      () => {
+        child.kill("SIGKILL");
+        finish(failed(format, "malformed", "The file took too long to parse."));
+      },
+      Math.max(1000, Math.min(timeoutMs, TIMEOUT_MS))
+    );
     child.stdout.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > MAX_OUTPUT_BYTES) {

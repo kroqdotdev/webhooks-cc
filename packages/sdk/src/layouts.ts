@@ -1,4 +1,4 @@
-import { conditionsIssues } from "./rules";
+import { conditionsIssues, type ValidateOptions } from "./rules";
 import { emailFieldIssues } from "./email/fields";
 import {
   MAX_LAYOUTS,
@@ -14,11 +14,14 @@ const COLUMN_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
 
 /**
  * What a layout list says is wrong with it; empty when it is valid. Pass
- * `checkPattern` to check RE2 syntax (the server does).
+ * `checkPattern` to check RE2 syntax of fields and line items, and
+ * `conditionChecks` for the match conditions' regexes and globs (the server
+ * does both).
  */
 export function layoutIssues(
   layouts: unknown,
-  checkPattern?: (pattern: string) => string | null
+  checkPattern?: (pattern: string) => string | null,
+  conditionChecks: Pick<ValidateOptions, "checkRegex" | "checkGlob"> = {}
 ): string[] {
   if (!Array.isArray(layouts)) return ["layouts must be a list"];
   if (layouts.length > MAX_LAYOUTS) return [`at most ${MAX_LAYOUTS} layouts`];
@@ -59,7 +62,7 @@ export function layoutIssues(
         }
         for (const issue of conditionsIssues(
           match.conditions,
-          { use: "filter" },
+          { use: "filter", ...conditionChecks },
           `${at}: match.conditions`
         )) {
           issues.push(issue);

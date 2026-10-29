@@ -2,7 +2,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { layoutsProblems, storedLayouts } from "@/lib/parsing/layouts";
 import { accountOf, parseEmail } from "@/lib/parsing/worker";
-import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
+import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { getNewestRequestId } from "@/lib/supabase/forwarding";
 import { getRequestsByIds } from "@/lib/supabase/requests";
 import type { Json } from "@/lib/supabase/database";
@@ -16,12 +16,16 @@ import { isUuid } from "@/lib/uuid";
  * pages are used: attachments show what an earlier parse stored, never a new
  * parse. Owner only, like the layouts themselves.
  */
+const PREVIEW_BUDGET_MS = 5_000;
+
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   const { slug } = await params;
 
-  const rateLimit = await checkRateLimitWithInfo(request, "layouts-preview", 30);
+  // Per account, not per address: each call runs the account's patterns
+  // over an email of its own choosing.
+  const rateLimit = await checkRateLimitByKeyWithInfo(`user:layouts-preview:${auth.userId}`, 20);
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(Response.json(body, { status }), rateLimit);
@@ -39,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     const endpoint = await ownedEndpoint(auth.userId, slug);
     if (!endpoint) return reply({ error: "Endpoint not found" }, 404);
     const draft = body.layouts !== undefined;
-    const problems = draft ? layoutsProblems(body.layouts, endpoint.layoutsCap) : [];
+    const problems = draft ? layoutsProblems(body.layouts) : [];
     const layouts = draft
       ? problems.length > 0
         ? []
@@ -60,7 +64,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
               layouts,
               endpoint.emailFields as unknown as Json,
               await accountOf(email.id, auth.userId),
-              false
+              false,
+              // A preview gets a few seconds; the worker gets more.
+              Date.now() + PREVIEW_BUDGET_MS
             )
           ).result
         : null;
