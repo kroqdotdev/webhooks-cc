@@ -65,3 +65,14 @@ describe("servedOnMailhooks", () => {
     }
   });
 });
+
+describe("homeOrigin", () => {
+  it("is the account's site's origin, webhooks.cc for anything else", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
+    const { homeOrigin } = await import("./supabase/home-site");
+    expect(homeOrigin("mailhooks")).toBe("https://mailhooks.cc");
+    expect(homeOrigin("webhooks")).toBe("https://webhooks.cc");
+    expect(homeOrigin(null)).toBe("https://webhooks.cc");
+  });
+});

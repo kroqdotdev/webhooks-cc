@@ -641,6 +641,7 @@ export interface Database {
           prorated_window: string | null;
           pending_plan: string | null;
           pending_interval: string | null;
+          home_site: "webhooks" | "mailhooks";
           retention_floor_days: number | null;
           retention_floor_until: string | null;
           pages_used: number;
@@ -691,6 +692,7 @@ export interface Database {
           prorated_window?: string | null;
           pending_plan?: string | null;
           pending_interval?: string | null;
+          home_site?: "webhooks" | "mailhooks";
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -741,6 +743,7 @@ export interface Database {
           prorated_window?: string | null;
           pending_plan?: string | null;
           pending_interval?: string | null;
+          home_site?: "webhooks" | "mailhooks";
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;

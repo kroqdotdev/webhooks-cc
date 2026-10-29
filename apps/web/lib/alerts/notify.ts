@@ -1,4 +1,4 @@
-import { publicEnv } from "@/lib/env";
+import { homeOrigin } from "@/lib/supabase/home-site";
 import { decryptSigningSecret } from "@/lib/crypto";
 import { sendEmail } from "@/lib/email/mailer";
 import { reportError } from "@/lib/observability";
@@ -26,6 +26,8 @@ interface AlertContext {
   slug: string;
   name: string | null;
   ownerEmail: string | null;
+  /** The origin the owner's links lead to (their site). */
+  origin: string;
   notifyEmail: boolean;
   destinationIds: string[];
   destinationNames: Map<string, string>;
@@ -118,9 +120,9 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     endpoint.user_id
       ? admin
           .from("users")
-          .select("email")
+          .select("email, home_site")
           .eq("id", endpoint.user_id)
-          .maybeSingle<{ email: string }>()
+          .maybeSingle<{ email: string; home_site: string }>()
       : Promise.resolve({ data: null }),
     admin
       .from("endpoint_alerts")
@@ -145,6 +147,8 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     slug: endpoint.slug,
     name: endpoint.name,
     ownerEmail: owner?.email ?? null,
+    // Where the owner's session is (users.home_site).
+    origin: homeOrigin(owner?.home_site),
     notifyEmail: settings?.notify_email ?? true,
     destinationIds: settings?.notify_destination_ids ?? [],
     destinationNames: names,
@@ -214,7 +218,7 @@ async function notifyOne(event: AlertEventRow): Promise<boolean> {
     ? (context.destinationNames.get(event.subject) ?? null)
     : null;
   const { summary, lines } = describeAlert(event, label, destinationName);
-  const link = `${publicEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, "")}/dashboard?endpoint=${encodeURIComponent(context.slug)}`;
+  const link = `${context.origin.replace(/\/+$/, "")}/dashboard?endpoint=${encodeURIComponent(context.slug)}`;
   const text = [summary, "", ...lines, "", `Open the endpoint: ${link}`].join("\n");
   let ok = true;
   if (context.notifyEmail && context.ownerEmail) {
