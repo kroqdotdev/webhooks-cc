@@ -53,6 +53,15 @@ const bingSiteVerification =
 const mailhooksUrl = mailhooksOrigin();
 const MAILHOOKS_HOST = mailhooksUrl ? new URL(mailhooksUrl).hostname : null;
 
+/** A string as a JavaScript literal that is safe inside an inline script element. */
+function scriptLiteral(value: string): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 export const metadata: Metadata = {
   title: {
     default: DEFAULT_PAGE_TITLE,
@@ -138,7 +147,7 @@ export default function RootLayout({
         {ANNOUNCEMENTS.length > 0 && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){${MAILHOOKS_HOST ? `if(location.hostname===${JSON.stringify(MAILHOOKS_HOST)})return;` : ""}var d=null;try{d=localStorage.getItem(${JSON.stringify(ANNOUNCEMENTS[0].id).replace(/</g, "\\u003c").replace(/>/g, "\\u003e")})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
+              __html: `(function(){${MAILHOOKS_HOST ? `if(location.hostname===${scriptLiteral(MAILHOOKS_HOST)})return;` : ""}var d=null;try{d=localStorage.getItem(${scriptLiteral(ANNOUNCEMENTS[0].id)})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
             }}
           />
         )}
