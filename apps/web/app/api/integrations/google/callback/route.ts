@@ -8,6 +8,7 @@ import {
   googleConfig,
   GoogleError,
   openState,
+  sealFinishTicket,
 } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
 import { siteOrigin } from "@/lib/site";
@@ -44,6 +45,20 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code");
   const config = googleConfig();
   if (!code || !config) return back(state.returnTo, "failed");
+  if (state.site === "mailhooks" && state.handoff) {
+    // Saved on mailhooks.cc, for the browser that started there only.
+    const finish = new URL("/api/integrations/google/finish", siteOrigin("mailhooks"));
+    finish.searchParams.set("ticket", sealFinishTicket(code, state));
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location: finish.toString(),
+        "set-cookie": clearBrowserCookie(secure),
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+      },
+    });
+  }
   try {
     const account = await exchangeCode(config, code, state.verifier);
     const connection = await saveGoogleConnection(state.userId, account);
