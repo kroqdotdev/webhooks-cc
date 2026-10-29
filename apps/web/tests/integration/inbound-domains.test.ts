@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -238,5 +239,100 @@ describe("custom inbound domains", () => {
     await recheckDomains(dns(inPlace(domain)), 1000);
     expect(await state()).toEqual({ status: "verified", failed_checks: 0 });
     expect((await resolve(domain.domain, "x")).status).toBe("ok");
+  });
+});
+
+// The receiver's private mail API (needs `make dev-receiver`; the receiver
+// reads verified domains again every INBOUND_DOMAINS_REFRESH_SECS).
+const MAIL_URL = (process.env.MAIL_INGEST_URL ?? "http://127.0.0.1:3002").replace(/\/$/, "");
+
+async function signedPost(path: string, payload: unknown) {
+  const body = JSON.stringify(payload);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = createHmac("sha256", process.env.CAPTURE_SHARED_SECRET!)
+    .update(`${timestamp}.POST.${path}.`)
+    .update(body)
+    .digest("hex");
+  const response = await fetch(`${MAIL_URL}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mail-timestamp": String(timestamp),
+      "x-mail-signature": signature,
+    },
+    body,
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
+async function checkAddress(address: string): Promise<string> {
+  return ((await signedPost("/internal/mail/check", { address })) as { status: string }).status;
+}
+
+/** The receiver's answer once its view of the domains caught up (a few seconds at most). */
+async function eventually(address: string, wanted: string): Promise<string> {
+  let status = await checkAddress(address);
+  for (let i = 0; i < 40 && status !== wanted; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    status = await checkAddress(address);
+  }
+  return status;
+}
+
+describe("mail at a custom domain, through the receiver", () => {
+  it("lands on the routed endpoint, and is refused when unknown, unverified or lapsed", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId: owner };
+    const orders = await createEndpoint(owner, "mail");
+    const domain = await addDomain(account, `mail-${ts}.acme.example`);
+    await verifyDomain(account, domain.id, dns(inPlace(domain)));
+    await setDomainRouting(account, domain.id, {
+      catchAllEndpointId: null,
+      routes: [{ localPart: "orders", endpointId: orders.id }],
+    });
+
+    expect(await eventually(`Orders+Shop@${domain.domain}`, "ok")).toBe("ok");
+    expect(await checkAddress(`nobody@${domain.domain}`)).toBe("unknown");
+    expect(await checkAddress(`orders@never-${ts}.acme.example`)).toBe("relay_denied");
+
+    const raw = [
+      `From: Acme Store <store@acme.example>`,
+      `To: orders@${domain.domain}`,
+      `Subject: Order 7 placed`,
+      `Message-ID: <custom-${ts}@acme.example>`,
+      "",
+      "Thanks for your order.",
+      "",
+    ].join("\r\n");
+    const delivered = (await signedPost("/internal/mail/deliver", {
+      recipients: [`orders+shop@${domain.domain}`, `someone@never-${ts}.acme.example`],
+      envelope_from: "store@acme.example",
+      client_ip: "192.0.2.25",
+      client_rdns: null,
+      helo: "mail.acme.example",
+      tls: null,
+      auth: null,
+      spam: null,
+      received_at: new Date().toISOString(),
+      retry: false,
+      raw: Buffer.from(raw).toString("base64"),
+    })) as { results: { recipient: string; status: string; request_id?: string }[] };
+    expect(delivered.results.map((result) => result.status)).toEqual(["captured", "relay_denied"]);
+
+    const { data: request } = await admin
+      .from("requests")
+      .select("endpoint_id, path, kind, email")
+      .eq("id", delivered.results[0].request_id!)
+      .single();
+    expect(request).toMatchObject({
+      endpoint_id: orders.id,
+      path: `orders+shop@${domain.domain}`,
+      kind: "email",
+    });
+    expect((request!.email as { tag: string | null }).tag).toBe("shop");
+
+    await admin.from("inbound_domains").update({ status: "lapsed" }).eq("id", domain.id);
+    expect(await eventually(`orders@${domain.domain}`, "relay_denied")).toBe("relay_denied");
   });
 });

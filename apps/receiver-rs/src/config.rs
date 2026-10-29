@@ -31,6 +31,9 @@ pub struct Config {
     pub mail_ingest_paused: bool,
     /// Domains whose recipients map to endpoint slugs, lowercase.
     pub mail_domains: Vec<String>,
+    /// How old the set of customers' verified inbound domains may get before
+    /// it is read again (INBOUND_DOMAINS_REFRESH_SECS, default 60).
+    pub inbound_domains_refresh_secs: u64,
     /// Where captured email (raw message and attachments) is stored. Unset:
     /// only the database copy is kept, as before object storage.
     pub object_store: Option<crate::object_store::ObjectStoreConfig>,
@@ -60,6 +63,10 @@ impl std::fmt::Debug for Config {
             .field("mail_ingest_addr", &self.mail_ingest_addr)
             .field("mail_ingest_paused", &self.mail_ingest_paused)
             .field("mail_domains", &self.mail_domains)
+            .field(
+                "inbound_domains_refresh_secs",
+                &self.inbound_domains_refresh_secs,
+            )
             .field("object_store", &self.object_store)
             .finish()
     }
@@ -127,6 +134,11 @@ impl Config {
             .is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"));
         let mail_domains =
             parse_mail_domains(&env::var("MAIL_DOMAINS").unwrap_or_else(|_| "mailhooks.cc".into()));
+        let inbound_domains_refresh_secs = env::var("INBOUND_DOMAINS_REFRESH_SECS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .filter(|secs| (1..=3600).contains(secs))
+            .unwrap_or(60);
 
         let object_store = object_store_from_env();
 
@@ -146,6 +158,7 @@ impl Config {
             mail_ingest_addr,
             mail_ingest_paused,
             mail_domains,
+            inbound_domains_refresh_secs,
             object_store,
         }
     }
@@ -205,6 +218,7 @@ impl Config {
             webhook_base_url: None,
             mail_ingest_addr: None,
             mail_ingest_paused: false,
+            inbound_domains_refresh_secs: 60,
             mail_domains: vec!["mailhooks.cc".into()],
             object_store: None,
         }
