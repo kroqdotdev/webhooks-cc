@@ -27,7 +27,7 @@ const FAQ_ITEMS = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. Every individual feature is included on both tiers: webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. The paid plan increases rate limits and retention, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
+      "Yes. The free plan has every Pro feature: webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. Paid plans raise rate limits and retention, Business adds attachment parsing at volume and more layouts, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
   },
   {
     question: "Does ngrok have a webhook testing SDK?",
@@ -69,7 +69,7 @@ const ROWS = [
   ["Edge computing / traffic policy", "No", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent)"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "$20/mo incl. 3 seats, then $5/seat"],
-  ["Free tier features", "Every individual feature", "Limited connections + features"],
+  ["Free tier features", "Every Pro feature", "Limited connections + features"],
 ] as const;
 
 export const metadata = createPageMetadata({

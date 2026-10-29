@@ -187,12 +187,12 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access — every individual feature works on both tiers. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Teams is billed separately at $12/seat/mo.",
+      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access, with every Pro feature. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Business ($29/month or $290/year) gives 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month and up to 50 layouts per endpoint. Teams is billed separately at $12/seat/mo.",
   },
   {
     question: "Whose quota is used for shared team endpoints?",
     answer:
-      "The team's. Once an endpoint is shared with a team that has an active Teams subscription, its incoming webhooks draw from the team's pooled quota — 100,000 requests per seat per 30 days — instead of the owner's personal quota, and they are kept for 31 days no matter which plan the owner is on. Endpoints that are not shared with an active team still count against the owner's own limit.",
+      "The team's. Once an endpoint is shared with a team that has an active Teams subscription, its incoming webhooks draw from the team's pooled quota (100,000 requests per seat per 30 days) instead of the owner's personal quota, and they are kept for 31 days, or 90 with the Team Business add-on, no matter which plan the owner is on. Endpoints that are not shared with an active team still count against the owner's own limit.",
   },
   {
     question: "How do I connect an AI coding agent?",
@@ -654,11 +654,12 @@ export default async function Home() {
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
             <p className="text-xl text-muted-foreground">
-              Every feature on Free and Pro. Add Teams when you need to work together.
+              Free has every Pro feature. Business adds attachment parsing at volume, more layouts
+              and longer retention. Add Teams when you need to work together.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Free Plan */}
             <div className="ui-card">
               <div className="mb-6">
@@ -673,6 +674,7 @@ export default async function Home() {
                   "50 requests/day",
                   "7-day data retention",
                   "Unlimited endpoints",
+                  "20 parsed attachment pages/month",
                   "CLI, SDK & MCP access",
                   "Mock responses & replay",
                 ].map((feature) => (
@@ -702,8 +704,40 @@ export default async function Home() {
                   "100,000 requests/month",
                   "31-day data retention",
                   "Unlimited endpoints",
+                  "100 parsed attachment pages/month",
+                  "Extra requests in 25,000 blocks",
                   "CLI, SDK & MCP access",
-                  "Mock responses & replay",
+                ].map((feature) => (
+                  <li key={feature} className="flex items-center gap-3">
+                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-sm text-muted-foreground mb-3 text-center">
+                Start free, upgrade later
+              </p>
+              <PricingCTA />
+            </div>
+
+            {/* Business Plan */}
+            <div className="ui-card">
+              <div className="mb-6">
+                <h3 className="font-bold text-2xl mb-2">Business</h3>
+                <p className="text-5xl font-bold">
+                  $29
+                  <span className="text-lg font-normal text-muted-foreground">/month</span>
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">or $290/year</p>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {[
+                  "250,000 requests/month",
+                  "90-day data retention",
+                  "2,000 parsed attachment pages/month",
+                  "Up to 50 layouts per endpoint",
+                  "Page blocks & page overage",
+                  "Extra requests in 25,000 blocks",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
@@ -733,6 +767,7 @@ export default async function Home() {
                   "Shared endpoints, real-time for everyone",
                   "31-day retention on team traffic",
                   "Billed per team, not per account",
+                  "Team Business add-on, $49/mo: +150,000 requests, 90-day retention",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />

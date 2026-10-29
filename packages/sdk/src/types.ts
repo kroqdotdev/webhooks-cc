@@ -279,7 +279,7 @@ export interface UsageInfo {
   /** Remaining requests before quota is exhausted */
   remaining: number;
   /** Current subscription plan */
-  plan: "free" | "pro";
+  plan: "free" | "pro" | "business";
   /** End of the current billing window, if active */
   periodEnd: number | null;
 }

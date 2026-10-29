@@ -454,8 +454,8 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
         <p className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
           <Paperclip className="h-3.5 w-3.5 shrink-0" />
           {inlineImages === 1
-            ? "1 image is attached inside the message. Attachment contents are not kept, so it shows as broken."
-            : `${inlineImages} images are attached inside the message. Attachment contents are not kept, so they show as broken.`}
+            ? "1 image is attached inside the message and shows as broken here; download it from the Attachments tab."
+            : `${inlineImages} images are attached inside the message and show as broken here; download them from the Attachments tab.`}
         </p>
       )}
       <div className="grid justify-items-center py-2 classic:py-1 clean:bg-muted/60 clean:rounded-lg clean:py-8 clean:px-4 grid-cols-[minmax(0,1fr)]">
