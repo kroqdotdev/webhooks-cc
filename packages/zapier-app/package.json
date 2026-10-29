@@ -14,5 +14,8 @@
   "devDependencies": {
     "vitest": "^5.0.5",
     "zapier-platform-schema": "19.2.1"
+  },
+  "overrides": {
+    "form-data": ">=4.0.6 <5"
   }
 }
