@@ -87,7 +87,8 @@ export type DeliveryFormat =
   | "sendgrid"
   | "mailgun"
   | "cloudmailin"
-  | "sheets";
+  | "sheets"
+  | "file_drop";
 export type DeliveryStatus = "pending" | "succeeded" | "failed" | "skipped";
 
 export interface TeamEndpointShare {
@@ -430,7 +431,8 @@ export type DestinationFormatSetting =
   | "sendgrid"
   | "mailgun"
   | "cloudmailin"
-  | "sheets";
+  | "sheets"
+  | "file_drop";
 
 /** Where an endpoint's captures go (lib/supabase/destinations.ts). */
 export interface DashboardDestination {

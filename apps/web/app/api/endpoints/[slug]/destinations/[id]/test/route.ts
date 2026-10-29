@@ -5,11 +5,17 @@ import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit"
 import {
   getDestination,
   getDestinationHeaders,
+  getDestinationDropSecret,
   getDestinationMailgunKey,
   getDestinationSecret,
 } from "@/lib/supabase/destinations";
 import { reportError } from "@/lib/observability";
 import { isUuid } from "@/lib/uuid";
+import { storedFileDropConfig } from "@/lib/drops/config";
+import { DropError, dropsOffered } from "@/lib/drops/connect";
+import { testDropTarget } from "@/lib/drops/target";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Destination } from "@/lib/supabase/destinations";
 
 type Params = { params: Promise<{ slug: string; id: string }> };
 
@@ -56,6 +62,9 @@ export async function POST(request: Request, { params }: Params) {
         400
       );
     }
+    if (destination.format === "file_drop") {
+      return reply(await testFileDrop(endpoint.id, destination));
+    }
     const picked = await pickRequest(endpoint, {
       requestId: (body.requestId as string | undefined) ?? null,
       kind: (body.kind as "http" | "email" | undefined) ?? null,
@@ -92,5 +101,35 @@ export async function POST(request: Request, { params }: Params) {
   } catch (error) {
     reportError("Test delivery failed", error);
     return reply({ error: "Internal server error" }, 500);
+  }
+}
+
+/**
+ * A file drop's test: connect, log in and write a small test file to the
+ * folder (written again on each test). The first SFTP connection pins the
+ * server's host key on the drop.
+ */
+async function testFileDrop(
+  endpointId: string,
+  destination: Destination
+): Promise<{ ok: boolean; error?: string; file?: string; hostKey?: string | null }> {
+  if (!dropsOffered()) return { ok: false, error: "File drops are not set up on this server." };
+  const config = storedFileDropConfig(destination.config);
+  const secret = await getDestinationDropSecret(endpointId, destination.id);
+  if (!config || !secret) return { ok: false, error: "Save the drop's settings and secret first." };
+  try {
+    const result = await testDropTarget(config, secret);
+    if (config.protocol === "sftp" && !config.hostKey && result.hostKey) {
+      const { error } = await createAdminClient()
+        .from("endpoint_destinations")
+        .update({ config: { ...config, hostKey: result.hostKey } as never })
+        .eq("id", destination.id)
+        .eq("endpoint_id", endpointId);
+      if (error) throw error;
+    }
+    return { ok: true, file: result.file, hostKey: result.hostKey };
+  } catch (error) {
+    if (error instanceof DropError) return { ok: false, error: error.message };
+    throw error;
   }
 }

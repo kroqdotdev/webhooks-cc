@@ -181,7 +181,8 @@ async function sendToDestination(
     }>();
   if (error) throw error;
   // Gone or switched off: nothing to send, and nothing to retry.
-  if (!data || !data.enabled || data.format === "sheets") return true;
+  if (!data || !data.enabled || data.format === "sheets" || data.format === "file_drop")
+    return true;
   const chat = data.format === "chat" || isSlackUrl(data.url) || isDiscordUrl(data.url);
   let outgoing;
   if (chat) {
