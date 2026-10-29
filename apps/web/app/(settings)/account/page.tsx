@@ -19,6 +19,7 @@ import { useAccountProfile } from "@/components/settings/use-account-profile";
 import { Button } from "@/components/ui/button";
 import { GitHubIcon, GoogleIcon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
+import { planName } from "@/lib/entitlements";
 
 const NAME_MAX_LENGTH = 80;
 
@@ -159,7 +160,7 @@ export default function ProfilePage() {
             <p className="text-lg font-semibold truncate">{profile.name || profile.email}</p>
             <p className="text-sm text-muted-foreground">
               <Link href="/account/plan" className={settingsLink}>
-                {profile.plan === "pro" ? "Pro" : "Free"}
+                {planName(profile.plan)}
               </Link>{" "}
               plan
             </p>

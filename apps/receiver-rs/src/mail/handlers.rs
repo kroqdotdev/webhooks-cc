@@ -277,6 +277,14 @@ struct Prepared {
     hash: String,
     parsed: ParsedEmail,
     stored: StoredBody,
+    /// The exact message and its decoded attachments, kept only when they go
+    /// to object storage.
+    objects: Option<MessageObjects>,
+}
+
+struct MessageObjects {
+    raw: Bytes,
+    attachments: Vec<Bytes>,
 }
 
 enum PrepareError {
@@ -284,7 +292,7 @@ enum PrepareError {
     TooLarge,
 }
 
-fn prepare(raw_base64: String) -> Result<Prepared, PrepareError> {
+fn prepare(raw_base64: String, keep_objects: bool) -> Result<Prepared, PrepareError> {
     let raw = base64::engine::general_purpose::STANDARD
         .decode(raw_base64.as_bytes())
         .map_err(|_| PrepareError::InvalidBase64)?;
@@ -292,11 +300,23 @@ fn prepare(raw_base64: String) -> Result<Prepared, PrepareError> {
     if raw.len() > MAX_MESSAGE_BYTES {
         return Err(PrepareError::TooLarge);
     }
+    let mut parsed = parse::parse_message_with(&raw, keep_objects);
+    let stored = parse::stored_body(&raw);
+    let size = raw.len();
+    let hash = hex::encode(Sha256::digest(&raw));
+    let objects = keep_objects.then(|| MessageObjects {
+        attachments: std::mem::take(&mut parsed.attachment_contents)
+            .into_iter()
+            .map(Bytes::from)
+            .collect(),
+        raw: Bytes::from(raw),
+    });
     Ok(Prepared {
-        size: raw.len(),
-        hash: hex::encode(Sha256::digest(&raw)),
-        parsed: parse::parse_message(&raw),
-        stored: parse::stored_body(&raw),
+        size,
+        hash,
+        parsed,
+        stored,
+        objects,
     })
 }
 
@@ -368,7 +388,8 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
         raw,
     } = request;
 
-    let prepared = match tokio::task::spawn_blocking(move || prepare(raw)).await {
+    let keep_objects = state.object_store.is_some();
+    let prepared = match tokio::task::spawn_blocking(move || prepare(raw, keep_objects)).await {
         Ok(Ok(prepared)) => prepared,
         Ok(Err(PrepareError::InvalidBase64)) => return bad_request("invalid_raw"),
         Ok(Err(PrepareError::TooLarge)) => return too_large(),
@@ -509,7 +530,39 @@ async fn capture_for_slug(
         map.insert("envelope_to".into(), json!(envelope_to));
     }
     email.insert("smtp".into(), smtp);
-    let email = Value::Object(email);
+    let mut email = Value::Object(email);
+
+    // Object storage first: the capture only names objects that exist. A
+    // failed upload answers transient, so the sender keeps the message and
+    // retries (at least once, as for database failures).
+    let stored_objects = match (&state.object_store, &input.prepared.objects) {
+        (Some(store), Some(objects)) => {
+            let request_id = uuid::Uuid::new_v4();
+            let prefix = crate::object_store::request_prefix(&request_id);
+            match store_objects(store, &prefix, objects).await {
+                Ok(()) => {
+                    // The exact message is kept whatever its size; the
+                    // database copy may still be cut (raw_truncated).
+                    if let Value::Object(map) = &mut email {
+                        map.insert("raw_stored".into(), Value::Bool(true));
+                    }
+                    Some((request_id, prefix))
+                }
+                Err(e) => {
+                    metrics::mail_ingest("storage_failed");
+                    if storage_log_throttle()
+                        .check("put", Instant::now())
+                        .is_some()
+                    {
+                        tracing::error!(error = %e, "storing an email in object storage failed");
+                    }
+                    delete_objects(store, &prefix, objects.attachments.len()).await;
+                    return ("transient", None);
+                }
+            }
+        }
+        _ => None,
+    };
 
     let limit_key = match state.capture_limiter.cached_key(slug) {
         Some(key) => key,
@@ -522,10 +575,16 @@ async fn capture_for_slug(
         .await
     else {
         metrics::mail_ingest("account_busy");
+        discard_objects(state, input.prepared, stored_objects.as_ref()).await;
         return ("transient", None);
     };
+    // With object storage the exact bytes are there, so body_raw stays empty.
+    let body_raw = match stored_objects {
+        Some(_) => None,
+        None => input.prepared.stored.raw.as_ref(),
+    };
     let result: Result<Value, sqlx::Error> = sqlx::query_scalar(
-        "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+        "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL, $16::uuid, $17)",
     )
     .bind(slug)
     .bind("EMAIL")
@@ -536,15 +595,27 @@ async fn capture_for_slug(
     .bind("message/rfc822")
     .bind(input.client_ip)
     .bind(input.received_at)
-    .bind(&input.prepared.stored.raw)
+    .bind(body_raw)
     .bind("email")
     .bind(&email)
     .bind(&input.prepared.hash)
     .bind(input.retry)
     .bind(i32::try_from(input.prepared.size).ok())
+    .bind(stored_objects.as_ref().map(|(id, _)| id.to_string()))
+    .bind(stored_objects.as_ref().map(|(_, prefix)| prefix.as_str()))
     .fetch_one(&state.pool)
     .await;
     drop(permit);
+
+    // Anything but a new capture leaves the objects unreferenced: a refusal,
+    // a duplicate (the earlier copy has its own), an error the sender will
+    // retry. Deleting them is best effort; the bucket's lifecycle rule
+    // removes whatever this misses.
+    let captured_here = matches!(&result, Ok(value)
+        if value.get("status").and_then(Value::as_str) == Some("ok"));
+    if !captured_here {
+        discard_objects(state, input.prepared, stored_objects.as_ref()).await;
+    }
 
     let value = match result {
         Ok(value) => value,
@@ -611,6 +682,82 @@ async fn capture_for_slug(
     }
 }
 
+/// Puts the raw message at `{prefix}raw.eml` and attachment `i` at
+/// `{prefix}a/{i}`, all at once.
+async fn store_objects(
+    store: &std::sync::Arc<crate::object_store::ObjectStore>,
+    prefix: &str,
+    objects: &MessageObjects,
+) -> Result<(), crate::object_store::StoreError> {
+    let mut uploads = tokio::task::JoinSet::new();
+    {
+        let store = store.clone();
+        let key = format!("{prefix}raw.eml");
+        let body = objects.raw.clone();
+        uploads.spawn(async move { store.put(&key, body, "message/rfc822").await });
+    }
+    for (index, contents) in objects.attachments.iter().enumerate() {
+        let store = store.clone();
+        let key = format!("{prefix}a/{index}");
+        let body = contents.clone();
+        uploads.spawn(async move { store.put(&key, body, "application/octet-stream").await });
+    }
+    let mut outcome = Ok(());
+    while let Some(joined) = uploads.join_next().await {
+        match joined {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => outcome = Err(e),
+            Err(_) => outcome = Err(crate::object_store::StoreError::Status(0)),
+        }
+    }
+    outcome
+}
+
+async fn delete_objects(
+    store: &std::sync::Arc<crate::object_store::ObjectStore>,
+    prefix: &str,
+    attachments: usize,
+) {
+    let mut keys = vec![format!("{prefix}raw.eml")];
+    keys.extend((0..attachments).map(|i| format!("{prefix}a/{i}")));
+    let mut deletes = tokio::task::JoinSet::new();
+    for key in keys {
+        let store = store.clone();
+        deletes.spawn(async move { store.delete(&key).await });
+    }
+    let mut failed = false;
+    while let Some(joined) = deletes.join_next().await {
+        failed |= !matches!(joined, Ok(Ok(())));
+    }
+    if failed
+        && storage_log_throttle()
+            .check("delete", Instant::now())
+            .is_some()
+    {
+        tracing::warn!(
+            "deleting unreferenced email objects failed; the bucket lifecycle rule will"
+        );
+    }
+}
+
+async fn discard_objects(
+    state: &AppState,
+    prepared: &Prepared,
+    stored: Option<&(uuid::Uuid, String)>,
+) {
+    if let (Some(store), Some(objects), Some((_, prefix))) =
+        (&state.object_store, &prepared.objects, stored)
+    {
+        delete_objects(store, prefix, objects.attachments.len()).await;
+    }
+}
+
+/// One storage error line a minute; the counter has every one.
+fn storage_log_throttle() -> &'static LogThrottle {
+    static THROTTLE: OnceLock<LogThrottle> = OnceLock::new();
+    THROTTLE.get_or_init(|| LogThrottle::new(Duration::from_secs(60), 4))
+}
+
 /// How a failed capture query is reported. Only data errors (SQLSTATE classes
 /// 22 and 23), where the message itself is the problem and a retry would fail
 /// the same way, are permanent. Everything else, including schema and
@@ -634,7 +781,6 @@ fn clamp_received_at(sent: Option<DateTime<Utc>>, now: DateTime<Utc>) -> DateTim
         _ => now,
     }
 }
-
 
 /// HELO names, reverse DNS and envelope senders: NUL-free and length-capped.
 fn short_text(s: &str) -> String {
@@ -681,6 +827,7 @@ mod tests {
             config,
             capture_limiter: Arc::new(CaptureLimiter::new(4)),
             mail_deliver_slots: Arc::new(tokio::sync::Semaphore::new(DELIVER_CONCURRENCY)),
+            object_store: None,
         }
     }
 
@@ -939,5 +1086,124 @@ mod tests {
             "transient"
         );
         assert_eq!(email_failure_status(&sqlx::Error::RowNotFound), "transient");
+    }
+
+    /// A fake S3 endpoint: records each request's method and path, and
+    /// answers `status` to PUTs.
+    async fn fake_store(
+        status: StatusCode,
+    ) -> (
+        Arc<crate::object_store::ObjectStore>,
+        Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorder = seen.clone();
+        let app = axum::Router::new().fallback(move |request: Request| {
+            let recorder = recorder.clone();
+            async move {
+                let signed = request
+                    .headers()
+                    .get("authorization")
+                    .is_some_and(|v| v.to_str().unwrap_or("").starts_with("AWS4-HMAC-SHA256"));
+                recorder.lock().unwrap().push(format!(
+                    "{} {} {}",
+                    request.method(),
+                    request.uri().path(),
+                    signed
+                ));
+                if request.method() == axum::http::Method::PUT {
+                    status
+                } else {
+                    StatusCode::NO_CONTENT
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let store = crate::object_store::ObjectStore::new(crate::object_store::ObjectStoreConfig {
+            endpoint: format!("http://{addr}"),
+            region: "us-east-1".into(),
+            bucket: "mail".into(),
+            access_key_id: "id".into(),
+            secret_access_key: "secret".into(),
+        });
+        (Arc::new(store), seen)
+    }
+
+    fn objects_with_two_attachments() -> MessageObjects {
+        MessageObjects {
+            raw: Bytes::from_static(b"Subject: x\r\n\r\nbody"),
+            attachments: vec![
+                Bytes::from_static(b"a,b\n1,2\n"),
+                Bytes::from_static(b"%PDF"),
+            ],
+        }
+    }
+
+    #[tokio::test]
+    async fn stores_the_message_and_each_attachment_signed() {
+        let (store, seen) = fake_store(StatusCode::OK).await;
+        store_objects(&store, "m/id/", &objects_with_two_attachments())
+            .await
+            .unwrap();
+        let mut seen = seen.lock().unwrap().clone();
+        seen.sort();
+        assert_eq!(
+            seen,
+            vec![
+                "PUT /mail/m/id/a/0 true",
+                "PUT /mail/m/id/a/1 true",
+                "PUT /mail/m/id/raw.eml true",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_upload_fails_the_whole_message_and_cleans_up() {
+        let (store, seen) = fake_store(StatusCode::SERVICE_UNAVAILABLE).await;
+        let objects = objects_with_two_attachments();
+        assert!(store_objects(&store, "m/id/", &objects).await.is_err());
+        delete_objects(&store, "m/id/", objects.attachments.len()).await;
+        let deletes: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.starts_with("DELETE"))
+            .cloned()
+            .collect();
+        assert_eq!(deletes.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_store_is_an_error_not_a_hang() {
+        let store = Arc::new(crate::object_store::ObjectStore::new(
+            crate::object_store::ObjectStoreConfig {
+                endpoint: "http://127.0.0.1:1".into(),
+                region: "us-east-1".into(),
+                bucket: "mail".into(),
+                access_key_id: "id".into(),
+                secret_access_key: "secret".into(),
+            },
+        ));
+        let started = Instant::now();
+        assert!(
+            store_objects(&store, "m/id/", &objects_with_two_attachments())
+                .await
+                .is_err()
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn prepare_keeps_objects_only_when_asked() {
+        let raw = "From: a@example.com\r\nTo: b@mailhooks.cc\r\nSubject: s\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=X\r\n\r\n--X\r\nContent-Type: text/plain\r\n\r\nhi\r\n--X\r\nContent-Type: text/csv\r\nContent-Disposition: attachment; filename=a.csv\r\n\r\na,b\r\n--X--\r\n";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
+        let kept = prepare(encoded.clone(), true).ok().unwrap();
+        let objects = kept.objects.unwrap();
+        assert_eq!(objects.raw.as_ref(), raw.as_bytes());
+        assert_eq!(objects.attachments.len(), 1);
+        assert_eq!(objects.attachments[0].as_ref(), b"a,b");
+        assert!(prepare(encoded, false).ok().unwrap().objects.is_none());
     }
 }
