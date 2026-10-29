@@ -20,6 +20,7 @@ keywords:
     "attachment parsing pages",
     "webhook overage",
     "extra webhook requests",
+    "custom inbound domain",
   ]
 seo:
   ogTitle: "Plans & Limits"
@@ -148,6 +149,10 @@ Pages are used in this order: the plan's pages, monthly page blocks, one-time pa
 
 One-time page blocks stay on the account when it leaves Business. Monthly page blocks and page overage end when the account leaves Business, or when the team's Team Business add-on ends.
 
+## Custom inbound domains
+
+Business includes one [custom inbound domain](/docs/email-capture#your-own-domain), so mail can arrive at an address on your own domain; the Team Business add-on includes one per team. Each extra domain is **$3 a month**, renewed with the plan and set under **Account > Domains** (or on the team's page). Domains added mid-period are charged in full and count at once; fewer apply at the renewal. Extra domains end when the account leaves Business, or when the team's Team Business ends, and the domains stop receiving mail.
+
 ## Teams and shared endpoints
 
 Teams are billed per team at **$12/seat/month**. Any account can create a team, but the team stays inert until its owner subscribes — the subscription, not anyone's personal plan, is what activates it.
@@ -161,7 +166,7 @@ Teams are billed per team at **$12/seat/month**. Any account can create a team, 
 
 When the pool is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset.
 
-**Team Business add-on.** For **$49/month** on the team's subscription (monthly only), Team Business adds 150,000 requests to the team's pool, 2,000 pooled parsed attachment pages a month with [page blocks and page overage](#page-blocks-and-page-overage), up to 50 layouts per endpoint on endpoints shared to the team, and 90-day retention for team-billed requests. Members' personal endpoints follow their own plan.
+**Team Business add-on.** For **$49/month** on the team's subscription (monthly only), Team Business adds 150,000 requests to the team's pool, 2,000 pooled parsed attachment pages a month with [page blocks and page overage](#page-blocks-and-page-overage), up to 50 layouts per endpoint on endpoints shared to the team, one [custom inbound domain](#custom-inbound-domains), and 90-day retention for team-billed requests. Members' personal endpoints follow their own plan.
 
 **Without an active subscription** (never subscribed, or canceled and past the period end) a team is suspended: its data is kept, but invites, endpoint sharing, and member access to shared endpoints are all blocked until it subscribes again. Requests captured while a team is suspended fall back to the endpoint owner's personal quota.
 

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CapacityAction } from "@/lib/capacity-route";
-import type { CapacityState } from "@/lib/supabase/capacity-billing";
+import type { CapacityResource, CapacityState } from "@/lib/supabase/capacity-billing";
 
 /**
  * Browser-side wrappers for `/api/billing/capacity` and
@@ -23,9 +23,10 @@ async function readError(response: Response): Promise<string> {
 export async function fetchCapacity(
   accessToken: string,
   teamId?: string,
-  resource: "requests" | "pages" = "requests"
+  resource: CapacityResource = "requests"
 ): Promise<CapacityState> {
-  const url = resource === "pages" ? `${capacityUrl(teamId)}?resource=pages` : capacityUrl(teamId);
+  const url =
+    resource === "requests" ? capacityUrl(teamId) : `${capacityUrl(teamId)}?resource=${resource}`;
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",

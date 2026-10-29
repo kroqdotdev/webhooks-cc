@@ -94,6 +94,24 @@ export function getPageProductIds(): CapacityProductIds | null {
   return { oneTime, monthly, monthlyAdd, overage };
 }
 
+/** Polar products for extra inbound domains: monthly units, and units added mid-period. */
+export type DomainProductIds = Pick<CapacityProductIds, "monthly" | "monthlyAdd">;
+
+/** Each extra-domain product id that is set. */
+export function configuredDomainProductIds(): Partial<DomainProductIds> {
+  return {
+    monthly: process.env.POLAR_DOMAINS_PRODUCT_ID || undefined,
+    monthlyAdd: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID || undefined,
+  };
+}
+
+/** The extra-domain products, or null while either is unset. */
+export function getDomainProductIds(): DomainProductIds | null {
+  const { monthly, monthlyAdd } = configuredDomainProductIds();
+  if (!monthly || !monthlyAdd) return null;
+  return { monthly, monthlyAdd };
+}
+
 /** The Team Business add-on product, or null when it is not offered. */
 export function teamBusinessProductId(): string | null {
   return process.env.POLAR_TEAM_BUSINESS_PRODUCT_ID || null;
