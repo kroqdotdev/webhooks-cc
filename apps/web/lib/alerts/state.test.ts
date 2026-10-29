@@ -50,6 +50,7 @@ describe("layout misses", () => {
     layout: { id: "orders", name: "Orders" },
     fields,
     lineItems: [],
+    lineItemColumns: [],
     attachments: [],
     pages: 0,
   });

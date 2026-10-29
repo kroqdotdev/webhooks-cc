@@ -19,9 +19,18 @@ import { highlightBody } from "@/lib/highlight";
 import { JsonTree } from "./json-tree";
 import { NoteBar, type DisplayableRequest } from "./request-detail";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
+import { ParsedResult } from "./layouts-section";
 
 type EmailTab =
-  "json" | "preview" | "text" | "headers" | "attachments" | "authentication" | "raw" | "deliveries";
+  | "parsed"
+  | "json"
+  | "preview"
+  | "text"
+  | "headers"
+  | "attachments"
+  | "authentication"
+  | "raw"
+  | "deliveries";
 type Verdict = "pass" | "fail" | "none";
 
 interface EmailDetailProps {
@@ -800,7 +809,7 @@ export function EmailDetail({
   const email = request.email ?? null;
   const requestId = "id" in request ? request.id : request._id;
   // JSON first: it is what forwarding sends and what a handler is written against.
-  const [tab, setTab] = useState<EmailTab>(initialTab ?? "json");
+  const [tab, setTab] = useState<EmailTab>(initialTab ?? (request.parsed ? "parsed" : "json"));
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
   const raw = useMemo(() => rawMessage(request), [request]);
@@ -943,6 +952,7 @@ export function EmailDetail({
   const attachments = email.attachments;
   const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
+    ...(request.parsed ? [{ id: "parsed" as const, label: "Parsed" }] : []),
     { id: "json", label: "JSON" },
     ...(email.html ? [{ id: "preview" as const, label: "Preview" }] : []),
     { id: "text", label: "Text" },
@@ -1110,6 +1120,8 @@ export function EmailDetail({
       </div>
 
       <div className="flex-1 overflow-auto p-4 md:p-5">
+        {activeTab === "parsed" && request.parsed && <ParsedResult parsed={request.parsed} />}
+
         {activeTab === "json" && json && (
           <EmailJsonPane
             json={json}

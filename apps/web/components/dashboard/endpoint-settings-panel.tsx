@@ -11,6 +11,7 @@ import { DestinationsSection } from "./destinations-section";
 import { DeliveriesSection } from "./deliveries-section";
 import { EmailFieldsEditor } from "./email-fields-editor";
 import { RetentionSection } from "./retention-section";
+import { LayoutsSection } from "./layouts-section";
 import { AlertsSection } from "./alerts-section";
 import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import {
@@ -569,12 +570,14 @@ export function EndpointSettingsPanel({
   // The log exists once a destination was added (its rows stay after it goes).
   const hasLog =
     isOwner && ((endpoint.destinationCount ?? 0) > 0 || endpoint.hasForwardSecret === true);
+  const hasEmail = isOwner && !!endpoint.emailAddress;
   const sections = useMemo(
     () =>
       [
         // In the order a request meets them: it arrives, its signature is
         // checked, it is answered, and it is sent on.
         { id: "receiving", label: "Receiving" },
+        ...(hasEmail ? [{ id: "layouts", label: "Layouts" }] : []),
         ...(isOwner ? [{ id: "retention", label: "Retention" }] : []),
         ...(isOwner ? [{ id: "verification", label: "Signature verification" }] : []),
         { id: "responses", label: "Responses" },
@@ -588,7 +591,7 @@ export function EndpointSettingsPanel({
             ]
           : []),
       ] as { id: SettingsSection; label: string; nested?: boolean }[],
-    [isOwner, hasLog]
+    [isOwner, hasLog, hasEmail]
   );
   const [active, setActive] = useState<SettingsSection>(focusSection ?? "receiving");
   const scroller = useRef<HTMLDivElement>(null);
@@ -650,6 +653,7 @@ export function EndpointSettingsPanel({
       <div ref={scroller} className="flex-1 overflow-y-auto">
         <div className="max-w-[780px] p-4 md:p-6 space-y-6">
           <ReceivingSection endpoint={endpoint} isOwner={isOwner} />
+          {hasEmail && <LayoutsSection endpoint={endpoint} />}
           {isOwner && <RetentionSection endpoint={endpoint} />}
           {isOwner && <VerificationSection endpoint={endpoint} />}
           <ResponsesSection endpoint={endpoint} />
