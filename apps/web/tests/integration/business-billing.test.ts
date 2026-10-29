@@ -35,6 +35,7 @@ import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
 import {
   changeMonthlyBlocks,
   getCapacityState,
+  reconcileAddonsWithPlan,
   setOverage,
   setTeamBusinessEnding,
 } from "@/lib/supabase/capacity-billing";
@@ -474,5 +475,83 @@ describe("page add-ons when Business is about to end", () => {
     await expect(changeMonthlyBlocks(account, owner, 1, "pages")).rejects.toMatchObject({
       code: "plan_ending",
     });
+  });
+});
+
+describe("add-ons on an annual plan", () => {
+  it("keep renewing monthly until the year's last month when Business is leaving", async () => {
+    const yearEnd = new Date(Date.now() + 200 * DAY).toISOString();
+    const userId = await createUser({
+      plan: "business",
+      subscription_status: "active",
+      billing_interval: "year",
+      billing_period_end: yearEnd,
+      period_start: new Date(Date.now() - 5 * DAY).toISOString(),
+      period_end: new Date(Date.now() + 25 * DAY).toISOString(),
+      pending_plan: "pro",
+      pending_interval: "month",
+    });
+    const account = { kind: "user" as const, userId };
+    await applyAddon(account, "page_blocks", `sub_pb_year_${ts}`, "active", 1);
+
+    await reconcileAddonsWithPlan(account);
+    const ending = async () =>
+      (
+        await admin
+          .from("capacity_subscriptions")
+          .select("cancel_at_period_end")
+          .eq("polar_subscription_id", `sub_pb_year_${ts}`)
+          .single()
+      ).data?.cancel_at_period_end;
+    expect(await ending()).toBe(false);
+    expect((await getCapacityState(account, "pages")).planEnding).toBe(false);
+
+    // The year's last month: they end with it.
+    await admin
+      .from("users")
+      .update({ period_start: new Date(Date.now() - DAY).toISOString(), period_end: yearEnd })
+      .eq("id", userId);
+    await reconcileAddonsWithPlan(account);
+    expect(await ending()).toBe(true);
+    expect((await getCapacityState(account, "pages")).planEnding).toBe(true);
+
+    // Keeping Business brings them back.
+    await admin
+      .from("users")
+      .update({ pending_plan: null, pending_interval: null })
+      .eq("id", userId);
+    await reconcileAddonsWithPlan(account);
+    expect(await ending()).toBe(false);
+  });
+
+  it("brings a team's page add-ons back when Team Business is kept", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({
+        name: `biz-keep-${ts}`,
+        created_by: owner,
+        seats: 1,
+        subscription_status: "active",
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+    await applyAddon(account, "team_business", `sub_tb_keep_${ts}`, "active");
+    await applyAddon(account, "page_overage", `sub_tpo_keep_${ts}`, "active");
+
+    await setTeamBusinessEnding(account, true);
+    await setTeamBusinessEnding(account, false);
+    const { data: rows } = await admin
+      .from("capacity_subscriptions")
+      .select("kind, cancel_at_period_end")
+      .eq("team_id", team.id)
+      .order("kind");
+    expect(rows).toEqual([
+      { kind: "page_overage", cancel_at_period_end: false },
+      { kind: "team_business", cancel_at_period_end: false },
+    ]);
   });
 });
