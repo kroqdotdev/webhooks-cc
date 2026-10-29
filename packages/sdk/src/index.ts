@@ -141,6 +141,7 @@ export {
   valueToText,
   parseStructuredBody,
 } from "./rules";
+export { layoutIssues } from "./layouts";
 export type {
   Condition,
   ConditionField,

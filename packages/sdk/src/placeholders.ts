@@ -102,6 +102,7 @@ export const EMAIL_TEMPLATE_ROOTS = [
   "html",
   "replyText",
   "fields",
+  "parsed",
   "codes",
   "links",
   "attachments",
