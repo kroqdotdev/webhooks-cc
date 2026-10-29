@@ -5,6 +5,7 @@ import type { FileDropConfig } from "@/lib/drops/config";
 import { openDropTarget } from "@/lib/drops/target";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import { createDestination, pinDropHostKey } from "@/lib/supabase/destinations";
+import { PATCH } from "@/app/api/endpoints/[slug]/destinations/[id]/route";
 
 /**
  * File drops against servers that misbehave (local fake servers, so these
@@ -137,5 +138,81 @@ describe("file drops to servers that misbehave", () => {
       second
     );
     expect(await key()).toBe(first);
+  });
+
+  it("keep a pinned host key unless a change names one, and ask for the secret to change a pin", async () => {
+    const email = `test-drop-patch-${Date.now()}@webhooks-test.local`;
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: "TestPassword123!",
+      email_confirm: true,
+    });
+    if (error) throw error;
+    userIds.push(data.user!.id);
+    await admin.from("users").update({ plan: "business" }).eq("id", data.user!.id);
+    const anon = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data: session, error: signInError } = await anon.auth.signInWithPassword({
+      email,
+      password: "TestPassword123!",
+    });
+    if (signInError) throw signInError;
+    const endpoint = await createEndpointForUser({ userId: data.user!.id, name: "patch" });
+    const pinned = "SHA256:" + "C".repeat(43);
+    const config = {
+      protocol: "sftp",
+      host: "files.acme.example",
+      port: 22,
+      username: "acme",
+      folder: "",
+      file: "json",
+      rows: "email",
+      columns: [],
+      prefix: "",
+      batch: false,
+    };
+    const destination = await createDestination(endpoint.id, {
+      url: "sftp://files.acme.example",
+      format: "file_drop",
+      email: true,
+      http: false,
+      config: { ...config, hostKey: pinned },
+      dropSecret: { password: "x" },
+    });
+    const patch = (body: unknown) =>
+      PATCH(
+        new Request(
+          `http://localhost/api/endpoints/${endpoint.slug}/destinations/${destination.id}`,
+          {
+            method: "PATCH",
+            headers: {
+              authorization: `Bearer ${session.session!.access_token}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(body),
+          }
+        ),
+        { params: Promise.resolve({ slug: endpoint.slug, id: destination.id }) }
+      );
+    const stored = async () =>
+      (await admin.from("endpoint_destinations").select("config").eq("id", destination.id).single())
+        .data?.config as { hostKey: string | null; prefix: string };
+
+    // A change that leaves the key out keeps it, and needs no secret.
+    expect((await patch({ config: { ...config, prefix: "orders-" } })).status).toBe(200);
+    expect(await stored()).toMatchObject({ hostKey: pinned, prefix: "orders-" });
+    // Forgetting the key, or trusting another one, needs the secret again.
+    expect((await patch({ config: { ...config, hostKey: null } })).status).toBe(400);
+    expect(
+      (await patch({ config: { ...config, hostKey: "SHA256:" + "D".repeat(43) } })).status
+    ).toBe(400);
+    expect((await stored()).hostKey).toBe(pinned);
+    expect(
+      (await patch({ config: { ...config, hostKey: null }, dropSecret: { password: "y" } })).status
+    ).toBe(200);
+    expect((await stored()).hostKey).toBeNull();
   });
 });

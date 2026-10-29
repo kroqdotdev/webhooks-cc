@@ -135,7 +135,11 @@ class Control {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiter = null;
-        reject(new DropError("The FTP server stopped answering."));
+        // A reply that comes later would be read as the next command's:
+        // the connection is closed instead.
+        const error = new DropError("The FTP server stopped answering.");
+        this.fail(error);
+        reject(error);
       }, COMMAND_TIMEOUT_MS);
       this.waiter = {
         resolve: (reply) => {
@@ -308,16 +312,34 @@ export class FtpSession {
       socket.once("close", () => resolve());
       socket.once("error", () => resolve());
     });
-    const uploadTimer = setTimeout(() => socket.destroy(), UPLOAD_TIMEOUT_MS);
+    // Only a file sent in full counts: a data connection that closes before
+    // the last byte went out (the upload timed out, the server cut it) leaves
+    // a partial file, which is never renamed into place. Plain FTP would
+    // take the early close as the end of the file and answer 226.
+    let timedOut = false;
+    const uploadTimer = setTimeout(() => {
+      timedOut = true;
+      socket.destroy();
+    }, UPLOAD_TIMEOUT_MS);
     try {
       await new Promise<void>((resolve, reject) => {
-        socket.end(data, () => resolve());
+        let sent = false;
+        socket.end(data, () => {
+          sent = true;
+          resolve();
+        });
         socket.once("error", () => reject(new DropError("The data connection broke.")));
-        socket.once("close", () => resolve());
+        socket.once("close", () => {
+          if (!sent) reject(new DropError("The data connection closed before the file was sent."));
+        });
       });
       const timer = setTimeout(() => socket.destroy(), CONNECT_TIMEOUT_MS);
       await done;
       clearTimeout(timer);
+    } catch (error) {
+      // The control connection would answer for a half-sent file: closed instead.
+      this.control.close();
+      throw timedOut ? new DropError("The upload took too long.") : error;
     } finally {
       clearTimeout(uploadTimer);
     }

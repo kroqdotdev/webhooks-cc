@@ -28,6 +28,12 @@ describe("file drop files", () => {
     );
   });
 
+  it("quotes semicolons and tabs, which some locales split cells on", () => {
+    expect(buildCsv(["a"], [['x;=HYPERLINK("y")'], ["tab\there"]]).toString("utf8")).toBe(
+      'a\r\n"x;=HYPERLINK(""y"")"\r\n"tab\there"\r\n'
+    );
+  });
+
   it("writes XML with safe element names and escaped values", () => {
     const xml = buildXml(
       ["Order #", "2nd line", "xmlish"],
