@@ -11,12 +11,15 @@
 -- Resend window: a free period lasts 24 hours, so a free account keeps the
 -- 7-day window. A paid period lasts 30 days, so a paid account is emailed at
 -- most once per period: again only when the last email predates its
--- period_start (an email sent while it was still free does not count).
+-- period_start. The web app clears quota_email_sent_at when a new
+-- subscription arrives, so a free-period email sent between the payment and
+-- the webhook does not count against the first paid period.
 --
--- The result gains plan, block_requests and cancel_at_period_end, so the web
--- app can pick the copy (extra requests instead of an upgrade) and state the
--- whole allowance. A changed result type needs drop and create, which also
--- drops the grants; they are given again below.
+-- The result gains plan, block_requests, cancel_at_period_end and
+-- overage_active, so the web app can pick the copy (extra requests instead of
+-- an upgrade, a higher overage maximum when overage is already on) and state
+-- the whole allowance. A changed result type needs drop and create, which
+-- also drops the grants; they are given again below.
 --
 -- Deploy order: deploy the web release that reads these columns first, then
 -- apply this file. The release before it would send a paid account the free
@@ -27,7 +30,9 @@
 -- neither this email nor the banner.
 --
 -- Numbered 00077 because the open mailhooks stack holds 00067 to 00076; it
--- depends on nothing there.
+-- depends on nothing there. That stack's 00067 redefines this function in its
+-- old shape (section 10) and must drop that section before it is applied
+-- after this file, or its create or replace fails on the changed result.
 -- ============================================================================
 
 begin;
@@ -43,6 +48,7 @@ returns table (
   block_requests integer,
   period_end timestamptz,
   cancel_at_period_end boolean,
+  overage_active boolean,
   team_billed_endpoints integer
 )
 language sql
@@ -74,10 +80,13 @@ as $$
       for update skip locked
    )
   returning u.id, u.email, u.plan, u.request_limit, u.block_requests, u.period_end,
-            u.cancel_at_period_end, public.count_team_billed_endpoints(u.id);
+            u.cancel_at_period_end, u.overage_active,
+            public.count_team_billed_endpoints(u.id);
 $$;
 
 revoke all on function public.claim_quota_exhausted_users(integer) from public, anon, authenticated;
 grant execute on function public.claim_quota_exhausted_users(integer) to service_role;
 
 commit;
+
+notify pgrst, 'reload schema';

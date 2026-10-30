@@ -18,6 +18,8 @@ const ts = Date.now();
 const DAY_MS = 24 * 60 * 60_000;
 const createdUserIds: string[] = [];
 const createdEndpointIds: string[] = [];
+const createdTeamIds: string[] = [];
+const endpointOf = new Map<string, string>();
 
 interface ClaimedUser {
   id: string;
@@ -27,6 +29,7 @@ interface ClaimedUser {
   block_requests: number;
   period_end: string;
   cancel_at_period_end: boolean;
+  overage_active: boolean;
   team_billed_endpoints: number;
 }
 
@@ -50,6 +53,7 @@ async function createAccount(label: string, state: Record<string, unknown>): Pro
 
   const endpoint = await createEndpointForUser({ userId, name: "quota claim endpoint" });
   createdEndpointIds.push(endpoint.id);
+  endpointOf.set(userId, endpoint.id);
 
   const { error: updateError } = await admin.from("users").update(state).eq("id", userId);
   if (updateError) throw updateError;
@@ -81,20 +85,65 @@ function proCapped(extra: Record<string, unknown> = {}) {
   };
 }
 
+/** Shares the user's endpoint into a new subscribed team owned by them. */
+async function billToTeam(userId: string, label: string) {
+  const { data, error } = await admin.rpc("create_team_with_owner", {
+    p_user_id: userId,
+    p_name: `QuotaClaim ${label} ${ts}`,
+  });
+  if (error) throw error;
+  const teamId = (data as { id: string }).id;
+  createdTeamIds.push(teamId);
+
+  const { error: activateError } = await admin
+    .from("teams")
+    .update({
+      subscription_status: "active",
+      seats: 1,
+      request_limit: 100_000,
+      requests_used: 0,
+      period_start: new Date().toISOString(),
+      period_end: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+      polar_subscription_id: `sub_quota_claim_${label}_${ts}`,
+    })
+    .eq("id", teamId);
+  if (activateError) throw activateError;
+
+  const { error: shareError } = await admin
+    .from("team_endpoints")
+    .insert({ team_id: teamId, endpoint_id: endpointOf.get(userId), shared_by: userId });
+  if (shareError) throw shareError;
+}
+
 async function claimAll(): Promise<Map<string, ClaimedUser>> {
   // Large enough to reach past whatever else is exhausted in the dev database.
   const { data, error } = await admin.rpc("claim_quota_exhausted_users", { p_limit: 10_000 });
   if (error) throw error;
   const ours = new Map<string, ClaimedUser>();
+  const others: string[] = [];
   for (const row of (data ?? []) as ClaimedUser[]) {
     if (createdUserIds.includes(row.id)) ours.set(row.id, row);
+    else others.push(row.id);
+  }
+  // Hand back the leases taken on other dev accounts, so a running dev poller
+  // is not held off them for 15 minutes.
+  if (others.length > 0) {
+    const { error: releaseError } = await admin
+      .from("users")
+      .update({ quota_email_claimed_at: null })
+      .in("id", others);
+    if (releaseError) throw releaseError;
   }
   return ours;
 }
 
 afterAll(async () => {
   if (createdEndpointIds.length > 0) {
+    await admin.from("team_endpoints").delete().in("endpoint_id", createdEndpointIds);
     await admin.from("endpoints").delete().in("id", createdEndpointIds);
+  }
+  if (createdTeamIds.length > 0) {
+    await admin.from("teams").delete().in("id", createdTeamIds);
   }
   for (const userId of createdUserIds) {
     await admin.auth.admin.deleteUser(userId);
@@ -152,9 +201,30 @@ describe("claim_quota_exhausted_users", () => {
         overage_period_start: PRO_PERIOD_START,
       })
     );
-    ids.proPeriodOver = await createAccount(
-      "pro-period-over",
-      proCapped({ period_start: ago(31 * DAY_MS), period_end: ago(DAY_MS) })
+    ids.proOverageLastPeriod = await createAccount(
+      "pro-overage-last-period",
+      proCapped({
+        overage_active: true,
+        overage_max: 25_000,
+        overage_used: 25_000,
+        overage_period_start: ago(40 * DAY_MS),
+      })
+    );
+    ids.proNoPeriodStart = await createAccount(
+      "pro-no-start",
+      proCapped({ period_start: null, quota_email_sent_at: ago(8 * DAY_MS) })
+    );
+    ids.proNoPeriodStartRecent = await createAccount(
+      "pro-no-start-recent",
+      proCapped({ period_start: null, quota_email_sent_at: ago(3 * DAY_MS) })
+    );
+    ids.proTeamBilledOnly = await createAccount("pro-team-billed", proCapped());
+    await billToTeam(ids.proTeamBilledOnly, "team-billed");
+    // Free, so the per-minute reset job (which renews Pro periods that have
+    // ended) cannot reset it before the claim and make the check vacuous.
+    ids.periodOver = await createAccount(
+      "period-over",
+      freeCapped({ period_start: ago(2 * DAY_MS), period_end: ago(DAY_MS) })
     );
 
     claimed = await claimAll();
@@ -175,9 +245,10 @@ describe("claim_quota_exhausted_users", () => {
       request_limit: 100_000,
       block_requests: 0,
       cancel_at_period_end: false,
+      overage_active: false,
       team_billed_endpoints: 0,
     });
-    expect(claimed.has(ids.proOverageFull)).toBe(true);
+    expect(claimed.get(ids.proOverageFull)).toMatchObject({ overage_active: true });
   });
 
   it("returns the recurring blocks and whether the plan is ending", () => {
@@ -193,7 +264,13 @@ describe("claim_quota_exhausted_users", () => {
     expect(claimed.has(ids.proWithBlocksLeft)).toBe(false);
     expect(claimed.has(ids.proWithCredits)).toBe(false);
     expect(claimed.has(ids.proOverageRoom)).toBe(false);
-    expect(claimed.has(ids.proPeriodOver)).toBe(false);
+    // Overage used up in an earlier period counts as room in this one.
+    expect(claimed.has(ids.proOverageLastPeriod)).toBe(false);
+    expect(claimed.has(ids.periodOver)).toBe(false);
+  });
+
+  it("skips an account whose endpoints are all billed to a team", () => {
+    expect(claimed.has(ids.proTeamBilledOnly)).toBe(false);
   });
 
   it("emails a paid account once per billing period", () => {
@@ -201,6 +278,11 @@ describe("claim_quota_exhausted_users", () => {
     expect(claimed.has(ids.proEmailedWhileFree)).toBe(true);
     // Emailed eight days ago, within this period: not again until it renews.
     expect(claimed.has(ids.proEmailedThisPeriod)).toBe(false);
+  });
+
+  it("falls back to the weekly window for a paid account without a period start", () => {
+    expect(claimed.has(ids.proNoPeriodStart)).toBe(true);
+    expect(claimed.has(ids.proNoPeriodStartRecent)).toBe(false);
   });
 
   it("does not claim an account again while its lease holds or once it was emailed", async () => {

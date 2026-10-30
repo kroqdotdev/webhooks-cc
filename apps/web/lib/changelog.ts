@@ -32,7 +32,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Pro Accounts Hear When Their Requests Run Out",
     track: "web",
     items: [
-      "Pro accounts now get the email free accounts already got when webhooks start meeting a 429: it names the endpoints that are rejecting them and the extra requests that keep them coming. It goes out once the plan's requests, monthly blocks, one-time blocks and overage are all used up, and at most once per billing period",
+      "Pro accounts now get the email free accounts already got when webhooks start meeting a 429, offering the extra requests that keep them coming instead of an upgrade. It goes out once the plan's requests, monthly blocks, one-time blocks and overage are all used up, and at most once per billing period",
     ],
   },
   {

@@ -59,14 +59,16 @@ interface Paragraph {
 /**
  * What a paid account can do about it: extra requests, when they are offered.
  * A plan set to end can only take one-time blocks; monthly blocks and overage
- * need a plan that renews.
+ * need a plan that renews. Overage that is already on has reached its
+ * maximum, so the way on is a higher one.
  */
 function paidNextStep(params: {
   planEnding: boolean;
+  overageActive: boolean;
   extraRequestsOffered: boolean;
   appUrl: string;
 }): Paragraph {
-  const { planEnding, extraRequestsOffered, appUrl } = params;
+  const { planEnding, overageActive, extraRequestsOffered, appUrl } = params;
   const extraLink = `${appUrl}/account/plan#extra-requests`;
   const blocks = BLOCK_REQUESTS.toLocaleString("en-US");
 
@@ -93,8 +95,11 @@ function paidNextStep(params: {
     `Extra requests keep your webhooks coming, in blocks of ${blocks}: monthly blocks`,
     `(${dollars(MONTHLY_BLOCK_CENTS)} a month, renewed with your plan), one-time blocks ` +
       `(${dollars(ONE_TIME_BLOCK_CENTS)}, kept until used) or`,
-    `overage (${dollars(OVERAGE_BLOCK_CENTS)} per ${blocks} used, billed at the end of the ` +
-      `period, up to a maximum you set).`,
+    overageActive
+      ? `a higher overage maximum (${dollars(OVERAGE_BLOCK_CENTS)} per ${blocks} used, billed ` +
+        `at the end of the period).`
+      : `overage (${dollars(OVERAGE_BLOCK_CENTS)} per ${blocks} used, billed at the end of the ` +
+        `period, up to a maximum you set).`,
   ];
   return {
     text: [...offer, `Add them on your plan page:`, extraLink],
@@ -124,6 +129,8 @@ export function buildQuotaExhaustedEmail(params: {
   plan?: string | null;
   /** A paid plan set to end at periodEnd instead of renewing. */
   planEnding?: boolean;
+  /** Overage is on (and, the quota being exhausted, at its maximum). */
+  overageActive?: boolean;
   /** Whether extra requests can be bought (the Polar add-on products are configured). */
   extraRequestsOffered?: boolean;
   appUrl: string;
@@ -164,6 +171,7 @@ export function buildQuotaExhaustedEmail(params: {
     ? [
         paidNextStep({
           planEnding: params.planEnding === true,
+          overageActive: params.overageActive === true,
           extraRequestsOffered: params.extraRequestsOffered === true,
           appUrl,
         }),

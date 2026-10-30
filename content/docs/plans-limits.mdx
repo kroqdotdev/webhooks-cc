@@ -54,7 +54,7 @@ Endpoints created by logged-in users (Free or Pro) **never expire**. They persis
 
 Quotas limit how many webhook requests your endpoints can capture within a billing period. When your quota is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` header indicating when the quota resets.
 
-When it runs out, we email you which endpoints are rejecting webhooks: on Free at most once a week, on Pro at most once per billing period, after any [extra requests](#extra-requests) are used up too.
+When it runs out, we email you that webhooks are being rejected, with the endpoints that have rejected any so far: on Free at most once a week, on Pro at most once per billing period, after any [extra requests](#extra-requests) are used up too.
 
 Quotas are enforced atomically inside a single Postgres stored procedure — no race conditions, even under high concurrency.
 

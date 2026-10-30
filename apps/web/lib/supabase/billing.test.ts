@@ -193,6 +193,35 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
     });
   });
 
+  test("a new subscription clears the quota email window", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [storedUser({ polar_subscription_id: null, period_start: null })],
+        "users:update": [{}],
+      })
+    );
+
+    await applyPolarWebhookEvent("subscription.created", subscriptionEvent());
+
+    expect(userUpdatePayload()).toMatchObject({ quota_email_sent_at: null });
+  });
+
+  test("a renewal or an update of the same subscription keeps the quota email window", async () => {
+    for (const periodStart of ["2026-07-01T00:00:00.000Z", "2026-08-01T00:00:00.000Z"]) {
+      recorded = [];
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "users:select": [storedUser({ period_start: periodStart })],
+          "users:update": [{}],
+        })
+      );
+
+      await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+
+      expect(userUpdatePayload()).not.toHaveProperty("quota_email_sent_at");
+    }
+  });
+
   test("an unrecognized status keeps the stored status instead of nulling it", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({

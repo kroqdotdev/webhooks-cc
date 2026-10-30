@@ -135,6 +135,7 @@ describe("sendQuotaExhaustedEmails", () => {
       block_requests: 25_000,
       period_end: "2026-11-15T06:48:00Z",
       cancel_at_period_end: false,
+      overage_active: false,
       team_billed_endpoints: 0,
     };
     rpc.mockImplementation(async (fn: string) =>
@@ -148,6 +149,7 @@ describe("sendQuotaExhaustedEmails", () => {
     const [message] = sendEmail.mock.calls[0];
     expect(message.text).toContain("all 125,000 requests in your current Pro billing period");
     expect(message.text).toContain("monthly blocks");
+    expect(message.text).toContain("up to a maximum you set");
     expect(message.text).not.toContain("Upgrade to Pro");
     expect(rpc).toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u3" });
   });
@@ -219,5 +221,32 @@ describe("sendQuotaExhaustedEmails", () => {
     const [message] = sendEmail.mock.calls[0];
     expect(message.text).toContain("all 50 requests in your current free period");
     expect(message.text).toContain("Upgrade to Pro");
+  });
+
+  it("passes overage that is already on through to the copy", async () => {
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users"
+        ? {
+            data: [
+              {
+                id: "u6",
+                email: "f@example.com",
+                plan: "pro",
+                request_limit: 100_000,
+                block_requests: 0,
+                period_end: "2026-11-15T06:48:00Z",
+                cancel_at_period_end: false,
+                overage_active: true,
+                team_billed_endpoints: 0,
+              },
+            ],
+            error: null,
+          }
+        : { data: [], error: null }
+    );
+    sendEmail.mockResolvedValue(undefined);
+
+    await sendQuotaExhaustedEmails();
+    expect(sendEmail.mock.calls[0][0].text).toContain("a higher overage maximum");
   });
 });

@@ -55,6 +55,7 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
           rejections,
           plan: user.plan ?? "free",
           planEnding: user.cancel_at_period_end ?? false,
+          overageActive: user.overage_active ?? false,
           extraRequestsOffered,
           appUrl,
         })

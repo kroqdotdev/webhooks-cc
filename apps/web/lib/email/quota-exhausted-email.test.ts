@@ -10,6 +10,37 @@ describe("buildQuotaExhaustedEmail", () => {
     appUrl: "https://webhooks.cc",
   });
 
+  it("keeps the free copy word for word", () => {
+    expect(message.text).toBe(
+      [
+        "You have used all 50 requests in your current free period on webhooks.cc.",
+        "Until the period resets at 2026-09-29 18:30 UTC, new webhooks sent to your endpoints",
+        "are rejected with HTTP 429 and are not captured.",
+        "",
+        "Upgrade to Pro for 100,000 requests a month and 31-day retention, $8/month:",
+        "https://webhooks.cc/account/plan",
+        "",
+        "Capturing for a company? A team gets a pooled quota of 100,000 requests per seat:",
+        "https://webhooks.cc/teams",
+        "",
+        "We send this at most once a week, only when your quota runs out.",
+      ].join("\n")
+    );
+    expect(message.html).toBe(
+      [
+        "<p>You have used all 50 requests in your current free period on webhooks.cc. " +
+          "Until the period resets at 2026-09-29 18:30 UTC, new webhooks sent to your endpoints " +
+          "are rejected with HTTP 429 and are not captured.</p>",
+        '<p><a href="https://webhooks.cc/account/plan">Upgrade to Pro</a> for 100,000 requests ' +
+          "a month and 31-day retention, $8/month.</p>",
+        '<p>Capturing for a company? A <a href="https://webhooks.cc/teams">team</a> gets a ' +
+          "pooled quota of 100,000 requests per seat.</p>",
+        '<p style="color:#666;font-size:12px">We send this at most once a week, ' +
+          "only when your quota runs out.</p>",
+      ].join("\n")
+    );
+  });
+
   it("addresses the user and names the reset time in UTC", () => {
     expect(message.to).toBe("dev@example.com");
     expect(message.text).toContain("all 50 requests");
@@ -157,6 +188,15 @@ describe("buildQuotaExhaustedEmail", () => {
       }
       expect(email.text).toContain("https://webhooks.cc/account/plan#extra-requests");
       expect(email.html).toContain('href="https://webhooks.cc/account/plan#extra-requests"');
+    });
+
+    it("asks for a higher overage maximum when overage is already on", () => {
+      const email = buildQuotaExhaustedEmail({ ...pro, overageActive: true });
+      for (const body of [email.text, email.html]) {
+        expect(body).toContain("a higher overage maximum ($4 per 25,000 used");
+        expect(body).not.toContain("up to a maximum you set");
+        expect(body).toContain("one-time blocks ($3, kept until used)");
+      }
     });
 
     it("offers only one-time blocks when the plan is set to end", () => {
