@@ -288,9 +288,50 @@ describe("claim_quota_exhausted_users", () => {
   it("does not claim an account again while its lease holds or once it was emailed", async () => {
     const { error } = await admin.rpc("mark_quota_email_sent", { p_user_id: ids.pro });
     if (error) throw error;
+
+    // The mark releases the lease, so only the email time keeps it out below.
+    const { data: row, error: readError } = await admin
+      .from("users")
+      .select("quota_email_sent_at, quota_email_claimed_at")
+      .eq("id", ids.pro)
+      .single();
+    if (readError) throw readError;
+    expect(row.quota_email_sent_at).not.toBeNull();
+    expect(row.quota_email_claimed_at).toBeNull();
+
     const again = await claimAll();
     expect(again.has(ids.pro)).toBe(false);
+    // Claimed in beforeAll and never marked: its lease still holds.
     expect(again.has(ids.free)).toBe(false);
+  });
+
+  it("dates the email from the claim, so a renewal before the mark keeps its own email", async () => {
+    const renewing = await createAccount("pro-renews-mid-send", proCapped());
+    expect((await claimAll()).has(renewing)).toBe(true);
+
+    // The period renews between the claim and the send.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const renewedStart = new Date().toISOString();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const { error: renewError } = await admin
+      .from("users")
+      .update({
+        requests_used: 0,
+        period_start: renewedStart,
+        period_end: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+      })
+      .eq("id", renewing);
+    if (renewError) throw renewError;
+
+    const { error } = await admin.rpc("mark_quota_email_sent", { p_user_id: renewing });
+    if (error) throw error;
+    const { data: row, error: readError } = await admin
+      .from("users")
+      .select("quota_email_sent_at")
+      .eq("id", renewing)
+      .single();
+    if (readError) throw readError;
+    expect(Date.parse(row.quota_email_sent_at!)).toBeLessThan(Date.parse(renewedStart));
   });
 });
 

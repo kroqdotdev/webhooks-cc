@@ -15,6 +15,10 @@
 -- subscription arrives, so a free-period email sent between the payment and
 -- the webhook does not count against the first paid period.
 --
+-- mark_quota_email_sent() now records the time of the claim rather than of
+-- the send: a period that renews between the two would otherwise get an
+-- email time after its own period_start and miss its own email.
+--
 -- The result gains plan, block_requests, cancel_at_period_end and
 -- overage_active, so the web app can pick the copy (extra requests instead of
 -- an upgrade, a higher overage maximum when overage is already on) and state
@@ -86,6 +90,19 @@ $$;
 
 revoke all on function public.claim_quota_exhausted_users(integer) from public, anon, authenticated;
 grant execute on function public.claim_quota_exhausted_users(integer) to service_role;
+
+-- Called after a successful send: starts the resend window from the claim,
+-- releases the lease. Same signature and grants as in 00040.
+create or replace function public.mark_quota_email_sent(p_user_id uuid)
+returns void
+language sql
+set search_path = ''
+as $$
+  update public.users
+     set quota_email_sent_at = coalesce(quota_email_claimed_at, now()),
+         quota_email_claimed_at = null
+   where id = p_user_id;
+$$;
 
 commit;
 
