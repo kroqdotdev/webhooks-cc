@@ -1262,8 +1262,10 @@ async function syncIncreaseToPolar(
     } catch (polarError) {
       if (!isEndedSubscriptionError(polarError)) throw polarError;
       // Ended meanwhile (the order landed before the end's own event): what
-      // the order added goes with it.
+      // the order added goes with it, and so does the row, whose raised
+      // units would otherwise count until the end's own event arrives.
       await settleEndedIncrease(account, orderId);
+      await markEnded(account, row);
     }
   }
 
@@ -1312,7 +1314,7 @@ async function settleEndedIncrease(account: CapacityAccount, orderId: string): P
     });
     return;
   }
-  const { error: grantError } = await admin.rpc("grant_capacity_purchase", {
+  const { data: granted, error: grantError } = await admin.rpc("grant_capacity_purchase", {
     p_order_id: `increase:${orderId}`,
     ...accountIds(account),
     p_kind: credits,
@@ -1320,6 +1322,8 @@ async function settleEndedIncrease(account: CapacityAccount, orderId: string): P
     p_amount: null,
   });
   if (grantError) throw grantError;
+  // The order was refunded meanwhile: nothing to keep.
+  if ((granted as { status?: string } | null)?.status === "refunded") return;
   reportError(
     "[capacity] paid increase on blocks that ended was kept as one-time blocks",
     undefined,

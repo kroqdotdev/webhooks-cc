@@ -175,6 +175,7 @@ declare
   v_target   integer;
   v_blocks_kind  text;
   v_credits_kind text;
+  v_refunded_at  timestamptz;
 begin
   if num_nonnulls(p_user_id, p_team_id) <> 1 then
     raise exception 'exactly one of p_user_id and p_team_id' using errcode = '22023';
@@ -195,6 +196,20 @@ begin
   end if;
   if not found then
     return jsonb_build_object('status', 'no_account');
+  end if;
+
+  -- An increase kept as one-time blocks ('increase:<order>') serializes with
+  -- a refund of its order on the order's row, which refund_capacity_purchase
+  -- locks first: a refund that came first leaves nothing to keep, and one
+  -- that comes after finds this row and takes it back.
+  if p_order_id like 'increase:%' then
+    select o.refunded_at into v_refunded_at
+      from public.capacity_purchases o
+     where o.polar_order_id = substr(p_order_id, length('increase:') + 1)
+     for update;
+    if v_refunded_at is not null then
+      return jsonb_build_object('status', 'refunded');
+    end if;
   end if;
 
   select * into v_purchase

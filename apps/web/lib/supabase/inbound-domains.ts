@@ -49,6 +49,7 @@ export class DomainError extends Error {
       | "not_found"
       | "bad_route"
       | "has_accounts"
+      | "busy"
       | "dns_failed",
     message: string,
     public status = 400
@@ -124,7 +125,9 @@ export interface DomainResolver {
 
 function emptyOnMissing(error: unknown): never[] {
   const code = (error as { code?: string }).code;
-  if (code === "ENOTFOUND" || code === "ENODATA" || code === "ESERVFAIL" || code === "NXDOMAIN") {
+  // A resolver failure (ESERVFAIL) is a failed lookup, not a missing record:
+  // it takes the lookup-failure path rather than lapsing a verified domain.
+  if (code === "ENOTFOUND" || code === "ENODATA" || code === "NXDOMAIN") {
     return [];
   }
   throw error;
@@ -357,38 +360,91 @@ async function ownedRow(account: DomainAccount, id: string): Promise<DomainRow> 
  * holds the domain.
  */
 async function recordCheck(row: DomainRow, ok: boolean): Promise<DomainRow["status"]> {
-  // Every way to verified passes here, a lapsed domain coming back too: an
-  // account may have signed up at the domain while it was not verified.
-  if (ok && row.status !== "verified" && (await domainHasAccounts(row.domain))) {
-    throw new DomainError(
+  const admin = createAdminClient();
+  const hasAccounts = () =>
+    new DomainError(
       "has_accounts",
       "An account here uses an email address at this domain, and its mail would become readable through your endpoints. Use a subdomain that receives no other mail.",
       409
     );
+  let current = row;
+  // Written only while the row still holds what this check read: two checks
+  // at once (the daily one and the owner's) never overwrite each other; the
+  // later one reads again and decides from what the other left.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // Every way to verified passes here, a lapsed domain coming back too: an
+    // account may have signed up at the domain while it was not verified.
+    // A verified domain is looked at again as well: a signup that raced its
+    // verification (the sign-up hook refuses the domain only once the write
+    // is visible) lapses it here, at the latest on the next daily check.
+    if (ok && (await domainHasAccounts(current.domain))) {
+      if (current.status !== "verified") throw hasAccounts();
+      const { error } = await admin
+        .from("inbound_domains")
+        .update({ status: "lapsed", last_checked_at: new Date().toISOString() })
+        .eq("id", current.id)
+        .eq("status", "verified");
+      if (error) throw error;
+      reportError("[domains] a verified domain has an account at it; lapsed", undefined, {
+        domainId: current.id,
+      });
+      return "lapsed";
+    }
+    const now = new Date().toISOString();
+    const failed = ok ? 0 : current.status === "pending" ? 0 : current.failed_checks + 1;
+    const status: DomainRow["status"] = ok
+      ? "verified"
+      : current.status === "pending"
+        ? "pending"
+        : failed >= LAPSE_AFTER_FAILED_CHECKS
+          ? "lapsed"
+          : current.status;
+    const { data, error } = await admin
+      .from("inbound_domains")
+      .update({
+        status,
+        // Verified again after a lapse counts from now: it must not outrank a
+        // domain verified while it was away.
+        verified_at: ok
+          ? current.status === "verified"
+            ? current.verified_at
+            : now
+          : current.verified_at,
+        failed_checks: failed,
+        lookup_failures: 0,
+        last_checked_at: now,
+      })
+      .eq("id", current.id)
+      .eq("status", current.status)
+      .eq("failed_checks", current.failed_checks)
+      .select("id");
+    if (error) throw error;
+    if (data && data.length > 0) {
+      if (status === "verified" && current.status !== "verified") {
+        // A signup that committed between the account check and this write:
+        // undo it rather than route that person's mail.
+        if (await domainHasAccounts(current.domain)) {
+          const { error: undoError } = await admin
+            .from("inbound_domains")
+            .update({ status: current.status, verified_at: current.verified_at })
+            .eq("id", current.id)
+            .eq("status", "verified");
+          if (undoError) throw undoError;
+          throw hasAccounts();
+        }
+      }
+      return status;
+    }
+    const { data: fresh, error: readError } = await admin
+      .from("inbound_domains")
+      .select(DOMAIN_COLUMNS)
+      .eq("id", current.id)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!fresh) throw new DomainError("not_found", "Domain not found", 404);
+    current = fresh as unknown as DomainRow;
   }
-  const now = new Date().toISOString();
-  const failed = ok ? 0 : row.status === "pending" ? 0 : row.failed_checks + 1;
-  const status: DomainRow["status"] = ok
-    ? "verified"
-    : row.status === "pending"
-      ? "pending"
-      : failed >= LAPSE_AFTER_FAILED_CHECKS
-        ? "lapsed"
-        : row.status;
-  const { error } = await createAdminClient()
-    .from("inbound_domains")
-    .update({
-      status,
-      // Verified again after a lapse counts from now: it must not outrank a
-      // domain verified while it was away.
-      verified_at: ok ? (row.status === "verified" ? row.verified_at : now) : row.verified_at,
-      failed_checks: failed,
-      lookup_failures: 0,
-      last_checked_at: now,
-    })
-    .eq("id", row.id);
-  if (error) throw error;
-  return status;
+  throw new DomainError("busy", "The domain is being checked. Try again in a moment.", 409);
 }
 
 async function domainHasAccounts(domain: string): Promise<boolean> {
@@ -647,7 +703,10 @@ export async function recheckDomains(
       // checked again in a week.
       if (
         !isUniqueViolation(updateError) &&
-        !(updateError instanceof DomainError && updateError.code === "has_accounts")
+        !(
+          updateError instanceof DomainError &&
+          (updateError.code === "has_accounts" || updateError.code === "busy")
+        )
       ) {
         throw updateError;
       }
@@ -673,7 +732,15 @@ export function startDomainChecker(): void {
   if (globalForChecker.__domainChecker) return;
   const tick = async () => {
     try {
-      const result = await recheckDomains();
+      // Every domain due this hour, a batch at a time (bounded per tick).
+      const result = { checked: 0, lapsed: 0, restored: 0 };
+      for (let batch = 0; batch < 40; batch++) {
+        const next = await recheckDomains();
+        result.checked += next.checked;
+        result.lapsed += next.lapsed;
+        result.restored += next.restored;
+        if (next.checked < 50) break;
+      }
       if (result.lapsed || result.restored) {
         console.info(
           `[domains] checked=${result.checked} lapsed=${result.lapsed} restored=${result.restored}`

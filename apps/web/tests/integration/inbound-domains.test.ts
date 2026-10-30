@@ -362,6 +362,57 @@ describe("custom inbound domains", () => {
     expect(Date.now() - Date.parse(stamped!.last_checked_at)).toBeLessThan(60_000);
   });
 
+  it("lapse a verified domain that has an account at it on its next check", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId: owner };
+    const domain = await addDomain(account, `raced-${ts}.acme.example`);
+    await verifyDomain(account, domain.id, dns(inPlace(domain)));
+    // A signup that raced the verification (admin createUser skips the hook).
+    const { data, error } = await admin.auth.admin.createUser({
+      email: `raced@${domain.domain}`,
+      password: "TestPassword123!",
+      email_confirm: true,
+    });
+    if (error) throw error;
+    userIds.push(data.user!.id);
+    await admin
+      .from("inbound_domains")
+      .update({ last_checked_at: new Date(Date.now() - 2 * 86_400_000).toISOString() })
+      .eq("id", domain.id);
+
+    await recheckDomains(dns(inPlace(domain)), 1000);
+    expect((await listDomains(account)).find((row) => row.id === domain.id)?.status).toBe("lapsed");
+    expect((await resolve(domain.domain, "raced")).status).toBe("relay_denied");
+  });
+
+  it("decide from what another check left when it wrote first", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId: owner };
+    const domain = await addDomain(account, `overlap-${ts}.acme.example`);
+    await verifyDomain(account, domain.id, dns(inPlace(domain)));
+    await admin
+      .from("inbound_domains")
+      .update({ last_checked_at: new Date(Date.now() - 2 * 86_400_000).toISOString() })
+      .eq("id", domain.id);
+    // While this check looks the records up, another one records two failed
+    // checks: this one must count from there (the third failure), not
+    // overwrite them with its own first.
+    const overlapping: DomainResolver = {
+      txt: async () => {
+        await admin.from("inbound_domains").update({ failed_checks: 2 }).eq("id", domain.id);
+        return [];
+      },
+      mx: async () => [],
+    };
+    await recheckDomains(overlapping, 1000);
+    const { data } = await admin
+      .from("inbound_domains")
+      .select("status, failed_checks")
+      .eq("id", domain.id)
+      .single();
+    expect(data).toEqual({ status: "lapsed", failed_checks: 3 });
+  });
+
   it("lapse when the nameservers stop answering for a week", async () => {
     const owner = await createUser({ plan: "business", subscription_status: "active" });
     const account = { kind: "user" as const, userId: owner };
