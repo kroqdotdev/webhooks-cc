@@ -4,9 +4,10 @@
 //!
 //! The set is read again when it is a minute old (INBOUND_DOMAINS_REFRESH_SECS),
 //! so a domain verified in the web app receives mail within about a minute. When a read fails the
-//! last set stays in use; with no set at all the answer is "unknown" and the
-//! caller asks the sender to retry rather than bouncing mail for a domain
-//! that may be a customer's.
+//! last set still says yes for the domains it lists; a domain it does not list
+//! (perhaps verified since), or any domain with no set at all, is "unknown",
+//! and the caller asks the sender to retry rather than bouncing mail for a
+//! domain that may be a customer's.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -79,8 +80,13 @@ impl InboundDomains {
             }
             Err(e) => {
                 tracing::error!(error = %e, "reading the inbound domains failed");
+                // A domain missing from the old list may have been verified
+                // since it was read: unknown, so the sender tries again,
+                // never a permanent refusal.
                 let current = self.current.read().await;
-                current.as_ref().map(|(_, set)| set.contains(domain))
+                current
+                    .as_ref()
+                    .and_then(|(_, set)| set.contains(domain).then_some(true))
             }
         }
     }
@@ -101,6 +107,30 @@ mod tests {
             Some(true)
         );
         assert_eq!(domains.contains(&pool, "example.com").await, Some(false));
+    }
+
+    #[tokio::test]
+    async fn a_stale_set_only_vouches_for_the_domains_it_lists() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(200))
+            .connect_lazy("postgres://nobody@127.0.0.1:1/none")
+            .unwrap();
+        let set: HashSet<String> = ["inbound.acme.example".to_string()].into_iter().collect();
+        let domains = InboundDomains {
+            max_age: Duration::from_secs(60),
+            current: RwLock::new(Some((
+                Instant::now() - Duration::from_secs(120),
+                Arc::new(set),
+            ))),
+            reading: Mutex::new(()),
+        };
+        // The read fails: a listed domain still receives mail, one verified
+        // since the last read is retried later, never refused for good.
+        assert_eq!(
+            domains.contains(&pool, "inbound.acme.example").await,
+            Some(true)
+        );
+        assert_eq!(domains.contains(&pool, "new.acme.example").await, None);
     }
 
     #[tokio::test]

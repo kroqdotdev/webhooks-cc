@@ -280,10 +280,13 @@ async function registerServiceAuth(
   );
   if (limit.response) return rateLimitedResponse(limit.response);
 
-  const loginHint = await checkLoginHint(body.login_hint);
   const clientName = cleanClientName(body.client_name);
+  let loginHint: string;
   let created;
   try {
+    // Inside the try, so a refused address (a capture or verified inbound
+    // domain) is audited like every other refusal.
+    loginHint = await checkLoginHint(body.login_hint);
     created = await createServiceAuthRegistration({ loginHint, clientName });
   } catch (error) {
     if (error instanceof AgentError) {

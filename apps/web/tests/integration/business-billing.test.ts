@@ -64,6 +64,8 @@ beforeAll(() => {
     POLAR_BUSINESS_PRODUCT_ID: "prod_business_test",
     POLAR_BUSINESS_ANNUAL_PRODUCT_ID: "prod_business_year_test",
     POLAR_TEAM_BUSINESS_PRODUCT_ID: "prod_team_business_test",
+    POLAR_DOMAINS_PRODUCT_ID: "prod_domains_test",
+    POLAR_DOMAINS_ADD_PRODUCT_ID: "prod_domains_add_test",
   })) {
     saved[key] = process.env[key];
     process.env[key] = value;
@@ -661,6 +663,43 @@ describe("extra inbound domains", () => {
     // A redelivery grants nothing twice.
     expect(await grant(`ord_dom_add_${ts}`)).toMatchObject({ status: "duplicate" });
     expect((await user(userId)).extra_domains).toBe(2);
+  });
+
+  it("raise the subscription and Polar's renewal from a paid order for more", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    await applyAddon({ userId }, "domain_blocks", `sub_db_paid_${ts}`, "active", 1);
+    const update = vi.fn().mockResolvedValue({});
+    polarMocks.createPolarClient.mockReturnValue({
+      subscriptions: { update, get: vi.fn(), revoke: vi.fn() },
+    });
+    try {
+      await deliver("order.paid", {
+        id: `ord_dom_paid_${ts}`,
+        product_id: "prod_domains_add_test",
+        units: 1,
+        total_amount: 300,
+        status: "paid",
+        customer: { metadata: { userId } },
+      });
+    } finally {
+      polarMocks.createPolarClient.mockReset();
+      polarMocks.createPolarClient.mockImplementation(() => ({
+        subscriptions: { update: vi.fn(), get: vi.fn(), revoke: vi.fn() },
+      }));
+    }
+    const { data: purchase } = await admin
+      .from("capacity_purchases")
+      .select("kind, units, target_units, synced_at")
+      .eq("polar_order_id", `ord_dom_paid_${ts}`)
+      .single();
+    expect(purchase).toMatchObject({ kind: "domain_increase", units: 1, target_units: 2 });
+    expect(purchase!.synced_at).not.toBeNull();
+    expect((await user(userId)).extra_domains).toBe(2);
+    // The renewal charges for the raised count from the next period.
+    expect(update).toHaveBeenCalledWith(`sub_db_paid_${ts}`, {
+      units: 2,
+      proration_behavior: "next_period",
+    });
   });
 
   it("count for a team only with Team Business", async () => {

@@ -405,10 +405,14 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
         }
     };
 
-    let mut resolved = Vec::with_capacity(recipients.len());
-    for recipient in &recipients {
-        resolved.push(resolve_recipient(&state, recipient).await);
-    }
+    // All at once (the pool bounds the database calls), so a slow pool costs
+    // one wait for the message, not one per recipient.
+    let resolved = futures_util::future::join_all(
+        recipients
+            .iter()
+            .map(|recipient| resolve_recipient(&state, recipient)),
+    )
+    .await;
     let (groups, immediate) = group_recipients(resolved);
     let mut statuses: Vec<Option<(&'static str, Option<String>)>> = vec![None; recipients.len()];
     for (position, status) in immediate {

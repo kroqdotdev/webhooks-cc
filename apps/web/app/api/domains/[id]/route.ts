@@ -2,6 +2,10 @@ import { auditDomain, domainAccount, domainErrorResponse } from "@/lib/domain-ro
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { deleteDomain, setDomainRouting, type DomainRoute } from "@/lib/supabase/inbound-domains";
 import { isUuid } from "@/lib/uuid";
+import { parseJsonBody } from "@/lib/request-validation";
+
+/** 100 routes of a 64-character local part and an id, with room to spare. */
+const MAX_ROUTING_BODY_BYTES = 64 * 1024;
 
 /**
  * PATCH /api/domains/{id} { catchAllEndpointId, routes: [{ localPart, endpointId }] }:
@@ -16,12 +20,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const limited = await checkRateLimitByKeyWithInfo(`user:domains-change:${context.userId}`, 60);
   if (limited.response) return limited.response;
 
-  let body: Record<string, unknown> | null = null;
-  try {
-    body = (await request.json()) as Record<string, unknown> | null;
-  } catch {
-    body = null;
-  }
+  // Capped before it is parsed: the 100-route limit is only checked later.
+  const parsed = await parseJsonBody(request, MAX_ROUTING_BODY_BYTES);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as Record<string, unknown> | null;
   const catchAll = body?.catchAllEndpointId;
   const routes = body?.routes;
   if (

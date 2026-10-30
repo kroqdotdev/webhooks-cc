@@ -85,11 +85,19 @@ test("a Business account adds a domain, checks it, and routes an address once ve
   await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect(card.getByText("Saved.")).toBeVisible();
 
+  // The route belongs to this test's domain, not another on the same endpoint.
+  const { data: saved } = await admin
+    .from("inbound_domains")
+    .select("id")
+    .eq("domain", domain)
+    .single();
   const { data: routes } = await admin
     .from("inbound_domain_routes")
-    .select("local_part, endpoint_id")
+    .select("local_part, endpoint_id, domain_id")
     .eq("endpoint_id", endpoint.id);
-  expect(routes).toEqual([{ local_part: "orders", endpoint_id: endpoint.id }]);
+  expect(routes).toEqual([
+    { local_part: "orders", endpoint_id: endpoint.id, domain_id: saved!.id },
+  ]);
 });
 
 test("a domain past the plan is refused, and extra domains go through a checkout", async ({

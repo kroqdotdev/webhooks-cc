@@ -7,6 +7,11 @@ const PRODUCTS = vi.hoisted(() => ({
   overage: "prod_overage",
 }));
 
+const DOMAIN_PRODUCTS = vi.hoisted(() => ({
+  monthly: "prod_domains",
+  monthlyAdd: "prod_domains_add",
+}));
+
 const mockFns = vi.hoisted(() => ({
   rpc: vi.fn(),
   checkoutsCreate: vi.fn(),
@@ -73,8 +78,8 @@ vi.mock("@/lib/polar", () => ({
   configuredCapacityProductIds: () => PRODUCTS,
   getPageProductIds: () => null,
   configuredPageProductIds: () => ({}),
-  getDomainProductIds: () => null,
-  configuredDomainProductIds: () => ({}),
+  getDomainProductIds: () => DOMAIN_PRODUCTS,
+  configuredDomainProductIds: () => DOMAIN_PRODUCTS,
   teamBusinessProductId: () => null,
   loggablePolarError: (error: unknown) => error,
   isEndedSubscriptionError: (error: unknown) =>
@@ -169,6 +174,53 @@ describe("changeMonthlyBlocks", () => {
     });
     expect(mockFns.checkoutsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ products: ["prod_monthly"], units: 3, customer_id: "cus_user" })
+    );
+  });
+
+  it("starts extra domains with a checkout for the domain product, marked as domains", async () => {
+    tables.users = proAccount({
+      plan: "business",
+      pending_plan: null,
+      billing_interval: "month",
+      billing_period_end: null,
+    });
+    await changeMonthlyBlocks(USER, "user_1", 2, "domains");
+    expect(mockFns.checkoutsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        products: ["prod_domains"],
+        units: 2,
+        metadata: expect.objectContaining({ resource: "domains" }),
+      })
+    );
+  });
+
+  it("charges only the added domains, with the domain increase product", async () => {
+    tables.users = proAccount({
+      plan: "business",
+      pending_plan: null,
+      billing_interval: "month",
+      billing_period_end: null,
+    });
+    tables.capacity_subscriptions = [
+      blocksRow({
+        id: "row_domains",
+        kind: "domain_blocks",
+        polar_subscription_id: "sub_domains",
+        units: 1,
+      }),
+    ];
+    mockFns.subscriptionsGet.mockResolvedValue({
+      id: "sub_domains",
+      units: 1,
+      pending_update: null,
+    });
+    await changeMonthlyBlocks(USER, "user_1", 3, "domains");
+    expect(mockFns.checkoutsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        products: ["prod_domains_add"],
+        units: 2,
+        metadata: expect.objectContaining({ resource: "domains" }),
+      })
     );
   });
 
