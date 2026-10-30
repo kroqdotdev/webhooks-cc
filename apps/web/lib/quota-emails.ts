@@ -1,6 +1,7 @@
 import { publicEnv } from "@/lib/env";
 import { buildQuotaExhaustedEmail } from "@/lib/email/quota-exhausted-email";
 import { sendEmail } from "@/lib/email/mailer";
+import { getCapacityProductIds } from "@/lib/polar";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getQuotaRejections, type QuotaRejections } from "@/lib/supabase/quota-rejections";
 import { reportError } from "@/lib/observability";
@@ -9,10 +10,12 @@ const POLL_INTERVAL_MS = 10 * 60 * 1000;
 const BATCH_SIZE = 50;
 
 /**
- * Emails free users whose quota ran out. claim_quota_exhausted_users() takes
- * a 15-minute lease on each user it returns, so concurrent polls never email
- * the same user. Only a successful send starts the 7-day resend window
- * (mark_quota_email_sent); a failed send releases the lease so the next poll
+ * Emails users whose quota ran out, free and paid alike (a paid account once
+ * it is also past its one-time blocks and overage). claim_quota_exhausted_users()
+ * takes a 15-minute lease on each user it returns, so concurrent polls never
+ * email the same user. Only a successful send starts the resend window
+ * (mark_quota_email_sent): a week for a free account, the rest of the billing
+ * period for a paid one. A failed send releases the lease so the next poll
  * retries, and a poll that dies mid-batch simply lets its leases expire. Each
  * email names this period's rejected webhooks per endpoint when there are any
  * yet; the poll runs every 10 minutes, so a user claimed just after hitting
@@ -26,6 +29,7 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
   if (error) throw new Error(`claim_quota_exhausted_users failed: ${error.message}`);
 
   const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
+  const extraRequestsOffered = getCapacityProductIds() !== null;
   let sent = 0;
   let failed = 0;
 
@@ -43,10 +47,15 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
       await sendEmail(
         buildQuotaExhaustedEmail({
           to: user.email,
-          requestLimit: user.request_limit,
+          // A database without migration 00077 returns free users only, and
+          // none of these columns.
+          requestLimit: user.request_limit + (user.block_requests ?? 0),
           periodEnd: new Date(user.period_end),
           teamBilledEndpoints: user.team_billed_endpoints,
           rejections,
+          plan: user.plan ?? "free",
+          planEnding: user.cancel_at_period_end ?? false,
+          extraRequestsOffered,
           appUrl,
         })
       );
