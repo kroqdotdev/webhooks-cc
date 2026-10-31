@@ -17,6 +17,7 @@ import { PricingCTA } from "@/components/landing/pricing-cta";
 import { EmailToJson } from "@/components/mailhooks/email-to-json";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { LAYOUT_TEMPLATES, layoutTemplate } from "@/lib/layout-templates";
+import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 
@@ -216,6 +217,17 @@ export default function MailhooksHome() {
                 </div>
               ))}
             </div>
+            <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
+            <ul className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {MAILHOOKS_FEATURES.map((feature) => (
+                <li key={feature.path}>
+                  <Link href={feature.path} className="ui-card block h-full">
+                    <p className="font-bold mb-1">{feature.name}</p>
+                    <p className="text-sm text-muted-foreground">{feature.summary}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
