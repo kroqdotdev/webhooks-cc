@@ -11,8 +11,9 @@ use tokio::sync::mpsc;
 use crate::api::ApiClient;
 use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
-use crate::types::CapturedRequest;
+use crate::types::{CapturedRequest, ParsedEmail};
 use crate::util::format::{format_bytes, format_timestamp};
+use crate::util::parsed::{Tone, parsed_lines};
 
 use super::{Action, Message, Screen};
 
@@ -290,6 +291,10 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
         }
     }
 
+    if let Some(ref parsed) = req.parsed {
+        lines.extend(parsed_overview(parsed));
+    }
+
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  ID: ", theme::style_muted()),
@@ -299,6 +304,29 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
     let p = Paragraph::new(lines)
         .scroll((scroll, 0));
     frame.render_widget(p, area);
+}
+
+/// The overview's "Parsed" section for an email: what the endpoint's layouts
+/// found, the same lines `whk requests get` prints.
+fn parsed_overview(parsed: &ParsedEmail) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled("  Parsed", theme::style_primary_bold())),
+    ];
+    for line in parsed_lines(parsed) {
+        let mut spans = vec![Span::raw("  ".repeat(line.depth + 2))];
+        spans.extend(line.spans.into_iter().map(|(tone, text)| {
+            let style = match tone {
+                Tone::Plain => theme::style(),
+                Tone::Strong => theme::style_bold(),
+                Tone::Muted => theme::style_muted(),
+                Tone::Danger => theme::style_danger(),
+            };
+            Span::styled(text, style)
+        }));
+        lines.push(Line::from(spans));
+    }
+    lines
 }
 
 fn render_headers(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll: u16) {
@@ -353,4 +381,30 @@ fn render_body(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll: u16
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0));
     frame.render_widget(p, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(line: &Line) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn overview_shows_an_emails_parsed_result() {
+        let request = crate::util::parsed::tests::acme_order();
+        let lines: Vec<String> = parsed_overview(request.parsed.as_ref().unwrap())
+            .iter()
+            .map(text)
+            .collect();
+        assert_eq!(lines[1], "  Parsed");
+        assert_eq!(lines[2], "    Layout: Acme orders");
+        assert!(lines.contains(&"      po: not found".to_string()));
+        assert!(lines.contains(&"      sku  qty  price".to_string()));
+        assert!(lines.contains(&"      scan.pdf  pdf, is encrypted".to_string()));
+    }
 }

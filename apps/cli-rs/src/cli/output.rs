@@ -1,7 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::types::{CapturedRequest, Endpoint, SearchHit, UsageInfo};
+use crate::types::{CapturedRequest, Endpoint, ParsedEmail, SearchHit, UsageInfo};
 use crate::util::format::{format_bytes, format_timestamp};
+use crate::util::parsed::{Tone, parsed_lines};
 
 static NO_COLOR: AtomicBool = AtomicBool::new(false);
 
@@ -184,6 +185,9 @@ fn print_email_detail(req: &CapturedRequest, email: &crate::types::EmailSummary)
             );
         }
     }
+    for line in parsed_section(req.parsed.as_deref()) {
+        println!("{line}");
+    }
     if let Some(ref text) = email.text {
         println!("\n{}", bold("Text"));
         let preview: String = text.chars().take(EMAIL_TEXT_PREVIEW).collect();
@@ -196,6 +200,29 @@ fn print_email_detail(req: &CapturedRequest, email: &crate::types::EmailSummary)
         "\n{}",
         dim("Headers and the raw message: --json. HTML and sender checks: the dashboard.")
     );
+}
+
+/// The "Parsed" section of an email's details: what the endpoint's layouts
+/// found (see `util::parsed`). Empty when the email has no parsed result,
+/// because its endpoint has no layouts or its parse has not finished.
+pub fn parsed_section(parsed: Option<&ParsedEmail>) -> Vec<String> {
+    let Some(parsed) = parsed else {
+        return Vec::new();
+    };
+    let mut out = vec![String::new(), bold("Parsed")];
+    for line in parsed_lines(parsed) {
+        let mut text = "  ".repeat(line.depth + 1);
+        for (tone, piece) in &line.spans {
+            text.push_str(&match tone {
+                Tone::Plain => piece.clone(),
+                Tone::Strong => bold(piece),
+                Tone::Muted => dim(piece),
+                Tone::Danger => red(piece),
+            });
+        }
+        out.push(text);
+    }
+    out
 }
 
 pub fn print_request_detail(req: &CapturedRequest) {
@@ -264,5 +291,66 @@ mod tests {
             "Hi   12:00:00 POST /fake   x[31m"
         );
         assert_eq!(sanitize_line("Confirm your email"), "Confirm your email");
+    }
+
+    /// The text of colored output: ANSI color sequences removed, so the test
+    /// holds whether or not color is on.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn email_details_show_the_parsed_result() {
+        let request = crate::util::parsed::tests::acme_order();
+        let section: Vec<String> = parsed_section(request.parsed.as_deref())
+            .iter()
+            .map(|line| strip_ansi(line))
+            .collect();
+        assert_eq!(
+            section.join("\n"),
+            "
+Parsed
+  Layout: Acme orders
+  Pages: 3
+  Fields
+    order: 1001
+    po: not found
+  Line items (2)
+    sku  qty  price
+    A-1  2    9.50
+    B-7  1    24.00
+  Attachments
+    order-1001.csv  csv, 1 page, 1 sheet, 3 rows
+    terms.pdf  pdf, 2 pages, 18 B of text
+    scan.pdf  pdf, is encrypted"
+        );
+    }
+
+    #[test]
+    fn email_details_add_nothing_without_a_parsed_result() {
+        // An email on an endpoint without layouts, or whose parse is pending.
+        let mut request = crate::util::parsed::tests::acme_order();
+        request.parsed = None;
+        assert!(parsed_section(request.parsed.as_deref()).is_empty());
+
+        let pending: CapturedRequest = serde_json::from_str(
+            r#"{"id":"e1","endpointId":"ep","method":"EMAIL","path":"orders@mailhooks.cc","queryParams":{},"ip":"192.0.2.1","size":1,"receivedAt":1,"kind":"email","email":{"subject":"Hi"},"parsed":null}"#,
+        )
+        .unwrap();
+        assert!(pending.parsed.is_none());
+        assert!(parsed_section(pending.parsed.as_deref()).is_empty());
     }
 }
