@@ -10,6 +10,7 @@ const mockFns = vi.hoisted(() => ({
   updateEndpointBySlugForUser: vi.fn(),
   deleteEndpointBySlugForUser: vi.fn(),
   isSigningKeyConfigured: vi.fn(),
+  endpointRetentionCap: vi.fn(),
 }));
 
 vi.mock("@/lib/api-auth", () => ({
@@ -38,6 +39,7 @@ vi.mock("@/lib/supabase/endpoints", () => ({
   getEndpointBySlugForUser: mockFns.getEndpointBySlugForUser,
   updateEndpointBySlugForUser: mockFns.updateEndpointBySlugForUser,
   deleteEndpointBySlugForUser: mockFns.deleteEndpointBySlugForUser,
+  endpointRetentionCap: mockFns.endpointRetentionCap,
 }));
 
 vi.mock("@/lib/crypto", () => ({
@@ -74,6 +76,18 @@ describe("PATCH /api/endpoints/[slug]", () => {
     });
     mockFns.updateEndpointBySlugForUser.mockResolvedValue({ slug: "demo" });
     mockFns.isSigningKeyConfigured.mockReturnValue(true);
+    mockFns.endpointRetentionCap.mockResolvedValue(31);
+  });
+
+  test("refuses a retention longer than the plan's, and changes nothing", async () => {
+    const { PATCH } = await import("./route");
+    const response = await PATCH(patchRequest({ retentionDays: 32 }), params);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "retentionDays: at most 31 days on this endpoint's plan",
+    });
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
   });
 
   test("rejects SendGrid as a signing provider", async () => {
@@ -143,9 +157,24 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Only the endpoint owner can update email, notification, forwarding or signing settings",
+        "Only the endpoint owner can update email, retention, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
+  test("rejects retention updates from team members", async () => {
+    mockFns.resolveEndpointAccess.mockResolvedValue({
+      ownerId: "owner_123",
+      endpointId: "endpoint_123",
+      isOwner: false,
+    });
+
+    const { PATCH } = await import("./route");
+    for (const body of [{ deleteAfterDelivery: true }, { retentionDays: 1 }]) {
+      const response = await PATCH(patchRequest(body), params);
+      expect(response.status).toBe(403);
+    }
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
   });
 
@@ -165,7 +194,7 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Only the endpoint owner can update email, notification, forwarding or signing settings",
+        "Only the endpoint owner can update email, retention, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();

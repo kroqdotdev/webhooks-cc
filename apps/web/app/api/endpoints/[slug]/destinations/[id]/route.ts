@@ -1,6 +1,11 @@
+import { parseSheetsConfig } from "@/lib/integrations/sheets";
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { parseDestinationInput, templateProblem } from "@/lib/forwarding/destination-input";
+import {
+  parseDestinationInput,
+  sheetsProblem,
+  templateProblem,
+} from "@/lib/forwarding/destination-input";
 import {
   forwardingUnavailable,
   jsonObject,
@@ -61,6 +66,20 @@ export async function PATCH(request: Request, { params }: Params) {
       current: { http: current.http, email: current.email },
     });
     if (!parsed.ok) return reply({ error: parsed.error }, 400);
+    // Changing the kinds changes which placeholders a stored Sheets config may
+    // use (email fields only for emails): check it again against them.
+    if (
+      parsed.changes.config === undefined &&
+      (parsed.changes.http !== undefined || parsed.changes.email !== undefined) &&
+      (parsed.changes.format ?? current.format) === "sheets" &&
+      current.config
+    ) {
+      const recheck = parseSheetsConfig(current.config, {
+        http: parsed.changes.http ?? current.http,
+        email: parsed.changes.email ?? current.email,
+      });
+      if (typeof recheck === "string") return reply({ error: recheck }, 400);
+    }
     const problem = templateProblem({
       format: parsed.changes.format ?? current.format,
       bodyTemplate:
@@ -69,6 +88,11 @@ export async function PATCH(request: Request, { params }: Params) {
           : current.bodyTemplate,
     });
     if (problem) return reply({ error: problem }, 400);
+    const sheets = await sheetsProblem(auth.userId, {
+      format: parsed.changes.format ?? current.format,
+      config: parsed.changes.config !== undefined ? parsed.changes.config : current.config,
+    });
+    if (sheets) return reply({ error: sheets }, 400);
 
     const destination = await updateDestination(endpoint.id, id, parsed.changes);
     if (!destination) return reply({ error: "Destination not found" }, 404);

@@ -8,7 +8,9 @@ import {
 import { conditionProblems } from "@/lib/rules";
 import type { Json } from "@/lib/supabase/database";
 import {
+  ATTACHMENT_MODES,
   DESTINATION_FORMAT_SETTINGS,
+  type DestinationAttachments,
   type DestinationChanges,
   type DestinationFormatSetting,
   type DestinationHeaderInput,
@@ -17,6 +19,9 @@ import { allowPrivateTargets } from "./config";
 import { checkOwnerHeaders } from "./owner-headers";
 import { checkForwardUrl } from "./target";
 import { checkSentField } from "./timing";
+import { parseSheetsConfig } from "@/lib/integrations/sheets";
+import { spreadsheetUrl } from "@/lib/integrations/google";
+import { googleRefreshToken } from "@/lib/supabase/google-connections";
 
 /**
  * Checks a destination as the API receives it (camelCase, every field
@@ -229,6 +234,27 @@ export function parseDestinationInput(
     if (value !== undefined) changes[key] = value;
   }
 
+  if (body.config !== undefined) {
+    if (body.config === null) changes.config = null;
+    else {
+      const config = parseSheetsConfig(body.config, {
+        http: changes.http ?? options.current?.http ?? true,
+        email: changes.email ?? options.current?.email ?? true,
+      });
+      if (typeof config === "string") return fail(config);
+      changes.config = config as unknown as Json;
+      // The row's URL is the spreadsheet's, whatever was sent.
+      changes.url = spreadsheetUrl(config.spreadsheetId);
+    }
+  }
+
+  if (body.attachments !== undefined) {
+    if (!(ATTACHMENT_MODES as readonly unknown[]).includes(body.attachments)) {
+      return fail('attachments must be "links", "inline" or "none".');
+    }
+    changes.attachments = body.attachments as DestinationAttachments;
+  }
+
   return { ok: true, changes };
 }
 
@@ -240,5 +266,23 @@ export function templateProblem(next: {
   return next.format === "template" &&
     (next.bodyTemplate === null || next.bodyTemplate === undefined)
     ? "A JSON template destination needs its bodyTemplate."
+    : null;
+}
+
+/**
+ * A Sheets destination needs a spreadsheet, through a Google account of the
+ * endpoint's owner; checked against the result of a change.
+ */
+export async function sheetsProblem(
+  ownerId: string,
+  next: { format: DestinationFormatSetting; config: Json | null }
+): Promise<string | null> {
+  if (next.format !== "sheets") return null;
+  const config = next.config as { connectionId?: unknown } | null;
+  if (!config || typeof config.connectionId !== "string") {
+    return "Choose a spreadsheet for the Google Sheets destination.";
+  }
+  return (await googleRefreshToken(ownerId, config.connectionId)) === null
+    ? "That Google account is not connected to your account."
     : null;
 }

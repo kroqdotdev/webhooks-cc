@@ -14,6 +14,9 @@
  * ```
  */
 import type {
+  AlertEvent,
+  AlertSettings,
+  AttachmentDownload,
   ClientOptions,
   ClientHooks,
   Endpoint,
@@ -847,6 +850,49 @@ export class WebhooksCC {
    * `repeatable` overrides whether a network error, a timeout or a 5xx is
    * retried, for a call whose method says otherwise.
    */
+  /** A binary download with the client's auth, for raw messages and attachments. */
+  private async download(path: string): Promise<AttachmentDownload> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}/api${path}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${await this.bearer()}` },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw mapStatusToError(
+          response.status,
+          text.length > 200 ? text.slice(0, 200) + "..." : text,
+          response
+        );
+      }
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+      let filename = /filename="([^"]*)"/i.exec(disposition)?.[1] ?? null;
+      if (encoded) {
+        try {
+          filename = decodeURIComponent(encoded);
+        } catch {
+          // keep the plain name
+        }
+      }
+      return {
+        bytes: new Uint8Array(await response.arrayBuffer()),
+        filename,
+        contentType: response.headers.get("content-type") ?? "application/octet-stream",
+      };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new TimeoutError(this.timeout);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   private async request<T>(
     method: string,
     path: string,
@@ -1042,11 +1088,17 @@ export class WebhooksCC {
               "{ name, from: subject|text|html|from|to|header, header?, pattern (RE2) }[]|null? (owner only, at most 20)",
             forwardEnabled: "boolean? (owner only; needs forwardUrl)",
             forwardUrl: "string|null? (owner only)",
+            retentionDays: "number|null? — keep requests fewer days than the plan (owner only)",
+            deleteAfterDelivery: "boolean? — delete once every delivery is settled (owner only)",
           },
         },
         delete: {
           description: "Delete endpoint and its requests",
           params: { slug: "string" },
+        },
+        redeliver: {
+          description: "Send requests received in a time range through the destinations again",
+          params: { slug: "string", since: "number?", until: "number?", kind: '"http"|"email"?' },
         },
         previewResponse: {
           description:
@@ -1174,6 +1226,18 @@ export class WebhooksCC {
         replay: {
           description: "Replay a captured request to a URL",
           params: { requestId: "string", targetUrl: "string" },
+        },
+        redeliver: {
+          description: "Send a captured request through its endpoint's destinations again",
+          params: { requestId: "string" },
+        },
+        raw: {
+          description: "A captured email's exact message, as bytes",
+          params: { requestId: "string" },
+        },
+        attachment: {
+          description: "Download one attachment of a stored email",
+          params: { requestId: "string", index: "number" },
         },
         export: {
           description: "Export captured requests as HAR or cURL commands",
@@ -1368,6 +1432,27 @@ export class WebhooksCC {
           params: { endpointSlug: "string", destinationId: "string? (only this destination)" },
         },
       },
+      alerts: {
+        get: {
+          description: "An endpoint's alert settings and its recent alerts",
+          params: { slug: "string" },
+        },
+        update: {
+          description:
+            "Change alert settings: field misses in a row or by share, hours of silence, failed deliveries, who is told",
+          params: {
+            slug: "string",
+            enabled: "boolean?",
+            fieldFailures: "number|null?",
+            fieldFailureShare: "number|null?",
+            requiredFields: "string[]|null?",
+            silenceHours: "number|null?",
+            destinationFailures: "boolean?",
+            notifyEmail: "boolean?",
+            notifyDestinationIds: "string[]?",
+          },
+        },
+      },
       destinations: {
         list: {
           description:
@@ -1535,6 +1620,19 @@ export class WebhooksCC {
     delete: async (slug: string): Promise<void> => {
       validatePathSegment(slug, "slug");
       await this.request("DELETE", `/endpoints/${slug}`);
+    },
+
+    /**
+     * Sends the endpoint's requests received in a time range through its
+     * destinations again (at most 500, oldest first), after a pattern was
+     * fixed or a destination came back. Owner only.
+     */
+    redeliver: async (
+      slug: string,
+      range: { since?: number; until?: number; kind?: "http" | "email" } = {}
+    ): Promise<{ requests: number; queued: number }> => {
+      validatePathSegment(slug, "slug");
+      return this.request("POST", `/endpoints/${slug}/replay`, range);
     },
 
     /**
@@ -2048,6 +2146,25 @@ export class WebhooksCC {
    * and optional throttling and delay. `forwarding.*` keeps working on the
    * endpoint's primary destination. Only the endpoint's owner can manage them.
    */
+  /** Alerts: when an endpoint's email fields stop matching, mail stops, or a delivery fails for good. */
+  alerts = {
+    get: async (slug: string): Promise<{ settings: AlertSettings; events: AlertEvent[] }> => {
+      validatePathSegment(slug, "slug");
+      return this.request("GET", `/endpoints/${slug}/alerts`);
+    },
+
+    update: async (slug: string, settings: Partial<AlertSettings>): Promise<AlertSettings> => {
+      validatePathSegment(slug, "slug");
+      return (
+        await this.request<{ settings: AlertSettings }>(
+          "PUT",
+          `/endpoints/${slug}/alerts`,
+          settings
+        )
+      ).settings;
+    },
+  };
+
   destinations = {
     /** The endpoint's destinations in order; `summary: true` adds the last 24 hours to each. */
     list: async (
@@ -2366,6 +2483,34 @@ export class WebhooksCC {
     get: async (requestId: string): Promise<Request> => {
       validatePathSegment(requestId, "requestId");
       return this.request<Request>("GET", `/requests/${requestId}`);
+    },
+
+    /**
+     * A captured email's exact message (RFC 5322 bytes), whatever its size
+     * when it was kept in storage (`email.stored`).
+     */
+    raw: async (requestId: string): Promise<Uint8Array> => {
+      validatePathSegment(requestId, "requestId");
+      return (await this.download(`/requests/${requestId}/raw`)).bytes;
+    },
+
+    /** One attachment of a stored email (`email.stored`), by its index in `email.attachments`. */
+    attachment: async (requestId: string, index: number): Promise<AttachmentDownload> => {
+      validatePathSegment(requestId, "requestId");
+      if (!Number.isInteger(index) || index < 0 || index > 99) {
+        throw new Error("index must be a whole number from 0 to 99");
+      }
+      return this.download(`/requests/${requestId}/attachments/${index}`);
+    },
+
+    /**
+     * Sends a captured request through its endpoint's destinations again,
+     * with their current settings. True when at least one delivery was queued.
+     */
+    redeliver: async (requestId: string): Promise<boolean> => {
+      validatePathSegment(requestId, "requestId");
+      return (await this.request<{ queued: boolean }>("POST", `/requests/${requestId}/replay`))
+        .queued;
     },
 
     waitForAll: async (endpointSlug: string, options: WaitForAllOptions): Promise<Request[]> => {

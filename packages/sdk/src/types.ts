@@ -52,6 +52,12 @@ export interface Endpoint {
   showEmailExtracts?: boolean;
   /** Named fields picked out of every email (owner only): `fields` in its JSON */
   emailFields?: EmailField[];
+  /** Days requests are kept; null keeps them as long as the plan does (owner only) */
+  retentionDays?: number | null;
+  /** The longest retention this endpoint may have: its plan's (owner only) */
+  retentionCapDays?: number;
+  /** Requests are deleted once every delivery is settled (owner only) */
+  deleteAfterDelivery?: boolean;
   /** Whether forwarding is on: the kinds below go to `forwardUrl` */
   forwardEnabled?: boolean;
   /** Where captured requests are forwarded (only returned to the endpoint's owner) */
@@ -408,6 +414,10 @@ export interface UpdateEndpointOptions {
   showEmailExtracts?: boolean;
   /** Named fields to pick out of every email, at most 20, or null for none (owner only) */
   emailFields?: EmailField[] | null;
+  /** Keep requests this many days (1 up to the plan's), or null for the plan's (owner only) */
+  retentionDays?: number | null;
+  /** Delete each request once every delivery is settled (owner only) */
+  deleteAfterDelivery?: boolean;
   /** Forward captured requests to `forwardUrl` (owner only; needs a URL) */
   forwardEnabled?: boolean;
   /** Where to forward, or null to remove it once forwarding is off (owner only) */
@@ -931,6 +941,7 @@ export interface SDKDescription {
   emails: Record<string, OperationDescription>;
   forwarding: Record<string, OperationDescription>;
   destinations: Record<string, OperationDescription>;
+  alerts: Record<string, OperationDescription>;
   teams: Record<string, OperationDescription>;
 }
 
@@ -1152,7 +1163,23 @@ export interface ListDeliveriesOptions {
  * received.
  */
 export type DestinationFormat =
-  "auto" | "as_received" | "json" | "chat" | "template" | InboundEmailFormat;
+  "auto" | "as_received" | "json" | "chat" | "template" | "sheets" | InboundEmailFormat;
+
+/** How a destination's deliveries carry an email's stored attachments. */
+export type DestinationAttachments = "links" | "inline" | "none";
+
+/** A Google Sheets destination's settings (format "sheets"). */
+export interface SheetsConfig {
+  /** One of your connected Google accounts (connected in the dashboard) */
+  connectionId: string;
+  spreadsheetId: string;
+  /** The tab rows go to */
+  sheet: string;
+  /** "email": a row per request; "line_items": a row per line item a layout found */
+  rows: "email" | "line_items";
+  /** Each column's header and its value, written with {{ placeholders }} */
+  columns: { header: string; value: string }[];
+}
 
 /** Which captured requests a destination gets; null or no conditions: all of them. */
 export interface DestinationFilter {
@@ -1201,6 +1228,10 @@ export interface Destination {
   throttleSeconds: number;
   /** Seconds after the capture before the first try, like a callback */
   delaySeconds: number;
+  /** Emails kept in storage: attachments as signed links (default), inline base64, or names only */
+  attachments?: DestinationAttachments;
+  /** For format "sheets": the spreadsheet and columns */
+  config?: SheetsConfig | null;
   /** "forward": what the endpoint's forward* fields stand for; "notify": its notificationUrl */
   role: "forward" | "notify" | null;
   createdAt: number;
@@ -1235,8 +1266,49 @@ export interface DestinationInput {
   throttleSeconds?: number;
   /** 0 to 3600 */
   delaySeconds?: number;
+  /** How emails' stored attachments travel */
+  attachments?: DestinationAttachments;
+  /** For format "sheets": the spreadsheet and columns (the url becomes the spreadsheet's) */
+  config?: SheetsConfig | null;
   /** Place in the list */
   position?: number;
+}
+
+/** An endpoint's alert settings. */
+export interface AlertSettings {
+  enabled: boolean;
+  /** Emails in a row that miss a required field before an alert opens; null is off */
+  fieldFailures: number | null;
+  /** Percent of the last 20 emails that missed a field; null is off */
+  fieldFailureShare: number | null;
+  /** Fields that must be found; null means every email field */
+  requiredFields: string[] | null;
+  /** Hours without an email before an alert opens; null is off */
+  silenceHours: number | null;
+  /** Open an alert when a delivery fails for good */
+  destinationFailures: boolean;
+  /** Email the endpoint's owner */
+  notifyEmail: boolean;
+  /** This endpoint's destinations that also get alerts (alert.opened / alert.resolved events) */
+  notifyDestinationIds: string[];
+}
+
+/** One alert, open (resolvedAt null) or resolved. */
+export interface AlertEvent {
+  id: string;
+  kind: "fields" | "silence" | "destination";
+  /** The destination, for destination alerts */
+  subject: string | null;
+  openedAt: number;
+  resolvedAt: number | null;
+  details: Record<string, unknown>;
+}
+
+/** A stored attachment, downloaded. */
+export interface AttachmentDownload {
+  bytes: Uint8Array;
+  filename: string | null;
+  contentType: string;
 }
 
 /** Options for `destinations.preview()`. */

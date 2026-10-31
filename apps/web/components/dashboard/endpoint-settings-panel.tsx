@@ -10,6 +10,8 @@ import { AddressPill } from "./endpoint-bar";
 import { DestinationsSection } from "./destinations-section";
 import { DeliveriesSection } from "./deliveries-section";
 import { EmailFieldsEditor } from "./email-fields-editor";
+import { RetentionSection } from "./retention-section";
+import { AlertsSection } from "./alerts-section";
 import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import {
   Field,
@@ -573,12 +575,14 @@ export function EndpointSettingsPanel({
         // In the order a request meets them: it arrives, its signature is
         // checked, it is answered, and it is sent on.
         { id: "receiving", label: "Receiving" },
+        ...(isOwner ? [{ id: "retention", label: "Retention" }] : []),
         ...(isOwner ? [{ id: "verification", label: "Signature verification" }] : []),
         { id: "responses", label: "Responses" },
         ...(isOwner
           ? [
               { id: "forwarding", label: "Forwarding" },
               ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
+              { id: "alerts", label: "Alerts" },
               { id: "sharing", label: "Team sharing" },
               { id: "delete", label: "Delete endpoint" },
             ]
@@ -646,6 +650,7 @@ export function EndpointSettingsPanel({
       <div ref={scroller} className="flex-1 overflow-y-auto">
         <div className="max-w-[780px] p-4 md:p-6 space-y-6">
           <ReceivingSection endpoint={endpoint} isOwner={isOwner} />
+          {isOwner && <RetentionSection endpoint={endpoint} />}
           {isOwner && <VerificationSection endpoint={endpoint} />}
           <ResponsesSection endpoint={endpoint} />
           {isOwner && (
@@ -657,6 +662,7 @@ export function EndpointSettingsPanel({
               onOpenRequest={(requestId) => onOpenRequestDeliveries?.(requestId)}
             />
           )}
+          {isOwner && <AlertsSection endpoint={endpoint} />}
           {isOwner && <SharingSection endpointId={endpoint.id} />}
           {isOwner && <DeleteSection endpoint={endpoint} requestCount={requestCount} />}
         </div>

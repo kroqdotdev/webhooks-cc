@@ -33,6 +33,15 @@ import { isDelivered, jsonForward, sendForward, type SendResult } from "./send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "./sign";
 import { senderTimestamp, type SenderTime } from "./timing";
 import { reportError } from "@/lib/observability";
+import { withAttachmentPayloads } from "./attachments";
+import { rowsFor, storedSheetsConfig } from "@/lib/integrations/sheets";
+import {
+  accessToken as googleAccessToken,
+  appendRows,
+  GoogleError,
+  googleConfig,
+} from "@/lib/integrations/google";
+import { googleRefreshTokenById } from "@/lib/supabase/google-connections";
 
 /**
  * Sends forwarded requests. capture_webhook() queues a delivery for every
@@ -578,6 +587,130 @@ export function filterVerdict(
     : "skip";
 }
 
+/** The Sheets rows of one delivery, or why it sends none. */
+type SheetsBatchItem = { claim: Claim; rows: string[][] };
+
+/**
+ * A Google Sheets destination: this delivery and up to 49 more of the same
+ * destination that are due go out as one append (the Sheets API counts
+ * calls, not rows), and each is recorded with the one outcome.
+ */
+async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void> {
+  const config = storedSheetsConfig(claim.destination_config);
+  const google = googleConfig();
+  const fail = (target: Claim, error: string, retry: boolean) =>
+    record(target, { status: null, durationMs: 0, excerpt: null, error }, retry, {
+      ...NO_FACTS,
+      format: "sheets",
+      target: "Google Sheets",
+    });
+  if (!config)
+    return fail(claim, "The destination has no spreadsheet. Open it and choose one.", false);
+  if (!google) return fail(claim, "Google Sheets is not set up on this server.", true);
+
+  const { data: more, error } = await createAdminClient().rpc("claim_destination_deliveries", {
+    p_destination_id: claim.destination_id!,
+    p_limit: 49,
+    p_lease_seconds: LEASE_SECONDS,
+  });
+  if (error) throw error;
+  const extra = (more ?? []).filter((row) => row.delivery_id !== claim.delivery_id);
+  const extraRequests = new Map(
+    (await getRequestsByIds([...new Set(extra.map((row) => row.request_id))])).map((r) => [r.id, r])
+  );
+  const fields = storedEmailFields(claim.email_fields);
+  const endpoint = { slug: claim.endpoint_slug, name: claim.endpoint_name };
+  const batch: SheetsBatchItem[] = [];
+  for (const [itemClaim, itemRequest] of [
+    [claim, request] as const,
+    ...extra.map(
+      (row) =>
+        [
+          {
+            ...claim,
+            delivery_id: row.delivery_id,
+            request_id: row.request_id,
+            attempt: row.attempt,
+            kind: row.kind,
+          },
+          extraRequests.get(row.request_id),
+        ] as const
+    ),
+  ]) {
+    if (!itemRequest) {
+      await fail(itemClaim, "The request is no longer stored.", false);
+      continue;
+    }
+    const values = emailFieldValues(itemRequest, fields);
+    if (!itemClaim.bypass_filter) {
+      const verdict = filterVerdict(
+        itemClaim.destination_filter,
+        itemRequest,
+        itemClaim.signing_provider,
+        Date.now(),
+        values
+      );
+      if (verdict === "skip") {
+        await skip(itemClaim, "Not sent: the destination's filter did not match.");
+        continue;
+      }
+      if (verdict !== "send") {
+        await release(itemClaim, verdict.waitMs);
+        continue;
+      }
+    }
+    batch.push({
+      claim: itemClaim,
+      rows: rowsFor(itemRequest, config, endpoint, {
+        includeExtracts: itemClaim.show_email_extracts,
+        fields: values,
+      }),
+    });
+  }
+  if (batch.length === 0) return;
+
+  const started = performance.now();
+  const facts: DeliveryFacts = { ...NO_FACTS, format: "sheets", target: "Google Sheets" };
+  try {
+    const refreshToken = await googleRefreshTokenById(config.connectionId);
+    if (!refreshToken) {
+      for (const item of batch) {
+        await fail(item.claim, "The Google account was disconnected. Connect it again.", true);
+      }
+      return;
+    }
+    const token = await googleAccessToken(google, refreshToken);
+    const rows = batch.flatMap((item) => item.rows);
+    if (rows.length > 0) await appendRows(token, config.spreadsheetId, config.sheet, rows);
+    const durationMs = Math.round(performance.now() - started);
+    for (const item of batch) {
+      await record(
+        item.claim,
+        {
+          status: 200,
+          durationMs,
+          excerpt: `${item.rows.length} row${item.rows.length === 1 ? "" : "s"} added`,
+          error: null,
+        },
+        true,
+        facts
+      );
+    }
+  } catch (sendError) {
+    const message =
+      sendError instanceof GoogleError
+        ? sendError.reconnect
+          ? "Google no longer accepts this connection. Connect the account again."
+          : `Google Sheets: ${sendError.message}`
+        : "Google Sheets could not be reached.";
+    const status = sendError instanceof GoogleError ? sendError.status : null;
+    const durationMs = Math.round(performance.now() - started);
+    for (const item of batch) {
+      await record(item.claim, { status, durationMs, excerpt: null, error: message }, true, facts);
+    }
+  }
+}
+
 /** Sends one claimed delivery and records the outcome. */
 async function deliver(claim: Claim, request: RequestRecord | undefined): Promise<void> {
   // Deliveries that cannot be sent at all fail at once: retrying will not help.
@@ -585,6 +718,7 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
     record(claim, { status: null, durationMs: 0, excerpt: null, error: reason }, false);
   if (!request) return giveUp("The request is no longer stored.");
   if (!claim.forward_url) return giveUp("The destination has no URL.");
+  if (claim.forward_format === "sheets") return deliverSheets(claim, request);
 
   const verdict = claim.bypass_filter
     ? "send"
@@ -622,7 +756,15 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
     const secret = claim.forward_secret_encrypted
       ? decryptSigningSecret(Buffer.from(claim.forward_secret_encrypted, "base64"))
       : "";
-    prepared = prepare(claim, request, secret);
+    // Links or inline contents for a stored email's attachments; a storage
+    // outage throws here and the delivery is retried on the usual schedule.
+    // A standard chat message shows only the subject and text; a template
+    // (JSON or a chat message template) can name attachments.
+    const usesAttachments = format !== "chat" || !!claim.message_template;
+    const withAttachments = usesAttachments
+      ? await withAttachmentPayloads(request, claim.attachments)
+      : request;
+    prepared = prepare(claim, withAttachments, secret);
   } catch (error) {
     // A server problem (SIGNING_SECRET_KEY missing or changed): retried on the
     // usual schedule, so deliveries resume once it is fixed.
