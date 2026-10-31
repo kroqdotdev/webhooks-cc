@@ -389,25 +389,3 @@ export async function getForwardOwnerHeaders(
   const primary = await primaryOf(userId, slug);
   return primary ? getDestinationHeaders(primary.endpointId, primary.destinationId) : [];
 }
-
-/** The newest email the endpoint captured, for a test delivery. */
-export async function getNewestEmailRequestId(endpointId: string): Promise<string | null> {
-  return getNewestRequestId(endpointId, "email");
-}
-
-/** The newest request of one kind the endpoint captured, for a test delivery. */
-export async function getNewestRequestId(
-  endpointId: string,
-  kind: "http" | "email"
-): Promise<string | null> {
-  const { data, error } = await createAdminClient()
-    .from("requests")
-    .select("id")
-    .eq("endpoint_id", endpointId)
-    .eq("kind", kind)
-    .order("received_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.id ?? null;
-}

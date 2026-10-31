@@ -294,6 +294,9 @@ function encodeCursor(offset: number, cutoff: number): string {
   return Buffer.from(JSON.stringify({ offset, cutoff }), "utf8").toString("base64url");
 }
 
+/** How far back a page cursor may hold the retention cutoff (see listPaginatedRequestsForEndpointByUser). */
+const CURSOR_PIN_MS = DAY_MS;
+
 function decodeCursor(cursor: string | undefined): { offset: number; cutoff: number } | null {
   if (!cursor) return null;
 
@@ -309,7 +312,9 @@ function decodeCursor(cursor: string | undefined): { offset: number; cutoff: num
       parsed.offset < 0 ||
       typeof parsed.cutoff !== "number" ||
       !Number.isFinite(parsed.cutoff) ||
-      parsed.cutoff < 0
+      parsed.cutoff < 0 ||
+      // A cutoff from the future is not one this server wrote.
+      parsed.cutoff > Date.now() + DAY_MS
     ) {
       return null;
     }
@@ -348,10 +353,33 @@ async function getOwnedEndpoint(userId: string, slug: string): Promise<OwnedEndp
 async function getAccessibleEndpoint(
   userId: string,
   slug: string
-): Promise<{ id: string; slug: string; ownerId: string } | null> {
+): Promise<{ id: string; slug: string; ownerId: string; retentionDays: number | null } | null> {
   const access = await resolveEndpointAccess(userId, slug);
   if (!access) return null;
-  return { id: access.endpointId, slug, ownerId: access.ownerId };
+  return {
+    id: access.endpointId,
+    slug,
+    ownerId: access.ownerId,
+    retentionDays: access.retentionDays,
+  };
+}
+
+/**
+ * Where an endpoint that keeps its requests fewer days than its plan stops
+ * showing them, or null. cleanup_expired_requests() deletes them, team-billed
+ * rows too, every 10 minutes; reads hide what it has not reached yet.
+ */
+function endpointCutoff(retentionDays: number | null): number | null {
+  return retentionDays ? Date.now() - retentionDays * DAY_MS : null;
+}
+
+/** Hides rows past the endpoint's own retention, whoever is billed for them. */
+function applyEndpointCutoff<Q extends { gte: (column: string, value: string) => unknown }>(
+  query: Q,
+  retentionDays: number | null
+): void {
+  const cutoff = endpointCutoff(retentionDays);
+  if (cutoff !== null) query.gte("received_at", new Date(cutoff).toISOString());
 }
 
 interface Retention {
@@ -406,6 +434,80 @@ function retentionOrFilter(cutoff: number): string {
  * Requests by id with no access check, for server work that already knows
  * which rows it may read (the email forwarding worker claims them).
  */
+/**
+ * Hides rows past retention on a query of one endpoint's requests, as the
+ * readers do: the owner's plan window (team-billed rows keep the team's)
+ * and the endpoint's own shorter one. For code that selects requests itself
+ * (replay, the previews), which would otherwise show or resend rows the
+ * cleanup has not deleted yet.
+ */
+export async function applyRequestRetention<
+  Q extends { or: (filter: string) => unknown; gte: (column: string, value: string) => unknown },
+>(query: Q, endpointId: string): Promise<void> {
+  const { data, error } = await createAdminClient()
+    .from("endpoints")
+    .select("user_id, retention_days")
+    .eq("id", endpointId)
+    .maybeSingle<{ user_id: string | null; retention_days: number | null }>();
+  if (error) throw error;
+  if (data?.user_id) {
+    const retention = await getUserRetention(data.user_id);
+    query.or(retentionOrFilter(retention.cutoff));
+  }
+  applyEndpointCutoff(query, data?.retention_days ?? null);
+}
+
+/** An endpoint's requests among `ids`, within retention (the previews' and replays' reader). */
+export async function getRetainedRequestsByIds(
+  endpointId: string,
+  ids: string[]
+): Promise<RequestRecord[]> {
+  if (ids.length === 0) return [];
+  const query = createAdminClient()
+    .from("requests")
+    .select(
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+    )
+    .eq("endpoint_id", endpointId)
+    .in("id", ids);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query.returns<SelectedRequestRowWithQuery[]>();
+  if (error) throw error;
+  return (data ?? []).map(normalizeRequest);
+}
+
+/** Whether one of an endpoint's requests is within retention (an id check, no body read). */
+export async function isRequestRetained(endpointId: string, requestId: string): Promise<boolean> {
+  const query = createAdminClient()
+    .from("requests")
+    .select("id")
+    .eq("endpoint_id", endpointId)
+    .eq("id", requestId);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query.maybeSingle<{ id: string }>();
+  if (error) throw error;
+  return data !== null;
+}
+
+/** The id of an endpoint's newest request of a kind within retention, or null. */
+export async function getNewestRetainedRequestId(
+  endpointId: string,
+  kind: "http" | "email"
+): Promise<string | null> {
+  const query = createAdminClient()
+    .from("requests")
+    .select("id")
+    .eq("endpoint_id", endpointId)
+    .eq("kind", kind);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
 export async function getRequestsByIds(ids: string[]): Promise<RequestRecord[]> {
   if (ids.length === 0) return [];
   const admin = createAdminClient();
@@ -463,6 +565,8 @@ export async function getRequestByIdForUser(
   ) {
     return null;
   }
+  const ownCutoff = endpointCutoff(access.retentionDays);
+  if (ownCutoff !== null && parseMillis(row.received_at) < ownCutoff) return null;
 
   return normalizeRequest(row);
 }
@@ -500,6 +604,7 @@ export async function listRequestsForEndpointByUser(input: {
       input.since === undefined ? retention.cutoff : Math.max(input.since, retention.cutoff);
     query.gte("received_at", new Date(floor).toISOString());
   }
+  applyEndpointCutoff(query, endpoint.retentionDays);
   if (input.kind) {
     query.eq("kind", input.kind);
   }
@@ -572,6 +677,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   } else {
     query.gte("received_at", new Date(retention.cutoff).toISOString());
   }
+  applyEndpointCutoff(query, endpoint.retentionDays);
 
   const { data, error } = await query
     .order("received_at", { ascending: true })
@@ -612,8 +718,10 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
 
   const limit = clampLimit(input.limit, 50);
   const retention = await getUserRetention(endpoint.ownerId);
-  // The cursor pins the cutoff so pages stay stable as the window slides.
-  const cutoff = decoded?.cutoff ?? retention.cutoff;
+  // The cursor pins the cutoff so pages stay stable as the window slides
+  // while someone pages through, but by a day at most: a cursor is the
+  // client's to forge, and an earlier cutoff would show rows past retention.
+  const cutoff = Math.max(decoded?.cutoff ?? retention.cutoff, retention.cutoff - CURSOR_PIN_MS);
   const offset = decoded?.offset ?? 0;
 
   const query = admin
@@ -628,6 +736,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   } else {
     query.gte("received_at", new Date(cutoff).toISOString());
   }
+  applyEndpointCutoff(query, endpoint.retentionDays);
   if (input.kind) {
     query.eq("kind", input.kind);
   }
