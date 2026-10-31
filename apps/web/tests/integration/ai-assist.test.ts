@@ -383,7 +383,8 @@ describe("AI setup and repair", () => {
         p_method: "EMAIL",
         p_path: `${owner.slug}@mailhooks.cc`,
         p_headers: Object.fromEntries(
-          Array.from({ length: 60 }, (_, h) => [`x-${"h".repeat(250)}-${h}`, big(400)])
+          // The index first: names cut to 100 characters stay distinct.
+          Array.from({ length: 60 }, (_, h) => [`x-${h}-${"h".repeat(250)}`, big(400)])
         ),
         p_body: "raw",
         p_query_params: {},
@@ -448,5 +449,26 @@ describe("AI setup and repair", () => {
     });
     expect(busy.status).toBe(409);
     expect(asked).toHaveLength(0);
+  });
+
+  it("does not count an ask abandoned before it finished", async () => {
+    const owner = await signedIn();
+    const left = async () =>
+      (await admin.rpc("ai_assists_left", { p_endpoint_id: owner.endpointId })).data as {
+        used: number;
+      };
+    // The process ended mid-ask four minutes ago: never finished, not counted.
+    await admin.from("ai_assist_uses").insert({
+      user_id: owner.userId,
+      actor_id: owner.userId,
+      kind: "field",
+      created_at: new Date(Date.now() - 4 * 60_000).toISOString(),
+    });
+    expect((await left()).used).toBe(0);
+    // One still within its three minutes is in flight, and counts.
+    await admin
+      .from("ai_assist_uses")
+      .insert({ user_id: owner.userId, actor_id: owner.userId, kind: "field" });
+    expect((await left()).used).toBe(1);
   });
 });

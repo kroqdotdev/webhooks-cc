@@ -997,6 +997,19 @@ export async function fetchDashboardRequests(
   return records.map(toDashboardRequest);
 }
 
+/** One request by id, as the request routes return it; null when it is no longer kept. */
+export async function fetchDashboardRequest(
+  accessToken: string,
+  id: string
+): Promise<Request | null> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(id)}`,
+    withAuthHeaders(accessToken)
+  );
+  if (response.status === 404) return null;
+  return toDashboardRequest(await readJson<Parameters<typeof toDashboardRequest>[0]>(response));
+}
+
 export async function fetchDashboardSearch(
   accessToken: string,
   params: Record<string, string>

@@ -36,7 +36,8 @@ export function AiAssistPanel({
   /** The endpoint's recent emails, newest first. */
   samples: { id: string; subject: string }[];
   mode: AiAssistMode;
-  onAddField?: (field: EmailField) => void;
+  /** May save (a repair does): the field shows as added only once it resolves. */
+  onAddField?: (field: EmailField) => void | Promise<void>;
   onUseLayout?: (layout: {
     name: string | null;
     match: Condition | null;
@@ -65,6 +66,7 @@ export function AiAssistPanel({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AiAssistResult | null>(null);
   const [added, setAdded] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -258,6 +260,13 @@ export function AiAssistPanel({
                   ) : null}
                 </p>
               )}
+              {mode.kind === "layout" && !result.match && (
+                <p className="text-xs text-muted-foreground">
+                  No text that all these emails share tells them apart, so this is not a layout of
+                  its own: it would read every email. Pick emails from one sender, or add these
+                  fields to a layout you have.
+                </p>
+              )}
               <ul className="space-y-2">
                 {result.fields.map(({ field, values }) => (
                   <li key={field.name} className="text-sm space-y-0.5">
@@ -272,10 +281,17 @@ export function AiAssistPanel({
                       {mode.kind !== "layout" && onAddField && (
                         <button
                           type="button"
-                          disabled={added.has(field.name)}
-                          onClick={() => {
-                            onAddField(field);
-                            setAdded(new Set([...added, field.name]));
+                          disabled={added.has(field.name) || adding === field.name}
+                          onClick={async () => {
+                            setAdding(field.name);
+                            try {
+                              await onAddField(field);
+                              setAdded((current) => new Set([...current, field.name]));
+                            } catch {
+                              // Not saved: the parent says why, and the button stays to try again.
+                            } finally {
+                              setAdding(null);
+                            }
                           }}
                           className="ui-btn-outline py-0.5! px-2! text-xs ml-auto"
                         >
@@ -299,7 +315,7 @@ export function AiAssistPanel({
                   </li>
                 ))}
               </ul>
-              {mode.kind === "layout" && onUseLayout && (
+              {mode.kind === "layout" && onUseLayout && result.match && (
                 <button
                   type="button"
                   onClick={() => {

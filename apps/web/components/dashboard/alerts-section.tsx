@@ -7,6 +7,8 @@ import {
   emitDashboardEndpointsChanged,
   fetchAiAssists,
   fetchAlerts,
+  fetchDashboardEndpoint,
+  fetchDashboardRequest,
   fetchDashboardRequests,
   fetchDestinations,
   replayEndpoint,
@@ -121,44 +123,76 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       .catch(() => setAiOffered(false));
   }, [accessToken, endpoint.slug]);
 
-  const startRepair = async (field: FieldAt) => {
+  /**
+   * Opens the repair with the email the alert last saw miss the field first
+   * (so it is among the picked samples, and a proposal must find a value in
+   * it), then the newest others. An alert that did not record its layout
+   * takes it from that email's own parse.
+   */
+  const startRepair = async (name: string, details: Record<string, unknown> | null) => {
     if (!accessToken) return;
     setRepairNote(null);
-    const requests = await fetchDashboardRequests(accessToken, endpoint.slug, 10, "email").catch(
-      () => []
-    );
+    const missedId =
+      typeof details?.lastMissedRequestId === "string" ? details.lastMissedRequestId : null;
+    const [requests, missed] = await Promise.all([
+      fetchDashboardRequests(accessToken, endpoint.slug, 10, "email").catch(() => []),
+      missedId
+        ? fetchDashboardRequest(accessToken, missedId).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    const layoutId =
+      typeof details?.layoutId === "string"
+        ? details.layoutId
+        : (missed?.parsed?.layout?.id ?? null);
+    const found = fieldDefinition(endpoint, name, layoutId);
+    if (!found) {
+      setRepairNote(`${name} is no longer defined, so there is nothing to repair.`);
+      return;
+    }
+    const emails = [
+      ...(missed?.kind === "email" ? [missed] : []),
+      ...requests.filter((request) => request._id !== missed?._id),
+    ].slice(0, 10);
     setRecent(
-      requests.map((request) => ({
+      emails.map((request) => ({
         id: request._id,
         subject: request.email?.subject || "(no subject)",
       }))
     );
-    setRepair(field);
+    setRepair(found);
   };
 
-  /** Replaces the field where it was found (that one place only), and saves the endpoint. */
+  /**
+   * Replaces the field where it was found (that one place only) and saves
+   * the endpoint. The endpoint is read again first, so edits made since this
+   * page loaded (another layout, another field) are kept. Throws when it
+   * was not saved, so the panel lets the person try again.
+   */
   const applyRepair = async (field: EmailField) => {
     if (!accessToken || !repair) return;
-    const updates =
-      repair.layoutId === null
-        ? {
-            emailFields: (endpoint.emailFields ?? []).map((item) =>
-              item.name === field.name ? field : item
-            ),
-          }
-        : {
-            layouts: (endpoint.layouts ?? []).map((layout) => {
-              if (layout.id !== repair.layoutId) return layout;
-              const at = (layout.fields ?? []).findIndex((item) => item.name === field.name);
-              return at < 0
-                ? layout
-                : {
-                    ...layout,
-                    fields: (layout.fields ?? []).map((item, i) => (i === at ? field : item)),
-                  };
-            }),
-          };
     try {
+      const fresh = await fetchDashboardEndpoint(accessToken, endpoint.slug);
+      const replace = (fields: EmailField[] | undefined) => {
+        const list = fields ?? [];
+        const at = list.findIndex((item) => item.name === field.name);
+        return at < 0 ? null : list.map((item, i) => (i === at ? field : item));
+      };
+      let updates: Parameters<typeof updateDashboardEndpoint>[2];
+      if (repair.layoutId === null) {
+        const emailFields = replace(fresh.emailFields);
+        if (!emailFields)
+          throw new Error(`${field.name} is no longer one of the endpoint's fields.`);
+        updates = { emailFields };
+      } else {
+        const layout = (fresh.layouts ?? []).find((item) => item.id === repair.layoutId);
+        const fields = layout ? replace(layout.fields) : null;
+        if (!fields) throw new Error(`${field.name} is no longer in that layout.`);
+        updates = {
+          layouts: (fresh.layouts ?? []).map((item) =>
+            item.id === repair.layoutId ? { ...item, fields } : item
+          ),
+        };
+      }
       await updateDashboardEndpoint(accessToken, endpoint.slug, updates);
       emitDashboardEndpointsChanged();
       setRepairNote(
@@ -166,6 +200,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       );
     } catch (err) {
       setRepairNote(err instanceof Error ? err.message : "The field was not saved.");
+      throw err;
     }
   };
   const fieldNames = useMemo(
@@ -450,7 +485,9 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                           <button
                             key={found.field.name}
                             type="button"
-                            onClick={() => void startRepair(found)}
+                            onClick={() =>
+                              void startRepair(found.field.name, event.details ?? null)
+                            }
                             className="ui-btn-outline py-1! px-2! text-xs"
                           >
                             Fix {found.field.name} with AI
@@ -472,10 +509,12 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           {repair && (
             <div className="mt-3">
               <AiAssistPanel
+                // A new repair starts afresh (its own emails picked), never with the last one's.
+                key={`${repair.layoutId ?? ""}:${repair.field.name}`}
                 slug={endpoint.slug}
                 samples={recent}
                 mode={{ kind: "repair", field: repair.field }}
-                onAddField={(field) => void applyRepair(field)}
+                onAddField={applyRepair}
                 onClose={() => setRepair(null)}
               />
             </div>

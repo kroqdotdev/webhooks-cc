@@ -18,9 +18,14 @@ const REQUEST_TIMEOUT_MS = 75_000;
 /** Patterns, names and a condition: a few thousand tokens with the thinking. */
 const MAX_TOKENS = 8000;
 
+/** The API key, trimmed: a blank one (spaces from an env file) is none. */
+function apiKey(): string | undefined {
+  return process.env.ANTHROPIC_API_KEY?.trim() || undefined;
+}
+
 /** Whether this server can make assists (an API key; tests point AI_API_BASE_URL at a fake). */
 export function aiOffered(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return apiKey() !== undefined;
 }
 
 export const FIELD_SOURCES = ["subject", "text", "html", "from", "to", "header"] as const;
@@ -96,7 +101,7 @@ export interface ModelCallOptions {
 
 function client(fetchImpl: typeof fetch): Anthropic {
   return new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
+    apiKey: apiKey(),
     // A fake model for tests, never in production (where the SDK's own
     // ANTHROPIC_BASE_URL fallback is overridden too).
     baseURL:
