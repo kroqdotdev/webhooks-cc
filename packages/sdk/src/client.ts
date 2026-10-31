@@ -34,6 +34,7 @@ import type {
   LayoutsPreview,
   Destination,
   DestinationInput,
+  DestinationCreateInput,
   DestinationPreview,
   DestinationTestResult,
   PreviewDestinationOptions,
@@ -2224,10 +2225,7 @@ export class WebhooksCC {
     },
 
     /** Add a destination (up to 10 per endpoint); it gets a signing secret of its own. */
-    create: async (
-      endpointSlug: string,
-      input: DestinationInput & { url: string }
-    ): Promise<Destination> => {
+    create: async (endpointSlug: string, input: DestinationCreateInput): Promise<Destination> => {
       validatePathSegment(endpointSlug, "endpointSlug");
       validateDestinationInput(input);
       return this.request<Destination>("POST", `/endpoints/${endpointSlug}/destinations`, input);

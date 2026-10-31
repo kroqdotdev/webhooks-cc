@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { addressBytes } from "./connect";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { addressBytes, openDropSocket } from "./connect";
+
+// Production never allows private targets; the rest of its environment is not needed here.
+vi.mock("@/lib/forwarding/config", () => ({ allowPrivateTargets: () => false }));
 
 describe("SOCKS address encoding", () => {
   it("encodes IPv4 and IPv6 literals, a dotted IPv4 tail included", () => {
@@ -14,5 +17,19 @@ describe("SOCKS address encoding", () => {
       "20010db8000000000000000000000001"
     );
     expect(addressBytes("files.acme.example")).toBeNull();
+  });
+});
+
+describe("openDropSocket in production", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("refuses to connect without the egress proxy, before any connection", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("FILE_DROP_PROXY_URL", "");
+    await expect(openDropSocket("files.acme.example", 22)).rejects.toThrow(
+      "File drops are not set up on this server."
+    );
   });
 });

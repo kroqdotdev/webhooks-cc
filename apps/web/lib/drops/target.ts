@@ -149,15 +149,18 @@ export const TEST_FILE_NAME = "webhooks-cc-test.txt";
 
 /**
  * Connects, logs in and writes a small test file, which is what a drop
- * needs to work. Answers the SFTP host key seen, to pin on the drop.
+ * needs to work. `beforeWrite` sees the SFTP host key once connected and
+ * may refuse it (throw) before anything is written.
  */
 export async function testDropTarget(
   config: FileDropConfig,
-  secret: DropSecret
+  secret: DropSecret,
+  beforeWrite?: (hostKey: string | null) => Promise<void>
 ): Promise<{ hostKey: string | null; file: string }> {
   // A test holds a request open: a minute at most.
   const target = await openDropTarget(config, secret, 60_000);
   try {
+    await beforeWrite?.(target.hostKey);
     await target.put(
       TEST_FILE_NAME,
       Buffer.from(

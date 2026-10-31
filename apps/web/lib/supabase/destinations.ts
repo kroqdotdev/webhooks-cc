@@ -1,5 +1,5 @@
 import { encryptDropSecret, decryptDropSecret } from "@/lib/drops/target";
-import type { DropSecret } from "@/lib/drops/config";
+import { storedFileDropConfig, type DropSecret } from "@/lib/drops/config";
 import type { Condition } from "@webhooks-cc/sdk";
 import { decryptSigningSecret, encryptSigningSecret, isSigningKeyConfigured } from "@/lib/crypto";
 import {
@@ -466,13 +466,13 @@ export async function dropForDestination(
   };
 }
 
-/** Pins an SFTP drop's host key if it still goes to that server and none is pinned. */
+/** Pins an SFTP drop's host key if it still goes to that server and none is pinned; whether it did. */
 export async function pinDropHostKey(
   id: string,
   target: { host: string; port: number; username: string },
   hostKey: string
-): Promise<void> {
-  const { error } = await createAdminClient().rpc("pin_drop_host_key", {
+): Promise<boolean> {
+  const { data, error } = await createAdminClient().rpc("pin_drop_host_key", {
     p_destination_id: id,
     p_host: target.host,
     p_port: target.port,
@@ -480,6 +480,31 @@ export async function pinDropHostKey(
     p_host_key: hostKey,
   });
   if (error) throw error;
+  return data === true;
+}
+
+/**
+ * Whether files may go to the SFTP server a drop's first connection
+ * reached (no key was pinned when it connected): its key is pinned now, or
+ * another connection pinned that same key meanwhile and the drop still
+ * names that server. Another key pinned meanwhile, or the drop moved to
+ * another server or login, and nothing is written.
+ */
+export async function trustDropHostKey(
+  id: string,
+  target: { host: string; port: number; username: string },
+  hostKey: string
+): Promise<boolean> {
+  if (await pinDropHostKey(id, target, hostKey)) return true;
+  const row = await dropForDestination(id);
+  const config = row?.format === "file_drop" ? storedFileDropConfig(row.config) : null;
+  return (
+    config?.protocol === "sftp" &&
+    config.host === target.host &&
+    config.port === target.port &&
+    config.username === target.username &&
+    config.hostKey === hostKey
+  );
 }
 
 /** A new signing secret; deliveries are signed with it from now on. */

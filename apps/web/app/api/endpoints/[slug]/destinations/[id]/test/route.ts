@@ -6,7 +6,7 @@ import {
   getDestination,
   getDestinationHeaders,
   dropForDestination,
-  pinDropHostKey,
+  trustDropHostKey,
   getDestinationMailgunKey,
   getDestinationSecret,
 } from "@/lib/supabase/destinations";
@@ -64,7 +64,20 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
     if (destination.format === "file_drop") {
-      return reply(await testFileDrop(endpoint.id, destination));
+      // The shape of every destination's test, plus the file written.
+      const started = performance.now();
+      const result = await testFileDrop(endpoint.id, destination);
+      return reply({
+        ...result,
+        status: null,
+        durationMs: Math.round(performance.now() - started),
+        excerpt: result.ok ? `Wrote ${result.file}` : null,
+        error: result.error ?? null,
+        delivered: result.ok,
+        sample: false,
+        format: "file_drop",
+        filterPasses: true,
+      });
     }
     const picked = await pickRequest(endpoint, {
       requestId: (body.requestId as string | undefined) ?? null,
@@ -108,7 +121,8 @@ export async function POST(request: Request, { params }: Params) {
 /**
  * A file drop's test: connect, log in and write a small test file to the
  * folder (written again on each test). The first SFTP connection pins the
- * server's host key on the drop.
+ * server's host key on the drop before the file is written, and the test
+ * fails if another key was pinned meanwhile.
  */
 async function testFileDrop(
   endpointId: string,
@@ -127,14 +141,19 @@ async function testFileDrop(
     return { ok: false, error: "Save the drop's settings and secret first." };
   }
   try {
-    const result = await testDropTarget(config, row.secret);
-    if (config.protocol === "sftp" && !config.hostKey && result.hostKey) {
-      await pinDropHostKey(
+    const result = await testDropTarget(config, row.secret, async (hostKey) => {
+      if (config.protocol !== "sftp" || config.hostKey || !hostKey) return;
+      const trusted = await trustDropHostKey(
         destination.id,
         { host: config.host!, port: config.port!, username: config.username! },
-        result.hostKey
+        hostKey
       );
-    }
+      if (!trusted) {
+        throw new DropError(
+          "The drop's server or host key changed while it connected. Nothing was written; test it again."
+        );
+      }
+    });
     return { ok: true, file: result.file, hostKey: result.hostKey };
   } catch (error) {
     if (error instanceof DropError) return { ok: false, error: error.message };

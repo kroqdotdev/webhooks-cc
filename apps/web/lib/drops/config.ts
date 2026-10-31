@@ -2,7 +2,7 @@ import { parseColumns, type SheetsColumn } from "@/lib/integrations/sheets";
 import type { Json } from "@/lib/supabase/database";
 import { dropHostProblem } from "./connect";
 import type { DropFileFormat } from "./files";
-import { s3EndpointProblem } from "./s3";
+import { isAws, s3EndpointProblem } from "./s3";
 import { normalizeFingerprint } from "./tls";
 
 /**
@@ -137,6 +137,12 @@ export function parseFileDropConfig(
     const bucket = text(config.bucket, 63);
     if (!bucket || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
       return "config.bucket is a bucket name: lower-case letters, digits, dots and dashes.";
+    }
+    // On AWS the bucket is part of the host name, and AWS's certificate
+    // covers one label there: a name with dots fails every TLS check unless
+    // the certificate is pinned instead.
+    if (bucket.includes(".") && isAws(host) && !tlsFingerprint) {
+      return "An AWS bucket with dots in its name cannot be reached over https: use one without dots, or pin the certificate.";
     }
     const accessKeyId = text(config.accessKeyId, 128);
     if (!accessKeyId || !/^[\x21-\x7e]+$/.test(accessKeyId)) {

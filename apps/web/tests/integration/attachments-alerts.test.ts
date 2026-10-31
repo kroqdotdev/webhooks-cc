@@ -268,6 +268,41 @@ async function openAlerts(endpointId: string) {
 }
 
 describe("alerts", () => {
+  it("keeps only destinations that can take a notice", async () => {
+    const target = await endpoint("alerts targets");
+    const notify = await createDestination(target.id, {
+      url: `${base}/alerts-targets`,
+      format: "json",
+      email: false,
+      http: false,
+    });
+    const drop = await createDestination(target.id, {
+      url: "sftp://files.acme.example",
+      format: "file_drop",
+      email: true,
+      http: false,
+      config: {
+        protocol: "sftp",
+        host: "files.acme.example",
+        port: 22,
+        username: "acme",
+        folder: "",
+        file: "json",
+        rows: "email",
+        columns: [],
+        prefix: "",
+        batch: false,
+      },
+      dropSecret: { password: "x" },
+    });
+    const saved = await saveAlertSettings(target.id, {
+      ...DEFAULT_ALERT_SETTINGS,
+      enabled: true,
+      notifyDestinationIds: [notify.id, drop.id],
+    });
+    expect(saved.notifyDestinationIds).toEqual([notify.id]);
+  });
+
   it("leaves a notice another pass has claimed until that claim runs out", async () => {
     const target = await endpoint("alerts claimed");
     const notify = await createDestination(target.id, {

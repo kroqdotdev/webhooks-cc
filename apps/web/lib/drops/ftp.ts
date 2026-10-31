@@ -53,7 +53,13 @@ class Control {
     let index;
     // Only the new text is searched; the partial line before it has no newline.
     while ((index = text.indexOf("\n", start)) >= 0) {
-      this.lines.push((this.buffer + text.slice(start, index)).replace(/\r$/, ""));
+      const line = (this.buffer + text.slice(start, index)).replace(/\r$/, "");
+      // A whole line in one chunk is held to the limit too, not only the unfinished one.
+      if (line.length > MAX_LINE_CHARS) {
+        this.fail(new DropError("The FTP server sent more than a reply.", false));
+        return;
+      }
+      this.lines.push(line);
       this.buffer = "";
       start = index + 1;
     }
@@ -345,13 +351,27 @@ export class FtpSession {
     }
     expect(await this.control.read(), [226, 250], "The upload did not complete");
     expect(await this.control.send(`RNFR ${partial}`), [350], "The file could not be renamed");
-    const renamed = await this.control.send(`RNTO ${name}`);
-    if (renamed.code === 250) return;
+    if ((await this.control.send(`RNTO ${name}`)).code === 250) return;
     // A file of that name is there (a retry after an upload that went
-    // through): servers that do not replace on rename need it removed first.
-    await this.control.send(`DELE ${name}`);
-    expect(await this.control.send(`RNFR ${partial}`), [350], "The file could not be renamed");
-    expect(await this.control.send(`RNTO ${name}`), [250], "The file could not be renamed");
+    // through) and the server does not rename over it: the old one is moved
+    // aside, and removed only once the new one is in place.
+    const aside = `${name}.${randomBytes(4).toString("hex")}.old`;
+    expect(await this.control.send(`RNFR ${name}`), [350], "The file could not be renamed");
+    expect(
+      await this.control.send(`RNTO ${aside}`),
+      [250],
+      "The old file could not be moved aside"
+    );
+    const from = await this.control.send(`RNFR ${partial}`);
+    const placed = from.code === 350 ? await this.control.send(`RNTO ${name}`) : from;
+    if (placed.code !== 250) {
+      // The old file goes back where it was.
+      if ((await this.control.send(`RNFR ${aside}`)).code === 350) {
+        await this.control.send(`RNTO ${name}`);
+      }
+      expect(placed, [250], "The file could not be renamed");
+    }
+    await this.control.send(`DELE ${aside}`);
   }
 
   async close(): Promise<void> {

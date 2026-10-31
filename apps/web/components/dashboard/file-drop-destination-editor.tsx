@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { Condition } from "@webhooks-cc/sdk";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { cn } from "@/lib/utils";
 import {
   createDestination,
   deleteDestination,
@@ -109,7 +110,7 @@ export function FileDropDestinationEditor({
     }
   };
 
-  const config = (): FileDropDestinationConfig => ({
+  const config = (forget = forgetHostKey): FileDropDestinationConfig => ({
     protocol,
     folder: folder.trim(),
     file,
@@ -129,9 +130,26 @@ export function FileDropDestinationEditor({
           host: host.trim(),
           port: Number(port),
           username: username.trim(),
-          ...(forgetHostKey ? { hostKey: null } : {}),
+          ...(forget ? { hostKey: null } : {}),
         }),
   });
+
+  // The form as it would be saved, to tell unsaved changes: a test uses the saved settings.
+  const formState = (typedSecret: boolean, forget: boolean) =>
+    JSON.stringify({
+      name,
+      enabled,
+      email,
+      http,
+      conditions,
+      logic,
+      batchMinutes,
+      config: config(forget),
+      typedSecret,
+    });
+  const [savedState, setSavedState] = useState(() => formState(false, false));
+  const dirty = !destination || formState(secret !== "", forgetHostKey) !== savedState;
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const secretInput = (): DestinationInput["dropSecret"] => {
     if (!secret) return undefined;
@@ -172,6 +190,7 @@ export function FileDropDestinationEditor({
         : await createDestination(accessToken, slug, input);
       setSecret("");
       setForgetHostKey(false);
+      setSavedState(formState(false, false));
       setSaved(true);
       onSaved(result);
     } catch (err) {
@@ -592,9 +611,13 @@ export function FileDropDestinationEditor({
         {destination && (
           <button
             type="button"
-            disabled={!!busy}
+            disabled={!!busy || dirty}
             onClick={() => void test()}
-            className="ui-btn-outline py-1.5! px-3! text-xs"
+            title={dirty ? "Save first: the test uses the saved settings." : undefined}
+            className={cn(
+              "ui-btn-outline py-1.5! px-3! text-xs",
+              dirty && "opacity-50 cursor-not-allowed"
+            )}
           >
             {busy === "Connecting..." ? busy : "Test the connection"}
           </button>
@@ -604,16 +627,39 @@ export function FileDropDestinationEditor({
             Cancel
           </button>
         )}
-        {destination && (
-          <button
-            type="button"
-            onClick={() => void remove()}
-            className="text-sm text-destructive ml-auto"
-          >
-            Remove
-          </button>
+        {destination &&
+          (confirmDelete ? (
+            <span className="ml-auto flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void remove()}
+                className="text-sm text-destructive"
+              >
+                Remove destination
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="text-sm text-muted-foreground"
+              >
+                Keep it
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="text-sm text-destructive ml-auto"
+            >
+              Remove
+            </button>
+          ))}
+        {destination && dirty && !busy && (
+          <span className="w-full text-xs text-muted-foreground">
+            Save first: the connection test uses the saved settings.
+          </span>
         )}
-        {saved && <span className="text-xs text-muted-foreground">Saved.</span>}
+        {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}
         {tested && <span className="text-xs text-muted-foreground">{tested}</span>}
         {error && <p className="w-full text-sm text-destructive">{error}</p>}
       </div>

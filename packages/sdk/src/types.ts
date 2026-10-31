@@ -1346,6 +1346,14 @@ export interface DestinationInput {
   position?: number;
 }
 
+/**
+ * Fields to create a destination with: `url` is needed, except for a file
+ * drop, whose address comes from its config.
+ */
+export type DestinationCreateInput =
+  | (DestinationInput & { url: string })
+  | (DestinationInput & { format: "file_drop"; config: FileDropConfig });
+
 /** An endpoint's alert settings. */
 export interface AlertSettings {
   enabled: boolean;
@@ -1425,6 +1433,10 @@ export interface DestinationPreview {
 export interface DestinationTestResult extends ForwardingTestResult {
   /** Whether the destination's filter would have let it through (a test sends either way) */
   filterPasses: boolean;
+  /** For a file drop: the test file written (`delivered` says whether it was) */
+  file?: string;
+  /** For an SFTP file drop: the server's host key, pinned on the drop by its first connection */
+  hostKey?: string | null;
 }
 
 /** Result of `forwarding.summary()`. Each count stops at 100,000. */

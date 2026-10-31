@@ -335,4 +335,59 @@ describe("file drop destinations", () => {
       { status: "failed", last_error: "The login was refused." },
     ]);
   });
+
+  it("batch only deliveries due again, and settle a written batch in one call", async () => {
+    const userId = await createUser("business");
+    const endpoint = await createEndpointForUser({ userId, name: "drop-batch" });
+    endpointIds.push(endpoint.id);
+    const destination = await createDestination(endpoint.id, {
+      url: "sftp://files.acme.example",
+      format: "file_drop",
+      email: true,
+      http: false,
+      // Never reached: the worker is not run here.
+      config: { ...sftpConfig("upload"), batch: true },
+      dropSecret: { password: "x" },
+    });
+    for (const subject of ["Order 1", "Order 2", "Order 3"]) await capture(endpoint.slug, subject);
+    const { data: queued } = await admin
+      .from("email_deliveries")
+      .select("id")
+      .eq("destination_id", destination.id)
+      .order("created_at");
+    expect(queued).toHaveLength(3);
+    // The second failed once and waits for its retry an hour from now.
+    await admin
+      .from("email_deliveries")
+      .update({ attempts: 1, next_attempt_at: new Date(Date.now() + 3600_000).toISOString() })
+      .eq("id", queued![1].id);
+
+    const { data: claimed, error } = await admin.rpc("claim_drop_batch", {
+      p_destination_id: destination.id,
+      p_limit: 499,
+      p_lease_seconds: 300,
+    });
+    if (error) throw error;
+    const batch = claimed as { delivery_id: string; attempt: number }[];
+    expect(batch.map((row) => row.delivery_id).sort()).toEqual(
+      [queued![0].id, queued![2].id].sort()
+    );
+
+    const { error: settleError } = await admin.rpc("record_drop_deliveries", {
+      p_delivery_ids: batch.map((row) => row.delivery_id),
+      p_attempts: batch.map((row) => row.attempt),
+      p_duration_ms: 12,
+      p_response_excerpt: "Wrote batch.csv",
+      p_target: "sftp://files.acme.example/upload",
+    });
+    if (settleError) throw settleError;
+    const { data: after } = await admin
+      .from("email_deliveries")
+      .select("id, status, format, target")
+      .eq("destination_id", destination.id);
+    const byId = new Map((after ?? []).map((row) => [row.id, row]));
+    expect(byId.get(queued![0].id)).toMatchObject({ status: "succeeded", format: "file_drop" });
+    expect(byId.get(queued![2].id)).toMatchObject({ status: "succeeded", format: "file_drop" });
+    expect(byId.get(queued![1].id)?.status).toBe("pending");
+  });
 });

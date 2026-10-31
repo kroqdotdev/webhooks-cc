@@ -266,15 +266,27 @@ async fn handle(mut stream: TcpStream, egress: &Egress) -> Result<(), &'static s
         send_reply(&mut stream, reply::NOT_ALLOWED, None).await;
         return Err("blocked port");
     }
+    // One deadline for the lookup and every address of the name, and only a
+    // few of them: the web app has given up by then, and the slot must not
+    // stay taken (a slow resolver included).
+    let deadline = tokio::time::Instant::now() + CONNECT_TIMEOUT;
     let addresses: Vec<SocketAddr> = match target {
         Target::Ip(ip) => vec![SocketAddr::new(ip, port)],
-        Target::Name(name) => match tokio::net::lookup_host((name.as_str(), port)).await {
-            Ok(found) => found.collect(),
-            Err(_) => {
-                send_reply(&mut stream, reply::HOST_UNREACHABLE, None).await;
-                return Err("lookup");
+        Target::Name(name) => {
+            match tokio::time::timeout_at(deadline, tokio::net::lookup_host((name.as_str(), port)))
+                .await
+            {
+                Ok(Ok(found)) => found.collect(),
+                Ok(Err(_)) => {
+                    send_reply(&mut stream, reply::HOST_UNREACHABLE, None).await;
+                    return Err("lookup");
+                }
+                Err(_) => {
+                    send_reply(&mut stream, reply::TIMED_OUT, None).await;
+                    return Err("lookup timeout");
+                }
             }
-        },
+        }
     };
     // Any blocked address refuses the whole name, as the web app does: a
     // name that mixes public and private addresses is not a drop target.
@@ -282,11 +294,8 @@ async fn handle(mut stream: TcpStream, egress: &Egress) -> Result<(), &'static s
         send_reply(&mut stream, reply::NOT_ALLOWED, None).await;
         return Err("blocked address");
     }
-    // One deadline for every address of the name, and only a few of them:
-    // the web app has given up by then, and the slot must not stay taken.
     let mut upstream = None;
     let mut last = reply::HOST_UNREACHABLE;
-    let deadline = tokio::time::Instant::now() + CONNECT_TIMEOUT;
     for address in addresses.iter().take(MAX_ADDRESSES) {
         match tokio::time::timeout_at(deadline, TcpStream::connect(address)).await {
             Ok(Ok(connected)) => {

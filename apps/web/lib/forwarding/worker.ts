@@ -34,7 +34,7 @@ import { forwardHeaders, FORWARD_USER_AGENT } from "./sign";
 import { senderTimestamp, type SenderTime } from "./timing";
 import { reportError } from "@/lib/observability";
 import { withAttachmentPayloads } from "./attachments";
-import { rowsFor, storedSheetsConfig } from "@/lib/integrations/sheets";
+import { RowsTooLargeError, rowsFor, storedSheetsConfig } from "@/lib/integrations/sheets";
 import {
   accessToken as googleAccessToken,
   appendRows,
@@ -46,7 +46,7 @@ import { dropUrl, storedFileDropConfig, type FileDropConfig } from "@/lib/drops/
 import { DropError, dropsOffered } from "@/lib/drops/connect";
 import { dropFile, dropFileName, type DropFile } from "@/lib/drops/files";
 import { openDropTarget, type DropTarget } from "@/lib/drops/target";
-import { dropForDestination, pinDropHostKey } from "@/lib/supabase/destinations";
+import { dropForDestination, trustDropHostKey } from "@/lib/supabase/destinations";
 
 /**
  * Sends forwarded requests. capture_webhook() queues a delivery for every
@@ -86,6 +86,8 @@ const SHEETS_LEASE_SECONDS = 180;
 const DROP_LEASE_SECONDS = 300;
 /** The largest file a batch drop writes; what does not fit goes in the next one. */
 const MAX_DROP_FILE_BYTES = 50 * 1024 * 1024;
+/** The most text one Sheets append carries; rows that do not fit go in the next one. */
+const MAX_SHEETS_APPEND_CHARS = 10 * 1024 * 1024;
 /** The notify proxy's cap (infra/notify-proxy); a larger body could never be delivered. */
 const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
 /**
@@ -632,6 +634,15 @@ async function admitBatch(
   const extra = more.filter((row) => row.delivery_id !== claim.delivery_id);
   const fields = storedEmailFields(claim.email_fields);
   const admit = async (itemClaim: Claim, itemRequest: RequestRecord | undefined) => {
+    try {
+      await admitOne(itemClaim, itemRequest);
+    } catch (error) {
+      // Settled here, so it is not left claimed (and the rest still go) until its lease runs out.
+      reportError("[forwarding] a delivery of a batch failed", error);
+      await fail(itemClaim, "The delivery failed.", true);
+    }
+  };
+  const admitOne = async (itemClaim: Claim, itemRequest: RequestRecord | undefined) => {
     if (!itemRequest) {
       await fail(itemClaim, "The request is no longer stored.", false);
       return;
@@ -721,14 +732,29 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
   if (error) throw error;
   const endpoint = { slug: claim.endpoint_slug, name: claim.endpoint_name };
   const batch: SheetsBatchItem[] = [];
+  let chars = 0;
+  let full = false;
   await admitBatch(claim, request, more ?? [], fail, async (item) => {
-    batch.push({
-      claim: item.claim,
-      rows: rowsFor(item.request, config, endpoint, {
+    // What does not fit in this append goes in the next one.
+    if (full) return release(item.claim, 0);
+    let rows: string[][];
+    try {
+      rows = rowsFor(item.request, config, endpoint, {
         includeExtracts: item.claim.show_email_extracts,
         fields: item.fields,
-      }),
-    });
+        maxChars: MAX_SHEETS_APPEND_CHARS,
+      });
+    } catch (rowsError) {
+      if (!(rowsError instanceof RowsTooLargeError)) throw rowsError;
+      return fail(item.claim, "This request makes more rows than one append can hold.", false);
+    }
+    const added = rows.reduce((sum, row) => sum + row.reduce((n, value) => n + value.length, 0), 0);
+    if (chars + added > MAX_SHEETS_APPEND_CHARS) {
+      full = true;
+      return release(item.claim, 0);
+    }
+    chars += added;
+    batch.push({ claim: item.claim, rows });
   });
   if (batch.length === 0) return;
 
@@ -787,11 +813,15 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
 async function dropContent(
   item: BatchItem,
   config: FileDropConfig,
-  endpoint: { slug: string; name: string | null }
+  endpoint: { slug: string; name: string | null },
+  maxChars: number
 ): Promise<{ rows: string[][]; document: unknown }> {
   const options = { includeExtracts: item.claim.show_email_extracts, fields: item.fields };
   if (config.file !== "json") {
-    return { rows: rowsFor(item.request, config, endpoint, options), document: null };
+    return {
+      rows: rowsFor(item.request, config, endpoint, { ...options, maxChars }),
+      document: null,
+    };
   }
   // The JSON forwarding sends, with attachments as the destination carries them.
   const request = await withAttachmentPayloads(item.request, item.claim.attachments);
@@ -899,16 +929,17 @@ async function runFileDrop(
       );
     }
   };
+  // Every delivery a file holds is settled at once: some settled and some
+  // not would send the rest again in another batch, under another name.
   const succeeded = async (claims: Claim[], name: string) => {
-    const durationMs = Math.round(performance.now() - started);
-    for (const target of claims) {
-      await record(
-        target,
-        { status: 200, durationMs, excerpt: `Wrote ${name}`, error: null },
-        true,
-        facts
-      );
-    }
+    const { error: settleError } = await admin.rpc("record_drop_deliveries", {
+      p_delivery_ids: claims.map((target) => target.delivery_id),
+      p_attempts: claims.map((target) => target.attempt),
+      p_duration_ms: Math.round(performance.now() - started),
+      p_response_excerpt: `Wrote ${name}`,
+      p_target: facts.target ?? null,
+    });
+    if (settleError) throw settleError;
   };
 
   // The connection opens with the first file to write; a failure to open
@@ -917,21 +948,27 @@ async function runFileDrop(
   let openError: unknown = null;
   const connect = async (): Promise<DropTarget | null> => {
     if (target || openError) return target;
+    let opened: DropTarget | null = null;
     try {
-      target = await openDropTarget(config, secret, Math.max(deadlineAt - Date.now(), 1000));
-      // The first SFTP connection pins the server's key, if the drop still
-      // goes there and none was pinned meanwhile.
-      if (config.protocol === "sftp" && !config.hostKey && target.hostKey) {
-        await pinDropHostKey(
+      opened = await openDropTarget(config, secret, Math.max(deadlineAt - Date.now(), 1000));
+      // The first SFTP connection pins the server's key, and nothing is
+      // written until it is: another key pinned meanwhile, or the drop moved
+      // to another server, and this server is not the one to trust.
+      if (config.protocol === "sftp" && !config.hostKey && opened.hostKey) {
+        const trusted = await trustDropHostKey(
           claim.destination_id!,
           { host: config.host!, port: config.port!, username: config.username! },
-          target.hostKey
-        ).catch((pinError) =>
-          // The files can still go: the key is pinned on a later connection.
-          reportError("[drops] pinning a host key failed", pinError)
+          opened.hostKey
         );
+        if (!trusted) {
+          throw new DropError(
+            "The drop's server or host key changed while it connected. Nothing was written."
+          );
+        }
       }
+      target = opened;
     } catch (connectError) {
+      if (opened) await opened.close().catch(() => undefined);
       openError = connectError;
     }
     return target;
@@ -958,14 +995,30 @@ async function runFileDrop(
       const rows: string[][] = [];
       const documents: unknown[] = [];
       let first: RequestRecord | null = null;
-      let size = 0;
+      // The file's header row (or the empty document) is there whatever it holds.
+      let size = dropFile(config.file, "", { headers, rows: [], documents: [], batch: true }).data
+        .byteLength;
       let full = false;
       await admitBatch(claim, request, more ?? [], fail, async (item) => {
         // The next batch takes what does not fit in this one, or comes after
         // the deadline, without building it.
         if (full || pastDeadline()) return release(item.claim, 0);
-        const content = await dropContent(item, config, endpoint);
-        const added = Buffer.byteLength(JSON.stringify(content));
+        let content: { rows: string[][]; document: unknown };
+        try {
+          content = await dropContent(item, config, endpoint, MAX_DROP_FILE_BYTES);
+        } catch (rowsError) {
+          if (!(rowsError instanceof RowsTooLargeError)) throw rowsError;
+          return tooLarge([item.claim]);
+        }
+        // What the delivery adds to the file as written (escaping, quoting
+        // and separators included): its rows or document on their own, which
+        // counts a little more than they add.
+        const added = dropFile(config.file, "", {
+          headers: [],
+          rows: content.rows,
+          documents: content.document === null ? [] : [content.document],
+          batch: true,
+        }).data.byteLength;
         if (added > MAX_DROP_FILE_BYTES) return tooLarge([item.claim]);
         if (size + added > MAX_DROP_FILE_BYTES) {
           full = true;
@@ -999,7 +1052,13 @@ async function runFileDrop(
         // Past the deadline, or the connection is gone: the rest waits for
         // the next try (a failure to connect fails them all, as it should).
         if (pastDeadline() && !openError) return release(item.claim, 0);
-        const content = await dropContent(item, config, endpoint);
+        let content: { rows: string[][]; document: unknown };
+        try {
+          content = await dropContent(item, config, endpoint, MAX_DROP_FILE_BYTES);
+        } catch (rowsError) {
+          if (!(rowsError instanceof RowsTooLargeError)) throw rowsError;
+          return tooLarge([item.claim]);
+        }
         const file = dropFile(
           config.file,
           dropFileName(

@@ -321,31 +321,39 @@ async function direct(host: string, port: number): Promise<DropSocket> {
       !message.includes("private")
     );
   }
-  const target = addresses[0];
-  if (!allowPrivate && isBlockedAddress(target.address)) {
-    throw new DropError("The host name points at a private or reserved address.", false);
+  // The name's addresses in turn (four at most), as the proxy does: one that
+  // does not answer (IPv6 on a host without it) leaves the next to try.
+  let lastError: DropError | null = null;
+  for (const target of addresses.slice(0, 4)) {
+    if (!allowPrivate && isBlockedAddress(target.address)) {
+      throw new DropError("The host name points at a private or reserved address.", false);
+    }
+    const socket = net.connect({ host: target.address, port, family: target.family });
+    socket.setNoDelay(true);
+    try {
+      return await withTimeout(
+        new Promise<DropSocket>((resolve, reject) => {
+          socket.once("connect", () => resolve({ socket, address: target.address }));
+          socket.once("error", reject);
+        }),
+        socket,
+        CONNECT_TIMEOUT_MS
+      );
+    } catch (error) {
+      socket.destroy();
+      if (error instanceof DropError) {
+        lastError = error;
+        continue;
+      }
+      const code = (error as { code?: string }).code;
+      lastError = new DropError(
+        code === "ECONNREFUSED"
+          ? "The server refused the connection."
+          : "The server could not be reached."
+      );
+    }
   }
-  const socket = net.connect({ host: target.address, port, family: target.family });
-  socket.setNoDelay(true);
-  try {
-    return await withTimeout(
-      new Promise<DropSocket>((resolve, reject) => {
-        socket.once("connect", () => resolve({ socket, address: target.address }));
-        socket.once("error", reject);
-      }),
-      socket,
-      CONNECT_TIMEOUT_MS
-    );
-  } catch (error) {
-    socket.destroy();
-    if (error instanceof DropError) throw error;
-    const code = (error as { code?: string }).code;
-    throw new DropError(
-      code === "ECONNREFUSED"
-        ? "The server refused the connection."
-        : "The server could not be reached."
-    );
-  }
+  throw lastError ?? new DropError("The host name could not be resolved.");
 }
 
 /**
