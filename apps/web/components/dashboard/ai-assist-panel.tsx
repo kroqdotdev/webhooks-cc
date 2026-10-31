@@ -222,7 +222,7 @@ export function AiAssistPanel({
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              disabled={busy || !consent || picked.length === 0 || left === 0}
+              disabled={busy || adding !== null || !consent || picked.length === 0 || left === 0}
               onClick={() => void ask()}
               className="ui-btn-primary py-1.5! px-3! text-xs"
             >
