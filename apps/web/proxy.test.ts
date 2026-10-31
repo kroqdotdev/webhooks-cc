@@ -79,6 +79,8 @@ describe("proxy", () => {
       const csp = res.headers.get("Content-Security-Policy") ?? "";
       expect(csp).toMatch(/script-src [^;]*https:\/\/apis\.google\.com/);
       expect(csp).toContain("frame-src 'self' https://docs.google.com");
+      // And the email preview's "Load images".
+      expect(csp).toMatch(/img-src [^;]* https:(;|$)/);
     }
   });
 });

@@ -159,7 +159,7 @@ export async function proxy(request: NextRequest) {
     "default-src 'self'",
     `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eu-assets.i.posthog.com https://f.webhooks.cc https://apis.google.com`,
     "style-src 'self' 'unsafe-inline'",
-    imgSrcDirective(pathname),
+    imgSrcDirective(),
     "font-src 'self'",
     `connect-src 'self' ${supabaseOrigin} ${supabaseWsOrigin} ${webhookOrigin} https://eu-assets.i.posthog.com https://f.webhooks.cc https://ingest.statoss.com`,
     "frame-src 'self' https://docs.google.com",
