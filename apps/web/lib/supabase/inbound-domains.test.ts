@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-const dnsMock = vi.hoisted(() => ({ txt: vi.fn(), mx: vi.fn() }));
+const dnsMock = vi.hoisted(() => ({ txt: vi.fn(), mx: vi.fn(), servers: vi.fn() }));
 vi.mock("node:dns/promises", () => ({
   Resolver: class {
-    setServers() {}
+    setServers(servers: string[]) {
+      dnsMock.servers(servers);
+    }
     resolveTxt(name: string) {
       return dnsMock.txt(name);
     }
@@ -34,5 +36,20 @@ describe("the system resolver", () => {
     await expect(systemResolver.mx("acme.example")).rejects.toMatchObject({
       code: "ESERVFAIL",
     });
+  });
+
+  it("uses the public resolvers when DOMAIN_DNS_SERVERS names none", async () => {
+    // Blank passes the startup check (it means unset), so it must not leave
+    // the resolver with no servers, which would fail every check.
+    vi.stubEnv("DOMAIN_DNS_SERVERS", "   ");
+    vi.resetModules();
+    try {
+      const fresh = await import("./inbound-domains");
+      dnsMock.txt.mockResolvedValueOnce([]);
+      await fresh.systemResolver.txt("_mailhooks.acme.example");
+      expect(dnsMock.servers).toHaveBeenLastCalledWith(["1.1.1.1", "1.0.0.1"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

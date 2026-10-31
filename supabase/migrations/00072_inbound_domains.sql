@@ -312,12 +312,14 @@ revoke execute on function public.hook_before_user_created(jsonb) from public, a
 grant execute on function public.hook_before_user_created(jsonb) to supabase_auth_admin;
 
 -- Nor through a change of email, which the hook above never sees: GoTrue
--- writes the requested address to email_change (after sending its
--- confirmation, whose link then leads nowhere) and moves it to email once
--- confirmed, and admin updates write email directly. Both writes are refused
--- for the capture domain and a verified customer domain, so an account never
--- takes an address whose mail others here can read, and nobody can make
--- another account's domain lapse by naming an address at it.
+-- moves a requested address from email_change to email once it is
+-- confirmed, and admin updates write email directly. Writing email is
+-- refused for the capture domain and a verified customer domain, so an
+-- account never takes an address whose mail others here can read, and
+-- nobody can make another account's domain lapse by naming an address at
+-- it. The request itself (email_change) is let through: GoTrue sends its
+-- confirmation before that write, and refusing the write would only drop
+-- email_change_sent_at and with it GoTrue's per-user resend limit.
 create or replace function public.refuse_readable_account_email()
 returns trigger
 language plpgsql
@@ -328,20 +330,18 @@ declare
   v_address text;
   v_domain  text;
 begin
-  foreach v_address in array array[
-    case when new.email is distinct from old.email then new.email end,
-    case when new.email_change is distinct from old.email_change then new.email_change end
-  ] loop
-    continue when v_address is null or btrim(v_address) = '';
-    v_domain := rtrim(substring(lower(btrim(v_address)) from '@([^@]*)$'), '.');
-    if v_domain = 'mailhooks.cc' or v_domain like '%.mailhooks.cc' or exists (
-      select 1 from public.inbound_domains d
-       where d.domain = v_domain and d.status = 'verified'
-    ) then
-      raise exception 'Addresses at % cannot be used for an account', v_domain
-        using errcode = '23514';
-    end if;
-  end loop;
+  v_address := new.email;
+  if v_address is null or btrim(v_address) = '' or v_address is not distinct from old.email then
+    return new;
+  end if;
+  v_domain := rtrim(substring(lower(btrim(v_address)) from '@([^@]*)$'), '.');
+  if v_domain = 'mailhooks.cc' or v_domain like '%.mailhooks.cc' or exists (
+    select 1 from public.inbound_domains d
+     where d.domain = v_domain and d.status = 'verified'
+  ) then
+    raise exception 'Addresses at % cannot be used for an account', v_domain
+      using errcode = '23514';
+  end if;
   return new;
 end;
 $$;
@@ -350,7 +350,7 @@ revoke all on function public.refuse_readable_account_email() from public, anon,
 
 drop trigger if exists refuse_readable_account_email on auth.users;
 create trigger refuse_readable_account_email
-  before update of email, email_change on auth.users
+  before update of email on auth.users
   for each row execute function public.refuse_readable_account_email();
 
 notify pgrst, 'reload schema';

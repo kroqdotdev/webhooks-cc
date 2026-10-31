@@ -27,6 +27,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use chrono::{DateTime, TimeDelta, Utc};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -48,6 +49,8 @@ pub const DELIVER_PATH: &str = "/internal/mail/deliver";
 pub const MAX_MESSAGE_BYTES: usize = 10 * 1024 * 1024;
 /// Base64 length of `MAX_MESSAGE_BYTES`, checked before decoding.
 const MAX_RAW_BASE64: usize = MAX_MESSAGE_BYTES.div_ceil(3) * 4;
+/// Recipients of one message resolved at once against the database.
+const RESOLVE_CONCURRENCY: usize = 4;
 /// More recipients than the MX host ever forwards for one message.
 const MAX_RECIPIENTS: usize = 50;
 /// Upper bound for the MX-supplied `tls` and `auth` objects.
@@ -405,14 +408,17 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
         }
     };
 
-    // All at once (the pool bounds the database calls), so a slow pool costs
-    // one wait for the message, not one per recipient.
-    let resolved = futures_util::future::join_all(
-        recipients
-            .iter()
-            .map(|recipient| resolve_recipient(&state, recipient)),
-    )
-    .await;
+    // A few at a time, in order: a slow pool costs a few waits for the
+    // message, not one per recipient, and one message cannot take the pool
+    // from everyone's captures.
+    let lookups: Vec<_> = recipients
+        .iter()
+        .map(|recipient| resolve_recipient(&state, recipient))
+        .collect();
+    let resolved: Vec<_> = futures_util::stream::iter(lookups)
+        .buffered(RESOLVE_CONCURRENCY)
+        .collect()
+        .await;
     let (groups, immediate) = group_recipients(resolved);
     let mut statuses: Vec<Option<(&'static str, Option<String>)>> = vec![None; recipients.len()];
     for (position, status) in immediate {

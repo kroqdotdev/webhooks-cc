@@ -800,9 +800,10 @@ describe("extra inbound domains", () => {
       .select("status, cancel_at_period_end")
       .eq("polar_subscription_id", `sub_tde_db_${ts}`)
       .single();
-    // They end with it now, as with a team plan that is ending, instead of
-    // waiting to renew after Team Business is gone.
-    expect(domainRow?.status).toBeNull();
+    // Set to end with it, not left to renew after it, and not ended now:
+    // Polar may still collect the payment for this period.
+    expect(domainRow?.status).not.toBeNull();
+    expect(domainRow?.cancel_at_period_end).toBe(true);
   });
 
   it("keep a paid increase on blocks that ended meanwhile, and take it back on a refund", async () => {
@@ -812,37 +813,44 @@ describe("extra inbound domains", () => {
     const orderId = `ord_pb_gone_${ts}`;
     await applyAddon(account, "page_blocks", subscriptionId, "active", 1);
     // Polar ended the subscription before the order's event arrived.
-    polarMocks.createPolarClient.mockReturnValueOnce({
+    polarMocks.createPolarClient.mockReturnValue({
       subscriptions: {
         update: vi.fn().mockRejectedValue(new Error("Subscription is already canceled.")),
-        get: vi.fn(),
+        get: vi.fn().mockResolvedValue({ status: "canceled", ended_at: new Date().toISOString() }),
         revoke: vi.fn(),
       },
     });
-    const order = { id: orderId, units: 1, total_amount: 500 };
-    await applyCapacityWebhookEvent(
-      "order.paid",
-      account,
-      { resource: "pages", kind: "monthly_add" },
-      order
-    );
-    expect((await user(userId)).credit_pages).toBe(1000);
-    // Redelivered: kept once.
-    await applyCapacityWebhookEvent(
-      "order.paid",
-      account,
-      { resource: "pages", kind: "monthly_add" },
-      order
-    );
-    expect((await user(userId)).credit_pages).toBe(1000);
+    try {
+      const order = { id: orderId, units: 1, total_amount: 500 };
+      await applyCapacityWebhookEvent(
+        "order.paid",
+        account,
+        { resource: "pages", kind: "monthly_add" },
+        order
+      );
+      expect((await user(userId)).credit_pages).toBe(1000);
+      // Redelivered: kept once.
+      await applyCapacityWebhookEvent(
+        "order.paid",
+        account,
+        { resource: "pages", kind: "monthly_add" },
+        order
+      );
+      expect((await user(userId)).credit_pages).toBe(1000);
 
-    await applyCapacityWebhookEvent(
-      "order.refunded",
-      account,
-      { resource: "pages", kind: "monthly_add" },
-      { id: orderId, status: "refunded" }
-    );
-    expect((await user(userId)).credit_pages).toBe(0);
+      await applyCapacityWebhookEvent(
+        "order.refunded",
+        account,
+        { resource: "pages", kind: "monthly_add" },
+        { id: orderId, status: "refunded" }
+      );
+      expect((await user(userId)).credit_pages).toBe(0);
+    } finally {
+      polarMocks.createPolarClient.mockReset();
+      polarMocks.createPolarClient.mockImplementation(() => ({
+        subscriptions: { update: vi.fn(), get: vi.fn(), revoke: vi.fn() },
+      }));
+    }
   });
 
   it("end with a change away from Business, and come back when Business is kept", async () => {
