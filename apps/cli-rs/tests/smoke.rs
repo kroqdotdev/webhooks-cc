@@ -1,6 +1,11 @@
 //! CLI smoke tests — run the binary and verify output/exit codes.
 //!
 //! Run with: cargo test --test smoke
+//!
+//! The tests that talk to a server (list, usage, the full lifecycle) run
+//! only with WHK_API_URL naming one, e.g. http://localhost:3000: without it
+//! the CLI would use https://webhooks.cc and the login saved on this machine,
+//! and create endpoints in a real account.
 
 use std::process::Command;
 
@@ -13,6 +18,11 @@ fn whk() -> Command {
         std::env::temp_dir().join(format!("whk-smoke-agent-{}.json", std::process::id())),
     );
     cmd
+}
+
+/// Whether a server to test against is named (see the module comment).
+fn server_named() -> bool {
+    std::env::var("WHK_API_URL").is_ok_and(|url| !url.is_empty())
 }
 
 // ─── Help & Version ─────────────────────────────────────────────────────
@@ -134,6 +144,9 @@ fn test_auth_status_json() {
 
 #[test]
 fn test_list_json() {
+    if !server_named() {
+        return;
+    }
     let output = whk().args(["list", "--json"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     if output.status.success() {
@@ -145,6 +158,9 @@ fn test_list_json() {
 
 #[test]
 fn test_usage_json() {
+    if !server_named() {
+        return;
+    }
     let output = whk().args(["usage", "--json"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     if output.status.success() {
@@ -157,6 +173,9 @@ fn test_usage_json() {
 
 #[test]
 fn test_full_lifecycle() {
+    if !server_named() {
+        return;
+    }
     // Use a unique slug to prevent test pollution
     let slug_name = format!(
         "smoke-test-{}",

@@ -45,7 +45,7 @@ pnpm test                               # SDK + MCP + web unit tests
 cd apps/web && pnpm test:integration    # needs the local Supabase stack; some suites need the receiver running (make dev-receiver, which also opens its mail listener)
 cd apps/receiver-rs && cargo test && cargo clippy -- -D warnings
 cd apps/mx-rs && cargo test && cargo clippy --all-targets -- -D warnings
-cd apps/cli-rs && cargo test                        # integration tests skip unless WHK_API_URL names a server (they create endpoints)
+cd apps/cli-rs && cargo test                        # tests that reach a server (integration, and smoke's list/usage/lifecycle) skip unless WHK_API_URL names one; without it they would use webhooks.cc and this machine's saved login
 cd apps/parser-rs && cargo test && cargo clippy --all-targets -- -D warnings   # cargo build --release for the web app's parse worker
 cd packages/sdk-python && uv run pytest && uv run ruff check src tests && uv run mypy
 cd packages/sdk-go && go vet ./... && go test -race ./...

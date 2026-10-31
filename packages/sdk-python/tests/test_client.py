@@ -1588,6 +1588,25 @@ def test_raw_returns_the_message_bytes_unchanged() -> None:
     assert seen == [("GET", "/api/requests/r1/raw", "Bearer whcc_test")]
 
 
+def test_a_redirected_download_raises_instead_of_returning_the_page() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            301,
+            content=b"<html>Moved</html>",
+            headers={
+                "location": "https://webhooks.cc/api/requests/r1/raw",
+                "content-type": "text/html",
+            },
+        )
+
+    client = make_client(handler)
+    with pytest.raises(errors.WebhooksCCError) as raised:
+        client.requests.raw("r1")
+    assert raised.value.status_code == 301
+    with pytest.raises(errors.WebhooksCCError):
+        client.requests.attachment("r1", 0)
+
+
 def test_attachment_returns_its_bytes_name_and_type_unchanged() -> None:
     responses: list[httpx.Response] = []
     paths: list[str] = []
