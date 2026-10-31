@@ -1,13 +1,16 @@
 "use client";
 
 import { Notice } from "@/components/settings/panel";
+import { planName } from "@/lib/entitlements";
 
 const POLAR_SUBSCRIPTION_URL = "https://polar.sh/purchases/subscriptions";
 
 export function PastDueBanner({
   subscriptionStatus,
+  plan,
 }: {
   subscriptionStatus: "active" | "canceled" | "past_due" | null;
+  plan: string | null;
 }) {
   if (subscriptionStatus !== "past_due") return null;
 
@@ -22,7 +25,7 @@ export function PastDueBanner({
       >
         Update your payment method
       </a>{" "}
-      to keep Pro.
+      to keep {planName(plan)}.
     </Notice>
   );
 }

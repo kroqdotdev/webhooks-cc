@@ -116,6 +116,9 @@ type DestinationInput struct {
 	Throttle Field[time.Duration]
 	// Delay waits this long after a capture before sending, up to an hour.
 	Delay Field[time.Duration]
+	// Attachments is how the attachments of emails kept in storage travel:
+	// AttachmentsLinks (default), AttachmentsInline or AttachmentsNone.
+	Attachments Field[DestinationAttachments]
 	// Position is its place in the list, from 0.
 	Position Field[int]
 }
@@ -125,7 +128,7 @@ type DestinationInput struct {
 func (in DestinationInput) body() (map[string]any, error) {
 	for _, field := range []interface{ isNull() bool }{
 		in.URL, in.Enabled, in.HTTP, in.Email, in.Format, in.Headers, in.AppendPath, in.Retry,
-		in.KeepOrder, in.Throttle, in.Delay, in.Position,
+		in.KeepOrder, in.Throttle, in.Delay, in.Attachments, in.Position,
 	} {
 		if field.isNull() {
 			return nil, errors.New("webhooks.cc: only Name, Filter, BodyTemplate, MessageTemplate, SentField and MailgunSigningKey can be cleared; set the others with Value")
@@ -173,6 +176,7 @@ func (in DestinationInput) body() (map[string]any, error) {
 		}
 		body[setting.key] = int64(setting.field.value / time.Second)
 	}
+	in.Attachments.put(body, "attachments")
 	in.Position.put(body, "position")
 	return body, nil
 }

@@ -28,10 +28,10 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 ## Pricing
 
 - Guest (no signup): 25 requests per ephemeral endpoint, deleted after 12 hours, no email capture
-- Free: 50 requests per 24 hours, unlimited endpoints, 7-day retention, 20 parsed attachment pages a month, 2 layouts per endpoint, every Pro feature including email capture and full CLI/SDK/MCP access
-- Pro ($8/month): 100,000 requests per 30 days, 31-day retention, 100 parsed attachment pages a month, extra requests in blocks of 25,000
-- Business ($29/month or $290/year): 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month (then page blocks or page overage), up to 50 layouts per endpoint, extra requests as on Pro; on annual billing requests and pages still reset every month
-- Teams ($12/seat/month): a separate per-team subscription; each seat adds 100,000 requests per 30 days to a pooled team quota, and requests on endpoints shared with the team are kept 31 days. The Team Business add-on ($49/month) adds 150,000 requests, 2,000 pooled parsed pages a month, up to 50 layouts per shared endpoint and 90-day retention
+- Free: 50 requests per 24 hours, unlimited endpoints, 7-day retention, 20 parsed attachment pages a month, 2 layouts per endpoint, 5 AI assists every 30 days, every Pro feature including email capture, Google Sheets and chat destinations and full CLI/SDK/MCP access
+- Pro ($8/month): 100,000 requests per 30 days, 31-day retention, 100 parsed attachment pages a month, 20 AI assists every 30 days, extra requests in blocks of 25,000
+- Business ($29/month or $290/year): 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month (then page blocks or page overage), up to 50 layouts per endpoint, 500 AI assists every 30 days, one custom inbound domain (extra ones $3/month), file drops to SFTP, FTP/FTPS or S3, extra requests as on Pro; on annual billing requests and pages still reset every month
+- Teams ($12/seat/month): a separate per-team subscription; each seat adds 100,000 requests per 30 days to a pooled team quota, and requests on endpoints shared with the team are kept 31 days. The Team Business add-on ($49/month) adds 150,000 requests, 2,000 pooled parsed pages a month, up to 50 layouts per shared endpoint, 500 AI assists, one custom inbound domain, file drops and 90-day retention
 - Emails count against the same quota as webhooks: one request per email per endpoint
 
 ## Links
@@ -54,8 +54,15 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Agent skill and Claude Code plugin: https://webhooks.cc/docs/mcp/skills, teaches coding agents to test webhook handlers with signed payloads and generate payload types from captures
 - Email capture: https://webhooks.cc/docs/email-capture
 - Email forwarding: https://webhooks.cc/docs/forwarding
+- Zapier and Make (the apps, in review, and the catch hook that works today): https://webhooks.cc/docs/zapier-make
 - Email testing overview: https://webhooks.cc/email-testing
 - Email to webhook overview: https://webhooks.cc/email-to-webhook
+- mailhooks.cc, the mail-first site (same account, endpoints and plans): https://mailhooks.cc, with ready-made layouts at https://mailhooks.cc/parse
+- Email to Google Sheets (a row per email or per line item): https://mailhooks.cc/google-sheets
+- File drops to SFTP, FTP/FTPS and S3 (Business): https://mailhooks.cc/file-drops
+- Custom inbound domains (Business): https://mailhooks.cc/custom-domains
+- AI setup for layouts and fields: https://mailhooks.cc/ai-setup
+- Zapier and Make: https://mailhooks.cc/integrations
 - REST API: https://webhooks.cc/docs/api
 - OpenAPI spec: https://webhooks.cc/openapi.yaml
 - Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents get a sandbox and a credential without an account

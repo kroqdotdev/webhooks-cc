@@ -25,7 +25,12 @@ export async function createTestUser(): Promise<TestUser> {
     email_confirm: true,
     user_metadata: {
       full_name: "E2E Test User",
-      avatar_url: "https://example.com/e2e-avatar.png",
+      // Inline, so no request leaves for it: a remote URL that is not an
+      // image (pages allow any https image) is blocked by the browser's
+      // ORB check, and Playwright never sees that request end, so
+      // waitForLoadState("networkidle") hangs.
+      avatar_url:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
     },
   });
 

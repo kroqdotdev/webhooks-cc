@@ -68,7 +68,7 @@ const CHECKLIST = [
   "CLI, TypeScript SDK and MCP server see shared endpoints like your own",
   "Owner-only delete, sharing, invites and billing",
   "Pooled quota: 100,000 requests per seat per 30 days",
-  "Team Business add-on: +150,000 requests, 2,000 parsed attachment pages a month, 50 layouts per endpoint",
+  "Team Business add-on: +150,000 requests, 2,000 parsed attachment pages a month, 50 layouts per endpoint, a custom inbound domain and file drops",
 ];
 
 const PERMISSIONS: readonly (readonly [string, boolean, boolean])[] = [
@@ -125,7 +125,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How much does webhooks.cc cost for a team?",
     answer:
-      "$12 per seat per month, billed per team on a 30-day period. Each seat is one member, the owner included, and adds 100,000 requests per 30 days to a pool the whole team shares. A team of 5 pays $60 a month for 500,000 requests. The optional Team Business add-on, $49 a month, adds 150,000 requests, 2,000 parsed attachment pages a month and 90-day retention.",
+      "$12 per seat per month, billed per team on a 30-day period. Each seat is one member, the owner included, and adds 100,000 requests per 30 days to a pool the whole team shares. A team of 5 pays $60 a month for 500,000 requests. The optional Team Business add-on, $49 a month, adds 150,000 requests, 2,000 parsed attachment pages a month, a custom inbound domain, file drops and 90-day retention.",
   },
   {
     question: "Do team members need a paid plan?",
@@ -293,8 +293,8 @@ export default function ForTeamsPage() {
             Need more? The Team Business add-on is $49 a month on the team&apos;s subscription
             (monthly only): 150,000 more requests in the pool, 2,000 pooled parsed attachment pages
             a month with page blocks and page overage, up to 50 layouts per endpoint on shared
-            endpoints, and 90-day retention for team-billed requests. Members&apos; personal
-            endpoints follow their own plan.{" "}
+            endpoints, 500 AI assists, one custom inbound domain, file drops, and 90-day retention
+            for team-billed requests. Members&apos; personal endpoints follow their own plan.{" "}
             <Link
               href="/docs/plans-limits#teams-and-shared-endpoints"
               className="text-primary font-bold hover:underline"

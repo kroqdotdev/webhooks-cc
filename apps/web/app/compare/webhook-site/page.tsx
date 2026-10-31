@@ -17,7 +17,7 @@ const FAQ_ITEMS = [
   {
     question: "Does webhooks.cc have a free plan like Webhook.site?",
     answer:
-      "Yes. The free plan has every Pro feature: inspection, replay, mock responses, CLI tunnel, SDK, and MCP. Paid plans raise request limits and retention, and Business adds attachment parsing at volume and more layouts. Teams (invite members, share endpoints) is a separate per-team subscription at $12/seat/mo.",
+      "Yes. The free plan has every Pro feature: inspection, replay, mock responses, CLI tunnel, SDK, and MCP. Paid plans raise request limits and retention, and Business adds attachment parsing, more layouts, custom inbound domains and file drops. Teams (invite members, share endpoints) is a separate per-team subscription at $12/seat/mo.",
   },
   {
     question: "Can I use webhooks.cc for CI/CD webhook testing?",
@@ -192,8 +192,8 @@ export default function CompareWebhookSitePage() {
               own per-team subscription at $12/seat/month, where each seat adds 100,000 pooled
               requests. Webhook.site reserves team collaboration for its Enterprise tier, starting
               at $69/month. Paid plans raise request limits and retention, and Business adds
-              attachment parsing at volume and more layouts. Webhook.site gates some features
-              (custom responses, API access) behind paid tiers.
+              attachment parsing, more layouts, custom inbound domains and file drops. Webhook.site
+              gates some features (custom responses, API access) behind paid tiers.
             </p>
           </div>
         </div>

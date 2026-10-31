@@ -1,0 +1,136 @@
+---
+title: "Zapier and Make"
+description: "Start a Zap or a Make scenario with each email an endpoint receives: the New email trigger (a REST hook that adds a JSON destination), the actions and the search, API key sign-in, and the catch hook to use while the apps are in review."
+section: dashboard
+order: 6
+lastUpdated: 2026-10-31
+schema: faq
+keywords:
+  [
+    "zapier email parser",
+    "email to zapier",
+    "make email parser",
+    "make custom webhook",
+    "zapier catch hook",
+    "rest hook",
+    "email.received",
+    "no-code email automation",
+  ]
+seo:
+  ogTitle: "Zapier and Make for webhooks.cc and mailhooks.cc"
+  ogDescription: "Start a Zap or a Make scenario with each email an endpoint receives, with its fields and line items: the apps, and the catch hook that works today."
+---
+
+The webhooks.cc apps for Zapier and Make start a Zap or a scenario with each email an endpoint receives, with the [fields](/docs/email-capture#fields-you-pick-out) and [line items](/docs/layouts#line-items) it read, and add actions and a search for endpoints and emails. They are the same apps on mailhooks.cc: one account, the same endpoints.
+
+<Callout type="info">
+  Both apps are in review with Zapier and Make, and are not listed in their directories yet. Until
+  they are, use [a catch hook](#until-the-apps-are-listed): it receives the same signed
+  `email.received` JSON the apps read.
+</Callout>
+
+## Until the apps are listed
+
+Any [forwarding destination](/docs/forwarding) can post to a URL Zapier or Make gives you. Pointed at a catch hook, a JSON destination sends each email as the same `email.received` JSON the apps' trigger reads.
+
+### Zapier
+
+1. Create a Zap with **Webhooks by Zapier** as the trigger app and **Catch Hook** as its event, and copy the webhook URL Zapier shows (it starts with `https://hooks.zapier.com/hooks/catch/`).
+2. In webhooks.cc, open the endpoint's **Settings**, find **Forwarding** and add **Your server** with that URL. Under **What it gets**, leave only **Emails** ticked, so each email goes as **Signed JSON**. Click **Add destination**.
+3. Click **Send test delivery** on the destination, then test the trigger in Zapier so it picks up the sample.
+4. Map the values you need in the Zap's actions, such as `data.subject`, `data.from.address`, `data.fields.order` or `data.parsed.lineItems`, and turn the Zap on.
+
+### Make
+
+1. Add a **Webhooks** module with a **Custom webhook** trigger, create a webhook, and copy its URL.
+2. In webhooks.cc, add **Your server** with that URL under the endpoint's **Forwarding**, with only **Emails** ticked under **What it gets**, and click **Add destination**.
+3. While Make waits for data to work out the structure, click **Send test delivery** on the destination.
+4. Map the values in the next modules, such as `data.subject` or `data.parsed.lineItems`, and turn the scenario on.
+
+Free accounts can do this too: destinations are on every plan, and a delivery does not use your quota, because each email already counted once when it arrived.
+
+### What the hook receives
+
+One `POST` per email, shortened here:
+
+```json
+{
+  "type": "email.received",
+  "timestamp": "2026-10-29T17:33:26.882Z",
+  "data": {
+    "id": "3f2a9c1e-0000-4000-8000-000000000000",
+    "endpoint": { "slug": "orders-acme", "name": "Orders" },
+    "address": "orders-acme@mailhooks.cc",
+    "subject": "Order #1001 confirmed",
+    "from": { "name": "Acme Store", "address": "orders@acme.example" },
+    "fields": { "order": "1001" },
+    "parsed": {
+      "status": "matched",
+      "layout": { "id": "orders", "name": "Acme orders" },
+      "fields": { "order": "1001", "total": "37.50" },
+      "lineItems": [
+        { "sku": "ACME-TEE-M", "qty": "2", "price": "12.50" },
+        { "sku": "ACME-MUG", "qty": "1", "price": "12.50" }
+      ]
+    }
+  }
+}
+```
+
+`data.fields` holds the endpoint's named fields and `data.parsed` what its [layouts](/docs/layouts) read; each is left out when the endpoint has none. Every key is listed under [Signed JSON](/docs/forwarding#signed-json). Attachments arrive as signed download links unless the destination sends them inline or by name only ([Attachments](/docs/forwarding#attachments)).
+
+Each delivery carries Standard Webhooks headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`) signed with the destination's secret, as every JSON destination does; see [Verify the signature](/docs/forwarding#verify-the-signature). Keep the hook's URL private all the same: anyone who has it can post to the Zap or scenario.
+
+To send only some emails, add conditions under **What it gets** ([Send only some captures](/docs/forwarding#send-only-some-captures)); to send a smaller body of your own, pick **Your own JSON** instead ([Your own JSON](/docs/forwarding#your-own-json)). The same works for n8n, Pipedream or any tool that gives you a webhook URL.
+
+## Connect the apps
+
+Both apps sign in with an API key. Create one under **Account > API keys** on webhooks.cc or mailhooks.cc (keys start with `whcc_`) and paste it when Zapier or Make asks for the connection. The connection is checked by reading the account's usage, which any key may.
+
+## New email
+
+The trigger is **New Email** in Zapier and **Watch emails** in Make, both instant. Pick the endpoint whose emails start the Zap or scenario.
+
+It is a REST hook. Turning the Zap or scenario on adds a destination to that endpoint: format **Signed JSON**, emails only, sending to the hook Zapier or Make created, named `Zapier (Zap 123)` after the Zap or `Make`. Turning it off removes the destination again. While it runs you can see it in the endpoint's **Forwarding** list; deleting it there stops the emails, and each one uses one of the endpoint's 10 destinations.
+
+Each record is the `data` of the `email.received` JSON above, so a Zap or scenario reads `subject`, `from.address`, `fields.order` or `parsed.lineItems` directly. When you set up the trigger, Zapier loads up to the three newest emails at the endpoint, built the way the hook will send them, so you can map real values.
+
+### When a hook is gone
+
+When a Zap or scenario is removed, its destination is removed with it. If that fails and the destination stays behind, Zapier or Make answers `410 Gone` for the old hook, and webhooks.cc turns the destination off instead of retrying it; the delivery log says why. Any destination whose URL answers `410 Gone` is turned off the same way, so turn it on again only once its URL works.
+
+## Actions
+
+| Zapier                | Make                   | What it does                                                                                                   |
+| --------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Create Endpoint**   | **Create an endpoint** | Creates an endpoint, with an optional name, and returns its id, slug, webhook URL and email address             |
+| **Send Test Email**   | **Send a test email**  | Delivers a sample email to an endpoint, to an optional `+tag`, to try a Zap or scenario end to end; it counts as one request |
+
+## Search
+
+**Find Email** in Zapier returns the newest email at an endpoint that contains the text you give, as the trigger would send it. **Search emails** in Make returns the endpoint's emails that contain the text, newest first, up to the limit you set (10 by default), with their sender, recipients, subject, text, HTML and attachments, but not their parsed fields.
+
+Both use the search API, at most 60 searches per 10 minutes per account; when the limit is reached, the Zapier app asks Zapier to try again later. The routes the apps call count their rate limits per account rather than per address, because both platforms send every customer's calls from a few shared addresses.
+
+<FAQ>
+<FAQItem question="Can I use Zapier or Make before the apps are listed?">
+
+Yes. Point a JSON destination at a Webhooks by Zapier catch hook or a Make custom webhook, as [above](#until-the-apps-are-listed). It receives the same signed `email.received` JSON the apps' trigger reads, on every plan.
+
+</FAQItem>
+<FAQItem question="Do deliveries to Zapier or Make use my quota?">
+
+No. Each email counts once, when it arrives at the endpoint. Sending it on to Zapier, Make or any other destination does not count again.
+
+</FAQItem>
+<FAQItem question="What happens to the destination when I delete a Zap or scenario?">
+
+It is removed. If removing it failed, the platform answers `410 Gone` for the old hook and webhooks.cc turns the destination off rather than retrying it.
+
+</FAQItem>
+<FAQItem question="Do the apps send HTTP requests too?">
+
+No. The trigger is for emails: the destination it adds takes emails only. To send an endpoint's HTTP requests to Zapier or Make, add a destination of your own with **HTTP requests** ticked.
+
+</FAQItem>
+</FAQ>

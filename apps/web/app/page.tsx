@@ -187,7 +187,7 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access, with every Pro feature. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Business ($29/month or $290/year) gives 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month and up to 50 layouts per endpoint. Teams is billed separately at $12/seat/mo.",
+      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access, with every Pro feature. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Business ($29/month or $290/year) gives 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month, up to 50 layouts per endpoint, a custom inbound domain and file drops to SFTP, FTP or S3. Teams is billed separately at $12/seat/mo.",
   },
   {
     question: "Whose quota is used for shared team endpoints?",
@@ -654,8 +654,8 @@ export default async function Home() {
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
             <p className="text-xl text-muted-foreground">
-              Free has every Pro feature. Business adds attachment parsing at volume, more layouts
-              and longer retention. Add Teams when you need to work together.
+              Free has every Pro feature; Business adds attachment parsing, more layouts, custom
+              domains, file drops and longer retention. Add Teams when you need to work together.
             </p>
           </div>
 
@@ -735,9 +735,9 @@ export default async function Home() {
                   "250,000 requests/month",
                   "90-day data retention",
                   "2,000 parsed attachment pages/month",
-                  "Up to 50 layouts per endpoint",
-                  "Page blocks & page overage",
-                  "Extra requests in 25,000 blocks",
+                  "Up to 50 layouts, 500 AI assists/30 days",
+                  "1 custom inbound domain, extra ones $3/mo",
+                  "File drops to SFTP, FTP/FTPS & S3",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
@@ -767,7 +767,7 @@ export default async function Home() {
                   "Shared endpoints, real-time for everyone",
                   "31-day retention on team traffic",
                   "Billed per team, not per account",
-                  "Team Business add-on, $49/mo: +150,000 requests, 90-day retention",
+                  "Team Business add-on, $49/mo: +150,000 requests and Business features",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />

@@ -11,9 +11,14 @@ import {
 } from "./entitlements";
 
 describe("entitlements", () => {
-  it("has the decided limits for every plan", () => {
-    expect(ENTITLEMENTS.free).toMatchObject({
+  it("has the decided limits for every plan, field by field", () => {
+    // Exact objects: a new field or a changed limit fails here until the
+    // decision is written down (and the SQL parity test keeps 00067 in step).
+    const common = { poolRequests: 0, quotaPeriod: "month" } as const;
+    expect(ENTITLEMENTS.free).toEqual({
+      key: "free",
       requestLimit: 50,
+      poolRequests: 0,
       quotaPeriod: "day",
       retentionDays: 7,
       parsedPages: 20,
@@ -25,9 +30,10 @@ describe("entitlements", () => {
       pageAddons: false,
       annualBilling: false,
     });
-    expect(ENTITLEMENTS.pro).toMatchObject({
+    expect(ENTITLEMENTS.pro).toEqual({
+      key: "pro",
+      ...common,
       requestLimit: 100_000,
-      quotaPeriod: "month",
       retentionDays: 31,
       parsedPages: 100,
       layoutsPerEndpoint: 2,
@@ -38,7 +44,9 @@ describe("entitlements", () => {
       pageAddons: false,
       annualBilling: false,
     });
-    expect(ENTITLEMENTS.business).toMatchObject({
+    expect(ENTITLEMENTS.business).toEqual({
+      key: "business",
+      ...common,
       requestLimit: 250_000,
       retentionDays: 90,
       parsedPages: 2_000,
@@ -50,17 +58,45 @@ describe("entitlements", () => {
       pageAddons: true,
       annualBilling: true,
     });
-    expect(ENTITLEMENTS.team).toMatchObject({ requestLimit: 100_000, retentionDays: 31 });
-    expect(ENTITLEMENTS.team_business).toMatchObject({
+    // A team without the Business add-on gets Pro's taste, per seat.
+    expect(ENTITLEMENTS.team).toEqual({
+      key: "team",
+      ...common,
+      requestLimit: 100_000,
+      retentionDays: 31,
+      parsedPages: 100,
+      layoutsPerEndpoint: 2,
+      aiAssists: 20,
+      customDomains: 0,
+      fileDrops: false,
+      requestAddons: true,
+      pageAddons: false,
+      annualBilling: false,
+    });
+    // Team Business: Business's features, 150k pooled on top of the seats,
+    // billed monthly only.
+    expect(ENTITLEMENTS.team_business).toEqual({
+      key: "team_business",
       requestLimit: 100_000,
       poolRequests: 150_000,
+      quotaPeriod: "month",
       retentionDays: 90,
       parsedPages: 2_000,
+      layoutsPerEndpoint: 50,
+      aiAssists: 500,
       customDomains: 1,
       fileDrops: true,
+      requestAddons: true,
       pageAddons: true,
       annualBilling: false,
     });
+    expect(Object.keys(ENTITLEMENTS).sort()).toEqual([
+      "business",
+      "free",
+      "pro",
+      "team",
+      "team_business",
+    ]);
   });
 
   it("keys every row by its own name", () => {

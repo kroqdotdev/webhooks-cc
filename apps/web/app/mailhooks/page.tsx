@@ -17,6 +17,7 @@ import { PricingCTA } from "@/components/landing/pricing-cta";
 import { EmailToJson } from "@/components/mailhooks/email-to-json";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { LAYOUT_TEMPLATES, layoutTemplate } from "@/lib/layout-templates";
+import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 
@@ -216,22 +217,45 @@ export default function MailhooksHome() {
                 </div>
               ))}
             </div>
+            <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
+            <ul className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {MAILHOOKS_FEATURES.map((feature) => (
+                <li key={feature.path}>
+                  <Link href={feature.path} className="ui-card block h-full">
+                    <p className="font-bold mb-1">{feature.name}</p>
+                    <p className="text-sm text-muted-foreground">{feature.summary}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
         <section className="py-20 px-4">
           <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6">
             {[
-              { name: "Free", price: "$0", lines: ["50 emails a day", "20 parsed pages a month"] },
+              {
+                name: "Free",
+                price: "$0",
+                lines: ["50 emails a day", "20 parsed pages a month", "5 AI assists every 30 days"],
+              },
               {
                 name: "Pro",
                 price: "$8 a month",
-                lines: ["100,000 emails and webhooks", "100 parsed pages a month"],
+                lines: [
+                  "100,000 emails and webhooks",
+                  "100 parsed pages a month",
+                  "20 AI assists every 30 days",
+                ],
               },
               {
                 name: "Business",
                 price: "$29 a month",
-                lines: ["250,000 emails and webhooks", "2,000 parsed pages a month, 50 layouts"],
+                lines: [
+                  "250,000 emails and webhooks",
+                  "2,000 parsed pages a month, 50 layouts",
+                  "Your own domain and file drops",
+                ],
               },
             ].map((plan) => (
               <div key={plan.name} className="ui-card ui-card-static">

@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.55.2";
+export const APP_VERSION = "0.55.3";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,19 @@ export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.55.3",
+    date: "2026-10-31",
+    title: "Business, Told in Full",
+    track: "web",
+    items: [
+      "The pricing pages and the plan page name everything Business adds: attachment parsing, more layouts, custom inbound domains, file drops, AI assists and longer retention",
+      "mailhooks.cc has pages for the Google Sheets destination, file drops, custom domains, AI setup, and Zapier and Make, and the docs have a page for Zapier and Make",
+      "A Google Sheets destination or file drop writing a row per line item leaves the item columns blank for an email with none, instead of their placeholders",
+      "Alerts settings wait until they have loaded before they can be changed, so a change made right away is no longer undone",
+      "When a Business renewal payment fails, the plan page says Business is at stake, not Pro",
+    ],
+  },
   {
     version: "0.55.2",
     date: "2026-10-29",
