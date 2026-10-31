@@ -41,6 +41,16 @@ EmailFieldSource = Literal["subject", "text", "html", "from", "to", "header"]
 """The part of an email a named field reads: ``"html"`` is the HTML as text, ``"to"`` the
 To and Cc addresses, and ``"header"`` the header named in ``header``."""
 
+DestinationAttachments = Literal["links", "inline", "none"]
+"""How a destination's deliveries carry the attachments of emails kept in storage:
+``"links"`` (the default) gives each attachment a ``url``, a signed link that downloads it
+while the email is kept; ``"inline"`` sends each one's ``content`` as base64 while a
+delivery's attachments add up to 1 MB (larger ones get a ``url``); ``"none"`` sends names,
+types and sizes only."""
+
+LineItemSource = Literal["text", "html", "attachment"]
+"""Where a layout's line items come from."""
+
 
 def _str_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) else None
@@ -181,6 +191,34 @@ class EmailCapture:
 
 
 @dataclass(frozen=True)
+class ParsedSheet:
+    """One sheet of a parsed spreadsheet."""
+
+    name: str | None
+    rows: list[list[str]]
+    """The first 1,000 rows, each a list of cell texts."""
+    row_count: int
+    """How many rows the sheet has, those past the first 1,000 included."""
+    truncated: bool
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> ParsedSheet:
+        rows = data.get("rows")
+        return cls(
+            name=_str_or_none(data.get("name")),
+            rows=[
+                [cell if isinstance(cell, str) else "" for cell in row]
+                for row in rows
+                if isinstance(row, list)
+            ]
+            if isinstance(rows, list)
+            else [],
+            row_count=int(_number(data.get("rowCount"))),
+            truncated=data.get("truncated") is True,
+        )
+
+
+@dataclass(frozen=True)
 class ParsedAttachment:
     """One attachment a layout parsed: its sheets' rows or its text, and the pages it used."""
 
@@ -190,14 +228,16 @@ class ParsedAttachment:
     """``csv``, ``tsv``, ``xlsx``, ``xls``, ``ods``, ``pdf`` or ``text``."""
     pages: int
     """Billable pages this parse used (0 when an earlier parse was read again)."""
-    sheets: list[dict[str, Any]] | None
-    """For spreadsheets: each sheet's ``name``, ``rows`` (the first 1,000), ``rowCount``
-    and ``truncated``."""
+    sheets: list[ParsedSheet] | None
+    """For spreadsheets: each sheet's name, its first 1,000 rows and its row count."""
     text: str | None
+    """For PDFs and text: the text, cut at 256 KB."""
     truncated: bool
+    """Stopped at the per-file page cap."""
     error: str | None
-    """Why it was not parsed: ``limit`` (no pages left), ``not_kept``, ``too_large``,
-    ``malformed``, ``encrypted``, ``zip_bomb`` or ``empty``."""
+    """Why it was not parsed: ``limit`` (no pages left), ``not_kept`` (the email's
+    attachments were not stored), ``not_parsed`` (a preview, which never parses),
+    ``too_large``, ``malformed``, ``encrypted``, ``zip_bomb`` or ``empty``."""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ParsedAttachment:
@@ -207,7 +247,7 @@ class ParsedAttachment:
             filename=_str_or_none(data.get("filename")),
             format=str(data.get("format") or ""),
             pages=int(_number(data.get("pages"))),
-            sheets=[dict(sheet) for sheet in sheets if isinstance(sheet, Mapping)]
+            sheets=[ParsedSheet.from_dict(sheet) for sheet in sheets if isinstance(sheet, Mapping)]
             if isinstance(sheets, list)
             else None,
             text=_str_or_none(data.get("text")),
@@ -221,7 +261,9 @@ class ParsedEmail:
     """What an endpoint's layouts found in an email: ``parsed`` in its JSON.
 
     Layouts run only on webhooks.cc's servers, so this SDK reads the result and
-    never parses itself.
+    never parses itself. To read it from an email forwarded to you, pass
+    ``event["data"]["parsed"]`` of :func:`~webhooks_cc.verify.verify_forwarded_email`
+    to :meth:`from_dict`.
     """
 
     status: Literal["matched", "no_layout"]
@@ -235,6 +277,12 @@ class ParsedEmail:
     attachments: list[ParsedAttachment]
     pages: int
     """Pages this email used."""
+    truncated: bool = False
+    """The result was cut to fit the email's JSON (about 1 MB): attachments' rows and
+    text, then line items from the end. The full parse is kept."""
+    partial: bool = False
+    """Read from a request list, which leaves out line items and attachments; get the
+    request (``requests.get()``) for all of it."""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ParsedEmail:
@@ -269,6 +317,8 @@ class ParsedEmail:
             if isinstance(attachments, list)
             else [],
             pages=int(_number(data.get("pages"))),
+            truncated=data.get("truncated") is True,
+            partial=data.get("partial") is True,
         )
 
 
@@ -282,20 +332,28 @@ class LayoutsPreview:
     request_id: str | None
     """The email it ran on; ``None`` when the endpoint has none yet."""
     parsed: ParsedEmail | None
+    request_subject: str | None = None
+    """The subject of the email it ran on."""
+    request_received_at: int | None = None
+    """When the email it ran on arrived, in ms since the epoch."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> LayoutsPreview:
         problems = data.get("problems")
         request = data.get("request")
+        if not isinstance(request, Mapping):
+            request = {}
         parsed = data.get("parsed")
         return cls(
             problems=[item for item in problems if isinstance(item, str)]
             if isinstance(problems, list)
             else [],
             layouts_cap=int(_number(data.get("layoutsCap"))),
-            request_id=_str_or_none(request.get("id")) if isinstance(request, Mapping) else None,
+            request_id=_str_or_none(request.get("id")),
             parsed=ParsedEmail.from_dict(parsed) if isinstance(parsed, Mapping) else None,
+            request_subject=_str_or_none(request.get("subject")),
+            request_received_at=_int_or_none(request.get("receivedAt")),
             raw=dict(data),
         )
 
@@ -377,6 +435,140 @@ class EmailField:
         out: dict[str, Any] = {"name": self.name, "from": self.from_, "pattern": self.pattern}
         if self.header is not None:
             out["header"] = self.header
+        return out
+
+
+@dataclass(frozen=True)
+class LineItemColumn:
+    """A spreadsheet column a layout keeps, as one field of each line item."""
+
+    name: str
+    """The line item field's name: letters, digits and ``_``."""
+    column: str
+    """The header's text (any case) or a column letter (``A``, ``B``, ...)."""
+
+
+@dataclass(frozen=True)
+class LineItemsSpec:
+    """Where a layout's line items come from.
+
+    For ``from_="text"`` or ``"html"``, ``pattern`` is an RE2 pattern with named groups,
+    found again and again; each match is one row whose columns are the groups, such as
+    ``r"(?P<sku>[A-Z]+-\\d+)\\s+(?P<qty>\\d+)"``. ``start`` and ``end`` limit the search
+    to the text after the first match of ``start`` and before the first match of ``end``
+    after it. For ``from_="attachment"``, ``attachment`` picks the file by name (``*`` and
+    ``?`` wildcards, any case; the first parsed spreadsheet or CSV when ``None``),
+    ``sheet`` the sheet by name (the first when ``None``), and ``columns`` the columns to
+    keep (every column, by its header, when ``None``).
+    """
+
+    from_: LineItemSource
+    pattern: str | None = None
+    start: str | None = None
+    end: str | None = None
+    attachment: str | None = None
+    sheet: str | None = None
+    columns: list[LineItemColumn] | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> LineItemsSpec:
+        source = data.get("from")
+        columns = data.get("columns")
+        return cls(
+            from_=cast(LineItemSource, source if isinstance(source, str) else ""),
+            pattern=_str_or_none(data.get("pattern")),
+            start=_str_or_none(data.get("start")),
+            end=_str_or_none(data.get("end")),
+            attachment=_str_or_none(data.get("attachment")),
+            sheet=_str_or_none(data.get("sheet")),
+            columns=[
+                LineItemColumn(
+                    name=str(item.get("name") or ""), column=str(item.get("column") or "")
+                )
+                for item in columns
+                if isinstance(item, Mapping)
+            ]
+            if isinstance(columns, list)
+            else None,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """The spec as the API takes it."""
+        out: dict[str, Any] = {"from": self.from_}
+        for key in ("pattern", "start", "end", "attachment", "sheet"):
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = value
+        if self.columns is not None:
+            out["columns"] = [{"name": item.name, "column": item.column} for item in self.columns]
+        return out
+
+
+@dataclass(frozen=True)
+class Layout:
+    """How an endpoint reads the emails of one sender or kind.
+
+    An endpoint has an ordered list; the first enabled layout whose ``match`` holds is
+    the email's layout, and its fields, line items and attachment parsing apply. Layouts
+    run only on webhooks.cc's servers (RE2, the sandboxed attachment parser), so this SDK
+    describes them and reads their results (:class:`ParsedEmail`); it never parses. The
+    server checks a list when it is saved. See https://webhooks.cc/docs/layouts.
+    """
+
+    id: str
+    """1 to 40 letters, digits, ``-`` or ``_``; how alerts and the API refer to it."""
+    name: str
+    enabled: bool | None = None
+    """``None`` means on; a layout that is off is kept but never matched."""
+    match: DestinationFilter | None = None
+    """When it applies, in the rule language of destination filters (the email's
+    ``subject``, ``from``, ``to``, ``text`` and ``tag``, headers, ``email_auth``,
+    ``spam_score``); ``None`` or no conditions: every email."""
+    fields: list[EmailField] | None = None
+    """Named values, as an endpoint's email fields."""
+    line_items: LineItemsSpec | None = None
+    parse_attachments: bool = False
+    """Parse its attachments (CSV, TSV, XLSX, XLS, ODS, PDF text, plain text); each parsed
+    page is metered."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Layout:
+        enabled = data.get("enabled")
+        match = data.get("match")
+        layout_fields = data.get("fields")
+        line_items = data.get("lineItems")
+        return cls(
+            id=str(data.get("id") or ""),
+            name=str(data.get("name") or ""),
+            enabled=enabled if isinstance(enabled, bool) else None,
+            match=DestinationFilter.from_dict(match) if isinstance(match, Mapping) else None,
+            fields=[
+                EmailField.from_dict(item) for item in layout_fields if isinstance(item, Mapping)
+            ]
+            if isinstance(layout_fields, list)
+            else None,
+            line_items=LineItemsSpec.from_dict(line_items)
+            if isinstance(line_items, Mapping)
+            else None,
+            parse_attachments=data.get("parseAttachments") is True,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """The layout as the API takes it."""
+        out: dict[str, Any] = {"id": self.id, "name": self.name}
+        if self.enabled is not None:
+            out["enabled"] = self.enabled
+        if self.match is not None:
+            out["match"] = {
+                "logic": self.match.logic,
+                "conditions": [dict(item) for item in self.match.conditions],
+            }
+        if self.fields is not None:
+            out["fields"] = [item.to_dict() for item in self.fields]
+        if self.line_items is not None:
+            out["lineItems"] = self.line_items.to_dict()
+        if self.parse_attachments:
+            out["parseAttachments"] = True
         return out
 
 
@@ -532,9 +724,9 @@ class Endpoint:
     """The longest retention this endpoint may have: its plan's (owner only)."""
     delete_after_delivery: bool | None = None
     """Requests are deleted once every delivery is settled (owner only)."""
-    layouts: list[dict[str, Any]] | None = None
-    """How the endpoint reads its emails, in the shape the API takes; the first whose
-    ``match`` holds applies (owner only)."""
+    layouts: list[Layout] | None = None
+    """How the endpoint reads its emails; the first enabled one whose ``match`` holds
+    applies (owner only)."""
     layouts_cap: int | None = None
     """Layouts the plan uses; later ones are kept but not used (owner only)."""
     forward_enabled: bool | None = None
@@ -581,7 +773,9 @@ class Endpoint:
             delete_after_delivery=data.get("deleteAfterDelivery")
             if isinstance(data.get("deleteAfterDelivery"), bool)
             else None,
-            layouts=[dict(item) for item in data["layouts"] if isinstance(item, Mapping)]
+            layouts=[
+                Layout.from_dict(item) for item in data["layouts"] if isinstance(item, Mapping)
+            ]
             if isinstance(data.get("layouts"), list)
             else None,
             layouts_cap=_int_or_none(data.get("layoutsCap")),
@@ -837,6 +1031,9 @@ class Destination:
     has_mailgun_signing_key: bool = False
     """For format ``"mailgun"``: whether a Mailgun signing key is saved. The key itself is
     never returned."""
+    attachments: str = "links"
+    """How its deliveries carry the attachments of emails kept in storage: ``"links"``,
+    ``"inline"`` or ``"none"`` (see :data:`DestinationAttachments`)."""
     summary: DestinationSummary | None = None
     """Set by ``destinations.list(slug, summary=True)``."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
@@ -877,6 +1074,7 @@ class Destination:
             created_at=int(_number(data.get("createdAt"))),
             updated_at=int(_number(data.get("updatedAt"))),
             has_mailgun_signing_key=data.get("hasMailgunSigningKey") is True,
+            attachments=_str_or_none(data.get("attachments")) or "links",
             summary=_destination_summary(summary) if isinstance(summary, Mapping) else None,
             raw=dict(data),
         )
@@ -1117,6 +1315,20 @@ class RenderedEmail:
             body=_str_or_none(data.get("body")) or "",
             raw=dict(data),
         )
+
+
+@dataclass(frozen=True)
+class AttachmentDownload:
+    """An attachment of a stored email, downloaded with ``requests.attachment()``."""
+
+    content: bytes = field(repr=False)
+    """The attachment's bytes, exactly as they were kept."""
+    filename: str | None
+    """The name the server gave the download (the attachment's own, or a stand-in such as
+    ``attachment-1``); ``None`` when it named none."""
+    content_type: str
+    """The attachment's declared type when it is a plain media type, otherwise
+    ``application/octet-stream``."""
 
 
 @dataclass(frozen=True)

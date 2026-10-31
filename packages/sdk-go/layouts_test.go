@@ -68,7 +68,8 @@ func TestPreviewLayoutsAndParsedRequests(t *testing.T) {
 				"sheets": []any{map[string]any{"name": nil, "rows": []any{[]any{"sku"}, []any{"A-1"}}, "rowCount": 2, "truncated": false}}},
 			map[string]any{"index": 1, "filename": "b.pdf", "format": "pdf", "pages": 0, "error": "limit"},
 		},
-		"pages": 1,
+		"pages":     1,
+		"truncated": true,
 	}
 	api := newFakeAPI(t)
 	api.handle("POST /api/endpoints/{slug}/layouts/preview", func(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +101,9 @@ func TestPreviewLayoutsAndParsedRequests(t *testing.T) {
 	if preview.Request == nil || preview.Request.ID != "req_1" || preview.Parsed == nil {
 		t.Fatalf("preview = %+v", preview)
 	}
+	if preview.Request.Subject != "Order 1" || preview.Request.ReceivedAt.UnixMilli() != 1 {
+		t.Errorf("request = %+v", preview.Request)
+	}
 	p := preview.Parsed
 	if p.Layout.ID != "orders" || p.Fields["order"] != "1" || p.Fields["total"] != "" {
 		t.Errorf("fields = %+v", p.Fields)
@@ -109,6 +113,9 @@ func TestPreviewLayoutsAndParsedRequests(t *testing.T) {
 	}
 	if p.Attachments[0].Sheets[0].RowCount != 2 || p.Attachments[1].Error != "limit" {
 		t.Errorf("attachments = %+v", p.Attachments)
+	}
+	if !p.Truncated || p.Partial {
+		t.Errorf("truncated = %v, partial = %v", p.Truncated, p.Partial)
 	}
 
 	request, err := client.Requests.Get(ctx, "req_1")
@@ -130,7 +137,7 @@ func TestPreviewLayoutsAndParsedRequests(t *testing.T) {
 	if err := json.Unmarshal(data, &again); err != nil {
 		t.Fatal(err)
 	}
-	if again.Parsed == nil || again.Parsed.Pages != 1 || !again.Email.Stored {
+	if again.Parsed == nil || again.Parsed.Pages != 1 || !again.Parsed.Truncated || !again.Email.Stored {
 		t.Errorf("round trip = %+v", again.Parsed)
 	}
 }

@@ -29,7 +29,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, Literal
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -58,14 +58,17 @@ from .errors import (
 )
 from .matchers import Matcher, is_email_request, match_email
 from .models import (
+    AttachmentDownload,
     BuiltRequest,
     Destination,
+    DestinationAttachments,
     DestinationFilter,
     DestinationFormat,
     DestinationPreview,
     DestinationTestResult,
     EmailField,
     Endpoint,
+    Layout,
     LayoutsPreview,
     RenderedEmail,
     Request,
@@ -571,8 +574,43 @@ class WebhooksCC:
         params: Mapping[str, str] | None = None,
         repeatable: bool | None = None,
     ) -> Any:
-        """Call the API. ``repeatable`` overrides whether a network error, a timeout or a
-        5xx is retried, for a call whose method says otherwise."""
+        """Call the API and return its JSON. ``repeatable`` overrides whether a network
+        error, a timeout or a 5xx is retried, for a call whose method says otherwise."""
+        response = self._call(method, path, body=body, params=params, repeatable=repeatable)
+        if response.status_code == 204 or response.headers.get("content-length") == "0":
+            return None
+        content_type = response.headers.get("content-type")
+        if content_type and "application/json" not in content_type:
+            raise WebhooksCCError(response.status_code, f"Unexpected content type: {content_type}")
+        return response.json()
+
+    def _download(self, path: str) -> AttachmentDownload:
+        """A binary download with the client's auth, for raw messages and attachments."""
+        response = self._call("GET", path)
+        disposition = response.headers.get("content-disposition") or ""
+        plain = re.search(r'filename="([^"]*)"', disposition, re.IGNORECASE)
+        filename = plain.group(1) if plain else None
+        encoded = re.search(r"filename\*=UTF-8''([^;]+)", disposition, re.IGNORECASE)
+        # A cut or invalid escape keeps the plain name, as decodeURIComponent would throw.
+        if encoded and not re.search(r"%(?![0-9A-Fa-f]{2})", encoded.group(1)):
+            with suppress(UnicodeDecodeError):
+                filename = unquote(encoded.group(1), errors="strict")
+        return AttachmentDownload(
+            content=response.content,
+            filename=filename,
+            content_type=response.headers.get("content-type") or "application/octet-stream",
+        )
+
+    def _call(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Any = None,
+        params: Mapping[str, str] | None = None,
+        repeatable: bool | None = None,
+    ) -> httpx.Response:
+        """Call the API with retries; the response, once it is a success."""
         url = f"{self._base_url}/api{path}"
         attempts = max(1, int(self._retry.max_attempts))
         if repeatable is None:
@@ -620,15 +658,7 @@ class WebhooksCC:
                     _sleep_ms(retry_after * 1000 if retry_after is not None else backoff)
                     continue
                 raise error
-
-            if response.status_code == 204 or response.headers.get("content-length") == "0":
-                return None
-            content_type = response.headers.get("content-type")
-            if content_type and "application/json" not in content_type:
-                raise WebhooksCCError(
-                    response.status_code, f"Unexpected content type: {content_type}"
-                )
-            return response.json()
+            return response
 
     def _send(
         self, method: str, url: str, headers: Mapping[str, str], body: str | bytes | None
@@ -843,7 +873,7 @@ class Endpoints:
         forward_url: str | None = UNSET,
         retention_days: int | None = UNSET,
         delete_after_delivery: bool = UNSET,
-        layouts: Sequence[Mapping[str, Any]] | None = UNSET,
+        layouts: Sequence[Mapping[str, Any] | Layout] | None = UNSET,
     ) -> Endpoint:
         """Change an endpoint's settings.
 
@@ -859,9 +889,10 @@ class Endpoints:
 
         ``retention_days`` keeps requests fewer days than the plan does (``None``
         for the plan's); ``delete_after_delivery`` deletes each once every delivery
-        is settled. ``layouts`` replaces how the endpoint reads its emails, in the
-        shape the API takes (see https://webhooks.cc/docs/layouts); the server
-        checks them, RE2 included. All three are owner only.
+        is settled. ``layouts`` replaces how the endpoint reads its emails, as
+        :class:`~webhooks_cc.models.Layout` objects or dicts in the shape the API
+        takes (see https://webhooks.cc/docs/layouts); the server checks them, RE2
+        included. All three are owner only.
         """
         _validate_segment(slug, "slug")
         if email_fields is not UNSET and email_fields is not None:
@@ -890,7 +921,7 @@ class Endpoints:
             "forwardUrl": forward_url,
             "retentionDays": retention_days,
             "deleteAfterDelivery": delete_after_delivery,
-            "layouts": [dict(layout) for layout in layouts]
+            "layouts": _layouts_body(layouts)
             if layouts is not UNSET and layouts is not None
             else layouts,
         }
@@ -901,7 +932,7 @@ class Endpoints:
         self,
         slug: str,
         *,
-        layouts: Sequence[Mapping[str, Any]] = UNSET,
+        layouts: Sequence[Mapping[str, Any] | Layout] = UNSET,
         request_id: str | None = None,
     ) -> LayoutsPreview:
         """Which layout a captured email matches, with its fields and line items.
@@ -915,7 +946,7 @@ class Endpoints:
         if request_id is not None:
             body["requestId"] = request_id
         if layouts is not UNSET:
-            body["layouts"] = [dict(layout) for layout in layouts]
+            body["layouts"] = _layouts_body(layouts)
         return LayoutsPreview.from_dict(
             self._client._api("POST", f"/endpoints/{slug}/layouts/preview", body=body)
         )
@@ -1030,7 +1061,7 @@ class Endpoints:
 
 
 class Requests:
-    """Captured requests: list, wait for, stream, replay and delete them."""
+    """Captured requests: list, wait for, stream, replay, download and delete them."""
 
     def __init__(self, client: WebhooksCC) -> None:
         self._client = client
@@ -1084,6 +1115,29 @@ class Requests:
         return Request.from_dict(
             self._client._api("GET", f"/requests/{request_id}", params={"extracts": "true"})
         )
+
+    def raw(self, request_id: str) -> bytes:
+        """A captured email's exact message (RFC 5322 bytes).
+
+        Whatever its size when the email was kept in storage (``email.stored``);
+        otherwise only when the message was at most 1 MiB. Raises
+        :class:`~webhooks_cc.errors.NotFoundError` when the message was not kept, and
+        :class:`~webhooks_cc.errors.WebhooksCCError` (400) for an HTTP request.
+        """
+        _validate_segment(request_id, "request id")
+        return self._client._download(f"/requests/{request_id}/raw").content
+
+    def attachment(self, request_id: str, index: int) -> AttachmentDownload:
+        """One attachment of a stored email (``email.stored``), by its index in
+        ``email.attachments`` (0 to 99): its bytes, file name and type.
+
+        Raises :class:`~webhooks_cc.errors.NotFoundError` when the email has no such
+        attachment or its contents were not kept.
+        """
+        _validate_segment(request_id, "request id")
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index <= 99:
+            raise ValueError("index must be a whole number from 0 to 99")
+        return self._client._download(f"/requests/{request_id}/attachments/{index}")
 
     def wait_for(
         self,
@@ -1465,6 +1519,13 @@ class Forwarding:
         return str(self._client._api("POST", f"/endpoints/{slug}/forwarding")["secret"])
 
 
+def _layouts_body(layouts: Sequence[Mapping[str, Any] | Layout]) -> list[dict[str, Any]]:
+    """Layouts as the API takes them."""
+    if isinstance(layouts, (str, Mapping)):
+        raise ValueError("layouts must be a list of layouts")
+    return [item.to_dict() if isinstance(item, Layout) else dict(item) for item in layouts]
+
+
 # The keyword arguments of Destinations.create() and update(), and the JSON fields they set.
 _DESTINATION_FIELDS = {
     "url": "url",
@@ -1484,6 +1545,7 @@ _DESTINATION_FIELDS = {
     "sent_field": "sentField",
     "throttle_seconds": "throttleSeconds",
     "delay_seconds": "delaySeconds",
+    "attachments": "attachments",
     "position": "position",
 }
 
@@ -1595,6 +1657,7 @@ class Destinations:
         sent_field: str | None = UNSET,
         throttle_seconds: int = UNSET,
         delay_seconds: int = UNSET,
+        attachments: DestinationAttachments = UNSET,
         position: int = UNSET,
     ) -> Destination:
         """Add a destination; it is on unless ``enabled=False`` and gets a signing secret.
@@ -1615,6 +1678,9 @@ class Destinations:
         - ``retry_seconds``: retry failed deliveries for 86400 (default), 3600 or 0 seconds.
         - ``throttle_seconds``: at most one delivery every so many seconds (0 to 3600).
         - ``delay_seconds``: wait this long after the capture before sending (0 to 3600).
+        - ``attachments``: how the attachments of emails kept in storage travel:
+          ``"links"`` (default, a signed ``url`` each), ``"inline"`` (base64 ``content``
+          up to 1 MB per delivery) or ``"none"`` (names only).
         - ``append_path``, ``keep_order``, ``sent_field`` and ``position`` work as for
           forwarding.
         """
@@ -1638,6 +1704,7 @@ class Destinations:
                 "sent_field": sent_field,
                 "throttle_seconds": throttle_seconds,
                 "delay_seconds": delay_seconds,
+                "attachments": attachments,
                 "position": position,
             }
         )
@@ -1667,6 +1734,7 @@ class Destinations:
         sent_field: str | None = UNSET,
         throttle_seconds: int = UNSET,
         delay_seconds: int = UNSET,
+        attachments: DestinationAttachments = UNSET,
         position: int = UNSET,
     ) -> Destination:
         """Change a destination; only the arguments you pass change.
@@ -1697,6 +1765,7 @@ class Destinations:
                 "sent_field": sent_field,
                 "throttle_seconds": throttle_seconds,
                 "delay_seconds": delay_seconds,
+                "attachments": attachments,
                 "position": position,
             }
         )

@@ -24,11 +24,17 @@ from webhooks_cc.email import (
 )
 from webhooks_cc.matchers import match_body_path, match_email, match_path
 from webhooks_cc.models import (
+    AttachmentDownload,
     Destination,
+    DestinationFilter,
     DestinationPreview,
     DestinationTestResult,
     EmailField,
     Endpoint,
+    Layout,
+    LineItemColumn,
+    LineItemsSpec,
+    ParsedSheet,
     Request,
 )
 from webhooks_cc.testing import capture_during, temporary_endpoint
@@ -518,9 +524,11 @@ def test_destinations_are_parsed() -> None:
     assert destination.raw["endpointId"] == "e1"
 
     assert destination.has_mailgun_signing_key is False
+    assert destination.attachments == "links"
 
     plain = Destination.from_dict(destination_record(filter=None, role="forward"))
     assert plain.filter is None and plain.summary is None and plain.role == "forward"
+    assert Destination.from_dict(destination_record(attachments="inline")).attachments == "inline"
 
 
 def test_destinations_take_the_inbound_shapes_and_a_mailgun_key() -> None:
@@ -548,6 +556,8 @@ def test_destinations_take_the_inbound_shapes_and_a_mailgun_key() -> None:
     assert created.format == "mailgun" and created.has_mailgun_signing_key is True
     destinations.update("acme", DESTINATION_ID, mailgun_signing_key=None)
     assert bodies[-1] == {"mailgunSigningKey": None}
+    destinations.update("acme", DESTINATION_ID, attachments="inline")
+    assert bodies[-1] == {"attachments": "inline"}
     destinations.preview("acme", destination={"format": "postmark"})
     assert bodies[-1] == {"destination": {"format": "postmark"}}
 
@@ -1380,7 +1390,11 @@ def test_update_sends_retention_and_layouts_and_reads_them_back() -> None:
     assert bodies == [{"retentionDays": 3, "deleteAfterDelivery": False, "layouts": [layout]}]
     assert endpoint.retention_days == 3
     assert endpoint.retention_cap_days == 31
-    assert endpoint.layouts == [layout]
+    assert endpoint.layouts is not None
+    [read] = endpoint.layouts
+    assert read.id == "orders" and read.enabled is None and read.parse_attachments is False
+    assert read.match is not None and read.match.conditions[0]["value"] == "Order"
+    assert read.line_items == LineItemsSpec(from_="attachment", attachment="*.csv")
     assert endpoint.layouts_cap == 2
 
 
@@ -1402,7 +1416,20 @@ def test_preview_layouts_reads_the_parsed_result() -> None:
                     "lineItems": [{"sku": "A-1", "qty": "2"}],
                     "lineItemColumns": ["sku", "qty"],
                     "attachments": [
-                        {"index": 0, "filename": "o.csv", "format": "csv", "pages": 1},
+                        {
+                            "index": 0,
+                            "filename": "o.csv",
+                            "format": "csv",
+                            "pages": 1,
+                            "sheets": [
+                                {
+                                    "name": None,
+                                    "rows": [["sku", "qty"], ["A-1", None]],
+                                    "rowCount": 2,
+                                    "truncated": False,
+                                }
+                            ],
+                        },
                         {
                             "index": 1,
                             "filename": "b.pdf",
@@ -1412,6 +1439,7 @@ def test_preview_layouts_reads_the_parsed_result() -> None:
                         },
                     ],
                     "pages": 1,
+                    "truncated": True,
                 },
             },
         )
@@ -1419,6 +1447,8 @@ def test_preview_layouts_reads_the_parsed_result() -> None:
     preview = make_client(handler).endpoints.preview_layouts("acme", request_id="r1")
     assert calls == [("/api/endpoints/acme/layouts/preview", {"requestId": "r1"})]
     assert preview.request_id == "r1"
+    assert preview.request_subject == "Order 1"
+    assert preview.request_received_at == 1
     parsed = preview.parsed
     assert parsed is not None
     assert parsed.status == "matched"
@@ -1427,6 +1457,11 @@ def test_preview_layouts_reads_the_parsed_result() -> None:
     assert parsed.line_items == [{"sku": "A-1", "qty": "2"}]
     assert parsed.line_item_columns == ["sku", "qty"]
     assert [item.error for item in parsed.attachments] == [None, "limit"]
+    assert parsed.attachments[0].sheets == [
+        ParsedSheet(name=None, rows=[["sku", "qty"], ["A-1", ""]], row_count=2, truncated=False)
+    ]
+    assert parsed.attachments[1].sheets is None
+    assert parsed.truncated is True and parsed.partial is False
 
 
 def test_requests_carry_the_parse_and_stored_attachments() -> None:
@@ -1463,3 +1498,178 @@ def test_requests_carry_the_parse_and_stored_attachments() -> None:
     assert request.email.attachments[0].url == "https://x/a"
     assert request.parsed is not None and request.parsed.status == "no_layout"
     assert request.parsed.line_item_columns == []
+    assert request.parsed.partial is False
+
+
+def test_layouts_round_trip_and_are_sent_as_the_api_takes_them() -> None:
+    wire = {
+        "id": "orders",
+        "name": "Orders",
+        "enabled": False,
+        "match": {
+            "logic": "or",
+            "conditions": [
+                {"field": "email", "name": "from", "op": "contains", "value": "acme.test"}
+            ],
+        },
+        "fields": [{"name": "order", "from": "subject", "pattern": r"Order (\d+)"}],
+        "lineItems": {
+            "from": "attachment",
+            "attachment": "*.xlsx",
+            "sheet": "Items",
+            "columns": [{"name": "sku", "column": "A"}, {"name": "qty", "column": "Quantity"}],
+        },
+        "parseAttachments": True,
+    }
+    layout = Layout.from_dict(wire)
+    assert layout.enabled is False and layout.parse_attachments is True
+    assert layout.fields == [EmailField(name="order", from_="subject", pattern=r"Order (\d+)")]
+    assert layout.line_items is not None
+    assert layout.line_items.columns == [
+        LineItemColumn(name="sku", column="A"),
+        LineItemColumn(name="qty", column="Quantity"),
+    ]
+    assert layout.to_dict() == wire
+
+    text_items = Layout(
+        id="receipts",
+        name="Receipts",
+        match=DestinationFilter(conditions=[]),
+        line_items=LineItemsSpec(
+            from_="text", pattern=r"(?P<sku>[A-Z]+-\d+)\s+(?P<qty>\d+)", start="Items"
+        ),
+    )
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        if request.url.path.endswith("/layouts/preview"):
+            return httpx.Response(200, json={"problems": [], "layoutsCap": 2, "request": None})
+        return httpx.Response(200, json={"id": "e1", "slug": "acme", "createdAt": 1})
+
+    client = make_client(handler)
+    client.endpoints.update("acme", layouts=[text_items, wire])
+    preview = client.endpoints.preview_layouts("acme", layouts=[text_items])
+    sent_text = {
+        "id": "receipts",
+        "name": "Receipts",
+        "match": {"logic": "and", "conditions": []},
+        "lineItems": {
+            "from": "text",
+            "pattern": r"(?P<sku>[A-Z]+-\d+)\s+(?P<qty>\d+)",
+            "start": "Items",
+        },
+    }
+    assert bodies == [{"layouts": [sent_text, wire]}, {"layouts": [sent_text]}]
+    assert preview.request_id is None and preview.request_subject is None
+    with pytest.raises(ValueError, match="list of layouts"):
+        client.endpoints.update("acme", layouts=wire)  # type: ignore[arg-type]
+    assert len(bodies) == 2
+
+
+STORED_BYTES = b"Subject: Order 1\r\n\r\n\x00\xff\xfe not UTF-8\r\n"
+
+
+def test_raw_returns_the_message_bytes_unchanged() -> None:
+    seen: list[tuple[str, str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.headers["authorization"]))
+        return httpx.Response(
+            200,
+            content=STORED_BYTES,
+            headers={
+                "content-type": "message/rfc822",
+                "content-disposition": 'attachment; filename="email-6f1c0a2b.eml"',
+            },
+        )
+
+    assert make_client(handler).requests.raw("r1") == STORED_BYTES
+    assert seen == [("GET", "/api/requests/r1/raw", "Bearer whcc_test")]
+
+
+def test_attachment_returns_its_bytes_name_and_type_unchanged() -> None:
+    responses: list[httpx.Response] = []
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return responses.pop(0)
+
+    responses.append(
+        httpx.Response(
+            200,
+            content=STORED_BYTES,
+            headers={
+                "content-type": "text/csv",
+                "content-disposition": (
+                    "attachment; filename=\"r_sum_.csv\"; filename*=UTF-8''r%C3%A9sum%C3%A9.csv"
+                ),
+            },
+        )
+    )
+    client = make_client(handler)
+    download = client.requests.attachment("r1", 2)
+    assert download == AttachmentDownload(
+        content=STORED_BYTES, filename="r\u00e9sum\u00e9.csv", content_type="text/csv"
+    )
+    assert paths == ["/api/requests/r1/attachments/2"]
+    assert "content=" not in repr(download)
+
+    # A name cut inside an escape keeps the plain one; no headers at all, the defaults.
+    responses.append(
+        httpx.Response(
+            200,
+            content=b"%PDF",
+            headers={
+                "content-disposition": 'attachment; filename="r_sum_.pdf"; '
+                "filename*=UTF-8''r%C3%A"
+            },
+        )
+    )
+    responses.append(httpx.Response(200, content=b""))
+    cut = client.requests.attachment("r1", 0)
+    assert (cut.filename, cut.content_type) == ("r_sum_.pdf", "application/octet-stream")
+    empty = client.requests.attachment("r1", 99)
+    assert (empty.content, empty.filename) == (b"", None)
+
+
+def test_downloads_raise_typed_errors_and_check_their_input() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/raw"):
+            return httpx.Response(400, json={"error": "not_an_email"})
+        return httpx.Response(
+            404,
+            json={
+                "error": "not_kept",
+                "message": "This email's attachment contents were not kept.",
+            },
+        )
+
+    client = make_client(handler)
+    with pytest.raises(errors.NotFoundError) as missing:
+        client.requests.attachment("r1", 0)
+    assert missing.value.status_code == 404 and "not_kept" in str(missing.value)
+    with pytest.raises(errors.WebhooksCCError) as not_email:
+        client.requests.raw("r1")
+    assert not_email.value.status_code == 400
+
+    for index in (-1, 100, True, 1.0):
+        with pytest.raises(ValueError, match="index"):
+            client.requests.attachment("r1", index)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="request id"):
+        client.requests.raw("../r1")
+
+
+def test_downloads_are_retried_like_other_reads() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, content=STORED_BYTES)
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=2, backoff=1))
+    assert client.requests.raw("r1") == STORED_BYTES
+    assert len(calls) == 2
