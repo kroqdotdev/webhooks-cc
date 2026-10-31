@@ -1615,6 +1615,17 @@ def test_raw_returns_the_message_bytes_unchanged() -> None:
     assert seen == [("GET", "/api/requests/r1/raw", "Bearer whcc_test")]
 
 
+def test_a_redirect_is_an_error_for_api_calls_too() -> None:
+    # A delete against a redirecting base URL must not read as done.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(301, headers={"location": "https://webhooks.cc/api/endpoints/x"})
+
+    following = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    with pytest.raises(errors.WebhooksCCError) as raised:
+        WebhooksCC("whcc_test", http_client=following).endpoints.delete("acme-orders")
+    assert raised.value.status_code == 301
+
+
 def test_a_redirected_download_raises_instead_of_returning_the_page() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

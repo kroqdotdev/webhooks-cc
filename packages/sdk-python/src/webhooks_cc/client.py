@@ -655,7 +655,9 @@ class WebhooksCC:
                 attempt -= 1
                 continue
 
-            if response.status_code >= 400:
+            # A 3xx too: redirects are not followed, so it is no answer to the call
+            # (a delete that "succeeded" against a redirecting base URL did nothing).
+            if response.status_code >= 300:
                 error = _error_from_response(response)
                 if (
                     attempt < attempts

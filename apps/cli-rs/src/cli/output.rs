@@ -218,9 +218,12 @@ pub fn parsed_section(parsed: Option<&ParsedEmail>) -> Vec<String> {
         return Vec::new();
     };
     let mut out = vec![String::new(), bold("Parsed")];
-    // The terminal's width, less a line's indent; 100 columns when piped.
+    // The terminal's width, less a line's indent; 100 columns when it is not
+    // known (piped, or a pty that reports no size, which reads as 0).
     let columns = crossterm::terminal::size()
+        .ok()
         .map(|(columns, _)| columns as usize)
+        .filter(|columns| *columns > 0)
         .unwrap_or(100);
     for line in parsed_lines(parsed, columns.saturating_sub(4)) {
         let mut text = "  ".repeat(line.depth + 1);
