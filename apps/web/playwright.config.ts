@@ -39,6 +39,26 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    // The same specs in the classic style, picked the way Account > Appearance
+    // stores it (lib/ui-style.ts). `--project=chromium` runs the clean style only.
+    {
+      name: "chromium-classic",
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: {
+          cookies: [],
+          origins: [
+            {
+              origin: new URL(baseURL).origin,
+              localStorage: [
+                { name: "ui-style", value: "classic" },
+                { name: "ui-style-source", value: "chosen" },
+              ],
+            },
+          ],
+        },
+      },
+    },
   ],
   webServer: [
     {

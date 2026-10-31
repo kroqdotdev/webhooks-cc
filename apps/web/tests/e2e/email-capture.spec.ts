@@ -327,7 +327,7 @@ test("codes and links can be turned off for the endpoint", async ({ page }) => {
     .click();
 
   const receiving = page.getByRole("region", { name: "Receiving" });
-  await receiving.getByRole("switch", { name: "Show codes and links found in emails" }).click();
+  await receiving.getByRole("switch", { name: "Codes and links" }).click();
   await receiving.getByRole("button", { name: "Save changes" }).click();
   await expect(receiving.getByText("Saved.")).toBeVisible({ timeout: 10000 });
 

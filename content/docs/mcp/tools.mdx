@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 46 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 47 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-10-25
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 46 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 47 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -81,6 +81,19 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `signingHeader`     | `string`  | no       | Custom header name (only for `generic-hmac`), or `null` to clear              |
 | `showEmailExtracts` | `boolean` | no       | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
 | `emailFields`       | `array`   | no       | Named fields to pick out of every email, `{ name, from, header?, pattern }` (RE2), at most 20; replaces the list, `null` or `[]` removes them; owner only. See [Fields you pick out](/docs/email-capture#fields-you-pick-out) |
+| `layouts`           | `array`   | no       | How the endpoint reads each sender's emails: `{ id, name, enabled?, match?, fields?, lineItems?, parseAttachments? }`, the first whose `match` holds applies; replaces the list, `null` or `[]` removes them; owner only. See [Layouts](/docs/layouts) |
+
+### preview_layouts
+
+A dry run of the endpoint's layouts on a captured email: which layout matches, the fields and line items it finds, and what earlier parses of its attachments held. Nothing is saved and no pages are used. Pass `layouts` to try them before saving them with `update_endpoint`.
+
+| Parameter   | Type     | Required | Description                                            |
+| ----------- | -------- | -------- | ------------------------------------------------------ |
+| `slug`      | `string` | yes      | Endpoint slug                                          |
+| `requestId` | `string` | no       | A captured email on the endpoint (default: the newest) |
+| `layouts`   | `array`  | no       | Layouts to try instead of the saved ones               |
+
+Returns any `problems` with the layouts tried, the plan's `layoutsCap`, the `request` it ran on and `parsed`: the `status` (`matched` or `no_layout`), the `layout`, `fields`, `lineItems` with `lineItemColumns`, `attachments` and `pages`. Long results keep the first 20 line items and leave out sheet rows and attachment text.
 
 ### preview_response
 

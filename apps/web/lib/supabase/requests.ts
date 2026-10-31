@@ -3,7 +3,12 @@ import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
 import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
-import { extractFromEmail, replyText, type EmailExtracts } from "@webhooks-cc/sdk/email";
+import {
+  extractFromEmail,
+  replyText,
+  type EmailExtracts,
+  type ParsedEmail,
+} from "@webhooks-cc/sdk/email";
 import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import type { RequestKind } from "@/lib/supabase/search";
 import { retentionDays } from "@/lib/entitlements";
@@ -36,8 +41,23 @@ type SelectedRequestRow = Pick<
 };
 type OwnedEndpointRow = Pick<Database["public"]["Tables"]["endpoints"]["Row"], "id" | "slug">;
 /** Present when the select asked for it (the forwarding worker does). */
-type SelectedRequestRowWithQuery = SelectedRequestRow & { query_raw?: string | null };
+type SelectedRequestRowWithQuery = SelectedRequestRow & {
+  query_raw?: string | null;
+  /** Embedded (migration 00069): the parse of an email on an endpoint with layouts. */
+  request_parses?: SelectedParse | SelectedParse[] | null;
+};
 type UserPlan = Database["public"]["Tables"]["users"]["Row"]["plan"];
+
+/**
+ * An email's parse as a select embeds it: the whole result (one request),
+ * or for lists only its summary, since a result can be about 1 MB.
+ */
+type SelectedParse = {
+  status: string;
+  result?: Json | null;
+  /** status, layout, fields, pages and truncated, stored when the parse completed. */
+  summary?: Json | null;
+};
 
 export interface RequestRecord {
   id: string;
@@ -70,6 +90,11 @@ export interface RequestRecord {
   extracts?: EmailExtracts | null;
   /** With extracts: the endpoint's named fields (null when it has none) and the reply text. */
   emailFields?: Record<string, string | null> | null;
+  /**
+   * For an email on an endpoint with layouts: what they found; null while
+   * the parse is pending or when it failed.
+   */
+  parsed?: ParsedEmail | null;
   replyText?: string | null;
 }
 
@@ -163,6 +188,37 @@ function normalizeRequest(row: SelectedRequestRowWithQuery): RequestRecord {
     detectedEvent: detection.detectedEvent,
     kind,
     email: kind === "email" ? toEmailCapture(row.email) : null,
+    ...(kind === "email" && row.request_parses ? { parsed: parsedOf(row.request_parses) } : {}),
+  };
+}
+
+function parsedOf(
+  value: NonNullable<SelectedRequestRowWithQuery["request_parses"]>
+): ParsedEmail | null {
+  const parse = Array.isArray(value) ? value[0] : value;
+  if (!parse || parse.status !== "done") return null;
+  if (parse.result && typeof parse.result === "object") {
+    return parse.result as unknown as ParsedEmail;
+  }
+  const summary = (parse.summary ?? null) as {
+    status?: unknown;
+    layout?: ParsedEmail["layout"];
+    fields?: ParsedEmail["fields"];
+    pages?: unknown;
+    truncated?: unknown;
+  } | null;
+  if (!summary || (summary.status !== "matched" && summary.status !== "no_layout")) return null;
+  // A list's summary: line items and attachments are fetched with the request.
+  return {
+    status: summary.status,
+    layout: summary.layout ?? null,
+    fields: summary.fields ?? {},
+    lineItems: [],
+    lineItemColumns: [],
+    attachments: [],
+    pages: Number(summary.pages ?? 0),
+    ...(summary.truncated === true ? { truncated: true } : {}),
+    partial: true,
   };
 }
 
@@ -356,7 +412,7 @@ export async function getRequestsByIds(ids: string[]): Promise<RequestRecord[]> 
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
     )
     .in("id", ids)
     .returns<SelectedRequestRowWithQuery[]>();
@@ -374,7 +430,7 @@ export async function getRequestByIdForUser(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()
@@ -430,7 +486,7 @@ export async function listRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -500,7 +556,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -563,7 +619,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -651,7 +707,7 @@ export async function listRequestsForSandboxEndpoint(
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpointId);
   if (input.since !== undefined) {
@@ -674,7 +730,7 @@ export async function getSandboxRequest(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()

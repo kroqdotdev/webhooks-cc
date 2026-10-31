@@ -141,6 +141,7 @@ export {
   valueToText,
   parseStructuredBody,
 } from "./rules";
+export { layoutIssues } from "./layouts";
 export type {
   Condition,
   ConditionField,
@@ -245,6 +246,8 @@ export type {
   ResponseRuleCondition,
   PreviewResponseOptions,
   ResponsePreview,
+  PreviewLayoutsOptions,
+  LayoutsPreview,
   Destination,
   DestinationFilter,
   DestinationFormat,

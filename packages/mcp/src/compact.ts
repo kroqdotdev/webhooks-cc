@@ -105,6 +105,69 @@ export function capLists(holder: JsonObject): void {
   }
 }
 
+/** Line items kept of a parsed email once it has to shrink. */
+const MAX_PARSED_ITEMS = 20;
+/** Longest field or line item value kept once it has to shrink. */
+const MAX_PARSED_VALUE = 200;
+/** Sheets listed per attachment once it has to shrink. */
+const MAX_PARSED_SHEETS = 10;
+
+/**
+ * Shrinks `holder.parsed` (what the endpoint's layouts found): the first line
+ * items with the full count beside them, and each parsed attachment without
+ * its rows and text (their counts stay); get_email with a smaller endpoint
+ * or the API returns the rest.
+ */
+export function trimParsed(holder: JsonObject): void {
+  const parsed = holder.parsed;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+  const next: JsonObject = { ...(parsed as JsonObject) };
+  if (Array.isArray(next.lineItems)) {
+    if (next.lineItems.length > MAX_PARSED_ITEMS) {
+      next.lineItemsTotal = next.lineItems.length;
+    }
+    // Values cut too: 20 rows of 30 long columns would still be too big.
+    next.lineItems = (next.lineItems.slice(0, MAX_PARSED_ITEMS) as JsonObject[]).map((row) =>
+      Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [
+          key,
+          typeof value === "string" ? sliceText(value, MAX_PARSED_VALUE) : value,
+        ])
+      )
+    );
+  }
+  if (next.fields && typeof next.fields === "object") {
+    next.fields = Object.fromEntries(
+      Object.entries(next.fields as JsonObject).map(([key, value]) => [
+        key,
+        typeof value === "string" ? sliceText(value, MAX_PARSED_VALUE) : value,
+      ])
+    );
+  }
+  if (Array.isArray(next.attachments)) {
+    next.attachments = (next.attachments as JsonObject[]).map((attachment) => {
+      const { sheets, text, ...rest } = attachment;
+      return {
+        ...rest,
+        ...(Array.isArray(sheets)
+          ? {
+              sheets: (sheets as JsonObject[]).slice(0, MAX_PARSED_SHEETS).map((sheet) => ({
+                name: sheet.name,
+                rowCount: sheet.rowCount,
+              })),
+              ...((sheets as unknown[]).length > MAX_PARSED_SHEETS
+                ? { sheetsTotal: (sheets as unknown[]).length }
+                : {}),
+            }
+          : {}),
+        ...(typeof text === "string" ? { textLength: text.length } : {}),
+      };
+    });
+  }
+  next.trimmed = "Line items, sheet rows and attachment text were cut to fit the output.";
+  holder.parsed = next;
+}
+
 /** Removes every field of `holder` except `keep`, and says so in `holder.trimmed`. */
 export function keepOnly(holder: JsonObject, keep: readonly string[]): void {
   for (const key of Object.keys(holder)) {
@@ -216,6 +279,7 @@ export function compactRequest<T extends CompactableRequest>(request: T): T | Co
   const root = { items: [compact], truncated: true, total: 1_000, returned: 1_000 };
   const budget = MAX_OUTPUT - 128;
   shrinkToFit(root, budget, [
+    () => trimParsed(compact),
     () => omitHeaders(compact),
     () => trimSpam(email),
     () => capLists(email),

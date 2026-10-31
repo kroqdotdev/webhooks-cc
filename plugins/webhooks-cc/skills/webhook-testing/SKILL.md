@@ -171,6 +171,23 @@ Every account endpoint receives mail at `{slug}@mailhooks.cc`, and at
    RE2 `pattern` whose first group is the value. `get_email` then returns
    them as `fields`, and the reply without its quote as `replyText`.
 
+### Parse emails from several senders
+
+When one endpoint receives different kinds of mail (orders from one
+sender, shipping notices from another, CSV or PDF reports), give it layouts:
+
+1. `preview_layouts` with draft `layouts` and a captured `requestId`: each
+   layout has a `match` (conditions such as the email's `subject` or `from`),
+   its own `fields`, optional `lineItems` (an RE2 pattern with named groups
+   over the text, or a spreadsheet attachment's columns) and
+   `parseAttachments`. It shows which layout matches and what it finds,
+   without using pages.
+2. `update_endpoint` with `layouts` to save them. New emails are parsed
+   before their deliveries go; `get_email` returns the result as `parsed`
+   (its status says when no layout matched).
+3. Parsing attachments uses the account's parsed pages (Free 20, Pro 100 a
+   month); past them, attachments arrive unparsed with `error: "limit"`.
+
 ### Test an inbound email handler
 
 When the app receives email through Postmark, SendGrid, Mailgun or
@@ -182,8 +199,9 @@ CloudMailin, test the handler with real mail in that provider's shape:
    `http://localhost:3000/api/inbound/postmark`). For Mailgun, pass the test
    signing key the handler verifies with as `mailgunSigningKey`.
 2. Check the side effect the handler should have, as for webhooks.
-3. Attachments are never included (their contents are not stored); say so
-   if the handler's attachment path needs another test.
+3. `render_email` leaves attachments out; say so if the handler's
+   attachment path needs another test (a destination in that provider's
+   format with attachments sent inline carries them).
 
 ### Debug a failing delivery
 

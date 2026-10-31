@@ -364,7 +364,8 @@ A **Google Sheets** destination adds a row to a spreadsheet for each email or re
 
 1. Add a destination and pick **Google Sheets**, then **Connect a Google account**. webhooks.cc asks only for access to the spreadsheets it creates or that you pick for it (Google's `drive.file` permission), never the rest of your Drive.
 2. **Create it** makes a new spreadsheet with your columns as its header row; **Choose from Drive** picks one you have.
-3. Set the columns: each has a header and a value written with the same [placeholders](#your-own-json) as templates, such as `{{ subject }}`, `{{ from.address }}` or one of your [fields](/docs/email-capture#fields-you-pick-out), `{{ fields.order }}`.
+3. Set the columns: each has a header and a value written with the same [placeholders](#your-own-json) as templates, such as `{{ subject }}`, `{{ from.address }}` or one of your [fields](/docs/email-capture#fields-you-pick-out), `{{ fields.order }}`. **Write these headers to row 1** puts the headers into a spreadsheet you picked; webhooks.cc never changes your header row on its own.
+4. **One per email** adds a row for each email; **One per line item** adds a row for each [line item](/docs/layouts#line-items) a layout found, with `{{ item.sku }}` and the like for its values (an email without line items adds one row).
 
 Rows are written as plain text, so a value that starts with `=` stays text and never becomes a formula. Rows that arrive close together are added in one call, and a delivery Google refuses is retried like any other; if you disconnect the account or remove webhooks.cc's access in Google, connect it again and the waiting rows go through.
 
@@ -516,13 +517,13 @@ await client.destinations.delete(slug, zap.id);
 
 ## Replay
 
-After fixing a field's pattern or a destination, send captures through the destinations again: **Replay these emails** on an open [alert](#alerts) sends what arrived since it opened, **Redeliver** on a request sends that one, and the API takes a time range (`POST /api/endpoints/{slug}/replay` with `since` and `until` in milliseconds, at most 500 requests, oldest first). Replayed deliveries use each destination's current settings and the email's fields as they read now.
+After fixing a field's pattern or a destination, send captures through the destinations again: **Replay these emails** on an open [alert](#alerts) sends what arrived since it opened, **Redeliver** on a request sends that one, and the API takes a time range (`POST /api/endpoints/{slug}/replay` with `since` and `until` in milliseconds, at most 500 requests, oldest first). Replayed deliveries use each destination's current settings and the email's fields as they read now. On an endpoint with [layouts](/docs/layouts), a replayed email is parsed again with the current layouts first (attachments parsed before are not charged again).
 
 ## Alerts
 
 An endpoint can tell you when something stops working. Under **Settings**, **Alerts**:
 
-- **Misses in a row**: this many emails in a row missed one of the endpoint's [fields](/docs/email-capture#fields-you-pick-out) (all of them, or the ones you mark as required).
+- **Misses in a row**: this many emails in a row missed one of the endpoint's [fields](/docs/email-capture#fields-you-pick-out) (all of them, or the ones you mark as required). On an endpoint with [layouts](/docs/layouts), an email no layout matched is a miss too, and the matched layout's fields count as the endpoint's.
 - **Share missed**: this share of the last 20 emails missed one. Useful when a sender changes its layout for some mail only.
 - **Quiet for**: no email arrived for this many hours, for an endpoint that should hear from a device or a system regularly.
 - **Failed deliveries**: a delivery failed after every retry; one alert per destination.

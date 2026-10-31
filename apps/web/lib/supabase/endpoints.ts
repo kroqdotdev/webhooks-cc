@@ -1,5 +1,6 @@
 import { storedEmailFields } from "@/lib/email-fields";
-import type { EmailField } from "@webhooks-cc/sdk/email";
+import { storedLayouts } from "@/lib/parsing/stored";
+import type { EmailField, Layout } from "@webhooks-cc/sdk/email";
 import { customAlphabet } from "nanoid";
 import { decryptOwnerHeaders, maskOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { createAdminClient } from "./admin";
@@ -40,6 +41,9 @@ type SelectedEndpointRow = Pick<
   delete_after_delivery?: boolean;
   /** Computed column (migration 00068): the billing account's retention. */
   retention_cap?: number | null;
+  layouts?: Json;
+  /** Computed column (migration 00069): layouts the billing account's plan uses. */
+  layouts_cap?: number | null;
   /** Embedded: the old forward* fields and notificationUrl read from these (migration 00063). */
   endpoint_destinations?: EmbeddedDestination[];
 };
@@ -64,7 +68,7 @@ type EmbeddedDestination = Pick<
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 const ENDPOINT_COLUMNS =
-  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, retention_days, delete_after_delivery, retention_cap, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
+  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, retention_days, delete_after_delivery, retention_cap, layouts, layouts_cap, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -131,6 +135,10 @@ export interface EndpointRecord {
   retentionCapDays: number;
   /** Requests are deleted once every delivery is settled. */
   deleteAfterDelivery: boolean;
+  /** How the endpoint reads its emails (lib/parsing/layouts.ts); the first that matches applies. */
+  layouts: Layout[];
+  /** Layouts the billing account's plan uses; later ones are kept but not used. */
+  layoutsCap: number;
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
@@ -183,6 +191,8 @@ interface UpdateEndpointInput {
   showEmailExtracts?: boolean;
   /** Validated by the route (lib/email-fields.ts). */
   emailFields?: EmailField[] | null;
+  /** Validated by the route (lib/parsing/layouts.ts). */
+  layouts?: Layout[] | null;
   forwardEnabled?: boolean;
   /** Validated by the route (lib/forwarding/target.ts). */
   forwardUrl?: string | null;
@@ -291,6 +301,8 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     retentionDays: row.retention_days ?? null,
     retentionCapDays: row.retention_cap ?? 7,
     deleteAfterDelivery: row.delete_after_delivery ?? false,
+    layouts: storedLayouts(row.layouts),
+    layoutsCap: row.layouts_cap ?? 0,
   };
 }
 
@@ -546,6 +558,7 @@ export async function updateEndpointBySlugForUser({
   signingHeader,
   showEmailExtracts,
   emailFields,
+  layouts,
   forwardEnabled,
   forwardUrl,
   forwardHttp,
@@ -636,6 +649,9 @@ export async function updateEndpointBySlugForUser({
   }
   if (emailFields !== undefined) {
     updates.email_fields = (emailFields ?? []) as unknown as Json;
+  }
+  if (layouts !== undefined) {
+    updates.layouts = (layouts ?? []) as unknown as Json;
   }
   if (retentionDays !== undefined) {
     updates.retention_days = retentionDays;

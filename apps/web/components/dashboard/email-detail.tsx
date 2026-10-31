@@ -11,17 +11,27 @@ import {
   extractFromEmail,
   replyText as findReplyText,
   type ExtractedLink,
+  type ParsedEmail,
 } from "@webhooks-cc/sdk/email";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { fetchAttachment, fetchEmailFieldValues, fetchRawEmail } from "@/lib/dashboard-api";
+import { fetchAttachment, fetchEmailDetails, fetchRawEmail } from "@/lib/dashboard-api";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { highlightBody } from "@/lib/highlight";
 import { JsonTree } from "./json-tree";
 import { NoteBar, type DisplayableRequest } from "./request-detail";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
+import { ParsedResult } from "./layouts-section";
 
 type EmailTab =
-  "json" | "preview" | "text" | "headers" | "attachments" | "authentication" | "raw" | "deliveries";
+  | "parsed"
+  | "json"
+  | "preview"
+  | "text"
+  | "headers"
+  | "attachments"
+  | "authentication"
+  | "raw"
+  | "deliveries";
 type Verdict = "pass" | "fail" | "none";
 
 interface EmailDetailProps {
@@ -800,7 +810,7 @@ export function EmailDetail({
   const email = request.email ?? null;
   const requestId = "id" in request ? request.id : request._id;
   // JSON first: it is what forwarding sends and what a handler is written against.
-  const [tab, setTab] = useState<EmailTab>(initialTab ?? "json");
+  const [tab, setTab] = useState<EmailTab>(initialTab ?? (request.parsed ? "parsed" : "json"));
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
   const raw = useMemo(() => rawMessage(request), [request]);
@@ -815,25 +825,40 @@ export function EmailDetail({
   // The endpoint's named fields run on the server (RE2), so they are fetched.
   const { session } = useAuth();
   const accessToken = session?.access_token;
-  const [fieldValues, setFieldValues] = useState<{
+  const [details, setDetails] = useState<{
     id: string;
     values: Record<string, string | null> | null;
+    parsed: ParsedEmail | null;
+    failed?: boolean;
   } | null>(null);
   // Once per opened email (the list refreshes the request objects on every
-  // capture), and not at all when the endpoint is known to have no fields.
+  // capture), and not at all when there is nothing to fetch: no fields and
+  // no parse summary to complete (lists carry only a summary of the parse).
   const fieldsKnownEmpty = endpoint.emailFields !== undefined && endpoint.emailFields.length === 0;
+  const partialParse = request.parsed?.partial === true;
   const isEmail = !!email;
   useEffect(() => {
-    if (!accessToken || !isEmail || fieldsKnownEmpty) return;
+    if (!accessToken || !isEmail || (fieldsKnownEmpty && !partialParse)) return;
     let cancelled = false;
-    fetchEmailFieldValues(accessToken, requestId)
-      .then((values) => !cancelled && setFieldValues({ id: requestId, values }))
-      .catch(() => !cancelled && setFieldValues({ id: requestId, values: null }));
+    fetchEmailDetails(accessToken, requestId)
+      .then(
+        (found) =>
+          !cancelled &&
+          setDetails({ id: requestId, values: found.emailFields, parsed: found.parsed })
+      )
+      .catch(
+        () => !cancelled && setDetails({ id: requestId, values: null, parsed: null, failed: true })
+      );
     return () => {
       cancelled = true;
     };
-  }, [accessToken, isEmail, requestId, fieldsKnownEmpty]);
-  const fields = fieldValues?.id === requestId ? fieldValues.values : null;
+  }, [accessToken, isEmail, requestId, fieldsKnownEmpty, partialParse]);
+  const fields = details?.id === requestId ? details.values : null;
+  const fetchFailed = details?.id === requestId && details.failed === true;
+  // The list's summary stands in when the whole result cannot be fetched.
+  const parsed =
+    (details?.id === requestId ? details.parsed : null) ??
+    (partialParse && !fetchFailed ? null : (request.parsed ?? null));
   // With object storage the exact message is fetched when it is wanted (the
   // Raw tab or a download), whatever its size.
   const stored = email?.stored === true;
@@ -866,10 +891,10 @@ export function EmailDetail({
               email,
             },
             { slug: endpoint.slug, name: endpoint.name ?? null },
-            { includeExtracts: showExtracts, fields }
+            { includeExtracts: showExtracts, fields, parsed }
           )
         : null,
-    [email, requestId, request, endpoint.slug, endpoint.name, showExtracts, fields]
+    [email, requestId, request, endpoint.slug, endpoint.name, showExtracts, fields, parsed]
   );
 
   const downloadEml = useCallback(async () => {
@@ -943,6 +968,7 @@ export function EmailDetail({
   const attachments = email.attachments;
   const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
+    ...(request.parsed ? [{ id: "parsed" as const, label: "Parsed" }] : []),
     { id: "json", label: "JSON" },
     ...(email.html ? [{ id: "preview" as const, label: "Preview" }] : []),
     { id: "text", label: "Text" },
@@ -1116,6 +1142,20 @@ export function EmailDetail({
       </div>
 
       <div className="flex-1 overflow-auto p-4 md:p-5">
+        {activeTab === "parsed" &&
+          (parsed ? (
+            <>
+              {parsed.partial && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  The line items and attachments could not be loaded; reopen the email to try again.
+                </p>
+              )}
+              <ParsedResult parsed={parsed} />
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading the parsed result...</p>
+          ))}
+
         {activeTab === "json" && json && (
           <EmailJsonPane
             json={json}

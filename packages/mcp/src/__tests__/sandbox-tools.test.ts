@@ -322,11 +322,11 @@ describe("sandbox tools (no API key)", () => {
     expect(connected.body.message).toContain("now that account's endpoints");
 
     const after = await names();
-    expect(after).toHaveLength(46);
+    expect(after).toHaveLength(47);
     expect(after).toEqual(expect.arrayContaining(["send_webhook", "describe", "list_teams"]));
     expect(after).not.toContain("connect_account");
     expect(after).not.toContain("about_sandbox");
-    // Debounced: removing eleven tools and adding 39 is one notification.
+    // Debounced: removing eleven tools and adding 40 is one notification.
     await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0));
     expect(changes).toHaveLength(1);
 
@@ -352,7 +352,7 @@ describe("sandbox tools (no API key)", () => {
     });
     try {
       const { call, names } = await connect();
-      expect(await names()).toHaveLength(46);
+      expect(await names()).toHaveLength(47);
 
       // The human disconnects the agent: the token dies and the assertion is refused.
       vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {

@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/email/mailer";
 import { reportError } from "@/lib/observability";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AlertEventRow } from "@/lib/supabase/alerts";
+import { NO_LAYOUT, PARSE_FAILED } from "./state";
 import { byteaToBuffer } from "@/lib/supabase/destinations";
 import { customChatPayload, isDiscordUrl, isSlackUrl } from "@/lib/forwarding/chat";
 import { sendOptions } from "@/lib/forwarding/config";
@@ -20,7 +21,6 @@ import { forwardHeaders, FORWARD_USER_AGENT } from "@/lib/forwarding/sign";
  */
 
 const BATCH = 50;
-const MAX_ATTEMPTS = 5;
 
 interface AlertContext {
   slug: string;
@@ -44,25 +44,37 @@ export function describeAlert(
   const details = (event.details ?? {}) as Record<string, unknown>;
   const resolved = event.resolved_at !== null;
   if (event.kind === "fields") {
-    const missing = Array.isArray(details.missing) ? (details.missing as string[]) : [];
+    const all = Array.isArray(details.missing) ? (details.missing as string[]) : [];
+    const noLayout = all.includes(NO_LAYOUT);
+    const failed = all.includes(PARSE_FAILED);
+    const missing = all.filter((name) => name !== NO_LAYOUT && name !== PARSE_FAILED);
     const what = missing.length > 0 ? missing.join(", ") : "a required field";
-    return resolved
-      ? {
-          summary: `${endpointLabel}: email fields match again`,
-          lines: ["The latest email had every required field."],
-        }
-      : {
-          summary: `${endpointLabel}: ${what} stopped matching`,
-          lines: [
-            typeof details.streak === "number" && details.streak > 0
-              ? `${plural(details.streak, "email", "emails")} in a row missed ${what}.`
-              : `Recent emails missed ${what}.`,
-            ...(typeof details.missedPercent === "number"
-              ? [`${details.missedPercent}% of the last 20 emails missed a field.`]
-              : []),
-            "The sender may have changed its layout. Fix the pattern, then replay the emails that missed.",
-          ],
-        };
+    const streak = typeof details.streak === "number" && details.streak > 0 ? details.streak : 0;
+    if (resolved) {
+      return {
+        summary: `${endpointLabel}: email fields match again`,
+        lines: ["The latest email had every required field."],
+      };
+    }
+    const [summary, missed] = noLayout
+      ? [`${endpointLabel}: no layout matched`, "matched no layout"]
+      : failed
+        ? [`${endpointLabel}: emails could not be parsed`, "could not be parsed"]
+        : [`${endpointLabel}: ${what} stopped matching`, `missed ${what}`];
+    return {
+      summary,
+      lines: [
+        streak > 0
+          ? `${plural(streak, "email", "emails")} in a row ${missed}.`
+          : `Recent emails ${missed}.`,
+        ...(typeof details.missedPercent === "number"
+          ? [`${details.missedPercent}% of the last 20 emails missed a field.`]
+          : []),
+        noLayout
+          ? "The sender may have changed its emails. Fix a layout's match conditions, then replay the emails that missed."
+          : "The sender may have changed its layout. Fix the pattern, then replay the emails that missed.",
+      ],
+    };
   }
   if (event.kind === "silence") {
     const hours = typeof details.hours === "number" ? details.hours : null;
@@ -157,7 +169,7 @@ async function sendToDestination(
     }>();
   if (error) throw error;
   // Gone or switched off: nothing to send, and nothing to retry.
-  if (!data || !data.enabled) return true;
+  if (!data || !data.enabled || data.format === "sheets") return true;
   const chat = data.format === "chat" || isSlackUrl(data.url) || isDiscordUrl(data.url);
   let outgoing;
   if (chat) {
@@ -237,49 +249,34 @@ async function notifyOne(event: AlertEventRow): Promise<boolean> {
   return ok;
 }
 
-/** Sends what opened or resolved since the last pass. */
+/** Sends what opened or resolved since the last pass; notices are leased, so each goes once. */
 export async function notifyAlerts(): Promise<number> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("alert_events")
-    .select("*")
-    .or("notified_open_at.is.null,and(resolved_at.not.is.null,notified_resolve_at.is.null)")
-    .lt("notify_attempts", MAX_ATTEMPTS)
-    .order("opened_at", { ascending: true })
-    .limit(BATCH)
-    .returns<AlertEventRow[]>();
+  const { data, error } = await admin.rpc("claim_alert_notices", { p_limit: BATCH });
   if (error) throw error;
   let sent = 0;
-  for (const event of data ?? []) {
+  for (const event of (data ?? []) as AlertEventRow[]) {
     const now = new Date().toISOString();
     // Opened and resolved before anyone was told: nothing worth saying.
     if (event.notified_open_at === null && event.resolved_at !== null) {
       await admin
         .from("alert_events")
-        .update({ notified_open_at: now, notified_resolve_at: now })
+        .update({ notified_open_at: now, notified_resolve_at: now, notify_claimed_until: null })
         .eq("id", event.id);
       continue;
     }
-    // Claimed by counting the attempt first, only if nobody else did since
-    // this pass read it: two processes never send the same notice.
-    const { data: claimed, error: claimError } = await admin
-      .from("alert_events")
-      .update({ notify_attempts: event.notify_attempts + 1 })
-      .eq("id", event.id)
-      .eq("notify_attempts", event.notify_attempts)
-      .select("id");
-    if (claimError) throw claimError;
-    if (!claimed || claimed.length === 0) continue;
     const ok = await notifyOne(event);
-    if (!ok) continue;
+    const update = ok
+      ? event.notified_open_at === null
+        ? { notified_open_at: now, notify_claimed_until: null }
+        : { notified_resolve_at: now, notify_claimed_until: null }
+      : { notify_attempts: event.notify_attempts + 1, notify_claimed_until: null };
     const { error: updateError } = await admin
       .from("alert_events")
-      .update(
-        event.notified_open_at === null ? { notified_open_at: now } : { notified_resolve_at: now }
-      )
+      .update(update)
       .eq("id", event.id);
     if (updateError) throw updateError;
-    sent++;
+    if (ok) sent++;
   }
   return sent;
 }
