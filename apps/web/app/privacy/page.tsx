@@ -27,7 +27,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 29, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 31, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -130,6 +130,31 @@ export default function PrivacyPage() {
               kilobyte) for as long as the request itself. You choose the destinations.
             </p>
             <p>
+              <span className="font-bold text-foreground">Google Sheets.</span> If you connect a
+              Google account for a Google Sheets destination, we store that account&apos;s email
+              address and an encrypted refresh token. Its access is limited to the spreadsheets
+              webhooks.cc creates or you pick (the drive.file scope). We use it only to create those
+              spreadsheets and add the rows your destinations send; disconnecting the account
+              deletes the token and revokes it at Google. Our use of information received from
+              Google APIs adheres to the Google API Services User Data Policy, including the Limited
+              Use requirements: we do not use it for anything else, share it with anyone else, or
+              use it for advertising.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">File drops.</span> If you set up a file
+              drop, we store the server&apos;s address, the user name, and the password, private key
+              or secret key you enter, encrypted. We use them only to write your files to that
+              server, and never show them again.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">AI setup and repair.</span> Only when you
+              ask for it and agree for that request, the emails you pick (subject, sender,
+              recipients, text and headers, never attachments) and what you describe are sent to
+              Anthropic, which proposes patterns for fields and layouts. We keep a record that an
+              assist was used (who, when and how it went), not what was sent. Nothing is sent for
+              mail as it arrives.
+            </p>
+            <p>
               <span className="font-bold text-foreground">API keys.</span> We store API keys only as
               a hash, together with the name you give them, when they were created, and when they
               were last used.
@@ -227,6 +252,10 @@ export default function PrivacyPage() {
               <li>Amazon SES delivers our emails from Germany</li>
               <li>PostHog provides product analytics from its EU region</li>
               <li>Polar sells our paid plans as merchant of record and processes payments</li>
+              <li>
+                Anthropic proposes patterns when you ask for AI setup or repair, from the emails you
+                pick
+              </li>
             </ul>
             <p>
               Our{" "}
@@ -245,11 +274,11 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-bold mb-3">International Transfers</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              Cloudflare, PostHog, and Polar are companies based in the United States, as are GitHub
-              and Google if you use them to sign in. Where your personal data reaches a company
-              outside the EU or EEA, the transfer is covered by the EU-US Data Privacy Framework,
-              the European Commission&apos;s Standard Contractual Clauses, or both. Our list of
-              subprocessors shows which applies to each company.
+              Cloudflare, PostHog, Polar, and Anthropic are companies based in the United States, as
+              are GitHub and Google if you use them to sign in or connect Google Sheets. Where your
+              personal data reaches a company outside the EU or EEA, the transfer is covered by the
+              EU-US Data Privacy Framework, the European Commission&apos;s Standard Contractual
+              Clauses, or both. Our list of subprocessors shows which applies to each company.
             </p>
           </div>
         </section>
