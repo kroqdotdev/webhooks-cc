@@ -65,6 +65,10 @@ function statusOf(domain: InboundDomain) {
   if (domain.status === "pending") return <StatusTag tone="warning">Waiting for DNS</StatusTag>;
   if (domain.status === "lapsed") return <StatusTag tone="danger">Records missing</StatusTag>;
   if (!domain.active) return <StatusTag tone="warning">Past your plan</StatusTag>;
+  // Verified, but with no address and no catch-all every recipient is refused.
+  if (domain.routes.length === 0 && !domain.catchAllEndpointId) {
+    return <StatusTag tone="warning">No addresses yet</StatusTag>;
+  }
   return <StatusTag tone="success">Receiving mail</StatusTag>;
 }
 
@@ -393,6 +397,7 @@ function ExtraDomains({
   const load = useCallback(async () => {
     try {
       const next = await fetchCapacity(accessToken, teamId, "domains");
+      setError(null);
       update(next);
       if (!edited.current) setCount(String(renewingCount(next)));
     } catch (err) {
@@ -404,7 +409,8 @@ function ExtraDomains({
     void load();
   }, [load]);
 
-  // Back from a checkout for domains: they count once Polar's webhook lands.
+  // Back from a checkout for domains: they count once Polar's webhook lands,
+  // which the notice says usually takes up to a minute.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (!params.get("capacity") || window.location.hash !== "#extra-domains") return;
@@ -416,7 +422,9 @@ function ExtraDomains({
       "",
       `${window.location.pathname}${query ? `?${query}` : ""}#extra-domains`
     );
-    const timers = [3000, 8000, 15000].map((ms) => setTimeout(() => void load(), ms));
+    const timers = [3000, 8000, 15000, 30000, 60000, 90000].map((ms) =>
+      setTimeout(() => void load(), ms)
+    );
     return () => timers.forEach(clearTimeout);
   }, [load]);
 
@@ -448,7 +456,8 @@ function ExtraDomains({
   }
 
   const allowed = state.planRequests + state.blockRequests;
-  const units = Number(count ?? 0);
+  // An emptied field is no count at all, never zero (which would end them all).
+  const units = count !== null && count.trim() !== "" ? Number(count) : Number.NaN;
   const valid = Number.isInteger(units) && units >= 0 && units <= MAX_EXTRA_DOMAINS;
   const blocks = state.blocks;
   const renewal = blocks?.periodEnd
@@ -563,11 +572,25 @@ export function DomainsPanel({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Counts the changes made here (an add, a route, a removal), so a list read
+  // that started before one never replaces it with what it read.
+  const changes = useRef(0);
+  const changed = useCallback((apply: (current: InboundDomain[] | null) => InboundDomain[]) => {
+    changes.current += 1;
+    setDomains(apply);
+  }, []);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
     try {
-      setDomains(await fetchDomains(accessToken, teamId));
+      for (let attempt = 0; ; attempt++) {
+        const seen = changes.current;
+        const list = await fetchDomains(accessToken, teamId);
+        // Changed while reading: read again, since this list may predate it.
+        if (changes.current !== seen && attempt < 2) continue;
+        setDomains(list);
+        return;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Domains could not be loaded.");
     }
@@ -583,7 +606,7 @@ export function DomainsPanel({
     setError(null);
     try {
       const added = await addDomainRequest(accessToken, draft.trim(), teamId);
-      setDomains((current) => [...(current ?? []), added]);
+      changed((current) => [...(current ?? []), added]);
       setDraft("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "The domain could not be added.");
@@ -599,7 +622,8 @@ export function DomainsPanel({
       description={
         <>
           Receive mail at your own domain, such as orders@inbound.acme.com: prove the domain with a
-          TXT record, point its MX at mailhooks.cc, and choose which endpoint each address goes to.{" "}
+          TXT record, point its MX at the mail host shown with its records, and choose which
+          endpoint each address goes to.{" "}
           <Link href="/docs/email-capture#your-own-domain" className={settingsLink}>
             About custom domains
           </Link>
@@ -617,7 +641,7 @@ export function DomainsPanel({
               accessToken={accessToken!}
               teamId={teamId}
               onChanged={(next) =>
-                setDomains((current) =>
+                changed((current) =>
                   next === null
                     ? (current ?? []).filter((item) => item.id !== domain.id)
                     : (current ?? []).map((item) => (item.id === next.id ? next : item))

@@ -385,6 +385,48 @@ describe("custom inbound domains", () => {
     expect((await resolve(domain.domain, "raced")).status).toBe("relay_denied");
   });
 
+  it("never become an account's email through a change of email", async () => {
+    const owner = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId: owner };
+    const domain = await addDomain(account, `changed-${ts}.acme.example`);
+    await verifyDomain(account, domain.id, dns(inPlace(domain)));
+    const someone = await createUser();
+    const { data: before } = await admin.auth.admin.getUserById(someone);
+    const email = before.user!.email!;
+
+    // Written directly (an admin update) and requested (GoTrue's pending
+    // email_change, as the confirmation link would set it), at the verified
+    // domain and at the capture domain: all refused, the email unchanged.
+    for (const address of [`someone@${domain.domain}`, `someone-${ts}@mailhooks.cc`]) {
+      const direct = await admin.auth.admin.updateUserById(someone, { email: address });
+      expect(direct.error).not.toBeNull();
+      const pending = await admin.auth.admin.generateLink({
+        type: "email_change_new",
+        email,
+        newEmail: address,
+      });
+      expect(pending.error).not.toBeNull();
+    }
+    const { data: after } = await admin.auth.admin.getUserById(someone);
+    expect(after.user!.email).toBe(email);
+    expect(after.user!.new_email ?? "").toBe("");
+    // So the domain keeps its mail.
+    await admin
+      .from("inbound_domains")
+      .update({ last_checked_at: new Date(Date.now() - 2 * 86_400_000).toISOString() })
+      .eq("id", domain.id);
+    await recheckDomains(dns(inPlace(domain)), 1000);
+    expect((await listDomains(account)).find((row) => row.id === domain.id)?.status).toBe(
+      "verified"
+    );
+
+    // Any other address still works.
+    const moved = await admin.auth.admin.updateUserById(someone, {
+      email: `moved-${ts}@webhooks-test.local`,
+    });
+    expect(moved.error).toBeNull();
+  });
+
   it("decide from what another check left when it wrote first", async () => {
     const owner = await createUser({ plan: "business", subscription_status: "active" });
     const account = { kind: "user" as const, userId: owner };

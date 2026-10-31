@@ -78,12 +78,14 @@ test("a Business account adds a domain, checks it, and routes an address once ve
     .eq("domain", domain);
   if (verifyError) throw verifyError;
   await page.reload();
-  await expect(card.getByText("Receiving mail")).toBeVisible({ timeout: 15000 });
+  // Verified, but no address takes mail yet.
+  await expect(card.getByText("No addresses yet")).toBeVisible({ timeout: 15000 });
 
   await card.getByRole("button", { name: "Add an address" }).click();
   await card.getByLabel("Address name").fill("orders");
   await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect(card.getByText("Saved.")).toBeVisible();
+  await expect(card.getByText("Receiving mail")).toBeVisible();
 
   // The route belongs to this test's domain, not another on the same endpoint.
   const { data: saved } = await admin
@@ -135,7 +137,7 @@ test("a domain past the plan is refused, and extra domains go through a checkout
 
   const panel = page.locator("#domains");
   await expect(
-    panel.getByRole("listitem", { name: older }).getByText("Receiving mail")
+    panel.getByRole("listitem", { name: older }).getByText("No addresses yet")
   ).toBeVisible({ timeout: 15000 });
   await expect(
     panel.getByRole("listitem", { name: newer }).getByText("Past your plan")

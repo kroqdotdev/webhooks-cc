@@ -776,6 +776,35 @@ describe("extra inbound domains", () => {
     expect(await allowed(account)).toBe(0);
   });
 
+  it("do not wait for a Team Business that is behind on payment and set to end", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `dom-pde-${ts}`, created_by: owner, seats: 1, subscription_status: "active" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+    await applyAddon(account, "team_business", `sub_tde_tb_${ts}`, "active");
+    await applyAddon(account, "domain_blocks", `sub_tde_db_${ts}`, "active", 1);
+    // A failed card on a Team Business already set to end at its renewal.
+    await applyAddon(account, "team_business", `sub_tde_tb_${ts}`, "past_due");
+    await admin
+      .from("capacity_subscriptions")
+      .update({ cancel_at_period_end: true })
+      .eq("polar_subscription_id", `sub_tde_tb_${ts}`);
+    await reconcileAddonsWithPlan(account);
+    const { data: domainRow } = await admin
+      .from("capacity_subscriptions")
+      .select("status, cancel_at_period_end")
+      .eq("polar_subscription_id", `sub_tde_db_${ts}`)
+      .single();
+    // They end with it now, as with a team plan that is ending, instead of
+    // waiting to renew after Team Business is gone.
+    expect(domainRow?.status).toBeNull();
+  });
+
   it("keep a paid increase on blocks that ended meanwhile, and take it back on a refund", async () => {
     const userId = await createUser({ plan: "business", subscription_status: "active" });
     const account = { kind: "user" as const, userId };

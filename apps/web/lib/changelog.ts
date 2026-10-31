@@ -31,9 +31,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Custom Inbound Domains",
     track: "web",
     items: [
-      "Receive mail at your own domain on Business: add it under Account > Domains, prove it with a TXT record, point its MX at mailhooks.cc, and send each address (or any address) to an endpoint",
+      "Receive mail at your own domain on Business: add it under Account > Domains, prove it with a TXT record, point its MX at the mail host it shows, and send each address (or any address) to an endpoint",
       "Business includes one domain and Team Business one per team; extra domains are $3 a month each, renewed with your plan",
-      "Domains are checked every day, and mail to a domain whose records are gone, or that is past what your plan allows, is refused",
+      "Domains are checked every day; mail to a domain whose records failed three checks in a row, or that is past what your plan allows, is refused",
     ],
   },
   {
