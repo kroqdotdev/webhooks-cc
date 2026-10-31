@@ -668,8 +668,8 @@ export async function changeMonthlyBlocks(
   resource: CapacityResource = "requests"
 ): Promise<MonthlyBlocksResult> {
   const spec = RESOURCES[resource];
-  const products = requireProducts(resource);
-  // Ending them never needs the plan.
+  // Ending them never needs the plan, and only a checkout needs the products:
+  // with a product withdrawn, blocks bought before can still be cut or ended.
   if (blocks > 0) await requireEligible(account, { renewing: true, resource });
   const current = liveOfKind(await liveSubscriptions(account), spec.blocks);
   const polar = createPolarClient();
@@ -678,7 +678,7 @@ export async function changeMonthlyBlocks(
     if (blocks === 0) return { kind: "unchanged" };
     const customerId = await ensureCustomer(account, actingUserId);
     const checkout = await polar.checkouts.create({
-      products: [products.monthly],
+      products: [requireProducts(resource).monthly],
       units: blocks,
       min_units: 1,
       max_units: spec.maxBlocks,
@@ -713,7 +713,7 @@ export async function changeMonthlyBlocks(
   if (blocks > current.units) {
     const customerId = await ensureCustomer(account, actingUserId);
     const checkout = await polar.checkouts.create({
-      products: [products.monthlyAdd],
+      products: [requireProducts(resource).monthlyAdd],
       units: blocks - current.units,
       min_units: blocks - current.units,
       max_units: blocks - current.units,
@@ -1491,10 +1491,14 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
   const domainsLeaving = plan.domains_ending || teamBusinessEnding;
   // A Team Business payment that failed stops it counting, but it is not
   // gone: Polar retries the card, and what needs it waits rather than ends.
-  // Only while the team's plan goes on: with the plan gone or ending, Team
-  // Business ends in this same pass and what needs it must end with it.
+  // Only while the team's plan and Team Business go on: with either gone or
+  // ending, what needs Team Business must end with it, and one behind on
+  // payment may also be set to end.
   const teamBusinessPastDue =
-    teamBusiness?.status === "past_due" && plan.plan_active && !plan.cancel_at_period_end;
+    teamBusiness?.status === "past_due" &&
+    !teamBusinessEnding &&
+    plan.plan_active &&
+    !plan.cancel_at_period_end;
 
   for (const row of rows) {
     if (teamBusinessPastDue && (PAGE_KINDS.has(row.kind) || DOMAIN_KINDS.has(row.kind))) {

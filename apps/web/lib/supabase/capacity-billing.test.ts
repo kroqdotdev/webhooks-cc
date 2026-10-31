@@ -259,6 +259,18 @@ describe("changeMonthlyBlocks", () => {
     });
   });
 
+  it("ends or cuts blocks whose products are no longer offered", async () => {
+    // The page products are unset in this suite.
+    tables.capacity_subscriptions = [blocksRow({ kind: "page_blocks" })];
+    await expect(changeMonthlyBlocks(USER, "user_1", 0, "pages")).resolves.toEqual({
+      kind: "scheduled",
+      units: 0,
+    });
+    expect(mockFns.subscriptionsUpdate).toHaveBeenCalledWith("sub_blocks", {
+      cancel_at_period_end: true,
+    });
+  });
+
   it("refuses to start or keep blocks while the plan is set to end", async () => {
     tables.users = proAccount({ cancel_at_period_end: true });
     await expect(changeMonthlyBlocks(USER, "user_1", 2)).rejects.toMatchObject({

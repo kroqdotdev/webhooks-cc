@@ -311,4 +311,46 @@ comment on function public.hook_before_user_created(jsonb) is
 revoke execute on function public.hook_before_user_created(jsonb) from public, anon, authenticated;
 grant execute on function public.hook_before_user_created(jsonb) to supabase_auth_admin;
 
+-- Nor through a change of email, which the hook above never sees: GoTrue
+-- writes the requested address to email_change (after sending its
+-- confirmation, whose link then leads nowhere) and moves it to email once
+-- confirmed, and admin updates write email directly. Both writes are refused
+-- for the capture domain and a verified customer domain, so an account never
+-- takes an address whose mail others here can read, and nobody can make
+-- another account's domain lapse by naming an address at it.
+create or replace function public.refuse_readable_account_email()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_address text;
+  v_domain  text;
+begin
+  foreach v_address in array array[
+    case when new.email is distinct from old.email then new.email end,
+    case when new.email_change is distinct from old.email_change then new.email_change end
+  ] loop
+    continue when v_address is null or btrim(v_address) = '';
+    v_domain := rtrim(substring(lower(btrim(v_address)) from '@([^@]*)$'), '.');
+    if v_domain = 'mailhooks.cc' or v_domain like '%.mailhooks.cc' or exists (
+      select 1 from public.inbound_domains d
+       where d.domain = v_domain and d.status = 'verified'
+    ) then
+      raise exception 'Addresses at % cannot be used for an account', v_domain
+        using errcode = '23514';
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+revoke all on function public.refuse_readable_account_email() from public, anon, authenticated;
+
+drop trigger if exists refuse_readable_account_email on auth.users;
+create trigger refuse_readable_account_email
+  before update of email, email_change on auth.users
+  for each row execute function public.refuse_readable_account_email();
+
 notify pgrst, 'reload schema';
