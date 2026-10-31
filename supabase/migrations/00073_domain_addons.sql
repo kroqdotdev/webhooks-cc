@@ -189,19 +189,11 @@ begin
     raise exception 'units must be positive' using errcode = '22023';
   end if;
 
-  if p_team_id is not null then
-    perform 1 from public.teams where id = p_team_id for update;
-  else
-    perform 1 from public.users where id = p_user_id for update;
-  end if;
-  if not found then
-    return jsonb_build_object('status', 'no_account');
-  end if;
-
   -- An increase kept as one-time blocks ('increase:<order>') serializes with
-  -- a refund of its order on the order's row, which refund_capacity_purchase
-  -- locks first: a refund that came first leaves nothing to keep, and one
-  -- that comes after finds this row and takes it back.
+  -- a refund of its order on the order's row, locked first, before the
+  -- account, in the same order as refund_capacity_purchase: a refund that
+  -- came first leaves nothing to keep, and one that comes after finds this
+  -- row and takes it back.
   if p_order_id like 'increase:%' then
     select o.refunded_at into v_refunded_at
       from public.capacity_purchases o
@@ -210,6 +202,15 @@ begin
     if v_refunded_at is not null then
       return jsonb_build_object('status', 'refunded');
     end if;
+  end if;
+
+  if p_team_id is not null then
+    perform 1 from public.teams where id = p_team_id for update;
+  else
+    perform 1 from public.users where id = p_user_id for update;
+  end if;
+  if not found then
+    return jsonb_build_object('status', 'no_account');
   end if;
 
   select * into v_purchase

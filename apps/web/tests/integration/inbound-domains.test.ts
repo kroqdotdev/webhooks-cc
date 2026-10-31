@@ -394,22 +394,23 @@ describe("custom inbound domains", () => {
     const { data: before } = await admin.auth.admin.getUserById(someone);
     const email = before.user!.email!;
 
-    // Written directly (an admin update) and requested (GoTrue's pending
-    // email_change, as the confirmation link would set it), at the verified
-    // domain and at the capture domain: all refused, the email unchanged.
+    // Written directly (an admin update, and the same write a confirmed
+    // change makes), at the verified domain and at the capture domain: both
+    // refused, the email unchanged.
     for (const address of [`someone@${domain.domain}`, `someone-${ts}@mailhooks.cc`]) {
       const direct = await admin.auth.admin.updateUserById(someone, { email: address });
       expect(direct.error).not.toBeNull();
-      const pending = await admin.auth.admin.generateLink({
-        type: "email_change_new",
-        email,
-        newEmail: address,
-      });
-      expect(pending.error).not.toBeNull();
     }
+    // A requested change is recorded (GoTrue keeps its resend limit), but
+    // confirming it writes email and is refused the same way.
+    const pending = await admin.auth.admin.generateLink({
+      type: "email_change_new",
+      email,
+      newEmail: `someone@${domain.domain}`,
+    });
+    expect(pending.error).toBeNull();
     const { data: after } = await admin.auth.admin.getUserById(someone);
     expect(after.user!.email).toBe(email);
-    expect(after.user!.new_email ?? "").toBe("");
     // So the domain keeps its mail.
     await admin
       .from("inbound_domains")

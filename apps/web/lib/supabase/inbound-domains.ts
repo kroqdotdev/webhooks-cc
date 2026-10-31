@@ -139,11 +139,11 @@ let dnsResolver: Resolver | null = null;
 function resolver(): Resolver {
   if (dnsResolver) return dnsResolver;
   const next = new Resolver({ timeout: 3000, tries: 2 });
-  const servers = (process.env.DOMAIN_DNS_SERVERS || "1.1.1.1,1.0.0.1")
+  const servers = (process.env.DOMAIN_DNS_SERVERS ?? "")
     .split(",")
     .map((server) => server.trim())
     .filter(Boolean);
-  next.setServers(servers);
+  next.setServers(servers.length > 0 ? servers : ["1.1.1.1", "1.0.0.1"]);
   dnsResolver = next;
   return next;
 }
@@ -379,12 +379,18 @@ async function recordCheck(row: DomainRow, ok: boolean): Promise<DomainRow["stat
     // is visible) lapses it here, at the latest on the next daily check.
     if (ok && (await domainHasAccounts(current.domain))) {
       if (current.status !== "verified") throw hasAccounts();
-      const { error } = await admin
+      const { data: lapsedRows, error } = await admin
         .from("inbound_domains")
         .update({ status: "lapsed", last_checked_at: new Date().toISOString() })
         .eq("id", current.id)
-        .eq("status", "verified");
+        .eq("status", "verified")
+        .select("id");
       if (error) throw error;
+      // Another check wrote first: decide again from what it left.
+      if ((lapsedRows ?? []).length === 0) {
+        current = await rereadRow(current.id);
+        continue;
+      }
       reportError("[domains] a verified domain has an account at it; lapsed", undefined, {
         domainId: current.id,
       });
@@ -435,16 +441,21 @@ async function recordCheck(row: DomainRow, ok: boolean): Promise<DomainRow["stat
       }
       return status;
     }
-    const { data: fresh, error: readError } = await admin
-      .from("inbound_domains")
-      .select(DOMAIN_COLUMNS)
-      .eq("id", current.id)
-      .maybeSingle();
-    if (readError) throw readError;
-    if (!fresh) throw new DomainError("not_found", "Domain not found", 404);
-    current = fresh as unknown as DomainRow;
+    current = await rereadRow(current.id);
   }
   throw new DomainError("busy", "The domain is being checked. Try again in a moment.", 409);
+}
+
+/** The row as it is now, for a check that lost a compare-and-set. */
+async function rereadRow(id: string): Promise<DomainRow> {
+  const { data, error } = await createAdminClient()
+    .from("inbound_domains")
+    .select(DOMAIN_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new DomainError("not_found", "Domain not found", 404);
+  return data as unknown as DomainRow;
 }
 
 async function domainHasAccounts(domain: string): Promise<boolean> {
@@ -682,15 +693,21 @@ export async function recheckDomains(
       const failures = row.lookup_failures + 1;
       const lapses = row.status === "verified" && failures >= LAPSE_AFTER_LOOKUP_FAILURES;
       if (lapses) lapsed++;
-      const { error: stampError } = await admin
+      // Only over what this check read: a check that wrote meanwhile (the
+      // owner's, say, which found the records) is not undone by this one.
+      const { data: stamped, error: stampError } = await admin
         .from("inbound_domains")
         .update({
           last_checked_at: new Date().toISOString(),
           lookup_failures: failures,
           ...(lapses ? { status: "lapsed" as const } : {}),
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("status", row.status)
+        .eq("lookup_failures", row.lookup_failures)
+        .select("id");
       if (stampError) throw stampError;
+      if (lapses && (stamped ?? []).length === 0) lapsed--;
       continue;
     }
     try {
@@ -730,7 +747,12 @@ const globalForChecker = globalThis as unknown as {
 /** Runs recheckDomains every hour (each domain is due once a day). */
 export function startDomainChecker(): void {
   if (globalForChecker.__domainChecker) return;
+  let running = false;
   const tick = async () => {
+    // A long run (many slow nameservers) never overlaps the next hour's, which
+    // would check the same rows twice and count one failure as two.
+    if (running) return;
+    running = true;
     try {
       // Every domain due this hour, a batch at a time (bounded per tick).
       const result = { checked: 0, lapsed: 0, restored: 0 };
@@ -748,6 +770,8 @@ export function startDomainChecker(): void {
       }
     } catch (error) {
       reportError("[domains] recheck failed", error);
+    } finally {
+      running = false;
     }
   };
   globalForChecker.__domainChecker = setInterval(() => void tick(), 60 * 60 * 1000);

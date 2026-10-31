@@ -408,25 +408,37 @@ function ExtraDomains({
   useEffect(() => {
     void load();
   }, [load]);
+  // The reloads after a checkout call the latest load, so a token refreshed
+  // meanwhile neither stops them nor reads with the old token.
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   // Back from a checkout for domains: they count once Polar's webhook lands,
-  // which the notice says usually takes up to a minute.
+  // which the notice says usually takes up to a minute. The return is
+  // remembered, so an effect run again (React's development double run)
+  // still sets the reloads after the URL was tidied.
+  const fromCheckout = useRef(false);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.get("capacity") || window.location.hash !== "#extra-domains") return;
-    setReturned(true);
-    params.delete("capacity");
-    const query = params.toString();
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${query ? `?${query}` : ""}#extra-domains`
-    );
+    if (!fromCheckout.current) {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.get("capacity") || window.location.hash !== "#extra-domains") return;
+      fromCheckout.current = true;
+      setReturned(true);
+      params.delete("capacity");
+      const query = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}#extra-domains`
+      );
+    }
     const timers = [3000, 8000, 15000, 30000, 60000, 90000].map((ms) =>
-      setTimeout(() => void load(), ms)
+      setTimeout(() => void loadRef.current(), ms)
     );
     return () => timers.forEach(clearTimeout);
-  }, [load]);
+  }, []);
 
   const save = async (units: number) => {
     setBusy(true);

@@ -1254,6 +1254,8 @@ async function syncIncreaseToPolar(
         await polar.subscriptions.update(subscriptionId, { cancel_at_period_end: false });
         await markSubscription(row.id, { cancel_at_period_end: false });
       }
+      // Scheduled even for one set to end with the plan, so it renews with
+      // the raised count if the plan is kept after all.
       await polar.subscriptions.update(subscriptionId, {
         units: row.units,
         proration_behavior: "next_period",
@@ -1261,11 +1263,17 @@ async function syncIncreaseToPolar(
       await markSubscription(row.id, { pending_units: row.units });
     } catch (polarError) {
       if (!isEndedSubscriptionError(polarError)) throw polarError;
-      // Ended meanwhile (the order landed before the end's own event): what
-      // the order added goes with it, and so does the row, whose raised
-      // units would otherwise count until the end's own event arrives.
-      await settleEndedIncrease(account, orderId);
-      await markEnded(account, row);
+      if (await hasEndedInPolar(subscriptionId)) {
+        // Ended meanwhile (the order landed before the end's own event):
+        // what the order added goes with it, and so does the row, whose
+        // raised units would otherwise count until the end's own event.
+        await settleEndedIncrease(account, orderId);
+        await markEnded(account, row);
+      } else if (!row.cancel_at_period_end) {
+        // Only set to end in Polar (Polar refuses changes to one with the
+        // same code): the units the order added count until its period end.
+        await markSubscription(row.id, { cancel_at_period_end: true });
+      }
     }
   }
 
@@ -1441,10 +1449,25 @@ async function setAddonEnding(
     });
   } catch (error) {
     if (!isEndedSubscriptionError(error)) throw error;
-    await markEnded(account, row);
-    return;
+    if (await hasEndedInPolar(row.polar_subscription_id)) {
+      await markEnded(account, row);
+      return;
+    }
+    // Already set to end in Polar, which is what was asked; anything else
+    // is unexpected.
+    if (!ending) throw error;
   }
   await markSubscription(row.id, { cancel_at_period_end: ending, canceled_with_plan: withPlan });
+}
+
+/**
+ * Whether an add-on Polar refused to change has really ended. Polar answers
+ * AlreadyCanceledSubscription both for one that ended and for one only set
+ * to end at its period end, which still counts until then.
+ */
+async function hasEndedInPolar(subscriptionId: string): Promise<boolean> {
+  const subscription = await createPolarClient().subscriptions.get(subscriptionId);
+  return addonStatus(subscription as unknown as Record<string, unknown>) === null;
 }
 
 /** The mid-period increase orders of an add-on's current period, not refunded. */
@@ -1491,17 +1514,28 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
   const domainsLeaving = plan.domains_ending || teamBusinessEnding;
   // A Team Business payment that failed stops it counting, but it is not
   // gone: Polar retries the card, and what needs it waits rather than ends.
-  // Only while the team's plan and Team Business go on: with either gone or
-  // ending, what needs Team Business must end with it, and one behind on
-  // payment may also be set to end.
+  // Only while the team's plan and Team Business go on: with the plan gone or
+  // ending, what needs Team Business ends with it in this same pass.
   const teamBusinessPastDue =
     teamBusiness?.status === "past_due" &&
     !teamBusinessEnding &&
     plan.plan_active &&
     !plan.cancel_at_period_end;
 
+  // Behind on payment and set to end: what needs it is set to end with it,
+  // not ended now, since Polar may still collect the payment.
+  const teamBusinessPastDueEnding =
+    teamBusiness?.status === "past_due" &&
+    teamBusinessEnding &&
+    plan.plan_active &&
+    !plan.cancel_at_period_end;
+
   for (const row of rows) {
     if (teamBusinessPastDue && (PAGE_KINDS.has(row.kind) || DOMAIN_KINDS.has(row.kind))) {
+      continue;
+    }
+    if (teamBusinessPastDueEnding && (PAGE_KINDS.has(row.kind) || DOMAIN_KINDS.has(row.kind))) {
+      if (!row.cancel_at_period_end) await setAddonEnding(account, row, true, true);
       continue;
     }
     // Page and domain add-ons need Business (or Team Business); the rest the plan.
