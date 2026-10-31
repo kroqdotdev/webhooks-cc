@@ -158,12 +158,15 @@ export function rowsFor(
   }
 ): string[][] {
   const context = templateContextFor(request, endpoint, options);
-  // Line items arrive with layouts (phase 2); until an email has any, it is one row.
+  // Line items arrive with layouts (phase 2); until an email has any, it is one
+  // row, whose item columns are blank rather than their placeholders as typed.
   const items = lineItemsOf(context);
   const contexts =
-    config.rows === "line_items" && items.length > 0
-      ? items.map((item) => ({ ...context, item }))
-      : [context];
+    config.rows !== "line_items"
+      ? [context]
+      : items.length > 0
+        ? items.map((item) => ({ ...context, item }))
+        : [{ ...context, item: {} }];
   const maxChars = options.maxChars ?? MAX_ROWS_CHARS;
   let total = 0;
   return contexts.map((ctx) =>
