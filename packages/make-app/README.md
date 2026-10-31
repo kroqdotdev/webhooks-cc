@@ -19,4 +19,11 @@ The tests check the files and their references and, when the web app runs locall
 
 ## Publish
 
-Publishing needs the Make account: create a custom app in Make (or with the Make Apps Editor for VS Code), copy each file into the matching block (base, connection, webhook, modules, RPC), test it in a scenario, then request a review to make the app public.
+`deploy.py` creates the app in the Make account the first time and writes every section from these files on each run, through Make's SDK apps API (the same calls the Make Apps Editor makes):
+
+```bash
+MAKE_API_TOKEN=... python3 packages/make-app/deploy.py                      # https://webhooks.cc
+MAKE_API_TOKEN=... python3 packages/make-app/deploy.py --base-url https://<tunnel>   # a dev server, for testing
+```
+
+The token needs the `sdk-apps:read` and `sdk-apps:write` scopes (Profile > API access). The remote names of the app and its components are kept in `~/.config/webhooks-cc/make-app-state.json` (`MAKE_APP_STATE`). A private app can be used in the owner's organization once it is installed there (Make asks the first time a scenario runs it); test it in a scenario, then request a review to make it public, which needs the API in production.
