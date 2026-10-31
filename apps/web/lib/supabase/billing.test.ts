@@ -204,6 +204,10 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
     await applyPolarWebhookEvent("subscription.created", subscriptionEvent());
 
     expect(userUpdatePayload()).toMatchObject({ quota_email_sent_at: null });
+    // The write is still guarded on the state it read, null columns included.
+    const update = recorded.find((call) => call.table === "users" && call.op === "update");
+    expect(update!.filters).toContainEqual(["is", "polar_subscription_id", null]);
+    expect(update!.filters).toContainEqual(["is", "period_start", null]);
   });
 
   test("a renewal or an update of the same subscription keeps the quota email window", async () => {
