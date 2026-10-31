@@ -214,7 +214,7 @@ export default function PlanPage() {
         <Suspense fallback={null}>
           <UpgradeSuccessNotice />
         </Suspense>
-        <PastDueBanner subscriptionStatus={profile.subscription_status} />
+        <PastDueBanner subscriptionStatus={profile.subscription_status} plan={profile.plan} />
         <RetentionGraceNotice profile={profile} />
 
         <Panel
