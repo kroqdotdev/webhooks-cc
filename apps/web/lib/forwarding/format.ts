@@ -10,11 +10,12 @@ import { isDiscordUrl, isSlackUrl } from "./chat";
  * template (migration 00063) is a JSON body of the owner's own, signed like
  * the JSON format. The inbound provider shapes (migration 00064) are for
  * emails; HTTP requests to such a destination go as received. Sheets
- * (migration 00068) appends rows through Google's API instead of a POST.
+ * (migration 00068) appends rows through Google's API instead of a POST, and
+ * a file drop (00074) writes files to the owner's SFTP, FTP or S3 server.
  */
 
 export type ForwardFormat =
-  "as_received" | "json" | "chat" | "template" | "sheets" | InboundEmailFormat;
+  "as_received" | "json" | "chat" | "template" | "sheets" | "file_drop" | InboundEmailFormat;
 
 export function isChatUrl(url: string): boolean {
   return isSlackUrl(url) || isDiscordUrl(url);
@@ -31,6 +32,8 @@ export function resolveFormat(
   if (setting === "template") return "template";
   // Rows in a Google Sheet (lib/integrations/sheets.ts), for both kinds.
   if (setting === "sheets") return "sheets";
+  // Files on the owner's server (lib/drops), for both kinds.
+  if (setting === "file_drop") return "file_drop";
   if (isInboundEmailFormat(setting)) return kind === "email" ? setting : "as_received";
   if (setting === "as_received") return native;
   return isChatUrl(url) ? "chat" : native;

@@ -10,7 +10,8 @@ export type DestinationFormat =
   | "sendgrid"
   | "mailgun"
   | "cloudmailin"
-  | "sheets";
+  | "sheets"
+  | "file_drop";
 
 /** How a destination's deliveries carry attachments (migration 00068). */
 export type DestinationAttachments = "none" | "links" | "inline";
@@ -1214,6 +1215,7 @@ export interface Database {
           /** AES-GCM ciphertext (bytea, read as hex); null until a format that signs needs one. */
           secret_encrypted: string | null;
           mailgun_key_encrypted: string | null;
+          drop_secret_encrypted: string | null;
           http: boolean;
           email: boolean;
           /** null picks from the URL. */
@@ -1245,6 +1247,7 @@ export interface Database {
           url: string;
           secret_encrypted?: string | null;
           mailgun_key_encrypted?: string | null;
+          drop_secret_encrypted?: string | null;
           http?: boolean;
           email?: boolean;
           format?: DestinationFormat | null;
@@ -1270,6 +1273,7 @@ export interface Database {
           url?: string;
           secret_encrypted?: string | null;
           mailgun_key_encrypted?: string | null;
+          drop_secret_encrypted?: string | null;
           http?: boolean;
           email?: boolean;
           format?: DestinationFormat | null;
@@ -1672,6 +1676,41 @@ export interface Database {
           queued_at: string;
           bypass_filter: boolean;
         }[];
+      };
+      claim_drop_batch: {
+        Args: { p_destination_id: string; p_limit?: number; p_lease_seconds?: number };
+        Returns: {
+          delivery_id: string;
+          request_id: string;
+          attempt: number;
+          kind: "email" | "http";
+          queued_at: string;
+          bypass_filter: boolean;
+        }[];
+      };
+      file_drops_allowed: {
+        Args: { p_endpoint_id: string };
+        Returns: boolean;
+      };
+      record_drop_deliveries: {
+        Args: {
+          p_delivery_ids: string[];
+          p_attempts: number[];
+          p_duration_ms: number;
+          p_response_excerpt: string;
+          p_target: string | null;
+        };
+        Returns: undefined;
+      };
+      pin_drop_host_key: {
+        Args: {
+          p_destination_id: string;
+          p_host: string;
+          p_port: number;
+          p_username: string;
+          p_host_key: string;
+        };
+        Returns: boolean;
       };
       claim_alert_checks: {
         Args: { p_limit?: number; p_lease_seconds?: number };

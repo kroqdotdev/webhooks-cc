@@ -59,6 +59,19 @@ pub struct Config {
     pub rspamd_url: Option<String>,
     pub limits: Limits,
     pub timeouts: Timeouts,
+    /// The file drop egress proxy (see `egress`), when set: its address on
+    /// the private network and the password the web app logs in with.
+    pub egress: Option<EgressConfig>,
+}
+
+#[derive(Clone)]
+pub struct EgressConfig {
+    pub listen: String,
+    pub secret: String,
+    /// Development only: let drops reach loopback and private addresses.
+    pub allow_private: bool,
+    /// Public addresses never to connect to (this host's and the web host's).
+    pub deny: Vec<std::net::IpAddr>,
 }
 
 /// Limits applied before mail is accepted (see `limits`).
@@ -146,6 +159,13 @@ impl std::fmt::Debug for Config {
             .field("rspamd_url", &self.rspamd_url)
             .field("limits", &self.limits)
             .field("timeouts", &self.timeouts)
+            .field(
+                "egress",
+                &self
+                    .egress
+                    .as_ref()
+                    .map(|egress| (&egress.listen, "[REDACTED]")),
+            )
             .finish()
     }
 }
@@ -215,13 +235,92 @@ impl Config {
             rspamd_url: non_empty("MX_RSPAMD_URL"),
             limits: Limits::default(),
             timeouts: Timeouts::default(),
+            egress: egress_from_env(),
         }
+    }
+}
+
+fn egress_from_env() -> Option<EgressConfig> {
+    let listen = non_empty("MX_EGRESS_LISTEN");
+    let secret = env::var("MX_EGRESS_SECRET").ok().filter(|v| !v.is_empty());
+    match (listen, secret) {
+        (None, None) => None,
+        (Some(listen), Some(secret)) => {
+            // The proxy takes its password in the clear: it listens on the
+            // private network (or loopback) only, never on every interface
+            // or a public address.
+            let address: std::net::SocketAddr = listen.parse().unwrap_or_else(|_| {
+                panic!("MX_EGRESS_LISTEN must be an address and port, like 10.0.0.3:1080")
+            });
+            if !is_private_listen(address.ip()) {
+                panic!("MX_EGRESS_LISTEN must be a private or loopback address, not {address}");
+            }
+            // The password travels in the clear on the private network; a
+            // short one could be guessed by anything else on it.
+            if secret.len() < 24 || secret.len() > 255 {
+                panic!("MX_EGRESS_SECRET must be 24 to 255 characters");
+            }
+            let allow_private = parse_env_or("MX_EGRESS_ALLOW_PRIVATE", false);
+            // Only a debug build may let drops reach private addresses: a
+            // release build ignores the setting, whatever the environment.
+            if allow_private && !cfg!(debug_assertions) {
+                tracing::warn!("MX_EGRESS_ALLOW_PRIVATE is ignored in a release build");
+            }
+            let deny = non_empty("MX_EGRESS_DENY")
+                .map(|raw| {
+                    raw.split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| {
+                            s.trim().parse().unwrap_or_else(|_| {
+                                panic!("MX_EGRESS_DENY: '{s}' is not an address")
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Some(EgressConfig {
+                listen,
+                secret,
+                allow_private: allow_private && cfg!(debug_assertions),
+                deny,
+            })
+        }
+        _ => panic!("MX_EGRESS_LISTEN and MX_EGRESS_SECRET must be set together"),
+    }
+}
+
+/// Where the egress may listen: loopback, RFC 1918, shared (100.64/10) or unique local IPv6.
+fn is_private_listen(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_loopback() || v4.is_private() || (a == 100 && (64..128).contains(&b))
+        }
+        std::net::IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::list;
+    use super::{is_private_listen, list};
+
+    #[test]
+    fn egress_listens_only_on_private_addresses() {
+        for ok in [
+            "10.0.0.3",
+            "192.168.1.2",
+            "172.16.0.1",
+            "100.64.0.9",
+            "127.0.0.1",
+            "::1",
+            "fd00::3",
+        ] {
+            assert!(is_private_listen(ok.parse().unwrap()), "{ok}");
+        }
+        for refused in ["0.0.0.0", "::", "203.0.113.7", "2001:db8::1", "100.128.0.1"] {
+            assert!(!is_private_listen(refused.parse().unwrap()), "{refused}");
+        }
+    }
 
     #[test]
     fn parses_suffix_lists() {

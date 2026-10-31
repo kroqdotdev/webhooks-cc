@@ -44,4 +44,17 @@ describe("serverEnv", () => {
       await expect(loadServerEnv()).rejects.toThrow(/DOMAIN_DNS_SERVERS/);
     }
   );
+
+  it("takes a socks5 FILE_DROP_PROXY_URL with a host and a port", async () => {
+    vi.stubEnv("FILE_DROP_PROXY_URL", "socks5://drop:secret@10.0.0.3:1080");
+    expect((await loadServerEnv()).FILE_DROP_PROXY_URL).toBe("socks5://drop:secret@10.0.0.3:1080");
+  });
+
+  it.each(["http://10.0.0.3:1080", "socks5://10.0.0.3", "not a url"])(
+    "refuses FILE_DROP_PROXY_URL=%s at startup",
+    async (value) => {
+      vi.stubEnv("FILE_DROP_PROXY_URL", value);
+      await expect(loadServerEnv()).rejects.toThrow(/FILE_DROP_PROXY_URL/);
+    }
+  );
 });

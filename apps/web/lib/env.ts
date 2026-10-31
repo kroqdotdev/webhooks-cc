@@ -25,6 +25,16 @@ const publicEnvSchema = z.object({
 });
 
 /** Blank values (an empty line in an env file) count as unset. */
+/** What lib/drops/connect.ts can use as its proxy: a socks5 URL with a host and a port. */
+function isDropProxyUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "socks5:" && url.hostname !== "" && url.port !== "";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * One resolver as Resolver.setServers() takes it: an IPv4 or IPv6 address,
  * IPv4 with a port, or either in brackets with or without one. A list it would
@@ -136,6 +146,17 @@ const serverEnvSchema = z
           },
           { message: "DOMAIN_DNS_SERVERS takes comma separated IP addresses, with optional ports" }
         )
+        .optional()
+    ),
+    // File drops (lib/drops): the SOCKS5 egress on the MX host,
+    // socks5://user:secret@<private address>:<port>. Required in production
+    // for drops to be offered; without it, development connects directly.
+    FILE_DROP_PROXY_URL: blankToUndefined(
+      z
+        .string()
+        .refine(isDropProxyUrl, {
+          message: "FILE_DROP_PROXY_URL is socks5://user:secret@<private address>:<port>",
+        })
         .optional()
     ),
     // S3-compatible object storage where the receiver keeps captured email
@@ -303,6 +324,7 @@ export function serverEnv() {
       POLAR_DOMAINS_PRODUCT_ID: process.env.POLAR_DOMAINS_PRODUCT_ID,
       POLAR_DOMAINS_ADD_PRODUCT_ID: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
       DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
+      FILE_DROP_PROXY_URL: process.env.FILE_DROP_PROXY_URL,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,

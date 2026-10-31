@@ -3,6 +3,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseDestinationInput,
   sheetsProblem,
+  fileDropProblem,
   templateProblem,
 } from "@/lib/forwarding/destination-input";
 import {
@@ -90,6 +91,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       config: parsed.changes.config ?? null,
     });
     if (sheets) return reply({ error: sheets }, 400);
+    const drop = await fileDropProblem(endpoint.id, {
+      format: parsed.changes.format ?? "auto",
+      config: parsed.changes.config ?? null,
+      secret: parsed.changes.dropSecret ?? null,
+    });
+    if (drop) return reply({ error: drop }, 400);
     const destination = await createDestination(endpoint.id, {
       ...parsed.changes,
       url: parsed.changes.url!,

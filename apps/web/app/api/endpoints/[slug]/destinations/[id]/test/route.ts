@@ -5,11 +5,18 @@ import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit"
 import {
   getDestination,
   getDestinationHeaders,
+  dropForDestination,
+  trustDropHostKey,
   getDestinationMailgunKey,
   getDestinationSecret,
 } from "@/lib/supabase/destinations";
 import { reportError } from "@/lib/observability";
 import { isUuid } from "@/lib/uuid";
+import { storedFileDropConfig } from "@/lib/drops/config";
+import { DropError, dropsOffered } from "@/lib/drops/connect";
+import { testDropTarget } from "@/lib/drops/target";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Destination } from "@/lib/supabase/destinations";
 
 type Params = { params: Promise<{ slug: string; id: string }> };
 
@@ -56,6 +63,22 @@ export async function POST(request: Request, { params }: Params) {
         400
       );
     }
+    if (destination.format === "file_drop") {
+      // The shape of every destination's test, plus the file written.
+      const started = performance.now();
+      const result = await testFileDrop(endpoint.id, destination);
+      return reply({
+        ...result,
+        status: null,
+        durationMs: Math.round(performance.now() - started),
+        excerpt: result.ok ? `Wrote ${result.file}` : null,
+        error: result.error ?? null,
+        delivered: result.ok,
+        sample: false,
+        format: "file_drop",
+        filterPasses: true,
+      });
+    }
     const picked = await pickRequest(endpoint, {
       requestId: (body.requestId as string | undefined) ?? null,
       kind: (body.kind as "http" | "email" | undefined) ?? null,
@@ -92,5 +115,48 @@ export async function POST(request: Request, { params }: Params) {
   } catch (error) {
     reportError("Test delivery failed", error);
     return reply({ error: "Internal server error" }, 500);
+  }
+}
+
+/**
+ * A file drop's test: connect, log in and write a small test file to the
+ * folder (written again on each test). The first SFTP connection pins the
+ * server's host key on the drop before the file is written, and the test
+ * fails if another key was pinned meanwhile.
+ */
+async function testFileDrop(
+  endpointId: string,
+  destination: Destination
+): Promise<{ ok: boolean; error?: string; file?: string; hostKey?: string | null }> {
+  if (!dropsOffered()) return { ok: false, error: "File drops are not set up on this server." };
+  const { data: allowed, error: planError } = await createAdminClient().rpc("file_drops_allowed", {
+    p_endpoint_id: endpointId,
+  });
+  if (planError) throw planError;
+  if (allowed !== true) return { ok: false, error: "File drops are part of Business." };
+  // The config and the secret from one read: the secret goes only where it was saved for.
+  const row = await dropForDestination(destination.id);
+  const config = row?.format === "file_drop" ? storedFileDropConfig(row.config) : null;
+  if (!config || !row?.secret) {
+    return { ok: false, error: "Save the drop's settings and secret first." };
+  }
+  try {
+    const result = await testDropTarget(config, row.secret, async (hostKey) => {
+      if (config.protocol !== "sftp" || config.hostKey || !hostKey) return;
+      const trusted = await trustDropHostKey(
+        destination.id,
+        { host: config.host!, port: config.port!, username: config.username! },
+        hostKey
+      );
+      if (!trusted) {
+        throw new DropError(
+          "The drop's server or host key changed while it connected. Nothing was written; test it again."
+        );
+      }
+    });
+    return { ok: true, file: result.file, hostKey: result.hostKey };
+  } catch (error) {
+    if (error instanceof DropError) return { ok: false, error: error.message };
+    throw error;
   }
 }

@@ -93,7 +93,7 @@ export function SheetsDestinationEditor({
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
-  const stored = destination?.config ?? null;
+  const stored = (destination?.config ?? null) as SheetsDestinationConfig | null;
   const [google, setGoogle] = useState<GoogleConnectionsInfo | null>(null);
   const [name, setName] = useState(destination?.name ?? "");
   const [enabled, setEnabled] = useState(destination?.enabled ?? true);

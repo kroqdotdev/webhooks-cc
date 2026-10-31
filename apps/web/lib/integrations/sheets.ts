@@ -71,11 +71,32 @@ export function parseSheetsConfig(
   if (sheet.length > 100) return "config.sheet is at most 100 characters.";
   const rows = config.rows === undefined ? "email" : config.rows;
   if (rows !== "email" && rows !== "line_items") return 'config.rows is "email" or "line_items".';
-  if (!Array.isArray(config.columns) || config.columns.length === 0) {
-    return "config.columns needs at least one column.";
+  const columns = parseColumns(config.columns, kinds, rows, "config.columns");
+  if (typeof columns === "string") return columns;
+  return {
+    connectionId: config.connectionId,
+    spreadsheetId: config.spreadsheetId,
+    sheet,
+    rows,
+    columns,
+  };
+}
+
+/**
+ * Columns as the API receives them: each a header and a value with the
+ * placeholders of what the destination takes (and `item` for a row per line
+ * item). Shared with file drops' CSV and XML (lib/drops/config.ts).
+ */
+export function parseColumns(
+  value: unknown,
+  kinds: { http: boolean; email: boolean },
+  rows: "email" | "line_items",
+  label: string
+): SheetsColumn[] | string {
+  if (!Array.isArray(value) || value.length === 0) {
+    return `${label} needs at least one column.`;
   }
-  if (config.columns.length > MAX_COLUMNS)
-    return `config.columns has at most ${MAX_COLUMNS} columns.`;
+  if (value.length > MAX_COLUMNS) return `${label} has at most ${MAX_COLUMNS} columns.`;
   const roots = [
     ...new Set([
       ...(kinds.http ? REQUEST_TEMPLATE_ROOTS : []),
@@ -84,7 +105,7 @@ export function parseSheetsConfig(
     ]),
   ];
   const columns: SheetsColumn[] = [];
-  for (const [index, column] of (config.columns as unknown[]).entries()) {
+  for (const [index, column] of (value as unknown[]).entries()) {
     const c = column as Record<string, unknown> | null;
     if (!c || typeof c.header !== "string" || typeof c.value !== "string" || !c.header.trim()) {
       return `Column ${index + 1} needs a header and a value.`;
@@ -97,13 +118,7 @@ export function parseSheetsConfig(
       return `Column ${index + 1} uses an unknown placeholder: ${unknown[0]}.`;
     columns.push({ header: c.header, value: c.value });
   }
-  return {
-    connectionId: config.connectionId,
-    spreadsheetId: config.spreadsheetId,
-    sheet,
-    rows,
-    columns,
-  };
+  return columns;
 }
 
 /** A stored config, or null when it is missing or malformed. */
@@ -116,12 +131,31 @@ function cell(text: string): string {
   return text.length > MAX_CELL_CHARS ? text.slice(0, MAX_CELL_CHARS) : text;
 }
 
-/** The rows one captured request adds. */
+/**
+ * The most text one request's rows may hold. A column repeated for each of
+ * up to 1,000 line items (50 columns of 50,000 characters each) would
+ * otherwise build gigabytes before anything could refuse it.
+ */
+export const MAX_ROWS_CHARS = 50 * 1024 * 1024;
+
+/** One request's rows would hold more than they may. */
+export class RowsTooLargeError extends Error {
+  constructor() {
+    super("This request makes more rows than fit.");
+    this.name = "RowsTooLargeError";
+  }
+}
+
+/** The rows one captured request adds; RowsTooLargeError past `maxChars` characters. */
 export function rowsFor(
   request: RequestRecord,
-  config: SheetsConfig,
+  config: Pick<SheetsConfig, "rows" | "columns">,
   endpoint: { slug: string; name: string | null },
-  options: { includeExtracts: boolean; fields: Record<string, string | null> | null }
+  options: {
+    includeExtracts: boolean;
+    fields: Record<string, string | null> | null;
+    maxChars?: number;
+  }
 ): string[][] {
   const context = templateContextFor(request, endpoint, options);
   // Line items arrive with layouts (phase 2); until an email has any, it is one row.
@@ -130,8 +164,18 @@ export function rowsFor(
     config.rows === "line_items" && items.length > 0
       ? items.map((item) => ({ ...context, item }))
       : [context];
+  const maxChars = options.maxChars ?? MAX_ROWS_CHARS;
+  let total = 0;
   return contexts.map((ctx) =>
-    config.columns.map((column) => cell(renderTemplate(column.value, ctx, { mode: "text" })))
+    config.columns.map((column) => {
+      // Each cell is cut while it is filled in, so a long value is never built in full.
+      const value = cell(
+        renderTemplate(column.value, ctx, { mode: "text", maxBytes: MAX_CELL_CHARS * 4 })
+      );
+      total += value.length;
+      if (total > maxChars) throw new RowsTooLargeError();
+      return value;
+    })
   );
 }
 
