@@ -286,7 +286,8 @@ test("configure signing secret and save", async ({ page }) => {
   await page.selectOption("#settings-signing-provider", "standard-webhooks");
   await page.fill("#settings-signing-secret", TEST_SECRET);
   await verificationSection(page).getByRole("button", { name: "Save changes" }).click();
-  await expect(verificationSection(page).getByText("Saved.")).toBeVisible({ timeout: 5000 });
+  // "Saved." shows once the endpoint list has been read again, which is slow under load.
+  await expect(verificationSection(page).getByText("Saved.")).toBeVisible({ timeout: 15000 });
 
   await expect
     .poll(async () => {

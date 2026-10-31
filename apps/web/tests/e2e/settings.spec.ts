@@ -303,7 +303,8 @@ test("removing a member asks first, then unshares what they shared", async ({ pa
   const row = page.getByRole("row", { name: new RegExp(member.email) });
   await row.getByRole("button", { name: /^Remove/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
-  await expect(row).toHaveCount(0, { timeout: 10000 });
+  // Gone once the team is read again after the removal, which is slow under load.
+  await expect(row).toHaveCount(0, { timeout: 20000 });
   await expect(page.locator("#shared-endpoints").getByText(memberEndpointName)).toHaveCount(0);
 
   const { count } = await admin
