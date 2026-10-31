@@ -429,6 +429,67 @@ function retentionOrFilter(cutoff: number): string {
  * Requests by id with no access check, for server work that already knows
  * which rows it may read (the email forwarding worker claims them).
  */
+/**
+ * Hides rows past retention on a query of one endpoint's requests, as the
+ * readers do: the owner's plan window (team-billed rows keep the team's)
+ * and the endpoint's own shorter one. For code that selects requests itself
+ * (replay, the previews), which would otherwise show or resend rows the
+ * cleanup has not deleted yet.
+ */
+export async function applyRequestRetention<
+  Q extends { or: (filter: string) => unknown; gte: (column: string, value: string) => unknown },
+>(query: Q, endpointId: string): Promise<void> {
+  const { data, error } = await createAdminClient()
+    .from("endpoints")
+    .select("user_id, retention_days")
+    .eq("id", endpointId)
+    .maybeSingle<{ user_id: string | null; retention_days: number | null }>();
+  if (error) throw error;
+  if (data?.user_id) {
+    const retention = await getUserRetention(data.user_id);
+    query.or(retentionOrFilter(retention.cutoff));
+  }
+  applyEndpointCutoff(query, data?.retention_days ?? null);
+}
+
+/** An endpoint's requests among `ids`, within retention (the previews' and replays' reader). */
+export async function getRetainedRequestsByIds(
+  endpointId: string,
+  ids: string[]
+): Promise<RequestRecord[]> {
+  if (ids.length === 0) return [];
+  const query = createAdminClient()
+    .from("requests")
+    .select(
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+    )
+    .eq("endpoint_id", endpointId)
+    .in("id", ids);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query.returns<SelectedRequestRowWithQuery[]>();
+  if (error) throw error;
+  return (data ?? []).map(normalizeRequest);
+}
+
+/** The id of an endpoint's newest request of a kind within retention, or null. */
+export async function getNewestRetainedRequestId(
+  endpointId: string,
+  kind: "http" | "email"
+): Promise<string | null> {
+  const query = createAdminClient()
+    .from("requests")
+    .select("id")
+    .eq("endpoint_id", endpointId)
+    .eq("kind", kind);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
 export async function getRequestsByIds(ids: string[]): Promise<RequestRecord[]> {
   if (ids.length === 0) return [];
   const admin = createAdminClient();
@@ -639,8 +700,9 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
 
   const limit = clampLimit(input.limit, 50);
   const retention = await getUserRetention(endpoint.ownerId);
-  // The cursor pins the cutoff so pages stay stable as the window slides.
-  const cutoff = decoded?.cutoff ?? retention.cutoff;
+  // The cursor pins the cutoff so pages stay stable as the window slides,
+  // but never earlier than the plan allows (a cursor is the client's to forge).
+  const cutoff = Math.max(decoded?.cutoff ?? retention.cutoff, retention.cutoff);
   const offset = decoded?.offset ?? 0;
 
   const query = admin

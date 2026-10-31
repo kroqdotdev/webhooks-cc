@@ -5,8 +5,7 @@ import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit"
 import { validateMockResponseField, validateResponseRules } from "@/lib/request-validation";
 import { previewResponse } from "@/lib/response-preview";
 import { getEndpointBySlugForUser } from "@/lib/supabase/endpoints";
-import { getNewestRequestId } from "@/lib/supabase/forwarding";
-import { getRequestsByIds } from "@/lib/supabase/requests";
+import { getNewestRetainedRequestId, getRetainedRequestsByIds } from "@/lib/supabase/requests";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { reportError } from "@/lib/observability";
 
@@ -62,13 +61,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
 
     let source = null;
     if (typeof body.requestId === "string") {
-      [source] = await getRequestsByIds([body.requestId]);
+      [source] = await getRetainedRequestsByIds(endpoint.id, [body.requestId]);
       if (!source || source.endpointId !== endpoint.id) {
         return reply({ error: "That request is not on this endpoint." }, 404);
       }
     } else {
-      const newestId = await getNewestRequestId(endpoint.id, "http");
-      [source] = newestId ? await getRequestsByIds([newestId]) : [];
+      const newestId = await getNewestRetainedRequestId(endpoint.id, "http");
+      [source] = newestId ? await getRetainedRequestsByIds(endpoint.id, [newestId]) : [];
     }
     const sample = !source;
     const target = source ?? sampleHttpRequest(endpoint.id);

@@ -3,8 +3,7 @@ import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { layoutsProblems, storedLayouts } from "@/lib/parsing/layouts";
 import { accountOf, parseEmail } from "@/lib/parsing/worker";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
-import { getNewestRequestId } from "@/lib/supabase/forwarding";
-import { getRequestsByIds } from "@/lib/supabase/requests";
+import { getNewestRetainedRequestId, getRetainedRequestsByIds } from "@/lib/supabase/requests";
 import type { Json } from "@/lib/supabase/database";
 import { reportError } from "@/lib/observability";
 import { isUuid } from "@/lib/uuid";
@@ -51,8 +50,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       : endpoint.layouts;
 
     const id =
-      (body.requestId as string | undefined) ?? (await getNewestRequestId(endpoint.id, "email"));
-    const [email] = id ? await getRequestsByIds([id]) : [];
+      (body.requestId as string | undefined) ??
+      (await getNewestRetainedRequestId(endpoint.id, "email"));
+    const [email] = id ? await getRetainedRequestsByIds(endpoint.id, [id]) : [];
     if (email && (email.endpointId !== endpoint.id || email.kind !== "email")) {
       return reply({ error: "That email is not on this endpoint." }, 404);
     }
