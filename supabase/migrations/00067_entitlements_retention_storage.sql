@@ -1294,44 +1294,10 @@ begin
 end;
 $$;
 
--- 10. Quota emails: base is 00065; accounts on a daily period, as before.
-create or replace function public.claim_quota_exhausted_users(p_limit integer default 50)
-returns table (
-  id uuid,
-  email text,
-  request_limit integer,
-  period_end timestamptz,
-  team_billed_endpoints integer
-)
-language sql
-set search_path = ''
-as $$
-  update public.users u
-     set quota_email_claimed_at = now()
-   where u.id in (
-     select c.id
-       from public.users c
-       join public.plan_entitlements pe on pe.key = c.plan
-      where pe.quota_period = 'day'
-        and c.request_limit > 0
-        and c.requests_used >= c.request_limit + c.block_requests
-        and c.credit_requests = 0
-        and c.period_end > now()
-        and (c.quota_email_sent_at is null or c.quota_email_sent_at < now() - interval '7 days')
-        and (c.quota_email_claimed_at is null or c.quota_email_claimed_at < now() - interval '15 minutes')
-        and exists (
-          select 1
-            from public.endpoints e
-           where e.user_id = c.id
-             and not public.is_team_billed_endpoint(e.id)
-        )
-      order by c.period_end
-      limit greatest(p_limit, 0)
-      for update skip locked
-   )
-  returning u.id, u.email, u.request_limit, u.period_end,
-            public.count_team_billed_endpoints(u.id);
-$$;
+-- 10. Quota emails: nothing here. claim_quota_exhausted_users() is 00077's
+-- (applied before this file in production), which already sends Free, the
+-- one plan on a daily period, at most one email a week, and every paid plan
+-- one a billing period.
 
 -- 11. Retention. Deletes in batches of p_batch rows through the indexes that
 -- already exist (requests_user_time, requests_team, requests_endpoint_time,
@@ -1497,7 +1463,6 @@ revoke all on function public.has_extra_request(uuid, uuid) from public, anon, a
 revoke all on function public.sync_capacity_account(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.start_free_period(uuid) from public, anon, authenticated;
 revoke all on function public.process_billing_period_resets() from public, anon, authenticated;
-revoke all on function public.claim_quota_exhausted_users(integer) from public, anon, authenticated;
 revoke all on function public.cleanup_expired_requests(integer, integer) from public, anon, authenticated;
 revoke all on function public.cleanup_delivered_requests(integer) from public, anon, authenticated;
 
@@ -1510,7 +1475,6 @@ grant execute on function public.has_extra_request(uuid, uuid) to service_role;
 grant execute on function public.sync_capacity_account(uuid, uuid) to service_role;
 grant execute on function public.start_free_period(uuid) to service_role;
 grant execute on function public.process_billing_period_resets() to service_role;
-grant execute on function public.claim_quota_exhausted_users(integer) to service_role;
 grant execute on function public.cleanup_expired_requests(integer, integer) to service_role;
 grant execute on function public.cleanup_delivered_requests(integer) to service_role;
 
