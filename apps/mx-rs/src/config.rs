@@ -246,6 +246,15 @@ fn egress_from_env() -> Option<EgressConfig> {
     match (listen, secret) {
         (None, None) => None,
         (Some(listen), Some(secret)) => {
+            // The proxy takes its password in the clear: it listens on the
+            // private network (or loopback) only, never on every interface
+            // or a public address.
+            let address: std::net::SocketAddr = listen.parse().unwrap_or_else(|_| {
+                panic!("MX_EGRESS_LISTEN must be an address and port, like 10.0.0.3:1080")
+            });
+            if !is_private_listen(address.ip()) {
+                panic!("MX_EGRESS_LISTEN must be a private or loopback address, not {address}");
+            }
             // The password travels in the clear on the private network; a
             // short one could be guessed by anything else on it.
             if secret.len() < 24 || secret.len() > 255 {
@@ -280,9 +289,38 @@ fn egress_from_env() -> Option<EgressConfig> {
     }
 }
 
+/// Where the egress may listen: loopback, RFC 1918, shared (100.64/10) or unique local IPv6.
+fn is_private_listen(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_loopback() || v4.is_private() || (a == 100 && (64..128).contains(&b))
+        }
+        std::net::IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::list;
+    use super::{is_private_listen, list};
+
+    #[test]
+    fn egress_listens_only_on_private_addresses() {
+        for ok in [
+            "10.0.0.3",
+            "192.168.1.2",
+            "172.16.0.1",
+            "100.64.0.9",
+            "127.0.0.1",
+            "::1",
+            "fd00::3",
+        ] {
+            assert!(is_private_listen(ok.parse().unwrap()), "{ok}");
+        }
+        for refused in ["0.0.0.0", "::", "203.0.113.7", "2001:db8::1", "100.128.0.1"] {
+            assert!(!is_private_listen(refused.parse().unwrap()), "{refused}");
+        }
+    }
 
     #[test]
     fn parses_suffix_lists() {

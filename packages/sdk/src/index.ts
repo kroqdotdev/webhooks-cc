@@ -252,6 +252,7 @@ export type {
   DestinationFilter,
   DestinationFormat,
   DestinationInput,
+  DestinationCreateInput,
   DestinationAttachments,
   SheetsConfig,
   FileDropConfig,

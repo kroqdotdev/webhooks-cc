@@ -147,11 +147,16 @@ export async function saveAlertSettings(
   if (settings.notifyDestinationIds.length > 0) {
     const { data, error } = await admin
       .from("endpoint_destinations")
-      .select("id")
+      .select("id, format")
       .eq("endpoint_id", endpointId)
       .in("id", settings.notifyDestinationIds);
     if (error) throw error;
-    const known = new Set((data as { id: string }[]).map((row) => row.id));
+    // A spreadsheet or a file drop cannot take a notice: only the others are kept.
+    const known = new Set(
+      (data as { id: string; format: string | null }[])
+        .filter((row) => row.format !== "sheets" && row.format !== "file_drop")
+        .map((row) => row.id)
+    );
     settings = {
       ...settings,
       notifyDestinationIds: settings.notifyDestinationIds.filter((id) => known.has(id)),

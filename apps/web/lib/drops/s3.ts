@@ -45,7 +45,8 @@ export function s3EndpointProblem(raw: string): string | null {
   return null;
 }
 
-function isAws(host: string): boolean {
+/** AWS's own endpoints, where buckets are addressed by host name. */
+export function isAws(host: string): boolean {
   return host === "amazonaws.com" || host.endsWith(".amazonaws.com");
 }
 

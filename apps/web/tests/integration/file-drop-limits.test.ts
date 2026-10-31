@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { FileDropConfig } from "@/lib/drops/config";
 import { openDropTarget } from "@/lib/drops/target";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
-import { createDestination, pinDropHostKey } from "@/lib/supabase/destinations";
+import { createDestination, pinDropHostKey, trustDropHostKey } from "@/lib/supabase/destinations";
 import { PATCH } from "@/app/api/endpoints/[slug]/destinations/[id]/route";
 
 /**
@@ -132,12 +132,21 @@ describe("file drops to servers that misbehave", () => {
     );
     expect(await key()).toBe(first);
     // Pinned once; another key never replaces it this way.
-    await pinDropHostKey(
-      destination.id,
-      { host: "files.acme.example", port: 22, username: "acme" },
-      second
-    );
+    expect(
+      await pinDropHostKey(
+        destination.id,
+        { host: "files.acme.example", port: 22, username: "acme" },
+        second
+      )
+    ).toBe(false);
     expect(await key()).toBe(first);
+    // A first connection that saw the pinned key may write; one that saw another may not.
+    const target = { host: "files.acme.example", port: 22, username: "acme" };
+    expect(await trustDropHostKey(destination.id, target, first)).toBe(true);
+    expect(await trustDropHostKey(destination.id, target, second)).toBe(false);
+    expect(
+      await trustDropHostKey(destination.id, { ...target, host: "other.acme.example" }, first)
+    ).toBe(false);
   });
 
   it("keep a pinned host key unless a change names one, and ask for the secret to change a pin", async () => {
@@ -214,5 +223,121 @@ describe("file drops to servers that misbehave", () => {
       (await patch({ config: { ...config, hostKey: null }, dropSecret: { password: "y" } })).status
     ).toBe(200);
     expect((await stored()).hostKey).toBeNull();
+  });
+
+  it("ask for the secret when the bucket changes, keep a key sent with a new host, and check the columns when the kinds change", async () => {
+    const email = `test-drop-recheck-${Date.now()}@webhooks-test.local`;
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: "TestPassword123!",
+      email_confirm: true,
+    });
+    if (error) throw error;
+    userIds.push(data.user!.id);
+    await admin.from("users").update({ plan: "business" }).eq("id", data.user!.id);
+    const anon = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data: session, error: signInError } = await anon.auth.signInWithPassword({
+      email,
+      password: "TestPassword123!",
+    });
+    if (signInError) throw signInError;
+    const endpoint = await createEndpointForUser({ userId: data.user!.id, name: "recheck" });
+    const patch = (id: string, body: unknown) =>
+      PATCH(
+        new Request(`http://localhost/api/endpoints/${endpoint.slug}/destinations/${id}`, {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${session.session!.access_token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ slug: endpoint.slug, id }) }
+      );
+    const stored = async (id: string) =>
+      (await admin.from("endpoint_destinations").select("config").eq("id", id).single()).data
+        ?.config as Record<string, unknown>;
+
+    const s3 = {
+      protocol: "s3",
+      endpoint: "https://storage.acme.example",
+      region: "eu-central-1",
+      bucket: "acme-orders",
+      accessKeyId: "AKIAEXAMPLE",
+      folder: "",
+      file: "json",
+      rows: "email",
+      columns: [],
+      prefix: "",
+      batch: false,
+    };
+    const bucket = await createDestination(endpoint.id, {
+      url: "s3://acme-orders",
+      format: "file_drop",
+      email: true,
+      http: false,
+      config: s3,
+      dropSecret: { secretAccessKey: "x" },
+    });
+    expect((await patch(bucket.id, { config: { ...s3, bucket: "elsewhere" } })).status).toBe(400);
+    expect((await stored(bucket.id)).bucket).toBe("acme-orders");
+    expect(
+      (
+        await patch(bucket.id, {
+          config: { ...s3, bucket: "elsewhere" },
+          dropSecret: { secretAccessKey: "y" },
+        })
+      ).status
+    ).toBe(200);
+    expect((await stored(bucket.id)).bucket).toBe("elsewhere");
+
+    const sftp = {
+      protocol: "sftp",
+      host: "files.acme.example",
+      port: 22,
+      username: "acme",
+      folder: "",
+      file: "csv",
+      rows: "email",
+      columns: [{ header: "Subject", value: "{{ subject }}" }],
+      prefix: "",
+      batch: false,
+    };
+    const drop = await createDestination(endpoint.id, {
+      url: "sftp://files.acme.example",
+      format: "file_drop",
+      email: true,
+      http: false,
+      config: { ...sftp, hostKey: "SHA256:" + "E".repeat(43) },
+      dropSecret: { password: "x" },
+    });
+    const next = "SHA256:" + "F".repeat(43);
+    expect(
+      (
+        await patch(drop.id, {
+          config: { ...sftp, host: "files2.acme.example", hostKey: next },
+          dropSecret: { password: "y" },
+        })
+      ).status
+    ).toBe(200);
+    expect(await stored(drop.id)).toMatchObject({ host: "files2.acme.example", hostKey: next });
+    // Without a key named, a new host starts with none.
+    expect(
+      (
+        await patch(drop.id, {
+          config: { ...sftp, host: "files3.acme.example" },
+          dropSecret: { password: "z" },
+        })
+      ).status
+    ).toBe(200);
+    expect((await stored(drop.id)).hostKey).toBeNull();
+    // A subject column needs emails: HTTP requests alone have none.
+    const kinds = await patch(drop.id, { email: false, http: true });
+    expect(kinds.status).toBe(400);
+    expect(((await kinds.json()) as { error: string }).error).toMatch(/subject/);
   });
 });

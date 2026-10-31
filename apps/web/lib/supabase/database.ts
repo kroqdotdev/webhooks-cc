@@ -1692,6 +1692,16 @@ export interface Database {
         Args: { p_endpoint_id: string };
         Returns: boolean;
       };
+      record_drop_deliveries: {
+        Args: {
+          p_delivery_ids: string[];
+          p_attempts: number[];
+          p_duration_ms: number;
+          p_response_excerpt: string;
+          p_target: string | null;
+        };
+        Returns: undefined;
+      };
       pin_drop_host_key: {
         Args: {
           p_destination_id: string;

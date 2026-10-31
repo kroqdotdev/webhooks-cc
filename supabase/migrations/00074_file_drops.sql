@@ -229,12 +229,46 @@ as $$
         and x.status = 'pending'
         and x.attempts < 12
         and (x.locked_until is null or x.locked_until <= now())
+        -- A delivery that failed before waits out its own retry time: taken
+        -- with every batch, it would spend its tries long before the window
+        -- it was promised.
+        and (x.attempts = 0 or x.next_attempt_at <= now())
       order by x.created_at, x.id
       limit least(greatest(p_limit, 1), 500)
       for update skip locked
    )
   returning d.id, d.request_id, d.attempts, d.kind,
             d.created_at + make_interval(secs => dest.delay_seconds), d.bypass_filter;
+$$;
+
+-- 3b. Settles every delivery a written file holds, in one transaction: a
+-- failure part way through would leave some of them to be written again
+-- in another batch, under another file name, so their rows would be in two
+-- files. Each is recorded as record_email_delivery_attempt() records one.
+create or replace function public.record_drop_deliveries(
+  p_delivery_ids     uuid[],
+  p_attempts         integer[],
+  p_duration_ms      integer,
+  p_response_excerpt text,
+  p_target           text
+)
+returns void
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  i integer;
+begin
+  if coalesce(array_length(p_delivery_ids, 1), 0) <> coalesce(array_length(p_attempts, 1), 0) then
+    raise exception 'record_drop_deliveries: ids and attempts differ in length';
+  end if;
+  for i in 1 .. coalesce(array_length(p_delivery_ids, 1), 0) loop
+    perform public.record_email_delivery_attempt(
+      p_delivery_ids[i], p_attempts[i], true, 200, p_duration_ms, null,
+      p_response_excerpt, null, 'file_drop', p_target, null, null
+    );
+  end loop;
+end;
 $$;
 
 -- 4. Whether an endpoint's plan has file drops: the team that is billed for
@@ -294,6 +328,10 @@ $$;
 revoke all on function public.claim_drop_batch(uuid, integer, integer) from public, anon, authenticated;
 revoke all on function public.pin_drop_host_key(uuid, text, integer, text, text) from public, anon, authenticated;
 revoke all on function public.file_drops_allowed(uuid) from public, anon, authenticated;
+revoke all on function public.record_drop_deliveries(uuid[], integer[], integer, text, text)
+  from public, anon, authenticated;
+grant execute on function public.record_drop_deliveries(uuid[], integer[], integer, text, text)
+  to service_role;
 grant execute on function public.claim_drop_batch(uuid, integer, integer) to service_role;
 grant execute on function public.file_drops_allowed(uuid) to service_role;
 grant execute on function public.pin_drop_host_key(uuid, text, integer, text, text) to service_role;

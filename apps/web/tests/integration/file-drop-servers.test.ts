@@ -34,6 +34,60 @@ const PASSWORD =
     }
   })();
 
+/** Reads a file back from the FTP test server (USER, PASS, PASV, RETR). */
+function readFtp(name: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const control = net.connect({ host: "127.0.0.1", port: 2121 });
+    let buffer = "";
+    let content = "";
+    let transferred = false;
+    let received = false;
+    const send = (line: string) => control.write(`${line}\r\n`);
+    const finish = () => {
+      if (!transferred || !received) return;
+      send("QUIT");
+      control.end();
+      resolve(content);
+    };
+    control.on("error", reject);
+    control.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      let index;
+      while ((index = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, index).trim();
+        buffer = buffer.slice(index + 1);
+        // Only a reply's last line ("123 ...") moves things on.
+        if (!/^\d{3} /.test(line)) continue;
+        const code = Number(line.slice(0, 3));
+        if (code === 220) send("USER acme");
+        else if (code === 331) send(`PASS ${PASSWORD}`);
+        else if (code === 230) send("TYPE I");
+        else if (code === 200) send("PASV");
+        else if (code === 227) {
+          const [, , , , high, low] = /\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)/
+            .exec(line)!
+            .slice(1)
+            .map(Number);
+          const data = net.connect({ host: "127.0.0.1", port: high * 256 + low });
+          data.on("data", (part) => (content += part.toString("utf8")));
+          data.on("end", () => {
+            received = true;
+            finish();
+          });
+          data.on("error", reject);
+          send(`RETR ${name}`);
+        } else if (code === 226) {
+          transferred = true;
+          finish();
+        } else if (code >= 400) {
+          control.destroy();
+          reject(new Error(line));
+        }
+      }
+    });
+  });
+}
+
 function reachable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = net.connect({ host: "127.0.0.1", port });
@@ -152,6 +206,8 @@ describe("file drops to real servers", () => {
     await target.put("batch.xml", Buffer.from("<rows/>\n"), "application/xml");
     await target.put("batch.xml", Buffer.from("<rows></rows>\n"), "application/xml");
     await target.close();
+    // Replaced by the second write.
+    expect(await readFtp("batch.xml")).toBe("<rows></rows>\n");
     await expect(openDropTarget(config, { password: "wrong" })).rejects.toMatchObject({
       retry: false,
     });

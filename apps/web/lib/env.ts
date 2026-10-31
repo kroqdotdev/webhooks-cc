@@ -25,6 +25,16 @@ const publicEnvSchema = z.object({
 });
 
 /** Blank values (an empty line in an env file) count as unset. */
+/** What lib/drops/connect.ts can use as its proxy: a socks5 URL with a host and a port. */
+function isDropProxyUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "socks5:" && url.hostname !== "" && url.port !== "";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * One resolver as Resolver.setServers() takes it: an IPv4 or IPv6 address,
  * IPv4 with a port, or either in brackets with or without one. A list it would
@@ -141,7 +151,14 @@ const serverEnvSchema = z
     // File drops (lib/drops): the SOCKS5 egress on the MX host,
     // socks5://user:secret@<private address>:<port>. Required in production
     // for drops to be offered; without it, development connects directly.
-    FILE_DROP_PROXY_URL: blankToUndefined(z.string().url().optional()),
+    FILE_DROP_PROXY_URL: blankToUndefined(
+      z
+        .string()
+        .refine(isDropProxyUrl, {
+          message: "FILE_DROP_PROXY_URL is socks5://user:secret@<private address>:<port>",
+        })
+        .optional()
+    ),
     // S3-compatible object storage where the receiver keeps captured email
     // (raw message and attachments, lib/storage). All four, or none; region
     // defaults to us-east-1, which S3-compatible services accept.

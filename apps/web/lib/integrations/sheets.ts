@@ -131,12 +131,31 @@ function cell(text: string): string {
   return text.length > MAX_CELL_CHARS ? text.slice(0, MAX_CELL_CHARS) : text;
 }
 
-/** The rows one captured request adds. */
+/**
+ * The most text one request's rows may hold. A column repeated for each of
+ * up to 1,000 line items (50 columns of 50,000 characters each) would
+ * otherwise build gigabytes before anything could refuse it.
+ */
+export const MAX_ROWS_CHARS = 50 * 1024 * 1024;
+
+/** One request's rows would hold more than they may. */
+export class RowsTooLargeError extends Error {
+  constructor() {
+    super("This request makes more rows than fit.");
+    this.name = "RowsTooLargeError";
+  }
+}
+
+/** The rows one captured request adds; RowsTooLargeError past `maxChars` characters. */
 export function rowsFor(
   request: RequestRecord,
   config: Pick<SheetsConfig, "rows" | "columns">,
   endpoint: { slug: string; name: string | null },
-  options: { includeExtracts: boolean; fields: Record<string, string | null> | null }
+  options: {
+    includeExtracts: boolean;
+    fields: Record<string, string | null> | null;
+    maxChars?: number;
+  }
 ): string[][] {
   const context = templateContextFor(request, endpoint, options);
   // Line items arrive with layouts (phase 2); until an email has any, it is one row.
@@ -145,8 +164,18 @@ export function rowsFor(
     config.rows === "line_items" && items.length > 0
       ? items.map((item) => ({ ...context, item }))
       : [context];
+  const maxChars = options.maxChars ?? MAX_ROWS_CHARS;
+  let total = 0;
   return contexts.map((ctx) =>
-    config.columns.map((column) => cell(renderTemplate(column.value, ctx, { mode: "text" })))
+    config.columns.map((column) => {
+      // Each cell is cut while it is filled in, so a long value is never built in full.
+      const value = cell(
+        renderTemplate(column.value, ctx, { mode: "text", maxBytes: MAX_CELL_CHARS * 4 })
+      );
+      total += value.length;
+      if (total > maxChars) throw new RowsTooLargeError();
+      return value;
+    })
   );
 }
 

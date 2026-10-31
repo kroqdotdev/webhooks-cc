@@ -27,6 +27,9 @@ export interface SftpOptions {
 const HANDSHAKE_TIMEOUT_MS = 20_000;
 /** One SFTP operation (a stat, a file written, a rename) may take this long. */
 const OPERATION_TIMEOUT_MS = 120_000;
+/** SFTP status codes (draft-ietf-secsh-filexfer-02). */
+const SFTP_NO_SUCH_FILE = 2;
+const SFTP_PERMISSION_DENIED = 3;
 
 /**
  * Whether an SSH connection has closed, and the operations waiting on it:
@@ -152,14 +155,24 @@ export class SftpSession {
     }
   }
 
-  /** Throws unless the folder exists. */
+  /** Throws unless the folder exists; only a missing or unreadable folder is for good. */
   async checkFolder(folder: string): Promise<void> {
     const path = folder || ".";
-    const stats = await this.live.operation<import("ssh2").Stats | null>(
-      "checking the folder",
-      (done) => this.sftp.stat(path, (error, found) => done(null, error ? null : found))
+    const stats = await this.live.operation<import("ssh2").Stats>("checking the folder", (done) =>
+      this.sftp.stat(path, (error, found) => {
+        const code = (error as { code?: unknown } | undefined)?.code;
+        if (code === SFTP_NO_SUCH_FILE) {
+          done(new DropError(`The folder ${path} is not there.`, false));
+        } else if (code === SFTP_PERMISSION_DENIED) {
+          done(new DropError(`The login may not read the folder ${path}.`, false));
+        } else if (error) {
+          done(new DropError(`The folder ${path} could not be checked: ${error.message}`));
+        } else {
+          done(null, found);
+        }
+      })
     );
-    if (!stats || !stats.isDirectory()) {
+    if (!stats.isDirectory()) {
       throw new DropError(`The folder ${path} is not there.`, false);
     }
   }
@@ -174,27 +187,56 @@ export class SftpSession {
         done(error ? new DropError(`The file could not be written: ${error.message}`) : null)
       )
     );
-    const rename = () =>
-      this.live.operation<void>("renaming the file", (done) => {
-        // The OpenSSH extension replaces an existing file in one step.
-        const finish = (error: Error | null | undefined) => done(error ?? null);
-        if (this.sftp.ext_openssh_rename) this.sftp.ext_openssh_rename(partial, target, finish);
-        else this.sftp.rename(partial, target, finish);
-      });
+    const renamed = (error: unknown) =>
+      new DropError(`The file could not be renamed: ${(error as Error).message}`);
+    // The OpenSSH extension replaces a file of that name in one step. ssh2
+    // throws at once when the server does not offer it.
+    let extension = true;
     try {
-      await rename();
-    } catch {
-      // A server without the extension will not rename over a file (a retry
-      // after an upload that went through): remove the old one first.
-      await this.live.operation<void>("removing the old file", (done) =>
-        this.sftp.unlink(target, () => done(null))
-      );
-      try {
-        await rename();
-      } catch (error) {
-        throw new DropError(`The file could not be renamed: ${(error as Error).message}`);
-      }
+      await this.live.operation<void>("renaming the file", (done) => {
+        try {
+          this.sftp.ext_openssh_rename(partial, target, (error) => done(error ?? null));
+        } catch {
+          extension = false;
+          done(null);
+        }
+      });
+    } catch (error) {
+      throw renamed(error);
     }
+    if (extension) return;
+    // A plain rename does not replace a file (there is one after an upload
+    // that went through and is tried again): the old one is moved aside
+    // first, and removed only once the new one is in place.
+    try {
+      await this.rename(partial, target);
+      return;
+    } catch {
+      // The name is taken.
+    }
+    const aside = `${target}.${randomBytes(4).toString("hex")}.old`;
+    try {
+      await this.rename(target, aside);
+    } catch (error) {
+      throw renamed(error);
+    }
+    try {
+      await this.rename(partial, target);
+    } catch (error) {
+      await this.rename(aside, target).catch(() => undefined);
+      throw renamed(error);
+    }
+    await this.live
+      .operation<void>("removing the old file", (done) =>
+        this.sftp.unlink(aside, (error) => done(error ?? null))
+      )
+      .catch(() => undefined);
+  }
+
+  private rename(from: string, to: string): Promise<void> {
+    return this.live.operation<void>("renaming the file", (done) =>
+      this.sftp.rename(from, to, (error) => done(error ?? null))
+    );
   }
 
   close(): void {
