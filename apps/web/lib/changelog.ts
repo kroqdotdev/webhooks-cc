@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.48.4";
+export const APP_VERSION = "0.48.5";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.48.5",
+    date: "2026-10-30",
+    title: "Pro Accounts Hear When Their Requests Run Out",
+    track: "web",
+    items: [
+      "Pro accounts now get the email free accounts already got when webhooks start meeting a 429, offering the extra requests that keep them coming instead of an upgrade. It goes out once the plan's requests, monthly blocks, one-time blocks and overage are all used up, and at most once per billing period",
+    ],
+  },
   {
     version: "0.48.4",
     date: "2026-10-29",

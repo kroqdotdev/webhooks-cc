@@ -1539,8 +1539,12 @@ export interface Database {
         Returns: Array<{
           id: string;
           email: string;
+          plan: string;
           request_limit: number;
+          block_requests: number;
           period_end: string;
+          cancel_at_period_end: boolean;
+          overage_active: boolean;
           team_billed_endpoints: number;
         }>;
       };

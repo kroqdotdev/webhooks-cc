@@ -307,9 +307,19 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       // resurrecting the revoked subscription's state after it. The loser's
       // write matches no rows; events carry full state and Polar redelivers,
       // so a skipped write converges on the next delivery.
+      // A new subscription also starts the quota email afresh: a paid account
+      // gets it once per period, judged by period_start, and a free-period
+      // email sent between the payment and this webhook would otherwise count
+      // against the first paid period (claim_quota_exhausted_users, 00077).
       let guarded = admin
         .from("users")
-        .update(isNewSubscription || isRenewal ? { ...patch, requests_used: 0 } : patch)
+        .update(
+          isNewSubscription
+            ? { ...patch, requests_used: 0, quota_email_sent_at: null }
+            : isRenewal
+              ? { ...patch, requests_used: 0 }
+              : patch
+        )
         .eq("id", userId);
       guarded =
         stored.polar_subscription_id === null

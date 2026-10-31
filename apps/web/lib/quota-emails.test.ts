@@ -13,6 +13,8 @@ vi.mock("@/lib/email/mailer", () => ({ sendEmail: (...args: unknown[]) => sendEm
 vi.mock("@/lib/env", () => ({
   publicEnv: () => ({ NEXT_PUBLIC_APP_URL: "https://webhooks.cc" }),
 }));
+const getCapacityProductIds = vi.fn();
+vi.mock("@/lib/polar", () => ({ getCapacityProductIds: () => getCapacityProductIds() }));
 
 const { sendQuotaExhaustedEmails } = await import("./quota-emails");
 
@@ -37,6 +39,12 @@ describe("sendQuotaExhaustedEmails", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     eq.mockResolvedValue({ error: null });
+    getCapacityProductIds.mockReturnValue({
+      oneTime: "p1",
+      monthly: "p2",
+      monthlyAdd: "p3",
+      overage: "p4",
+    });
   });
 
   it("emails every claimed user and marks each one sent", async () => {
@@ -116,5 +124,129 @@ describe("sendQuotaExhaustedEmails", () => {
     expect(sendEmail.mock.calls[0][0].text).not.toContain("rejected across");
     expect(rpc).toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u1" });
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("sends a paid account the paid copy, with its recurring blocks in the limit", async () => {
+    const pro = {
+      id: "u3",
+      email: "c@example.com",
+      plan: "pro",
+      request_limit: 100_000,
+      block_requests: 25_000,
+      period_end: "2026-11-15T06:48:00Z",
+      cancel_at_period_end: false,
+      overage_active: false,
+      team_billed_endpoints: 0,
+    };
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users"
+        ? { data: [pro], error: null }
+        : { data: [], error: null }
+    );
+    sendEmail.mockResolvedValue(undefined);
+
+    await expect(sendQuotaExhaustedEmails()).resolves.toEqual({ sent: 1, failed: 0 });
+    const [message] = sendEmail.mock.calls[0];
+    expect(message.text).toContain("all 125,000 requests in your current Pro billing period");
+    expect(message.text).toContain("monthly blocks");
+    expect(message.text).toContain("up to a maximum you set");
+    expect(message.text).not.toContain("Upgrade to Pro");
+    expect(rpc).toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u3" });
+  });
+
+  it("offers only one-time blocks when the paid plan is ending", async () => {
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users"
+        ? {
+            data: [
+              {
+                id: "u4",
+                email: "d@example.com",
+                plan: "pro",
+                request_limit: 100_000,
+                block_requests: 0,
+                period_end: "2026-11-15T06:48:00Z",
+                cancel_at_period_end: true,
+                team_billed_endpoints: 0,
+              },
+            ],
+            error: null,
+          }
+        : { data: [], error: null }
+    );
+    sendEmail.mockResolvedValue(undefined);
+
+    await sendQuotaExhaustedEmails();
+    const [message] = sendEmail.mock.calls[0];
+    expect(message.text).toContain("One-time blocks keep your webhooks coming");
+    expect(message.text).not.toContain("monthly blocks");
+  });
+
+  it("leaves extra requests out when the add-on products are not configured", async () => {
+    getCapacityProductIds.mockReturnValue(null);
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users"
+        ? {
+            data: [
+              {
+                id: "u5",
+                email: "e@example.com",
+                plan: "pro",
+                request_limit: 100_000,
+                block_requests: 0,
+                period_end: "2026-11-15T06:48:00Z",
+                cancel_at_period_end: false,
+                team_billed_endpoints: 0,
+              },
+            ],
+            error: null,
+          }
+        : { data: [], error: null }
+    );
+    sendEmail.mockResolvedValue(undefined);
+
+    await sendQuotaExhaustedEmails();
+    expect(sendEmail.mock.calls[0][0].text).not.toContain("Extra requests");
+  });
+
+  it("treats rows without a plan as free, as the function before 00077 returns them", async () => {
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users"
+        ? { data: [claimed[0]], error: null }
+        : { data: [], error: null }
+    );
+    sendEmail.mockResolvedValue(undefined);
+
+    await sendQuotaExhaustedEmails();
+    const [message] = sendEmail.mock.calls[0];
+    expect(message.text).toContain("all 50 requests in your current free period");
+    expect(message.text).toContain("Upgrade to Pro");
+  });
+
+  it("passes overage that is already on through to the copy", async () => {
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users"
+        ? {
+            data: [
+              {
+                id: "u6",
+                email: "f@example.com",
+                plan: "pro",
+                request_limit: 100_000,
+                block_requests: 0,
+                period_end: "2026-11-15T06:48:00Z",
+                cancel_at_period_end: false,
+                overage_active: true,
+                team_billed_endpoints: 0,
+              },
+            ],
+            error: null,
+          }
+        : { data: [], error: null }
+    );
+    sendEmail.mockResolvedValue(undefined);
+
+    await sendQuotaExhaustedEmails();
+    expect(sendEmail.mock.calls[0][0].text).toContain("a higher overage maximum");
   });
 });
