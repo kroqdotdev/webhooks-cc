@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.48.5";
+export const APP_VERSION = "0.48.6";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,16 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.48.6",
+    date: "2026-10-29",
+    title: "Full Messages for Large Emails",
+    track: "web",
+    items: [
+      "Captured emails are now kept whole in storage, so the Raw tab and the .eml download have the complete message even when it is larger than 1 MiB",
+      "Groundwork for longer retention, shorter retention per endpoint and the coming Business plan; nothing changes for any plan today",
+    ],
+  },
   // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.48.5",

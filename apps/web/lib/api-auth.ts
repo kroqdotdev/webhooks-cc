@@ -9,7 +9,8 @@ import { validateApiKeyWithMetadata } from "./supabase/api-keys";
 import { markAgentTokenRequest } from "./agent/token-requests";
 import { reportError } from "@/lib/observability";
 
-export type UserPlan = "free" | "pro";
+export type { UserPlan } from "./entitlements";
+import type { UserPlan } from "./entitlements";
 
 export interface ApiKeyValidation {
   /**

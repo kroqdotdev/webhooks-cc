@@ -229,6 +229,20 @@ describe("Search across team-shared endpoints", () => {
     // plan change past this file.
     const { error } = await admin.from("users").update({ plan: "pro" }).eq("id", ownerId);
     if (error) throw error;
+    // The cleanup runs every 10 minutes and deletes the row while the owner
+    // is free: put it back now that the owner's window holds it.
+    const { error: deleteError } = await admin
+      .from("requests")
+      .delete()
+      .eq("endpoint_id", sharedEndpointId)
+      .eq("path", "/shared/owner-billed-expired");
+    if (deleteError) throw deleteError;
+    await insertRequest({
+      endpointId: sharedEndpointId,
+      userId: ownerId,
+      path: "/shared/owner-billed-expired",
+      receivedAt: Date.now() - 10 * 86_400_000,
+    });
     const results = await searchRequestsForUser({ userId: memberId, plan: "free", q: MARKER });
     const count = await countSearchRequestsForUser({ userId: memberId, q: MARKER });
     const { error: resetError } = await admin

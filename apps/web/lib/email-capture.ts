@@ -183,6 +183,7 @@ export function toEmailCapture(value: Json | null | undefined): EmailCapture | n
     spam: asSpam(doc.spam),
     smtp: asSmtp(doc.smtp),
     parseError: doc.parse_error === true,
+    stored: doc.raw_stored === true,
     truncated: {
       raw: doc.raw_truncated === true,
       text: doc.text_truncated === true,

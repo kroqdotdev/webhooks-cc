@@ -85,6 +85,14 @@ const serverEnvSchema = z
     POLAR_MONTHLY_BLOCKS_PRODUCT_ID: z.string().optional(),
     POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: z.string().optional(),
     POLAR_OVERAGE_PRODUCT_ID: z.string().optional(),
+    // S3-compatible object storage where the receiver keeps captured email
+    // (raw message and attachments, lib/storage). All four, or none; region
+    // defaults to us-east-1, which S3-compatible services accept.
+    OBJECT_STORAGE_ENDPOINT: blankToUndefined(z.string().url().optional()),
+    OBJECT_STORAGE_REGION: blankToUndefined(z.string().default("us-east-1")),
+    OBJECT_STORAGE_BUCKET: blankToUndefined(z.string().optional()),
+    OBJECT_STORAGE_ACCESS_KEY_ID: blankToUndefined(z.string().optional()),
+    OBJECT_STORAGE_SECRET_ACCESS_KEY: blankToUndefined(z.string().optional()),
     // Agent auth (auth.md) — all optional with defaults so existing deploys are unaffected.
     RESEND_API_KEY: z.string().optional(),
     // SMTP transport for agent OTP email (used in production when SMTP_HOST is set;
@@ -222,6 +230,11 @@ export function serverEnv() {
       POLAR_MONTHLY_BLOCKS_PRODUCT_ID: process.env.POLAR_MONTHLY_BLOCKS_PRODUCT_ID,
       POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: process.env.POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID,
       POLAR_OVERAGE_PRODUCT_ID: process.env.POLAR_OVERAGE_PRODUCT_ID,
+      OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
+      OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
+      OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,
+      OBJECT_STORAGE_ACCESS_KEY_ID: process.env.OBJECT_STORAGE_ACCESS_KEY_ID,
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       SMTP_HOST: process.env.SMTP_HOST,
       SMTP_PORT: process.env.SMTP_PORT,
