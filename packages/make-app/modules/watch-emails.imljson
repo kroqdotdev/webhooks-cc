@@ -20,6 +20,18 @@
         { "name": "address", "type": "text", "label": "Address" }
       ]
     },
+    {
+      "name": "to",
+      "type": "array",
+      "label": "To",
+      "spec": {
+        "type": "collection",
+        "spec": [
+          { "name": "name", "type": "text", "label": "Name" },
+          { "name": "address", "type": "text", "label": "Address" }
+        ]
+      }
+    },
     { "name": "text", "type": "text", "label": "Text" },
     { "name": "html", "type": "text", "label": "HTML" },
     { "name": "replyText", "type": "text", "label": "Reply text" },

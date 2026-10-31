@@ -25,8 +25,7 @@ Publishing needs the Zapier developer account:
 ```bash
 npm install -g zapier-platform-cli
 zapier login
-zapier register "webhooks.cc"   # once; writes .zapierapprc
-zapier push
+zapier push   # .zapierapprc (committed) names the registered integration
 ```
 
 Then fill in the listing in the Zapier developer platform (logo, description, the help link to the docs) and submit it for review. While it is private, invite testers from the developer platform.

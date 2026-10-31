@@ -111,6 +111,15 @@ describe("the Make app definitions", () => {
     for (const hook of Object.values(webhooks)) {
       expect(names(connections)).toContain(hook.connection);
     }
+    // A delivery's body is the email.received envelope; the trigger's bundle is its data.
+    const envelope = {
+      type: "email.received",
+      timestamp: "2026-10-10T15:25:09.312Z",
+      data: { id: "r1", subject: "Order 1001", to: [{ name: null, address: "a@mailhooks.cc" }] },
+    };
+    expect(fill(webhooks["new-email.imljson"].communication.output, { body: envelope })).toEqual(
+      envelope.data
+    );
     expect(Object.keys(modules).sort()).toEqual([
       "create-endpoint.imljson",
       "find-emails.imljson",
@@ -197,6 +206,11 @@ describe("the Make app against the web app", () => {
       parameters: connection,
     });
     expect(check.status).toBe(200);
+    // A key the server does not know is refused.
+    const refused = await run(connections["api-key.imljson"].communication, {
+      parameters: { apiKey: `whcc_${randomBytes(24).toString("hex")}` },
+    });
+    expect(refused.status).toBe(401);
 
     const created = await run(modules["create-endpoint.imljson"].communication, {
       connection,
@@ -235,11 +249,17 @@ describe("the Make app against the web app", () => {
     expect(fill(hook.detach.response.valid, { statusCode: again.status })).toBe(true);
     expect(fill(hook.detach.response.valid, { statusCode: 500 })).toBe(false);
 
-    const found = await run(modules["find-emails.imljson"].communication, {
-      connection,
-      parameters: { endpoint: slug, query: "test" },
-    });
+    // The search finds the email sent above (captured through the mail listener).
+    let found = { status: 0, body: [] };
+    for (let i = 0; i < 20; i++) {
+      found = await run(modules["find-emails.imljson"].communication, {
+        connection,
+        parameters: { endpoint: slug, query: "test" },
+      });
+      if (found.body?.some?.((item) => item.id === sent.body.requestId)) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
     expect(found.status).toBe(200);
-    expect(Array.isArray(found.body)).toBe(true);
+    expect(found.body.map((item) => item.id)).toContain(sent.body.requestId);
   }, 60_000);
 });

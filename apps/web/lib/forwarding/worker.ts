@@ -1184,27 +1184,35 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   // hook of a Zap or scenario that was removed). Not retried, and the
   // destination is turned off rather than sent every email again.
   if (result.status === 410 && claim.destination_id) {
-    await record(
-      claim,
-      {
-        ...result,
-        error: result.error ?? "The URL answered 410 Gone: the destination was turned off.",
-      },
-      false,
-      facts
-    );
-    await turnOffGoneDestination(claim.destination_id);
+    try {
+      await record(
+        claim,
+        {
+          ...result,
+          error: result.error ?? "The URL answered 410 Gone: the destination was turned off.",
+        },
+        false,
+        facts
+      );
+    } finally {
+      // After the attempt is recorded (turning it off settles what is still
+      // pending), and whether or not that worked: it must not stay on.
+      await turnOffGoneDestination(claim.destination_id, claim.forward_url!);
+    }
     return;
   }
   await record(claim, result, true, facts);
 }
 
-async function turnOffGoneDestination(destinationId: string): Promise<void> {
+/** Turns a destination off, only while it still sends to the URL that answered 410. */
+async function turnOffGoneDestination(destinationId: string, goneUrl: string): Promise<void> {
   const { error } = await createAdminClient()
     .from("endpoint_destinations")
     .update({ enabled: false })
     .eq("id", destinationId)
-    .eq("enabled", true);
+    .eq("enabled", true)
+    // Changed meanwhile (the owner fixed the URL): the new one is not gone.
+    .eq("url", goneUrl);
   if (error) reportError("[forwarding] could not turn off a gone destination", error);
 }
 
