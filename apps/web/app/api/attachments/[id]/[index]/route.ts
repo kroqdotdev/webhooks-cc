@@ -1,7 +1,7 @@
 import { reportError } from "@/lib/observability";
 import { toEmailCapture } from "@/lib/email-capture";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getRetainedRequestsByIds } from "@/lib/supabase/requests";
+import { isRequestRetained } from "@/lib/supabase/requests";
 import { isObjectStorageConfigured, presignGet } from "@/lib/storage/object-store";
 import { verifyAttachmentLink } from "@/lib/storage/attachment-links";
 import {
@@ -49,7 +49,7 @@ export async function GET(
     // deleted the email yet.
     const retained =
       data?.kind === "email" && data.endpoint_id
-        ? (await getRetainedRequestsByIds(data.endpoint_id, [data.id])).length > 0
+        ? await isRequestRetained(data.endpoint_id, data.id)
         : false;
     const email = retained ? toEmailCapture(data!.email) : null;
     const attachment = email?.attachments[index];
