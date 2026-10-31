@@ -1180,7 +1180,52 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   if (facts.format === "chat" && result.status === 429) {
     holdChat(url, result.retryAfterSeconds ?? 1);
   }
+  // 410 Gone: the URL is gone for good (Zapier and Make answer it for the
+  // hook of a Zap or scenario that was removed). Not retried, and the
+  // destination is turned off rather than sent every email again.
+  // Only for the destination's own URL: with the request's path appended,
+  // a 410 says that one resource is gone, not the destination.
+  if (result.status === 410 && claim.destination_id && samePath(url, claim.forward_url!)) {
+    try {
+      await record(
+        claim,
+        {
+          ...result,
+          error: result.error ?? "The URL answered 410 Gone: the destination was turned off.",
+        },
+        false,
+        facts
+      );
+    } finally {
+      // After the attempt is recorded (turning it off settles what is still
+      // pending), and whether or not that worked: it must not stay on.
+      await turnOffGoneDestination(claim.destination_id, claim.forward_url!);
+    }
+    return;
+  }
   await record(claim, result, true, facts);
+}
+
+/** Whether a sent URL is the destination's own (no request path appended; the query aside). */
+function samePath(sent: string, stored: string): boolean {
+  try {
+    const trim = (path: string) => path.replace(/\/+$/, "");
+    return trim(new URL(sent).pathname) === trim(new URL(stored).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** Turns a destination off, only while it still sends to the URL that answered 410. */
+async function turnOffGoneDestination(destinationId: string, goneUrl: string): Promise<void> {
+  const { error } = await createAdminClient()
+    .from("endpoint_destinations")
+    .update({ enabled: false })
+    .eq("id", destinationId)
+    .eq("enabled", true)
+    // Changed meanwhile (the owner fixed the URL): the new one is not gone.
+    .eq("url", goneUrl);
+  if (error) reportError("[forwarding] could not turn off a gone destination", error);
 }
 
 /** Claims up to `limit` due deliveries, with the requests they forward. */

@@ -1,0 +1,22 @@
+{
+  "name": "createEndpoint",
+  "label": "Create an endpoint",
+  "description": "Creates an endpoint that captures webhooks and emails.",
+  "type": "action",
+  "connection": "apiKey",
+  "parameters": [],
+  "expect": [{ "name": "name", "type": "text", "label": "Name", "required": false }],
+  "communication": {
+    "url": "/endpoints",
+    "method": "POST",
+    "body": { "name": "{{ifempty(parameters.name, undefined)}}" },
+    "response": { "output": "{{body}}" }
+  },
+  "interface": [
+    { "name": "id", "type": "text", "label": "ID" },
+    { "name": "slug", "type": "text", "label": "Slug" },
+    { "name": "name", "type": "text", "label": "Name" },
+    { "name": "url", "type": "url", "label": "Webhook URL" },
+    { "name": "emailAddress", "type": "email", "label": "Email address" }
+  ]
+}

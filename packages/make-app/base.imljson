@@ -1,0 +1,14 @@
+{
+  "baseUrl": "https://webhooks.cc/api",
+  "headers": {
+    "Authorization": "Bearer {{connection.apiKey}}"
+  },
+  "response": {
+    "error": {
+      "message": "{{ifempty(body.error, 'webhooks.cc answered ' + statusCode)}}"
+    }
+  },
+  "log": {
+    "sanitize": ["request.headers.authorization"]
+  }
+}

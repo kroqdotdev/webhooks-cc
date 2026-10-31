@@ -11,7 +11,7 @@ import {
   jsonObject,
   ownedEndpoint,
 } from "@/lib/forwarding/destination-routes";
-import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
+import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import {
   createDestination,
   DestinationHeaderValueMissingError,
@@ -66,7 +66,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!auth.success) return auth.response;
   const { slug } = await params;
 
-  const rateLimit = await checkRateLimitWithInfo(request, "destinations", 60);
+  // Per account, not per address: Zapier and Make send every customer's
+  // calls from a few shared addresses.
+  const rateLimit = await checkRateLimitByKeyWithInfo(`user:destinations:${auth.userId}`, 60);
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(Response.json(body, { status }), rateLimit);
