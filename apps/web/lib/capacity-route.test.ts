@@ -47,6 +47,25 @@ describe("parseCapacityAction", () => {
     ).toBeNull();
   });
 
+  it("reads extra domains as recurring units only", () => {
+    expect(
+      parseCapacityAction({ resource: "domains", action: "set_monthly_blocks", blocks: 3 })
+    ).toEqual({ resource: "domains", action: "set_monthly_blocks", blocks: 3 });
+    expect(
+      parseCapacityAction({ resource: "domains", action: "set_monthly_blocks", blocks: 20 })
+    ).toBeNull();
+    // Zero ends them.
+    expect(
+      parseCapacityAction({ resource: "domains", action: "set_monthly_blocks", blocks: 0 })
+    ).toEqual({ resource: "domains", action: "set_monthly_blocks", blocks: 0 });
+    expect(
+      parseCapacityAction({ resource: "domains", action: "buy_blocks", blocks: 1 })
+    ).toBeNull();
+    expect(
+      parseCapacityAction({ resource: "domains", action: "set_overage", enabled: true })
+    ).toBeNull();
+  });
+
   it("refuses anything else", () => {
     expect(parseCapacityAction(null)).toBeNull();
     expect(parseCapacityAction({ action: "buy_blocks", blocks: 0 })).toBeNull();

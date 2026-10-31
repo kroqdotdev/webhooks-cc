@@ -25,6 +25,26 @@ const publicEnvSchema = z.object({
 });
 
 /** Blank values (an empty line in an env file) count as unset. */
+/**
+ * One resolver as Resolver.setServers() takes it: an IPv4 or IPv6 address,
+ * IPv4 with a port, or either in brackets with or without one. A list it would
+ * refuse fails at startup instead of failing every domain check, which would
+ * lapse every verified domain within the week.
+ */
+function isResolverAddress(entry: string): boolean {
+  const port = (value: string) => /^\d{1,5}$/.test(value) && Number(value) <= 65_535;
+  if (z.ipv4().safeParse(entry).success || z.ipv6().safeParse(entry).success) return true;
+  const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(entry);
+  if (bracketed) {
+    return (
+      (z.ipv4().safeParse(bracketed[1]).success || z.ipv6().safeParse(bracketed[1]).success) &&
+      (bracketed[2] === undefined || port(bracketed[2]))
+    );
+  }
+  const withPort = /^([^:]+):(\d+)$/.exec(entry);
+  return withPort !== null && z.ipv4().safeParse(withPort[1]).success && port(withPort[2]);
+}
+
 function blankToUndefined<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
@@ -99,6 +119,25 @@ const serverEnvSchema = z
     POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID: z.string().optional(),
     POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID: z.string().optional(),
     POLAR_PAGE_OVERAGE_PRODUCT_ID: z.string().optional(),
+    // Extra inbound domains (migration 00073): monthly units and the
+    // mid-period add; offered only when both are set (getDomainProductIds()).
+    POLAR_DOMAINS_PRODUCT_ID: z.string().optional(),
+    POLAR_DOMAINS_ADD_PRODUCT_ID: z.string().optional(),
+    // Resolvers for custom inbound domain checks (lib/supabase/inbound-domains.ts),
+    // comma separated; public ones by default, so a customer's nameservers
+    // never see this host.
+    DOMAIN_DNS_SERVERS: blankToUndefined(
+      z
+        .string()
+        .refine(
+          (value) => {
+            const entries = value.split(",").map((entry) => entry.trim());
+            return entries.every((entry) => entry !== "" && isResolverAddress(entry));
+          },
+          { message: "DOMAIN_DNS_SERVERS takes comma separated IP addresses, with optional ports" }
+        )
+        .optional()
+    ),
     // S3-compatible object storage where the receiver keeps captured email
     // (raw message and attachments, lib/storage). All four, or none; region
     // defaults to us-east-1, which S3-compatible services accept.
@@ -261,6 +300,9 @@ export function serverEnv() {
       POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID:
         process.env.POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID,
       POLAR_PAGE_OVERAGE_PRODUCT_ID: process.env.POLAR_PAGE_OVERAGE_PRODUCT_ID,
+      POLAR_DOMAINS_PRODUCT_ID: process.env.POLAR_DOMAINS_PRODUCT_ID,
+      POLAR_DOMAINS_ADD_PRODUCT_ID: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
+      DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,

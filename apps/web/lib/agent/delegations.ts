@@ -1,5 +1,6 @@
 import { serverEnv } from "@/lib/env";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
+import { isInboundDomainAddress } from "@/lib/supabase/inbound-domains";
 import { isPlainEmailAddress } from "@/lib/request-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { signAssertion } from "./assertion";
@@ -108,7 +109,8 @@ export async function linkIdJagIdentity(verified: IdJagSuccess): Promise<IdJagLi
   // never identifies anyone.
   if (
     !isPlainEmailAddress(email) ||
-    isCaptureDomainAddress(email, serverEnv().EMAIL_CAPTURE_DOMAIN)
+    isCaptureDomainAddress(email, serverEnv().EMAIL_CAPTURE_DOMAIN) ||
+    (await isInboundDomainAddress(email))
   ) {
     throw new AgentError(400, "invalid_request", "The assertion's email cannot be used here.");
   }
