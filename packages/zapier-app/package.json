@@ -9,11 +9,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "zapier-platform-core": "19.2.1"
+    "zapier-platform-core": "19.3.0"
   },
   "devDependencies": {
     "vitest": "^5.0.5",
-    "zapier-platform-schema": "19.2.1"
+    "zapier-platform-schema": "19.3.0"
   },
   "overrides": {
     "form-data": ">=4.0.6 <5"

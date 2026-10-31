@@ -55,6 +55,9 @@ module.exports = {
   version,
   platformVersion,
   authentication,
+  // Inputs arrive as typed: optional fields are read by truthiness, so an
+  // empty one is simply not sent.
+  flags: { cleanInputData: false },
   beforeRequest: [addApiKey],
   afterResponse: [explainErrors],
   triggers: {
