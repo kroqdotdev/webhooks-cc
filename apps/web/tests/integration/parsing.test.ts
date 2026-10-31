@@ -352,6 +352,31 @@ describe.skipIf(!ready)("layouts and the parse step", () => {
     expect((events![0].details as { missing: string[] }).missing).toEqual([NO_LAYOUT]);
   });
 
+  it("names the layout an email matched when one of its fields missed", async () => {
+    const userId = await proUser();
+    const endpoint = await endpointWithLayouts(userId, "layout alert");
+    await saveAlertSettings(endpoint.id, {
+      ...DEFAULT_ALERT_SETTINGS,
+      enabled: true,
+      fieldFailures: 1,
+      notifyEmail: false,
+    });
+    // Matches "Orders", but its order field finds no number.
+    const id = await captureEmail(endpoint.slug, "Order shipped soon");
+    expect((await parsed(id)).result?.layout?.id).toBe("orders");
+
+    await admin
+      .from("endpoint_alerts")
+      .update({ next_check_at: new Date(0).toISOString() })
+      .eq("endpoint_id", endpoint.id);
+    await runAlertChecks();
+    const { data: events } = await admin
+      .from("alert_events")
+      .select("details")
+      .eq("endpoint_id", endpoint.id);
+    expect(events![0].details).toMatchObject({ missing: ["order"], layoutId: "orders" });
+  });
+
   it("re-parses on replay without charging the pages again, and redelivers", async () => {
     const userId = await proUser();
     const endpoint = await endpointWithLayouts(userId, "replay");

@@ -208,6 +208,8 @@ async function checkFields(
   }
   let lastMissing: string[] = [];
   let lastMissingId: string | null = null;
+  // The layout that email matched: where a missing field is defined.
+  let lastMissingLayoutId: string | null = null;
   const counted = layouts.length > 0 ? rows.filter((row) => parseOf(row) !== "none") : rows;
   if (counted.length === 0) return;
   const outcomes = counted.map((row) => {
@@ -220,10 +222,11 @@ async function checkFields(
       },
       fields
     );
+    const parse = layouts.length > 0 ? parseOf(row) : "none";
     const missing =
       layouts.length > 0
         ? layoutMissing(
-            parseOf(row),
+            parse,
             values,
             fields.map((field) => field.name),
             alert.required_fields
@@ -232,6 +235,7 @@ async function checkFields(
     if (missing.length > 0) {
       lastMissing = missing;
       lastMissingId = row.id;
+      lastMissingLayoutId = typeof parse === "object" ? (parse.layout?.id ?? null) : null;
     }
     return missing.length === 0;
   });
@@ -249,6 +253,7 @@ async function checkFields(
     await openAlert(endpoint.id, "fields", null, {
       missing: lastMissing,
       lastMissedRequestId: lastMissingId,
+      layoutId: lastMissingLayoutId,
       streak: state.streak,
       missedPercent: missShare(state.recent),
     });
@@ -264,11 +269,19 @@ function parseOf(row: EmailRow): "none" | "pending" | "failed" | ParsedEmail {
   if (!parse) return "none";
   if (parse.status === "pending") return "pending";
   if (parse.status !== "done") return "failed";
-  const summary = (parse.summary ?? null) as { status?: unknown; fields?: unknown } | null;
+  const summary = (parse.summary ?? null) as {
+    status?: unknown;
+    layout?: { id?: unknown; name?: unknown } | null;
+    fields?: unknown;
+  } | null;
   if (summary?.status !== "matched" && summary?.status !== "no_layout") return "failed";
+  const layout = summary.layout;
   return {
     status: summary.status,
-    layout: null,
+    layout:
+      layout && typeof layout.id === "string"
+        ? { id: layout.id, name: typeof layout.name === "string" ? layout.name : "" }
+        : null,
     fields:
       summary.fields && typeof summary.fields === "object"
         ? (summary.fields as Record<string, string | null>)

@@ -63,6 +63,15 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     location: "Stored in PostHog's EU region in Frankfurt, Germany",
     safeguard: "EU-US Data Privacy Framework and Standard Contractual Clauses",
   },
+  {
+    name: "Anthropic",
+    entity: "Anthropic, PBC, United States",
+    purpose:
+      "AI setup and repair: proposes patterns for email fields and layouts, only when a person asks for it and agrees to send the emails, each time.",
+    data: "The emails picked for that request (subject, sender, recipients, text and headers, never attachments) and what the person describes they want. We do not keep what is sent; Anthropic processes it under its commercial terms.",
+    location: "United States",
+    safeguard: "Standard Contractual Clauses",
+  },
 ];
 
 export default function SubprocessorsPage() {
@@ -72,7 +81,7 @@ export default function SubprocessorsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Subprocessors</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 12, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 29, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
