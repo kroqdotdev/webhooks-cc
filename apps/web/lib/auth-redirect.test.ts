@@ -21,6 +21,11 @@ describe("sanitizeNextPath", () => {
     expect(sanitizeNextPath("https://evil.com")).toBe("/dashboard");
     expect(sanitizeNextPath("javascript:alert(1)")).toBe("/dashboard");
     expect(sanitizeNextPath("dashboard")).toBe("/dashboard");
+    // Browsers read a backslash as a slash: "/\\evil" leaves the site.
+    expect(sanitizeNextPath("/\\evil.example")).toBe("/dashboard");
+    expect(sanitizeNextPath("/%5Cevil.example")).toBe("/%5Cevil.example");
+    expect(sanitizeNextPath("/\tevil")).toBe("/dashboard");
+    expect(sanitizeNextPath("/x\u0000")).toBe("/dashboard");
   });
 });
 
@@ -33,22 +38,55 @@ describe("resolveRedirectBase", () => {
     return new Request("http://internal:3000/auth/confirm", { headers });
   }
 
-  it("uses the request origin in development even behind a proxy header", () => {
+  it("uses the request's own host in development even behind a proxy header", () => {
     vi.stubEnv("NODE_ENV", "development");
     expect(
       resolveRedirectBase(req({ "x-forwarded-host": "webhooks.cc" }), "http://localhost:3000")
     ).toBe("http://localhost:3000");
+    expect(
+      resolveRedirectBase(req({ host: "mailhooks.localhost:3000" }), "http://localhost:3000")
+    ).toBe("http://mailhooks.localhost:3000");
   });
 
-  it("prefers https://<x-forwarded-host> outside development", () => {
+  it("answers with the forwarded host's site outside development", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
     expect(
       resolveRedirectBase(req({ "x-forwarded-host": "webhooks.cc" }), "http://internal:3000")
     ).toBe("https://webhooks.cc");
+    expect(
+      resolveRedirectBase(req({ "x-forwarded-host": "mailhooks.cc" }), "http://internal:3000")
+    ).toBe("https://mailhooks.cc");
   });
 
-  it("falls back to the origin when no forwarded host is present", () => {
+  it("follows the site the proxy settled over the forwarded headers", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
+    expect(
+      resolveRedirectBase(
+        req({ "x-whk-site": "mailhooks", "x-forwarded-host": "webhooks.cc" }),
+        "http://internal:3000"
+      )
+    ).toBe("https://mailhooks.cc");
+  });
+
+  it("never answers with a host the request names that is not ours", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    expect(
+      resolveRedirectBase(req({ "x-forwarded-host": "evil.example" }), "http://internal:3000")
+    ).toBe("https://webhooks.cc");
+  });
+
+  it("reads Host when no forwarded host is present", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
+    expect(resolveRedirectBase(req({ host: "mailhooks.cc" }), "http://internal:3000")).toBe(
+      "https://mailhooks.cc"
+    );
     expect(resolveRedirectBase(req(), "https://webhooks.cc")).toBe("https://webhooks.cc");
   });
 });

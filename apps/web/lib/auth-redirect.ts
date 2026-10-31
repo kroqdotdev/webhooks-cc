@@ -1,3 +1,5 @@
+import { SITE_HEADER, parseSite, siteForHost, siteOrigin } from "@/lib/site";
+
 /**
  * Redirect helpers shared by the auth route handlers (/auth/callback for
  * OAuth PKCE, /auth/confirm for email token-hash links).
@@ -5,22 +7,41 @@
 
 /**
  * Only allow same-origin path redirects. Anything that is not a single-slash
- * path ("//evil" would be protocol-relative, "https://..." and "javascript:"
- * are absolute) falls back.
+ * path falls back: "//evil" is protocol-relative, "https://..." and
+ * "javascript:" are absolute, and browsers read a backslash as a slash, so
+ * "/\evil" is protocol-relative too (control characters are dropped by URL
+ * parsers, which could form one).
  */
 export function sanitizeNextPath(raw: string | null, fallback = "/dashboard"): string {
-  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : fallback;
+  return raw &&
+    raw.startsWith("/") &&
+    !raw.startsWith("//") &&
+    // eslint-disable-next-line no-control-regex
+    !/[\\\u0000-\u001f\u007f]/.test(raw)
+    ? raw
+    : fallback;
 }
 
 /**
- * Base URL to redirect to after a successful auth handoff. Behind the
- * production proxy the request origin is the internal host, so prefer
- * x-forwarded-host; in development trust the request origin as-is.
+ * Base URL to redirect to after a successful auth handoff: the origin of the
+ * site the request came to (lib/site.ts), from x-forwarded-host or Host,
+ * so a session set on mailhooks.cc lands on mailhooks.cc. Only the two
+ * configured origins can come out, never a host a request names. In
+ * development the request's own host is trusted as-is.
  */
 export function resolveRedirectBase(request: Request, origin: string): string {
-  if (process.env.NODE_ENV === "development") return origin;
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  return forwardedHost ? `https://${forwardedHost}` : origin;
+  if (process.env.NODE_ENV === "development") {
+    // The host the browser used: Next reports a local request's origin as
+    // localhost, which is another cookie host than webhooks.localhost.
+    const host = request.headers.get("host");
+    return host ? `${new URL(origin).protocol}//${host}` : origin;
+  }
+  // The site proxy.ts settled from Host, the header the host rewrites match
+  // too; the forwarded headers only where the proxy did not run.
+  const site = request.headers.get(SITE_HEADER);
+  if (site) return siteOrigin(parseSite(site));
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  return siteOrigin(siteForHost(host));
 }
 
 /**

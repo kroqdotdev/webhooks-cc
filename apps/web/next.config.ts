@@ -33,6 +33,32 @@ const varyAccept = { key: "Vary", value: "Accept" };
 // MARKDOWN_TWIN_HEADER in lib/markdown-negotiation.ts.
 const prefersMarkdown = [{ type: "header" as const, key: "x-markdown-twin", value: "1" }];
 
+// mailhooks.cc (lib/site.ts): its own pages live in app/mailhooks and are
+// served at its root by host. A host match ignores the port.
+function hostnameOf(value: string | undefined): string | null {
+  try {
+    return value ? new URL(value).hostname : null;
+  } catch {
+    return null;
+  }
+}
+const mailhooksHost = hostnameOf(process.env.NEXT_PUBLIC_MAILHOOKS_URL);
+// The value is a regular expression: every special character is escaped
+// (a hostname has dots), so it matches the host exactly.
+const onMailhooks = mailhooksHost
+  ? [{ type: "host" as const, value: mailhooksHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }]
+  : [];
+const mailhooksRewrites = mailhooksHost
+  ? [
+      { source: "/", has: onMailhooks, destination: "/mailhooks" },
+      { source: "/pricing", has: onMailhooks, destination: "/mailhooks/pricing" },
+      { source: "/parse", has: onMailhooks, destination: "/mailhooks/parse" },
+      { source: "/parse/:path*", has: onMailhooks, destination: "/mailhooks/parse/:path*" },
+      { source: "/robots.txt", has: onMailhooks, destination: "/mailhooks/robots.txt" },
+      { source: "/sitemap.xml", has: onMailhooks, destination: "/mailhooks/sitemap.xml" },
+    ]
+  : [];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   env: {
@@ -109,6 +135,8 @@ const nextConfig: NextConfig = {
       // proxy.ts, which marks the requests that prefer markdown, and stay
       // inside the server, unlike a proxy.ts rewrite to an absolute URL.
       beforeFiles: [
+        // mailhooks.cc's pages come first: its root is not webhooks.cc's.
+        ...mailhooksRewrites,
         // A route segment cannot end in ".md", so the docs twins live
         // under /docs.md; an index page's twin is its directory's.
         { source: "/docs/index.md", destination: "/docs.md" },

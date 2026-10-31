@@ -641,6 +641,7 @@ export interface Database {
           prorated_window: string | null;
           pending_plan: string | null;
           pending_interval: string | null;
+          home_site: "webhooks" | "mailhooks";
           retention_floor_days: number | null;
           retention_floor_until: string | null;
           pages_used: number;
@@ -691,6 +692,7 @@ export interface Database {
           prorated_window?: string | null;
           pending_plan?: string | null;
           pending_interval?: string | null;
+          home_site?: "webhooks" | "mailhooks";
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -741,6 +743,7 @@ export interface Database {
           prorated_window?: string | null;
           pending_plan?: string | null;
           pending_interval?: string | null;
+          home_site?: "webhooks" | "mailhooks";
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -1491,6 +1494,10 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      append_endpoint_layout: {
+        Args: { p_endpoint_id: string; p_layout: Json; p_expected_count: number };
+        Returns: boolean;
+      };
       claim_alert_notices: {
         Args: { p_limit?: number };
         Returns: Database["public"]["Tables"]["alert_events"]["Row"][];

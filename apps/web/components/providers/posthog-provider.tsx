@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { redactShareTokens } from "@/lib/analytics-redact";
+import { siteForHost } from "@/lib/site";
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -20,6 +21,8 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
       // Share link URLs hold their token; analytics never gets it.
       before_send: redactShareTokens,
       loaded: (ph) => {
+        // Which of the two sites an event came from (lib/site.ts).
+        ph.register({ site: siteForHost(window.location.host) });
         if (process.env.NODE_ENV === "development") ph.debug();
       },
     });

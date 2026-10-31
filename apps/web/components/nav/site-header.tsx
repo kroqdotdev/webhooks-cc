@@ -5,16 +5,25 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
+import { useSite } from "@/components/providers/site-provider";
 import { UserDropdown } from "@/components/nav/user-dropdown";
 import { siteHeaderTop } from "@/lib/announcements";
 import { resetUser } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
+import { webhooksOrigin } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
   { href: "/docs", label: "Docs" },
   { href: "/installation", label: "Install" },
   { href: "/blog", label: "Blog" },
+];
+
+// mailhooks.cc keeps its docs on webhooks.cc (one copy, one canonical URL).
+const MAILHOOKS_LINKS = [
+  { href: "/parse", label: "Senders" },
+  { href: "/pricing", label: "Pricing" },
+  { href: `${webhooksOrigin()}/docs/layouts`, label: "Docs" },
 ];
 
 interface SiteHeaderProps {
@@ -46,12 +55,14 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
   const pathname = usePathname();
   const router = useRouter();
   const isAuthenticated = useIsAuthenticated();
+  const site = useSite();
   const [open, setOpen] = useState(false);
 
   // Close the phone menu on navigation, including browser back.
   useEffect(() => setOpen(false), [pathname]);
 
-  const links = compact ? NAV_LINKS.filter((link) => link.href !== "/blog") : NAV_LINKS;
+  const siteLinks = site.key === "mailhooks" ? MAILHOOKS_LINKS : NAV_LINKS;
+  const links = compact ? siteLinks.filter((link) => link.href !== "/blog") : siteLinks;
   const onAuthPage = pathname.startsWith("/login") || pathname.startsWith("/auth/");
   const inApp = ["/dashboard", "/account", "/teams"].some((prefix) => pathname.startsWith(prefix));
 
@@ -91,7 +102,7 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
             the context can wrap onto its own full-width row under the wordmark. */}
         <div className={cn("flex items-center gap-3 min-w-0", compact && "max-md:contents")}>
           <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
-            webhooks.cc
+            {site.name}
           </Link>
           {compact && children ? (
             <div className="flex items-center gap-3 min-w-0 max-md:order-last max-md:w-full">
