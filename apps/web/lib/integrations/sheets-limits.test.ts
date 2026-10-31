@@ -87,4 +87,21 @@ describe("rowsFor limits", () => {
       })
     ).toHaveLength(3);
   });
+
+  it("stops a large email's rows within seconds, not minutes", () => {
+    const columns = [
+      { header: "SKU", value: "{{ item.sku }}" },
+      { header: "Text", value: "{{ text }}" },
+    ];
+    const started = performance.now();
+    // 300 KB of text repeated on each of 1,000 line items: past the budget.
+    expect(() =>
+      rowsFor(request("z".repeat(300_000), 1000), { rows: "line_items", columns }, endpoint, {
+        includeExtracts: false,
+        fields: null,
+        maxChars: 10 * 1024 * 1024,
+      })
+    ).toThrow(RowsTooLargeError);
+    expect(performance.now() - started).toBeLessThan(5000);
+  });
 });

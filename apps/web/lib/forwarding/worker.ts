@@ -996,8 +996,9 @@ async function runFileDrop(
       const documents: unknown[] = [];
       let first: RequestRecord | null = null;
       // The file's header row (or the empty document) is there whatever it holds.
-      let size = dropFile(config.file, "", { headers, rows: [], documents: [], batch: true }).data
-        .byteLength;
+      const empty = dropFile(config.file, "", { headers, rows: [], documents: [], batch: true })
+        .data.byteLength;
+      let size = empty;
       let full = false;
       await admitBatch(claim, request, more ?? [], fail, async (item) => {
         // The next batch takes what does not fit in this one, or comes after
@@ -1010,16 +1011,18 @@ async function runFileDrop(
           if (!(rowsError instanceof RowsTooLargeError)) throw rowsError;
           return tooLarge([item.claim]);
         }
-        // What the delivery adds to the file as written (escaping, quoting
-        // and separators included): its rows or document on their own, which
-        // counts a little more than they add.
-        const added = dropFile(config.file, "", {
-          headers: [],
-          rows: content.rows,
-          documents: content.document === null ? [] : [content.document],
-          batch: true,
-        }).data.byteLength;
-        if (added > MAX_DROP_FILE_BYTES) return tooLarge([item.claim]);
+        // What the delivery adds to the file as written (escaping, quoting,
+        // element names and separators included): a file of it alone, less
+        // the empty file.
+        const added =
+          dropFile(config.file, "", {
+            headers,
+            rows: content.rows,
+            documents: content.document === null ? [] : [content.document],
+            batch: true,
+          }).data.byteLength - empty;
+        // Too large even alone: released, it would be claimed again forever.
+        if (empty + added > MAX_DROP_FILE_BYTES) return tooLarge([item.claim]);
         if (size + added > MAX_DROP_FILE_BYTES) {
           full = true;
           return release(item.claim, 0);

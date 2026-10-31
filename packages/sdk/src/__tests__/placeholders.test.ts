@@ -153,3 +153,28 @@ describe("emailTemplateContext", () => {
     expect(renderTemplate("{{ signature }}", emailTemplateContext(data))).toBe("{{ signature }}");
   });
 });
+
+describe("renderTemplate maxBytes", () => {
+  const utf8 = (text: string) => new TextEncoder().encode(text).length;
+
+  it("cuts a long value at a character boundary, quickly", () => {
+    const value = "aé€😀".repeat(250_000);
+    const started = performance.now();
+    const out = renderTemplate("{{ v }}", { v: value }, { maxBytes: 200_000 });
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(utf8(out)).toBeLessThanOrEqual(200_000);
+    expect(value.startsWith(out)).toBe(true);
+    // Nothing that would still fit was left out: the next character would not.
+    const next = String.fromCodePoint(value.codePointAt(out.length)!);
+    expect(utf8(out) + utf8(next)).toBeGreaterThan(200_000);
+  });
+
+  it("never splits a surrogate pair or a multibyte character", () => {
+    for (let max = 1; max <= 12; max++) {
+      const out = renderTemplate("x{{ v }}", { v: "😀é😀" }, { maxBytes: max });
+      expect(utf8(out)).toBeLessThanOrEqual(max);
+      expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|�/);
+      expect("x😀é😀".startsWith(out)).toBe(true);
+    }
+  });
+});
