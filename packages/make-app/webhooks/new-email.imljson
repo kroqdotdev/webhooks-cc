@@ -1,7 +1,7 @@
 {
   "name": "newEmail",
   "label": "New email",
-  "type": "dedicated",
+  "type": "web",
   "connection": "apiKey",
   "parameters": [
     {
