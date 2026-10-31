@@ -133,7 +133,8 @@ describe("destinations", () => {
 
   it("turns a destination off when its URL answers 410, without retrying", async () => {
     const e = await endpoint();
-    const gone = await createDestination(e.id, { url: `${base}/gone` });
+    // As a Zapier or Make hook: the URL itself, nothing appended.
+    const gone = await createDestination(e.id, { url: `${base}/gone`, appendPath: false });
     await capture(e.slug, { type: "x" });
     const rows = await drain(e.id);
     expect(rows).toHaveLength(1);
@@ -150,9 +151,24 @@ describe("destinations", () => {
     expect(await deliveries(e.id)).toHaveLength(1);
   });
 
+  it("keeps a destination on when a 410 answers a path appended to its URL", async () => {
+    const e = await endpoint();
+    // The request's path (/events) goes after the URL: a 410 there is about that resource.
+    const relay = await createDestination(e.id, { url: `${base}/gone/append`, appendPath: true });
+    await capture(e.slug, { type: "x" });
+    await runForwardingBatch();
+    expect(at("/gone/append/events").length).toBeGreaterThan(0);
+    const { data: destination } = await admin
+      .from("endpoint_destinations")
+      .select("enabled")
+      .eq("id", relay.id)
+      .single();
+    expect(destination?.enabled).toBe(true);
+  });
+
   it("settles deliveries queued for a gone URL without sending them", async () => {
     const e = await endpoint();
-    await createDestination(e.id, { url: `${base}/gone/queued` });
+    await createDestination(e.id, { url: `${base}/gone/queued`, appendPath: false });
     for (const type of ["a", "b", "c"]) await capture(e.slug, { type });
     const sentBefore = at("/gone/queued").length;
     const rows = await drain(e.id);
