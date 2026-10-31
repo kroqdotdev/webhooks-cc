@@ -54,6 +54,10 @@ const mailhooksRewrites = mailhooksHost
       { source: "/pricing", has: onMailhooks, destination: "/mailhooks/pricing" },
       { source: "/parse", has: onMailhooks, destination: "/mailhooks/parse" },
       { source: "/parse/:path*", has: onMailhooks, destination: "/mailhooks/parse/:path*" },
+      // The feature pages (lib/mailhooks-features.ts).
+      ...["/google-sheets", "/file-drops", "/custom-domains", "/ai-setup", "/integrations"].map(
+        (source) => ({ source, has: onMailhooks, destination: `/mailhooks${source}` })
+      ),
       { source: "/robots.txt", has: onMailhooks, destination: "/mailhooks/robots.txt" },
       { source: "/sitemap.xml", has: onMailhooks, destination: "/mailhooks/sitemap.xml" },
     ]

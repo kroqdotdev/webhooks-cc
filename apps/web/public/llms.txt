@@ -56,6 +56,12 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Email forwarding: https://webhooks.cc/docs/forwarding
 - Email testing overview: https://webhooks.cc/email-testing
 - Email to webhook overview: https://webhooks.cc/email-to-webhook
+- mailhooks.cc, the mail-first site (same account, endpoints and plans): https://mailhooks.cc, with ready-made layouts at https://mailhooks.cc/parse
+- Email to Google Sheets (a row per email or per line item): https://mailhooks.cc/google-sheets
+- File drops to SFTP, FTP/FTPS and S3 (Business): https://mailhooks.cc/file-drops
+- Custom inbound domains (Business): https://mailhooks.cc/custom-domains
+- AI setup for layouts and fields: https://mailhooks.cc/ai-setup
+- Zapier and Make: https://mailhooks.cc/integrations
 - REST API: https://webhooks.cc/docs/api
 - OpenAPI spec: https://webhooks.cc/openapi.yaml
 - Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents get a sandbox and a credential without an account

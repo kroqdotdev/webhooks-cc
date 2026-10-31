@@ -369,6 +369,8 @@ A **Google Sheets** destination adds a row to a spreadsheet for each email or re
 
 Rows are written as plain text, so a value that starts with `=` stays text and never becomes a formula. Rows that arrive close together are added in one call, and a delivery Google refuses is retried like any other; if you disconnect the account or remove webhooks.cc's access in Google, connect it again and the waiting rows go through.
 
+An order email as a row per email and as a row per line item: [Email to Google Sheets](https://mailhooks.cc/google-sheets) on mailhooks.cc.
+
 ## File drops
 
 A **File drop** writes what the endpoint captures as files to your own server, for systems that watch a folder: an ERP or accounting import, a warehouse system, a nightly job. It is part of [Business](/docs/plans-limits#plans-overview) (and Team Business for endpoints shared with the team).
@@ -389,6 +391,8 @@ A **File drop** writes what the endpoint captures as files to your own server, f
 Files are named after the time and the first request's id, such as `orders-20261029-173326-3f2a9c1e.csv` (with `-batch` for a batch, and your prefix in front), and written under a temporary name first, then renamed, so a system watching the folder never picks up half a file. A retry writes the same name again and replaces its own file rather than adding a second.
 
 The password, key or secret key is stored encrypted and never shown again; changing the server, port, username, endpoint or access key asks for it again. Drops connect from our mail server's address, `mx.mailhooks.cc`, so allow that address if your server only takes known ones. A drop to a server that refuses the login, or to a folder that is not there, fails at once and is not retried; one that cannot be reached is retried like any delivery. On a plan without file drops, a drop is kept but skipped until the plan has them again.
+
+What a CSV and an XML file look like for an order email: [File drops](https://mailhooks.cc/file-drops) on mailhooks.cc.
 
 ## Send only some captures
 
