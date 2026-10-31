@@ -15,7 +15,7 @@ module.exports = {
       type: "password",
       required: true,
       helpText:
-        "Create one on webhooks.cc (or mailhooks.cc) under **Account > API keys**. Keys start with `whcc_`.",
+        "Create one at [webhooks.cc/account/api-keys](https://webhooks.cc/account/api-keys) (the same page on mailhooks.cc works too). Keys start with `whcc_`.",
     },
   ],
   test: async (z) => {
