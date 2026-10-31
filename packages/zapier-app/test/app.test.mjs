@@ -106,6 +106,8 @@ describe("the Zapier app", () => {
       inputData: { name: "Zapier orders" },
     });
     expect(endpoint.slug).toBeTruthy();
+    // Mapped into Send Test Email, the id must be the slug.
+    expect(endpoint.id).toBe(endpoint.slug);
     const slug = endpoint.slug;
 
     const listed = await appTester(App.triggers.endpoint.operation.perform, { authData });
@@ -115,7 +117,9 @@ describe("the Zapier app", () => {
       authData,
       inputData: { endpoint: slug },
     });
-    expect(sent.id).toBeTruthy();
+    // The request id, not the endpoint slug the action falls back to.
+    expect(sent.requestId).toBeTruthy();
+    expect(sent.id).toBe(sent.requestId);
 
     // The sample records are the payload a hook delivers.
     const samples = await appTester(App.triggers.new_email.operation.performList, {

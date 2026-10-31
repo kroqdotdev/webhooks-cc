@@ -32,7 +32,7 @@ if not TOKEN:
 MODULE_TYPE_IDS = {"trigger": 1, "action": 4, "search": 9, "instant_trigger": 10}
 
 
-def call(method, path, body=None, content_type="application/json", raw=False):
+def call(method, path, body=None, content_type="application/json", raw=False, missing_ok=False):
     data = None
     # Make's edge refuses Python's default user agent (Cloudflare error 1010).
     headers = {
@@ -51,6 +51,8 @@ def call(method, path, body=None, content_type="application/json", raw=False):
                 return json.loads(text) if text.strip().startswith(("{", "[")) else text
         except urllib.error.HTTPError as e:
             detail = e.read().decode()[:400]
+            if missing_ok and e.code in (403, 404):
+                return None
             if e.code == 429 and attempt < 3:
                 time.sleep(5)
                 continue
@@ -59,6 +61,21 @@ def call(method, path, body=None, content_type="application/json", raw=False):
 
 def load(rel):
     return json.load(open(os.path.join(ROOT, rel)))
+
+
+def definitions(folder):
+    """The .imljson files of a folder, in name order (not .DS_Store and the like)."""
+    return sorted(f for f in os.listdir(os.path.join(ROOT, folder)) if f.endswith(".imljson"))
+
+
+def save_state(state):
+    """Written whole or not at all (a cut-off write would lose the remote names), mode 600."""
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    tmp = STATE + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(state, f, indent=2)
+    os.replace(tmp, STATE)
 
 
 def section(path, value):
@@ -71,6 +88,15 @@ def main():
         base_url = sys.argv[sys.argv.index("--base-url") + 1]
     state = json.load(open(STATE)) if os.path.exists(STATE) else {}
 
+    if "app" in state:
+        # Make answers 403 for an app that is not there (deleted, or another
+        # account's): say so rather than writing sections to it.
+        app = state["app"]
+        if call("GET", f"/sdk/apps/{app['name']}/{app['version']}", missing_ok=True) is None:
+            raise SystemExit(
+                f"The app {app['name']} v{app['version']} in {STATE} is not in this Make "
+                "account. Point MAKE_APP_STATE at a new file to create the app again."
+            )
     if "app" not in state:
         created = call("POST", "/sdk/apps", {
             "name": APP_NAME_HINT,
@@ -84,7 +110,7 @@ def main():
         })
         app = created["app"]
         state["app"] = {"name": app["name"], "version": app["version"]}
-        json.dump(state, open(STATE, "w"), indent=2)
+        save_state(state)
         print("created app", app["name"], "v", app["version"])
     name, version = state["app"]["name"], state["app"]["version"]
     app_path = f"/sdk/apps/{name}/{version}"
@@ -100,7 +126,7 @@ def main():
     if "connection" not in state:
         created = call("POST", f"/sdk/apps/{name}/connections", {"type": conn_file["type"], "label": conn_file["label"]})
         state["connection"] = created["appConnection"]["name"]
-        json.dump(state, open(STATE, "w"), indent=2)
+        save_state(state)
     conn = state["connection"]
     conn_api = conn_file["communication"]
     if base_url:
@@ -116,7 +142,7 @@ def main():
     if "webhook" not in state:
         created = call("POST", f"/sdk/apps/{name}/webhooks", {"type": hook_file["type"], "label": hook_file["label"], "connection": conn})
         state["webhook"] = created["appWebhook"]["name"]
-        json.dump(state, open(STATE, "w"), indent=2)
+        save_state(state)
     hook = state["webhook"]
     section(f"/sdk/apps/webhooks/{hook}/api", hook_file["communication"])
     section(f"/sdk/apps/webhooks/{hook}/parameters", hook_file["parameters"])
@@ -124,22 +150,31 @@ def main():
     section(f"/sdk/apps/webhooks/{hook}/detach", hook_file["detach"])
     print("webhook", hook)
 
+    # RPCs and modules belong to an app version: what was created is kept per
+    # version (state from before kept them unversioned, for the saved version).
+    versions = state.setdefault("versions", {})
+    current = versions.setdefault(str(version), {})
+    for kind in ("rpcs", "modules"):
+        if kind in state:
+            current.setdefault(kind, {}).update(state.pop(kind))
+    rpcs = current.setdefault("rpcs", {})
+    modules = current.setdefault("modules", {})
+    save_state(state)
+
     # RPCs (versioned).
-    state.setdefault("rpcs", {})
-    for fname in sorted(os.listdir(os.path.join(ROOT, "rpcs"))):
+    for fname in definitions("rpcs"):
         rpc = load(f"rpcs/{fname}")
-        if rpc["name"] not in state["rpcs"]:
+        if rpc["name"] not in rpcs:
             call("POST", f"{app_path}/rpcs", {"name": rpc["name"], "label": rpc["label"], "connection": conn})
-            state["rpcs"][rpc["name"]] = True
-            json.dump(state, open(STATE, "w"), indent=2)
+            rpcs[rpc["name"]] = True
+            save_state(state)
         section(f"{app_path}/rpcs/{rpc['name']}/api", rpc["communication"])
         print("rpc", rpc["name"])
 
     # Modules (versioned).
-    state.setdefault("modules", {})
-    for fname in sorted(os.listdir(os.path.join(ROOT, "modules"))):
+    for fname in definitions("modules"):
         mod = load(f"modules/{fname}")
-        if mod["name"] not in state["modules"]:
+        if mod["name"] not in modules:
             body = {
                 "name": mod["name"],
                 "label": mod["label"],
@@ -151,18 +186,22 @@ def main():
             if mod["type"] == "instant_trigger":
                 body["webhook"] = hook
             call("POST", f"{app_path}/modules", body)
-            state["modules"][mod["name"]] = True
-            json.dump(state, open(STATE, "w"), indent=2)
+            modules[mod["name"]] = True
+            save_state(state)
+        else:
+            # The type cannot change this way (a new type needs a new module).
+            call("PATCH", f"{app_path}/modules/{mod['name']}", {
+                "label": mod["label"],
+                "description": mod["description"],
+            })
         mpath = f"{app_path}/modules/{mod['name']}"
         if "communication" in mod:
             section(f"{mpath}/api", mod["communication"])
         section(f"{mpath}/parameters", mod.get("parameters", []))
-        if "expect" in mod:
-            section(f"{mpath}/expect", mod["expect"])
-        if "interface" in mod:
-            section(f"{mpath}/interface", mod["interface"])
-        if "samples" in mod:
-            section(f"{mpath}/samples", mod["samples"])
+        # A section taken out of the file is emptied in Make too.
+        section(f"{mpath}/expect", mod.get("expect", []))
+        section(f"{mpath}/interface", mod.get("interface", []))
+        section(f"{mpath}/samples", mod.get("samples", {}))
         print("module", mod["name"], mod["type"])
 
 

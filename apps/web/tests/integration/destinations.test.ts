@@ -150,6 +150,21 @@ describe("destinations", () => {
     expect(await deliveries(e.id)).toHaveLength(1);
   });
 
+  it("settles deliveries queued for a gone URL without sending them", async () => {
+    const e = await endpoint();
+    await createDestination(e.id, { url: `${base}/gone/queued` });
+    for (const type of ["a", "b", "c"]) await capture(e.slug, { type });
+    const sentBefore = at("/gone/queued").length;
+    const rows = await drain(e.id);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.status !== "pending")).toBe(true);
+    // Once it answered 410, what was still queued was not sent: at most the
+    // ones already on their way with the first (two per endpoint at a time).
+    const sent = at("/gone/queued").length - sentBefore;
+    expect(sent).toBeGreaterThanOrEqual(1);
+    expect(sent).toBeLessThan(3);
+  });
+
   it("skips what the filter turns down, and logs it", async () => {
     const e = await endpoint();
     await createDestination(e.id, {

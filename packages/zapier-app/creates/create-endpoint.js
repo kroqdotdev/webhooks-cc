@@ -19,10 +19,13 @@ module.exports = {
         body: bundle.inputData.name ? { name: bundle.inputData.name } : {},
       });
       const endpoint = response.data;
-      return { ...endpoint, id: endpoint.id || endpoint.slug };
+      // The slug as id, as the endpoint list gives it: the actions that take
+      // an endpoint (Send Test Email, the triggers) take its slug.
+      return { ...endpoint, id: endpoint.slug, endpointId: endpoint.id };
     },
     sample: {
-      id: "e3c1f1a0-0000-4000-8000-000000000000",
+      id: "orders-acme",
+      endpointId: "e3c1f1a0-0000-4000-8000-000000000000",
       slug: "orders-acme",
       name: "Orders",
       url: "https://go.webhooks.cc/w/orders-acme",
