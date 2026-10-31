@@ -356,6 +356,8 @@ function known(placeholder: Placeholder, context: Context): boolean {
 
 const encoder = new TextEncoder();
 
+const decoder = new TextDecoder();
+
 /** Appends `piece` unless the output would pass maxBytes; cut at a character. */
 class Output {
   text = "";
@@ -370,12 +372,20 @@ class Output {
       this.bytes += size;
       return;
     }
-    for (const ch of piece) {
-      const n = encoder.encode(ch).length;
-      if (this.bytes + n > this.maxBytes) break;
-      this.text += ch;
-      this.bytes += n;
-    }
+    const room = this.maxBytes - this.bytes;
+    // At most `room` characters can fit (each is a byte at least), and a
+    // surrogate pair is never split; the bytes are then cut at the last
+    // character boundary within room, in one step rather than one
+    // character at a time (a long value would take seconds).
+    let head = piece.slice(0, room);
+    const last = head.charCodeAt(head.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) head = head.slice(0, -1);
+    const bytes = encoder.encode(head);
+    let end = Math.min(room, bytes.length);
+    while (end > 0 && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
+    const cut = decoder.decode(bytes.subarray(0, end));
+    this.text += cut;
+    this.bytes += end;
     this.full = true;
   }
 }
