@@ -30,6 +30,17 @@ describe("mailhooks.cc feature pages", () => {
     }
   });
 
+  it("links docs pages that exist", () => {
+    const docs = path.resolve(__dirname, "../../../content/docs");
+    for (const feature of MAILHOOKS_FEATURES) {
+      const slug = feature.docs.path.replace(/^\/docs\//, "").replace(/#.*$/, "");
+      const found =
+        existsSync(path.join(docs, `${slug}.mdx`)) ||
+        existsSync(path.join(docs, slug, "index.mdx"));
+      expect(found, feature.docs.path).toBe(true);
+    }
+  });
+
   it("writes no em dashes", () => {
     expect(JSON.stringify(MAILHOOKS_FEATURES)).not.toContain(EM_DASH);
   });

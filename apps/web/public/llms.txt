@@ -54,6 +54,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Agent skill and Claude Code plugin: https://webhooks.cc/docs/mcp/skills, teaches coding agents to test webhook handlers with signed payloads and generate payload types from captures
 - Email capture: https://webhooks.cc/docs/email-capture
 - Email forwarding: https://webhooks.cc/docs/forwarding
+- Zapier and Make (the apps, in review, and the catch hook that works today): https://webhooks.cc/docs/zapier-make
 - Email testing overview: https://webhooks.cc/email-testing
 - Email to webhook overview: https://webhooks.cc/email-to-webhook
 - mailhooks.cc, the mail-first site (same account, endpoints and plans): https://mailhooks.cc, with ready-made layouts at https://mailhooks.cc/parse

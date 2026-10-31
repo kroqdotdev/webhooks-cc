@@ -463,7 +463,7 @@ export const MAILHOOKS_FEATURES: readonly MailhooksFeature[] = [
           "No. Each email counted once when it arrived; sending it to Zapier, Make or anywhere else does not count again.",
       },
     ],
-    docs: { path: "/docs/forwarding#signed-json", label: "Signed JSON in the forwarding docs" },
+    docs: { path: "/docs/zapier-make", label: "The Zapier and Make docs" },
     updated: UPDATED,
   },
 ];
