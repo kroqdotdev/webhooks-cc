@@ -587,6 +587,10 @@ class WebhooksCC:
     def _download(self, path: str) -> AttachmentDownload:
         """A binary download with the client's auth, for raw messages and attachments."""
         response = self._call("GET", path)
+        # Redirects are not followed (the token must not go with them): a 3xx
+        # is an error here, not the file.
+        if not 200 <= response.status_code < 300:
+            raise _error_from_response(response)
         disposition = response.headers.get("content-disposition") or ""
         plain = re.search(r'filename="([^"]*)"', disposition, re.IGNORECASE)
         filename = plain.group(1) if plain else None
