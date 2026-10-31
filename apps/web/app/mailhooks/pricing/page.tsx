@@ -108,8 +108,8 @@ export default function MailhooksPricing() {
         <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">Pricing</h1>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl">
-            Start free. Free has every Pro feature; Business adds attachment parsing, more layouts,
-            custom domains, file drops and longer retention.
+            Start free: Free has every Pro feature except buying extra requests. Business adds more
+            parsed pages, more layouts, custom domains, file drops and longer retention.
           </p>
 
           <div className="grid md:grid-cols-3 gap-6">

@@ -1290,12 +1290,26 @@ mod tests {
             json!([{"recipient": "acme-orders@mailhooks.cc", "status": "transient"}])
         );
         let seen = seen.lock().unwrap().clone();
-        assert!(seen.iter().any(|line| line.starts_with("PUT")));
+        // "METHOD path signed": the request's prefix is the PUT path up to its
+        // last part (raw.eml, or a/0 for the attachment).
+        let put = seen
+            .iter()
+            .find(|line| line.starts_with("PUT"))
+            .expect("an upload was tried");
+        let path = put.split(' ').nth(1).unwrap();
+        let prefix = path
+            .strip_suffix("raw.eml")
+            .or_else(|| path.strip_suffix("a/0"))
+            .expect("a message or attachment key");
+        let mut deleted: Vec<&str> = seen
+            .iter()
+            .filter(|line| line.starts_with("DELETE"))
+            .map(|line| line.split(' ').nth(1).unwrap())
+            .collect();
+        deleted.sort();
         assert_eq!(
-            seen.iter()
-                .filter(|line| line.starts_with("DELETE"))
-                .count(),
-            2,
+            deleted,
+            vec![format!("{prefix}a/0"), format!("{prefix}raw.eml")],
             "the message and its one attachment are removed: {seen:?}"
         );
     }

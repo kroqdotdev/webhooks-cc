@@ -84,7 +84,9 @@ async function signedIn(fields: Record<string, unknown>): Promise<string> {
   });
   if (error) throw error;
   userIds.push(data.user!.id);
-  await admin.from("users").update(fields).eq("id", data.user!.id);
+  // Unchecked, a failed update would run the Pro case as Free and still pass.
+  const { error: updateError } = await admin.from("users").update(fields).eq("id", data.user!.id);
+  if (updateError) throw updateError;
   const client = createClient(process.env.SUPABASE_URL!, anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });

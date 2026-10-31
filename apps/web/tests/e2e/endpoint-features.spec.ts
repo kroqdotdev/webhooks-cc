@@ -129,7 +129,11 @@ async function openSettings(page: Page, section: string) {
 }
 
 /** Delivers a message the way the MX host does, so the receiver stores its objects. */
-async function deliverMail(subject: string, attachment: string): Promise<string> {
+/** Delivers an email through the mail listener; its request id and the message as sent. */
+async function deliverMail(
+  subject: string,
+  attachment: string
+): Promise<{ requestId: string; raw: string }> {
   const to = `${slug}@mailhooks.cc`;
   const raw = [
     "From: Acme Store <orders@acme.example>",
@@ -186,7 +190,7 @@ async function deliverMail(subject: string, attachment: string): Promise<string>
     results: { status: string; request_id?: string }[];
   };
   expect(result.results[0].status).toBe("captured");
-  return result.results[0].request_id!;
+  return { requestId: result.results[0].request_id!, raw };
 }
 
 test("an endpoint keeps requests for fewer days, or until every destination has them", async ({
@@ -247,7 +251,7 @@ test("alerts are set up, and an open alert replays its emails", async ({ page })
   expect(saved).toEqual({ enabled: true, silence_hours: 12, destination_failures: true });
 
   // An email arrives (and goes to the destination), then a fields alert opens.
-  const requestId = await deliverMail(`Order replay ${ts}`, "sku,qty\r\nA-1,2");
+  const { requestId } = await deliverMail(`Order replay ${ts}`, "sku,qty\r\nA-1,2");
   await expect.poll(() => received.length, { timeout: 20000 }).toBeGreaterThanOrEqual(1);
   const { error } = await admin.from("alert_events").insert({
     endpoint_id: endpointId,
@@ -271,7 +275,7 @@ test("an email's attachment and its exact message download from the dashboard", 
   page,
 }) => {
   const subject = `Order attached ${ts}`;
-  await deliverMail(subject, "sku,qty\r\nB-2,5");
+  const { raw } = await deliverMail(subject, "sku,qty\r\nB-2,5");
   await openDashboard(page);
   await page.getByRole("button", { name: new RegExp(`EMAIL ${subject}`) }).click();
   await expect(shown(page.getByRole("heading", { name: subject }))).toBeVisible({
@@ -296,8 +300,8 @@ test("an email's attachment and its exact message download from the dashboard", 
   const message = await eml;
   expect(message.suggestedFilename()).toMatch(/^email-[0-9a-f]{8}\.eml$/);
   const bytes = Buffer.concat(await (await message.createReadStream()).toArray());
-  expect(bytes.toString("utf8")).toContain('filename="order.csv"');
-  expect(bytes.toString("utf8")).toContain("B-2,5");
+  // The message exactly as it arrived, headers and every MIME part.
+  expect(bytes.toString("utf8")).toBe(raw);
 });
 
 test("a Google Sheets destination is set up with a new spreadsheet", async ({ page }) => {

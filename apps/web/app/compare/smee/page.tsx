@@ -81,7 +81,7 @@ export default function CompareSmeePage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated March 2026
+          Comparison · Updated October 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Smee.io</h1>
         <p className="text-lg text-muted-foreground mb-10">

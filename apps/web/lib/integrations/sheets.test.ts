@@ -113,5 +113,28 @@ describe("rowsFor", () => {
         options
       )
     ).toEqual([["1001"]]);
+    // Two items, still one row: a row per email, not per item.
+    expect(
+      rowsFor(
+        order([
+          { sku: "A-1", qty: "2" },
+          { sku: "B-2", qty: "1" },
+        ]),
+        { rows: "email", columns: [columns[0]] },
+        endpoint,
+        options
+      )
+    ).toEqual([["1001"]]);
+  });
+
+  it("adds one row with blank item columns for an email without a parse", () => {
+    expect(
+      rowsFor(
+        { ...order([]), parsed: undefined },
+        { rows: "line_items", columns: [columns[1], columns[2]] },
+        endpoint,
+        options
+      )
+    ).toEqual([["", ""]]);
   });
 });
