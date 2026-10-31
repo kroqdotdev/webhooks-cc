@@ -77,7 +77,7 @@ function UpgradeSuccessNotice() {
       }
     >
       {show === "business"
-        ? "Your subscription is active: 250,000 requests and 2,000 parsed pages a month, kept for 90 days, and up to 50 layouts per endpoint."
+        ? "Your subscription is active: 250,000 requests and 2,000 parsed pages a month, kept for 90 days, up to 50 layouts per endpoint, a custom inbound domain and file drops."
         : "Your subscription is active: 100,000 requests every 30 days, kept for 31 days."}
     </Notice>
   );
@@ -95,6 +95,19 @@ const PLAN_ROWS: { label: string; free: string; pro: string; business: string }[
     business: "2,000 a month, then blocks or overage",
   },
   { label: "Layouts per endpoint", free: "2", pro: "2", business: "Up to 50" },
+  {
+    label: "AI assists",
+    free: "5 every 30 days",
+    pro: "20 every 30 days",
+    business: "500 every 30 days",
+  },
+  {
+    label: "Custom inbound domains",
+    free: "None",
+    pro: "None",
+    business: "1, then $3 a month each",
+  },
+  { label: "File drops (SFTP, FTP, S3)", free: "No", pro: "No", business: "Yes" },
   {
     label: "Price",
     free: "Free",

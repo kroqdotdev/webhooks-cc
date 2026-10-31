@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Does Hookdeck have a free tier?",
     answer:
-      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing at volume and more layouts, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
+      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
   },
   {
     question: "Does webhooks.cc handle webhook retries and delivery guarantees?",
