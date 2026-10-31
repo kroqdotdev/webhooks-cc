@@ -1,27 +1,38 @@
 //! Integration tests that hit the real API.
 //!
 //! Requirements:
-//!   - Web app running on localhost:3000 (or WHK_API_URL)
+//!   - WHK_API_URL set to the web app to test against, e.g. http://localhost:3000;
+//!     without it every test here skips
 //!   - Receiver running on localhost:3001 (or WHK_WEBHOOK_URL)
-//!   - Authenticated (valid token at ~/.config/whk/token.json or ~/Library/Application Support/whk/)
+//!   - Authenticated against that server (`whk auth login`, saved at
+//!     ~/.config/whk/token.json or ~/Library/Application Support/whk/)
 //!
-//! Run with: cargo test --test integration
+//! Run with: WHK_API_URL=http://localhost:3000 cargo test --test integration
 //! Skip with: cargo test --lib (unit tests only)
 
 use base64::Engine;
 use std::collections::HashMap;
 
-/// Helper to create a client pointing at local dev
+/// A client for the server named by WHK_API_URL. Without it the tests skip
+/// (no token): they create, use and delete endpoints, so they never run
+/// against production by default with whatever `whk` session is saved.
 fn make_client() -> whk::api::ApiClient {
-    let base = std::env::var("WHK_API_URL").unwrap_or_else(|_| "https://webhooks.cc".into());
+    let explicit = std::env::var("WHK_API_URL")
+        .ok()
+        .filter(|url| !url.is_empty());
+    let base = explicit
+        .clone()
+        .unwrap_or_else(|| "http://localhost:3000".into());
     let webhook =
-        std::env::var("WHK_WEBHOOK_URL").unwrap_or_else(|_| "https://go.webhooks.cc".into());
+        std::env::var("WHK_WEBHOOK_URL").unwrap_or_else(|_| "http://localhost:3001".into());
     // Only a `whk auth login` session runs these tests: an agent connection
     // another tool saved in the shared credential file must not.
-    let token = whk::auth::load_token()
-        .ok()
-        .flatten()
-        .map(|t| t.access_token);
+    let token = explicit.and_then(|_| {
+        whk::auth::load_token()
+            .ok()
+            .flatten()
+            .map(|t| t.access_token)
+    });
     whk::api::ApiClient::with_credentials(Some(&base), Some(&webhook), token, None)
         .expect("failed to create API client")
 }
@@ -31,8 +42,8 @@ fn make_client() -> whk::api::ApiClient {
 #[tokio::test]
 async fn test_auth_token_loads() {
     let client = make_client();
-    // If there's a token, require_auth should succeed
-    if whk::auth::is_logged_in() {
+    // With a server named and a saved session, the client uses it.
+    if std::env::var("WHK_API_URL").is_ok_and(|url| !url.is_empty()) && whk::auth::is_logged_in() {
         assert!(client.require_auth().is_ok());
     }
 }
