@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { layoutIssues } from "@webhooks-cc/sdk";
 import {
@@ -11,6 +11,7 @@ import {
   type ParsedAttachment,
   type ParsedEmail,
 } from "@webhooks-cc/sdk/email";
+import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
@@ -352,11 +353,20 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       .catch(() => setAiOffered(false));
   }, [accessToken, endpoint.slug]);
 
+  // The saved layouts changed (a save, another tab, an alert's AI repair):
+  // layouts edited here keep their edits, the others take the saved copy.
+  const baseKey = useRef(initialKey);
   useEffect(() => {
-    setLayouts(JSON.parse(initialKey) as Layout[]);
+    const base = JSON.parse(baseKey.current) as Layout[];
+    baseKey.current = initialKey;
+    setLayouts((current) =>
+      mergeEdits(base, current, JSON.parse(initialKey) as Layout[], (layout) => layout.id)
+    );
   }, [initialKey]);
 
   const draftKey = JSON.stringify(layouts);
+  // An assist is spent on a draft only while the plan would use another layout.
+  const draftCap = Math.min(cap, MAX_LAYOUTS);
   const dirty = draftKey !== initialKey;
   const local = useMemo(() => layoutIssues(layouts), [layouts]);
   const allProblems = [...local, ...(preview?.problems ?? [])];
@@ -614,8 +624,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <Plus className="h-3 w-3" />
           Add layout
         </button>
-        {/* An assist is spent on a draft: only while another layout would be used. */}
-        {aiOffered && layouts.length < Math.min(cap, MAX_LAYOUTS) && assist?.kind !== "layout" && (
+        {aiOffered && layouts.length < draftCap && assist?.kind !== "layout" && (
           <button
             type="button"
             onClick={() => setAssist({ kind: "layout" })}
@@ -631,7 +640,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           </span>
         )}
       </div>
-      {assist?.kind === "layout" && (
+      {assist?.kind === "layout" && layouts.length < draftCap && (
         <AiAssistPanel
           slug={endpoint.slug}
           samples={samples}

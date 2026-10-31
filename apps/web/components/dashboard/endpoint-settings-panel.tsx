@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Globe, Mail, ShieldCheck } from "lucide-react";
+import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { ResponsesSection } from "./responses-section";
@@ -73,10 +74,22 @@ function ReceivingSection({
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
   const url = `${WEBHOOK_BASE_URL}/w/${endpoint.slug}`;
 
+  // The saved endpoint changed (a save, another tab, an alert's AI repair):
+  // what was edited here is kept, the rest takes the saved copy.
+  const base = useRef({ name: initialName, extracts: initialExtracts, fields: initialFieldsKey });
   useEffect(() => {
-    setName(initialName);
-    setExtracts(initialExtracts);
-    setFields(JSON.parse(initialFieldsKey) as EmailField[]);
+    const before = base.current;
+    base.current = { name: initialName, extracts: initialExtracts, fields: initialFieldsKey };
+    setName((current) => (current === before.name ? initialName : current));
+    setExtracts((current) => (current === before.extracts ? initialExtracts : current));
+    setFields((current) =>
+      mergeEdits(
+        JSON.parse(before.fields) as EmailField[],
+        current,
+        JSON.parse(initialFieldsKey) as EmailField[],
+        (field) => field.name
+      )
+    );
   }, [initialName, initialExtracts, initialFieldsKey]);
 
   const fieldsChanged = JSON.stringify(fields) !== initialFieldsKey;

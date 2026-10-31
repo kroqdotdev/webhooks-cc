@@ -8,7 +8,7 @@ import {
   fetchAiAssists,
   fetchAlerts,
   fetchDashboardEndpoint,
-  fetchDashboardRequest,
+  fetchDashboardRequestById,
   fetchDashboardRequests,
   fetchDestinations,
   replayEndpoint,
@@ -137,7 +137,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     const [requests, missed] = await Promise.all([
       fetchDashboardRequests(accessToken, endpoint.slug, 10, "email").catch(() => []),
       missedId
-        ? fetchDashboardRequest(accessToken, missedId).catch(() => null)
+        ? fetchDashboardRequestById(accessToken, missedId).catch(() => null)
         : Promise.resolve(null),
     ]);
     const layoutId =
@@ -169,7 +169,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
    * was not saved, so the panel lets the person try again.
    */
   const applyRepair = async (field: EmailField) => {
-    if (!accessToken || !repair) return;
+    if (!accessToken || !repair) throw new Error("Sign in again to save the field.");
     try {
       const fresh = await fetchDashboardEndpoint(accessToken, endpoint.slug);
       const replace = (fields: EmailField[] | undefined) => {
