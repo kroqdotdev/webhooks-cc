@@ -294,6 +294,9 @@ function encodeCursor(offset: number, cutoff: number): string {
   return Buffer.from(JSON.stringify({ offset, cutoff }), "utf8").toString("base64url");
 }
 
+/** How far back a page cursor may hold the retention cutoff (see listPaginatedRequestsForEndpointByUser). */
+const CURSOR_PIN_MS = DAY_MS;
+
 function decodeCursor(cursor: string | undefined): { offset: number; cutoff: number } | null {
   if (!cursor) return null;
 
@@ -309,7 +312,9 @@ function decodeCursor(cursor: string | undefined): { offset: number; cutoff: num
       parsed.offset < 0 ||
       typeof parsed.cutoff !== "number" ||
       !Number.isFinite(parsed.cutoff) ||
-      parsed.cutoff < 0
+      parsed.cutoff < 0 ||
+      // A cutoff from the future is not one this server wrote.
+      parsed.cutoff > Date.now() + DAY_MS
     ) {
       return null;
     }
@@ -469,6 +474,19 @@ export async function getRetainedRequestsByIds(
   const { data, error } = await query.returns<SelectedRequestRowWithQuery[]>();
   if (error) throw error;
   return (data ?? []).map(normalizeRequest);
+}
+
+/** Whether one of an endpoint's requests is within retention (an id check, no body read). */
+export async function isRequestRetained(endpointId: string, requestId: string): Promise<boolean> {
+  const query = createAdminClient()
+    .from("requests")
+    .select("id")
+    .eq("endpoint_id", endpointId)
+    .eq("id", requestId);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query.maybeSingle<{ id: string }>();
+  if (error) throw error;
+  return data !== null;
 }
 
 /** The id of an endpoint's newest request of a kind within retention, or null. */
@@ -700,9 +718,10 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
 
   const limit = clampLimit(input.limit, 50);
   const retention = await getUserRetention(endpoint.ownerId);
-  // The cursor pins the cutoff so pages stay stable as the window slides,
-  // but never earlier than the plan allows (a cursor is the client's to forge).
-  const cutoff = Math.max(decoded?.cutoff ?? retention.cutoff, retention.cutoff);
+  // The cursor pins the cutoff so pages stay stable as the window slides
+  // while someone pages through, but by a day at most: a cursor is the
+  // client's to forge, and an earlier cutoff would show rows past retention.
+  const cutoff = Math.max(decoded?.cutoff ?? retention.cutoff, retention.cutoff - CURSOR_PIN_MS);
   const offset = decoded?.offset ?? 0;
 
   const query = admin

@@ -6,6 +6,7 @@ import {
   getNewestRetainedRequestId,
   getRequestByIdForUser,
   getRetainedRequestsByIds,
+  isRequestRetained,
   listPaginatedRequestsForEndpointByUser,
   listRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
@@ -232,6 +233,8 @@ describe("retention", () => {
     await admin.from("endpoints").update({ retention_days: 90 }).eq("id", planOnly.id);
     const [planExpired] = await insertRequests(planOnly.id, userId, [40]);
     expect(await getRetainedRequestsByIds(planOnly.id, [planExpired])).toEqual([]);
+    expect(await isRequestRetained(planOnly.id, planExpired)).toBe(false);
+    expect(await isRequestRetained(short.id, kept)).toBe(true);
     expect(await getNewestRetainedRequestId(planOnly.id, "http")).toBeNull();
     expect(await requestIdsInRange(planOnly.id, {})).toEqual([]);
   });
@@ -251,6 +254,14 @@ describe("retention", () => {
       cursor: forged,
     });
     expect(page!.items.map((r) => r.id)).toEqual([recent]);
+    // A cutoff from the future is not a cursor this server wrote.
+    const future = Buffer.from(
+      JSON.stringify({ offset: 0, cutoff: Date.now() + 30 * DAY }),
+      "utf8"
+    ).toString("base64url");
+    await expect(
+      listPaginatedRequestsForEndpointByUser({ userId, slug: endpoint.slug, cursor: future })
+    ).rejects.toThrow("invalid_cursor");
   });
 
   it("keeps team-billed rows for the team's days, not the owner's", async () => {
