@@ -26,6 +26,12 @@ const ts = Date.now();
 
 beforeAll(async () => {
   server = createServer((req, res) => {
+    // Only the Messages API is the model's. Anything else on the port (an
+    // editor probing new local listeners, say) gets a 404 and is not counted.
+    if (req.method !== "POST" || !req.url?.startsWith("/v1/messages")) {
+      res.writeHead(404).end();
+      return;
+    }
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => {
