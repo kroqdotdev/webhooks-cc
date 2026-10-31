@@ -137,6 +137,8 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   let useId: string | null = null;
+  // Once the model was asked, a failure keeps the assist ("error"); before, it is given back.
+  let asked = false;
   try {
     const endpoint = await ownedEndpoint(auth.userId, slug);
     if (!endpoint) return Response.json({ error: "Endpoint not found" }, { status: 404 });
@@ -195,10 +197,12 @@ export async function POST(request: Request, { params }: Params) {
 
     let result;
     try {
+      asked = true;
       result = await runAssist(ask, requests, prepared);
     } catch (error) {
       // Given back when it cost nothing; kept when the model may have run.
       const billed = error instanceof AssistModelError && error.billed;
+      asked = billed;
       await finish(useId, billed ? "error" : "failed");
       useId = null;
       if (error instanceof AssistModelError) {
@@ -220,12 +224,14 @@ export async function POST(request: Request, { params }: Params) {
         dropped: result.dropped,
       },
     });
-    return Response.json({ ...result, ...(await left(endpoint.id)) });
+    // The counts the take answered (this ask included): a fresh read that
+    // failed would lose a proposal the assist was spent on.
+    return Response.json({ ...result, allowed: take.allowed ?? 0, used: take.used ?? 0 });
   } catch (error) {
     // Only an ask that never finished (finish_ai_assist leaves finished ones be).
     if (useId) {
       await createAdminClient()
-        .rpc("finish_ai_assist", { p_id: useId, p_outcome: "failed" })
+        .rpc("finish_ai_assist", { p_id: useId, p_outcome: asked ? "error" : "failed" })
         .then(undefined, () => undefined);
     }
     reportError("An AI assist failed", error);

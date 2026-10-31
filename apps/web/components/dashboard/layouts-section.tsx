@@ -341,7 +341,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   // AI setup: a layout drafted from emails, or a field found for an open layout.
   const [aiOffered, setAiOffered] = useState(false);
   const [assist, setAssist] = useState<
-    { kind: "layout" } | { kind: "field"; index: number } | null
+    // A field is found for one layout, by id: moving layouts must not move it.
+    { kind: "layout" } | { kind: "field"; layoutId: string } | null
   >(null);
 
   useEffect(() => {
@@ -548,7 +549,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         requestId={sampleId || undefined}
                       />
                       {aiOffered &&
-                        (assist?.kind === "field" && assist.index === index ? (
+                        (assist?.kind === "field" && assist.layoutId === layout.id ? (
                           <AiAssistPanel
                             slug={endpoint.slug}
                             samples={samples}
@@ -566,7 +567,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => setAssist({ kind: "field", index })}
+                            onClick={() => setAssist({ kind: "field", layoutId: layout.id })}
                             className="text-xs text-muted-foreground underline inline-flex items-center gap-1"
                           >
                             <Sparkles className="h-3 w-3" /> Find a field with AI
@@ -613,7 +614,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <Plus className="h-3 w-3" />
           Add layout
         </button>
-        {aiOffered && layouts.length < MAX_LAYOUTS && assist?.kind !== "layout" && (
+        {/* An assist is spent on a draft: only while another layout would be used. */}
+        {aiOffered && layouts.length < Math.min(cap, MAX_LAYOUTS) && assist?.kind !== "layout" && (
           <button
             type="button"
             onClick={() => setAssist({ kind: "layout" })}
@@ -635,13 +637,15 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           samples={samples}
           mode={{ kind: "layout" }}
           onUseLayout={(drafted) => {
+            // Without a condition it would read every email (the panel offers none such).
+            if (!drafted.match) return;
             const base = newLayout(layouts);
             setLayouts([
               ...layouts,
               {
                 ...base,
                 name: drafted.name ?? base.name,
-                match: { logic: "and", conditions: drafted.match ? [drafted.match] : [] },
+                match: { logic: "and", conditions: [drafted.match] },
                 fields: drafted.fields,
               },
             ]);

@@ -90,7 +90,8 @@ begin
   select count(*) into v_used
     from public.ai_assist_uses u
    where u.created_at > now() - interval '30 days'
-     and (u.user_id = v_account.user_id or u.team_id = v_account.team_id);
+     and (u.user_id = v_account.user_id or u.team_id = v_account.team_id)
+     and (u.outcome is not null or u.created_at > now() - interval '3 minutes');
   return jsonb_build_object('allowed', v_account.allowed, 'used', v_used);
 end;
 $$;
@@ -126,10 +127,14 @@ begin
   else
     perform 1 from public.users where id = v_account.user_id for no key update;
   end if;
+  -- An ask still unfinished after the 3 minutes one may take was abandoned
+  -- (the process ended before it could say how it went): our side failed,
+  -- so it is not counted, here or in ai_assists_left().
   select count(*) into v_used
     from public.ai_assist_uses u
    where u.created_at > now() - interval '30 days'
-     and (u.user_id = v_account.user_id or u.team_id = v_account.team_id);
+     and (u.user_id = v_account.user_id or u.team_id = v_account.team_id)
+     and (u.outcome is not null or u.created_at > now() - interval '3 minutes');
   -- One ask at a time per person: another is still waiting for the model.
   -- The web app ends an ask within 80 seconds; the window is longer.
   perform 1

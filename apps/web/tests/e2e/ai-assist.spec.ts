@@ -162,7 +162,12 @@ async function draftAndFind(page: Page) {
     () => true,
     () => false
   );
-  test.skip(!offered, "AI setup is not offered");
+  // With a key configured, a missing offer is a failure, not a skip.
+  if (process.env.ANTHROPIC_API_KEY?.trim()) {
+    await expect(draft).toBeVisible();
+  } else {
+    test.skip(!offered, "AI setup is not offered");
+  }
   await draft.click();
 
   const panel = section.getByRole("region", { name: "Draft a layout with AI" });
