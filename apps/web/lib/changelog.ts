@@ -36,6 +36,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "mailhooks.cc has pages for the Google Sheets destination, file drops, custom domains, AI setup, and Zapier and Make, and the docs have a page for Zapier and Make",
       "A Google Sheets destination or file drop writing a row per line item leaves the item columns blank for an email with none, instead of their placeholders",
       "Alerts settings wait until they have loaded before they can be changed, so a change made right away is no longer undone",
+      "When a Business renewal payment fails, the plan page says Business is at stake, not Pro",
     ],
   },
   {
