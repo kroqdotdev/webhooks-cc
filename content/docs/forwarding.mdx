@@ -186,7 +186,7 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 | `data.replyText`             | The new text of a reply, without the quoted message and the signature; `null` when the email quotes nothing. See [Reply text](/docs/email-capture#reply-text). |
 | `data.fields`                | The endpoint's [named fields](/docs/email-capture#fields-you-pick-out), each the text its pattern found or `null`. Left out when the endpoint has none. |
 | `data.codes`, `data.links`   | One-time codes and the links worth clicking, as on the email in the dashboard. Left out when the endpoint turned off "Show codes and links found in emails". |
-| `data.attachments`           | Name, type and size of each attachment. The contents are not kept, so they are not forwarded.                                                         |
+| `data.attachments`           | Name, type and size of each attachment, with a signed `url` or the base64 `content` as the destination asks; see [Attachments](#attachments).          |
 | `data.auth`                  | The SPF, DKIM and DMARC results (`pass`, `fail`, `softfail`, `none`, ...) and the TLS version; `null` when a check did not run.                     |
 | `data.spam` | rspamd's `score`, the `required` score at which it would reject, and its suggested `action` (never applied); `null` when the email was not scored. |
 | `data.headers`               | Every header, lowercase names, repeated headers joined with a newline.                                                                               |
@@ -325,7 +325,7 @@ If your app already receives email through an inbound mail service, a destinatio
 
 The Mailgun form is signed as Mailgun signs it when you enter your **Mailgun signing key** (the HTTP webhook signing key under API Security in Mailgun): `signature` is the hex HMAC-SHA256 of `timestamp` and `token`, so your handler's check passes; without a key it is empty. The key is stored encrypted and never shown again. Every shape also carries this destination's Standard Webhooks headers, so a handler can check that a delivery came from here.
 
-What differs from the real thing: attachment contents are never stored, so no attachments are included (the [email JSON](#an-email) lists them); the text and HTML are what webhooks.cc kept (up to 256 KB each); and fields a provider computes for itself (Postmark's `MessageID`, SendGrid's SpamAssassin report) come from webhooks.cc's own checks or the request id. HTTP requests to such a destination go as received. To try a shape on one email, use `whk tunnel --email-format postmark` [on localhost](/docs/cli/tunnel), `client.emails.render()` in the SDK, or `render_email` in the [MCP server](/docs/mcp/tools#render_email).
+What differs from the real thing: attachments are left out of these shapes (the [email JSON](#an-email) carries them, as links or inline); the text and HTML are what webhooks.cc kept (up to 256 KB each); and fields a provider computes for itself (Postmark's `MessageID`, SendGrid's SpamAssassin report) come from webhooks.cc's own checks or the request id. HTTP requests to such a destination go as received. To try a shape on one email, use `whk tunnel --email-format postmark` [on localhost](/docs/cli/tunnel), `client.emails.render()` in the SDK, or `render_email` in the [MCP server](/docs/mcp/tools#render_email).
 
 ## Attachments
 

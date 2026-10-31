@@ -249,9 +249,10 @@ describe("a team pool past its allowance", () => {
       .from("teams")
       .update({
         subscription_status: "active",
+        // request_limit follows the seats (trigger teams_request_limit), so
+        // the pool is used up rather than set small.
         seats: 1,
-        request_limit: 1,
-        requests_used: 1,
+        requests_used: 100_000,
         credit_requests: 1,
         polar_customer_id: `cus_team_${teamId}`,
         period_start: periodStart(),

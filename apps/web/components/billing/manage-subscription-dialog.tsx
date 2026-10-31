@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import type { AccountProfile } from "@/lib/account-profile";
-import { cancelBillingSubscription, resubscribeBillingSubscription } from "@/lib/billing-api";
+import {
+  cancelBillingSubscription,
+  planName,
+  resubscribeBillingSubscription,
+} from "@/lib/billing-api";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +43,14 @@ export function ManageSubscriptionDialog({
   const [resubscribing, setResubscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!profile || profile.plan !== "pro") return null;
+  if (!profile || (profile.plan !== "pro" && profile.plan !== "business")) return null;
+  const name = planName(profile.plan);
+  const amount =
+    profile.plan === "business"
+      ? profile.billing_interval === "year"
+        ? "$290.00/year"
+        : "$29.00/month"
+      : "$8.00/month";
 
   const handleCancelClick = () => {
     setConfirmCancelOpen(true);
@@ -89,8 +100,10 @@ export function ManageSubscriptionDialog({
     }
   };
 
-  const nextPaymentDate = profile.period_end
-    ? new Date(profile.period_end).toLocaleDateString("en-US", {
+  // An annual plan's quota renews monthly; its payment comes with the year.
+  const billingEnd = profile.billing_period_end ?? profile.period_end;
+  const nextPaymentDate = billingEnd
+    ? new Date(billingEnd).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
@@ -110,7 +123,7 @@ export function ManageSubscriptionDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Manage subscription</DialogTitle>
-          <DialogDescription>You&apos;re on the Pro plan</DialogDescription>
+          <DialogDescription>You&apos;re on the {name} plan</DialogDescription>
         </DialogHeader>
 
         {!profile.cancel_at_period_end && (
@@ -121,7 +134,7 @@ export function ManageSubscriptionDialog({
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Amount</span>
-              <span className="font-medium">$8.00/month</span>
+              <span className="font-medium">{amount}</span>
             </div>
           </div>
         )}
@@ -164,8 +177,9 @@ export function ManageSubscriptionDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel subscription?</AlertDialogTitle>
             <AlertDialogDescription>
-              You&apos;ll retain Pro access until your billing period ends on {nextPaymentDate}.
-              After that, you&apos;ll be downgraded to the free tier.
+              You&apos;ll keep {name} until your billing period ends on {nextPaymentDate}. After
+              that, you&apos;ll be downgraded to the free tier. Requests older than the free
+              plan&apos;s 7 days are kept one more week, then deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

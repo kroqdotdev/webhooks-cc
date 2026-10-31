@@ -21,7 +21,13 @@ export type AccountProfile = Pick<
   | "overage_max"
   | "overage_used"
   | "overage_period_start"
+  | "billing_interval"
+  | "billing_period_end"
+  | "pending_plan"
+  | "pending_interval"
+  | "retention_floor_days"
+  | "retention_floor_until"
 >;
 
 export const ACCOUNT_PROFILE_SELECT =
-  "id, email, name, image, plan, requests_used, request_limit, period_start, period_end, cancel_at_period_end, subscription_status, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start";
+  "id, email, name, image, plan, requests_used, request_limit, period_start, period_end, cancel_at_period_end, subscription_status, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start, billing_interval, billing_period_end, pending_plan, pending_interval, retention_floor_days, retention_floor_until";

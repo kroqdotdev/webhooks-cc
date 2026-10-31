@@ -17,6 +17,8 @@ import {
 import { QuotaMeter, seatSlotsFor } from "@/components/settings/quota-meter";
 import { useSettingsData } from "@/components/settings/settings-data";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
+import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
+import { TeamBusinessPanel } from "@/components/teams/team-business-panel";
 import { TeamBillingPanel } from "@/components/teams/team-billing-panel";
 import {
   AlertDialog,
@@ -80,6 +82,8 @@ function TeamDetailContent() {
   const team = settings.teams.find((t) => t.id === teamId) ?? null;
 
   const [members, setMembers] = useState<TeamMember[] | null>(null);
+  // Bumped when Team Business changes, which the pages panel reads.
+  const [businessVersion, setBusinessVersion] = useState(0);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [endpoints, setEndpoints] = useState<TeamEndpoint[]>([]);
   const [ownedEndpoints, setOwnedEndpoints] = useState<OwnedEndpoint[]>([]);
@@ -525,6 +529,33 @@ function TeamDetailContent() {
         ) : (
           // Members already see the suspended notice above; only the owner can subscribe.
           isOwner && billing
+        )}
+
+        {subscribed && (
+          <TeamBusinessPanel
+            accessToken={accessToken}
+            teamId={team.id}
+            business={team.business}
+            canManage={isOwner}
+            onChanged={() => {
+              setBusinessVersion((version) => version + 1);
+              void settings.refresh();
+            }}
+          />
+        )}
+
+        {subscribed && team.business && (
+          <ParsedPagesPanel
+            accessToken={accessToken}
+            teamId={team.id}
+            canManage={isOwner}
+            reloadKey={[
+              team.subscriptionStatus,
+              team.periodEnd,
+              team.business,
+              businessVersion,
+            ].join(":")}
+          />
         )}
 
         {subscribed && (

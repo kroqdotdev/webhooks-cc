@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Is Smee.io free?",
     answer:
-      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every individual feature included on both tiers. The paid plan raises rate limits and retention, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
+      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing at volume and more layouts, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
   },
   {
     question: "Should I use Smee.io or webhooks.cc for GitHub App development?",
@@ -46,7 +46,7 @@ const ROWS = [
   ["Auth / user accounts", "Yes (optional)", "No — anonymous channels"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (ISC)"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "None"],
-  ["Free tier features", "Every individual feature", "Free (fully open)"],
+  ["Free tier features", "Every Pro feature", "Free (fully open)"],
 ] as const;
 
 export const metadata = createPageMetadata({

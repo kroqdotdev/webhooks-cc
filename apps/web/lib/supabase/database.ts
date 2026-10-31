@@ -637,6 +637,10 @@ export interface Database {
           overage_report_lease: string | null;
           billing_interval: "month" | "year" | null;
           billing_period_end: string | null;
+          prorated_pages: number | null;
+          prorated_window: string | null;
+          pending_plan: string | null;
+          pending_interval: string | null;
           retention_floor_days: number | null;
           retention_floor_until: string | null;
           pages_used: number;
@@ -683,6 +687,10 @@ export interface Database {
           overage_report_lease?: string | null;
           billing_interval?: "month" | "year" | null;
           billing_period_end?: string | null;
+          prorated_pages?: number | null;
+          prorated_window?: string | null;
+          pending_plan?: string | null;
+          pending_interval?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -729,6 +737,10 @@ export interface Database {
           overage_report_lease?: string | null;
           billing_interval?: "month" | "year" | null;
           billing_period_end?: string | null;
+          prorated_pages?: number | null;
+          prorated_window?: string | null;
+          pending_plan?: string | null;
+          pending_interval?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -964,7 +976,7 @@ export interface Database {
           id: string;
           user_id: string | null;
           team_id: string | null;
-          kind: "blocks" | "overage";
+          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
           polar_subscription_id: string;
           status: "active" | "canceled" | "past_due" | null;
           units: number;
@@ -980,7 +992,7 @@ export interface Database {
           id?: string;
           user_id?: string | null;
           team_id?: string | null;
-          kind: "blocks" | "overage";
+          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
           polar_subscription_id: string;
           status?: "active" | "canceled" | "past_due" | null;
           units?: number;
@@ -1016,7 +1028,7 @@ export interface Database {
           polar_order_id: string;
           user_id: string | null;
           team_id: string | null;
-          kind: "credits" | "block_increase";
+          kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
           units: number;
           requests: number;
           amount: number | null;
@@ -1031,7 +1043,7 @@ export interface Database {
           polar_order_id: string;
           user_id?: string | null;
           team_id?: string | null;
-          kind: "credits" | "block_increase";
+          kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
           units: number;
           requests: number;
           amount?: number | null;
@@ -1799,7 +1811,7 @@ export interface Database {
         Args: {
           p_user_id: string | null;
           p_team_id: string | null;
-          p_kind: "blocks" | "overage";
+          p_kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
           p_subscription_id: string;
           p_status: "active" | "canceled" | "past_due" | null;
           p_units: number;
@@ -1815,7 +1827,7 @@ export interface Database {
           p_order_id: string;
           p_user_id: string | null;
           p_team_id: string | null;
-          p_kind: "credits" | "block_increase";
+          p_kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
           p_units: number;
           p_amount: number | null;
         };
@@ -1848,6 +1860,27 @@ export interface Database {
         }[];
       };
       complete_overage_report: {
+        Args: {
+          p_account_kind: "user" | "team";
+          p_account_id: string;
+          p_to_total: number;
+        };
+        Returns: undefined;
+      };
+      claim_page_overage_reports: {
+        Args: {
+          p_limit?: number;
+          p_lease_seconds?: number;
+        };
+        Returns: {
+          account_kind: "user" | "team";
+          account_id: string;
+          polar_customer_id: string;
+          from_total: number;
+          to_total: number;
+        }[];
+      };
+      complete_page_overage_report: {
         Args: {
           p_account_kind: "user" | "team";
           p_account_id: string;

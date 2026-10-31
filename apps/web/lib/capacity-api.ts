@@ -20,8 +20,13 @@ async function readError(response: Response): Promise<string> {
   return typeof data?.error === "string" ? data.error : `Request failed (${response.status})`;
 }
 
-export async function fetchCapacity(accessToken: string, teamId?: string): Promise<CapacityState> {
-  const response = await fetch(capacityUrl(teamId), {
+export async function fetchCapacity(
+  accessToken: string,
+  teamId?: string,
+  resource: "requests" | "pages" = "requests"
+): Promise<CapacityState> {
+  const url = resource === "pages" ? `${capacityUrl(teamId)}?resource=pages` : capacityUrl(teamId);
+  const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
