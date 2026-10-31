@@ -53,7 +53,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       (body.requestId as string | undefined) ??
       (await getNewestRetainedRequestId(endpoint.id, "email"));
     const [email] = id ? await getRetainedRequestsByIds(endpoint.id, [id]) : [];
-    if (email && (email.endpointId !== endpoint.id || email.kind !== "email")) {
+    // An email asked for by id must be this endpoint's, and still kept.
+    if (
+      (body.requestId !== undefined && !email) ||
+      (email && (email.endpointId !== endpoint.id || email.kind !== "email"))
+    ) {
       return reply({ error: "That email is not on this endpoint." }, 404);
     }
     const parsed =

@@ -227,6 +227,13 @@ describe("retention", () => {
     await admin.from("endpoints").update({ retention_days: 2 }).eq("id", expiredOnly.id);
     await insertRequests(expiredOnly.id, userId, [3]);
     expect(await getNewestRetainedRequestId(expiredOnly.id, "http")).toBeNull();
+    // And by the plan alone: an endpoint keeping more days than Pro's 30.
+    const planOnly = await createEndpointForUser({ userId, name: "plan only" });
+    await admin.from("endpoints").update({ retention_days: 90 }).eq("id", planOnly.id);
+    const [planExpired] = await insertRequests(planOnly.id, userId, [40]);
+    expect(await getRetainedRequestsByIds(planOnly.id, [planExpired])).toEqual([]);
+    expect(await getNewestRetainedRequestId(planOnly.id, "http")).toBeNull();
+    expect(await requestIdsInRange(planOnly.id, {})).toEqual([]);
   });
 
   it("does not let a page cursor reach past the plan's retention", async () => {
