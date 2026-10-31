@@ -161,7 +161,7 @@ Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the ad
 
 `whk requests get` on an email shows the sender, recipient, subject, tag, attachments, and text part instead of the raw message. Add `--json` for the headers and the raw message; the HTML and the sender checks are in the dashboard.
 
-On an endpoint with [layouts](/docs/layouts), it also shows what they found under **Parsed**: the layout, each field as `name: value`, the line items as a table in their columns' order (the first 50), and one line per parsed attachment. The TUI's request view shows the same, and `--json` carries all of it as `parsed`.
+On an endpoint with [layouts](/docs/layouts), it also shows what they found under **Parsed**: the layout, each field as `name: value`, the line items as a table in their columns' order (the first 50), and one line per parsed attachment. The TUI's request view shows the same, and `--json` returns the request's `parsed` as stored: a very large result is cut to fit the email's JSON (attachment rows and text first, then line items from the end), and `parsed.truncated` says so.
 
 ## replay
 

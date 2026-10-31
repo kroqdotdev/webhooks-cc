@@ -223,6 +223,8 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     });
   }, []);
 
+  // Bumped by "Try again" when the first load failed.
+  const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
@@ -242,7 +244,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, endpoint.slug, reset]);
+  }, [accessToken, endpoint.slug, reset, loadAttempt]);
 
   const next: DashboardAlertSettings = {
     enabled: draft.enabled,
@@ -340,7 +342,20 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       {loaded === null ? (
         // The settings load after the section renders; nothing to change
         // before then, so an early change is never overwritten by the load.
-        <p className="text-sm text-muted-foreground">{error ? null : "Loading alerts..."}</p>
+        error ? (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setLoadAttempt((attempt) => attempt + 1);
+            }}
+            className="ui-btn-outline py-1! px-2.5! text-xs"
+          >
+            Try again
+          </button>
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading alerts...</p>
+        )
       ) : (
         <>
           <SwitchRow

@@ -158,48 +158,56 @@ pub fn print_request_line(req: &CapturedRequest) {
 const EMAIL_TEXT_PREVIEW: usize = 4000;
 
 fn print_email_detail(req: &CapturedRequest, email: &crate::types::EmailSummary) {
-    println!("{}", bold("Email Details"));
-    println!("  {} {}", dim("ID:"), sanitize(&req.id));
-    println!("  {} {}", dim("To:"), sanitize_line(&req.path));
-    if let Some(from) = email.from.first() {
-        println!("  {} {}", dim("From:"), sanitize_line(&from.to_string()));
+    for line in email_detail_lines(req, email) {
+        println!("{line}");
     }
-    println!(
+}
+
+/// What `whk requests get` prints for an email, line by line.
+fn email_detail_lines(req: &CapturedRequest, email: &crate::types::EmailSummary) -> Vec<String> {
+    let mut out = vec![bold("Email Details")];
+    out.push(format!("  {} {}", dim("ID:"), sanitize(&req.id)));
+    out.push(format!("  {} {}", dim("To:"), sanitize_line(&req.path)));
+    if let Some(from) = email.from.first() {
+        out.push(format!("  {} {}", dim("From:"), sanitize_line(&from.to_string())));
+    }
+    out.push(format!(
         "  {} {}",
         dim("Subject:"),
         sanitize_line(email.subject.as_deref().unwrap_or("(no subject)"))
-    );
+    ));
     if let Some(ref tag) = email.tag {
-        println!("  {} {}", dim("Tag:"), sanitize_line(tag));
+        out.push(format!("  {} {}", dim("Tag:"), sanitize_line(tag)));
     }
-    println!("  {} {}", dim("Size:"), format_bytes(req.size));
-    println!("  {} {}", dim("Time:"), format_timestamp(req.received_at));
+    out.push(format!("  {} {}", dim("Size:"), format_bytes(req.size)));
+    out.push(format!("  {} {}", dim("Time:"), format_timestamp(req.received_at)));
     if !email.attachments.is_empty() {
-        println!("\n{}", bold("Attachments"));
+        out.push(String::new());
+        out.push(bold("Attachments"));
         for attachment in &email.attachments {
-            println!(
+            out.push(format!(
                 "  {} {} {}",
                 sanitize_line(attachment.filename.as_deref().unwrap_or("(unnamed)")),
                 dim(&sanitize_line(attachment.content_type.as_deref().unwrap_or(""))),
                 dim(&format_bytes(attachment.size as usize))
-            );
+            ));
         }
     }
-    for line in parsed_section(req.parsed.as_deref()) {
-        println!("{line}");
-    }
+    out.extend(parsed_section(req.parsed.as_deref()));
     if let Some(ref text) = email.text {
-        println!("\n{}", bold("Text"));
+        out.push(String::new());
+        out.push(bold("Text"));
         let preview: String = text.chars().take(EMAIL_TEXT_PREVIEW).collect();
-        println!("{}", sanitize(&preview));
+        out.push(sanitize(&preview));
         if text.chars().count() > EMAIL_TEXT_PREVIEW {
-            println!("{}", dim("... (cut; the dashboard shows the whole email)"));
+            out.push(dim("... (cut; the dashboard shows the whole email)"));
         }
     }
-    println!(
-        "\n{}",
-        dim("Headers and the raw message: --json. HTML and sender checks: the dashboard.")
-    );
+    out.push(String::new());
+    out.push(dim(
+        "Headers and the raw message: --json. HTML and sender checks: the dashboard.",
+    ));
+    out
 }
 
 /// The "Parsed" section of an email's details: what the endpoint's layouts
@@ -210,7 +218,11 @@ pub fn parsed_section(parsed: Option<&ParsedEmail>) -> Vec<String> {
         return Vec::new();
     };
     let mut out = vec![String::new(), bold("Parsed")];
-    for line in parsed_lines(parsed) {
+    // The terminal's width, less a line's indent; 100 columns when piped.
+    let columns = crossterm::terminal::size()
+        .map(|(columns, _)| columns as usize)
+        .unwrap_or(100);
+    for line in parsed_lines(parsed, columns.saturating_sub(4)) {
         let mut text = "  ".repeat(line.depth + 1);
         for (tone, piece) in &line.spans {
             text.push_str(&match tone {
@@ -315,6 +327,17 @@ mod tests {
     #[test]
     fn email_details_show_the_parsed_result() {
         let request = crate::util::parsed::tests::acme_order();
+        // What `whk requests get` prints carries the section too.
+        if let Some(email) = request.email.as_ref() {
+            let printed: Vec<String> = email_detail_lines(&request, email)
+                .iter()
+                .map(|line| strip_ansi(line))
+                .collect();
+            assert!(printed.contains(&"Parsed".to_string()), "{printed:#?}");
+            assert!(printed.contains(&"    order: 1001".to_string()));
+        } else {
+            panic!("the fixture is an email");
+        }
         let section: Vec<String> = parsed_section(request.parsed.as_deref())
             .iter()
             .map(|line| strip_ansi(line))

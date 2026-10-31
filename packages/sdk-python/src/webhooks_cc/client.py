@@ -625,6 +625,9 @@ class WebhooksCC:
             attempt += 1
             backoff = self._backoff_ms * 2 ** (attempt - 1)
             try:
+                # Never followed, even with an http_client configured to: the API does
+                # not redirect, the token stays with the host named, and a download
+                # never returns a redirect's page as the file.
                 response = self._http.request(
                     method,
                     url,
@@ -632,6 +635,7 @@ class WebhooksCC:
                     content=json.dumps(body) if body is not None else None,
                     headers={**self._auth(), "Content-Type": "application/json"},
                     timeout=self._timeout_s,
+                    follow_redirects=False,
                 )
             except httpx.TimeoutException:
                 if attempt < attempts and repeatable:

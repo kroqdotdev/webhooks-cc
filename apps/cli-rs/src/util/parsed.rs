@@ -19,9 +19,12 @@ use crate::util::format::format_bytes;
 pub const MAX_LINE_ITEM_ROWS: usize = 50;
 /// A line item cell or column name, in terminal columns.
 const MAX_CELL_WIDTH: usize = 24;
-/// The line items table, in terminal columns: with its indent it fits a
-/// 100-column terminal, and columns past it are counted instead of wrapped.
-const MAX_TABLE_WIDTH: usize = 92;
+/// The line items table and a field's line, in terminal columns, at most:
+/// with its indent it fits a 100-column terminal, and table columns past the
+/// width given (a narrower terminal or panel) are counted instead of wrapped.
+pub const MAX_TABLE_WIDTH: usize = 92;
+/// The least a field's value keeps, however long its name.
+const MIN_VALUE_WIDTH: usize = 12;
 /// A field's value or the layout's name, in terminal columns.
 const MAX_VALUE_WIDTH: usize = 80;
 /// A field's or an attachment's name, in terminal columns.
@@ -59,8 +62,10 @@ impl ParsedLine {
 
 /// The lines under an email's "Parsed" heading: the layout, its fields, the
 /// line items as a table in `lineItemColumns` order, and one line per parsed
-/// attachment.
-pub fn parsed_lines(parsed: &ParsedEmail) -> Vec<ParsedLine> {
+/// attachment. `width` is the room for a line's text after the caller's
+/// indent (the terminal's or the panel's), capped at `MAX_TABLE_WIDTH`.
+pub fn parsed_lines(parsed: &ParsedEmail, width: usize) -> Vec<ParsedLine> {
+    let width = width.min(MAX_TABLE_WIDTH);
     if !parsed.matched() {
         return vec![ParsedLine::new(
             0,
@@ -91,22 +96,23 @@ pub fn parsed_lines(parsed: &ParsedEmail) -> Vec<ParsedLine> {
     if !parsed.fields.is_empty() {
         lines.push(title("Fields"));
         for (name, value) in &parsed.fields {
+            let name = clip(&sanitize_line(name), MAX_NAME_WIDTH);
+            // The value takes what the name and ": " leave of the line.
+            let room = width
+                .saturating_sub(name.width() + 2)
+                .clamp(MIN_VALUE_WIDTH, MAX_VALUE_WIDTH);
             let value = match value {
-                Some(value) => (Tone::Plain, clip(&sanitize_line(value), MAX_VALUE_WIDTH)),
+                Some(value) => (Tone::Plain, clip(&sanitize_line(value), room)),
                 None => (Tone::Danger, "not found".into()),
             };
             lines.push(ParsedLine::new(
                 1,
-                vec![
-                    (Tone::Strong, clip(&sanitize_line(name), MAX_NAME_WIDTH)),
-                    (Tone::Muted, ": ".into()),
-                    value,
-                ],
+                vec![(Tone::Strong, name), (Tone::Muted, ": ".into()), value],
             ));
         }
     }
 
-    line_items(parsed, &mut lines);
+    line_items(parsed, width, &mut lines);
 
     if !parsed.attachments.is_empty() {
         lines.push(title("Attachments"));
@@ -125,7 +131,7 @@ pub fn parsed_lines(parsed: &ParsedEmail) -> Vec<ParsedLine> {
 }
 
 /// The line items as a table: a muted header row, then a row per item.
-fn line_items(parsed: &ParsedEmail, lines: &mut Vec<ParsedLine>) {
+fn line_items(parsed: &ParsedEmail, budget: usize, lines: &mut Vec<ParsedLine>) {
     if parsed.line_items.is_empty() {
         return;
     }
@@ -177,7 +183,7 @@ fn line_items(parsed: &ParsedEmail, lines: &mut Vec<ParsedLine>) {
     let mut fit = 0;
     for (i, width) in widths.iter().enumerate() {
         let needed = if i == 0 { *width } else { width + GAP.len() };
-        if fit > 0 && used + needed > MAX_TABLE_WIDTH {
+        if fit > 0 && used + needed > budget {
             break;
         }
         used += needed;
@@ -422,7 +428,7 @@ pub(crate) mod tests {
     }
 
     fn texts(parsed: &ParsedEmail) -> Vec<String> {
-        parsed_lines(parsed)
+        parsed_lines(parsed, MAX_TABLE_WIDTH)
             .iter()
             .map(|line| format!("{}{}", "  ".repeat(line.depth), line.text()))
             .collect()
@@ -449,7 +455,7 @@ pub(crate) mod tests {
                 "  scan.pdf  pdf, is encrypted",
             ]
         );
-        let lines = parsed_lines(&parsed);
+        let lines = parsed_lines(&parsed, MAX_TABLE_WIDTH);
         // A field the layout did not find, and a file that was not read, stand out.
         assert_eq!(lines[4].spans[2], (Tone::Danger, "not found".to_string()));
         assert_eq!(lines[12].spans[2].0, Tone::Danger);
@@ -463,7 +469,7 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(texts(&parsed), ["No layout matched this email."]);
-        assert_eq!(parsed_lines(&parsed)[0].spans[0].0, Tone::Danger);
+        assert_eq!(parsed_lines(&parsed, MAX_TABLE_WIDTH)[0].spans[0].0, Tone::Danger);
     }
 
     #[test]
@@ -544,6 +550,29 @@ pub(crate) mod tests {
         assert_eq!(lines.len(), 4 + 1 + MAX_LINE_ITEM_ROWS + 2);
         assert_eq!(lines[lines.len() - 2], "  27 more columns in the JSON.");
         assert_eq!(lines[lines.len() - 1], "  10 more line items in the JSON.");
+    }
+
+    #[test]
+    fn a_narrow_terminal_gets_shorter_values_and_fewer_columns() {
+        let parsed: ParsedEmail = serde_json::from_value(serde_json::json!({
+            "status": "matched",
+            "layout": {"id": "a", "name": "A"},
+            "fields": {"note": "y".repeat(500)},
+            "lineItems": [{"sku": "A-1", "qty": "2", "price": "9.50", "colour": "blue"}],
+            "lineItemColumns": ["sku", "qty", "price", "colour"],
+            "attachments": [],
+            "pages": 0
+        }))
+        .unwrap();
+        let lines: Vec<String> = parsed_lines(&parsed, 18)
+            .iter()
+            .map(|line| line.text())
+            .collect();
+        // "note: " and what it leaves of 18 columns.
+        assert_eq!(lines[2].width(), 18, "{}", lines[2]);
+        // sku, qty and price fit in 18 columns with their gaps; colour is counted.
+        assert_eq!(lines[4], "sku  qty  price");
+        assert!(lines.contains(&"1 more column in the JSON.".to_string()), "{lines:#?}");
     }
 
     #[test]

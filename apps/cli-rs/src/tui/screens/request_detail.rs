@@ -292,7 +292,7 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
     }
 
     if let Some(ref parsed) = req.parsed {
-        lines.extend(parsed_overview(parsed));
+        lines.extend(parsed_overview(parsed, area.width as usize));
     }
 
     lines.push(Line::from(""));
@@ -308,12 +308,13 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
 
 /// The overview's "Parsed" section for an email: what the endpoint's layouts
 /// found, the same lines `whk requests get` prints.
-fn parsed_overview(parsed: &ParsedEmail) -> Vec<Line<'static>> {
+fn parsed_overview(parsed: &ParsedEmail, width: usize) -> Vec<Line<'static>> {
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled("  Parsed", theme::style_primary_bold())),
     ];
-    for line in parsed_lines(parsed) {
+    // The panel's width, less a line's indent (it neither wraps nor scrolls sideways).
+    for line in parsed_lines(parsed, width.saturating_sub(6)) {
         let mut spans = vec![Span::raw("  ".repeat(line.depth + 2))];
         spans.extend(line.spans.into_iter().map(|(tone, text)| {
             let style = match tone {
@@ -397,7 +398,7 @@ mod tests {
     #[test]
     fn overview_shows_an_emails_parsed_result() {
         let request = crate::util::parsed::tests::acme_order();
-        let lines: Vec<String> = parsed_overview(request.parsed.as_ref().unwrap())
+        let lines: Vec<String> = parsed_overview(request.parsed.as_ref().unwrap(), 120)
             .iter()
             .map(text)
             .collect();
@@ -406,5 +407,28 @@ mod tests {
         assert!(lines.contains(&"      po: not found".to_string()));
         assert!(lines.contains(&"      sku  qty  price".to_string()));
         assert!(lines.contains(&"      scan.pdf  pdf, is encrypted".to_string()));
+    }
+
+    #[test]
+    fn the_overview_screen_draws_the_parsed_section() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let request = crate::util::parsed::tests::acme_order();
+        let mut terminal = Terminal::new(TestBackend::new(100, 80)).unwrap();
+        terminal
+            .draw(|frame| render_overview(frame, frame.area(), &request, 0))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<String> = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect();
+        assert!(rows.iter().any(|row| row == "  Parsed"), "{rows:#?}");
+        assert!(rows.iter().any(|row| row == "    Layout: Acme orders"));
+        assert!(rows.iter().any(|row| row == "      po: not found"));
     }
 }

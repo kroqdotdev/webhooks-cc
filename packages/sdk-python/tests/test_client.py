@@ -1570,6 +1570,33 @@ def test_layouts_round_trip_and_are_sent_as_the_api_takes_them() -> None:
 STORED_BYTES = b"Subject: Order 1\r\n\r\n\x00\xff\xfe not UTF-8\r\n"
 
 
+def test_requests_decode_partial_flag() -> None:
+    from webhooks_cc.models import Request
+
+    request = Request.from_dict(
+        {
+            "id": "r1",
+            "endpointId": "e1",
+            "method": "EMAIL",
+            "path": "acme@mailhooks.cc",
+            "headers": {},
+            "queryParams": {},
+            "ip": "192.0.2.1",
+            "size": 10,
+            "receivedAt": 1,
+            "kind": "email",
+            "parsed": {
+                "status": "matched",
+                "layout": {"id": "orders", "name": "Orders"},
+                "fields": {},
+                "lineItems": [],
+                "partial": True,
+            },
+        }
+    )
+    assert request.parsed is not None and request.parsed.partial is True
+
+
 def test_raw_returns_the_message_bytes_unchanged() -> None:
     seen: list[tuple[str, str, str]] = []
 
@@ -1599,6 +1626,10 @@ def test_a_redirected_download_raises_instead_of_returning_the_page() -> None:
             },
         )
 
+    # Even through a client that would follow it.
+    following = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    with pytest.raises(errors.WebhooksCCError):
+        WebhooksCC("whcc_test", http_client=following).requests.raw("r1")
     client = make_client(handler)
     with pytest.raises(errors.WebhooksCCError) as raised:
         client.requests.raw("r1")

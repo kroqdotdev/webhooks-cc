@@ -2,7 +2,7 @@
 //!
 //! Requirements:
 //!   - WHK_API_URL set to the web app to test against, e.g. http://localhost:3000;
-//!     without it every test here skips
+//!     without it the API tests skip (the tunnel tests need no server and run)
 //!   - Receiver running on localhost:3001 (or WHK_WEBHOOK_URL)
 //!   - Authenticated against that server (`whk auth login`, saved at
 //!     ~/.config/whk/token.json or ~/Library/Application Support/whk/)
