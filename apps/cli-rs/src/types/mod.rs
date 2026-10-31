@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -137,6 +137,102 @@ pub struct CapturedRequest {
     /// The parsed message of a captured email (the REST API sends it; the stream does not).
     #[serde(default)]
     pub email: Option<EmailSummary>,
+    /// What the endpoint's layouts found in a captured email. Only emails on
+    /// an endpoint with layouts have it, once their parse is done: in full
+    /// from `GET /api/requests/{id}`, as a summary in lists (`partial`), and
+    /// never in the stream. Boxed: most requests have none, and every
+    /// request is moved around the TUI's messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed: Option<Box<ParsedEmail>>,
+}
+
+/// `parsed` on a captured email, as the SDK's `ParsedEmail`
+/// (packages/sdk/src/email/layouts.ts). Every key the API sends is kept, so
+/// `--json` passes it on.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ParsedEmail {
+    /// "matched", or "no_layout" when no layout's conditions held.
+    #[serde(default)]
+    pub status: String,
+    /// The layout that applied; none for no_layout.
+    #[serde(default)]
+    pub layout: Option<ParsedLayout>,
+    /// The layout's named values; null when its pattern found nothing.
+    #[serde(default)]
+    pub fields: BTreeMap<String, Option<String>>,
+    #[serde(rename = "lineItems", default)]
+    pub line_items: Vec<BTreeMap<String, Option<String>>>,
+    /// The line items' columns in order: a JSON object's keys (and jsonb's)
+    /// come back in any order.
+    #[serde(rename = "lineItemColumns", default)]
+    pub line_item_columns: Vec<String>,
+    #[serde(default)]
+    pub attachments: Vec<ParsedAttachment>,
+    /// Billable pages this email used.
+    #[serde(default)]
+    pub pages: u64,
+    /// Cut to fit the email's JSON; the full parse is kept on the server.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    /// A list's summary: line items and attachments are left out.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+}
+
+impl ParsedEmail {
+    pub fn matched(&self) -> bool {
+        self.status == "matched"
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ParsedLayout {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// One attachment a layout parsed, or why it was not.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ParsedAttachment {
+    /// Its place among the email's attachments, from 0.
+    #[serde(default)]
+    pub index: u64,
+    #[serde(default)]
+    pub filename: Option<String>,
+    /// csv, tsv, xlsx, xls, ods, pdf or text.
+    #[serde(default)]
+    pub format: String,
+    /// Billable pages this parse used (0 when an earlier parse was read again).
+    #[serde(default)]
+    pub pages: u64,
+    /// A spreadsheet's sheets, each with its first 1,000 rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheets: Option<Vec<ParsedSheet>>,
+    /// A PDF's or text file's text, cut at 256 KB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Stopped at the per-file page cap, or cut to fit.
+    #[serde(default)]
+    pub truncated: bool,
+    /// Why it was not parsed: limit, not_kept, not_parsed, too_large,
+    /// malformed, encrypted, zip_bomb or empty.
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ParsedSheet {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub rows: Vec<Vec<String>>,
+    /// Rows in the sheet, also those not sent inline.
+    #[serde(rename = "rowCount", default)]
+    pub row_count: u64,
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 /// The parts of a captured email the CLI shows. The API's `email` object has
@@ -283,6 +379,7 @@ impl From<SearchHit> for CapturedRequest {
             signing_provider: None,
             kind: None,
             email: None,
+            parsed: None,
         }
     }
 }
@@ -844,6 +941,71 @@ mod email_tests {
         request.email = None;
         request.headers.clear();
         assert_eq!(request.email_subject(), None);
+    }
+}
+
+#[cfg(test)]
+mod parsed_tests {
+    use super::{CapturedRequest, RequestList};
+    use crate::util::parsed::tests::{ACME_ORDER_EMAIL, acme_order};
+
+    #[test]
+    fn captured_email_keeps_the_parsed_result() {
+        let parsed = acme_order().parsed.expect("parsed is kept");
+        assert!(parsed.matched());
+        assert_eq!(
+            parsed.layout.as_ref().map(|l| l.name.as_str()),
+            Some("Acme orders")
+        );
+        assert_eq!(parsed.fields.get("order"), Some(&Some("1001".to_string())));
+        assert_eq!(parsed.fields.get("po"), Some(&None));
+        assert_eq!(parsed.line_item_columns, ["sku", "qty", "price"]);
+        assert_eq!(parsed.line_items.len(), 2);
+        assert_eq!(parsed.line_items[1]["price"].as_deref(), Some("24.00"));
+        assert_eq!(parsed.pages, 3);
+        assert!(!parsed.truncated && !parsed.partial);
+
+        let sheets = parsed.attachments[0].sheets.as_ref().unwrap();
+        assert_eq!(sheets[0].row_count, 3);
+        assert_eq!(sheets[0].rows[1], ["A-1", "2", "9.50"]);
+        assert_eq!(
+            parsed.attachments[1].text.as_deref(),
+            Some("Acme terms of sale")
+        );
+        assert_eq!(parsed.attachments[2].error.as_deref(), Some("encrypted"));
+    }
+
+    /// `whk requests get --json` prints the request it deserialised, so a
+    /// `parsed` the types drop would vanish from the output.
+    #[test]
+    fn json_output_passes_parsed_on_unchanged() {
+        let sent: serde_json::Value = serde_json::from_str(ACME_ORDER_EMAIL).unwrap();
+        let printed = serde_json::to_string_pretty(&acme_order()).unwrap();
+        let printed: serde_json::Value = serde_json::from_str(&printed).unwrap();
+        assert_eq!(printed["parsed"], sent["parsed"]);
+        assert_eq!(
+            printed["parsed"]["lineItemColumns"],
+            serde_json::json!(["sku", "qty", "price"])
+        );
+    }
+
+    #[test]
+    fn list_summaries_and_requests_without_parsed() {
+        // A list's summary, as `GET /api/endpoints/{slug}/requests` sends it.
+        let json = r#"[{"id":"e1","endpointId":"ep","method":"EMAIL","path":"orders@mailhooks.cc","headers":{},"queryParams":{},"ip":"192.0.2.1","size":1,"receivedAt":1,"kind":"email","parsed":{"status":"matched","layout":{"id":"orders","name":"Acme orders"},"fields":{"order":"1001"},"lineItems":[],"lineItemColumns":[],"attachments":[],"pages":1,"partial":true}},{"id":"r1","endpointId":"ep","method":"POST","path":"/hook","headers":{},"queryParams":{},"ip":"::1","size":3,"receivedAt":2}]"#;
+        let requests: Vec<CapturedRequest> = serde_json::from_str(json).unwrap();
+        assert!(requests[0].parsed.as_ref().unwrap().partial);
+        assert!(requests[1].parsed.is_none());
+
+        let printed = serde_json::to_value(RequestList {
+            requests,
+            count: None,
+        })
+        .unwrap();
+        assert_eq!(printed["requests"][0]["parsed"]["partial"], true);
+        assert_eq!(printed["requests"][0]["parsed"]["fields"]["order"], "1001");
+        // HTTP requests never had `parsed`, and --json does not add it.
+        assert!(printed["requests"][1].get("parsed").is_none());
     }
 }
 

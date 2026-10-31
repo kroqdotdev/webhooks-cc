@@ -357,6 +357,7 @@ fn make_captured_request(
         signing_provider: None,
         kind: None,
         email: None,
+        parsed: None,
     }
 }
 
