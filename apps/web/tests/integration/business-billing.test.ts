@@ -164,8 +164,15 @@ describe("the Business plan webhook", () => {
       subscription_status: "active",
     });
     expect(Date.parse(row.billing_period_end as string)).toBe(yearEnd.getTime());
+    // A month on as Postgres counts it, kept on the last day of a shorter
+    // month (Oct 31 gives Nov 30), so the test holds on any day it runs.
     const monthEnd = new Date(start);
+    monthEnd.setUTCDate(1);
     monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+    const lastDay = new Date(
+      Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 0)
+    ).getUTCDate();
+    monthEnd.setUTCDate(Math.min(start.getUTCDate(), lastDay));
     expect(Date.parse(row.period_end as string)).toBe(monthEnd.getTime());
 
     // A month on, the reset job rolled the quota period; a mid-year update
