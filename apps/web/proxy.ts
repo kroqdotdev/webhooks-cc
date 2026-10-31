@@ -150,16 +150,19 @@ export async function proxy(request: NextRequest) {
   const edgeSetsSecurityHeaders = process.env.EDGE_SETS_SECURITY_HEADERS === "true";
 
   // The dashboard may open Google's Drive picker (Sheets destinations), which
-  // loads a script from apis.google.com and shows itself in a docs.google.com frame.
-  const googlePicker = pathname.startsWith("/dashboard");
+  // loads a script from apis.google.com and shows itself in a docs.google.com
+  // frame. Every page allows it: a document keeps the policy of the page it was
+  // first loaded as, and most visits reach the dashboard by a client-side
+  // navigation (after signing in, from the header). script-src already allows
+  // inline scripts, so this widens it very little.
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eu-assets.i.posthog.com https://f.webhooks.cc${googlePicker ? " https://apis.google.com" : ""}`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eu-assets.i.posthog.com https://f.webhooks.cc https://apis.google.com`,
     "style-src 'self' 'unsafe-inline'",
     imgSrcDirective(pathname),
     "font-src 'self'",
     `connect-src 'self' ${supabaseOrigin} ${supabaseWsOrigin} ${webhookOrigin} https://eu-assets.i.posthog.com https://f.webhooks.cc https://ingest.statoss.com`,
-    ...(googlePicker ? ["frame-src 'self' https://docs.google.com"] : []),
+    "frame-src 'self' https://docs.google.com",
     "object-src 'none'",
     "worker-src 'self'",
     "frame-ancestors 'none'",

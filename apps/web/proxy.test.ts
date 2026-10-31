@@ -70,6 +70,17 @@ describe("proxy", () => {
     expect(pageRes.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
     expect(getUser).toHaveBeenCalledTimes(2);
   });
+
+  it("allows Google's Drive picker on pages that lead to the dashboard, not only on it", async () => {
+    // Signing in moves to the dashboard without loading a new document, so the
+    // sign-in page's policy is the one the picker meets.
+    for (const path of ["/login", "/dashboard", "/account/plan"]) {
+      const res = await proxy(new NextRequest(`https://webhooks.cc${path}`, { method: "GET" }));
+      const csp = res.headers.get("Content-Security-Policy") ?? "";
+      expect(csp).toMatch(/script-src [^;]*https:\/\/apis\.google\.com/);
+      expect(csp).toContain("frame-src 'self' https://docs.google.com");
+    }
+  });
 });
 
 describe("proxy: markdown twins", () => {
