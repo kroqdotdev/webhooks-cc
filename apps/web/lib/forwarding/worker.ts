@@ -1183,7 +1183,9 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   // 410 Gone: the URL is gone for good (Zapier and Make answer it for the
   // hook of a Zap or scenario that was removed). Not retried, and the
   // destination is turned off rather than sent every email again.
-  if (result.status === 410 && claim.destination_id) {
+  // Only for the destination's own URL: with the request's path appended,
+  // a 410 says that one resource is gone, not the destination.
+  if (result.status === 410 && claim.destination_id && samePath(url, claim.forward_url!)) {
     try {
       await record(
         claim,
@@ -1202,6 +1204,16 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
     return;
   }
   await record(claim, result, true, facts);
+}
+
+/** Whether a sent URL is the destination's own (no request path appended; the query aside). */
+function samePath(sent: string, stored: string): boolean {
+  try {
+    const trim = (path: string) => path.replace(/\/+$/, "");
+    return trim(new URL(sent).pathname) === trim(new URL(stored).pathname);
+  } catch {
+    return false;
+  }
 }
 
 /** Turns a destination off, only while it still sends to the URL that answered 410. */

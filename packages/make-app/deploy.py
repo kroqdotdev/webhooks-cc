@@ -21,9 +21,10 @@ import urllib.request
 ZONE = os.environ.get("MAKE_ZONE", "https://eu1.make.com/api/v2")
 APP_NAME_HINT = "webhooks-cc"
 ROOT = os.path.dirname(os.path.abspath(__file__))
-STATE = os.path.expanduser(
+# Absolute, so a bare file name still has a folder to create and write in.
+STATE = os.path.abspath(os.path.expanduser(
     os.environ.get("MAKE_APP_STATE", "~/.config/webhooks-cc/make-app-state.json")
-)
+))
 TOKEN = os.environ.get("MAKE_API_TOKEN", "").strip()
 if not TOKEN:
     raise SystemExit("MAKE_API_TOKEN is not set")
@@ -95,7 +96,8 @@ def main():
         if call("GET", f"/sdk/apps/{app['name']}/{app['version']}", missing_ok=True) is None:
             raise SystemExit(
                 f"The app {app['name']} v{app['version']} in {STATE} is not in this Make "
-                "account. Point MAKE_APP_STATE at a new file to create the app again."
+                "account, or the token cannot read it (it needs sdk-apps:read). If the app "
+                "is gone, point MAKE_APP_STATE at a new file to create it again."
             )
     if "app" not in state:
         created = call("POST", "/sdk/apps", {
