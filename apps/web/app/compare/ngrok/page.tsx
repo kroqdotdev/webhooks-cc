@@ -27,7 +27,7 @@ const FAQ_ITEMS = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan has every Pro feature: webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. Paid plans raise rate limits and retention, Business adds attachment parsing at volume and more layouts, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
+      "Yes. The free plan has every Pro feature: webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. Paid plans raise rate limits and retention, Business adds attachment parsing, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
   },
   {
     question: "Does ngrok have a webhook testing SDK?",

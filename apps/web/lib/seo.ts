@@ -26,6 +26,9 @@ const SEO_PASS_UPDATED = new Date("2026-10-20T00:00:00.000Z");
 // The Business plan and the Team Business add-on: pages that list the plans and prices.
 const PLANS_UPDATED = new Date("2026-10-29T00:00:00.000Z");
 
+// Business's custom inbound domains, file drops and AI assists: the plan pages that name them.
+const BUSINESS_FEATURES_UPDATED = new Date("2026-10-31T00:00:00.000Z");
+
 export interface SitemapPageDefinition {
   path: string;
   changeFrequency: NonNullable<MetadataRoute.Sitemap[number]["changeFrequency"]>;
@@ -34,7 +37,7 @@ export interface SitemapPageDefinition {
 }
 
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
-  { path: "/", changeFrequency: "weekly", priority: 1, lastModified: PLANS_UPDATED },
+  { path: "/", changeFrequency: "weekly", priority: 1, lastModified: BUSINESS_FEATURES_UPDATED },
   // /go permanently redirects to / (the landing page is the guest dashboard now)
   // Individual /webhooks/[provider] pages are appended in app/sitemap.xml/route.ts
   { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
@@ -50,20 +53,25 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     priority: 0.8,
     lastModified: EMAIL_PAGES_UPDATED,
   },
-  { path: "/for-teams", changeFrequency: "monthly", priority: 0.8, lastModified: PLANS_UPDATED },
+  {
+    path: "/for-teams",
+    changeFrequency: "monthly",
+    priority: 0.8,
+    lastModified: BUSINESS_FEATURES_UPDATED,
+  },
   // Docs pages are auto-generated from content/docs/ in app/sitemap.xml/route.ts
   { path: "/compare", changeFrequency: "monthly", priority: 0.7, lastModified: PLANS_UPDATED },
   {
     path: "/compare/webhook-site",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: BUSINESS_FEATURES_UPDATED,
   },
   {
     path: "/compare/ngrok",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: BUSINESS_FEATURES_UPDATED,
   },
   {
     path: "/compare/beeceptor",
@@ -81,13 +89,13 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare/hookdeck",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: BUSINESS_FEATURES_UPDATED,
   },
   {
     path: "/compare/svix",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: BUSINESS_FEATURES_UPDATED,
   },
   {
     path: "/compare/stripe-cli",
@@ -99,7 +107,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare/smee",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: BUSINESS_FEATURES_UPDATED,
   },
   {
     path: "/compare/localtunnel",

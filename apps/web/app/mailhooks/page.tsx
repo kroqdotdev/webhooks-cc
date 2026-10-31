@@ -222,16 +222,28 @@ export default function MailhooksHome() {
         <section className="py-20 px-4">
           <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6">
             {[
-              { name: "Free", price: "$0", lines: ["50 emails a day", "20 parsed pages a month"] },
+              {
+                name: "Free",
+                price: "$0",
+                lines: ["50 emails a day", "20 parsed pages a month", "5 AI assists every 30 days"],
+              },
               {
                 name: "Pro",
                 price: "$8 a month",
-                lines: ["100,000 emails and webhooks", "100 parsed pages a month"],
+                lines: [
+                  "100,000 emails and webhooks",
+                  "100 parsed pages a month",
+                  "20 AI assists every 30 days",
+                ],
               },
               {
                 name: "Business",
                 price: "$29 a month",
-                lines: ["250,000 emails and webhooks", "2,000 parsed pages a month, 50 layouts"],
+                lines: [
+                  "250,000 emails and webhooks",
+                  "2,000 parsed pages a month, 50 layouts",
+                  "Your own domain and file drops",
+                ],
               },
             ].map((plan) => (
               <div key={plan.name} className="ui-card ui-card-static">
