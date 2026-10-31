@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import type { EmailField } from "@webhooks-cc/sdk/email";
 import {
@@ -208,6 +208,8 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     [endpoint.emailFields]
   );
 
+  // Whether the draft has changes not saved yet, for the load below.
+  const dirtyRef = useRef(false);
   const reset = useCallback((settings: DashboardAlertSettings) => {
     setDraft({
       enabled: settings.enabled,
@@ -233,7 +235,8 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         setLoaded(alerts.settings);
         setEvents(alerts.events);
         setDestinations(list);
-        reset(alerts.settings);
+        // A reload (a refreshed sign-in) keeps changes not saved yet.
+        if (!dirtyRef.current) reset(alerts.settings);
       })
       .catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
     return () => {
@@ -252,6 +255,9 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     notifyDestinationIds: draft.notifyDestinationIds,
   };
   const dirty = loaded !== null && JSON.stringify(next) !== JSON.stringify(loaded);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
   const invalid = (text: string, min: number, max: number) =>
     text.trim() !== "" &&
     (!Number.isInteger(Number(text)) || Number(text) < min || Number(text) > max);
@@ -331,119 +337,127 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         />
       }
     >
-      <SwitchRow
-        id="alerts-enabled"
-        label="Alerts"
-        help="Checked about once a minute. You get one notice when an alert opens and one when it resolves."
-        checked={draft.enabled}
-        onChange={(enabled) => setDraft({ ...draft, enabled })}
-      />
-      {draft.enabled && (
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field
-              id="alerts-failures"
-              label="Misses in a row"
-              help="Emails in a row missing a field. Empty: off."
-              error={invalid(draft.failures, 1, 100) ? "1 to 100" : undefined}
-            >
-              <input
-                id="alerts-failures"
-                inputMode="numeric"
-                value={draft.failures}
-                onChange={(e) =>
-                  setDraft({ ...draft, failures: e.target.value.replace(/[^\d]/g, "") })
-                }
-                className="ui-input w-full text-sm font-mono py-2!"
-                placeholder="off"
-              />
-            </Field>
-            <Field
-              id="alerts-share"
-              label="Share missed (%)"
-              help="Of the last 20 emails. Empty: off."
-              error={invalid(draft.share, 1, 100) ? "1 to 100" : undefined}
-            >
-              <input
-                id="alerts-share"
-                inputMode="numeric"
-                value={draft.share}
-                onChange={(e) =>
-                  setDraft({ ...draft, share: e.target.value.replace(/[^\d]/g, "") })
-                }
-                className="ui-input w-full text-sm font-mono py-2!"
-                placeholder="off"
-              />
-            </Field>
-            <Field
-              id="alerts-silence"
-              label="Quiet for (hours)"
-              help="No email at all for this long. Empty: off."
-              error={invalid(draft.silence, 1, 720) ? "1 to 720" : undefined}
-            >
-              <input
-                id="alerts-silence"
-                inputMode="numeric"
-                value={draft.silence}
-                onChange={(e) =>
-                  setDraft({ ...draft, silence: e.target.value.replace(/[^\d]/g, "") })
-                }
-                className="ui-input w-full text-sm font-mono py-2!"
-                placeholder="off"
-              />
-            </Field>
-          </div>
-          {fieldNames.length > 0 ? (
-            <Field label="Fields that must be found">
-              <div className="flex flex-wrap gap-2">
-                {fieldNames.map((name) => (
-                  <label key={name} className="flex items-center gap-1.5 text-sm font-mono">
-                    <input
-                      type="checkbox"
-                      checked={required.includes(name)}
-                      onChange={() => toggleRequired(name)}
-                    />
-                    {name}
-                  </label>
-                ))}
-              </div>
-            </Field>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Field rules need email fields: add some under Receiving.
-            </p>
-          )}
+      {loaded === null ? (
+        // The settings load after the section renders; nothing to change
+        // before then, so an early change is never overwritten by the load.
+        <p className="text-sm text-muted-foreground">{error ? null : "Loading alerts..."}</p>
+      ) : (
+        <>
           <SwitchRow
-            id="alerts-destinations"
-            label="Failed deliveries"
-            help="A delivery that failed after every retry opens an alert for its destination."
-            checked={draft.destinationFailures}
-            onChange={(destinationFailures) => setDraft({ ...draft, destinationFailures })}
+            id="alerts-enabled"
+            label="Alerts"
+            help="Checked about once a minute. You get one notice when an alert opens and one when it resolves."
+            checked={draft.enabled}
+            onChange={(enabled) => setDraft({ ...draft, enabled })}
           />
-          <SwitchRow
-            id="alerts-email"
-            label="Email me"
-            help="From webhooks.cc to your account's address."
-            checked={draft.notifyEmail}
-            onChange={(notifyEmail) => setDraft({ ...draft, notifyEmail })}
-          />
-          {destinations.length > 0 && (
-            <Field label="Also post alerts to">
-              <div className="space-y-1">
-                {destinations.map((destination) => (
-                  <label key={destination.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={draft.notifyDestinationIds.includes(destination.id)}
-                      onChange={() => toggleDestination(destination.id)}
-                    />
-                    <span className="truncate">{destination.name || destination.url}</span>
-                  </label>
-                ))}
+          {draft.enabled && (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Field
+                  id="alerts-failures"
+                  label="Misses in a row"
+                  help="Emails in a row missing a field. Empty: off."
+                  error={invalid(draft.failures, 1, 100) ? "1 to 100" : undefined}
+                >
+                  <input
+                    id="alerts-failures"
+                    inputMode="numeric"
+                    value={draft.failures}
+                    onChange={(e) =>
+                      setDraft({ ...draft, failures: e.target.value.replace(/[^\d]/g, "") })
+                    }
+                    className="ui-input w-full text-sm font-mono py-2!"
+                    placeholder="off"
+                  />
+                </Field>
+                <Field
+                  id="alerts-share"
+                  label="Share missed (%)"
+                  help="Of the last 20 emails. Empty: off."
+                  error={invalid(draft.share, 1, 100) ? "1 to 100" : undefined}
+                >
+                  <input
+                    id="alerts-share"
+                    inputMode="numeric"
+                    value={draft.share}
+                    onChange={(e) =>
+                      setDraft({ ...draft, share: e.target.value.replace(/[^\d]/g, "") })
+                    }
+                    className="ui-input w-full text-sm font-mono py-2!"
+                    placeholder="off"
+                  />
+                </Field>
+                <Field
+                  id="alerts-silence"
+                  label="Quiet for (hours)"
+                  help="No email at all for this long. Empty: off."
+                  error={invalid(draft.silence, 1, 720) ? "1 to 720" : undefined}
+                >
+                  <input
+                    id="alerts-silence"
+                    inputMode="numeric"
+                    value={draft.silence}
+                    onChange={(e) =>
+                      setDraft({ ...draft, silence: e.target.value.replace(/[^\d]/g, "") })
+                    }
+                    className="ui-input w-full text-sm font-mono py-2!"
+                    placeholder="off"
+                  />
+                </Field>
               </div>
-            </Field>
+              {fieldNames.length > 0 ? (
+                <Field label="Fields that must be found">
+                  <div className="flex flex-wrap gap-2">
+                    {fieldNames.map((name) => (
+                      <label key={name} className="flex items-center gap-1.5 text-sm font-mono">
+                        <input
+                          type="checkbox"
+                          checked={required.includes(name)}
+                          onChange={() => toggleRequired(name)}
+                        />
+                        {name}
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Field rules need email fields: add some under Receiving.
+                </p>
+              )}
+              <SwitchRow
+                id="alerts-destinations"
+                label="Failed deliveries"
+                help="A delivery that failed after every retry opens an alert for its destination."
+                checked={draft.destinationFailures}
+                onChange={(destinationFailures) => setDraft({ ...draft, destinationFailures })}
+              />
+              <SwitchRow
+                id="alerts-email"
+                label="Email me"
+                help="From webhooks.cc to your account's address."
+                checked={draft.notifyEmail}
+                onChange={(notifyEmail) => setDraft({ ...draft, notifyEmail })}
+              />
+              {destinations.length > 0 && (
+                <Field label="Also post alerts to">
+                  <div className="space-y-1">
+                    {destinations.map((destination) => (
+                      <label key={destination.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={draft.notifyDestinationIds.includes(destination.id)}
+                          onChange={() => toggleDestination(destination.id)}
+                        />
+                        <span className="truncate">{destination.name || destination.url}</span>
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
       {events.length > 0 && (
         <div className="pt-4 border-t border-line/20">
