@@ -68,7 +68,7 @@ type Client struct {
 
 	// Endpoints creates, reads, changes and deletes endpoints.
 	Endpoints *EndpointsService
-	// Requests lists, waits for, streams and replays captured requests.
+	// Requests lists, waits for, streams, replays and downloads captured requests.
 	Requests *RequestsService
 	// Emails reads and waits for captured email.
 	Emails *EmailsService
@@ -252,6 +252,25 @@ func (c *Client) api(ctx context.Context, method, path string, query url.Values,
 // apiRetrying is api with repeatable saying whether a network error, a
 // timeout or a 5xx is retried, for a call whose method says otherwise.
 func (c *Client) apiRetrying(ctx context.Context, method, path string, query url.Values, body, out any, repeatable bool) error {
+	response, err := c.call(ctx, method, path, query, body, repeatable)
+	if err != nil {
+		return err
+	}
+	if out == nil || response.status == http.StatusNoContent || len(response.body) == 0 {
+		return nil
+	}
+	if contentType := response.header.Get("Content-Type"); contentType != "" && !strings.Contains(contentType, "application/json") {
+		return &Error{StatusCode: response.status, Message: "unexpected content type: " + contentType}
+	}
+	if err := json.Unmarshal(response.body, out); err != nil {
+		return fmt.Errorf("webhooks.cc: reading the response: %w", err)
+	}
+	return nil
+}
+
+// call sends an API request, retrying as c.retry says, and returns the
+// response once it is a success.
+func (c *Client) call(ctx context.Context, method, path string, query url.Values, body any, repeatable bool) (*apiResponse, error) {
 	endpoint := c.baseURL + "/api" + path
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
@@ -260,7 +279,7 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 	if body != nil {
 		var err error
 		if payload, err = json.Marshal(body); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	refreshed := false
@@ -270,20 +289,20 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 		// An agent token that cannot be had is never retried as a network error.
 		bearer, err := c.bearer(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		response, err := c.apiOnce(ctx, method, endpoint, payload, bearer)
 		if err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return nil, ctx.Err()
 			}
 			if more && repeatable {
 				if err := sleep(ctx, backoff); err != nil {
-					return err
+					return nil, err
 				}
 				continue
 			}
-			return err
+			return nil, err
 		}
 		// An agent token expired or was revoked: exchange once more, right away.
 		if response.status == http.StatusUnauthorized && c.tokens != nil && !refreshed {
@@ -301,7 +320,7 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 					wait = apiErr.RetryAfter
 				}
 				if err := sleep(ctx, wait); err != nil {
-					return err
+					return nil, err
 				}
 				continue
 			}
@@ -311,20 +330,11 @@ func (c *Client) apiRetrying(ctx context.Context, method, path string, query url
 				if refusal.Code == "sandbox_closed" && c.tokens != nil {
 					c.tokens.forgetSlot()
 				}
-				return refusal
+				return nil, refusal
 			}
-			return apiErr
+			return nil, apiErr
 		}
-		if out == nil || response.status == http.StatusNoContent || len(response.body) == 0 {
-			return nil
-		}
-		if contentType := response.header.Get("Content-Type"); contentType != "" && !strings.Contains(contentType, "application/json") {
-			return &Error{StatusCode: response.status, Message: "unexpected content type: " + contentType}
-		}
-		if err := json.Unmarshal(response.body, out); err != nil {
-			return fmt.Errorf("webhooks.cc: reading the response: %w", err)
-		}
-		return nil
+		return response, nil
 	}
 }
 

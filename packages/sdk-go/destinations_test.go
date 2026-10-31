@@ -184,7 +184,8 @@ func TestDestinationsAreParsed(t *testing.T) {
 	api := newFakeAPI(t)
 	api.handle("GET /api/endpoints/{slug}/destinations", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, []any{destinationJSON(map[string]any{
-			"summary": map[string]any{"last24h": map[string]int{"delivered": 3, "failed": 1, "skipped": 2}, "pending": 4},
+			"summary":     map[string]any{"last24h": map[string]int{"delivered": 3, "failed": 1, "skipped": 2}, "pending": 4},
+			"attachments": "inline",
 		})})
 	})
 	destinations, err := api.client().Destinations.List(context.Background(), "acme-test", webhookscc.ListDestinationsOptions{Summary: true})
@@ -219,6 +220,9 @@ func TestDestinationsAreParsed(t *testing.T) {
 	}
 	if !strings.Contains(string(d.Raw), `"endpointId":"ep_1"`) {
 		t.Errorf("raw = %s", d.Raw)
+	}
+	if d.Attachments != webhookscc.AttachmentsInline {
+		t.Errorf("attachments = %q", d.Attachments)
 	}
 
 	var plain webhookscc.Destination
@@ -260,6 +264,15 @@ func TestDestinationsTakeTheInboundShapesAndAMailgunKey(t *testing.T) {
 	}
 	if _, body := api.last(); body != `{"mailgunSigningKey":null}` {
 		t.Errorf("body = %s", body)
+	}
+	if _, err := client.Destinations.Update(ctx, "acme-test", destinationID, webhookscc.DestinationInput{Attachments: webhookscc.Value(webhookscc.AttachmentsNone)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"attachments":"none"}` {
+		t.Errorf("body = %s", body)
+	}
+	if _, err := client.Destinations.Update(ctx, "acme-test", destinationID, webhookscc.DestinationInput{Attachments: webhookscc.Null[webhookscc.DestinationAttachments]()}); err == nil {
+		t.Error("Attachments cannot be cleared")
 	}
 }
 

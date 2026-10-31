@@ -60,7 +60,7 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 		BodyTemplate: json.RawMessage(`{"invoice":"{{ json.id }}"}`), MessageTemplate: "{{ method }} {{ path }}",
 		Headers:    []webhookscc.DestinationHeader{{Name: "x-env", Value: "****"}},
 		AppendPath: true, Retry: time.Hour, KeepOrder: true, SentField: "data.created", Throttle: time.Minute,
-		Delay: 30 * time.Second, Role: "forward", CreatedAt: time.UnixMilli(1767225600000), UpdatedAt: time.UnixMilli(1767225660000),
+		Delay: 30 * time.Second, Attachments: webhookscc.AttachmentsInline, Role: "forward", CreatedAt: time.UnixMilli(1767225600000), UpdatedAt: time.UnixMilli(1767225660000),
 		Summary: &webhookscc.DestinationSummary{Last24h: webhookscc.DeliveryCounts{Delivered: 3, Failed: 1, Skipped: 2}, Pending: 4},
 	}
 	destinationPreview := webhookscc.DestinationPreview{
@@ -91,7 +91,19 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 		Request: webhookscc.DestinationRequest{Method: "POST", Path: "/", Sample: true},
 	}
 
-	for _, value := range []any{&request, &endpoint, &usage, &preview, &sample, &destination, &destinationPreview, &unsent, &testResult, &failedTest, &rendered} {
+	layoutsPreview := webhookscc.LayoutsPreview{
+		Problems: []string{"layouts[1]: name is required"}, LayoutsCap: 2,
+		Request: &webhookscc.LayoutsPreviewRequest{ID: "r1", Subject: "Order 1", ReceivedAt: time.UnixMilli(1767225600123)},
+		Parsed: &webhookscc.ParsedEmail{
+			Status: "matched", Layout: &webhookscc.ParsedLayout{ID: "orders", Name: "Orders"},
+			Fields: map[string]string{"order": "1"}, LineItems: []map[string]string{{"sku": "A-1"}},
+			LineItemColumns: []string{"sku"}, Pages: 1, Truncated: true, Partial: true,
+			Attachments: []webhookscc.ParsedAttachment{{Index: 0, Filename: "o.csv", Format: "csv", Pages: 1,
+				Sheets: []webhookscc.ParsedSheet{{Rows: [][]string{{"sku"}, {"A-1"}}, RowCount: 2}}}},
+		},
+	}
+
+	for _, value := range []any{&request, &endpoint, &usage, &preview, &sample, &destination, &destinationPreview, &unsent, &testResult, &failedTest, &rendered, &layoutsPreview} {
 		data, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)
