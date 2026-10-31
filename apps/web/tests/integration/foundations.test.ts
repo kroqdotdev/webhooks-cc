@@ -3,10 +3,13 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import {
+  getNewestRetainedRequestId,
   getRequestByIdForUser,
+  getRetainedRequestsByIds,
   listPaginatedRequestsForEndpointByUser,
   listRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
+import { requestIdsInRange } from "@/lib/replay";
 import { countSearchRequestsForUser, searchRequestsForUser } from "@/lib/supabase/search";
 import { ENTITLEMENTS, type Entitlements } from "@/lib/entitlements";
 import type { PlanKey } from "@/lib/supabase/database";
@@ -215,6 +218,32 @@ describe("retention", () => {
     expect(found.map((r) => r.id)).toEqual([kept]);
     expect(await countSearchRequestsForUser({ userId, plan: "pro", slug: short.slug })).toBe(1);
     expect(await countSearchRequestsForUser({ userId, plan: "pro" })).toBe(1);
+    // Replay and the previews read the same way: nothing past retention is resent or shown.
+    expect(await requestIdsInRange(short.id, {})).toEqual([kept]);
+    const retained = await getRetainedRequestsByIds(short.id, [kept, old, teamOld]);
+    expect(retained.map((r) => r.id)).toEqual([kept]);
+    expect(await getNewestRetainedRequestId(short.id, "http")).toBe(kept);
+    const expiredOnly = await createEndpointForUser({ userId, name: "expired only" });
+    await admin.from("endpoints").update({ retention_days: 2 }).eq("id", expiredOnly.id);
+    await insertRequests(expiredOnly.id, userId, [3]);
+    expect(await getNewestRetainedRequestId(expiredOnly.id, "http")).toBeNull();
+  });
+
+  it("does not let a page cursor reach past the plan's retention", async () => {
+    const userId = await createUser({ plan: "pro", request_limit: 100_000 });
+    const endpoint = await createEndpointForUser({ userId, name: "cursor" });
+    // Pro keeps 30 days; a 40-day-old row is waiting for the cleanup.
+    const [recent] = await insertRequests(endpoint.id, userId, [1]);
+    await insertRequests(endpoint.id, userId, [40]);
+    const forged = Buffer.from(JSON.stringify({ offset: 0, cutoff: 0 }), "utf8").toString(
+      "base64url"
+    );
+    const page = await listPaginatedRequestsForEndpointByUser({
+      userId,
+      slug: endpoint.slug,
+      cursor: forged,
+    });
+    expect(page!.items.map((r) => r.id)).toEqual([recent]);
   });
 
   it("keeps team-billed rows for the team's days, not the owner's", async () => {
