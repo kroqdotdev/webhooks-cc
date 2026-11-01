@@ -11,7 +11,7 @@ import { webhooksOrigin } from "@/lib/site";
 export const metadata = mailhooksMetadata({
   title: "Pricing",
   description:
-    "Free to start with 50 emails a day. Pro $8 a month, Business $29 a month or $290 a year with 2,000 parsed attachment pages and 50 layouts per endpoint.",
+    "Free to start with 50 emails a day. Pro $8 a month. Business $29 a month or $290 a year, with 2,000 parsed attachment pages, 50 layouts per endpoint, your own domain and file drops.",
   path: "/pricing",
   keywords: ["email parser pricing", "email parsing api pricing", "parse email attachments"],
 });
@@ -25,8 +25,10 @@ const PLANS = [
       "50 emails or webhooks a day",
       "20 parsed attachment pages a month",
       "2 layouts per endpoint",
+      "5 AI assists every 30 days",
       "7-day retention",
-      "Every destination, alert and replay",
+      "Unlimited endpoints",
+      "Webhook, Sheets and chat destinations",
     ],
   },
   {
@@ -37,7 +39,9 @@ const PLANS = [
       "100,000 emails or webhooks per 30 days",
       "100 parsed attachment pages a month",
       "2 layouts per endpoint",
+      "20 AI assists every 30 days",
       "31-day retention",
+      "Unlimited endpoints",
       "Extra requests in blocks of 25,000",
     ],
   },
@@ -49,8 +53,10 @@ const PLANS = [
       "250,000 emails or webhooks a month",
       "2,000 parsed attachment pages a month",
       "Up to 50 layouts per endpoint",
+      "500 AI assists every 30 days",
       "90-day retention",
-      "Page blocks and page overage",
+      "1 custom inbound domain, extra ones $3 a month",
+      "File drops to SFTP, FTP/FTPS and S3",
     ],
   },
 ];
@@ -65,6 +71,16 @@ const FAQ: FAQItem[] = [
     question: "What is a parsed page?",
     answer:
       "Each PDF page, each started 1,000 rows of a sheet in a CSV, TSV, Excel or OpenDocument file, and each plain text attachment. Email bodies never count. Without pages left, emails still arrive with their attachments as files, unparsed.",
+  },
+  {
+    question: "What are custom domains and file drops?",
+    answer:
+      "Two Business features. A custom domain lets mail arrive at an address on a domain you own, such as orders@inbound.acme.com: one is included, and each extra one is $3 a month. A file drop writes each email, or each batch, as a CSV, XML or JSON file to your SFTP, FTP/FTPS or S3-compatible server.",
+  },
+  {
+    question: "What is an AI assist?",
+    answer:
+      "One ask to AI setup: it proposes the patterns for a field or a whole layout from up to 5 emails you pick, or repairs a field that stopped matching. Free includes 5 every 30 days, Pro 20 and Business 500. The patterns then run on our servers like any others; the AI never reads your mail after that.",
   },
   {
     question: "What if I need more pages on Business?",
@@ -92,8 +108,8 @@ export default function MailhooksPricing() {
         <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">Pricing</h1>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl">
-            Start free. Every plan has every destination, alert and replay; paid plans add volume,
-            parsed pages, layouts and retention.
+            Start free: Free has every Pro feature except buying extra requests. Business adds more
+            parsed pages, more layouts, custom domains, file drops and longer retention.
           </p>
 
           <div className="grid md:grid-cols-3 gap-6">
@@ -125,7 +141,8 @@ export default function MailhooksPricing() {
             <p className="text-muted-foreground">
               $12 per seat a month, with 100,000 pooled requests per seat. Add Team Business for $49
               a month: 150,000 more requests in the pool, 2,000 pooled parsed pages, 50 layouts per
-              endpoint and 90-day retention for the endpoints you share.{" "}
+              endpoint, 500 AI assists, a custom domain, file drops and 90-day retention for the
+              endpoints you share.{" "}
               <Link href={`${webhooksOrigin()}/for-teams`} className="underline">
                 About teams
               </Link>

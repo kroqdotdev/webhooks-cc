@@ -9,6 +9,7 @@ vi.mock("@supabase/ssr", () => ({
   })),
 }));
 
+import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
 import { proxy } from "./proxy";
 
 beforeEach(() => {
@@ -196,7 +197,14 @@ describe("proxy: two sites", () => {
   });
 
   it("serves mailhooks.cc's own paths and marks the request's site", async () => {
-    for (const path of ["/", "/pricing", "/parse/shopify-orders", "/dashboard", "/api/endpoints"]) {
+    for (const path of [
+      "/",
+      "/pricing",
+      "/parse/shopify-orders",
+      ...MAILHOOKS_FEATURES.map((f) => f.path),
+      "/dashboard",
+      "/api/endpoints",
+    ]) {
       const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
       expect(res.status, path).toBe(200);
       expect(res.headers.get("x-middleware-request-x-whk-site"), path).toBe("mailhooks");

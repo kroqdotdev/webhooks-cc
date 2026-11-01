@@ -101,3 +101,20 @@ func TestOnlyAFinishedRegistrationStartsANewOne(t *testing.T) {
 		t.Error("a network error must not start a new registration")
 	}
 }
+
+func TestDispositionFilenamePrefersAnEncodedNameThatDecodes(t *testing.T) {
+	cases := []struct{ header, want string }{
+		{`attachment; filename="r_sum_.csv"; filename*=UTF-8''r%C3%A9sum%C3%A9.csv`, "r\u00e9sum\u00e9.csv"},
+		{`attachment; filename="plain.txt"`, "plain.txt"},
+		{`attachment; filename*=utf-8''Invoice%20(1).pdf`, "Invoice (1).pdf"},
+		// Cut inside an escape, or not UTF-8: the plain name.
+		{`attachment; filename="r_sum_.csv"; filename*=UTF-8''r%C3%A`, "r_sum_.csv"},
+		{`attachment; filename="x.bin"; filename*=UTF-8''%FF.bin`, "x.bin"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := dispositionFilename(c.header); got != c.want {
+			t.Errorf("dispositionFilename(%q) = %q, want %q", c.header, got, c.want)
+		}
+	}
+}

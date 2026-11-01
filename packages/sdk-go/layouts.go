@@ -2,7 +2,9 @@ package webhookscc
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // Layout is how an endpoint reads the emails of one sender or kind. An
@@ -57,7 +59,9 @@ type LineItemColumn struct {
 }
 
 // ParsedEmail is what an endpoint's layouts found in an email: "parsed" in
-// its JSON. Values that were not found are "".
+// its JSON. Values that were not found are "". It has the JSON shape, so it
+// also reads the "parsed" key of an email forwarded to you (the Data of
+// verify.ForwardedEmail).
 type ParsedEmail struct {
 	// Status is "matched", or "no_layout" when no layout's conditions held.
 	Status string `json:"status"`
@@ -70,6 +74,13 @@ type ParsedEmail struct {
 	Attachments     []ParsedAttachment `json:"attachments"`
 	// Pages is the billable pages this email used.
 	Pages int `json:"pages"`
+	// Truncated reports that the result was cut to fit the email's JSON
+	// (about 1 MB): attachments' rows and text, then line items from the
+	// end. The full parse is kept.
+	Truncated bool `json:"truncated,omitempty"`
+	// Partial reports a result read from a request list, which leaves out
+	// line items and attachments; RequestsService.Get has all of it.
+	Partial bool `json:"partial,omitempty"`
 }
 
 // ParsedLayout names the layout an email matched.
@@ -92,8 +103,10 @@ type ParsedAttachment struct {
 	// Text is a PDF's or text file's text, cut at 256 KB.
 	Text      string `json:"text,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
-	// Error says why it was not parsed: "limit" (no pages left), "not_kept",
-	// "too_large", "malformed", "encrypted", "zip_bomb" or "empty".
+	// Error says why it was not parsed: "limit" (no pages left), "not_kept"
+	// (the email's attachments were not stored), "not_parsed" (a preview,
+	// which never parses), "too_large", "malformed", "encrypted", "zip_bomb"
+	// or "empty".
 	Error string `json:"error,omitempty"`
 }
 
@@ -121,11 +134,35 @@ type LayoutsPreview struct {
 	Problems   []string `json:"problems"`
 	LayoutsCap int      `json:"layoutsCap"`
 	// Request is the email it ran on; nil when the endpoint has none yet.
-	Request *struct {
-		ID      string `json:"id"`
-		Subject string `json:"subject"`
-	} `json:"request"`
-	Parsed *ParsedEmail `json:"parsed"`
+	Request *LayoutsPreviewRequest `json:"request"`
+	Parsed  *ParsedEmail           `json:"parsed"`
+}
+
+// LayoutsPreviewRequest is the captured email a layouts preview ran on.
+type LayoutsPreviewRequest struct {
+	ID         string
+	Subject    string
+	ReceivedAt time.Time
+}
+
+// UnmarshalJSON reads the email as the API returns it.
+func (r *LayoutsPreviewRequest) UnmarshalJSON(data []byte) error {
+	var o rawObject
+	if err := json.Unmarshal(data, &o); err != nil {
+		return err
+	}
+	*r = LayoutsPreviewRequest{ID: o.str("id"), Subject: o.str("subject"), ReceivedAt: o.millis("receivedAt")}
+	return nil
+}
+
+// MarshalJSON writes the email in the API's shape, so UnmarshalJSON reads it
+// back.
+func (r LayoutsPreviewRequest) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ID         string  `json:"id"`
+		Subject    *string `json:"subject"`
+		ReceivedAt *int64  `json:"receivedAt,omitempty"`
+	}{r.ID, nonEmpty(r.Subject), millisOf(r.ReceivedAt)})
 }
 
 // PreviewLayouts runs layouts on a captured email without saving anything:

@@ -67,6 +67,8 @@ Business includes one domain, and Team Business one per team. Each extra domain 
 
 An address at a verified domain cannot be used to sign up for an account, because its mail can be read here.
 
+The records and the routing at a glance: [Your own domain](https://mailhooks.cc/custom-domains) on mailhooks.cc.
+
 ## Send a test email
 
 Open **Send** in the endpoint bar and pick **Send test email**. A sample message with a code and a link is delivered straight to the endpoint, so you can see every part of the email view before wiring up a real sender. It counts as one request. It does not travel over SMTP, so the sender checks (SPF, DKIM, DMARC) do not apply to it, and the dashboard says so.
@@ -156,7 +158,7 @@ The score is only information. Every email that reaches an address is captured, 
 | The original message       | Yes, the exact bytes, up to the 10 MB message limit                  |
 | Sender check results, TLS  | Yes                                                                 |
 
-The original message and the attachments are kept in object storage in the EU (Germany), apart from the request itself, and deleted with it. **Download .eml** and the **Raw** tab show the exact message whatever its size; each attachment has a **Download** button. A self-hosted copy without object storage keeps attachment names only, and the original message only when it is 1 MB or smaller.
+The original message and the attachments are kept in object storage in the EU (Denmark), apart from the request itself, and deleted with it. **Download .eml** and the **Raw** tab show the exact message whatever its size; each attachment has a **Download** button. A self-hosted copy without object storage keeps attachment names only, and the original message only when it is 1 MB or smaller.
 
 Emails follow the same [retention](/docs/plans-limits#data-retention) as HTTP requests on your plan, or an endpoint's own shorter one (see [Retention](/docs/endpoints#retention)).
 

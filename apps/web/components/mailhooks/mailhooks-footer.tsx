@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { webhooksOrigin } from "@/lib/site";
 
 /** mailhooks.cc's footer: its own pages, and webhooks.cc's docs and legal pages. */
@@ -12,6 +13,10 @@ export function MailhooksFooter() {
         { href: "/pricing", label: "Pricing" },
         { href: "/login", label: "Sign in" },
       ],
+    },
+    {
+      title: "Features",
+      links: MAILHOOKS_FEATURES.map((feature) => ({ href: feature.path, label: feature.name })),
     },
     {
       title: "Docs",
@@ -34,7 +39,7 @@ export function MailhooksFooter() {
   ];
   return (
     <footer className="border-t-strong border-line py-12 px-4">
-      <div className="max-w-6xl mx-auto grid md:grid-cols-4 gap-8">
+      <div className="max-w-6xl mx-auto grid md:grid-cols-3 lg:grid-cols-5 gap-8">
         <div>
           <p className="font-bold text-lg mb-4">mailhooks.cc</p>
           <p className="text-muted-foreground text-sm">

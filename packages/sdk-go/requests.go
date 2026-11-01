@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -35,8 +37,8 @@ var replaySkippedHeaders = map[string]bool{
 	"x-forwarded-proto": true, "x-real-ip": true, "true-client-ip": true,
 }
 
-// RequestsService lists, waits for, streams, replays and deletes captured
-// requests. Use it as client.Requests.
+// RequestsService lists, waits for, streams, replays, downloads and deletes
+// captured requests. Use it as client.Requests.
 type RequestsService struct{ c *Client }
 
 // ListOptions narrow Requests.List. All are optional.
@@ -117,6 +119,88 @@ func (s *RequestsService) Get(ctx context.Context, id string) (*Request, error) 
 		return nil, err
 	}
 	return &request, nil
+}
+
+// AttachmentDownload is an attachment of a stored email, downloaded with
+// RequestsService.Attachment.
+type AttachmentDownload struct {
+	// Body is the attachment's bytes, exactly as they were kept.
+	Body []byte
+	// Filename is the name the server gave the download (the attachment's
+	// own, or a stand-in such as "attachment-1"); "" when it named none.
+	Filename string
+	// ContentType is the attachment's declared type when it is a plain media
+	// type, otherwise "application/octet-stream".
+	ContentType string
+}
+
+// Raw returns a captured email's exact message, its RFC 5322 bytes:
+// whatever its size when the email was kept in storage (EmailCapture.Stored),
+// otherwise only when the message was at most 1 MiB. A message that was not
+// kept matches ErrNotFound; for an HTTP request the error is an *Error with
+// status 400.
+func (s *RequestsService) Raw(ctx context.Context, id string) ([]byte, error) {
+	if err := validateSegment(id, "request id"); err != nil {
+		return nil, err
+	}
+	download, err := s.c.download(ctx, "/requests/"+id+"/raw")
+	if err != nil {
+		return nil, err
+	}
+	return download.Body, nil
+}
+
+// Attachment downloads one attachment of a stored email
+// (EmailCapture.Stored), by its index in EmailCapture.Attachments, from 0 to
+// 99. An attachment the email does not have, or whose contents were not
+// kept, matches ErrNotFound.
+func (s *RequestsService) Attachment(ctx context.Context, id string, index int) (*AttachmentDownload, error) {
+	if err := validateSegment(id, "request id"); err != nil {
+		return nil, err
+	}
+	if index < 0 || index > 99 {
+		return nil, fmt.Errorf("webhooks.cc: attachment index must be from 0 to 99, not %d", index)
+	}
+	return s.c.download(ctx, "/requests/"+id+"/attachments/"+strconv.Itoa(index))
+}
+
+// download reads a binary response with the client's auth: a raw message or
+// an attachment. It is retried like any other GET.
+func (c *Client) download(ctx context.Context, path string) (*AttachmentDownload, error) {
+	response, err := c.call(ctx, http.MethodGet, path, nil, nil, true)
+	if err != nil {
+		return nil, err
+	}
+	contentType := response.header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return &AttachmentDownload{
+		Body:        response.body,
+		Filename:    dispositionFilename(response.header.Get("Content-Disposition")),
+		ContentType: contentType,
+	}, nil
+}
+
+var (
+	plainFilename   = regexp.MustCompile(`(?i)filename="([^"]*)"`)
+	encodedFilename = regexp.MustCompile(`(?i)filename\*=UTF-8''([^;]+)`)
+)
+
+// dispositionFilename reads a Content-Disposition header's file name: the
+// UTF-8 filename* when it decodes, otherwise the plain filename. A name cut
+// inside an escape keeps the plain one, as the TypeScript SDK does.
+func dispositionFilename(disposition string) string {
+	name := ""
+	if match := plainFilename.FindStringSubmatch(disposition); match != nil {
+		name = match[1]
+	}
+	if match := encodedFilename.FindStringSubmatch(disposition); match != nil {
+		if decoded, err := url.PathUnescape(match[1]); err == nil && utf8.ValidString(decoded) {
+			name = decoded
+		}
+	}
+	return name
 }
 
 // WaitOptions control Requests.WaitFor and WaitForAll.

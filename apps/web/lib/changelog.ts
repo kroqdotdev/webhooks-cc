@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.55.2";
+export const APP_VERSION = "0.55.3";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -27,8 +27,22 @@ export const MCP_VERSION = "1.15.1";
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
   {
+    version: "0.55.3",
+    date: "2026-11-01",
+    title: "Business, Told in Full",
+    track: "web",
+    items: [
+      "The pricing pages and the plan page name everything Business adds: attachment parsing, more layouts, custom inbound domains, file drops, AI assists and longer retention",
+      "mailhooks.cc has pages for the Google Sheets destination, file drops, custom domains, AI setup, and Zapier and Make, and the docs have a page for Zapier and Make",
+      "A Google Sheets destination or file drop writing a row per line item leaves the item columns blank for an email with none, instead of their placeholders",
+      "Alerts settings wait until they have loaded before they can be changed, so a change made right away is no longer undone",
+      "When a Business renewal payment fails, the plan page says Business is at stake, not Pro",
+      "The privacy policy says where the original message and attachments of a captured email are kept: object storage on our own server in Denmark",
+    ],
+  },
+  {
     version: "0.55.2",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Endpoint Retention in Every View",
     track: "web",
     items: [
@@ -37,7 +51,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.55.1",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Destinations That Are Gone",
     track: "web",
     items: [
@@ -48,7 +62,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.55.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "AI Setup and Repair",
     track: "web",
     items: [
@@ -59,7 +73,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.54.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "File Drops",
     track: "web",
     items: [
@@ -70,7 +84,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.53.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Custom Inbound Domains",
     track: "web",
     items: [
@@ -81,7 +95,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.52.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "mailhooks.cc and Ready-made Layouts",
     track: "web",
     items: [
@@ -92,7 +106,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.51.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Business Plan, Parsed Page Add-ons and Team Business",
     track: "web",
     items: [
@@ -105,7 +119,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.50.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Layouts: Parse Emails into Fields, Line Items and Rows",
     track: "web",
     items: [
@@ -118,7 +132,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.49.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Attachments, Alerts, Google Sheets and Retention",
     track: "web",
     items: [
@@ -131,7 +145,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.48.6",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Full Messages for Large Emails",
     track: "web",
     items: [

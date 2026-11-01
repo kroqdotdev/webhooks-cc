@@ -131,8 +131,11 @@ test("a free-plan user can create a team, which starts suspended", async ({ page
   if (error || !data) throw new Error(`Created team not found: ${error?.message ?? "no row"}`);
   teamId = data.id as string;
 
-  // Later tests open the team directly, so keep the index link itself covered
-  await goToTeams(page, owner);
+  // Later tests open the team directly, so keep the index link itself covered.
+  // Signed in already: a plain visit (signing in again waits for the network
+  // to go quiet, which the team page's cut-off link prefetches can keep from
+  // happening).
+  await page.goto("/teams");
   await expect(page.getByText("1 member").first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(`${TEAM_NAME} is suspended`)).toBeVisible();
   await expect(page.getByRole("link", { name: `Manage ${TEAM_NAME}` })).toHaveAttribute(

@@ -3,6 +3,7 @@ import {
   admin,
   createTestUser,
   deleteTestUser,
+  findUserIdByEmail,
   generateMagicLinkTokenHash,
   signInTestUser,
   type TestUser,
@@ -188,4 +189,42 @@ test("an email link asked for on mailhooks.cc signs in there, even opened on web
   // Emails sent later (quota, alerts) link to the site it signed in on.
   const { data } = await admin.from("users").select("home_site").eq("id", user.id).single();
   expect(data?.home_site).toBe("mailhooks");
+});
+
+test("mailhooks.cc renders in the style the project picked", async ({ page }, testInfo) => {
+  // The classic project stores its pick for this origin too (playwright.config.ts).
+  await page.goto(`${MAIL}/`);
+  const style = testInfo.project.name === "chromium-classic" ? "classic" : "clean";
+  await expect(page.locator("html")).toHaveAttribute("data-style", style);
+});
+
+test("signs up on mailhooks.cc", async ({ page }) => {
+  const email = `e2e-mail-signup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@webhooks-test.local`;
+  try {
+    await page.goto(`${MAIL}/login`);
+    await expect(page).toHaveTitle(/mailhooks\.cc/);
+    await page.getByRole("button", { name: "Create an account" }).click();
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill("a-long-enough-password");
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page.getByText("Check your email")).toBeVisible({ timeout: 20000 });
+    await expect(page).toHaveURL(new RegExp(`^${MAIL!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  } finally {
+    const id = await findUserIdByEmail(email);
+    if (id) await deleteTestUser(id);
+  }
+});
+
+test("signs in with a password on mailhooks.cc and stays there", async ({ page }) => {
+  await page.goto(`${MAIL}/login`);
+  await page.getByLabel("Email").fill(user.email);
+  await page.getByLabel("Password").fill(user.password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`^${MAIL!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/dashboard`),
+    {
+      timeout: 20000,
+    }
+  );
+  await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
 });

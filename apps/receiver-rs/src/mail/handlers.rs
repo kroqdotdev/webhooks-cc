@@ -1270,6 +1270,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_store_that_fails_makes_the_sender_retry_and_keeps_nothing() {
+        // The whole path, not only store_objects(): the upload comes before the
+        // capture, so a failing store answers transient (451 at the MX host)
+        // without touching the database, and removes what it wrote.
+        let (store, seen) = fake_store(StatusCode::SERVICE_UNAVAILABLE).await;
+        let mut state = test_state(false);
+        state.object_store = Some(store);
+        let raw = "From: orders@acme.example\r\nTo: acme-orders@mailhooks.cc\r\nSubject: Order 1001\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=X\r\n\r\n--X\r\nContent-Type: text/plain\r\n\r\nThanks.\r\n--X\r\nContent-Type: text/csv\r\nContent-Disposition: attachment; filename=order.csv\r\n\r\nsku,qty\r\n--X--\r\n";
+        let payload = json!({
+            "recipients": ["acme-orders@mailhooks.cc"],
+            "raw": b64(raw),
+        });
+        let (headers, body) = signed(DELIVER_PATH, &payload);
+        let (status, value) = json_of(deliver(State(state), headers, body).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            value["results"],
+            json!([{"recipient": "acme-orders@mailhooks.cc", "status": "transient"}])
+        );
+        let seen = seen.lock().unwrap().clone();
+        // "METHOD path signed": the request's prefix is the PUT path up to its
+        // last part (raw.eml, or a/0 for the attachment).
+        let put = seen
+            .iter()
+            .find(|line| line.starts_with("PUT"))
+            .expect("an upload was tried");
+        let path = put.split(' ').nth(1).unwrap();
+        let prefix = path
+            .strip_suffix("raw.eml")
+            .or_else(|| path.strip_suffix("a/0"))
+            .expect("a message or attachment key");
+        let mut deleted: Vec<&str> = seen
+            .iter()
+            .filter(|line| line.starts_with("DELETE"))
+            .map(|line| line.split(' ').nth(1).unwrap())
+            .collect();
+        deleted.sort();
+        assert_eq!(
+            deleted,
+            vec![format!("{prefix}a/0"), format!("{prefix}raw.eml")],
+            "the message and its one attachment are removed: {seen:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn an_unreachable_store_is_an_error_not_a_hang() {
         let store = Arc::new(crate::object_store::ObjectStore::new(
             crate::object_store::ObjectStoreConfig {

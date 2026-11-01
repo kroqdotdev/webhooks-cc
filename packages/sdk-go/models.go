@@ -322,7 +322,8 @@ type EmailCapture struct {
 	ParseError   bool              `json:"parseError"`
 	Truncated    map[string]bool   `json:"truncated"`
 	// Stored reports that the exact message and the attachments' contents
-	// are kept: RequestsService.Raw and Attachment download them.
+	// are kept in storage: RequestsService.Raw downloads the message and
+	// RequestsService.Attachment each attachment, whatever their size.
 	Stored bool `json:"stored,omitempty"`
 	// Raw is the JSON the email was read from.
 	Raw json.RawMessage `json:"-"`
@@ -693,6 +694,21 @@ const (
 	FormatFileDrop DestinationFormat = "file_drop"
 )
 
+// DestinationAttachments is how a destination's deliveries carry the
+// attachments of emails kept in storage (EmailCapture.Stored).
+type DestinationAttachments string
+
+// The ways attachments travel. AttachmentsLinks, the default, gives each
+// attachment a URL, a signed link that downloads it while the email is kept;
+// AttachmentsInline sends each one's Content as base64 while a delivery's
+// attachments add up to 1 MB (larger ones get a URL); AttachmentsNone sends
+// names, types and sizes only.
+const (
+	AttachmentsLinks  DestinationAttachments = "links"
+	AttachmentsInline DestinationAttachments = "inline"
+	AttachmentsNone   DestinationAttachments = "none"
+)
+
 // DestinationFilter says which captured requests a destination gets: those
 // its conditions match, all of them (Logic "and", the default) or any
 // ("or"). The conditions are those of response rules, and may also read:
@@ -778,6 +794,9 @@ type Destination struct {
 	Throttle time.Duration
 	// Delay is how long after a capture the first try waits, like a callback.
 	Delay time.Duration
+	// Attachments is how its deliveries carry the attachments of emails kept
+	// in storage; "" from a server that does not say.
+	Attachments DestinationAttachments
 	// Role is "forward" for the destination the endpoint's Forward settings
 	// stand for, "notify" for its NotificationURL, and "" otherwise.
 	Role      string
@@ -834,6 +853,7 @@ func (d *Destination) UnmarshalJSON(data []byte) error {
 		SentField:            o.str("sentField"),
 		Throttle:             o.seconds("throttleSeconds"),
 		Delay:                o.seconds("delaySeconds"),
+		Attachments:          DestinationAttachments(o.str("attachments")),
 		CreatedAt:            o.millis("createdAt"),
 		UpdatedAt:            o.millis("updatedAt"),
 		Raw:                  bytes.Clone(data),
@@ -894,35 +914,36 @@ func (d Destination) MarshalJSON() ([]byte, error) {
 		headers = []DestinationHeader{}
 	}
 	return json.Marshal(struct {
-		ID                   string              `json:"id"`
-		Position             int                 `json:"position"`
-		Name                 *string             `json:"name"`
-		Enabled              bool                `json:"enabled"`
-		URL                  string              `json:"url"`
-		HasSecret            bool                `json:"hasSecret"`
-		HasMailgunSigningKey bool                `json:"hasMailgunSigningKey"`
-		HTTP                 bool                `json:"http"`
-		Email                bool                `json:"email"`
-		Format               DestinationFormat   `json:"format"`
-		Filter               *DestinationFilter  `json:"filter"`
-		BodyTemplate         json.RawMessage     `json:"bodyTemplate"`
-		MessageTemplate      *string             `json:"messageTemplate"`
-		Headers              []DestinationHeader `json:"headers"`
-		AppendPath           bool                `json:"appendPath"`
-		RetrySeconds         int64               `json:"retrySeconds"`
-		KeepOrder            bool                `json:"keepOrder"`
-		SentField            *string             `json:"sentField"`
-		ThrottleSeconds      int64               `json:"throttleSeconds"`
-		DelaySeconds         int64               `json:"delaySeconds"`
-		Role                 *string             `json:"role"`
-		CreatedAt            *int64              `json:"createdAt,omitempty"`
-		UpdatedAt            *int64              `json:"updatedAt,omitempty"`
-		Summary              *wireSummary        `json:"summary,omitempty"`
+		ID                   string                 `json:"id"`
+		Position             int                    `json:"position"`
+		Name                 *string                `json:"name"`
+		Enabled              bool                   `json:"enabled"`
+		URL                  string                 `json:"url"`
+		HasSecret            bool                   `json:"hasSecret"`
+		HasMailgunSigningKey bool                   `json:"hasMailgunSigningKey"`
+		HTTP                 bool                   `json:"http"`
+		Email                bool                   `json:"email"`
+		Format               DestinationFormat      `json:"format"`
+		Filter               *DestinationFilter     `json:"filter"`
+		BodyTemplate         json.RawMessage        `json:"bodyTemplate"`
+		MessageTemplate      *string                `json:"messageTemplate"`
+		Headers              []DestinationHeader    `json:"headers"`
+		AppendPath           bool                   `json:"appendPath"`
+		RetrySeconds         int64                  `json:"retrySeconds"`
+		KeepOrder            bool                   `json:"keepOrder"`
+		SentField            *string                `json:"sentField"`
+		ThrottleSeconds      int64                  `json:"throttleSeconds"`
+		DelaySeconds         int64                  `json:"delaySeconds"`
+		Attachments          DestinationAttachments `json:"attachments,omitempty"`
+		Role                 *string                `json:"role"`
+		CreatedAt            *int64                 `json:"createdAt,omitempty"`
+		UpdatedAt            *int64                 `json:"updatedAt,omitempty"`
+		Summary              *wireSummary           `json:"summary,omitempty"`
 	}{
 		d.ID, d.Position, nonEmpty(d.Name), d.Enabled, d.URL, d.HasSecret, d.HasMailgunSigningKey, d.HTTP, d.Email, d.Format,
 		d.Filter, d.BodyTemplate, nonEmpty(d.MessageTemplate), headers, d.AppendPath,
 		int64(d.Retry / time.Second), d.KeepOrder, nonEmpty(d.SentField), int64(d.Throttle / time.Second),
-		int64(d.Delay / time.Second), nonEmpty(d.Role), millisOf(d.CreatedAt), millisOf(d.UpdatedAt), summary,
+		int64(d.Delay / time.Second), d.Attachments, nonEmpty(d.Role), millisOf(d.CreatedAt), millisOf(d.UpdatedAt), summary,
 	})
 }
 

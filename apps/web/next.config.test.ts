@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 // Next's own matcher, `has` check and value interpolation, so this test sees
 // the rules the way the router applies them: for headers() every matching
 // rule in order, the later one winning per header; for rewrites the first
@@ -9,6 +9,7 @@ import {
   matchHas,
   prepareDestination,
 } from "next/dist/shared/lib/router/utils/prepare-destination";
+import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
 import { MARKDOWN_TWIN_HEADER } from "./lib/markdown-negotiation";
 import nextConfig from "./next.config";
 
@@ -66,8 +67,12 @@ describe("next.config.ts headers", () => {
 });
 
 /** Where a beforeFiles rewrite sends a request, or null when none matches. */
-async function rewriteFor(pathname: string, headers: Record<string, string> = {}) {
-  const rewrites = await nextConfig.rewrites?.();
+async function rewriteFor(
+  pathname: string,
+  headers: Record<string, string> = {},
+  config: typeof nextConfig = nextConfig
+) {
+  const rewrites = await config.rewrites?.();
   const beforeFiles = rewrites && !Array.isArray(rewrites) ? (rewrites.beforeFiles ?? []) : [];
   const req = { headers } as unknown as Parameters<typeof matchHas>[0];
   for (const rule of beforeFiles) {
@@ -110,5 +115,35 @@ describe("next.config.ts markdown twin rewrites", () => {
     for (const path of ["/pricing", "/auth.md", "/index.md", "/docs.md/agents"]) {
       expect(await rewriteFor(path, { [MARKDOWN_TWIN_HEADER]: "1" })).toBeNull();
     }
+  });
+});
+
+describe("next.config.ts mailhooks.cc rewrites", () => {
+  // The rewrites are built when next.config.ts loads, from NEXT_PUBLIC_MAILHOOKS_URL.
+  async function mailConfig(): Promise<typeof nextConfig> {
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
+    vi.resetModules();
+    try {
+      return (await import("./next.config")).default;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
+
+  it("serves every mailhooks.cc page from app/mailhooks on the mail host only", async () => {
+    const config = await mailConfig();
+    const paths = [
+      "/pricing",
+      "/parse",
+      "/parse/shopify-orders",
+      ...MAILHOOKS_FEATURES.map((f) => f.path),
+    ];
+    for (const path of paths) {
+      expect(await rewriteFor(path, { host: "mailhooks.cc" }, config), path).toBe(
+        `/mailhooks${path}`
+      );
+      expect(await rewriteFor(path, { host: "webhooks.cc" }, config), path).toBeNull();
+    }
+    expect(await rewriteFor("/", { host: "mailhooks.cc" }, config)).toBe("/mailhooks");
   });
 });

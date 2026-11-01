@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Is Smee.io free?",
     answer:
-      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing at volume and more layouts, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
+      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
   },
   {
     question: "Should I use Smee.io or webhooks.cc for GitHub App development?",
@@ -81,7 +81,7 @@ export default function CompareSmeePage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated March 2026
+          Comparison · Updated October 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Smee.io</h1>
         <p className="text-lg text-muted-foreground mb-10">
