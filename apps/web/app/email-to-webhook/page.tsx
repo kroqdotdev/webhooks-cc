@@ -135,7 +135,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Can I test a handler written for Postmark, SendGrid, Mailgun or CloudMailin?",
     answer:
-      "Yes. A destination, the CLI's tunnel and the SDK can post a captured email the way Postmark's inbound webhook, SendGrid's Inbound Parse, a Mailgun route or CloudMailin's JSON format posts it, a Mailgun form signed with your own signing key, so the handler you already wrote runs against real mail. Attachment contents are not included, because they are not stored.",
+      "Yes. A destination, the CLI's tunnel and the SDK can post a captured email the way Postmark's inbound webhook, SendGrid's Inbound Parse, a Mailgun route or CloudMailin's JSON format posts it, a Mailgun form signed with your own signing key, so the handler you already wrote runs against real mail. Postmark's and CloudMailin's shapes carry attachment contents when the email is stored; SendGrid's and Mailgun's forms carry their names only.",
   },
   {
     question: "How are forwarded emails signed?",
@@ -150,7 +150,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Are attachments forwarded?",
     answer:
-      "Their name, type and size are. The contents are not kept, so they are not forwarded either.",
+      "Yes, in the JSON, template, Postmark and CloudMailin formats: each destination sends them as signed download links (the default), inline as base64 up to 1 MB per delivery, or as names only. The SendGrid and Mailgun forms carry their names only.",
   },
   {
     question: "Does forwarding cost extra?",
@@ -290,7 +290,7 @@ export default function EmailToWebhookPage() {
               "8 retries over about a day, then marked failed",
               "Every try logged, with a Redeliver button",
               "https URLs on public host names only",
-              "Text and HTML up to 256 KB each; attachment contents not included",
+              "Text and HTML up to 256 KB each; attachments as signed links or inline",
               "Every plan, Free included",
               "No extra quota: each email counted once when it arrived",
             ].map((item) => (

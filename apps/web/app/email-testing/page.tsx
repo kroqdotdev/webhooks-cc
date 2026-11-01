@@ -118,7 +118,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Does email testing cost extra?",
     answer:
-      "No. Email capture is on every plan, Free included. Each email counts as one request against the same quota as your webhooks: 50 a day on Free, 100,000 a month on Pro.",
+      "No. Email capture is on every plan, Free included. Each email counts as one request against the same quota as your webhooks: 50 a day on Free, 100,000 a month on Pro and 250,000 a month on Business.",
   },
   {
     question: "Can I get an email address without an account?",
@@ -138,7 +138,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "What happens to attachments?",
     answer:
-      "Their name, type and size are listed. The contents are not kept. Messages up to 10 MB are accepted, text and HTML parts are stored up to 256 KB each, and the original message is kept when it is 1 MB or smaller.",
+      "They are kept with the email: download each one from the Attachments tab, or through the API. Messages up to 10 MB are accepted, text and HTML parts are stored up to 256 KB each, and the original message is kept whole.",
   },
 ];
 

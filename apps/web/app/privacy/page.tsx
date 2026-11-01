@@ -27,7 +27,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 25, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 29, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -320,9 +320,13 @@ export default function PrivacyPage() {
               deleted 31 days after they are received.
             </p>
             <p>
+              <span className="font-bold text-foreground">Business plan:</span> Captured requests
+              are deleted 90 days after they are received.
+            </p>
+            <p>
               <span className="font-bold text-foreground">Team-shared endpoints:</span> Requests
-              billed to a team&apos;s subscription are retained for 31 days regardless of the
-              endpoint owner&apos;s plan.
+              billed to a team&apos;s subscription are retained for 31 days, or 90 days with the
+              Team Business add-on, regardless of the endpoint owner&apos;s plan.
             </p>
             <p>
               <span className="font-bold text-foreground">Guest endpoints:</span> Endpoints created

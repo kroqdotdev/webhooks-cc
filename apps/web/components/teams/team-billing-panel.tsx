@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,6 +111,24 @@ export function TeamBillingPanel({
   /** The activation wait ran out; offer checkout again as an escape hatch. */
   activationTimedOut?: boolean;
 }) {
+  // Team Business set to end (shown by its own panel) is not part of the
+  // next renewal: the owner reads its state from the same route.
+  const [businessEnding, setBusinessEnding] = useState(false);
+  useEffect(() => {
+    if (!accessToken || !isOwner || !team.business) return;
+    let cancelled = false;
+    fetch(`/api/teams/${encodeURIComponent(team.id)}/billing/business`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((state: { ending?: boolean } | null) => {
+        if (!cancelled) setBusinessEnding(state?.ending === true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, isOwner, team.business, team.id]);
   const [checkoutSeats, setCheckoutSeats] = useState(DEFAULT_TEAM_SEATS);
   const [seatDraft, setSeatDraft] = useState(() => clampSeats(team.seats));
   // The parent refreshes the `team` prop in place (no remount), so a seat count
@@ -426,7 +444,8 @@ export function TeamBillingPanel({
             )}
             {!isCanceling && !isPastDue && team.periodEnd && (
               <p className="text-muted-foreground">
-                Renews on {periodEndLabel} at {formatSeatPricing(scheduledReduction ?? team.seats)}.
+                Renews on {periodEndLabel} at {formatSeatPricing(scheduledReduction ?? team.seats)}
+                {team.business && !businessEnding ? ", plus Team Business at $49/mo" : ""}.
               </p>
             )}
           </div>

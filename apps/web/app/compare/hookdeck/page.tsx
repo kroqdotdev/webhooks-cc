@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Does Hookdeck have a free tier?",
     answer:
-      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every individual feature included on both tiers. The paid plan raises rate limits and retention, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
+      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing at volume and more layouts, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
   },
   {
     question: "Does webhooks.cc handle webhook retries and delivery guarantees?",
@@ -61,7 +61,7 @@ const ROWS = [
   ["MCP server for AI agents", "Yes, @webhooks-cc/mcp", "Yes, for Event Gateway operations"],
   ["Open source", "Yes (AGPL + MIT)", "Partially"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "Team+ ($39/mo), unlimited seats"],
-  ["Free tier features", "Every individual feature", "Limited events/month"],
+  ["Free tier features", "Every Pro feature", "Limited events/month"],
 ] as const;
 
 export const metadata = createPageMetadata({

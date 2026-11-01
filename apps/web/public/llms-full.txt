@@ -42,9 +42,12 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 ## Pricing
 
 - **Guest** (no signup): 25 requests per ephemeral endpoint, deleted after 12 hours, no email capture
-- **Free**: 50 requests per 24 hours, unlimited endpoints, 7-day retention, every feature including email capture and full CLI/SDK/MCP access
-- **Pro** ($8/month): 100,000 requests per 30 days, 31-day retention
+- **Free**: 50 requests per 24 hours, unlimited endpoints, 7-day retention, 20 parsed attachment pages a month, 2 layouts per endpoint, every Pro feature including email capture and full CLI/SDK/MCP access
+- **Pro** ($8/month): 100,000 requests per 30 days, 31-day retention, 100 parsed attachment pages a month. Extra requests: monthly blocks ($2 per 25,000), one-time blocks ($3 per 25,000) or overage ($4 per 25,000, up to a maximum you set).
+- **Business** ($29/month, or $290/year; annual billing is only for Business): 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month, up to 50 layouts per endpoint, extra requests as on Pro. More pages: monthly page blocks ($5 per 1,000), one-time page blocks ($8 per 1,000, never expire) or opt-in page overage ($0.01 per page, up to a maximum you set). On annual billing requests and pages still reset every month.
 - **Teams** ($12/seat/month): a separate per-team subscription, not a tier of a personal plan. Each seat adds 100,000 requests per 30 days to a pooled team quota and one member slot. Requests on endpoints shared with an active team are billed to the pool and kept 31 days.
+- **Team Business add-on** ($49/month on the team's subscription, monthly only): +150,000 requests in the team pool, 2,000 pooled parsed attachment pages a month with page blocks and overage, up to 50 layouts per endpoint on team-shared endpoints, and 90-day retention for team-billed requests. Members' personal endpoints follow their own plan.
+- A parsed page is each PDF page (text layer, no OCR), each started 1,000 rows of each sheet in CSV/TSV/XLSX/XLS/ODS, or each plain text attachment; email bodies never count. Without pages left, emails still arrive with attachments as files, unparsed.
 - Emails count against the same quota as webhooks: one request per email per endpoint it is addressed to.
 
 ## Authentication
@@ -377,7 +380,7 @@ const preview = await client.buildRequest("https://example.com/webhook", { ... }
 
 ```typescript
 const usage = await client.usage();
-// Returns: { used, limit, remaining, plan: "free"|"pro", periodEnd }
+// Returns: { used, limit, remaining, plan: "free"|"pro"|"business", periodEnd }
 ```
 
 ### Matchers
@@ -501,7 +504,7 @@ interface UsageInfo {
   used: number;
   limit: number;
   remaining: number;
-  plan: "free" | "pro";
+  plan: "free" | "pro" | "business";
   periodEnd: number | null;
 }
 ```
@@ -985,7 +988,7 @@ interface EmailCapture {
   text: string | null;             // up to 256 KB
   html: string | null;             // up to 256 KB
   textFromHtml: boolean;           // no text part, so text was derived from the HTML
-  attachments: {                   // contents are not kept
+  attachments: {                   // contents downloadable from /api/attachments
     filename: string | null;
     contentType: string;
     size: number;
@@ -1110,7 +1113,7 @@ interface ForwardedEmail {
     html: string | null;           // up to 256 KB
     codes?: string[];              // one-time codes; left out when showEmailExtracts is false
     links?: { url: string; text: string | null }[];  // links worth clicking; same rule
-    attachments: {                 // contents are not kept, so not forwarded
+    attachments: {                 // with url or base64 content, per the destination
       filename: string | null;
       contentType: string;
       size: number;
@@ -1227,6 +1230,8 @@ interface Delivery {
 
 - **Free plan**: 7 days
 - **Pro plan**: 31 days
-- **Team-billed requests** (endpoints shared with an active team): 31 days, whatever the owner's plan
+- **Business plan**: 90 days
+- **Team-billed requests** (endpoints shared with an active team): 31 days, or 90 days with the Team Business add-on, whatever the owner's plan
+- After moving to a plan with shorter retention, the old retention is kept for 7 more days
 - Ephemeral endpoints: 12 hours, max 25 requests
 - Emails and their forwarding deliveries follow the same retention as HTTP requests

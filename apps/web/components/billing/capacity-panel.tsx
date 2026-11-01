@@ -115,7 +115,8 @@ export function CapacityPanel({
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const capacity = params.get("capacity");
-    if (!capacity) return;
+    // Back from buying parsed pages: that panel's to say.
+    if (!capacity || window.location.hash === "#extra-pages") return;
     setReturned(capacity);
     params.delete("capacity");
     const query = params.toString();

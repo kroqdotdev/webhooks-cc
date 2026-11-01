@@ -1,6 +1,6 @@
 ---
 title: "Plans & Limits"
-description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free, pro, and teams plans side by side with exact numbers, billing periods, and upgrade paths."
+description: "Request quotas, data retention, parsed attachment pages, rate limits, and endpoint limits for webhooks.cc. Compare the Free, Pro, Business, and Teams plans side by side with exact numbers, billing periods, and plan changes."
 section: getting-started
 order: 4
 lastUpdated: 2026-10-29
@@ -13,48 +13,56 @@ keywords:
     "webhook retention",
     "free plan",
     "pro plan",
+    "business plan",
     "teams plan",
+    "team business",
+    "annual billing",
+    "attachment parsing pages",
     "webhook overage",
     "extra webhook requests",
   ]
 seo:
   ogTitle: "Plans & Limits"
-  ogDescription: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare free, pro, and teams plans side by side with exact numbers and upgrade paths."
+  ogDescription: "Request quotas, data retention, parsed attachment pages, rate limits, and endpoint limits for webhooks.cc. Compare Free, Pro, Business, and Teams side by side with exact numbers and plan changes."
 ---
 
 ## Plans overview
 
-| Plan      | Requests         | Period   | Retention | Endpoints                    | Price            |
-| --------- | ---------------- | -------- | --------- | ---------------------------- | ---------------- |
-| Guest     | 25               | 12 hours | 12 hours  | Ephemeral only (12hr TTL)    | Free (no signup) |
-| Agent     | 100 per agent    | 24 hours | 24 hours  | 3 at a time (24hr TTL)       | Free (no signup) |
-| Free      | 50               | 24 hours | 7 days    | Unlimited, never expire      | Free             |
-| **Pro**   | 100,000          | 30 days  | 31 days   | Unlimited, never expire      | $8/month         |
-| **Teams** | 100,000 per seat | 30 days  | 31 days   | Endpoints shared to the team | $12/seat/month   |
+| Plan                     | Requests          | Period   | Retention | Endpoints                    | Price                  |
+| ------------------------ | ----------------- | -------- | --------- | ---------------------------- | ---------------------- |
+| Guest                    | 25                | 12 hours | 12 hours  | Ephemeral only (12hr TTL)    | Free (no signup)       |
+| Agent                    | 100 per agent     | 24 hours | 24 hours  | 3 at a time (24hr TTL)       | Free (no signup)       |
+| Free                     | 50                | 24 hours | 7 days    | Unlimited, never expire      | Free                   |
+| **Pro**                  | 100,000           | 30 days  | 31 days   | Unlimited, never expire      | $8/month               |
+| **Business**             | 250,000           | 1 month  | 90 days   | Unlimited, never expire      | $29/month or $290/year |
+| **Teams**                | 100,000 per seat  | 30 days  | 31 days   | Endpoints shared to the team | $12/seat/month         |
+| **Team Business** add-on | +150,000 per team | 30 days  | 90 days   | Endpoints shared to the team | $49/month per team     |
 
-Every feature (webhook capture, [email capture](/docs/email-capture), inspection, replay, mock responses, CLI tunneling, SDK, and MCP server) works on both Free and Pro.
+Free has every Pro feature except extra requests (monthly blocks, one-time blocks and overage), which need a Pro or Business account or a subscribed team. Webhook and [email capture](/docs/email-capture), inspection, replay, mock responses and response rules, [forwarding destinations](/docs/forwarding) (Google Sheets included), attachment contents in deliveries, failure alerts, [layouts](/docs/layouts), CLI tunneling, the TypeScript, Python and Go SDKs, and the MCP server work on every plan. Paid plans raise the volume and the retention, and Business adds attachment parsing at volume, more layouts per endpoint and 90-day retention (see [Email parsing](#email-parsing)).
 
-**Teams** is a separate, per-team subscription rather than a tier of your personal plan. Any account (Free or Pro) can create a team, and the team's own subscription decides what it can do. See [Teams and shared endpoints](#teams-and-shared-endpoints) below.
+**Teams** is a separate, per-team subscription rather than a tier of your personal plan. Any account (Free, Pro or Business) can create a team, and the team's own subscription decides what it can do. See [Teams and shared endpoints](#teams-and-shared-endpoints) below.
 
-Endpoints created by logged-in users (Free or Pro) **never expire**. They persist until you explicitly delete them from the dashboard, CLI, SDK, or API. Only ephemeral endpoints -- created without an account or explicitly marked ephemeral -- auto-delete after 12 hours.
+Endpoints created by logged-in users, on any plan, **never expire**. They persist until you explicitly delete them from the dashboard, CLI, SDK, or API. Only ephemeral endpoints (created without an account or explicitly marked ephemeral) auto-delete after 12 hours.
 
 ## How billing periods work
 
-**Guest** — no account required. Ephemeral endpoints auto-delete after 12 hours along with all captured requests. Each ephemeral endpoint has a 25-request cap.
+**Guest**: no account required. Ephemeral endpoints auto-delete after 12 hours along with all captured requests. Each ephemeral endpoint has a 25-request cap.
 
 **Agent**: an AI agent that registers without an account gets a sandbox of 3 endpoints for 24 hours, with 25 requests per endpoint and 100 in all. See [AI agents](/docs/agents).
 
-**Free** — billing periods activate lazily. Your 24-hour window starts when your first webhook request is captured, not when you sign up. Once the period expires, the counter resets and the next request starts a new 24-hour window.
+**Free**: billing periods activate lazily. Your 24-hour window starts when your first webhook request is captured, not when you sign up. Once the period expires, the counter resets and the next request starts a new 24-hour window.
 
-**Pro** — 30-day rolling billing periods. The counter resets automatically at the end of each period. Canceled subscriptions remain active until the current period ends, then downgrade to Free.
+**Pro**: 30-day rolling billing periods. The counter resets automatically at the end of each period. Canceled subscriptions remain active until the current period ends, then downgrade to Free.
 
-**Teams** — 30-day rolling periods on the team itself, starting when the team subscribes. The team's pooled counter resets at the end of each period. A canceled team subscription stays active until the period ends, then the team is suspended.
+**Business**: billed monthly ($29) or yearly ($290); annual billing is only offered on Business. On monthly billing, requests and parsed pages reset with each renewal, as on Pro. On annual billing you pay once a year, and requests and parsed pages still reset every month. A canceled subscription stays active until the end of the period you paid for, then the account moves to Free.
+
+**Teams**: 30-day rolling periods on the team itself, starting when the team subscribes. The team's pooled counter resets at the end of each period. A canceled team subscription stays active until the period ends, then the team is suspended. The Team Business add-on is billed monthly on the team's subscription and follows the same period.
 
 ## Request quotas
 
 Quotas limit how many webhook requests your endpoints can capture within a billing period. When your quota is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` header indicating when the quota resets.
 
-When it runs out, we email you that webhooks are being rejected, with the endpoints that have rejected any so far: on Free at most once a week, on Pro at most once per billing period, after any [extra requests](#extra-requests) are used up too.
+When it runs out, we email you that webhooks are being rejected, with the endpoints that have rejected any so far: on Free at most once a week, on Pro and Business at most once per billing period, after any [extra requests](#extra-requests) are used up too.
 
 Quotas are enforced atomically inside a single Postgres stored procedure — no race conditions, even under high concurrency.
 
@@ -67,7 +75,7 @@ Emails sent to an endpoint's address count against the same quota: one request p
 
 ## Extra requests
 
-Pro accounts and subscribed teams can go past the plan's quota in three ways, all in blocks of 25,000 requests. Manage them under **Account > Plan and usage > Extra requests**, or on the team's page (the owner).
+Pro and Business accounts and subscribed teams can go past the plan's quota in three ways, all in blocks of 25,000 requests. Manage them under **Account > Plan and usage > Extra requests**, or on the team's page (the owner).
 
 | Option          | Price                           | How it works                                                                                   |
 | --------------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -79,11 +87,21 @@ Requests are used in this order: the plan's quota, monthly blocks, one-time bloc
 
 **Monthly blocks** renew on the plan's renewal date. Adding blocks mid-period charges the full monthly price for them at once and adds their requests at once; removing blocks takes effect at the renewal, so you keep what you paid for until then.
 
-**One-time blocks** never expire. They stay with the account when Pro ends, and a team keeps them while it is subscribed.
+**One-time blocks** never expire. They stay with the account when the paid plan ends, and a team keeps them while it is subscribed.
 
 **Overage** costs nothing until it is used. Polar asks for a card when you turn it on, and bills the requests counted in a period together with the plan at the end of that period, never more than your maximum. Turning overage off stops it at once; what was already used is billed at the period end.
 
-Monthly blocks and overage need the plan: if Pro or the team's subscription is canceled they end with it, and come back if you keep the plan after all.
+Monthly blocks and overage need a paid plan: if Pro, Business or the team's subscription is canceled they end with it, and come back if you keep the plan after all.
+
+## Changing plans
+
+Change plans under **Account > Plan and usage**. Each change says before you confirm it whether it applies now or at the renewal.
+
+- **From Free**, checking out starts Pro or Business (monthly or yearly) at once.
+- **Pro to Business, monthly**, applies at once. You are charged the difference for the rest of the current period and get Business's extra requests and parsed pages in proportion for that part of it. The full allowance starts at the next renewal.
+- **Every other change** (to annual billing, back to monthly, or down to Pro) takes effect at the renewal. Until then you keep the current plan and can undo the change.
+
+After moving down, the old plan's retention is kept for 7 more days before the shorter one applies. One-time page blocks stay on the account; monthly page blocks and page overage end when the account leaves Business.
 
 ## Data retention
 
@@ -91,23 +109,46 @@ Captured requests, with any stored email and attachments, are deleted automatica
 
 - **Free**: 7 days
 - **Pro**: 31 days
-- **Team-billed**: requests captured on an endpoint shared with an active team are kept for 31 days, even when the endpoint owner is on Free
+- **Business**: 90 days
+- **Team-billed**: requests captured on an endpoint shared with an active team are kept for 31 days, or 90 days with the Team Business add-on, even when the endpoint owner is on Free
 - **Ephemeral**: requests are deleted when the endpoint expires (12 hours after creation)
 
-An endpoint's owner can keep its requests for fewer days than the plan, or delete each request a minute after every destination has its copy or has given up ("deliver, then delete"); see [Retention](/docs/endpoints#retention). After a plan ends, its retention is kept for 7 more days before the shorter one applies.
+An endpoint's owner can keep its requests for fewer days than the plan, or delete each request a minute after every destination has its copy or has given up ("deliver, then delete"); see [Retention](/docs/endpoints#retention). After a plan ends or moves down, its retention is kept for 7 more days before the shorter one applies.
 
 Deleted requests cannot be recovered. Export important requests as JSON or CSV from the dashboard before they expire.
 
 ## Email parsing
 
-[Layouts](/docs/layouts) read each sender's emails into fields and line items on every plan. Parsing attachments (CSV, Excel, ODS, PDF text) is metered in pages: each started 1,000 rows of a sheet, each PDF page, or each text file is a page.
+[Layouts](/docs/layouts) read each sender's emails into fields and line items on every plan. Parsing attachments is metered in pages:
 
-| Plan | Parsed pages | Layouts per endpoint |
-| ---- | ------------ | -------------------- |
-| Free | 20 a month   | 2                    |
-| Pro  | 100 a month  | 2                    |
+- each PDF page (its text layer; there is no OCR, so a scanned page has no text to read)
+- each started 1,000 rows of each sheet in a CSV, TSV, XLSX, XLS or ODS file
+- each plain text attachment
 
-Without pages left, emails are still captured and delivered with their attachments as files, unparsed. Free counts a month from the first parse; Pro counts with its 30-day request period.
+Email bodies never count.
+
+| Plan                 | Parsed pages          | Layouts per endpoint               | More pages                |
+| -------------------- | --------------------- | ---------------------------------- | ------------------------- |
+| Free                 | 20 a month            | 2                                  | No                        |
+| Pro                  | 100 a month           | 2                                  | No                        |
+| Business             | 2,000 a month         | 50                                 | Page blocks, page overage |
+| Team Business add-on | 2,000 a month, pooled | 50 on endpoints shared to the team | Page blocks, page overage |
+
+Without pages left, emails are still captured and delivered with their attachments as files, unparsed. Free counts a month from the first parse; Pro and Business count with their request period, so on annual Business the pages reset every month too.
+
+### Page blocks and page overage
+
+Business accounts, and teams with the Team Business add-on, can parse past the included pages. Manage them under **Account > Plan and usage > Parsed pages**, or on the team's page (the owner).
+
+| Option               | Price                | How it works                                                                                   |
+| -------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
+| Monthly page blocks  | $5 per 1,000 a month | Raise the pages every period and renew together with the plan                                  |
+| One-time page blocks | $8 per 1,000         | Bought once, never expire                                                                      |
+| Page overage         | $0.01 per page       | Opt-in, counted past everything else, up to a maximum you set, billed at the end of the period |
+
+Pages are used in this order: the plan's pages, monthly page blocks, one-time page blocks, then overage.
+
+One-time page blocks stay on the account when it leaves Business. Monthly page blocks and page overage end when the account leaves Business, or when the team's Team Business add-on ends.
 
 ## Teams and shared endpoints
 
@@ -118,9 +159,11 @@ Teams are billed per team at **$12/seat/month**. Any account can create a team, 
 - **The member cap** — a team can hold exactly as many members as it has purchased seats (the owner occupies one). Adding a member beyond that means buying another seat first.
 - **The request pool** — each seat adds 100,000 requests per 30-day period to a single pool shared by the whole team.
 
-**Whose quota gets used.** Once an endpoint is shared with a team that has an active subscription, its captured requests draw from that team's pool instead of the endpoint owner's personal quota, and they are retained for 31 days regardless of the owner's plan. If an endpoint is shared with several active teams, the oldest share is billed — never more than one team per request. Endpoints that are not shared with an active team keep counting against their owner's own quota and retention.
+**Whose quota gets used.** Once an endpoint is shared with a team that has an active subscription, its captured requests draw from that team's pool instead of the endpoint owner's personal quota, and they are retained for 31 days (90 with Team Business) regardless of the owner's plan. If an endpoint is shared with several active teams, the oldest share is billed, never more than one team per request. Endpoints that are not shared with an active team keep counting against their owner's own quota and retention.
 
 When the pool is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset.
+
+**Team Business add-on.** For **$49/month** on the team's subscription (monthly only), Team Business adds 150,000 requests to the team's pool, 2,000 pooled parsed attachment pages a month with [page blocks and page overage](#page-blocks-and-page-overage), up to 50 layouts per endpoint on endpoints shared to the team, and 90-day retention for team-billed requests. Members' personal endpoints follow their own plan.
 
 **Without an active subscription** (never subscribed, or canceled and past the period end) a team is suspended: its data is kept, but invites, endpoint sharing, and member access to shared endpoints are all blocked until it subscribes again. Requests captured while a team is suspended fall back to the endpoint owner's personal quota.
 
@@ -189,7 +232,7 @@ On your first captured request, not when you sign up. The 24-hour window activat
 </FAQItem>
 <FAQItem question="Whose quota do team-shared endpoints use?">
 
-The team's. An endpoint shared with a team that has an active Teams subscription bills its captured requests to that team's pooled quota — 100,000 requests per seat per 30 days — and those requests are kept for 31 days regardless of the endpoint owner's personal plan. Endpoints that are not shared with an active team still count against their owner's quota.
+The team's. An endpoint shared with a team that has an active Teams subscription bills its captured requests to that team's pooled quota (100,000 requests per seat per 30 days, plus 150,000 with Team Business), and those requests are kept for 31 days, or 90 with Team Business, regardless of the endpoint owner's personal plan. Endpoints that are not shared with an active team still count against their owner's quota.
 
 </FAQItem>
 <FAQItem question="What happens when I need more than my plan's requests?">
@@ -197,9 +240,19 @@ The team's. An endpoint shared with a team that has an active Teams subscription
 Add extra requests in blocks of 25,000: monthly blocks ($2 each, renewed with the plan), one-time blocks ($3 each, kept until used), or overage ($4 per 25,000, billed at the end of the period up to a maximum you set). They are used in that order once the plan's quota runs out. See [Extra requests](#extra-requests).
 
 </FAQItem>
+<FAQItem question="What does Business add over Pro?">
+
+250,000 requests a month instead of 100,000, 90-day retention instead of 31 days, 2,000 parsed attachment pages a month instead of 100 (then page blocks or page overage), and up to 50 layouts per endpoint instead of 2. Business costs $29/month or $290/year. Every other feature works the same on Free, Pro and Business. See [Changing plans](#changing-plans) for how a switch is billed.
+
+</FAQItem>
+<FAQItem question="What counts as a parsed page?">
+
+Each PDF page (its text layer, without OCR), each started 1,000 rows of each sheet in a CSV, TSV, XLSX, XLS or ODS file, and each plain text attachment. Email bodies never count. Without pages left, emails still arrive with their attachments as files, unparsed. See [Email parsing](#email-parsing).
+
+</FAQItem>
 <FAQItem question="Do I need Pro to create a team?">
 
-No. Any account can create a team. The team needs its own Teams subscription ($12/seat/month) before it can invite members or share endpoints, and personal Free or Pro plans have no bearing on team access.
+No. Any account can create a team. The team needs its own Teams subscription ($12/seat/month) before it can invite members or share endpoints, and personal Free, Pro or Business plans have no bearing on team access.
 
 </FAQItem>
 </FAQ>

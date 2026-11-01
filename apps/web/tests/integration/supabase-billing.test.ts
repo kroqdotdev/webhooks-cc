@@ -86,6 +86,11 @@ describe("Supabase Billing Integration", () => {
 
   beforeEach(async () => {
     polarMocks.createPolarClient.mockReset();
+    // Plan events read the subscription back from Polar; with nothing there
+    // the event's own state applies.
+    polarMocks.createPolarClient.mockReturnValue({
+      subscriptions: { get: vi.fn(async () => undefined), revoke: vi.fn(), update: vi.fn() },
+    });
     polarMocks.getPolarCheckoutConfig.mockReset();
     polarMocks.getPolarWebhookSecret.mockReset();
     polarMocks.validateEvent.mockReset();
@@ -120,6 +125,7 @@ describe("Supabase Billing Integration", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     if (testUserId) {
       await admin.auth.admin.deleteUser(testUserId);
     }
@@ -133,6 +139,8 @@ describe("Supabase Billing Integration", () => {
     const checkoutCreate = vi.fn().mockResolvedValue({
       url: "https://sandbox.polar.sh/checkout/test-session",
     });
+    // The plan's product comes from its env var.
+    vi.stubEnv("POLAR_PRO_PRODUCT_ID", "prod_test_123");
 
     polarMocks.createPolarClient.mockReturnValue({
       customers: { create: customerCreate },
@@ -159,7 +167,7 @@ describe("Supabase Billing Integration", () => {
     });
     expect(checkoutCreate).toHaveBeenCalledWith({
       products: ["prod_test_123"],
-      success_url: "https://webhooks.cc/account/plan?upgraded=true",
+      success_url: "https://webhooks.cc/account/plan?upgraded=pro",
       customer_id: "polar_cust_123",
     });
 

@@ -56,9 +56,12 @@ export function blocksFromRequests(requests: number): number | null {
 }
 
 /** A block count from user input, or null when it is outside 1..MAX_BLOCKS. */
-export function parseBlockCount(value: unknown, { allowZero = false } = {}): number | null {
+export function parseBlockCount(
+  value: unknown,
+  { allowZero = false, max = MAX_BLOCKS }: { allowZero?: boolean; max?: number } = {}
+): number | null {
   if (typeof value !== "number" || !Number.isInteger(value)) return null;
-  if (value < (allowZero ? 0 : 1) || value > MAX_BLOCKS) return null;
+  if (value < (allowZero ? 0 : 1) || value > max) return null;
   return value;
 }
 
@@ -123,3 +126,23 @@ export function remainingCapacity(account: CapacityFields): number {
     : 0;
   return allowanceLeft + Math.max(0, account.credit_requests) + overageLeft;
 }
+
+// ---------------------------------------------------------------------------
+// Parsed pages (migration 00070): the same three ways, for Business and
+// Team Business. A block is 1,000 pages.
+// ---------------------------------------------------------------------------
+
+/** Pages in one block. Matches capacity_page_block_pages() in SQL. */
+export const BLOCK_PAGES = 1000;
+/** A recurring page block, per billing period. */
+export const MONTHLY_PAGE_BLOCK_CENTS = 500;
+/** A one-time page block. */
+export const ONE_TIME_PAGE_BLOCK_CENTS = 800;
+/** Page overage, per page. */
+export const PAGE_OVERAGE_CENTS = 1;
+/** Upper bound for any one page purchase or setting, in blocks (a million pages). */
+export const MAX_PAGE_BLOCKS = 1000;
+/** The page overage maximum a customer starts with: $20. */
+export const DEFAULT_PAGE_OVERAGE_MAX_PAGES = 2 * BLOCK_PAGES;
+/** The meter event page overage is reported under. */
+export const PAGE_OVERAGE_EVENT_NAME = "page.overage";

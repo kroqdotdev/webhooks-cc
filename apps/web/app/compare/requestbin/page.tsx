@@ -32,7 +32,7 @@ const FAQ_ITEMS = [
   {
     question: "Which RequestBin alternatives support longer retention and team access?",
     answer:
-      "On webhooks.cc, Pro keeps requests for 31 days and Teams shares endpoints with signed-in members only, at $12 per seat per month with 31-day retention for team-billed requests. Guest URLs on any tool, webhooks.cc's included, can be read by anyone who has the address, so capture on account endpoints when the payloads matter.",
+      "On webhooks.cc, Pro keeps requests for 31 days and Business for 90, and Teams shares endpoints with signed-in members only, at $12 per seat per month with 31-day retention for team-billed requests. Guest URLs on any tool, webhooks.cc's included, can be read by anyone who has the address, so capture on account endpoints when the payloads matter.",
   },
 ];
 
@@ -50,7 +50,7 @@ const ROWS = [
   ["Third-party integrations", "No", "Yes — 1000+ apps"],
   ["Self-hostable", "Yes (open source)", "No"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "All plans, free unlimited members"],
-  ["Free tier features", "Every individual feature", "Limited invocations/day"],
+  ["Free tier features", "Every Pro feature", "Limited invocations/day"],
 ] as const;
 
 export const metadata = createPageMetadata({

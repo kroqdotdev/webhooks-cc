@@ -27,7 +27,7 @@ const FAQ_ITEMS = [
   {
     question: "How does pricing compare between webhooks.cc and Svix?",
     answer:
-      "webhooks.cc includes every individual feature on its Free tier (50 requests/day), costs $8/month for Pro (100,000 requests/month), and bills Teams at $12/seat/month with pooled quota. Svix offers open-source self-hosting and Svix Play for basic inspection, while hosted Svix Cloud plans start at $20/month (Basic) and $490/month (Professional) after the free developer tier.",
+      "webhooks.cc has every Pro feature on its Free tier (50 requests/day), costs $8/month for Pro (100,000 requests/month) and $29/month for Business (250,000 requests/month, attachment parsing at volume), and bills Teams at $12/seat/month with pooled quota. Svix offers open-source self-hosting and Svix Play for basic inspection, while hosted Svix Cloud plans start at $20/month (Basic) and $490/month (Professional) after the free developer tier.",
   },
 ];
 
