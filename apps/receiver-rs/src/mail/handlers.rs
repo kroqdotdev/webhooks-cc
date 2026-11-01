@@ -27,11 +27,12 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use chrono::{DateTime, TimeDelta, Utc};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-use super::address::{AddressError, MailAddress, parse_recipient};
+use super::address::{AddressError, MailAddress, parse_custom, parse_recipient};
 use super::auth;
 use super::parse::{self, ParsedEmail, StoredBody};
 use crate::AppState;
@@ -48,6 +49,8 @@ pub const DELIVER_PATH: &str = "/internal/mail/deliver";
 pub const MAX_MESSAGE_BYTES: usize = 10 * 1024 * 1024;
 /// Base64 length of `MAX_MESSAGE_BYTES`, checked before decoding.
 const MAX_RAW_BASE64: usize = MAX_MESSAGE_BYTES.div_ceil(3) * 4;
+/// Recipients of one message resolved at once against the database.
+const RESOLVE_CONCURRENCY: usize = 4;
 /// More recipients than the MX host ever forwards for one message.
 const MAX_RECIPIENTS: usize = 50;
 /// Upper bound for the MX-supplied `tls` and `auth` objects.
@@ -204,18 +207,23 @@ pub async fn check(State(state): State<AppState>, headers: HeaderMap, body: Byte
         .into_response();
     }
 
-    let address = match parse_recipient(&request.address, &state.config.mail_domains) {
-        Ok(address) => address,
-        Err(e) => {
-            metrics::mail_ingest(match e {
-                AddressError::Invalid => "check_invalid",
-                AddressError::RelayDenied => "check_relay_denied",
+    let address = match resolve_recipient(&state, &request.address).await {
+        Resolved::Address(address) => address,
+        Resolved::Refused(status) => {
+            metrics::mail_ingest(match status {
+                "invalid" => "check_invalid",
+                "unknown" => "check_unknown",
+                _ => "check_relay_denied",
             });
             return axum::Json(CheckResponse {
-                status: e.as_status(),
+                status,
                 endpoint_id: None,
             })
             .into_response();
+        }
+        Resolved::Transient => {
+            metrics::mail_ingest("check_failed");
+            return retry_later();
         }
     };
 
@@ -400,7 +408,18 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
         }
     };
 
-    let (groups, immediate) = group_recipients(&recipients, &state.config.mail_domains);
+    // A few at a time, in order: a slow pool costs a few waits for the
+    // message, not one per recipient, and one message cannot take the pool
+    // from everyone's captures.
+    let lookups: Vec<_> = recipients
+        .iter()
+        .map(|recipient| resolve_recipient(&state, recipient))
+        .collect();
+    let resolved: Vec<_> = futures_util::stream::iter(lookups)
+        .buffered(RESOLVE_CONCURRENCY)
+        .collect()
+        .await;
+    let (groups, immediate) = group_recipients(resolved);
     let mut statuses: Vec<Option<(&'static str, Option<String>)>> = vec![None; recipients.len()];
     for (position, status) in immediate {
         statuses[position] = Some((status, None));
@@ -462,28 +481,89 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
     axum::Json(DeliverResponse { results }).into_response()
 }
 
-/// Split recipients into per-slug groups (in first-seen order) and immediate
-/// results, by position, for addresses that cannot be captured at all.
-fn group_recipients(
-    recipients: &[String],
-    domains: &[String],
-) -> (Vec<SlugGroup>, Vec<(usize, &'static str)>) {
+/// What a recipient comes to: an endpoint's address, a refusal (`invalid`,
+/// `unknown`, `relay_denied`), or a lookup that failed and is retried.
+enum Resolved {
+    Address(MailAddress),
+    Refused(&'static str),
+    Transient,
+}
+
+/// Resolves a recipient: at a capture domain by its slug; at any other
+/// domain through a verified customer domain's routes
+/// (`resolve_inbound_recipient`, migration 00072).
+async fn resolve_recipient(state: &AppState, raw: &str) -> Resolved {
+    match parse_recipient(raw, &state.config.mail_domains) {
+        Ok(address) => Resolved::Address(address),
+        Err(e @ AddressError::Invalid) => Resolved::Refused(e.as_status()),
+        Err(denied @ AddressError::RelayDenied) => {
+            // A form no customer domain accepts is a domain we do not serve.
+            let Ok(custom) = parse_custom(raw) else {
+                return Resolved::Refused(denied.as_status());
+            };
+            match state
+                .inbound_domains
+                .contains(&state.pool, &custom.domain)
+                .await
+            {
+                Some(true) => {}
+                Some(false) => return Resolved::Refused(denied.as_status()),
+                None => return Resolved::Transient,
+            }
+            let lookup: Result<Value, sqlx::Error> =
+                sqlx::query_scalar("SELECT resolve_inbound_recipient($1, $2)")
+                    .bind(&custom.domain)
+                    .bind(&custom.local)
+                    .fetch_one(&state.pool)
+                    .await;
+            match lookup {
+                Ok(value) => match value.get("status").and_then(Value::as_str) {
+                    Some("ok") => match value.get("slug").and_then(Value::as_str) {
+                        Some(slug) => Resolved::Address(custom.for_slug(slug.to_string())),
+                        None => Resolved::Transient,
+                    },
+                    Some("unknown") => Resolved::Refused("unknown"),
+                    Some("relay_denied") => Resolved::Refused("relay_denied"),
+                    other => {
+                        tracing::error!(status = ?other, "unexpected resolve_inbound_recipient status");
+                        Resolved::Transient
+                    }
+                },
+                Err(e) => {
+                    tracing::error!(
+                        sqlstate = sqlstate_of(&e).as_deref().unwrap_or("none"),
+                        error = %e,
+                        "resolve_inbound_recipient failed"
+                    );
+                    Resolved::Transient
+                }
+            }
+        }
+    }
+}
+
+/// Split resolved recipients into per-slug groups (in first-seen order) and
+/// immediate results, by position, for addresses that cannot be captured.
+fn group_recipients(resolved: Vec<Resolved>) -> (Vec<SlugGroup>, Vec<(usize, &'static str)>) {
     let mut groups: Vec<SlugGroup> = Vec::new();
     let mut immediate = Vec::new();
-    for (position, recipient) in recipients.iter().enumerate() {
-        match parse_recipient(recipient, domains) {
-            Ok(address) => match groups.iter_mut().find(|g| g.slug == address.slug) {
-                Some(group) => {
-                    group.addresses.push(address);
-                    group.positions.push(position);
+    for (position, recipient) in resolved.into_iter().enumerate() {
+        match recipient {
+            Resolved::Address(address) => {
+                match groups.iter_mut().find(|g| g.slug == address.slug) {
+                    Some(group) => {
+                        group.addresses.push(address);
+                        group.positions.push(position);
+                    }
+                    None => groups.push(SlugGroup {
+                        slug: address.slug.clone(),
+                        addresses: vec![address],
+                        positions: vec![position],
+                    }),
                 }
-                None => groups.push(SlugGroup {
-                    slug: address.slug.clone(),
-                    addresses: vec![address],
-                    positions: vec![position],
-                }),
-            },
-            Err(e) => immediate.push((position, e.as_status())),
+            }
+            Resolved::Refused(status) => immediate.push((position, status)),
+            Resolved::Transient => immediate.push((position, "transient")),
         }
     }
     (groups, immediate)
@@ -834,6 +914,7 @@ mod tests {
             capture_limiter: Arc::new(CaptureLimiter::new(4)),
             mail_deliver_slots: Arc::new(tokio::sync::Semaphore::new(DELIVER_CONCURRENCY)),
             object_store: None,
+            inbound_domains: Arc::new(crate::mail::domains::InboundDomains::fixed(&[])),
         }
     }
 
@@ -1028,14 +1109,21 @@ mod tests {
 
     #[test]
     fn groups_recipients_by_slug_and_keeps_positions() {
-        let recipients = vec![
-            "b@mailhooks.cc".to_string(),
-            "a+one@mailhooks.cc".to_string(),
-            "x@example.com".to_string(),
-            "A+two@mailhooks.cc".to_string(),
-            "bad slug@mailhooks.cc".to_string(),
+        let recipients = [
+            "b@mailhooks.cc",
+            "a+one@mailhooks.cc",
+            "x@example.com",
+            "A+two@mailhooks.cc",
+            "bad slug@mailhooks.cc",
         ];
-        let (groups, immediate) = group_recipients(&recipients, &domains());
+        let resolved = recipients
+            .iter()
+            .map(|raw| match parse_recipient(raw, &domains()) {
+                Ok(address) => Resolved::Address(address),
+                Err(e) => Resolved::Refused(e.as_status()),
+            })
+            .collect();
+        let (groups, immediate) = group_recipients(resolved);
         let slugs: Vec<&str> = groups.iter().map(|g| g.slug.as_str()).collect();
         assert_eq!(slugs, vec!["b", "a"]);
         assert_eq!(groups[1].positions, vec![1, 3]);

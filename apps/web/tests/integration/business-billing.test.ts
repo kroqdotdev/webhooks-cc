@@ -5,7 +5,8 @@ import { createClient } from "@supabase/supabase-js";
  * Business billing (migration 00070) against the local database: the plan
  * webhook for Business and its annual interval, page add-ons that count only
  * with Business, the Team Business add-on and the team pool, page overage
- * reporting and the order pages are charged in. Polar is mocked; the
+ * reporting and the order pages are charged in, and extra inbound domains
+ * (migration 00073). Polar is mocked; the
  * webhook's product matching reads the product ids set here.
  */
 
@@ -34,6 +35,7 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
 import { DELETE as keepPlanRoute } from "@/app/api/billing/change-plan/route";
 import {
+  applyCapacityWebhookEvent,
   changeMonthlyBlocks,
   getCapacityState,
   reconcileAddonsWithPlan,
@@ -62,6 +64,8 @@ beforeAll(() => {
     POLAR_BUSINESS_PRODUCT_ID: "prod_business_test",
     POLAR_BUSINESS_ANNUAL_PRODUCT_ID: "prod_business_year_test",
     POLAR_TEAM_BUSINESS_PRODUCT_ID: "prod_team_business_test",
+    POLAR_DOMAINS_PRODUCT_ID: "prod_domains_test",
+    POLAR_DOMAINS_ADD_PRODUCT_ID: "prod_domains_add_test",
   })) {
     saved[key] = process.env[key];
     process.env[key] = value;
@@ -592,6 +596,292 @@ describe("page add-ons when Business is about to end", () => {
     await expect(changeMonthlyBlocks(account, owner, 1, "pages")).rejects.toMatchObject({
       code: "plan_ending",
     });
+  });
+});
+
+describe("extra inbound domains", () => {
+  async function allowed(account: { userId?: string; teamId?: string }) {
+    const { data, error } = await admin.rpc("inbound_domains_allowed", {
+      p_user_id: account.userId ?? null,
+      p_team_id: account.teamId ?? null,
+    });
+    if (error) throw error;
+    return data as number;
+  }
+
+  it("count only on Business, on top of the included domain", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    expect(await allowed({ userId })).toBe(1);
+    expect(
+      (await applyAddon({ userId }, "domain_blocks", `sub_db_${ts}`, "active", 2)).status
+    ).toBe("ok");
+    expect((await user(userId)).extra_domains).toBe(2);
+    expect(await allowed({ userId })).toBe(3);
+    const state = await getCapacityState({ kind: "user", userId }, "domains");
+    expect(state).toMatchObject({ eligible: true, planRequests: 1, blockRequests: 2, used: 0 });
+    expect(state.blocks).toMatchObject({ units: 2, pendingUnits: 2 });
+
+    // Down to Pro: none included, and the extra ones stop counting.
+    await admin.from("users").update({ plan: "pro" }).eq("id", userId);
+    await admin.rpc("sync_capacity_account", { p_user_id: userId, p_team_id: null });
+    expect((await user(userId)).extra_domains).toBe(0);
+    expect(await allowed({ userId })).toBe(0);
+  });
+
+  it("raise the subscription when added mid-period, and record an add with nothing to raise", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    const grant = async (order: string) => {
+      const { data, error } = await admin.rpc("grant_capacity_purchase", {
+        p_order_id: order,
+        p_user_id: userId,
+        p_team_id: null,
+        p_kind: "domain_increase",
+        p_units: 1,
+        p_amount: 300,
+      });
+      if (error) throw error;
+      return data as Record<string, unknown>;
+    };
+
+    // No subscription to raise (it ended while the checkout was open).
+    expect(await grant(`ord_dom_orphan_${ts}`)).toMatchObject({
+      status: "ok",
+      kind: "domain_increase",
+      unapplied: true,
+    });
+    expect((await user(userId)).extra_domains).toBe(0);
+    expect((await user(userId)).credit_requests).toBe(0);
+
+    await applyAddon({ userId }, "domain_blocks", `sub_db_add_${ts}`, "active", 1);
+    expect(await grant(`ord_dom_add_${ts}`)).toMatchObject({
+      status: "ok",
+      kind: "domain_increase",
+      target_units: 2,
+      synced: false,
+    });
+    expect((await user(userId)).extra_domains).toBe(2);
+    // A redelivery grants nothing twice.
+    expect(await grant(`ord_dom_add_${ts}`)).toMatchObject({ status: "duplicate" });
+    expect((await user(userId)).extra_domains).toBe(2);
+  });
+
+  it("raise the subscription and Polar's renewal from a paid order for more", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    await applyAddon({ userId }, "domain_blocks", `sub_db_paid_${ts}`, "active", 1);
+    const update = vi.fn().mockResolvedValue({});
+    polarMocks.createPolarClient.mockReturnValue({
+      subscriptions: { update, get: vi.fn(), revoke: vi.fn() },
+    });
+    try {
+      await deliver("order.paid", {
+        id: `ord_dom_paid_${ts}`,
+        product_id: "prod_domains_add_test",
+        units: 1,
+        total_amount: 300,
+        status: "paid",
+        customer: { metadata: { userId } },
+      });
+    } finally {
+      polarMocks.createPolarClient.mockReset();
+      polarMocks.createPolarClient.mockImplementation(() => ({
+        subscriptions: { update: vi.fn(), get: vi.fn(), revoke: vi.fn() },
+      }));
+    }
+    const { data: purchase } = await admin
+      .from("capacity_purchases")
+      .select("kind, units, target_units, synced_at")
+      .eq("polar_order_id", `ord_dom_paid_${ts}`)
+      .single();
+    expect(purchase).toMatchObject({ kind: "domain_increase", units: 1, target_units: 2 });
+    expect(purchase!.synced_at).not.toBeNull();
+    expect((await user(userId)).extra_domains).toBe(2);
+    // The renewal charges for the raised count from the next period.
+    expect(update).toHaveBeenCalledWith(`sub_db_paid_${ts}`, {
+      units: 2,
+      proration_behavior: "next_period",
+    });
+  });
+
+  it("count for a team only with Team Business", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `dom-${ts}`, created_by: owner, seats: 1, subscription_status: "active" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+
+    await applyAddon(account, "domain_blocks", `sub_tdb_${ts}`, "active", 2);
+    expect(await allowed(account)).toBe(0);
+    await expect(changeMonthlyBlocks(account, owner, 3, "domains")).rejects.toMatchObject({
+      code: "plan_required",
+    });
+
+    await applyAddon(account, "team_business", `sub_tdb_tb_${ts}`, "active");
+    expect(await allowed(account)).toBe(3);
+
+    // Team Business set to end: the extra domains end with it.
+    await setTeamBusinessEnding(account, true);
+    const { data: rows } = await admin
+      .from("capacity_subscriptions")
+      .select("kind, cancel_at_period_end, canceled_with_plan")
+      .eq("team_id", team.id)
+      .order("kind");
+    expect(rows).toEqual([
+      { kind: "domain_blocks", cancel_at_period_end: true, canceled_with_plan: true },
+      { kind: "team_business", cancel_at_period_end: true, canceled_with_plan: false },
+    ]);
+    expect((await getCapacityState(account, "domains")).planEnding).toBe(true);
+  });
+
+  it("wait while Team Business is behind on payment, and end when it is revoked", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `dom-pd-${ts}`, created_by: owner, seats: 1, subscription_status: "active" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+    await applyAddon(account, "team_business", `sub_tdp_tb_${ts}`, "active");
+    await applyAddon(account, "domain_blocks", `sub_tdp_db_${ts}`, "active", 1);
+    const domainRow = async () =>
+      (
+        await admin
+          .from("capacity_subscriptions")
+          .select("status, cancel_at_period_end")
+          .eq("polar_subscription_id", `sub_tdp_db_${ts}`)
+          .single()
+      ).data;
+
+    // A failed card: Team Business stops counting, the extra domains wait.
+    await applyAddon(account, "team_business", `sub_tdp_tb_${ts}`, "past_due");
+    await reconcileAddonsWithPlan(account);
+    expect(await domainRow()).toEqual({ status: "active", cancel_at_period_end: false });
+    expect(await allowed(account)).toBe(0);
+    await applyAddon(account, "team_business", `sub_tdp_tb_${ts}`, "active");
+    expect(await allowed(account)).toBe(2);
+
+    // Revoked mid-period: the extra domains end now, not at their renewal.
+    await applyCapacityWebhookEvent(
+      "subscription.revoked",
+      account,
+      { resource: "team", kind: "team_business" },
+      { id: `sub_tdp_tb_${ts}`, status: "canceled", ended_at: new Date().toISOString() }
+    );
+    expect((await domainRow())?.status).toBeNull();
+    expect(await allowed(account)).toBe(0);
+  });
+
+  it("do not wait for a Team Business that is behind on payment and set to end", async () => {
+    const owner = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `dom-pde-${ts}`, created_by: owner, seats: 1, subscription_status: "active" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    teamIds.push(team.id);
+    const account = { kind: "team" as const, teamId: team.id };
+    await applyAddon(account, "team_business", `sub_tde_tb_${ts}`, "active");
+    await applyAddon(account, "domain_blocks", `sub_tde_db_${ts}`, "active", 1);
+    // A failed card on a Team Business already set to end at its renewal.
+    await applyAddon(account, "team_business", `sub_tde_tb_${ts}`, "past_due");
+    await admin
+      .from("capacity_subscriptions")
+      .update({ cancel_at_period_end: true })
+      .eq("polar_subscription_id", `sub_tde_tb_${ts}`);
+    await reconcileAddonsWithPlan(account);
+    const { data: domainRow } = await admin
+      .from("capacity_subscriptions")
+      .select("status, cancel_at_period_end")
+      .eq("polar_subscription_id", `sub_tde_db_${ts}`)
+      .single();
+    // Set to end with it, not left to renew after it, and not ended now:
+    // Polar may still collect the payment for this period.
+    expect(domainRow?.status).not.toBeNull();
+    expect(domainRow?.cancel_at_period_end).toBe(true);
+  });
+
+  it("keep a paid increase on blocks that ended meanwhile, and take it back on a refund", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    const account = { kind: "user" as const, userId };
+    const subscriptionId = `sub_pb_gone_${ts}`;
+    const orderId = `ord_pb_gone_${ts}`;
+    await applyAddon(account, "page_blocks", subscriptionId, "active", 1);
+    // Polar ended the subscription before the order's event arrived.
+    polarMocks.createPolarClient.mockReturnValue({
+      subscriptions: {
+        update: vi.fn().mockRejectedValue(new Error("Subscription is already canceled.")),
+        get: vi.fn().mockResolvedValue({ status: "canceled", ended_at: new Date().toISOString() }),
+        revoke: vi.fn(),
+      },
+    });
+    try {
+      const order = { id: orderId, units: 1, total_amount: 500 };
+      await applyCapacityWebhookEvent(
+        "order.paid",
+        account,
+        { resource: "pages", kind: "monthly_add" },
+        order
+      );
+      expect((await user(userId)).credit_pages).toBe(1000);
+      // Redelivered: kept once.
+      await applyCapacityWebhookEvent(
+        "order.paid",
+        account,
+        { resource: "pages", kind: "monthly_add" },
+        order
+      );
+      expect((await user(userId)).credit_pages).toBe(1000);
+
+      await applyCapacityWebhookEvent(
+        "order.refunded",
+        account,
+        { resource: "pages", kind: "monthly_add" },
+        { id: orderId, status: "refunded" }
+      );
+      expect((await user(userId)).credit_pages).toBe(0);
+    } finally {
+      polarMocks.createPolarClient.mockReset();
+      polarMocks.createPolarClient.mockImplementation(() => ({
+        subscriptions: { update: vi.fn(), get: vi.fn(), revoke: vi.fn() },
+      }));
+    }
+  });
+
+  it("end with a change away from Business, and come back when Business is kept", async () => {
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    await applyAddon({ userId }, "domain_blocks", `sub_db_end_${ts}`, "active", 1);
+    const account = { kind: "user" as const, userId };
+
+    await admin
+      .from("users")
+      .update({ pending_plan: "pro", pending_interval: "month" })
+      .eq("id", userId);
+    await reconcileAddonsWithPlan(account);
+    const ending = async () =>
+      (
+        await admin
+          .from("capacity_subscriptions")
+          .select("cancel_at_period_end")
+          .eq("polar_subscription_id", `sub_db_end_${ts}`)
+          .single()
+      ).data?.cancel_at_period_end;
+    expect(await ending()).toBe(true);
+    await expect(changeMonthlyBlocks(account, userId, 2, "domains")).rejects.toMatchObject({
+      code: "plan_ending",
+    });
+
+    await admin
+      .from("users")
+      .update({ pending_plan: null, pending_interval: null })
+      .eq("id", userId);
+    await reconcileAddonsWithPlan(account);
+    expect(await ending()).toBe(false);
   });
 });
 

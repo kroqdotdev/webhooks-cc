@@ -7,6 +7,11 @@ const PRODUCTS = vi.hoisted(() => ({
   overage: "prod_overage",
 }));
 
+const DOMAIN_PRODUCTS = vi.hoisted(() => ({
+  monthly: "prod_domains",
+  monthlyAdd: "prod_domains_add",
+}));
+
 const mockFns = vi.hoisted(() => ({
   rpc: vi.fn(),
   checkoutsCreate: vi.fn(),
@@ -73,6 +78,8 @@ vi.mock("@/lib/polar", () => ({
   configuredCapacityProductIds: () => PRODUCTS,
   getPageProductIds: () => null,
   configuredPageProductIds: () => ({}),
+  getDomainProductIds: () => DOMAIN_PRODUCTS,
+  configuredDomainProductIds: () => DOMAIN_PRODUCTS,
   teamBusinessProductId: () => null,
   loggablePolarError: (error: unknown) => error,
   isEndedSubscriptionError: (error: unknown) =>
@@ -170,6 +177,53 @@ describe("changeMonthlyBlocks", () => {
     );
   });
 
+  it("starts extra domains with a checkout for the domain product, marked as domains", async () => {
+    tables.users = proAccount({
+      plan: "business",
+      pending_plan: null,
+      billing_interval: "month",
+      billing_period_end: null,
+    });
+    await changeMonthlyBlocks(USER, "user_1", 2, "domains");
+    expect(mockFns.checkoutsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        products: ["prod_domains"],
+        units: 2,
+        metadata: expect.objectContaining({ resource: "domains" }),
+      })
+    );
+  });
+
+  it("charges only the added domains, with the domain increase product", async () => {
+    tables.users = proAccount({
+      plan: "business",
+      pending_plan: null,
+      billing_interval: "month",
+      billing_period_end: null,
+    });
+    tables.capacity_subscriptions = [
+      blocksRow({
+        id: "row_domains",
+        kind: "domain_blocks",
+        polar_subscription_id: "sub_domains",
+        units: 1,
+      }),
+    ];
+    mockFns.subscriptionsGet.mockResolvedValue({
+      id: "sub_domains",
+      units: 1,
+      pending_update: null,
+    });
+    await changeMonthlyBlocks(USER, "user_1", 3, "domains");
+    expect(mockFns.checkoutsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        products: ["prod_domains_add"],
+        units: 2,
+        metadata: expect.objectContaining({ resource: "domains" }),
+      })
+    );
+  });
+
   it("charges only the added blocks, at the full monthly price, for an increase", async () => {
     tables.capacity_subscriptions = [blocksRow()];
     await changeMonthlyBlocks(USER, "user_1", 5);
@@ -200,6 +254,18 @@ describe("changeMonthlyBlocks", () => {
   it("ends the blocks at the renewal for zero", async () => {
     tables.capacity_subscriptions = [blocksRow()];
     await changeMonthlyBlocks(USER, "user_1", 0);
+    expect(mockFns.subscriptionsUpdate).toHaveBeenCalledWith("sub_blocks", {
+      cancel_at_period_end: true,
+    });
+  });
+
+  it("ends or cuts blocks whose products are no longer offered", async () => {
+    // The page products are unset in this suite.
+    tables.capacity_subscriptions = [blocksRow({ kind: "page_blocks" })];
+    await expect(changeMonthlyBlocks(USER, "user_1", 0, "pages")).resolves.toEqual({
+      kind: "scheduled",
+      units: 0,
+    });
     expect(mockFns.subscriptionsUpdate).toHaveBeenCalledWith("sub_blocks", {
       cancel_at_period_end: true,
     });
@@ -370,6 +436,10 @@ describe("applyCapacityWebhookEvent: a paid mid-period increase", () => {
       error: null,
     });
     mockFns.subscriptionsUpdate.mockRejectedValueOnce({ code: "AlreadyCanceledSubscription" });
+    mockFns.subscriptionsGet.mockResolvedValueOnce({
+      status: "canceled",
+      ended_at: "2026-10-30T00:00:00Z",
+    });
     await applyCapacityWebhookEvent(
       "order.paid",
       USER,
@@ -379,6 +449,47 @@ describe("applyCapacityWebhookEvent: a paid mid-period increase", () => {
     expect(updates.some((u) => u.table === "capacity_purchases" && "synced_at" in u.patch)).toBe(
       true
     );
+    // Ended: the row ends too.
+    expect(mockFns.rpc).toHaveBeenCalledWith(
+      "apply_capacity_subscription",
+      expect.objectContaining({ p_subscription_id: "sub_blocks", p_status: null })
+    );
+  });
+
+  it("keeps the raised units of one Polar has only set to end", async () => {
+    tables.capacity_subscriptions = [blocksRow({ units: 4 })];
+    mockFns.rpc.mockResolvedValueOnce({
+      data: { status: "ok", kind: "block_increase", subscription_id: "sub_blocks", synced: false },
+      error: null,
+    });
+    // Polar answers the same code for one that will end at its period end.
+    mockFns.subscriptionsUpdate.mockRejectedValueOnce({ code: "AlreadyCanceledSubscription" });
+    mockFns.subscriptionsGet.mockResolvedValueOnce({
+      status: "active",
+      cancel_at_period_end: true,
+      ended_at: null,
+    });
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "requests", kind: "monthly_add" },
+      { id: "ord_4", units: 1 }
+    );
+    // Neither ended nor granted again as one-time blocks: the units count
+    // until the period end.
+    expect(mockFns.rpc).not.toHaveBeenCalledWith(
+      "apply_capacity_subscription",
+      expect.objectContaining({ p_status: null })
+    );
+    expect(mockFns.rpc).not.toHaveBeenCalledWith(
+      "grant_capacity_purchase",
+      expect.objectContaining({ p_order_id: "increase:ord_4" })
+    );
+    expect(
+      updates.some(
+        (u) => u.table === "capacity_subscriptions" && u.patch.cancel_at_period_end === true
+      )
+    ).toBe(true);
   });
 
   it("leaves Polar alone for a repeated order that was already synced", async () => {
@@ -612,12 +723,38 @@ describe("reconcileAddonsWithPlan", () => {
     tables.users = proAccount({ cancel_at_period_end: true });
     tables.capacity_subscriptions = [blocksRow()];
     mockFns.subscriptionsUpdate.mockRejectedValueOnce({ code: "AlreadyCanceledSubscription" });
+    mockFns.subscriptionsGet.mockResolvedValueOnce({
+      status: "canceled",
+      ended_at: "2026-10-30T00:00:00Z",
+    });
 
     await expect(reconcileAddonsWithPlan(USER)).resolves.toBeUndefined();
     expect(mockFns.rpc).toHaveBeenCalledWith(
       "apply_capacity_subscription",
       expect.objectContaining({ p_subscription_id: "sub_blocks", p_status: null })
     );
+  });
+
+  it("records an add-on Polar has only set to end as ending, not ended", async () => {
+    tables.users = proAccount({ cancel_at_period_end: true });
+    tables.capacity_subscriptions = [blocksRow()];
+    mockFns.subscriptionsUpdate.mockRejectedValueOnce({ code: "AlreadyCanceledSubscription" });
+    mockFns.subscriptionsGet.mockResolvedValueOnce({
+      status: "active",
+      cancel_at_period_end: true,
+      ended_at: null,
+    });
+
+    await reconcileAddonsWithPlan(USER);
+    expect(mockFns.rpc).not.toHaveBeenCalledWith(
+      "apply_capacity_subscription",
+      expect.objectContaining({ p_status: null })
+    );
+    expect(
+      updates.some(
+        (u) => u.table === "capacity_subscriptions" && u.patch.cancel_at_period_end === true
+      )
+    ).toBe(true);
   });
 
   it("does nothing in Polar when plan and add-ons agree", async () => {

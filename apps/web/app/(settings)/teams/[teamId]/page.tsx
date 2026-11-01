@@ -19,6 +19,7 @@ import { useSettingsData } from "@/components/settings/settings-data";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
 import { TeamBusinessPanel } from "@/components/teams/team-business-panel";
+import { DomainsPanel } from "@/components/settings/domains-panel";
 import { TeamBillingPanel } from "@/components/teams/team-billing-panel";
 import {
   AlertDialog,
@@ -529,6 +530,19 @@ function TeamDetailContent() {
         ) : (
           // Members already see the suspended notice above; only the owner can subscribe.
           isOwner && billing
+        )}
+
+        {subscribed && isOwner && team.business && (
+          <DomainsPanel
+            accessToken={accessToken}
+            teamId={team.id}
+            canAdd
+            endpoints={endpoints.map((endpoint) => ({
+              id: endpoint.id,
+              name: endpoint.name ?? null,
+              slug: endpoint.slug,
+            }))}
+          />
         )}
 
         {subscribed && (

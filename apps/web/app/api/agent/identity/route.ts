@@ -33,7 +33,7 @@ import {
 import {
   claimAttemptBlock,
   createServiceAuthRegistration,
-  normalizeLoginHint,
+  checkLoginHint,
 } from "@/lib/agent/claims";
 import { linkIdJagIdentity } from "@/lib/agent/delegations";
 import { maxAuthAgeSeconds, verifyIdJag } from "@/lib/agent/id-jag";
@@ -280,10 +280,13 @@ async function registerServiceAuth(
   );
   if (limit.response) return rateLimitedResponse(limit.response);
 
-  const loginHint = normalizeLoginHint(body.login_hint);
   const clientName = cleanClientName(body.client_name);
+  let loginHint: string;
   let created;
   try {
+    // Inside the try, so a refused address (a capture or verified inbound
+    // domain) is audited like every other refusal.
+    loginHint = await checkLoginHint(body.login_hint);
     created = await createServiceAuthRegistration({ loginHint, clientName });
   } catch (error) {
     if (error instanceof AgentError) {

@@ -28,4 +28,20 @@ describe("serverEnv", () => {
     vi.stubEnv("QUOTA_EMAILS_ENABLED", "");
     expect((await loadServerEnv()).QUOTA_EMAILS_ENABLED).toBe(false);
   });
+
+  it("takes the resolver forms Resolver.setServers() accepts", async () => {
+    const list = "1.1.1.1, 9.9.9.9:53,[8.8.8.8]:53,2606:4700:4700::1111,[2001:4860:4860::8888]:53";
+    vi.stubEnv("DOMAIN_DNS_SERVERS", list);
+    expect((await loadServerEnv()).DOMAIN_DNS_SERVERS).toBe(list);
+    vi.stubEnv("DOMAIN_DNS_SERVERS", "");
+    expect((await loadServerEnv()).DOMAIN_DNS_SERVERS).toBeUndefined();
+  });
+
+  it.each(["dns.google", "1.1.1.1,", "1.1.1.1:99999", "2606:4700::1111:53x"])(
+    "refuses DOMAIN_DNS_SERVERS=%s at startup",
+    async (value) => {
+      vi.stubEnv("DOMAIN_DNS_SERVERS", value);
+      await expect(loadServerEnv()).rejects.toThrow(/DOMAIN_DNS_SERVERS/);
+    }
+  );
 });

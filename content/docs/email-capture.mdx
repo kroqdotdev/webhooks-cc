@@ -14,6 +14,7 @@ keywords:
     "verification code email",
     "signup email testing",
     "SPF DKIM DMARC",
+    "custom inbound domain",
   ]
 seo:
   ogTitle: "Email Capture for Testing Signup and Login Flows"
@@ -46,6 +47,25 @@ The slug is not case sensitive. The tag is kept exactly as the sender wrote it.
 ### Which endpoints receive email
 
 Endpoints on an account do, on every plan, including endpoints shared with a team. Endpoints created without an account (guest endpoints on the landing page) receive HTTP requests only, because anyone who knows a guest slug can read what it captured. Mail to a guest endpoint is refused.
+
+## Your own domain
+
+On Business, and for a team with the Team Business add-on, mail can also arrive at a domain you own, such as `orders@inbound.acme.com`. Add the domain under **Account > Domains** (a team's on the team's page, by the owner), then add two records where the domain's DNS is managed:
+
+| Type | Name                          | Value                                    |
+| ---- | ----------------------------- | ---------------------------------------- |
+| TXT  | `_mailhooks.inbound.acme.com` | `mailhooks-verify=` and the page's token |
+| MX   | `inbound.acme.com`            | `mx.mailhooks.cc`                        |
+
+Use a subdomain that receives no other mail: the MX record sends all of its mail here. **Check records** looks them up, and DNS changes can take a while to show. Once the domain is verified, its mail is accepted within a minute.
+
+Then choose where its mail goes: an address per endpoint (`orders@` to one endpoint, `invoices@` to another), and an endpoint for any other address, or refuse those. A plus tag works as on mailhooks.cc addresses: `orders+test@inbound.acme.com` lands where `orders@` does. Only endpoints on the account (or shared with the team) can receive a domain's mail.
+
+The records are checked again every day. After three failed checks in a row the domain lapses and its mail is refused until the records are back; check them again from the page.
+
+Business includes one domain, and Team Business one per team. Each extra domain is $3 a month, renewed with your plan: set the number under **Extra domains** on the same page. Domains added mid-period are charged in full and count at once; fewer apply at the renewal. Domains past what the plan allows stay listed, but mail to the most recently verified ones is refused. When the account leaves Business, or the team's Team Business ends, its domains stop receiving mail and extra domains end with it.
+
+An address at a verified domain cannot be used to sign up for an account, because its mail can be read here.
 
 ## Send a test email
 

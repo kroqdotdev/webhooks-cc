@@ -3,7 +3,7 @@ import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import {
   claimAttemptBlock,
   claimAttemptId,
-  normalizeLoginHint,
+  checkLoginHint,
   startClaimAttempt,
 } from "@/lib/agent/claims";
 import {
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const loginHint = body.email === undefined ? null : normalizeLoginHint(body.email);
+    const loginHint = body.email === undefined ? null : await checkLoginHint(body.email);
     const attempt = await startClaimAttempt({ claimToken: body.claim_token, loginHint });
     await auditAgentEvent(request, {
       action: "agent.claim.requested",

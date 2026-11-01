@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.52.0";
+export const APP_VERSION = "0.53.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,17 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.53.0",
+    date: "2026-10-29",
+    title: "Custom Inbound Domains",
+    track: "web",
+    items: [
+      "Receive mail at your own domain on Business: add it under Account > Domains, prove it with a TXT record, point its MX at the mail host it shows, and send each address (or any address) to an endpoint",
+      "Business includes one domain and Team Business one per team; extra domains are $3 a month each, renewed with your plan",
+      "Domains are checked every day; mail to a domain whose records failed three checks in a row, or that is past what your plan allows, is refused",
+    ],
+  },
   {
     version: "0.52.0",
     date: "2026-10-29",

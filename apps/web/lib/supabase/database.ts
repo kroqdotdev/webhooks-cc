@@ -656,6 +656,7 @@ export interface Database {
           page_overage_reported: number;
           page_overage_reporting_to: number | null;
           page_overage_report_lease: string | null;
+          extra_domains: number;
         };
         Insert: {
           id: string;
@@ -707,6 +708,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Update: {
           id?: string;
@@ -758,6 +760,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Relationships: [];
       };
@@ -885,6 +888,7 @@ export interface Database {
           page_overage_reported: number;
           page_overage_reporting_to: number | null;
           page_overage_report_lease: string | null;
+          extra_domains: number;
         };
         Insert: {
           id?: string;
@@ -928,6 +932,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Update: {
           id?: string;
@@ -971,6 +976,7 @@ export interface Database {
           page_overage_reported?: number;
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
+          extra_domains?: number;
         };
         Relationships: [];
       };
@@ -979,7 +985,13 @@ export interface Database {
           id: string;
           user_id: string | null;
           team_id: string | null;
-          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
+          kind:
+            | "blocks"
+            | "overage"
+            | "page_blocks"
+            | "page_overage"
+            | "team_business"
+            | "domain_blocks";
           polar_subscription_id: string;
           status: "active" | "canceled" | "past_due" | null;
           units: number;
@@ -995,7 +1007,13 @@ export interface Database {
           id?: string;
           user_id?: string | null;
           team_id?: string | null;
-          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
+          kind:
+            | "blocks"
+            | "overage"
+            | "page_blocks"
+            | "page_overage"
+            | "team_business"
+            | "domain_blocks";
           polar_subscription_id: string;
           status?: "active" | "canceled" | "past_due" | null;
           units?: number;
@@ -1031,7 +1049,12 @@ export interface Database {
           polar_order_id: string;
           user_id: string | null;
           team_id: string | null;
-          kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
+          kind:
+            | "credits"
+            | "block_increase"
+            | "page_credits"
+            | "page_block_increase"
+            | "domain_increase";
           units: number;
           requests: number;
           amount: number | null;
@@ -1046,7 +1069,12 @@ export interface Database {
           polar_order_id: string;
           user_id?: string | null;
           team_id?: string | null;
-          kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
+          kind:
+            | "credits"
+            | "block_increase"
+            | "page_credits"
+            | "page_block_increase"
+            | "domain_increase";
           units: number;
           requests: number;
           amount?: number | null;
@@ -1491,11 +1519,96 @@ export interface Database {
         Update: { locked_until?: string | null };
         Relationships: [];
       };
+      inbound_domains: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          team_id: string | null;
+          domain: string;
+          token: string;
+          status: "pending" | "verified" | "lapsed";
+          verified_at: string | null;
+          last_checked_at: string | null;
+          failed_checks: number;
+          catch_all_endpoint_id: string | null;
+          released_at: string | null;
+          lookup_failures: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          domain: string;
+          token?: string;
+          status?: "pending" | "verified" | "lapsed";
+          verified_at?: string | null;
+          last_checked_at?: string | null;
+          failed_checks?: number;
+          catch_all_endpoint_id?: string | null;
+          released_at?: string | null;
+          lookup_failures?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          domain?: string;
+          token?: string;
+          status?: "pending" | "verified" | "lapsed";
+          verified_at?: string | null;
+          last_checked_at?: string | null;
+          failed_checks?: number;
+          catch_all_endpoint_id?: string | null;
+          released_at?: string | null;
+          lookup_failures?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      inbound_domain_routes: {
+        Row: {
+          domain_id: string;
+          local_part: string;
+          endpoint_id: string;
+          created_at: string;
+        };
+        Insert: {
+          domain_id: string;
+          local_part: string;
+          endpoint_id: string;
+          created_at?: string;
+        };
+        Update: {
+          domain_id?: string;
+          local_part?: string;
+          endpoint_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
       append_endpoint_layout: {
         Args: { p_endpoint_id: string; p_layout: Json; p_expected_count: number };
+        Returns: boolean;
+      };
+      inbound_domains_allowed: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: number;
+      };
+      resolve_inbound_recipient: {
+        Args: { p_domain: string; p_local: string };
+        Returns: Json;
+      };
+      set_inbound_domain_routes: {
+        Args: { p_domain_id: string; p_catch_all: string | null; p_routes: Json };
+        Returns: undefined;
+      };
+      inbound_domain_has_accounts: {
+        Args: { p_domain: string };
         Returns: boolean;
       };
       claim_alert_notices: {
@@ -1818,7 +1931,13 @@ export interface Database {
         Args: {
           p_user_id: string | null;
           p_team_id: string | null;
-          p_kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "team_business";
+          p_kind:
+            | "blocks"
+            | "overage"
+            | "page_blocks"
+            | "page_overage"
+            | "team_business"
+            | "domain_blocks";
           p_subscription_id: string;
           p_status: "active" | "canceled" | "past_due" | null;
           p_units: number;
@@ -1834,7 +1953,12 @@ export interface Database {
           p_order_id: string;
           p_user_id: string | null;
           p_team_id: string | null;
-          p_kind: "credits" | "block_increase" | "page_credits" | "page_block_increase";
+          p_kind:
+            | "credits"
+            | "block_increase"
+            | "page_credits"
+            | "page_block_increase"
+            | "domain_increase";
           p_units: number;
           p_amount: number | null;
         };

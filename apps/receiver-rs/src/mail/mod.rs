@@ -8,6 +8,7 @@
 
 pub mod address;
 pub mod auth;
+pub mod domains;
 pub mod handlers;
 pub mod parse;
 
