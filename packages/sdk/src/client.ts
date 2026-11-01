@@ -34,6 +34,7 @@ import type {
   LayoutsPreview,
   Destination,
   DestinationInput,
+  DestinationCreateInput,
   DestinationPreview,
   DestinationTestResult,
   PreviewDestinationOptions,
@@ -1480,8 +1481,11 @@ export class WebhooksCC {
         },
         create: {
           description:
-            "Add a destination: url, name, http/email (kinds), filter ({ logic, conditions } like response rules plus kind, email, spam_score, email_auth, signature), format (auto, as_received, json, template, chat), bodyTemplate (JSON with {{ placeholders }}), messageTemplate (chat text), headers, retrySeconds, keepOrder, throttleSeconds, delaySeconds",
-          params: { endpointSlug: "string", input: "DestinationInput (url required)" },
+            "Add a destination: url, name, http/email (kinds), filter ({ logic, conditions } like response rules plus kind, email, spam_score, email_auth, signature), format (auto, as_received, json, template, chat, postmark, sendgrid, mailgun, cloudmailin, sheets, file_drop), bodyTemplate (JSON with {{ placeholders }}), messageTemplate (chat text), headers, retrySeconds, keepOrder, throttleSeconds, delaySeconds, config (sheets, file_drop), dropSecret (file_drop)",
+          params: {
+            endpointSlug: "string",
+            input: "DestinationInput (url required, except for sheets' and file drops' config)",
+          },
         },
         update: {
           description: "Change a destination; only the fields you pass change",
@@ -2221,10 +2225,7 @@ export class WebhooksCC {
     },
 
     /** Add a destination (up to 10 per endpoint); it gets a signing secret of its own. */
-    create: async (
-      endpointSlug: string,
-      input: DestinationInput & { url: string }
-    ): Promise<Destination> => {
+    create: async (endpointSlug: string, input: DestinationCreateInput): Promise<Destination> => {
       validatePathSegment(endpointSlug, "endpointSlug");
       validateDestinationInput(input);
       return this.request<Destination>("POST", `/endpoints/${endpointSlug}/destinations`, input);

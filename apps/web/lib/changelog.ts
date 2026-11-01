@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.53.0";
+export const APP_VERSION = "0.54.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,17 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.54.0",
+    date: "2026-10-29",
+    title: "File Drops",
+    track: "web",
+    items: [
+      "File drops on Business: write each email (or each batch of them) as a CSV, XML or JSON file to your SFTP, FTPS, FTP or S3-compatible server, for systems that watch a folder",
+      "CSV and XML files use the same columns as Google Sheets, a row per email or per line item; JSON files hold each email with its parsed fields",
+      "Files are written under a temporary name and renamed when complete, the SFTP host key is pinned on the first connection, and passwords and keys are stored encrypted and never shown again",
+    ],
+  },
   {
     version: "0.53.0",
     date: "2026-10-29",

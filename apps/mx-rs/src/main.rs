@@ -7,6 +7,7 @@
 
 mod auth_check;
 mod config;
+mod egress;
 mod expiring;
 mod ingest;
 mod limits;
@@ -189,6 +190,26 @@ async fn run(statoss: bool) {
             server.clone(),
             stopped.clone(),
         )));
+    }
+    if let Some(egress) = &config.egress {
+        let listener = TcpListener::bind(&egress.listen)
+            .await
+            .unwrap_or_else(|e| panic!("could not listen on {}: {e}", egress.listen));
+        if egress.allow_private {
+            tracing::warn!(
+                "the file drop egress lets private addresses through (development only)"
+            );
+        }
+        tracing::info!(addr = %egress.listen, "listening for file drop egress");
+        tokio::spawn(egress::serve(
+            listener,
+            egress::Egress::new(
+                egress.secret.clone(),
+                egress.allow_private,
+                egress.deny.clone(),
+            ),
+            stopped.clone(),
+        ));
     }
     if let Some(addr) = &config.health_addr {
         let listener = TcpListener::bind(addr)

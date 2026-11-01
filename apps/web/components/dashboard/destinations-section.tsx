@@ -11,6 +11,7 @@ import {
   Mail,
   MessageSquare,
   Sheet,
+  FolderUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -64,6 +65,13 @@ const PRESETS: { id: DestinationPreset; label: string; detail: string; icon: typ
     icon: Sheet,
   },
   {
+    id: "file_drop",
+    label: "File drop",
+    detail:
+      "A CSV, XML or JSON file on your SFTP, FTP or S3 server, per email or per batch. Business.",
+    icon: FolderUp,
+  },
+  {
     id: "inbound",
     label: "Inbound email handler",
     detail:
@@ -78,6 +86,7 @@ const FORMAT_NAMES: Record<string, string> = {
   template: "Your JSON",
   chat: "Chat message",
   sheets: "Google Sheets",
+  file_drop: "File drop",
   ...INBOUND_EMAIL_FORMAT_NAMES,
 };
 

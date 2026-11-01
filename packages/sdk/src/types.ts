@@ -1173,10 +1173,18 @@ export interface ListDeliveriesOptions {
  * Discord, else as received for HTTP and signed JSON for email). The
  * inbound provider shapes ("postmark", "sendgrid", "mailgun",
  * "cloudmailin") apply to emails; HTTP requests to such a destination go as
- * received.
+ * received. "sheets" adds rows to a Google Sheet and "file_drop" (Business)
+ * writes files to your SFTP, FTP or S3-compatible server.
  */
 export type DestinationFormat =
-  "auto" | "as_received" | "json" | "chat" | "template" | "sheets" | InboundEmailFormat;
+  | "auto"
+  | "as_received"
+  | "json"
+  | "chat"
+  | "template"
+  | "sheets"
+  | "file_drop"
+  | InboundEmailFormat;
 
 /** How a destination's deliveries carry an email's stored attachments. */
 export type DestinationAttachments = "links" | "inline" | "none";
@@ -1192,6 +1200,47 @@ export interface SheetsConfig {
   rows: "email" | "line_items";
   /** Each column's header and its value, written with {{ placeholders }} */
   columns: { header: string; value: string }[];
+}
+
+/**
+ * A file drop's settings (format "file_drop", Business): where the files go
+ * and what each holds. The password, private key or secret key is sent
+ * separately as `dropSecret` and never returned.
+ */
+export interface FileDropConfig {
+  protocol: "sftp" | "ftp" | "ftps" | "s3";
+  /** SFTP and FTP: the server, its port (22 or 21 by default) and the login */
+  host?: string | null;
+  port?: number | null;
+  username?: string | null;
+  /** The folder (relative to the login's home) or, for S3, the key prefix; "" for the root */
+  folder: string;
+  /** SFTP: the server's host key fingerprint, pinned on the first connection */
+  hostKey?: string | null;
+  /** FTPS and S3: a self-signed certificate's SHA-256 fingerprint to accept */
+  tlsFingerprint?: string | null;
+  /** S3: the storage endpoint, region, bucket and access key ID */
+  endpoint?: string | null;
+  region?: string | null;
+  bucket?: string | null;
+  accessKeyId?: string | null;
+  /** What each file holds: CSV or XML rows from `columns`, or JSON documents */
+  file: "csv" | "json" | "xml";
+  /** CSV and XML: a row per request, or a row per line item a layout found */
+  rows: "email" | "line_items";
+  /** CSV and XML: each column's header and its value, written with {{ placeholders }} */
+  columns: { header: string; value: string }[];
+  /** Put before each file's name */
+  prefix?: string;
+  /** One file per batch (what arrives during the destination's delaySeconds) instead of one per request */
+  batch?: boolean;
+}
+
+/** The secret a file drop logs in with: one of these, as its protocol needs. */
+export interface FileDropSecret {
+  password?: string;
+  privateKey?: string;
+  secretAccessKey?: string;
 }
 
 /** Which captured requests a destination gets; null or no conditions: all of them. */
@@ -1217,6 +1266,8 @@ export interface Destination {
   hasSecret: boolean;
   /** For format "mailgun": whether a Mailgun signing key is saved (it is never returned) */
   hasMailgunSigningKey?: boolean;
+  /** For format "file_drop": whether its password, key or secret key is saved (it is never returned) */
+  hasDropSecret?: boolean;
   /** Takes HTTP requests */
   http: boolean;
   /** Takes emails */
@@ -1243,8 +1294,8 @@ export interface Destination {
   delaySeconds: number;
   /** Emails kept in storage: attachments as signed links (default), inline base64, or names only */
   attachments?: DestinationAttachments;
-  /** For format "sheets": the spreadsheet and columns */
-  config?: SheetsConfig | null;
+  /** For format "sheets": the spreadsheet and columns; for "file_drop": where files go and what they hold */
+  config?: SheetsConfig | FileDropConfig | null;
   /** "forward": what the endpoint's forward* fields stand for; "notify": its notificationUrl */
   role: "forward" | "notify" | null;
   createdAt: number;
@@ -1281,11 +1332,27 @@ export interface DestinationInput {
   delaySeconds?: number;
   /** How emails' stored attachments travel */
   attachments?: DestinationAttachments;
-  /** For format "sheets": the spreadsheet and columns (the url becomes the spreadsheet's) */
-  config?: SheetsConfig | null;
+  /**
+   * For format "sheets": the spreadsheet and columns (the url becomes the
+   * spreadsheet's); for "file_drop": where files go and what they hold (no url)
+   */
+  config?: SheetsConfig | FileDropConfig | null;
+  /**
+   * For format "file_drop": the password, private key or S3 secret key;
+   * needed again whenever the drop's server or login changes
+   */
+  dropSecret?: FileDropSecret | null;
   /** Place in the list */
   position?: number;
 }
+
+/**
+ * Fields to create a destination with: `url` is needed, except for a file
+ * drop, whose address comes from its config.
+ */
+export type DestinationCreateInput =
+  | (DestinationInput & { url: string })
+  | (DestinationInput & { format: "file_drop"; config: FileDropConfig });
 
 /** An endpoint's alert settings. */
 export interface AlertSettings {
@@ -1366,6 +1433,10 @@ export interface DestinationPreview {
 export interface DestinationTestResult extends ForwardingTestResult {
   /** Whether the destination's filter would have let it through (a test sends either way) */
   filterPasses: boolean;
+  /** For a file drop: the test file written (`delivered` says whether it was) */
+  file?: string;
+  /** For an SFTP file drop: the server's host key, pinned on the drop by its first connection */
+  hostKey?: string | null;
 }
 
 /** Result of `forwarding.summary()`. Each count stops at 100,000. */

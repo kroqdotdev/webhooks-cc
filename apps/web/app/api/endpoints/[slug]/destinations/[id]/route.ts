@@ -1,9 +1,11 @@
 import { parseSheetsConfig } from "@/lib/integrations/sheets";
+import { parseFileDropConfig } from "@/lib/drops/config";
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseDestinationInput,
   sheetsProblem,
+  fileDropProblem,
   templateProblem,
 } from "@/lib/forwarding/destination-input";
 import {
@@ -17,8 +19,10 @@ import {
   DestinationHeaderValueMissingError,
   getDestination,
   updateDestination,
+  getDestinationDropSecret,
 } from "@/lib/supabase/destinations";
 import { reportError } from "@/lib/observability";
+import type { Json } from "@/lib/supabase/database";
 
 type Params = { params: Promise<{ slug: string; id: string }> };
 
@@ -63,21 +67,31 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!endpoint || !current) return reply({ error: "Destination not found" }, 404);
     const parsed = parseDestinationInput(body, {
       creating: false,
-      current: { http: current.http, email: current.email },
+      current: {
+        http: current.http,
+        email: current.email,
+        format: current.format,
+        config: current.config,
+      },
     });
     if (!parsed.ok) return reply({ error: parsed.error }, 400);
-    // Changing the kinds changes which placeholders a stored Sheets config may
-    // use (email fields only for emails): check it again against them.
+    // Changing the kinds changes which placeholders a stored Sheets or drop
+    // config may use (email fields only for emails): check it again against them.
+    const recheckFormat = parsed.changes.format ?? current.format;
     if (
       parsed.changes.config === undefined &&
       (parsed.changes.http !== undefined || parsed.changes.email !== undefined) &&
-      (parsed.changes.format ?? current.format) === "sheets" &&
+      (recheckFormat === "sheets" || recheckFormat === "file_drop") &&
       current.config
     ) {
-      const recheck = parseSheetsConfig(current.config, {
+      const kinds = {
         http: parsed.changes.http ?? current.http,
         email: parsed.changes.email ?? current.email,
-      });
+      };
+      const recheck =
+        recheckFormat === "sheets"
+          ? parseSheetsConfig(current.config, kinds)
+          : parseFileDropConfig(current.config, kinds);
       if (typeof recheck === "string") return reply({ error: recheck }, 400);
     }
     const problem = templateProblem({
@@ -93,6 +107,61 @@ export async function PATCH(request: Request, { params }: Params) {
       config: parsed.changes.config !== undefined ? parsed.changes.config : current.config,
     });
     if (sheets) return reply({ error: sheets }, 400);
+    const nextFormat = parsed.changes.format ?? current.format;
+    if (nextFormat === "file_drop" && parsed.changes.config) {
+      const before = (current.config ?? {}) as Record<string, unknown>;
+      const after = parsed.changes.config as Record<string, Json>;
+      // A pinned host key is kept unless the change names one (an SDK or an
+      // editor opened before the first connection pinned it leaves it out).
+      const sent = body.config as Record<string, unknown>;
+      if (!("hostKey" in sent) && typeof before.hostKey === "string") {
+        after.hostKey = before.hostKey;
+      }
+      // Where the secret is sent, and which server is trusted with it:
+      // changing any of it needs the secret typed again, so a stolen API key
+      // cannot point a drop at its own server (or trust its certificate)
+      // and collect the stored password. The bucket too: the same keys could
+      // write to a bucket someone else owns.
+      const target = [
+        "protocol",
+        "host",
+        "port",
+        "username",
+        "endpoint",
+        "bucket",
+        "accessKeyId",
+        "hostKey",
+        "tlsFingerprint",
+      ];
+      const moved =
+        current.format !== "file_drop" ||
+        target.some((key) => (before[key] ?? null) !== (after[key] ?? null));
+      if (moved && parsed.changes.dropSecret === undefined) {
+        return reply(
+          {
+            error:
+              "Enter the password or key again: the drop now goes to another server, or trusts another key.",
+          },
+          400
+        );
+      }
+      // Another server: the key pinned for the old one does not carry over
+      // (a key sent with the change is the one to trust there).
+      if ((before.host !== after.host || before.port !== after.port) && !("hostKey" in sent)) {
+        parsed.changes.config = { ...after, hostKey: null };
+      }
+    }
+    const drop = await fileDropProblem(endpoint.id, {
+      format: nextFormat,
+      config: parsed.changes.config !== undefined ? parsed.changes.config : current.config,
+      secret:
+        parsed.changes.dropSecret !== undefined
+          ? parsed.changes.dropSecret
+          : nextFormat === "file_drop"
+            ? await getDestinationDropSecret(endpoint.id, id)
+            : null,
+    });
+    if (drop) return reply({ error: drop }, 400);
 
     const destination = await updateDestination(endpoint.id, id, parsed.changes);
     if (!destination) return reply({ error: "Destination not found" }, 404);

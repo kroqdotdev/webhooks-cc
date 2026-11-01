@@ -20,6 +20,16 @@ import { checkOwnerHeaders } from "./owner-headers";
 import { checkForwardUrl } from "./target";
 import { checkSentField } from "./timing";
 import { parseSheetsConfig } from "@/lib/integrations/sheets";
+import {
+  dropUrl,
+  parseDropSecret,
+  parseFileDropConfig,
+  secretFits,
+  storedFileDropConfig,
+  type DropSecret,
+} from "@/lib/drops/config";
+import { dropsOffered } from "@/lib/drops/connect";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { spreadsheetUrl } from "@/lib/integrations/google";
 import { googleRefreshToken } from "@/lib/supabase/google-connections";
 
@@ -81,7 +91,12 @@ export function parseDestinationInput(
   options: {
     creating: boolean;
     /** The stored kinds, for checking templates when a change leaves them out. */
-    current?: { http: boolean; email: boolean };
+    current?: {
+      http: boolean;
+      email: boolean;
+      format?: DestinationFormatSetting;
+      config?: Json | null;
+    };
     /** Let private targets through (development); read from the environment when left out. */
     allowPrivate?: boolean;
   }
@@ -89,7 +104,15 @@ export function parseDestinationInput(
   const fail = (error: string): DestinationInputResult => ({ ok: false, error });
   const changes: DestinationChanges = {};
 
-  if (body.url !== undefined || options.creating) {
+  // A file drop has no URL of its own: its address comes from its config.
+  const drop =
+    body.format === "file_drop" ||
+    (body.format === undefined && options.current?.format === "file_drop");
+  if (drop && options.creating && body.config === undefined) {
+    return fail("A file drop needs its config: where the files go and what they hold.");
+  }
+
+  if (!drop && (body.url !== undefined || options.creating)) {
     if (typeof body.url !== "string" || !body.url.trim() || body.url.length > 2048) {
       return fail("Enter the URL to send to.");
     }
@@ -234,7 +257,16 @@ export function parseDestinationInput(
     if (value !== undefined) changes[key] = value;
   }
 
-  if (body.config !== undefined) {
+  if (body.config !== undefined && drop) {
+    if (body.config === null) return fail("A file drop needs its config.");
+    const config = parseFileDropConfig(body.config, {
+      http: changes.http ?? options.current?.http ?? true,
+      email: changes.email ?? options.current?.email ?? true,
+    });
+    if (typeof config === "string") return fail(config);
+    changes.config = config as unknown as Json;
+    changes.url = dropUrl(config);
+  } else if (body.config !== undefined) {
     if (body.config === null) changes.config = null;
     else {
       const config = parseSheetsConfig(body.config, {
@@ -245,6 +277,22 @@ export function parseDestinationInput(
       changes.config = config as unknown as Json;
       // The row's URL is the spreadsheet's, whatever was sent.
       changes.url = spreadsheetUrl(config.spreadsheetId);
+    }
+  }
+
+  if (body.dropSecret !== undefined) {
+    if (!drop) return fail("dropSecret is for file drops only.");
+    if (body.dropSecret === null) changes.dropSecret = null;
+    else {
+      const protocol =
+        (changes.config as { protocol?: unknown } | undefined)?.protocol ??
+        storedFileDropConfig(options.current?.config ?? null)?.protocol;
+      if (protocol !== "sftp" && protocol !== "ftp" && protocol !== "ftps" && protocol !== "s3") {
+        return fail("Set the drop's config before its secret.");
+      }
+      const secret = parseDropSecret(body.dropSecret, protocol);
+      if (typeof secret === "string") return fail(secret);
+      changes.dropSecret = secret;
     }
   }
 
@@ -285,4 +333,35 @@ export async function sheetsProblem(
   return (await googleRefreshToken(ownerId, config.connectionId)) === null
     ? "That Google account is not connected to your account."
     : null;
+}
+
+/**
+ * A file drop needs a config, the secret its protocol uses, a server that
+ * can make drops, and a plan with file drops (Business); checked against the
+ * result of a change.
+ */
+export async function fileDropProblem(
+  endpointId: string,
+  next: {
+    format: DestinationFormatSetting;
+    config: Json | null;
+    secret: DropSecret | null;
+  }
+): Promise<string | null> {
+  if (next.format !== "file_drop") return null;
+  if (!dropsOffered()) return "File drops are not set up on this server.";
+  const config = storedFileDropConfig(next.config);
+  if (!config) return "Set where the files go and what they hold.";
+  if (!secretFits(next.secret, config.protocol)) {
+    return config.protocol === "s3"
+      ? "Enter the storage's secret key."
+      : config.protocol === "sftp"
+        ? "Enter the password or a private key for the SFTP server."
+        : "Enter the FTP password.";
+  }
+  const { data, error } = await createAdminClient().rpc("file_drops_allowed", {
+    p_endpoint_id: endpointId,
+  });
+  if (error) throw error;
+  return data === true ? null : "File drops are part of Business.";
 }

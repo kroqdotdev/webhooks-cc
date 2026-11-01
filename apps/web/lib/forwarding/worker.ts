@@ -34,7 +34,7 @@ import { forwardHeaders, FORWARD_USER_AGENT } from "./sign";
 import { senderTimestamp, type SenderTime } from "./timing";
 import { reportError } from "@/lib/observability";
 import { withAttachmentPayloads } from "./attachments";
-import { rowsFor, storedSheetsConfig } from "@/lib/integrations/sheets";
+import { RowsTooLargeError, rowsFor, storedSheetsConfig } from "@/lib/integrations/sheets";
 import {
   accessToken as googleAccessToken,
   appendRows,
@@ -42,6 +42,11 @@ import {
   googleConfig,
 } from "@/lib/integrations/google";
 import { googleRefreshTokenById } from "@/lib/supabase/google-connections";
+import { dropUrl, storedFileDropConfig, type FileDropConfig } from "@/lib/drops/config";
+import { DropError, dropsOffered } from "@/lib/drops/connect";
+import { dropFile, dropFileName, type DropFile } from "@/lib/drops/files";
+import { openDropTarget, type DropTarget } from "@/lib/drops/target";
+import { dropForDestination, trustDropHostKey } from "@/lib/supabase/destinations";
 
 /**
  * Sends forwarded requests. capture_webhook() queues a delivery for every
@@ -77,6 +82,12 @@ const PER_ENDPOINT = 2;
 const LEASE_SECONDS = 60;
 /** A Sheets batch is up to 50 rows in one append; its lease covers the token refresh and retries of the call. */
 const SHEETS_LEASE_SECONDS = 180;
+/** A file drop's lease, for the whole batch: connecting, logging in and writing up to 50 files or one batch file. */
+const DROP_LEASE_SECONDS = 300;
+/** The largest file a batch drop writes; what does not fit goes in the next one. */
+const MAX_DROP_FILE_BYTES = 50 * 1024 * 1024;
+/** The most text one Sheets append carries; rows that do not fit go in the next one. */
+const MAX_SHEETS_APPEND_CHARS = 10 * 1024 * 1024;
 /** The notify proxy's cap (infra/notify-proxy); a larger body could never be delivered. */
 const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
 /**
@@ -593,8 +604,107 @@ export function filterVerdict(
     : "skip";
 }
 
-/** The Sheets rows of one delivery, or why it sends none. */
+/** A claimed delivery of a batch, with its request and named email fields. */
+type BatchItem = {
+  claim: Claim;
+  request: RequestRecord;
+  fields: Record<string, string | null> | null;
+};
+
+/** The Sheets rows of one delivery. */
 type SheetsBatchItem = { claim: Claim; rows: string[][] };
+
+/** Requests of a batch are loaded this many at a time (and the id list stays short in the URL). */
+const BATCH_LOAD_CHUNK = 50;
+
+/**
+ * The deliveries of a batch that go out: the claimed one and the rows
+ * claimed with it, each through its own filter and throttle (skipped,
+ * released or failed here as a single delivery would be). Each admitted
+ * delivery is handed to `onItem` as its chunk loads, so a large batch never
+ * holds every request at once.
+ */
+async function admitBatch(
+  claim: Claim,
+  request: RequestRecord,
+  more: Database["public"]["Functions"]["claim_destination_deliveries"]["Returns"],
+  fail: (target: Claim, error: string, retry: boolean) => Promise<void>,
+  onItem: (item: BatchItem) => Promise<void>
+): Promise<void> {
+  const extra = more.filter((row) => row.delivery_id !== claim.delivery_id);
+  const fields = storedEmailFields(claim.email_fields);
+  const admit = async (itemClaim: Claim, itemRequest: RequestRecord | undefined) => {
+    try {
+      await admitOne(itemClaim, itemRequest);
+    } catch (error) {
+      // Settled here, so it is not left claimed (and the rest still go) until its lease runs out.
+      reportError("[forwarding] a delivery of a batch failed", error);
+      await fail(itemClaim, "The delivery failed.", true);
+    }
+  };
+  const admitOne = async (itemClaim: Claim, itemRequest: RequestRecord | undefined) => {
+    if (!itemRequest) {
+      await fail(itemClaim, "The request is no longer stored.", false);
+      return;
+    }
+    const values = emailFieldValues(itemRequest, fields);
+    if (!itemClaim.bypass_filter) {
+      const verdict = filterVerdict(
+        itemClaim.destination_filter,
+        itemRequest,
+        itemClaim.signing_provider,
+        Date.now(),
+        values
+      );
+      if (verdict === "skip") {
+        await skip(itemClaim, "Not sent: the destination's filter did not match.");
+        return;
+      }
+      if (verdict !== "send") {
+        await release(itemClaim, verdict.waitMs);
+        return;
+      }
+      // A destination without a filter took its slot when queueing.
+      if (
+        itemClaim.throttle_seconds > 0 &&
+        hasConditions(itemClaim.destination_filter) &&
+        !(await takeSlot(itemClaim))
+      ) {
+        await skip(
+          itemClaim,
+          `Not sent: at most one every ${itemClaim.throttle_seconds} s, and one went out less than that before.`
+        );
+        return;
+      }
+    }
+    await onItem({ claim: itemClaim, request: itemRequest, fields: values });
+  };
+
+  await admit(claim, request);
+  for (let start = 0; start < extra.length; start += BATCH_LOAD_CHUNK) {
+    const chunk = extra.slice(start, start + BATCH_LOAD_CHUNK);
+    const loaded = new Map(
+      (await getRequestsByIds([...new Set(chunk.map((row) => row.request_id))])).map((r) => [
+        r.id,
+        r,
+      ])
+    );
+    for (const row of chunk) {
+      await admit(
+        {
+          ...claim,
+          delivery_id: row.delivery_id,
+          request_id: row.request_id,
+          attempt: row.attempt,
+          kind: row.kind,
+          queued_at: row.queued_at,
+          bypass_filter: row.bypass_filter,
+        },
+        loaded.get(row.request_id)
+      );
+    }
+  }
+}
 
 /**
  * A Google Sheets destination: this delivery and up to 49 more of the same
@@ -620,73 +730,32 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
     p_lease_seconds: SHEETS_LEASE_SECONDS,
   });
   if (error) throw error;
-  const extra = (more ?? []).filter((row) => row.delivery_id !== claim.delivery_id);
-  const extraRequests = new Map(
-    (await getRequestsByIds([...new Set(extra.map((row) => row.request_id))])).map((r) => [r.id, r])
-  );
-  const fields = storedEmailFields(claim.email_fields);
   const endpoint = { slug: claim.endpoint_slug, name: claim.endpoint_name };
   const batch: SheetsBatchItem[] = [];
-  for (const [itemClaim, itemRequest] of [
-    [claim, request] as const,
-    ...extra.map(
-      (row) =>
-        [
-          {
-            ...claim,
-            delivery_id: row.delivery_id,
-            request_id: row.request_id,
-            attempt: row.attempt,
-            kind: row.kind,
-            queued_at: row.queued_at,
-            bypass_filter: row.bypass_filter,
-          },
-          extraRequests.get(row.request_id),
-        ] as const
-    ),
-  ]) {
-    if (!itemRequest) {
-      await fail(itemClaim, "The request is no longer stored.", false);
-      continue;
+  let chars = 0;
+  let full = false;
+  await admitBatch(claim, request, more ?? [], fail, async (item) => {
+    // What does not fit in this append goes in the next one.
+    if (full) return release(item.claim, 0);
+    let rows: string[][];
+    try {
+      rows = rowsFor(item.request, config, endpoint, {
+        includeExtracts: item.claim.show_email_extracts,
+        fields: item.fields,
+        maxChars: MAX_SHEETS_APPEND_CHARS,
+      });
+    } catch (rowsError) {
+      if (!(rowsError instanceof RowsTooLargeError)) throw rowsError;
+      return fail(item.claim, "This request makes more rows than one append can hold.", false);
     }
-    const values = emailFieldValues(itemRequest, fields);
-    if (!itemClaim.bypass_filter) {
-      const verdict = filterVerdict(
-        itemClaim.destination_filter,
-        itemRequest,
-        itemClaim.signing_provider,
-        Date.now(),
-        values
-      );
-      if (verdict === "skip") {
-        await skip(itemClaim, "Not sent: the destination's filter did not match.");
-        continue;
-      }
-      if (verdict !== "send") {
-        await release(itemClaim, verdict.waitMs);
-        continue;
-      }
-      // A destination without a filter took its slot when queueing.
-      if (
-        itemClaim.throttle_seconds > 0 &&
-        hasConditions(itemClaim.destination_filter) &&
-        !(await takeSlot(itemClaim))
-      ) {
-        await skip(
-          itemClaim,
-          `Not sent: at most one every ${itemClaim.throttle_seconds} s, and one went out less than that before.`
-        );
-        continue;
-      }
+    const added = rows.reduce((sum, row) => sum + row.reduce((n, value) => n + value.length, 0), 0);
+    if (chars + added > MAX_SHEETS_APPEND_CHARS) {
+      full = true;
+      return release(item.claim, 0);
     }
-    batch.push({
-      claim: itemClaim,
-      rows: rowsFor(itemRequest, config, endpoint, {
-        includeExtracts: itemClaim.show_email_extracts,
-        fields: values,
-      }),
-    });
-  }
+    chars += added;
+    batch.push({ claim: item.claim, rows });
+  });
   if (batch.length === 0) return;
 
   const started = performance.now();
@@ -740,6 +809,284 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
   }
 }
 
+/** What one delivery adds to a drop's file: rows (CSV, XML) or a document (JSON). */
+async function dropContent(
+  item: BatchItem,
+  config: FileDropConfig,
+  endpoint: { slug: string; name: string | null },
+  maxChars: number
+): Promise<{ rows: string[][]; document: unknown }> {
+  const options = { includeExtracts: item.claim.show_email_extracts, fields: item.fields };
+  if (config.file !== "json") {
+    return {
+      rows: rowsFor(item.request, config, endpoint, { ...options, maxChars }),
+      document: null,
+    };
+  }
+  // The JSON forwarding sends, with attachments as the destination carries them.
+  const request = await withAttachmentPayloads(item.request, item.claim.attachments);
+  const document =
+    request.kind === "email" && request.email
+      ? buildEmailJson({ ...request, email: request.email }, endpoint, {
+          ...options,
+          parsed: request.parsed ?? null,
+        })
+      : buildRequestJson(request, endpoint);
+  return { rows: [], document };
+}
+
+/** Drops running at once in this process: a slow customer server must not hold every worker. */
+const MAX_DROPS_IN_FLIGHT = 2;
+let dropsInFlight = 0;
+/** Every connection of one drop ends by then, well inside its lease. */
+const DROP_DEADLINE_MS = 240_000;
+
+/**
+ * A file drop: this delivery and the others of the destination go out over
+ * one connection, a file each (written as each is built), or (batch) one
+ * file for everything that arrived while the batch collected. Each delivery
+ * is recorded with the outcome of the file that holds it; a file is written
+ * under a stable name, so a retry replaces it rather than adding another.
+ */
+async function deliverFileDrop(claim: Claim, request: RequestRecord): Promise<void> {
+  const fail = (target: Claim, error: string, retry: boolean, facts: DeliveryFacts = NO_FACTS) =>
+    record(target, { status: null, durationMs: 0, excerpt: null, error }, retry, {
+      ...facts,
+      format: "file_drop",
+    });
+  if (!dropsOffered()) return fail(claim, "File drops are not set up on this server.", true);
+  if (dropsInFlight >= MAX_DROPS_IN_FLIGHT) return release(claim, 2000);
+  dropsInFlight++;
+  try {
+    await runFileDrop(claim, request, fail);
+  } finally {
+    dropsInFlight--;
+  }
+}
+
+async function runFileDrop(
+  claim: Claim,
+  request: RequestRecord,
+  fail: (target: Claim, error: string, retry: boolean, facts?: DeliveryFacts) => Promise<void>
+): Promise<void> {
+  // The config and the secret from one read of the row: a secret is only
+  // ever sent with the config it was saved for, whatever the claim carried.
+  const row = await dropForDestination(claim.destination_id!);
+  const config = row?.format === "file_drop" ? storedFileDropConfig(row.config) : null;
+  if (!config) return fail(claim, "The drop has no settings. Open it and save them.", false);
+  const facts: DeliveryFacts = { ...NO_FACTS, format: "file_drop", target: dropUrl(config) };
+  const admin = createAdminClient();
+  const { data: allowed, error: planError } = await admin.rpc("file_drops_allowed", {
+    p_endpoint_id: claim.endpoint_id,
+  });
+  if (planError) throw planError;
+  if (allowed !== true) {
+    return skip(claim, "Not sent: file drops are part of Business, and paused on this plan.");
+  }
+  const secret = row!.secret;
+  if (!secret) {
+    return fail(claim, "The drop has no password or key. Open it and enter one.", false, facts);
+  }
+
+  // One lease for the whole batch, the delivery that started it included,
+  // and one deadline inside it: what is not written by then waits for the
+  // next try rather than outliving the lease (and being written twice).
+  const deadlineAt = Date.now() + DROP_DEADLINE_MS;
+  const pastDeadline = () => Date.now() >= deadlineAt;
+  const { error: leaseError } = await admin
+    .from("email_deliveries")
+    .update({ locked_until: new Date(Date.now() + DROP_LEASE_SECONDS * 1000).toISOString() })
+    .eq("id", claim.delivery_id)
+    .eq("attempts", claim.attempt);
+  if (leaseError) throw leaseError;
+  const { data: more, error } = await admin.rpc(
+    config.batch ? "claim_drop_batch" : "claim_destination_deliveries",
+    {
+      p_destination_id: claim.destination_id!,
+      p_limit: config.batch ? 499 : 49,
+      p_lease_seconds: DROP_LEASE_SECONDS,
+    }
+  );
+  if (error) throw error;
+  const endpoint = { slug: claim.endpoint_slug, name: claim.endpoint_name };
+  const headers = config.columns.map((column) => column.header);
+  const started = performance.now();
+  const failed = async (claims: Claim[], dropError: unknown) => {
+    const known = dropError instanceof DropError;
+    if (!known) reportError("[drops] a drop failed unexpectedly", dropError);
+    const message = known ? dropError.message : "The drop failed.";
+    for (const target of claims) {
+      await record(
+        target,
+        {
+          status: null,
+          durationMs: Math.round(performance.now() - started),
+          excerpt: null,
+          error: message,
+        },
+        known ? dropError.retry : true,
+        facts
+      );
+    }
+  };
+  // Every delivery a file holds is settled at once: some settled and some
+  // not would send the rest again in another batch, under another name.
+  const succeeded = async (claims: Claim[], name: string) => {
+    const { error: settleError } = await admin.rpc("record_drop_deliveries", {
+      p_delivery_ids: claims.map((target) => target.delivery_id),
+      p_attempts: claims.map((target) => target.attempt),
+      p_duration_ms: Math.round(performance.now() - started),
+      p_response_excerpt: `Wrote ${name}`,
+      p_target: facts.target ?? null,
+    });
+    if (settleError) throw settleError;
+  };
+
+  // The connection opens with the first file to write; a failure to open
+  // fails every delivery of the drop.
+  let target: DropTarget | null = null;
+  let openError: unknown = null;
+  const connect = async (): Promise<DropTarget | null> => {
+    if (target || openError) return target;
+    let opened: DropTarget | null = null;
+    try {
+      opened = await openDropTarget(config, secret, Math.max(deadlineAt - Date.now(), 1000));
+      // The first SFTP connection pins the server's key, and nothing is
+      // written until it is: another key pinned meanwhile, or the drop moved
+      // to another server, and this server is not the one to trust.
+      if (config.protocol === "sftp" && !config.hostKey && opened.hostKey) {
+        const trusted = await trustDropHostKey(
+          claim.destination_id!,
+          { host: config.host!, port: config.port!, username: config.username! },
+          opened.hostKey
+        );
+        if (!trusted) {
+          throw new DropError(
+            "The drop's server or host key changed while it connected. Nothing was written."
+          );
+        }
+      }
+      target = opened;
+    } catch (connectError) {
+      if (opened) await opened.close().catch(() => undefined);
+      openError = connectError;
+    }
+    return target;
+  };
+  const write = async (file: DropFile, claims: Claim[]) => {
+    const open = await connect();
+    if (!open) return failed(claims, openError);
+    try {
+      await open.put(file.name, file.data, file.contentType);
+    } catch (putError) {
+      return failed(claims, putError);
+    }
+    await succeeded(claims, file.name);
+  };
+  const tooLarge = (claims: Claim[]) =>
+    failed(
+      claims,
+      new DropError("This email is too large for a file drop (at most 50 MB a file).", false)
+    );
+
+  try {
+    if (config.batch) {
+      const held: Claim[] = [];
+      const rows: string[][] = [];
+      const documents: unknown[] = [];
+      let first: RequestRecord | null = null;
+      // The file's header row (or the empty document) is there whatever it holds.
+      const empty = dropFile(config.file, "", { headers, rows: [], documents: [], batch: true })
+        .data.byteLength;
+      let size = empty;
+      let full = false;
+      await admitBatch(claim, request, more ?? [], fail, async (item) => {
+        // The next batch takes what does not fit in this one, or comes after
+        // the deadline, without building it.
+        if (full || pastDeadline()) return release(item.claim, 0);
+        let content: { rows: string[][]; document: unknown };
+        try {
+          content = await dropContent(item, config, endpoint, MAX_DROP_FILE_BYTES);
+        } catch (rowsError) {
+          if (!(rowsError instanceof RowsTooLargeError)) throw rowsError;
+          return tooLarge([item.claim]);
+        }
+        // What the delivery adds to the file as written (escaping, quoting,
+        // element names and separators included): a file of it alone, less
+        // the empty file.
+        const added =
+          dropFile(config.file, "", {
+            headers,
+            rows: content.rows,
+            documents: content.document === null ? [] : [content.document],
+            batch: true,
+          }).data.byteLength - empty;
+        // Too large even alone: released, it would be claimed again forever.
+        if (empty + added > MAX_DROP_FILE_BYTES) return tooLarge([item.claim]);
+        if (size + added > MAX_DROP_FILE_BYTES) {
+          full = true;
+          return release(item.claim, 0);
+        }
+        size += added;
+        held.push(item.claim);
+        first ??= item.request;
+        rows.push(...content.rows);
+        if (content.document !== null) documents.push(content.document);
+      });
+      if (held.length === 0 || !first) return;
+      const firstRequest = first as RequestRecord;
+      const file = dropFile(
+        config.file,
+        dropFileName(
+          config.prefix,
+          { id: firstRequest.id, receivedAt: new Date(firstRequest.receivedAt).toISOString() },
+          config.file,
+          true
+        ),
+        { headers, rows, documents, batch: true }
+      );
+      if (pastDeadline()) {
+        for (const heldClaim of held) await release(heldClaim, 0);
+        return;
+      }
+      await write(file, held);
+    } else {
+      await admitBatch(claim, request, more ?? [], fail, async (item) => {
+        // Past the deadline, or the connection is gone: the rest waits for
+        // the next try (a failure to connect fails them all, as it should).
+        if (pastDeadline() && !openError) return release(item.claim, 0);
+        let content: { rows: string[][]; document: unknown };
+        try {
+          content = await dropContent(item, config, endpoint, MAX_DROP_FILE_BYTES);
+        } catch (rowsError) {
+          if (!(rowsError instanceof RowsTooLargeError)) throw rowsError;
+          return tooLarge([item.claim]);
+        }
+        const file = dropFile(
+          config.file,
+          dropFileName(
+            config.prefix,
+            { id: item.request.id, receivedAt: new Date(item.request.receivedAt).toISOString() },
+            config.file,
+            false
+          ),
+          {
+            headers,
+            rows: content.rows,
+            documents: content.document === null ? [] : [content.document],
+            batch: false,
+          }
+        );
+        if (file.data.byteLength > MAX_DROP_FILE_BYTES) return tooLarge([item.claim]);
+        await write(file, [item.claim]);
+      });
+    }
+  } finally {
+    const open = target as DropTarget | null;
+    if (open) await open.close().catch(() => undefined);
+  }
+}
+
 /** Sends one claimed delivery and records the outcome. */
 async function deliver(claim: Claim, request: RequestRecord | undefined): Promise<void> {
   // Deliveries that cannot be sent at all fail at once: retrying will not help.
@@ -748,6 +1095,7 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   if (!request) return giveUp("The request is no longer stored.");
   if (!claim.forward_url) return giveUp("The destination has no URL.");
   if (claim.forward_format === "sheets") return deliverSheets(claim, request);
+  if (claim.forward_format === "file_drop") return deliverFileDrop(claim, request);
 
   const verdict = claim.bypass_filter
     ? "send"
