@@ -159,6 +159,10 @@ const serverEnvSchema = z
         })
         .optional()
     ),
+    // AI setup and repair (lib/ai): the Anthropic API key; without it the
+    // feature is not offered. AI_API_BASE_URL points tests at a fake model.
+    ANTHROPIC_API_KEY: blankToUndefined(z.string().optional()),
+    AI_API_BASE_URL: blankToUndefined(z.string().url().optional()),
     // S3-compatible object storage where the receiver keeps captured email
     // (raw message and attachments, lib/storage). All four, or none; region
     // defaults to us-east-1, which S3-compatible services accept.
@@ -325,6 +329,8 @@ export function serverEnv() {
       POLAR_DOMAINS_ADD_PRODUCT_ID: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
       DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
       FILE_DROP_PROXY_URL: process.env.FILE_DROP_PROXY_URL,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      AI_API_BASE_URL: process.env.AI_API_BASE_URL,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
       OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,

@@ -38,6 +38,7 @@ export type AuditAction =
   | "endpoint.destination_updated"
   | "endpoint.destination_deleted"
   | "endpoint.destinations_reordered"
+  | "endpoint.ai_assist"
   | "endpoint.destination_secret_rotated"
   | "email.redelivery_queued"
   | "request.redelivery_queued"

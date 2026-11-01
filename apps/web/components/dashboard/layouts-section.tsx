@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { layoutIssues } from "@webhooks-cc/sdk";
 import {
   MAX_LAYOUTS,
@@ -11,14 +11,17 @@ import {
   type ParsedAttachment,
   type ParsedEmail,
 } from "@webhooks-cc/sdk/email";
+import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
+  fetchAiAssists,
   fetchDashboardRequests,
   previewLayouts,
   type DashboardEndpoint,
   type LayoutsPreview,
 } from "@/lib/dashboard-api";
+import { AiAssistPanel } from "./ai-assist-panel";
 import { ConditionList } from "./condition-list";
 import { EmailFieldsEditor } from "./email-fields-editor";
 import { SaveFooter, Section, Segmented, SwitchRow, useSave } from "./settings-primitives";
@@ -336,12 +339,34 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const [sampleId, setSampleId] = useState("");
   const [samples, setSamples] = useState<{ id: string; subject: string }[]>([]);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
+  // AI setup: a layout drafted from emails, or a field found for an open layout.
+  const [aiOffered, setAiOffered] = useState(false);
+  const [assist, setAssist] = useState<
+    // A field is found for one layout, by id: moving layouts must not move it.
+    { kind: "layout" } | { kind: "field"; layoutId: string } | null
+  >(null);
 
   useEffect(() => {
-    setLayouts(JSON.parse(initialKey) as Layout[]);
+    if (!accessToken) return;
+    fetchAiAssists(accessToken, endpoint.slug)
+      .then((info) => setAiOffered(info.offered))
+      .catch(() => setAiOffered(false));
+  }, [accessToken, endpoint.slug]);
+
+  // The saved layouts changed (a save, another tab, an alert's AI repair):
+  // layouts edited here keep their edits, the others take the saved copy.
+  const baseKey = useRef(initialKey);
+  useEffect(() => {
+    const base = JSON.parse(baseKey.current) as Layout[];
+    baseKey.current = initialKey;
+    setLayouts((current) =>
+      mergeEdits(base, current, JSON.parse(initialKey) as Layout[], (layout) => layout.id)
+    );
   }, [initialKey]);
 
   const draftKey = JSON.stringify(layouts);
+  // An assist is spent on a draft only while the plan would use another layout.
+  const draftCap = Math.min(cap, MAX_LAYOUTS);
   const dirty = draftKey !== initialKey;
   const local = useMemo(() => layoutIssues(layouts), [layouts]);
   const allProblems = [...local, ...(preview?.problems ?? [])];
@@ -533,6 +558,31 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         emailAddress={endpoint.emailAddress ?? ""}
                         requestId={sampleId || undefined}
                       />
+                      {aiOffered &&
+                        (assist?.kind === "field" && assist.layoutId === layout.id ? (
+                          <AiAssistPanel
+                            slug={endpoint.slug}
+                            samples={samples}
+                            mode={{ kind: "field" }}
+                            onAddField={(field) =>
+                              update(index, {
+                                fields: [
+                                  ...(layout.fields ?? []).filter((f) => f.name !== field.name),
+                                  field,
+                                ],
+                              })
+                            }
+                            onClose={() => setAssist(null)}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setAssist({ kind: "field", layoutId: layout.id })}
+                            className="text-xs text-muted-foreground underline inline-flex items-center gap-1"
+                          >
+                            <Sparkles className="h-3 w-3" /> Find a field with AI
+                          </button>
+                        ))}
                     </div>
                     <div className="space-y-1.5">
                       <h4 className="text-sm font-semibold">Line items</h4>
@@ -574,12 +624,45 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <Plus className="h-3 w-3" />
           Add layout
         </button>
+        {aiOffered && layouts.length < draftCap && assist?.kind !== "layout" && (
+          <button
+            type="button"
+            onClick={() => setAssist({ kind: "layout" })}
+            className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
+          >
+            <Sparkles className="h-3 w-3" />
+            Draft a layout with AI
+          </button>
+        )}
         {layouts.length === 0 && (
           <span className="text-xs text-muted-foreground">
             Without layouts, emails are delivered as they arrive, with your fields.
           </span>
         )}
       </div>
+      {assist?.kind === "layout" && layouts.length < draftCap && (
+        <AiAssistPanel
+          slug={endpoint.slug}
+          samples={samples}
+          mode={{ kind: "layout" }}
+          onUseLayout={(drafted) => {
+            // Without a condition it would read every email (the panel offers none such).
+            if (!drafted.match) return;
+            const base = newLayout(layouts);
+            setLayouts([
+              ...layouts,
+              {
+                ...base,
+                name: drafted.name ?? base.name,
+                match: { logic: "and", conditions: [drafted.match] },
+                fields: drafted.fields,
+              },
+            ]);
+            setOpen(layouts.length);
+          }}
+          onClose={() => setAssist(null)}
+        />
+      )}
       {layouts.length > 0 && preview && (
         <div className="pt-4 border-t border-line/20 space-y-2" aria-live="polite">
           {preview.request ? (

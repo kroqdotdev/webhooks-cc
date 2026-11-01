@@ -2,18 +2,54 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import type { EmailField } from "@webhooks-cc/sdk/email";
 import {
+  emitDashboardEndpointsChanged,
+  fetchAiAssists,
   fetchAlerts,
+  fetchDashboardEndpoint,
+  fetchDashboardRequestById,
+  fetchDashboardRequests,
   fetchDestinations,
   replayEndpoint,
   saveAlerts,
+  updateDashboardEndpoint,
   type DashboardAlertEvent,
   type DashboardAlertSettings,
   type DashboardDestination,
   type DashboardEndpoint,
 } from "@/lib/dashboard-api";
 import { cn } from "@/lib/utils";
+import { AiAssistPanel } from "./ai-assist-panel";
 import { Field, SaveFooter, Section, SwitchRow } from "./settings-primitives";
+
+/** A field to repair and where it is defined: the endpoint's own fields (null), or a layout. */
+type FieldAt = { field: EmailField; layoutId: string | null };
+
+/**
+ * Where the field an alert names is defined. A layout's fields win over the
+ * endpoint's own (as when emails are read), so the layout the missed email
+ * matched comes first; alerts from before layouts were recorded fall back
+ * to the endpoint's own fields, then the first layout that has it.
+ */
+function fieldDefinition(
+  endpoint: DashboardEndpoint,
+  name: string,
+  layoutId: string | null
+): FieldAt | null {
+  const layouts = endpoint.layouts ?? [];
+  const matched = layoutId ? layouts.find((layout) => layout.id === layoutId) : undefined;
+  const inMatched = (matched?.fields ?? []).find((field) => field.name === name);
+  if (matched && inMatched) return { field: inMatched, layoutId: matched.id };
+  const own = (endpoint.emailFields ?? []).find((field) => field.name === name);
+  if (own) return { field: own, layoutId: null };
+  if (layoutId) return null;
+  for (const layout of layouts) {
+    const found = (layout.fields ?? []).find((field) => field.name === name);
+    if (found) return { field: found, layoutId: layout.id };
+  }
+  return null;
+}
 
 /** "" for an empty input (the rule is off), else the number. */
 function numberOrNull(text: string): number | null {
@@ -74,6 +110,99 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [replayNote, setReplayNote] = useState<string | null>(null);
+  // AI repair: a field an open alert says stopped matching, from recent emails.
+  const [aiOffered, setAiOffered] = useState(false);
+  const [repair, setRepair] = useState<FieldAt | null>(null);
+  const [recent, setRecent] = useState<{ id: string; subject: string }[]>([]);
+  const [repairNote, setRepairNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    fetchAiAssists(accessToken, endpoint.slug)
+      .then((info) => setAiOffered(info.offered))
+      .catch(() => setAiOffered(false));
+  }, [accessToken, endpoint.slug]);
+
+  /**
+   * Opens the repair with the email the alert last saw miss the field first
+   * (so it is among the picked samples, and a proposal must find a value in
+   * it), then the newest others. An alert that did not record its layout
+   * takes it from that email's own parse.
+   */
+  const startRepair = async (name: string, details: Record<string, unknown> | null) => {
+    if (!accessToken) return;
+    setRepairNote(null);
+    const missedId =
+      typeof details?.lastMissedRequestId === "string" ? details.lastMissedRequestId : null;
+    const [requests, missed] = await Promise.all([
+      fetchDashboardRequests(accessToken, endpoint.slug, 10, "email").catch(() => []),
+      missedId
+        ? fetchDashboardRequestById(accessToken, missedId).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    const layoutId =
+      typeof details?.layoutId === "string"
+        ? details.layoutId
+        : (missed?.parsed?.layout?.id ?? null);
+    const found = fieldDefinition(endpoint, name, layoutId);
+    if (!found) {
+      setRepairNote(`${name} is no longer defined, so there is nothing to repair.`);
+      return;
+    }
+    const emails = [
+      ...(missed?.kind === "email" ? [missed] : []),
+      ...requests.filter((request) => request._id !== missed?._id),
+    ].slice(0, 10);
+    setRecent(
+      emails.map((request) => ({
+        id: request._id,
+        subject: request.email?.subject || "(no subject)",
+      }))
+    );
+    setRepair(found);
+  };
+
+  /**
+   * Replaces the field where it was found (that one place only) and saves
+   * the endpoint. The endpoint is read again first, so edits made since this
+   * page loaded (another layout, another field) are kept. Throws when it
+   * was not saved, so the panel lets the person try again.
+   */
+  const applyRepair = async (field: EmailField) => {
+    if (!accessToken || !repair) throw new Error("Sign in again to save the field.");
+    try {
+      const fresh = await fetchDashboardEndpoint(accessToken, endpoint.slug);
+      const replace = (fields: EmailField[] | undefined) => {
+        const list = fields ?? [];
+        const at = list.findIndex((item) => item.name === field.name);
+        return at < 0 ? null : list.map((item, i) => (i === at ? field : item));
+      };
+      let updates: Parameters<typeof updateDashboardEndpoint>[2];
+      if (repair.layoutId === null) {
+        const emailFields = replace(fresh.emailFields);
+        if (!emailFields)
+          throw new Error(`${field.name} is no longer one of the endpoint's fields.`);
+        updates = { emailFields };
+      } else {
+        const layout = (fresh.layouts ?? []).find((item) => item.id === repair.layoutId);
+        const fields = layout ? replace(layout.fields) : null;
+        if (!fields) throw new Error(`${field.name} is no longer in that layout.`);
+        updates = {
+          layouts: (fresh.layouts ?? []).map((item) =>
+            item.id === repair.layoutId ? { ...item, fields } : item
+          ),
+        };
+      }
+      await updateDashboardEndpoint(accessToken, endpoint.slug, updates);
+      emitDashboardEndpointsChanged();
+      setRepairNote(
+        `Saved the new pattern for ${field.name}. Replay these emails to read them again.`
+      );
+    } catch (err) {
+      setRepairNote(err instanceof Error ? err.message : "The field was not saved.");
+      throw err;
+    }
+  };
   const fieldNames = useMemo(
     () => (endpoint.emailFields ?? []).map((field) => field.name),
     [endpoint.emailFields]
@@ -335,18 +464,62 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 <span>{describe(event, destinations)}</span>
                 <span className="text-xs text-muted-foreground">since {when(event.openedAt)}</span>
                 {event.kind === "fields" && event.resolvedAt === null && (
-                  <button
-                    type="button"
-                    onClick={() => void replaySince(event)}
-                    className="ui-btn-outline py-1! px-2! text-xs ml-auto"
-                  >
-                    Replay these emails
-                  </button>
+                  <span className="ml-auto flex flex-wrap gap-2">
+                    {aiOffered &&
+                      (Array.isArray(event.details?.missing)
+                        ? (event.details.missing as string[])
+                        : []
+                      )
+                        .map((name) =>
+                          fieldDefinition(
+                            endpoint,
+                            name,
+                            typeof event.details?.layoutId === "string"
+                              ? event.details.layoutId
+                              : null
+                          )
+                        )
+                        .filter((found): found is FieldAt => found !== null)
+                        .slice(0, 3)
+                        .map((found) => (
+                          <button
+                            key={found.field.name}
+                            type="button"
+                            onClick={() =>
+                              void startRepair(found.field.name, event.details ?? null)
+                            }
+                            className="ui-btn-outline py-1! px-2! text-xs"
+                          >
+                            Fix {found.field.name} with AI
+                          </button>
+                        ))}
+                    <button
+                      type="button"
+                      onClick={() => void replaySince(event)}
+                      className="ui-btn-outline py-1! px-2! text-xs"
+                    >
+                      Replay these emails
+                    </button>
+                  </span>
                 )}
               </li>
             ))}
           </ul>
           {replayNote && <p className="text-xs text-muted-foreground mt-2">{replayNote}</p>}
+          {repair && (
+            <div className="mt-3">
+              <AiAssistPanel
+                // A new repair starts afresh (its own emails picked), never with the last one's.
+                key={`${repair.layoutId ?? ""}:${repair.field.name}`}
+                slug={endpoint.slug}
+                samples={recent}
+                mode={{ kind: "repair", field: repair.field }}
+                onAddField={applyRepair}
+                onClose={() => setRepair(null)}
+              />
+            </div>
+          )}
+          {repairNote && <p className="text-xs text-muted-foreground mt-2">{repairNote}</p>}
         </div>
       )}
     </Section>
