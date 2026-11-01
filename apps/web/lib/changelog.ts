@@ -37,6 +37,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "A Google Sheets destination or file drop writing a row per line item leaves the item columns blank for an email with none, instead of their placeholders",
       "Alerts settings wait until they have loaded before they can be changed, so a change made right away is no longer undone",
       "When a Business renewal payment fails, the plan page says Business is at stake, not Pro",
+      "The privacy policy says where the original message and attachments of a captured email are kept: object storage on our own server in Denmark",
     ],
   },
   {

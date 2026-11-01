@@ -27,7 +27,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 31, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 1, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -70,7 +70,9 @@ export default function PrivacyPage() {
               captured requests, teams, and billing records runs on a server we rent from Hetzner
               Online GmbH in Falkenstein, Germany, and Hetzner keeps the backups of that server in
               Falkenstein too. Supabase, the database and sign-in software we use, runs on that same
-              server; Supabase Inc. does not receive your data.
+              server; Supabase Inc. does not receive your data. The original message and the
+              attachments of each captured email are kept apart from the database, in object storage
+              on a server of our own in Denmark, and deleted with the request.
             </p>
             <p>
               The emails we send leave from our own mail server in Copenhagen, Denmark, and are
