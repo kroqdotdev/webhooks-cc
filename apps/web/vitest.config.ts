@@ -22,6 +22,8 @@ const FORWARDING_SUITES = [
   "tests/integration/email-fields.test.ts",
   "tests/integration/email-forwarding.test.ts",
   "tests/integration/http-forwarding.test.ts",
+  "tests/integration/attachments-alerts.test.ts",
+  "tests/integration/sheets.test.ts",
 ];
 
 export default defineConfig({

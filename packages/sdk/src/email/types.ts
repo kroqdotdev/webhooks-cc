@@ -24,6 +24,16 @@ export interface EmailAttachment {
   size: number;
   contentId: string | null;
   inline: boolean;
+  /**
+   * The decoded contents, base64; only in deliveries from a destination that
+   * sends attachments inline, up to a size per delivery.
+   */
+  content?: string;
+  /**
+   * A signed link that downloads the attachment while the email is kept;
+   * in deliveries, for attachments not sent inline.
+   */
+  url?: string;
 }
 
 export interface EmailCheck {
@@ -188,6 +198,10 @@ export interface EmailReceivedData {
     size: number;
     contentId: string | null;
     inline: boolean;
+    /** Base64 contents, from a destination that sends attachments inline. */
+    content?: string;
+    /** A signed download link, for attachments not sent inline. */
+    url?: string;
   }[];
   /** Sender check verdicts ("pass", "fail", ...), null when a check did not run. */
   auth: { spf: string | null; dkim: string | null; dmarc: string | null; tls: string | null };

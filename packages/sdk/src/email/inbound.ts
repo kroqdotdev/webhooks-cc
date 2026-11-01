@@ -168,7 +168,16 @@ function postmark(source: EmailJsonSource, raw?: string | null): InboundEmailPay
     StrippedTextReply: reply.quoted ? reply.text : "",
     Tag: "",
     Headers: [...headers, ...spamHeaders(source)].map(([Name, Value]) => ({ Name, Value })),
-    Attachments: [],
+    // Postmark sends contents only; attachments sent as links are left out.
+    Attachments: email.attachments
+      .filter((attachment) => attachment.content !== undefined)
+      .map((attachment) => ({
+        Name: attachment.filename ?? "",
+        Content: attachment.content,
+        ContentType: attachment.contentType,
+        ContentLength: attachment.size,
+        ContentID: attachment.contentId ?? "",
+      })),
   };
   return { contentType: "application/json", body: JSON.stringify(body) };
 }
@@ -200,7 +209,19 @@ function cloudmailin(source: EmailJsonSource, raw?: string | null): InboundEmail
     plain: text(source),
     ...(email.html ? { html: email.html } : {}),
     ...(reply.quoted && reply.text ? { reply_plain: reply.text } : {}),
-    attachments: [],
+    // CloudMailin sends each attachment's content, or a URL when it stored it.
+    attachments: email.attachments
+      .filter((attachment) => attachment.content !== undefined || attachment.url !== undefined)
+      .map((attachment) => ({
+        file_name: attachment.filename ?? "",
+        content_type: attachment.contentType,
+        size: attachment.size,
+        disposition: attachment.inline ? "inline" : "attachment",
+        ...(attachment.contentId ? { content_id: attachment.contentId } : {}),
+        ...(attachment.content !== undefined
+          ? { content: attachment.content }
+          : { url: attachment.url }),
+      })),
   };
   return { contentType: "application/json", body: JSON.stringify(body) };
 }

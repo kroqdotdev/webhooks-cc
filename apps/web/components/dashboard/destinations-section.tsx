@@ -2,7 +2,16 @@
 
 import { INBOUND_EMAIL_FORMAT_NAMES } from "@webhooks-cc/sdk/email";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Braces, ChevronDown, Globe, Mail, MessageSquare } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Braces,
+  ChevronDown,
+  Globe,
+  Mail,
+  MessageSquare,
+  Sheet,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
@@ -49,6 +58,12 @@ const PRESETS: { id: DestinationPreset; label: string; detail: string; icon: typ
     icon: Braces,
   },
   {
+    id: "sheets",
+    label: "Google Sheets",
+    detail: "A row in a spreadsheet for each email or request, with the columns you choose.",
+    icon: Sheet,
+  },
+  {
     id: "inbound",
     label: "Inbound email handler",
     detail:
@@ -62,6 +77,7 @@ const FORMAT_NAMES: Record<string, string> = {
   json: "Signed JSON",
   template: "Your JSON",
   chat: "Chat message",
+  sheets: "Google Sheets",
   ...INBOUND_EMAIL_FORMAT_NAMES,
 };
 
