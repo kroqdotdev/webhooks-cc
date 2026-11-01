@@ -7,6 +7,8 @@ import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import { EmailPasswordForm } from "@/components/auth/email-password-form";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import { useSite } from "@/components/providers/site-provider";
+import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { describeLoginError } from "@/lib/auth-errors";
 
 export default function LoginPage() {
@@ -27,6 +29,7 @@ export default function LoginPage() {
 
 function LoginContent() {
   const { isAuthenticated, isLoading } = useAuth();
+  const site = useSite();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [hasMounted, setHasMounted] = useState(false);
@@ -36,10 +39,8 @@ function LoginContent() {
   }, []);
 
   const rawRedirect = searchParams.get("redirect");
-  const redirectTo =
-    rawRedirect && rawRedirect.startsWith("/") && !rawRedirect.startsWith("//")
-      ? rawRedirect
-      : "/dashboard";
+  // A path on this site only (lib/auth-redirect.ts).
+  const redirectTo = sanitizeNextPath(rawRedirect);
   // Set by /auth/callback (OAuth errors) and /auth/confirm (bad email links).
   const urlError = describeLoginError(searchParams.get("error"));
 
@@ -60,7 +61,7 @@ function LoginContent() {
   return (
     <AuthPageShell>
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold mb-2">Sign in to webhooks.cc</h1>
+        <h1 className="text-2xl font-bold mb-2">Sign in to {site.name}</h1>
         <p className="text-muted-foreground">Continue with GitHub, Google, or email</p>
       </div>
 

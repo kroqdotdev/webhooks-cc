@@ -1,4 +1,4 @@
-import { publicEnv } from "@/lib/env";
+import { homeOrigin } from "@/lib/supabase/home-site";
 import { decryptSigningSecret } from "@/lib/crypto";
 import { sendEmail } from "@/lib/email/mailer";
 import { reportError } from "@/lib/observability";
@@ -26,6 +26,8 @@ interface AlertContext {
   slug: string;
   name: string | null;
   ownerEmail: string | null;
+  /** The origin the owner's links lead to (their site). */
+  origin: string;
   notifyEmail: boolean;
   destinationIds: string[];
   destinationNames: Map<string, string>;
@@ -114,14 +116,18 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     .maybeSingle<{ slug: string; name: string | null; user_id: string | null }>();
   if (error) throw error;
   if (!endpoint) return null;
-  const [{ data: owner }, { data: settings }, { data: destinations }] = await Promise.all([
+  const [
+    { data: owner, error: ownerError },
+    { data: settings, error: settingsError },
+    { data: destinations, error: destinationsError },
+  ] = await Promise.all([
     endpoint.user_id
       ? admin
           .from("users")
-          .select("email")
+          .select("email, home_site")
           .eq("id", endpoint.user_id)
-          .maybeSingle<{ email: string }>()
-      : Promise.resolve({ data: null }),
+          .maybeSingle<{ email: string; home_site: string }>()
+      : Promise.resolve({ data: null, error: null }),
     admin
       .from("endpoint_alerts")
       .select("notify_email, notify_destination_ids")
@@ -129,6 +135,10 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
       .maybeSingle<{ notify_email: boolean; notify_destination_ids: string[] }>(),
     admin.from("endpoint_destinations").select("id, name, url").eq("endpoint_id", endpointId),
   ]);
+  // A failed read must not look like "no owner" or "notify no one".
+  if (ownerError) throw ownerError;
+  if (settingsError) throw settingsError;
+  if (destinationsError) throw destinationsError;
   const names = new Map<string, string>();
   for (const row of (destinations ?? []) as { id: string; name: string | null; url: string }[]) {
     let label = row.name;
@@ -145,6 +155,8 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     slug: endpoint.slug,
     name: endpoint.name,
     ownerEmail: owner?.email ?? null,
+    // Where the owner's session is (users.home_site).
+    origin: homeOrigin(owner?.home_site),
     notifyEmail: settings?.notify_email ?? true,
     destinationIds: settings?.notify_destination_ids ?? [],
     destinationNames: names,
@@ -214,7 +226,7 @@ async function notifyOne(event: AlertEventRow): Promise<boolean> {
     ? (context.destinationNames.get(event.subject) ?? null)
     : null;
   const { summary, lines } = describeAlert(event, label, destinationName);
-  const link = `${publicEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, "")}/dashboard?endpoint=${encodeURIComponent(context.slug)}`;
+  const link = `${context.origin.replace(/\/+$/, "")}/dashboard?endpoint=${encodeURIComponent(context.slug)}`;
   const text = [summary, "", ...lines, "", `Open the endpoint: ${link}`].join("\n");
   let ok = true;
   if (context.notifyEmail && context.ownerEmail) {
@@ -265,7 +277,14 @@ export async function notifyAlerts(): Promise<number> {
         .eq("id", event.id);
       continue;
     }
-    const ok = await notifyOne(event);
+    let ok = false;
+    try {
+      ok = await notifyOne(event);
+    } catch (error) {
+      // One alert's failed read is retried with its attempts; the rest of the
+      // batch is still sent.
+      reportError("[alerts] notice failed", error, { alert: event.id });
+    }
     const update = ok
       ? event.notified_open_at === null
         ? { notified_open_at: now, notify_claimed_until: null }

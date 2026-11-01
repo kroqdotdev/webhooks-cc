@@ -6,6 +6,7 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
 import { isMaintenanceBannerEnabled } from "@/components/maintenance-banner";
+import { siteForHost } from "@/lib/site";
 
 function setAnnOffset(h: string) {
   document.documentElement.style.setProperty("--ann-h", h);
@@ -31,7 +32,9 @@ export function AnnouncementBanner() {
   useEffect(() => {
     // Client navigation into the dashboard keeps this component mounted, so
     // hide the banner there as well as dropping its offset.
-    const show = !!announcementId && !isDashboard && !wasDismissed(announcementId);
+    // The announcements are webhooks.cc's news.
+    const onMailhooks = siteForHost(window.location.host) === "mailhooks";
+    const show = !!announcementId && !isDashboard && !onMailhooks && !wasDismissed(announcementId);
     setVisible(show);
     setAnnOffset(show ? BANNER_HEIGHT : "0px");
   }, [announcementId, isDashboard]);

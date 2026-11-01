@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSite } from "@/components/providers/site-provider";
 import Link from "next/link";
 import {
   Check,
@@ -264,6 +265,7 @@ export function EndpointBar({
   exportMenu,
 }: EndpointBarProps) {
   const [guideOpen, setGuideOpen] = useState(false);
+  const mailFirst = useSite().key === "mailhooks";
   const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
   const shownUrl = url.replace(/^https?:\/\//, "");
 
@@ -284,7 +286,8 @@ export function EndpointBar({
               label="Email"
               icon={Mail}
               value={emailAddress}
-              className="w-full md:w-auto md:max-w-[44%]"
+              // mailhooks.cc leads with the address.
+              className={cn("w-full md:w-auto md:max-w-[44%]", mailFirst && "order-first")}
             />
           ) : (
             <span className="inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">

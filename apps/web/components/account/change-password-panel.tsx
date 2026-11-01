@@ -105,7 +105,10 @@ export function ChangePasswordPanel({ email }: { email: string }) {
     setBusy(true);
     setMessage(null);
     try {
-      const { error } = await createClient().auth.resetPasswordForEmail(email);
+      // The site the reset was asked on: the link opens it there (/auth/confirm).
+      const { error } = await createClient().auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
       if (error) {
         fail(mapAuthError(error));
         return;

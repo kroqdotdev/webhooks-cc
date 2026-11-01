@@ -8,8 +8,10 @@ import {
   googleConfig,
   GoogleError,
   openState,
+  sealFinishTicket,
 } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
+import { siteOrigin } from "@/lib/site";
 import { saveGoogleConnection } from "@/lib/supabase/google-connections";
 
 /**
@@ -20,7 +22,11 @@ import { saveGoogleConnection } from "@/lib/supabase/google-connections";
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const appUrl = publicEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, "");
+  const state = openState(url.searchParams.get("state") ?? "");
+  // Back to the site the flow started on (mailhooks.cc goes through begin).
+  const appUrl = (
+    state?.site === "mailhooks" ? siteOrigin("mailhooks") : publicEnv().NEXT_PUBLIC_APP_URL
+  ).replace(/\/+$/, "");
   const secure = url.protocol === "https:";
   const back = (path: string, outcome: string) => {
     const target = new URL(path, `${appUrl}/`);
@@ -30,7 +36,6 @@ export async function GET(request: Request) {
       headers: { location: target.toString(), "set-cookie": clearBrowserCookie(secure) },
     });
   };
-  const state = openState(url.searchParams.get("state") ?? "");
   if (!state) return back("/dashboard", "expired");
   // The browser that finishes must be the one that started (a consent URL
   // someone else made would otherwise link your Google account to theirs).
@@ -40,6 +45,20 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code");
   const config = googleConfig();
   if (!code || !config) return back(state.returnTo, "failed");
+  if (state.site === "mailhooks" && state.handoff) {
+    // Saved on mailhooks.cc, for the browser that started there only.
+    const finish = new URL("/api/integrations/google/finish", siteOrigin("mailhooks"));
+    finish.searchParams.set("ticket", sealFinishTicket(code, state));
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location: finish.toString(),
+        "set-cookie": clearBrowserCookie(secure),
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+      },
+    });
+  }
   try {
     const account = await exchangeCode(config, code, state.verifier);
     const connection = await saveGoogleConnection(state.userId, account);

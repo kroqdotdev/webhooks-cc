@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSite } from "@/components/providers/site-provider";
 import Link from "next/link";
 import { Megaphone, X } from "lucide-react";
 import { ANNOUNCEMENTS } from "@/lib/announcements";
@@ -10,15 +11,18 @@ export function DashboardAnnouncement() {
   const announcementId = announcement?.id;
   const [visible, setVisible] = useState(false);
 
+  // The announcements are webhooks.cc's news.
+  const onMailhooks = useSite().key === "mailhooks";
+
   useEffect(() => {
-    if (!announcementId) return;
+    if (!announcementId || onMailhooks) return;
     try {
       if (localStorage.getItem(`dash-${announcementId}`)) return;
     } catch {
       // Storage is blocked: show it, dismissal lasts for this page view.
     }
     setVisible(true);
-  }, [announcementId]);
+  }, [announcementId, onMailhooks]);
 
   if (!visible || !announcement) return null;
 

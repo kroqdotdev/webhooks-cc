@@ -37,6 +37,8 @@ COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --offline
 
 ARG NEXT_PUBLIC_APP_URL=https://webhooks.cc
+# mailhooks.cc, the second site (lib/site.ts); empty serves webhooks.cc alone.
+ARG NEXT_PUBLIC_MAILHOOKS_URL=
 ARG NEXT_PUBLIC_WEBHOOK_URL=https://go.webhooks.cc
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY

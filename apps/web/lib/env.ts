@@ -15,6 +15,9 @@ import { DEFAULT_IDJAG_MAX_AUTH_AGE_SECONDS } from "./agent/constants";
 const publicEnvSchema = z.object({
   NEXT_PUBLIC_WEBHOOK_URL: z.string().url(),
   NEXT_PUBLIC_APP_URL: z.string().url().default("https://webhooks.cc"),
+  // mailhooks.cc, the mail-first front door on the same app (lib/site.ts);
+  // unset, the app serves webhooks.cc alone.
+  NEXT_PUBLIC_MAILHOOKS_URL: blankToUndefined(z.string().url().optional()),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
@@ -208,6 +211,7 @@ export function publicEnv() {
     _publicEnv = publicEnvSchema.parse({
       NEXT_PUBLIC_WEBHOOK_URL: process.env.NEXT_PUBLIC_WEBHOOK_URL,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+      NEXT_PUBLIC_MAILHOOKS_URL: process.env.NEXT_PUBLIC_MAILHOOKS_URL,
       NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
       NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
