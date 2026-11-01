@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -257,7 +258,7 @@ describe("the Make app against the web app", () => {
         parameters: { endpoint: slug, query: "test" },
       });
       if (found.body?.some?.((item) => item.id === sent.body.requestId)) break;
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await sleep(500);
     }
     expect(found.status).toBe(200);
     expect(found.body.map((item) => item.id)).toContain(sent.body.requestId);
