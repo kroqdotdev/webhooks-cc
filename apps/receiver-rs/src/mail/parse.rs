@@ -9,7 +9,9 @@
 //!
 //! Everything is bounded: the sender controls every byte, and a 10 MiB
 //! message of nothing but addresses must not turn into a gigabyte of JSON.
-//! Attachment contents are never stored; v1 lists name, type and size only.
+//! The document lists attachments by name, type and size; their decoded
+//! contents are handed back separately (when asked for) so the handler can
+//! put them in object storage, never in the database.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -47,6 +49,9 @@ pub struct ParsedEmail {
     pub headers: HashMap<String, String>,
     /// The parsed document; the handler adds the per-recipient fields.
     pub doc: Map<String, Value>,
+    /// Decoded attachment contents, in the order of `doc.attachments`; empty
+    /// unless `parse_message_with` was asked to keep them.
+    pub attachment_contents: Vec<Vec<u8>>,
 }
 
 pub struct StoredBody {
@@ -59,7 +64,13 @@ pub struct StoredBody {
 /// Parse a raw RFC 5322 message. Never fails: input mail-parser cannot read
 /// yields the empty document with `parse_error: true`, and the raw message is
 /// still stored.
+#[cfg(test)]
 pub fn parse_message(raw: &[u8]) -> ParsedEmail {
+    parse_message_with(raw, false)
+}
+
+/// `parse_message`, also keeping each listed attachment's decoded contents.
+pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
     let (input, headers_oversized) = bounded_input(raw);
     let mut doc = empty_doc();
     doc.insert("headers_oversized".into(), Value::Bool(headers_oversized));
@@ -69,6 +80,7 @@ pub fn parse_message(raw: &[u8]) -> ParsedEmail {
         return ParsedEmail {
             headers: HashMap::new(),
             doc,
+            attachment_contents: Vec::new(),
         };
     };
 
@@ -118,7 +130,11 @@ pub fn parse_message(raw: &[u8]) -> ParsedEmail {
     doc.insert("html_truncated".into(), Value::Bool(html_truncated));
 
     let mut attachments = Vec::new();
+    let mut attachment_contents = Vec::new();
     for part in message.attachments().take(MAX_ATTACHMENTS) {
+        if keep_contents {
+            attachment_contents.push(part.contents().to_vec());
+        }
         let content_type = part.content_type().map(|ct| {
             let full = match ct.subtype() {
                 Some(sub) => format!("{}/{}", ct.ctype(), sub),
@@ -143,6 +159,7 @@ pub fn parse_message(raw: &[u8]) -> ParsedEmail {
     ParsedEmail {
         headers,
         doc,
+        attachment_contents,
     }
 }
 

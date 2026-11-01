@@ -6,10 +6,9 @@ import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
 import { extractFromEmail, replyText, type EmailExtracts } from "@webhooks-cc/sdk/email";
 import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import type { RequestKind } from "@/lib/supabase/search";
+import { retentionDays } from "@/lib/entitlements";
 
-const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-// Matches the daily cleanup, which deletes Pro requests after 31 days.
-const PRO_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LIST_LIMIT = 1000;
 
 type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
@@ -303,9 +302,9 @@ interface Retention {
   /** Rows received before this instant are outside the owner's window. */
   cutoff: number;
   /**
-   * True on the free plan, where a request billed to a team's pooled quota was
-   * paid for by that team's subscription and so outlives the 7-day personal
-   * window. Mirrors the `team_id is null` carve-out in cleanup_free_user_requests().
+   * A request billed to a team's pooled quota keeps the team's retention, not
+   * the owner's (cleanup_expired_requests() deletes it by the team's), so the
+   * owner's window never hides it. Always true since migration 00067.
    */
   exemptTeamBilled: boolean;
 }
@@ -314,18 +313,27 @@ async function getUserRetention(userId: string): Promise<Retention> {
   const admin = createAdminClient();
   const { data: user, error } = await admin
     .from("users")
-    .select("plan")
+    .select("plan, retention_floor_days, retention_floor_until")
     .eq("id", userId)
-    .maybeSingle<{ plan: UserPlan }>();
+    .maybeSingle<{
+      plan: UserPlan;
+      retention_floor_days: number | null;
+      retention_floor_until: string | null;
+    }>();
 
   if (error) {
     throw error;
   }
 
-  const isPro = user?.plan === "pro";
+  // The hourly cleanup deletes what is older; this hides what it has not
+  // reached yet.
+  const days = retentionDays(user?.plan, {
+    days: user?.retention_floor_days ?? null,
+    until: user?.retention_floor_until ?? null,
+  });
   return {
-    cutoff: Date.now() - (isPro ? PRO_RETENTION_MS : FREE_RETENTION_MS),
-    exemptTeamBilled: !isPro,
+    cutoff: Date.now() - days * DAY_MS,
+    exemptTeamBilled: true,
   };
 }
 

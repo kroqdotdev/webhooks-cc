@@ -1,6 +1,7 @@
 import { isCapacityExhausted, periodOverageUsed, remainingCapacity } from "@/lib/capacity";
 import { createAdminClient } from "./admin";
 import type { UserPlan } from "./api-keys";
+import { isUserPlan, planEntitlements } from "@/lib/entitlements";
 import { reportError } from "@/lib/observability";
 import { getQuotaRejections, NO_QUOTA_REJECTIONS, type QuotaRejections } from "./quota-rejections";
 
@@ -50,7 +51,7 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
     throw error;
   }
 
-  if (!user || (user.plan !== "free" && user.plan !== "pro")) {
+  if (!user || !isUserPlan(user.plan)) {
     return null;
   }
 
@@ -65,7 +66,8 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
   const now = Date.now();
   const periodEndMs = user.period_end ? Date.parse(user.period_end) : NaN;
   const periodActive = Number.isFinite(periodEndMs) && periodEndMs > now;
-  const used = user.plan === "free" && !periodActive ? 0 : user.requests_used;
+  const used =
+    planEntitlements(user.plan).quotaPeriod === "day" && !periodActive ? 0 : user.requests_used;
   // capture_webhook() counts emails with the period_start they belong to
   // (migration 00049), so a count from an earlier period reads as none.
   const emails =

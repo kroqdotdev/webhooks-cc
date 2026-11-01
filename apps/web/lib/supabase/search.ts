@@ -3,6 +3,7 @@ import type { Database, Json } from "./database";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
 import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
 import { byteaToBase64 } from "./requests";
+import { isUserPlan } from "@/lib/entitlements";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -131,7 +132,7 @@ function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
 }
 
 async function resolvePlan(userId: string, plan: UserPlan | undefined): Promise<UserPlan> {
-  if (plan === "free" || plan === "pro") {
+  if (isUserPlan(plan)) {
     return plan;
   }
 

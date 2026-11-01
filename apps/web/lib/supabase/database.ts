@@ -11,6 +11,9 @@ export type DestinationFormat =
   | "mailgun"
   | "cloudmailin";
 
+/** Rows of plan_entitlements (migration 00067). */
+export type PlanKey = "free" | "pro" | "business" | "team" | "team_business";
+
 export interface Database {
   public: {
     Tables: {
@@ -448,6 +451,8 @@ export interface Database {
           forward_sent_field: string | null;
           // Agent sandbox endpoints (migration 00055); never set with user_id.
           agent_registration_id: string | null;
+          retention_days: number | null;
+          delete_after_delivery: boolean;
         };
         Insert: {
           id?: string;
@@ -478,6 +483,8 @@ export interface Database {
           forward_keep_order?: boolean;
           forward_sent_field?: string | null;
           agent_registration_id?: string | null;
+          retention_days?: number | null;
+          delete_after_delivery?: boolean;
         };
         Update: {
           id?: string;
@@ -508,6 +515,8 @@ export interface Database {
           forward_keep_order?: boolean;
           forward_sent_field?: string | null;
           agent_registration_id?: string | null;
+          retention_days?: number | null;
+          delete_after_delivery?: boolean;
         };
         Relationships: [];
       };
@@ -534,6 +543,7 @@ export interface Database {
           kind: "http" | "email";
           email: Json | null;
           dedupe_key: string | null;
+          object_prefix: string | null;
         };
         Insert: {
           id?: string;
@@ -557,6 +567,7 @@ export interface Database {
           kind?: "http" | "email";
           email?: Json | null;
           dedupe_key?: string | null;
+          object_prefix?: string | null;
         };
         Update: {
           id?: string;
@@ -580,6 +591,7 @@ export interface Database {
           kind?: "http" | "email";
           email?: Json | null;
           dedupe_key?: string | null;
+          object_prefix?: string | null;
         };
         Relationships: [];
       };
@@ -589,7 +601,7 @@ export interface Database {
           email: string;
           name: string | null;
           image: string | null;
-          plan: "free" | "pro";
+          plan: "free" | "pro" | "business";
           polar_customer_id: string | null;
           polar_subscription_id: string | null;
           subscription_status: "active" | "canceled" | "past_due" | null;
@@ -613,13 +625,17 @@ export interface Database {
           overage_reported: number;
           overage_reporting_to: number | null;
           overage_report_lease: string | null;
+          billing_interval: "month" | "year" | null;
+          billing_period_end: string | null;
+          retention_floor_days: number | null;
+          retention_floor_until: string | null;
         };
         Insert: {
           id: string;
           email: string;
           name?: string | null;
           image?: string | null;
-          plan?: "free" | "pro";
+          plan?: "free" | "pro" | "business";
           polar_customer_id?: string | null;
           polar_subscription_id?: string | null;
           subscription_status?: "active" | "canceled" | "past_due" | null;
@@ -643,13 +659,17 @@ export interface Database {
           overage_reported?: number;
           overage_reporting_to?: number | null;
           overage_report_lease?: string | null;
+          billing_interval?: "month" | "year" | null;
+          billing_period_end?: string | null;
+          retention_floor_days?: number | null;
+          retention_floor_until?: string | null;
         };
         Update: {
           id?: string;
           email?: string;
           name?: string | null;
           image?: string | null;
-          plan?: "free" | "pro";
+          plan?: "free" | "pro" | "business";
           polar_customer_id?: string | null;
           polar_subscription_id?: string | null;
           subscription_status?: "active" | "canceled" | "past_due" | null;
@@ -673,6 +693,10 @@ export interface Database {
           overage_reported?: number;
           overage_reporting_to?: number | null;
           overage_report_lease?: string | null;
+          billing_interval?: "month" | "year" | null;
+          billing_period_end?: string | null;
+          retention_floor_days?: number | null;
+          retention_floor_until?: string | null;
         };
         Relationships: [];
       };
@@ -785,6 +809,9 @@ export interface Database {
           overage_reported: number;
           overage_reporting_to: number | null;
           overage_report_lease: string | null;
+          business: boolean;
+          retention_floor_days: number | null;
+          retention_floor_until: string | null;
         };
         Insert: {
           id?: string;
@@ -813,6 +840,9 @@ export interface Database {
           overage_reported?: number;
           overage_reporting_to?: number | null;
           overage_report_lease?: string | null;
+          business?: boolean;
+          retention_floor_days?: number | null;
+          retention_floor_until?: string | null;
         };
         Update: {
           id?: string;
@@ -841,6 +871,9 @@ export interface Database {
           overage_reported?: number;
           overage_reporting_to?: number | null;
           overage_report_lease?: string | null;
+          business?: boolean;
+          retention_floor_days?: number | null;
+          retention_floor_until?: string | null;
         };
         Relationships: [];
       };
@@ -1173,9 +1206,63 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      plan_entitlements: {
+        Row: {
+          key: PlanKey;
+          request_limit: number;
+          pool_requests: number;
+          quota_period: "day" | "month";
+          retention_days: number;
+          parsed_pages: number;
+          layouts_per_endpoint: number;
+          ai_assists: number;
+          custom_domains: number;
+          file_drops: boolean;
+          request_addons: boolean;
+          page_addons: boolean;
+          annual_billing: boolean;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      storage_deletions: {
+        Row: {
+          id: number;
+          prefix: string;
+          created_at: string;
+          attempts: number;
+          locked_until: string | null;
+        };
+        Insert: {
+          prefix: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      claim_storage_deletions: {
+        Args: { p_limit?: number; p_lease_seconds?: number };
+        Returns: { id: number; prefix: string; attempts: number }[];
+      };
+      complete_storage_deletions: {
+        Args: { p_ids: number[] };
+        Returns: number;
+      };
+      cleanup_expired_requests: {
+        Args: { p_batch?: number; p_max_rows?: number };
+        Returns: number;
+      };
+      cleanup_delivered_requests: {
+        Args: { p_limit?: number };
+        Returns: number;
+      };
+      account_retention_days: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: number;
+      };
       start_agent_claim_attempt: {
         Args: {
           p_claim_token_hash: string;
@@ -1492,7 +1579,7 @@ export interface Database {
       search_requests: {
         Args: {
           p_user_id: string;
-          p_plan?: "free" | "pro" | null;
+          p_plan?: "free" | "pro" | "business" | null;
           p_slug?: string | null;
           p_method?: string | null;
           p_q?: string | null;
@@ -1524,7 +1611,7 @@ export interface Database {
       search_requests_count: {
         Args: {
           p_user_id: string;
-          p_plan?: "free" | "pro" | null;
+          p_plan?: "free" | "pro" | "business" | null;
           p_slug?: string | null;
           p_method?: string | null;
           p_q?: string | null;

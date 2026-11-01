@@ -3,7 +3,8 @@ import { customAlphabet } from "nanoid";
 import { createAdminClient } from "./admin";
 import { reportError } from "@/lib/observability";
 
-export type UserPlan = "free" | "pro";
+import { isUserPlan, type UserPlan } from "@/lib/entitlements";
+export type { UserPlan };
 export const MAX_KEYS_PER_USER = 10;
 
 const generateApiKeyBody = customAlphabet(
@@ -110,7 +111,7 @@ export async function validateApiKeyWithMetadata(
     throw userError;
   }
 
-  if (!userRow || (userRow.plan !== "free" && userRow.plan !== "pro")) {
+  if (!userRow || !isUserPlan(userRow.plan)) {
     return null;
   }
 

@@ -667,6 +667,23 @@ export async function fetchEmailFieldValues(
   return data.emailFields ?? null;
 }
 
+/** The exact message from object storage (emails with `stored`). */
+export async function fetchRawEmail(
+  accessToken: string,
+  requestId: string
+): Promise<Uint8Array<ArrayBuffer>> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}/raw`,
+    withAuthHeaders(accessToken)
+  );
+  if (!response.ok) {
+    throw new Error(
+      response.status === 404 ? "The message is no longer kept." : "Download failed."
+    );
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 export async function fetchRequestDeliveries(
   accessToken: string,
   requestId: string

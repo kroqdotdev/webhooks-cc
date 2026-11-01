@@ -3,6 +3,7 @@ pub mod crypto;
 mod handlers;
 mod mail;
 pub mod metrics;
+mod object_store;
 mod observability;
 pub mod verification;
 
@@ -26,6 +27,8 @@ pub struct AppState {
     pub capture_limiter: std::sync::Arc<handlers::capture_limiter::CaptureLimiter>,
     /// Bounds how many mail deliveries are decoded and held in memory at once.
     pub mail_deliver_slots: std::sync::Arc<tokio::sync::Semaphore>,
+    /// Object storage for captured email, when configured.
+    pub object_store: Option<std::sync::Arc<object_store::ObjectStore>>,
 }
 
 fn main() {
@@ -101,6 +104,10 @@ async fn run(statoss: bool) {
         mail_deliver_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
             mail::handlers::DELIVER_CONCURRENCY,
         )),
+        object_store: config
+            .object_store
+            .clone()
+            .map(|c| std::sync::Arc::new(object_store::ObjectStore::new(c))),
     };
 
     // Private mail ingest listener for the MX host. Bound here, before the
