@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.55.3";
+export const APP_VERSION = "0.55.4";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.55.4",
+    date: "2026-11-01",
+    title: "Attachments Parsed Without Waiting",
+    track: "web",
+    items: [
+      "Emails on an endpoint whose layout reads or parses attachments are parsed and delivered right away again, instead of waiting for minutes",
+      "The layout preview answers in moments for an email with attachments, instead of after 30 seconds",
+    ],
+  },
   {
     version: "0.55.3",
     date: "2026-11-01",
