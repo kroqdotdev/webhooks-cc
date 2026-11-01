@@ -28,7 +28,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.55.3",
-    date: "2026-10-31",
+    date: "2026-11-01",
     title: "Business, Told in Full",
     track: "web",
     items: [
@@ -41,7 +41,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.55.2",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Endpoint Retention in Every View",
     track: "web",
     items: [
@@ -50,7 +50,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.55.1",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Destinations That Are Gone",
     track: "web",
     items: [
@@ -61,7 +61,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.55.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "AI Setup and Repair",
     track: "web",
     items: [
@@ -72,7 +72,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.54.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "File Drops",
     track: "web",
     items: [
@@ -83,7 +83,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.53.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Custom Inbound Domains",
     track: "web",
     items: [
@@ -94,7 +94,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.52.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "mailhooks.cc and Ready-made Layouts",
     track: "web",
     items: [
@@ -105,7 +105,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.51.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Business Plan, Parsed Page Add-ons and Team Business",
     track: "web",
     items: [
@@ -118,7 +118,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.50.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Layouts: Parse Emails into Fields, Line Items and Rows",
     track: "web",
     items: [
@@ -131,7 +131,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.49.0",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Attachments, Alerts, Google Sheets and Retention",
     track: "web",
     items: [
@@ -144,7 +144,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "0.48.6",
-    date: "2026-10-29",
+    date: "2026-11-01",
     title: "Full Messages for Large Emails",
     track: "web",
     items: [
