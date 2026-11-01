@@ -2,6 +2,16 @@ import { createHmac } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
+import {
+  getNewestRetainedRequestId,
+  getRequestByIdForUser,
+  getRetainedRequestsByIds,
+  isRequestRetained,
+  listPaginatedRequestsForEndpointByUser,
+  listRequestsForEndpointByUser,
+} from "@/lib/supabase/requests";
+import { requestIdsInRange } from "@/lib/replay";
+import { countSearchRequestsForUser, searchRequestsForUser } from "@/lib/supabase/search";
 import { ENTITLEMENTS, type Entitlements } from "@/lib/entitlements";
 import type { PlanKey } from "@/lib/supabase/database";
 import { getObjectBytes, isObjectStorageConfigured, listKeys } from "@/lib/storage/object-store";
@@ -181,6 +191,77 @@ describe("retention", () => {
     expect(await remaining([...shortIds, ...normalIds])).toEqual(
       new Set([shortIds[0], normalIds[0]])
     );
+  });
+
+  it("hides rows past an endpoint's shorter retention before the cleanup reaches them", async () => {
+    const userId = await createUser({ plan: "pro", request_limit: 100_000 });
+    const short = await createEndpointForUser({ userId, name: "short reads" });
+    await admin.from("endpoints").update({ retention_days: 2 }).eq("id", short.id);
+    const [kept, old] = await insertRequests(short.id, userId, [1, 3]);
+    // A team-billed row past the endpoint's days goes too (the cleanup deletes it).
+    const { data: team, error } = await admin.rpc("create_team_with_owner", {
+      p_user_id: userId,
+      p_name: `Reads team ${ts}`,
+    });
+    if (error) throw error;
+    const teamId = (team as { id: string }).id;
+    createdTeamIds.push(teamId);
+    const [teamOld] = await insertRequests(short.id, userId, [3], { team_id: teamId });
+
+    expect(await getRequestByIdForUser(userId, kept)).not.toBeNull();
+    expect(await getRequestByIdForUser(userId, old)).toBeNull();
+    expect(await getRequestByIdForUser(userId, teamOld)).toBeNull();
+    const listed = await listRequestsForEndpointByUser({ userId, slug: short.slug });
+    expect(listed!.map((r) => r.id)).toEqual([kept]);
+    const page = await listPaginatedRequestsForEndpointByUser({ userId, slug: short.slug });
+    expect(page!.items.map((r) => r.id)).toEqual([kept]);
+    const found = await searchRequestsForUser({ userId, plan: "pro", slug: short.slug });
+    expect(found.map((r) => r.id)).toEqual([kept]);
+    expect(await countSearchRequestsForUser({ userId, plan: "pro", slug: short.slug })).toBe(1);
+    expect(await countSearchRequestsForUser({ userId, plan: "pro" })).toBe(1);
+    // Replay and the previews read the same way: nothing past retention is resent or shown.
+    expect(await requestIdsInRange(short.id, {})).toEqual([kept]);
+    const retained = await getRetainedRequestsByIds(short.id, [kept, old, teamOld]);
+    expect(retained.map((r) => r.id)).toEqual([kept]);
+    expect(await getNewestRetainedRequestId(short.id, "http")).toBe(kept);
+    const expiredOnly = await createEndpointForUser({ userId, name: "expired only" });
+    await admin.from("endpoints").update({ retention_days: 2 }).eq("id", expiredOnly.id);
+    await insertRequests(expiredOnly.id, userId, [3]);
+    expect(await getNewestRetainedRequestId(expiredOnly.id, "http")).toBeNull();
+    // And by the plan alone: an endpoint keeping more days than Pro's 30.
+    const planOnly = await createEndpointForUser({ userId, name: "plan only" });
+    await admin.from("endpoints").update({ retention_days: 90 }).eq("id", planOnly.id);
+    const [planExpired] = await insertRequests(planOnly.id, userId, [40]);
+    expect(await getRetainedRequestsByIds(planOnly.id, [planExpired])).toEqual([]);
+    expect(await isRequestRetained(planOnly.id, planExpired)).toBe(false);
+    expect(await isRequestRetained(short.id, kept)).toBe(true);
+    expect(await getNewestRetainedRequestId(planOnly.id, "http")).toBeNull();
+    expect(await requestIdsInRange(planOnly.id, {})).toEqual([]);
+  });
+
+  it("does not let a page cursor reach past the plan's retention", async () => {
+    const userId = await createUser({ plan: "pro", request_limit: 100_000 });
+    const endpoint = await createEndpointForUser({ userId, name: "cursor" });
+    // Pro keeps 30 days; a 40-day-old row is waiting for the cleanup.
+    const [recent] = await insertRequests(endpoint.id, userId, [1]);
+    await insertRequests(endpoint.id, userId, [40]);
+    const forged = Buffer.from(JSON.stringify({ offset: 0, cutoff: 0 }), "utf8").toString(
+      "base64url"
+    );
+    const page = await listPaginatedRequestsForEndpointByUser({
+      userId,
+      slug: endpoint.slug,
+      cursor: forged,
+    });
+    expect(page!.items.map((r) => r.id)).toEqual([recent]);
+    // A cutoff from the future is not a cursor this server wrote.
+    const future = Buffer.from(
+      JSON.stringify({ offset: 0, cutoff: Date.now() + 30 * DAY }),
+      "utf8"
+    ).toString("base64url");
+    await expect(
+      listPaginatedRequestsForEndpointByUser({ userId, slug: endpoint.slug, cursor: future })
+    ).rejects.toThrow("invalid_cursor");
   });
 
   it("keeps team-billed rows for the team's days, not the owner's", async () => {

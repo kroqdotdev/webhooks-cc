@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { replayRequests } from "@/lib/replay";
+import { getRetainedRequestsByIds } from "@/lib/supabase/requests";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
 
@@ -32,6 +33,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }>();
     if (error) throw error;
     if (!data || data.endpoints.user_id !== auth.userId) return reply({ error: "not_found" }, 404);
+    // Past retention it is gone, whether or not the cleanup has deleted it yet.
+    const retained = await getRetainedRequestsByIds(data.endpoint_id, [data.id]);
+    if (retained.length === 0) return reply({ error: "not_found" }, 404);
     const queued = await replayRequests(data.endpoint_id, [data.id]);
     await auditUserAction(request, auth.userId, {
       action: "request.replayed",

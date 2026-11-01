@@ -467,13 +467,19 @@ export async function listTeamEndpoints(
 export async function resolveEndpointAccess(
   userId: string,
   slug: string
-): Promise<{ endpointId: string; ownerId: string; isOwner: boolean } | null> {
+): Promise<{
+  endpointId: string;
+  ownerId: string;
+  isOwner: boolean;
+  /** The endpoint's own retention when shorter than its plan's, else null. */
+  retentionDays: number | null;
+} | null> {
   const admin = createAdminClient();
 
   // Look up endpoint by slug
   const { data: endpoint, error: endpointError } = await admin
     .from("endpoints")
-    .select("id, user_id")
+    .select("id, user_id, retention_days")
     .eq("slug", slug.toLowerCase())
     .maybeSingle();
 
@@ -484,7 +490,12 @@ export async function resolveEndpointAccess(
 
   // Check ownership
   if (endpoint.user_id === userId) {
-    return { endpointId: endpoint.id, ownerId, isOwner: true };
+    return {
+      endpointId: endpoint.id,
+      ownerId,
+      isOwner: true,
+      retentionDays: endpoint.retention_days ?? null,
+    };
   }
 
   // A non-owner needs one team that the endpoint is shared with, that they
@@ -515,7 +526,12 @@ export async function resolveEndpointAccess(
   const activeShareTeamIds = await filterActiveTeamIds(shareTeamIds, 1);
   if (activeShareTeamIds.length === 0) return null;
 
-  return { endpointId: endpoint.id, ownerId, isOwner: false };
+  return {
+    endpointId: endpoint.id,
+    ownerId,
+    isOwner: false,
+    retentionDays: endpoint.retention_days ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------

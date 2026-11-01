@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.55.1";
+export const APP_VERSION = "0.55.2";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,16 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.55.2",
+    date: "2026-10-29",
+    title: "Endpoint Retention in Every View",
+    track: "web",
+    items: [
+      "An endpoint set to keep its requests fewer days than your plan hides older ones at once, in the dashboard, the API and search, instead of showing them until the next cleanup",
+    ],
+  },
   {
     version: "0.55.1",
     date: "2026-10-29",
@@ -129,7 +139,6 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Groundwork for longer retention, shorter retention per endpoint and the coming Business plan; nothing changes for any plan today",
     ],
   },
-  // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.48.5",
     date: "2026-10-30",

@@ -1,6 +1,7 @@
 import { reportError } from "@/lib/observability";
 import { toEmailCapture } from "@/lib/email-capture";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isRequestRetained } from "@/lib/supabase/requests";
 import { isObjectStorageConfigured, presignGet } from "@/lib/storage/object-store";
 import { verifyAttachmentLink } from "@/lib/storage/attachment-links";
 import {
@@ -40,11 +41,17 @@ export async function GET(
   try {
     const { data, error } = await createAdminClient()
       .from("requests")
-      .select("id, kind, email")
+      .select("id, endpoint_id, kind, email")
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
-    const email = data?.kind === "email" ? toEmailCapture(data.email) : null;
+    // Past retention the link ends too, whether or not the cleanup has
+    // deleted the email yet.
+    const retained =
+      data?.kind === "email" && data.endpoint_id
+        ? await isRequestRetained(data.endpoint_id, data.id)
+        : false;
+    const email = retained ? toEmailCapture(data!.email) : null;
     const attachment = email?.attachments[index];
     // Gone with the email (retention, or deleted), or never stored.
     if (!email?.stored || !attachment) {

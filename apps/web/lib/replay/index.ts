@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { applyRequestRetention } from "@/lib/supabase/requests";
 import { queueRedelivery } from "@/lib/supabase/forwarding";
 
 /**
@@ -19,7 +20,7 @@ export interface ReplayRange {
   kind?: "http" | "email" | null;
 }
 
-/** The ids of an endpoint's requests in a range, oldest first, at most MAX_REPLAY. */
+/** The ids of an endpoint's requests in a range and within retention, oldest first, at most MAX_REPLAY. */
 export async function requestIdsInRange(endpointId: string, range: ReplayRange): Promise<string[]> {
   let query = createAdminClient()
     .from("requests")
@@ -31,6 +32,8 @@ export async function requestIdsInRange(endpointId: string, range: ReplayRange):
   if (range.since != null) query = query.gte("received_at", new Date(range.since).toISOString());
   if (range.until != null) query = query.lte("received_at", new Date(range.until).toISOString());
   if (range.kind) query = query.eq("kind", range.kind);
+  // Never what retention has ended and the cleanup has not reached yet.
+  await applyRequestRetention(query, endpointId);
   const { data, error } = await query;
   if (error) throw error;
   return ((data ?? []) as { id: string }[]).map((row) => row.id);

@@ -2,8 +2,11 @@ import { emailFieldValues } from "@/lib/email-fields";
 import { serverEnv } from "@/lib/env";
 import type { EndpointRecord } from "@/lib/supabase/endpoints";
 import type { Destination } from "@/lib/supabase/destinations";
-import { getNewestRequestId } from "@/lib/supabase/forwarding";
-import { getRequestsByIds, type RequestRecord } from "@/lib/supabase/requests";
+import {
+  getNewestRetainedRequestId,
+  getRetainedRequestsByIds,
+  type RequestRecord,
+} from "@/lib/supabase/requests";
 import { sendOptions } from "./config";
 import { resolveFormat, type ForwardFormat } from "./format";
 import { isDelivered, sendForward, type SendResult } from "./send";
@@ -40,7 +43,7 @@ export async function pickRequest(
   }
 ): Promise<{ request: RequestRecord; sample: boolean } | { error: string; status: number }> {
   if (options.requestId) {
-    const [request] = await getRequestsByIds([options.requestId]);
+    const [request] = await getRetainedRequestsByIds(endpoint.id, [options.requestId]);
     if (!request || request.endpointId !== endpoint.id) {
       return { error: "That request is not on this endpoint.", status: 404 };
     }
@@ -48,8 +51,8 @@ export async function pickRequest(
   }
   const kind =
     options.kind ?? (options.destination.http || !options.destination.email ? "http" : "email");
-  const newestId = await getNewestRequestId(endpoint.id, kind);
-  const [newest] = newestId ? await getRequestsByIds([newestId]) : [];
+  const newestId = await getNewestRetainedRequestId(endpoint.id, kind);
+  const [newest] = newestId ? await getRetainedRequestsByIds(endpoint.id, [newestId]) : [];
   if (newest) return { request: newest, sample: false };
   if (kind === "http") return { request: sampleHttpRequest(endpoint.id), sample: true };
   const sample = sampleEmailSource(`${endpoint.slug}@${serverEnv().EMAIL_CAPTURE_DOMAIN}`);
