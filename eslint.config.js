@@ -55,6 +55,30 @@ export default tseslint.config(
     },
   },
 
+  // The Zapier app is CommonJS (Zapier's platform loads it with require).
+  {
+    files: ["packages/zapier-app/**/*.js"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: {
+        require: "readonly",
+        module: "writable",
+        process: "readonly",
+        __dirname: "readonly",
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  // Tests of the Zapier and Make apps run in Node.
+  {
+    files: ["packages/zapier-app/test/**/*.mjs", "packages/make-app/test/**/*.mjs"],
+    languageOptions: {
+      globals: { process: "readonly", fetch: "readonly", URLSearchParams: "readonly" },
+    },
+  },
+
   // SDK rules
   {
     files: ["packages/sdk/**/*.ts"],

@@ -1,0 +1,19 @@
+{
+  "name": "sendTestEmail",
+  "label": "Send a test email",
+  "description": "Delivers a sample email to an endpoint (it counts as one request).",
+  "type": "action",
+  "connection": "apiKey",
+  "parameters": [],
+  "expect": [
+    { "name": "endpoint", "type": "select", "label": "Endpoint", "options": "rpc://listEndpoints", "required": true },
+    { "name": "tag", "type": "text", "label": "Tag", "required": false }
+  ],
+  "communication": {
+    "url": "/send-test-email",
+    "method": "POST",
+    "body": { "slug": "{{parameters.endpoint}}", "tag": "{{ifempty(parameters.tag, undefined)}}" },
+    "response": { "output": "{{body}}" }
+  },
+  "interface": [{ "name": "requestId", "type": "text", "label": "Request ID" }]
+}

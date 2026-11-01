@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.55.0";
+export const APP_VERSION = "0.55.1";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -25,6 +25,17 @@ export const GO_SDK_VERSION = "0.3.0";
 export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.55.1",
+    date: "2026-10-29",
+    title: "Destinations That Are Gone",
+    track: "web",
+    items: [
+      "A destination whose URL answers 410 Gone is turned off instead of being retried with every email; turn it on again once the URL works",
+      "Rendered email JSON (the samples integrations show) includes attachment download links, as deliveries do",
+      "Rate limits on destinations, test emails and rendering count per account, so integrations that share addresses do not slow each other down",
+    ],
+  },
   {
     version: "0.55.0",
     date: "2026-10-29",

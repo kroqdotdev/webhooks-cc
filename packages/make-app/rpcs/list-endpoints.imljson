@@ -1,0 +1,16 @@
+{
+  "name": "listEndpoints",
+  "label": "List endpoints",
+  "connection": "apiKey",
+  "communication": {
+    "url": "/endpoints",
+    "method": "GET",
+    "response": {
+      "iterate": "{{body.owned}}",
+      "output": {
+        "label": "{{ifempty(item.name, item.slug)}}",
+        "value": "{{item.slug}}"
+      }
+    }
+  }
+}

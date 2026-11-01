@@ -49,7 +49,9 @@ beforeAll(async () => {
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       received.push({ url: req.url ?? "", headers: req.headers, body });
-      res.writeHead(200).end("ok");
+      // A hook whose Zap or scenario was removed answers 410.
+      if (req.url?.startsWith("/gone")) res.writeHead(410).end("gone");
+      else res.writeHead(200).end("ok");
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -127,6 +129,56 @@ describe("destinations", () => {
     const rows = await deliveries(e.id);
     expect(rows.map((row) => row.destination_id)).toEqual([a.id]);
     expect([b.id, c.id]).not.toContain(rows[0].destination_id);
+  });
+
+  it("turns a destination off when its URL answers 410, without retrying", async () => {
+    const e = await endpoint();
+    // As a Zapier or Make hook: the URL itself, nothing appended.
+    const gone = await createDestination(e.id, { url: `${base}/gone`, appendPath: false });
+    await capture(e.slug, { type: "x" });
+    const rows = await drain(e.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "failed", attempts: 1 });
+    expect(rows[0].last_error).toContain("410");
+    const { data: destination } = await admin
+      .from("endpoint_destinations")
+      .select("enabled")
+      .eq("id", gone.id)
+      .single();
+    expect(destination?.enabled).toBe(false);
+    // Nothing more is queued for it.
+    await capture(e.slug, { type: "y" });
+    expect(await deliveries(e.id)).toHaveLength(1);
+  });
+
+  it("keeps a destination on when a 410 answers a path appended to its URL", async () => {
+    const e = await endpoint();
+    // The request's path (/events) goes after the URL: a 410 there is about that resource.
+    const relay = await createDestination(e.id, { url: `${base}/gone/append`, appendPath: true });
+    await capture(e.slug, { type: "x" });
+    await runForwardingBatch();
+    expect(at("/gone/append/events").length).toBeGreaterThan(0);
+    const { data: destination } = await admin
+      .from("endpoint_destinations")
+      .select("enabled")
+      .eq("id", relay.id)
+      .single();
+    expect(destination?.enabled).toBe(true);
+  });
+
+  it("settles deliveries queued for a gone URL without sending them", async () => {
+    const e = await endpoint();
+    await createDestination(e.id, { url: `${base}/gone/queued`, appendPath: false });
+    for (const type of ["a", "b", "c"]) await capture(e.slug, { type });
+    const sentBefore = at("/gone/queued").length;
+    const rows = await drain(e.id);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.status !== "pending")).toBe(true);
+    // Once it answered 410, what was still queued was not sent: at most the
+    // ones already on their way with the first (two per endpoint at a time).
+    const sent = at("/gone/queued").length - sentBefore;
+    expect(sent).toBeGreaterThanOrEqual(1);
+    expect(sent).toBeLessThan(3);
   });
 
   it("skips what the filter turns down, and logs it", async () => {
