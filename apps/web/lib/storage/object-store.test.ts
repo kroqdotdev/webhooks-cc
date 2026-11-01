@@ -129,14 +129,21 @@ describe("object storage", () => {
   });
 
   it("settles when the fetch keeps a tee of every answer, as Next's does", async () => {
-    vi.stubGlobal("fetch", teeingFetch(404, "<Error><Code>NoSuchKey</Code></Error>"));
+    // Each answer's body is read to the end, which frees the connection.
+    const notFound = teeingFetch(404, "<Error><Code>NoSuchKey</Code></Error>");
+    vi.stubGlobal("fetch", notFound);
     expect(await getObject("m/x/p/0.json")).toBeNull();
+    expect((await notFound.mock.results[0].value).bodyUsed).toBe(true);
 
-    vi.stubGlobal("fetch", teeingFetch(500, "<Error><Code>InternalError</Code></Error>"));
+    const failed = teeingFetch(500, "<Error><Code>InternalError</Code></Error>");
+    vi.stubGlobal("fetch", failed);
     await expect(getObject("m/x/a/0")).rejects.toThrow(/answered 500/);
+    expect((await failed.mock.results[0].value).bodyUsed).toBe(true);
 
-    vi.stubGlobal("fetch", teeingFetch(200, ""));
+    const stored = teeingFetch(200, "");
+    vi.stubGlobal("fetch", stored);
     await expect(putObject("m/x/p/0.json", "{}", "application/json")).resolves.toBeUndefined();
+    expect((await stored.mock.results[0].value).bodyUsed).toBe(true);
   }, 2_000);
 
   it("refuses to delete anything but a request prefix", async () => {
