@@ -102,14 +102,26 @@ export async function getObject(key: string): Promise<Response | null> {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (response.status === 404) {
-    await response.body?.cancel();
+    await drain(response);
     return null;
   }
   if (!response.ok) {
-    await response.body?.cancel();
+    await drain(response);
     throw new ObjectStorageError(`object storage answered ${response.status}`, response.status);
   }
   return response;
+}
+
+/**
+ * Reads a storage answer whose body we do not need (a 404, an error, a PUT's
+ * reply: a few hundred bytes at most) so its connection is freed. Never
+ * `await response.body.cancel()` here: Next's patched fetch hands back one
+ * branch of a tee and keeps the other for its fetch cache, and cancelling
+ * one branch of a tee only settles once the other is cancelled or read to
+ * the end, so in the server that await never returned.
+ */
+async function drain(response: Response): Promise<void> {
+  await response.arrayBuffer().catch(() => undefined);
 }
 
 /** The object's bytes, or null when it does not exist. */
@@ -131,7 +143,7 @@ export async function putObject(
     body: typeof body === "string" ? body : Buffer.from(body),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  await response.body?.cancel();
+  await drain(response);
   if (!response.ok) {
     throw new ObjectStorageError(`object storage answered ${response.status}`, response.status);
   }

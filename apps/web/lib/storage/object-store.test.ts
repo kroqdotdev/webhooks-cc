@@ -9,8 +9,29 @@ const env = vi.hoisted((): Record<string, string | undefined> => ({
 }));
 vi.mock("@/lib/env", () => ({ serverEnv: () => env }));
 
-const { contentDisposition, deletePrefix, deleteKeys, listKeys, objectStorageConfig, presignGet } =
-  await import("./object-store");
+const {
+  contentDisposition,
+  deletePrefix,
+  deleteKeys,
+  getObject,
+  listKeys,
+  objectStorageConfig,
+  presignGet,
+  putObject,
+} = await import("./object-store");
+
+/**
+ * A fetch like Next's patched one in the server: the caller gets one branch
+ * of a tee and the other branch (kept for the fetch cache) is never read.
+ */
+function teeingFetch(status: number, body: string) {
+  const held: ReadableStream<Uint8Array>[] = [];
+  return vi.fn(async () => {
+    const [caller, cache] = new Response(body).body!.tee();
+    held.push(cache);
+    return new Response(caller, { status });
+  });
+}
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -106,6 +127,17 @@ describe("object storage", () => {
     );
     await expect(deleteKeys(["m/x/a"])).rejects.toThrow(/refused a delete/);
   });
+
+  it("settles when the fetch keeps a tee of every answer, as Next's does", async () => {
+    vi.stubGlobal("fetch", teeingFetch(404, "<Error><Code>NoSuchKey</Code></Error>"));
+    expect(await getObject("m/x/p/0.json")).toBeNull();
+
+    vi.stubGlobal("fetch", teeingFetch(500, "<Error><Code>InternalError</Code></Error>"));
+    await expect(getObject("m/x/a/0")).rejects.toThrow(/answered 500/);
+
+    vi.stubGlobal("fetch", teeingFetch(200, ""));
+    await expect(putObject("m/x/p/0.json", "{}", "application/json")).resolves.toBeUndefined();
+  }, 2_000);
 
   it("refuses to delete anything but a request prefix", async () => {
     await expect(deletePrefix("m/")).rejects.toThrow(/request prefix/);
