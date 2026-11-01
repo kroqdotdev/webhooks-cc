@@ -18,6 +18,21 @@ describe("alert wording", () => {
     expect(lines.join(" ")).toContain("replay");
   });
 
+  it("says when no layout matched", () => {
+    const { summary, lines } = describeAlert(
+      {
+        kind: "fields",
+        subject: null,
+        resolved_at: null,
+        details: { missing: ["(no layout matched)"], streak: 2 },
+      },
+      "Orders",
+      null
+    );
+    expect(summary).toBe("Orders: no layout matched");
+    expect(lines[0]).toBe("2 emails in a row matched no layout.");
+  });
+
   it("words silence and destination alerts, open and resolved", () => {
     expect(
       describeAlert(

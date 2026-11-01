@@ -1,3 +1,4 @@
+import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 /**
  * The arithmetic of field alerts, apart from the database so it can be
  * tested on its own. An email's outcome is true when every required field
@@ -58,4 +59,30 @@ export function missingFields(
   required: readonly string[]
 ): string[] {
   return required.filter((name) => values?.[name] === null || values?.[name] === undefined);
+}
+
+/** Shown as the missing "field" when no layout matched or the parse failed. */
+export const NO_LAYOUT = "(no layout matched)";
+export const PARSE_FAILED = "(parse failed)";
+
+/**
+ * What an email on an endpoint with layouts lacks: a layout, or one of the
+ * required fields among the endpoint's email fields and its layout's fields
+ * (every one of them when no fields are named).
+ */
+export function layoutMissing(
+  parse: "none" | "pending" | "failed" | ParsedEmail,
+  emailValues: Record<string, string | null> | null,
+  emailFieldNames: readonly string[],
+  requiredNames: readonly string[] | null
+): string[] {
+  if (parse === "pending" || parse === "none") return [];
+  if (parse === "failed") return [PARSE_FAILED];
+  if (parse.status !== "matched") return [NO_LAYOUT];
+  const values = { ...(emailValues ?? {}), ...parse.fields };
+  const required = requiredFieldNames(
+    [...new Set([...emailFieldNames, ...Object.keys(parse.fields)])],
+    requiredNames
+  );
+  return missingFields(values, required);
 }

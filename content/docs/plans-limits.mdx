@@ -87,7 +87,7 @@ Monthly blocks and overage need the plan: if Pro or the team's subscription is c
 
 ## Data retention
 
-Captured requests, with any stored email and attachments, are deleted automatically, within the hour after they pass your plan's retention:
+Captured requests, with any stored email and attachments, are deleted automatically, within minutes after they pass your plan's retention:
 
 - **Free**: 7 days
 - **Pro**: 31 days
@@ -97,6 +97,17 @@ Captured requests, with any stored email and attachments, are deleted automatica
 An endpoint's owner can keep its requests for fewer days than the plan, or delete each request a minute after every destination has its copy or has given up ("deliver, then delete"); see [Retention](/docs/endpoints#retention). After a plan ends, its retention is kept for 7 more days before the shorter one applies.
 
 Deleted requests cannot be recovered. Export important requests as JSON or CSV from the dashboard before they expire.
+
+## Email parsing
+
+[Layouts](/docs/layouts) read each sender's emails into fields and line items on every plan. Parsing attachments (CSV, Excel, ODS, PDF text) is metered in pages: each started 1,000 rows of a sheet, each PDF page, or each text file is a page.
+
+| Plan | Parsed pages | Layouts per endpoint |
+| ---- | ------------ | -------------------- |
+| Free | 20 a month   | 2                    |
+| Pro  | 100 a month  | 2                    |
+
+Without pages left, emails are still captured and delivered with their attachments as files, unparsed. Free counts a month from the first parse; Pro counts with its 30-day request period.
 
 ## Teams and shared endpoints
 
@@ -143,7 +154,7 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Test webhook body size          | 1 MB                                               |
 | Email message size              | 10 MB                                              |
 | Recipients per email            | 20                                                 |
-| Original email kept up to       | 1 MB                                               |
+| Original email kept             | The whole message, up to 10 MB                     |
 | Forwarding answer timeout       | 15 seconds                                         |
 | Forwarding retries              | 8, over about a day (or 4 within an hour, or none) |
 | Deliveries waiting per endpoint | 1,000                                              |

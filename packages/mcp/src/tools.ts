@@ -38,6 +38,7 @@ import {
 import {
   capExtracts,
   capLists,
+  trimParsed,
   compactRequest,
   cutEmailText,
   cutStringToFit,
@@ -129,6 +130,60 @@ function conditionSchema(use: "response" | "filter") {
 }
 
 const ruleConditionSchema = conditionSchema("response");
+
+const emailFieldSchema = z.object({
+  name: z.string().describe("Letters, digits and _, starting with a letter: {{ fields.name }}"),
+  from: z
+    .enum(["subject", "text", "html", "from", "to", "header"])
+    .describe("What it reads; html is the HTML as text"),
+  header: z.string().optional().describe('The header name, for from "header"'),
+  pattern: z
+    .string()
+    .describe("RE2 regular expression; the first group is the value (no lookarounds)"),
+});
+
+const layoutSchema = z.object({
+  id: z.string().describe("Stable id: 1 to 40 letters, digits, - or _"),
+  name: z.string().max(100),
+  enabled: z.boolean().optional().describe("Off: kept but never matched (default on)"),
+  match: z
+    .object({
+      logic: z.enum(["and", "or"]).optional(),
+      conditions: z.array(conditionSchema("filter")).max(10),
+    })
+    .optional()
+    .describe("When it applies, e.g. the sender or subject; no conditions: every email"),
+  fields: z.array(emailFieldSchema).max(20).optional().describe("Named values, as emailFields"),
+  lineItems: z
+    .object({
+      from: z.enum(["text", "html", "attachment"]),
+      pattern: z
+        .string()
+        .optional()
+        .describe(
+          "text/html: RE2 with named groups found again and again, one row each, e.g. (?P<sku>[A-Z]+-\\d+)\\s+x(?P<qty>\\d+)"
+        ),
+      start: z.string().optional().describe("text/html: search only after this (RE2)"),
+      end: z.string().optional().describe("text/html: and before this (RE2)"),
+      attachment: z
+        .string()
+        .optional()
+        .describe("attachment: file name with * and ? (default: the first spreadsheet or CSV)"),
+      sheet: z.string().optional().describe("attachment: sheet name (default: the first)"),
+      columns: z
+        .array(z.object({ name: z.string(), column: z.string() }))
+        .max(30)
+        .optional()
+        .describe("attachment: { name, column: header text or letter }; default: every column"),
+    })
+    .nullable()
+    .optional()
+    .describe("Rows such as an order's products"),
+  parseAttachments: z
+    .boolean()
+    .optional()
+    .describe("Parse CSV, XLSX, ODS, PDF text and text files into the JSON; uses parsed pages"),
+});
 
 const destinationFields = {
   name: z.string().max(100).nullable().optional().describe("A name for the list and the log"),
@@ -840,6 +895,7 @@ const ESSENTIAL_DETAIL_FIELDS = [
   "subject",
   "from",
   "fields",
+  "parsed",
   "replyText",
   "size",
   "test",
@@ -895,6 +951,7 @@ function emailDetail(
     ...(includeHtml && html !== null ? { html } : {}),
   };
   shrinkToFit(detail, MAX_BODY_SIZE, [
+    () => trimParsed(detail),
     () => omitHeaders(detail),
     () => trimSpam(detail),
     () => capExtracts(detail),
@@ -1207,25 +1264,20 @@ export function registerTools(
         .optional()
         .describe("Pick codes and links out of emails (dashboard and forwarded JSON). Owner only."),
       emailFields: z
-        .array(
-          z.object({
-            name: z
-              .string()
-              .describe("Letters, digits and _, starting with a letter: {{ fields.name }}"),
-            from: z
-              .enum(["subject", "text", "html", "from", "to", "header"])
-              .describe("What it reads; html is the HTML as text"),
-            header: z.string().optional().describe('The header name, for from "header"'),
-            pattern: z
-              .string()
-              .describe("RE2 regular expression; the first group is the value (no lookarounds)"),
-          })
-        )
+        .array(emailFieldSchema)
         .max(20)
         .nullable()
         .optional()
         .describe(
           "Named fields picked out of every email: shown with it, `fields` in its JSON, read by forwarding templates and filters (email_field). Replaces the list; null or [] removes them. Owner only."
+        ),
+      layouts: z
+        .array(layoutSchema)
+        .max(50)
+        .nullable()
+        .optional()
+        .describe(
+          "How the endpoint reads each sender's emails: the first layout whose match holds applies its fields, line items and attachment parsing; the result is `parsed` in the email's JSON, and deliveries wait for it. The plan uses the first 2 (Business 50). Replaces the list; null or [] removes them. Try them with preview_layouts first. Owner only."
         ),
     },
     withErrorHandling(
@@ -1240,6 +1292,7 @@ export function registerTools(
         signingHeader,
         showEmailExtracts,
         emailFields,
+        layouts,
       }) => {
         const endpoint = await client.endpoints.update(slug, {
           name,
@@ -1251,10 +1304,30 @@ export function registerTools(
           signingHeader,
           showEmailExtracts,
           emailFields,
+          layouts,
         });
         return jsonContent(endpoint);
       }
     )
+  );
+
+  server.tool(
+    "preview_layouts",
+    "Dry run of an endpoint's layouts on a captured email: which layout matches, the fields and line items it finds, and what earlier parses of its attachments held. Nothing is saved and no pages are used. Pass layouts to try them before saving them with update_endpoint.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      requestId: z
+        .string()
+        .optional()
+        .describe("A captured email on the endpoint (default: the newest)"),
+      layouts: z.array(layoutSchema).max(50).optional().describe("Unsaved layouts to try"),
+    },
+    withErrorHandling(async ({ slug, requestId, layouts }) => {
+      const preview = await client.endpoints.previewLayouts(slug, { requestId, layouts });
+      const holder = { ...preview } as Record<string, unknown>;
+      shrinkToFit(holder, MAX_BODY_SIZE, [() => trimParsed(holder)]);
+      return jsonContent(holder);
+    })
   );
 
   server.tool(

@@ -1,0 +1,130 @@
+---
+title: "Layouts"
+description: "Read each sender's emails its own way: match conditions pick a layout, which finds named fields, turns an order's products into line items, and parses CSV, Excel, ODS and PDF attachments into rows and text."
+section: dashboard
+order: 5
+lastUpdated: 2026-10-29
+schema: none
+keywords:
+  [
+    "email parser",
+    "parse emails",
+    "email to rows",
+    "line items",
+    "parse csv attachments",
+    "parse excel attachments",
+    "pdf text extraction",
+    "email layouts",
+  ]
+seo:
+  ogTitle: "Layouts: Parse Emails into Fields, Line Items and Rows"
+  ogDescription: "Match each sender's emails to a layout, pick out fields, turn products into line items, and parse CSV, Excel, ODS and PDF attachments."
+---
+
+An endpoint that receives mail from more than one sender, or more than one kind of mail from the same sender, can read each kind its own way. A **layout** says which emails it is for, which values to pick out, which rows to turn into line items, and whether to parse the attachments. The result travels with the email as `parsed`: in the dashboard, in every [forwarded](/docs/forwarding) delivery, in the API, the SDKs and the MCP tools.
+
+Layouts build on [fields you pick out](/docs/email-capture#fields-you-pick-out): the endpoint's own fields still apply to every email, and each layout adds fields of its own.
+
+## Set it up
+
+Open the endpoint's **Settings**, then **Layouts**, and add one:
+
+1. **When it applies**: conditions in the same language as [destination filters](/docs/forwarding#send-only-some-captures), such as the email's subject containing "Order" or its sender ending in `@acme.example`. A layout without conditions takes every email.
+2. **Fields**: names and RE2 patterns, as on the Receiving page.
+3. **Line items**: where the repeating rows are (see below).
+4. **Parse attachments**: turn spreadsheets, CSV files, PDFs and text files into rows and text.
+
+Layouts are tried in order, and the first whose conditions hold is the email's layout. Put the most specific first. An email no layout matches is still captured and delivered, with `parsed.status` set to `no_layout`, and [alerts](/docs/forwarding#alerts) can tell you about it.
+
+Under the list, **Tried on** runs your draft on a captured email (the newest, or one you pick) and shows which layout matches and what it finds, before you save. The preview never parses attachments and never uses pages; it shows what an earlier parse of the email held.
+
+## Line items
+
+Line items turn a list in an email (the products of an order, the rows of a report) into rows of the same columns.
+
+**From the text or the HTML.** Give an RE2 pattern with named groups. It is found again and again, and each match is a row whose columns are the groups:
+
+```text
+(?P<sku>[A-Z]+-\d+)\s+x(?P<qty>\d+)\s+(?P<price>[\d.]+)
+```
+
+**Start after** and **Stop at** limit the search to the part of the email between two markers, such as `Items ordered` and `Subtotal`, so a footer that happens to look like an item is left out.
+
+**From a spreadsheet.** Pick the attachment by file name (`*.csv`, `orders-*.xlsx`; the first spreadsheet or CSV when empty) and the sheet (the first when empty). The first row is the header. Map columns to names by header text or letter (`Item code`, `B`), or leave the mapping empty to keep every column under its header. Reading a spreadsheet parses it, so it uses pages.
+
+An email has at most 1,000 line items. The columns come in the order you defined them, as `parsed.lineItemColumns`. A [Google Sheets](/docs/forwarding#google-sheets) destination can write one row per line item.
+
+## Attachments
+
+With **Parse attachments** on, or line items read from a spreadsheet, the email's attachments are parsed once, when it arrives:
+
+| Kind | Read as |
+| ---- | ------- |
+| CSV, TSV | Rows |
+| XLSX, XLS, ODS | Rows, per sheet (hidden sheets are skipped) |
+| PDF | The text layer, per page (no OCR for scanned pages) |
+| TXT, JSON, XML, ICS | Text |
+
+Attachments are parsed in a separate, sandboxed process with no network, no file access and limits on memory, time and output, so a hostile file cannot reach anything else. Files over 32 MB, encrypted files, archives that expand too far and malformed files are reported with an `error` instead. The parse is stored with the email, so the preview, every delivery and a [replay](/docs/forwarding#replay) use the same result and are never charged again. Only emails whose attachments are kept (see [Attachments](/docs/forwarding#attachments)) can be parsed.
+
+## Parsed pages
+
+Parsing attachments is metered in pages:
+
+- each started 1,000 rows of a sheet, CSV or TSV file is a page;
+- each PDF page is a page;
+- a text file is a page (its first 1 MB is read).
+
+Email bodies, fields and line items read from the text never count. A file uses at most 100 pages. The Free plan includes 20 parsed pages a month and Pro 100. When an account has no pages left, emails are still captured and delivered with their attachments as files, unparsed, and the attachment says `error: "limit"`; a file that would go past what is left is cut at the pages that remain.
+
+## The result
+
+`parsed` in the email's JSON:
+
+```json
+{
+  "status": "matched",
+  "layout": { "id": "orders", "name": "Acme orders" },
+  "fields": { "order": "1001" },
+  "lineItems": [
+    { "sku": "A-1", "qty": "2", "price": "9.50" },
+    { "sku": "B-7", "qty": "1", "price": "24.00" }
+  ],
+  "lineItemColumns": ["sku", "qty", "price"],
+  "attachments": [
+    { "index": 0, "filename": "order-1001.csv", "format": "csv", "pages": 1, "sheets": [...] }
+  ],
+  "pages": 1
+}
+```
+
+Each parsed attachment keeps its first 1,000 rows per sheet and its first 256 KB of text inline. [Templates](/docs/forwarding#your-own-json) read the result as `{{ parsed.fields.order }}`, and a Google Sheets destination that writes a row per line item reads each one as `{{ item.sku }}`.
+
+Emails on an endpoint with layouts are delivered once they are parsed, usually within seconds. Changing a layout does not touch emails already parsed; [replay](/docs/forwarding#replay) them to read them again and send them on.
+
+## Limits
+
+Your plan uses 2 layouts per endpoint on Free and Pro. An endpoint keeps up to 50, and layouts past what the plan uses are kept but not matched, shown as such in the list. Every pattern is RE2 with a bounded size, a line item pattern reads at most the first 512 KB of the text, and a line item's value is cut at 1,000 characters.
+
+## From code
+
+The endpoint's `layouts` are part of its settings: `PATCH /api/endpoints/{slug}` with a `layouts` list (owner only), and `POST /api/endpoints/{slug}/layouts/preview` with `layouts` and a `requestId` for a dry run. In the [TypeScript SDK](/docs/sdk/api):
+
+```typescript
+await client.endpoints.update("orders", {
+  layouts: [
+    {
+      id: "acme",
+      name: "Acme orders",
+      match: { conditions: [{ field: "email", name: "from", op: "ends_with", value: "@acme.example" }] },
+      fields: [{ name: "order", from: "subject", pattern: "Order (\\d+)" }],
+      lineItems: { from: "attachment", attachment: "*.csv" },
+    },
+  ],
+});
+
+const email = await client.emails.get(requestId);
+console.log(email.parsed?.lineItems);
+```
+
+The Python and Go SDKs read `parsed` (`request.parsed`, `Request.Parsed`) and take `layouts` on update. The MCP server's `update_endpoint` takes `layouts` and `preview_layouts` runs a dry run.

@@ -75,6 +75,8 @@ const HEARTBEAT_MS = 5 * 60_000;
 const PER_ENDPOINT = 2;
 /** Longer than a send can take (FORWARD_TIMEOUT_MS plus the proxy's margin). */
 const LEASE_SECONDS = 60;
+/** A Sheets batch is up to 50 rows in one append; its lease covers the token refresh and retries of the call. */
+const SHEETS_LEASE_SECONDS = 180;
 /** The notify proxy's cap (infra/notify-proxy); a larger body could never be delivered. */
 const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
 /**
@@ -108,7 +110,11 @@ export function forwardRequest(
 ): { body: string; headers: Record<string, string> } | null {
   if (request.kind !== "email" || !request.email) return null;
   const body = JSON.stringify(
-    buildEmailJson({ ...request, email: request.email }, endpoint, { includeExtracts, fields })
+    buildEmailJson({ ...request, email: request.email }, endpoint, {
+      includeExtracts,
+      fields,
+      parsed: request.parsed ?? null,
+    })
   );
   return { body, headers: forwardHeaders(secret, request.id, body) };
 }
@@ -611,7 +617,7 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
   const { data: more, error } = await createAdminClient().rpc("claim_destination_deliveries", {
     p_destination_id: claim.destination_id!,
     p_limit: 49,
-    p_lease_seconds: LEASE_SECONDS,
+    p_lease_seconds: SHEETS_LEASE_SECONDS,
   });
   if (error) throw error;
   const extra = (more ?? []).filter((row) => row.delivery_id !== claim.delivery_id);
@@ -632,6 +638,8 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
             request_id: row.request_id,
             attempt: row.attempt,
             kind: row.kind,
+            queued_at: row.queued_at,
+            bypass_filter: row.bypass_filter,
           },
           extraRequests.get(row.request_id),
         ] as const
@@ -658,6 +666,18 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
         await release(itemClaim, verdict.waitMs);
         continue;
       }
+      // A destination without a filter took its slot when queueing.
+      if (
+        itemClaim.throttle_seconds > 0 &&
+        hasConditions(itemClaim.destination_filter) &&
+        !(await takeSlot(itemClaim))
+      ) {
+        await skip(
+          itemClaim,
+          `Not sent: at most one every ${itemClaim.throttle_seconds} s, and one went out less than that before.`
+        );
+        continue;
+      }
     }
     batch.push({
       claim: itemClaim,
@@ -672,7 +692,16 @@ async function deliverSheets(claim: Claim, request: RequestRecord): Promise<void
   const started = performance.now();
   const facts: DeliveryFacts = { ...NO_FACTS, format: "sheets", target: "Google Sheets" };
   try {
-    const refreshToken = await googleRefreshTokenById(config.connectionId);
+    const { data: owner, error: ownerError } = await createAdminClient()
+      .from("endpoints")
+      .select("user_id")
+      .eq("id", claim.endpoint_id)
+      .maybeSingle<{ user_id: string | null }>();
+    if (ownerError) throw ownerError;
+    // Only the endpoint owner's own Google account writes its rows.
+    const refreshToken = owner?.user_id
+      ? await googleRefreshTokenById(config.connectionId, owner.user_id)
+      : null;
     if (!refreshToken) {
       for (const item of batch) {
         await fail(item.claim, "The Google account was disconnected. Connect it again.", true);

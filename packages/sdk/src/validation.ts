@@ -7,6 +7,7 @@ import {
 } from "./rules";
 import type { MockResponse, ResponseRule } from "./types";
 import { emailFieldIssues } from "./email/fields";
+import { layoutIssues } from "./layouts";
 
 export const MOCK_RESPONSE_STATUS_MIN = 100;
 export const MOCK_RESPONSE_STATUS_MAX = 599;
@@ -114,6 +115,13 @@ export function validateDestinationInput(input: { filter?: unknown }): void {
   }
   const issues = conditionsIssues(filter.conditions, { use: "filter" }, "filter.conditions");
   if (issues.length > 0) throw new Error(issues[0]);
+}
+
+/** Refuses a layout list the API would refuse (RE2 syntax and the plan's cap are checked by the server). */
+export function validateLayouts(layouts: unknown): void {
+  if (layouts === undefined || layouts === null) return;
+  const issues = layoutIssues(layouts);
+  if (issues.length > 0) throw new Error(`layouts: ${issues[0]}`);
 }
 
 /** Refuses a field list the API would refuse (names, sources, pattern length; RE2 syntax is checked by the server). */

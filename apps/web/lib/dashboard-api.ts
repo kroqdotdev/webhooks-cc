@@ -1,7 +1,7 @@
 "use client";
 
 import type { Condition, MockResponse } from "@webhooks-cc/sdk";
-import type { EmailField } from "@webhooks-cc/sdk/email";
+import type { EmailField, Layout, ParsedEmail } from "@webhooks-cc/sdk/email";
 import type { EmailCapture } from "@/lib/email-capture";
 import type { ClickHouseRequest, Request } from "@/types/request";
 
@@ -71,6 +71,10 @@ export interface DashboardEndpoint {
   retentionCapDays?: number;
   /** Requests are deleted once every delivery is settled. */
   deleteAfterDelivery?: boolean;
+  /** How the endpoint reads its emails; the first that matches applies (owner only to change). */
+  layouts?: Layout[];
+  /** Layouts the plan uses; later ones are kept but not used. */
+  layoutsCap?: number;
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
@@ -148,6 +152,7 @@ function toDashboardRequest(record: {
   detectedEvent?: string | null;
   kind?: "http" | "email";
   email?: EmailCapture | null;
+  parsed?: ParsedEmail | null;
 }): Request {
   return {
     _id: record.id,
@@ -170,6 +175,7 @@ function toDashboardRequest(record: {
     detectedEvent: record.detectedEvent ?? null,
     kind: record.kind ?? "http",
     email: record.email ?? null,
+    ...(record.parsed !== undefined ? { parsed: record.parsed } : {}),
   };
 }
 
@@ -666,17 +672,52 @@ export async function previewEmailFields(
   return readJson<EmailFieldsPreview>(response);
 }
 
-/** An email's named field values (null when the endpoint has none), found by the server with RE2. */
-export async function fetchEmailFieldValues(
+export interface LayoutsPreview {
+  problems: string[];
+  layoutsCap: number;
+  request: { id: string; subject: string | null; receivedAt: number } | null;
+  parsed: ParsedEmail | null;
+}
+
+/** What layouts (the saved ones when left out) find in an email; no pages are used. */
+export async function previewLayouts(
+  accessToken: string,
+  slug: string,
+  layouts?: Layout[],
+  requestId?: string
+): Promise<LayoutsPreview> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}/layouts/preview`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(layouts ? { layouts } : {}),
+        ...(requestId ? { requestId } : {}),
+      }),
+    })
+  );
+  return readJson<LayoutsPreview>(response);
+}
+
+/**
+ * What an opened email needs from the server: its named field values (RE2
+ * runs there; null when the endpoint has none) and its whole parsed result
+ * (lists carry only a summary).
+ */
+export async function fetchEmailDetails(
   accessToken: string,
   requestId: string
-): Promise<Record<string, string | null> | null> {
+): Promise<{ emailFields: Record<string, string | null> | null; parsed: ParsedEmail | null }> {
   const response = await fetch(
     `/api/requests/${encodeURIComponent(requestId)}?extracts=true`,
     withAuthHeaders(accessToken)
   );
-  const data = await readJson<{ emailFields?: Record<string, string | null> | null }>(response);
-  return data.emailFields ?? null;
+  const data = await readJson<{
+    emailFields?: Record<string, string | null> | null;
+    parsed?: ParsedEmail | null;
+  }>(response);
+  return { emailFields: data.emailFields ?? null, parsed: data.parsed ?? null };
 }
 
 /** The exact message from object storage (emails with `stored`). */

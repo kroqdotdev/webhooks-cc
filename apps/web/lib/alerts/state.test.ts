@@ -5,6 +5,9 @@ import {
   missShare,
   nextFieldState,
   requiredFieldNames,
+  layoutMissing,
+  NO_LAYOUT,
+  PARSE_FAILED,
 } from "./state";
 
 describe("field alert state", () => {
@@ -38,5 +41,33 @@ describe("field alert state", () => {
     expect(requiredFieldNames(["a", "b"], ["b", "gone"])).toEqual(["b"]);
     expect(missingFields({ a: "1", b: null }, ["a", "b"])).toEqual(["b"]);
     expect(missingFields(null, ["a"])).toEqual(["a"]);
+  });
+});
+
+describe("layout misses", () => {
+  const parsed = (fields: Record<string, string | null>) => ({
+    status: "matched" as const,
+    layout: { id: "orders", name: "Orders" },
+    fields,
+    lineItems: [],
+    lineItemColumns: [],
+    attachments: [],
+    pages: 0,
+  });
+
+  it("counts no layout and a failed parse as misses, and waits for a pending parse", () => {
+    expect(
+      layoutMissing({ ...parsed({}), status: "no_layout", layout: null }, {}, [], null)
+    ).toEqual([NO_LAYOUT]);
+    expect(layoutMissing("failed", {}, [], null)).toEqual([PARSE_FAILED]);
+    expect(layoutMissing("pending", {}, [], null)).toEqual([]);
+    expect(layoutMissing("none", {}, [], null)).toEqual([]);
+  });
+
+  it("checks the layout's fields and the endpoint's, every one unless some are named", () => {
+    const parse = parsed({ order: "1001", total: null });
+    expect(layoutMissing(parse, { ref: "x" }, ["ref"], null)).toEqual(["total"]);
+    expect(layoutMissing(parse, { ref: null }, ["ref"], ["order"])).toEqual([]);
+    expect(layoutMissing(parse, { ref: null }, ["ref"], ["ref", "order"])).toEqual(["ref"]);
   });
 });

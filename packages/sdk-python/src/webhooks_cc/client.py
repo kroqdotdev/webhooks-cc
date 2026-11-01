@@ -66,6 +66,7 @@ from .models import (
     DestinationTestResult,
     EmailField,
     Endpoint,
+    LayoutsPreview,
     RenderedEmail,
     Request,
     RequestKind,
@@ -840,6 +841,9 @@ class Endpoints:
         email_fields: Sequence[Mapping[str, Any] | EmailField] | None = UNSET,
         forward_enabled: bool = UNSET,
         forward_url: str | None = UNSET,
+        retention_days: int | None = UNSET,
+        delete_after_delivery: bool = UNSET,
+        layouts: Sequence[Mapping[str, Any]] | None = UNSET,
     ) -> Endpoint:
         """Change an endpoint's settings.
 
@@ -852,6 +856,12 @@ class Endpoints:
         ``{"name": "invoice", "from": "subject", "pattern": r"(INV-\\d+)"}``. A list
         :func:`~webhooks_cc.email.email_field_issues` finds fault with is refused
         before anything is sent.
+
+        ``retention_days`` keeps requests fewer days than the plan does (``None``
+        for the plan's); ``delete_after_delivery`` deletes each once every delivery
+        is settled. ``layouts`` replaces how the endpoint reads its emails, in the
+        shape the API takes (see https://webhooks.cc/docs/layouts); the server
+        checks them, RE2 included. All three are owner only.
         """
         _validate_segment(slug, "slug")
         if email_fields is not UNSET and email_fields is not None:
@@ -878,9 +888,37 @@ class Endpoints:
             "emailFields": email_fields,
             "forwardEnabled": forward_enabled,
             "forwardUrl": forward_url,
+            "retentionDays": retention_days,
+            "deleteAfterDelivery": delete_after_delivery,
+            "layouts": [dict(layout) for layout in layouts]
+            if layouts is not UNSET and layouts is not None
+            else layouts,
         }
         body = {key: value for key, value in fields.items() if value is not UNSET}
         return Endpoint.from_dict(self._client._api("PATCH", f"/endpoints/{slug}", body=body))
+
+    def preview_layouts(
+        self,
+        slug: str,
+        *,
+        layouts: Sequence[Mapping[str, Any]] = UNSET,
+        request_id: str | None = None,
+    ) -> LayoutsPreview:
+        """Which layout a captured email matches, with its fields and line items.
+
+        Runs on ``request_id`` (by default the endpoint's newest email) with the
+        saved layouts, or with ``layouts`` you have not saved. Nothing is saved and
+        no pages are used: attachments show an earlier parse, never a new one.
+        """
+        _validate_segment(slug, "slug")
+        body: dict[str, Any] = {}
+        if request_id is not None:
+            body["requestId"] = request_id
+        if layouts is not UNSET:
+            body["layouts"] = [dict(layout) for layout in layouts]
+        return LayoutsPreview.from_dict(
+            self._client._api("POST", f"/endpoints/{slug}/layouts/preview", body=body)
+        )
 
     def preview_response(
         self,

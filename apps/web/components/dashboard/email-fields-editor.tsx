@@ -67,6 +67,7 @@ export function EmailFieldsEditor({
   disabled,
   showRequired,
   emailAddress,
+  requestId,
 }: {
   slug: string;
   fields: EmailField[];
@@ -75,6 +76,8 @@ export function EmailFieldsEditor({
   /** Show "is required" problems (after a save attempt). */
   showRequired: boolean;
   emailAddress: string;
+  /** Try the fields on this email instead of the newest. */
+  requestId?: string;
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
@@ -95,7 +98,7 @@ export function EmailFieldsEditor({
     if (!accessToken || fields.length === 0 || local.length > 0) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      previewEmailFields(accessToken, slug, fields)
+      previewEmailFields(accessToken, slug, fields, requestId)
         .then((result) => !cancelled && setPreview(result))
         .catch(() => !cancelled && setPreview(null));
     }, 350);
@@ -105,7 +108,7 @@ export function EmailFieldsEditor({
     };
     // draftKey stands for `fields`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, slug, draftKey, local.length]);
+  }, [accessToken, slug, draftKey, local.length, requestId]);
 
   const update = (index: number, change: Partial<EmailField>) => {
     const next = fields.map((field, i) => {
@@ -228,7 +231,8 @@ export function EmailFieldsEditor({
         {fields.length > 0 &&
           (preview?.request ? (
             <span className="text-xs text-muted-foreground">
-              Tried on the newest email, &ldquo;{preview.request.subject || "(no subject)"}&rdquo;,{" "}
+              Tried on {requestId ? "the email" : "the newest email"}, &ldquo;
+              {preview.request.subject || "(no subject)"}&rdquo;,{" "}
               {formatAgo(preview.request.receivedAt)}.
             </span>
           ) : preview ? (

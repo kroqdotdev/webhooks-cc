@@ -268,6 +268,47 @@ async function openAlerts(endpointId: string) {
 }
 
 describe("alerts", () => {
+  it("leaves a notice another pass has claimed until that claim runs out", async () => {
+    const target = await endpoint("alerts claimed");
+    const notify = await createDestination(target.id, {
+      url: `${base}/alerts-claimed`,
+      format: "json",
+      email: false,
+      http: false,
+    });
+    await saveAlertSettings(target.id, {
+      ...DEFAULT_ALERT_SETTINGS,
+      enabled: true,
+      notifyEmail: false,
+      notifyDestinationIds: [notify.id],
+    });
+    const { data: event, error } = await admin
+      .from("alert_events")
+      .insert({ endpoint_id: target.id, kind: "silence", details: { hours: 6 } })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const sent = () => received.filter((r) => r.path === "/alerts-claimed").length;
+
+    // A first pass claimed it (claim_alert_notices) and is still sending: a
+    // second pass started now leaves it alone.
+    await admin
+      .from("alert_events")
+      .update({ notify_claimed_until: new Date(Date.now() + 120_000).toISOString() })
+      .eq("id", event.id);
+    await notifyAlerts();
+    expect(sent()).toBe(0);
+
+    // The first pass died and its claim ran out: a later pass sends it, once.
+    await admin
+      .from("alert_events")
+      .update({ notify_claimed_until: new Date(Date.now() - 1_000).toISOString() })
+      .eq("id", event.id);
+    await notifyAlerts();
+    await notifyAlerts();
+    expect(sent()).toBe(1);
+  });
+
   it("sends a notice once when two passes run at the same time", async () => {
     const target = await endpoint("alerts once");
     const notify = await createDestination(target.id, {
@@ -342,6 +383,56 @@ describe("alerts", () => {
       "alert.resolved"
     );
     expect(getLastMessageForEmail(ownerEmail)?.subject).toMatch(/^Resolved:/);
+  });
+
+  it("scores each email once, however many arrive within the hour", async () => {
+    const target = await endpoint("alerts burst");
+    await updateEndpointBySlugForUser({
+      userId,
+      slug: target.slug,
+      emailFields: [{ name: "order", from: "subject", pattern: "Order #(\\d+)" }],
+    });
+    // Counts misses only: the alert never opens at this threshold.
+    await saveAlertSettings(target.id, {
+      ...DEFAULT_ALERT_SETTINGS,
+      enabled: true,
+      fieldFailures: 100,
+      destinationFailures: false,
+      notifyEmail: false,
+    });
+    // 800 emails in the last 40 minutes, more than the 500 ids the checker
+    // remembers: before the fix, older ones were scored again and the cursor
+    // stopped moving.
+    const start = Date.now() - 40 * 60_000;
+    const rows = Array.from({ length: 800 }, (_, i) => ({
+      endpoint_id: target.id,
+      user_id: userId,
+      method: "EMAIL",
+      path: `${target.slug}@mailhooks.cc`,
+      ip: "192.0.2.10",
+      kind: "email",
+      received_at: new Date(start + i * 3000).toISOString(),
+      email: { subject: `Receipt ${i}`, text: "no order here" },
+    }));
+    for (let i = 0; i < rows.length; i += 200) {
+      const { error } = await admin.from("requests").insert(rows.slice(i, i + 200));
+      if (error) throw error;
+    }
+    await admin
+      .from("endpoint_alerts")
+      .update({ created_at: new Date(start - 60_000).toISOString() })
+      .eq("endpoint_id", target.id);
+    for (let i = 0; i < 6; i++) {
+      await dueNow(target.id);
+      await runAlertChecks();
+    }
+    const { data } = await admin
+      .from("endpoint_alerts")
+      .select("failure_streak, checked_through")
+      .eq("endpoint_id", target.id)
+      .single();
+    expect(data!.failure_streak).toBe(800);
+    expect(Date.parse(data!.checked_through!)).toBe(Date.parse(rows[799].received_at));
   });
 
   it("opens a silence alert when no email arrives for the hours set", async () => {

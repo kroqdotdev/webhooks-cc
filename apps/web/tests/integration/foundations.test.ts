@@ -225,6 +225,14 @@ describe("retention", () => {
       .update({ status: "succeeded", finished_at: new Date().toISOString() })
       .eq("request_id", old);
     await admin.rpc("cleanup_delivered_requests", {});
+    // Kept a few minutes after its delivery finished, so alerts see it.
+    expect(await remaining([old, fresh])).toEqual(new Set([old, fresh]));
+
+    await admin
+      .from("email_deliveries")
+      .update({ finished_at: new Date(Date.now() - 4 * 60_000).toISOString() })
+      .eq("request_id", old);
+    await admin.rpc("cleanup_delivered_requests", {});
     // The fresh row is under a minute old and stays for the dashboard.
     expect(await remaining([old, fresh])).toEqual(new Set([fresh]));
   });
@@ -285,6 +293,45 @@ describe("periods", () => {
     const until = Date.parse(String(user.retention_floor_until));
     expect(until).toBeGreaterThan(Date.now() + 6 * DAY);
     expect(until).toBeLessThan(Date.now() + 8 * DAY);
+  });
+
+  it("keeps the grace on any downgrade path, and only for a downgrade", async () => {
+    // A Polar revoke writes the plan directly; the trigger keeps the floor.
+    const userId = await createUser({ plan: "pro", subscription_status: "active" });
+    await admin.from("users").update({ plan: "free" }).eq("id", userId);
+    const { data: user } = await admin
+      .from("users")
+      .select("retention_floor_days, retention_floor_until")
+      .eq("id", userId)
+      .single();
+    expect(user?.retention_floor_days).toBe(ENTITLEMENTS.pro.retentionDays);
+    expect(Date.parse(String(user?.retention_floor_until))).toBeGreaterThan(Date.now() + 6 * DAY);
+
+    // An upgrade sets nothing.
+    const upgraded = await createUser({ plan: "free" });
+    await admin.from("users").update({ plan: "business" }).eq("id", upgraded);
+    const { data: up } = await admin
+      .from("users")
+      .select("retention_floor_days")
+      .eq("id", upgraded)
+      .single();
+    expect(up?.retention_floor_days).toBeNull();
+
+    // Teams: dropping Team Business keeps its days.
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: `floor-${ts}`, created_by: userId, business: true })
+      .select("id")
+      .single();
+    expect(error).toBeNull();
+    await admin.from("teams").update({ business: false }).eq("id", team!.id);
+    const { data: after } = await admin
+      .from("teams")
+      .select("retention_floor_days")
+      .eq("id", team!.id)
+      .single();
+    expect(after?.retention_floor_days).toBe(ENTITLEMENTS.team_business.retentionDays);
+    await admin.from("teams").delete().eq("id", team!.id);
   });
 
   it("starts lazy daily periods from the entitlements on capture", async () => {

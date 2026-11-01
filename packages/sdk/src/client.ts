@@ -30,6 +30,8 @@ import type {
   UpdateEndpointOptions,
   PreviewResponseOptions,
   ResponsePreview,
+  PreviewLayoutsOptions,
+  LayoutsPreview,
   Destination,
   DestinationInput,
   DestinationPreview,
@@ -70,6 +72,7 @@ import type {
   RenderedEmail,
 } from "./types";
 import type { EmailReceivedEvent, RequestKind } from "./email/types";
+import type { ParsedEmail } from "./email/layouts";
 import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/address";
 import { buildEmailJson } from "./email/json";
 import { isEmailRequest, matchEmail } from "./matchers";
@@ -89,6 +92,7 @@ import { WebhookFlowBuilder } from "./flow";
 import {
   validateDestinationInput,
   validateEmailFields,
+  validateLayouts,
   validateMockResponse,
   validateResponseRules,
 } from "./validation";
@@ -1088,8 +1092,19 @@ export class WebhooksCC {
               "{ name, from: subject|text|html|from|to|header, header?, pattern (RE2) }[]|null? (owner only, at most 20)",
             forwardEnabled: "boolean? (owner only; needs forwardUrl)",
             forwardUrl: "string|null? (owner only)",
-            retentionDays: "number|null? — keep requests fewer days than the plan (owner only)",
-            deleteAfterDelivery: "boolean? — delete once every delivery is settled (owner only)",
+            retentionDays: "number|null?: keep requests fewer days than the plan (owner only)",
+            deleteAfterDelivery: "boolean?: delete once every delivery is settled (owner only)",
+            layouts:
+              "Layout[]|null?: how emails are read: match conditions, fields, lineItems, parseAttachments; the first match applies (owner only)",
+          },
+        },
+        previewLayouts: {
+          description:
+            "Dry run: which layout a captured email matches, with its fields and line items. Nothing is saved; no pages are used.",
+          params: {
+            slug: "string",
+            layouts: "Layout[]?: try unsaved layouts",
+            requestId: "string?: a captured email (default: the newest)",
           },
         },
         delete: {
@@ -1614,6 +1629,7 @@ export class WebhooksCC {
         validateResponseRules(options.responseRules);
       }
       validateEmailFields(options.emailFields);
+      validateLayouts(options.layouts);
       return this.request<Endpoint>("PATCH", `/endpoints/${slug}`, options);
     },
 
@@ -1633,6 +1649,20 @@ export class WebhooksCC {
     ): Promise<{ requests: number; queued: number }> => {
       validatePathSegment(slug, "slug");
       return this.request("POST", `/endpoints/${slug}/replay`, range);
+    },
+
+    /**
+     * What layouts find in a captured email (the endpoint's newest unless
+     * `requestId` is given), with the saved layouts unless `layouts` are
+     * given. Nothing is saved, nothing is sent and no pages are used. Owner only.
+     */
+    previewLayouts: async (
+      slug: string,
+      options: PreviewLayoutsOptions = {}
+    ): Promise<LayoutsPreview> => {
+      validatePathSegment(slug, "slug");
+      validateLayouts(options.layouts);
+      return this.request<LayoutsPreview>("POST", `/endpoints/${slug}/layouts/preview`, options);
     },
 
     /**
@@ -1915,6 +1945,8 @@ export class WebhooksCC {
         includeExtracts?: boolean;
         /** The endpoint's named fields, found; `emails.get()` gives them as `emailFields`. */
         fields?: Record<string, string | null> | null;
+        /** What the endpoint's layouts found; the request's `parsed` by default. */
+        parsed?: ParsedEmail | null;
       } = {}
     ): EmailReceivedEvent => {
       const local = email.path.slice(0, Math.max(0, email.path.lastIndexOf("@")));
@@ -1932,6 +1964,7 @@ export class WebhooksCC {
         {
           includeExtracts: options.includeExtracts,
           fields: options.fields !== undefined ? options.fields : (email.emailFields ?? null),
+          parsed: options.parsed !== undefined ? options.parsed : (email.parsed ?? null),
         }
       );
     },

@@ -88,6 +88,10 @@ class EmailAttachment:
     size: int
     content_id: str | None
     inline: bool
+    url: str | None = None
+    """A signed download link, in deliveries whose destination sends links."""
+    content: str | None = None
+    """The contents, base64-encoded, in deliveries whose destination sends them inline."""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> EmailAttachment:
@@ -97,6 +101,8 @@ class EmailAttachment:
             size=int(_number(data.get("size"))),
             content_id=_str_or_none(data.get("contentId")),
             inline=data.get("inline") is True,
+            url=_str_or_none(data.get("url")),
+            content=_str_or_none(data.get("content")),
         )
 
 
@@ -128,6 +134,9 @@ class EmailCapture:
     smtp: dict[str, Any] | None
     parse_error: bool
     truncated: dict[str, bool]
+    stored: bool = False
+    """The exact message and the attachments' contents are kept: download them with
+    ``requests.raw()`` and ``requests.attachment()``."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -163,6 +172,127 @@ class EmailCapture:
             truncated={str(key): value is True for key, value in truncated.items()}
             if isinstance(truncated, Mapping)
             else {},
+            stored=data.get("stored") is True,
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class ParsedAttachment:
+    """One attachment a layout parsed: its sheets' rows or its text, and the pages it used."""
+
+    index: int
+    filename: str | None
+    format: str
+    """``csv``, ``tsv``, ``xlsx``, ``xls``, ``ods``, ``pdf`` or ``text``."""
+    pages: int
+    """Billable pages this parse used (0 when an earlier parse was read again)."""
+    sheets: list[dict[str, Any]] | None
+    """For spreadsheets: each sheet's ``name``, ``rows`` (the first 1,000), ``rowCount``
+    and ``truncated``."""
+    text: str | None
+    truncated: bool
+    error: str | None
+    """Why it was not parsed: ``limit`` (no pages left), ``not_kept``, ``too_large``,
+    ``malformed``, ``encrypted``, ``zip_bomb`` or ``empty``."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> ParsedAttachment:
+        sheets = data.get("sheets")
+        return cls(
+            index=int(_number(data.get("index"))),
+            filename=_str_or_none(data.get("filename")),
+            format=str(data.get("format") or ""),
+            pages=int(_number(data.get("pages"))),
+            sheets=[dict(sheet) for sheet in sheets if isinstance(sheet, Mapping)]
+            if isinstance(sheets, list)
+            else None,
+            text=_str_or_none(data.get("text")),
+            truncated=data.get("truncated") is True,
+            error=_str_or_none(data.get("error")),
+        )
+
+
+@dataclass(frozen=True)
+class ParsedEmail:
+    """What an endpoint's layouts found in an email: ``parsed`` in its JSON.
+
+    Layouts run only on webhooks.cc's servers, so this SDK reads the result and
+    never parses itself.
+    """
+
+    status: Literal["matched", "no_layout"]
+    """``no_layout`` when no layout's conditions held (a parse failure)."""
+    layout: dict[str, str] | None
+    """The layout that applied: its ``id`` and ``name``."""
+    fields: dict[str, str | None]
+    line_items: list[dict[str, str | None]]
+    line_item_columns: list[str]
+    """The line items' columns in order."""
+    attachments: list[ParsedAttachment]
+    pages: int
+    """Pages this email used."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> ParsedEmail:
+        layout = data.get("layout")
+        fields = data.get("fields")
+        items = data.get("lineItems")
+        columns = data.get("lineItemColumns")
+        attachments = data.get("attachments")
+        return cls(
+            status="matched" if data.get("status") == "matched" else "no_layout",
+            layout={str(key): str(value) for key, value in layout.items()}
+            if isinstance(layout, Mapping)
+            else None,
+            fields={str(key): _str_or_none(value) for key, value in fields.items()}
+            if isinstance(fields, Mapping)
+            else {},
+            line_items=[
+                {str(key): _str_or_none(value) for key, value in item.items()}
+                for item in items
+                if isinstance(item, Mapping)
+            ]
+            if isinstance(items, list)
+            else [],
+            line_item_columns=[column for column in columns if isinstance(column, str)]
+            if isinstance(columns, list)
+            else [],
+            attachments=[
+                ParsedAttachment.from_dict(item)
+                for item in attachments
+                if isinstance(item, Mapping)
+            ]
+            if isinstance(attachments, list)
+            else [],
+            pages=int(_number(data.get("pages"))),
+        )
+
+
+@dataclass(frozen=True)
+class LayoutsPreview:
+    """What ``endpoints.preview_layouts()`` reports. No pages are used."""
+
+    problems: list[str]
+    """What is wrong with the layouts tried, if any."""
+    layouts_cap: int
+    request_id: str | None
+    """The email it ran on; ``None`` when the endpoint has none yet."""
+    parsed: ParsedEmail | None
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> LayoutsPreview:
+        problems = data.get("problems")
+        request = data.get("request")
+        parsed = data.get("parsed")
+        return cls(
+            problems=[item for item in problems if isinstance(item, str)]
+            if isinstance(problems, list)
+            else [],
+            layouts_cap=int(_number(data.get("layoutsCap"))),
+            request_id=_str_or_none(request.get("id")) if isinstance(request, Mapping) else None,
+            parsed=ParsedEmail.from_dict(parsed) if isinstance(parsed, Mapping) else None,
             raw=dict(data),
         )
 
@@ -286,6 +416,9 @@ class Request:
     reply_text: str | None = None
     """The new text of a reply, without the quoted message and the signature; ``None``
     when the email quotes no earlier message. Set on emails read through this client."""
+    parsed: ParsedEmail | None = None
+    """What the endpoint's layouts found, once the parse is done (emails on endpoints
+    with layouts)."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -322,6 +455,9 @@ class Request:
             if isinstance(fields, Mapping)
             else None,
             reply_text=_str_or_none(data.get("replyText")),
+            parsed=ParsedEmail.from_dict(data["parsed"])
+            if isinstance(data.get("parsed"), Mapping)
+            else None,
             raw=dict(data),
         )
 
@@ -387,6 +523,17 @@ class Endpoint:
     show_email_extracts: bool | None = None
     email_fields: list[EmailField] | None = None
     """The named fields picked out of every email the endpoint captures (owner only)."""
+    retention_days: int | None = None
+    """Days requests are kept here; ``None`` keeps them as long as the plan does."""
+    retention_cap_days: int | None = None
+    """The longest retention this endpoint may have: its plan's (owner only)."""
+    delete_after_delivery: bool | None = None
+    """Requests are deleted once every delivery is settled (owner only)."""
+    layouts: list[dict[str, Any]] | None = None
+    """How the endpoint reads its emails, in the shape the API takes; the first whose
+    ``match`` holds applies (owner only)."""
+    layouts_cap: int | None = None
+    """Layouts the plan uses; later ones are kept but not used (owner only)."""
     forward_enabled: bool | None = None
     forward_url: str | None = None
     shared_with: list[TeamShare] = field(default_factory=list)
@@ -426,6 +573,15 @@ class Endpoint:
             ]
             if isinstance(email_fields, list)
             else None,
+            retention_days=_int_or_none(data.get("retentionDays")),
+            retention_cap_days=_int_or_none(data.get("retentionCapDays")),
+            delete_after_delivery=data.get("deleteAfterDelivery")
+            if isinstance(data.get("deleteAfterDelivery"), bool)
+            else None,
+            layouts=[dict(item) for item in data["layouts"] if isinstance(item, Mapping)]
+            if isinstance(data.get("layouts"), list)
+            else None,
+            layouts_cap=_int_or_none(data.get("layoutsCap")),
             forward_enabled=data.get("forwardEnabled")
             if isinstance(data.get("forwardEnabled"), bool)
             else None,
