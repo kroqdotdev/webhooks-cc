@@ -440,6 +440,7 @@ export interface Database {
           signing_secret_encrypted: string | null;
           signing_header: string | null;
           show_email_extracts: boolean;
+          site: string;
           /** Named fields picked out of every email (migration 00064). */
           email_fields: Json;
           forward_enabled: boolean;
@@ -477,6 +478,7 @@ export interface Database {
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
           show_email_extracts?: boolean;
+          site?: string;
           email_fields?: Json;
           forward_enabled?: boolean;
           forward_url?: string | null;
@@ -511,6 +513,7 @@ export interface Database {
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
           show_email_extracts?: boolean;
+          site?: string;
           email_fields?: Json;
           forward_enabled?: boolean;
           forward_url?: string | null;

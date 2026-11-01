@@ -7,6 +7,7 @@ import { Menu, X } from "lucide-react";
 import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
 import { UserDropdown } from "@/components/nav/user-dropdown";
+import { SiteSwitchRow, SiteSwitcher } from "@/components/nav/site-switcher";
 import { siteHeaderTop } from "@/lib/announcements";
 import { resetUser } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
@@ -101,9 +102,12 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
         {/* In compact mode on phones this group dissolves (display: contents), so
             the context can wrap onto its own full-width row under the wordmark. */}
         <div className={cn("flex items-center gap-3 min-w-0", compact && "max-md:contents")}>
-          <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
-            {site.name}
-          </Link>
+          <div className="flex items-center gap-1 shrink-0">
+            <Link href="/" className="font-bold text-lg tracking-tight">
+              {site.name}
+            </Link>
+            <SiteSwitcher />
+          </div>
           {compact && children ? (
             <div className="flex items-center gap-3 min-w-0 max-md:order-last max-md:w-full">
               {children}
@@ -150,6 +154,7 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
           className="md:hidden absolute top-full left-0 right-0 border-t-strong border-line bg-background clean:bg-card shadow-raised"
         >
           <div className="px-4 py-4 flex flex-col gap-3">
+            <SiteSwitchRow onNavigate={() => setOpen(false)} />
             {links.map((link) => (
               <Link
                 key={link.href}

@@ -1,5 +1,5 @@
 import { auditUserAction } from "@/lib/audit";
-import { SITE_HEADER, parseSite } from "@/lib/site";
+import { SITE_HEADER, isEndpointSite, parseSite } from "@/lib/site";
 import { rememberHomeSite } from "@/lib/supabase/home-site";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
@@ -64,6 +64,7 @@ export async function GET(request: Request) {
       fromTeams: ep.fromTeams,
       emailAddress: ep.emailAddress,
       showEmailExtracts: ep.showEmailExtracts,
+      site: ep.site,
       forwardEnabled: ep.forwardEnabled,
       hasForwardSecret: ep.hasForwardSecret,
     }));
@@ -97,6 +98,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "Name must be between 1 and 100 characters" }, { status: 400 });
   }
 
+  // Which site's dashboard lists it: the dashboard sends the site it is on;
+  // the API, SDKs, CLI and MCP leave it out and get both.
+  if (body.site !== undefined && !isEndpointSite(body.site)) {
+    return Response.json(
+      { error: 'site must be "webhooks", "mailhooks" or "both"' },
+      { status: 400 }
+    );
+  }
+
   if (body.isEphemeral !== undefined && typeof body.isEphemeral !== "boolean") {
     return Response.json({ error: "isEphemeral must be a boolean" }, { status: 400 });
   }
@@ -126,6 +136,7 @@ export async function POST(request: Request) {
     const created = await createEndpointForUser({
       userId: auth.userId,
       name,
+      site: isEndpointSite(body.site) ? body.site : undefined,
       isEphemeral,
       expiresAt,
       mockResponse:

@@ -167,6 +167,23 @@ describe("WebhooksCC", () => {
     });
   });
 
+  describe("endpoints.create with site", () => {
+    it("sends the site when given and leaves it out otherwise", async () => {
+      const fetchMock = mockFetch({
+        body: { id: "ep1", slug: "abc123", site: "mailhooks", createdAt: Date.now() },
+      });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.endpoints.create({ name: "Orders", site: "mailhooks" });
+      expect(result.site).toBe("mailhooks");
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).site).toBe("mailhooks");
+
+      await client.endpoints.create({ name: "Hooks" });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty("site");
+    });
+  });
+
   describe("endpoints.create with notificationUrl", () => {
     it("includes notificationUrl in POST body when provided", async () => {
       const endpoint = {

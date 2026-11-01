@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.55.4";
+export const APP_VERSION = "0.56.0";
 export const CLI_VERSION = "1.6.0";
 export const SDK_VERSION = "1.19.0";
 export const PYTHON_SDK_VERSION = "0.3.0";
@@ -26,6 +26,18 @@ export const MCP_VERSION = "1.15.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.56.0",
+    date: "2026-11-01",
+    title: "One Account, Two Sites",
+    track: "web",
+    items: [
+      "A switcher beside the name at the top of every page moves between webhooks.cc and mailhooks.cc, and keeps you signed in on the way",
+      "An endpoint is listed on the site it was made on, or on both: choose when you create it, or later under Settings, Receiving. Its HTTP URL and email address work either way",
+      "Endpoints made before, and those made through the API, the SDKs, the CLI or the MCP server, are listed on both sites",
+      "The API and the TypeScript SDK take a site when creating or updating an endpoint",
+    ],
+  },
   {
     version: "0.55.4",
     date: "2026-11-01",

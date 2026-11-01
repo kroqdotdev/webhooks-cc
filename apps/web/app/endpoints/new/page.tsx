@@ -12,6 +12,9 @@ import { parseStatusCode } from "@/lib/http";
 import Link from "next/link";
 import { trackEndpointCreated } from "@/lib/analytics";
 import { createDashboardEndpoint } from "@/lib/dashboard-api";
+import { useSite } from "@/components/providers/site-provider";
+import { twoSites, type EndpointSite } from "@/lib/site";
+import { EndpointSiteField } from "@/components/dashboard/endpoint-site-field";
 
 export default function NewEndpointPage() {
   return (
@@ -24,8 +27,10 @@ export default function NewEndpointPage() {
 function NewEndpointForm() {
   const router = useRouter();
   const { session } = useAuth();
+  const site = useSite();
 
   const [name, setName] = useState("");
+  const [listedOn, setListedOn] = useState<EndpointSite>(site.key);
   const [mockStatus, setMockStatus] = useState("200");
   const [mockBody, setMockBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,6 +49,7 @@ function NewEndpointForm() {
 
       const result = await createDashboardEndpoint(accessToken, {
         name: name || undefined,
+        ...(twoSites() ? { site: listedOn } : {}),
         mockResponse: mockBody
           ? {
               status: parseStatusCode(mockStatus, 200),
@@ -66,7 +72,7 @@ function NewEndpointForm() {
       <header className="border-b">
         <div className="container mx-auto px-4 h-16 flex items-center">
           <Link href="/dashboard" className="font-bold text-xl">
-            webhooks.cc
+            {site.name}
           </Link>
         </div>
       </header>
@@ -85,6 +91,8 @@ function NewEndpointForm() {
             />
             <p className="text-sm text-muted-foreground">A friendly name for this endpoint</p>
           </div>
+
+          {twoSites() && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
 
           <div className="border rounded-lg p-4 space-y-4">
             <h2 className="font-semibold">Mock Response (optional)</h2>

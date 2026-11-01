@@ -20,6 +20,7 @@ import { reportError } from "@/lib/observability";
 export type AuditAction =
   | "account.deleted"
   | "account.name_updated"
+  | "account.site_switch"
   | "api_key.created"
   | "api_key.deleted"
   | "billing.checkout_started"

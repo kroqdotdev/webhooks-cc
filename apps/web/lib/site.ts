@@ -78,6 +78,56 @@ export function parseSite(value: string | null | undefined): SiteKey {
   return value === "mailhooks" ? "mailhooks" : "webhooks";
 }
 
+/** Whether the app serves two sites (NEXT_PUBLIC_MAILHOOKS_URL is set). */
+export function twoSites(): boolean {
+  return mailhooksOrigin() !== null;
+}
+
+/** The site that is not this one. */
+export function otherSite(site: SiteKey): SiteKey {
+  return site === "mailhooks" ? "webhooks" : "mailhooks";
+}
+
+/**
+ * Which site's dashboard lists an endpoint (migration 00078). Only the
+ * listing: every endpoint keeps both addresses and captures both kinds.
+ */
+export type EndpointSite = SiteKey | "both";
+
+export const ENDPOINT_SITES: readonly EndpointSite[] = ["webhooks", "mailhooks", "both"];
+
+export function isEndpointSite(value: unknown): value is EndpointSite {
+  return value === "webhooks" || value === "mailhooks" || value === "both";
+}
+
+/**
+ * Whether a site's dashboard lists an endpoint. With one site every endpoint
+ * is listed, and an endpoint without a site (an older client's copy) is
+ * listed on both.
+ */
+export function listedOn(endpointSite: EndpointSite | undefined, site: SiteKey): boolean {
+  if (!twoSites()) return true;
+  return endpointSite === undefined || endpointSite === "both" || endpointSite === site;
+}
+
+/**
+ * The header switcher's link to the other site. Signed in, it goes through
+ * /auth/switch (lib/site-switch.ts) and lands on `nextPath` signed in there;
+ * signed out, it is the other site's home page.
+ */
+export function siteSwitchUrl(target: SiteKey, nextPath: string, signedIn: boolean): string {
+  const origin = siteOrigin(target);
+  if (!signedIn) return `${origin}/`;
+  const url = new URL("/auth/switch/start", origin);
+  url.searchParams.set("next", nextPath);
+  return url.toString();
+}
+
+/** Where an endpoint's dashboard link should go: its own site, or this one when it is on both. */
+export function endpointHomeSite(endpointSite: EndpointSite | undefined, site: SiteKey): SiteKey {
+  return endpointSite === "webhooks" || endpointSite === "mailhooks" ? endpointSite : site;
+}
+
 /** The site's origin for a request, from its Host (for return URLs and links). */
 export function requestSiteOrigin(request: Request): string {
   return siteOrigin(siteForHost(request.headers.get("host")));
