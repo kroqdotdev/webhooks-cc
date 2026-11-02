@@ -71,14 +71,16 @@ export function applyCarriedConsent() {
     .find((part) => part.startsWith(`${name}=`))
     ?.slice(name.length + 1);
   if (carried !== "granted" && carried !== "denied") return;
-  document.cookie = secure
-    ? `${name}=; Path=/; Max-Age=0; SameSite=Lax; Secure`
-    : `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
   const here = analyticsConsent();
   if (carried === "denied" && here !== "denied") declineAnalytics();
   if (carried === "granted" && here === "pending" && !browserDeclinesTracking()) {
     acceptAnalytics();
   }
+  // A decline storage refused stays carried, for the next page load to retry.
+  if (carried === "denied" && analyticsConsent() !== "denied") return;
+  document.cookie = secure
+    ? `${name}=; Path=/; Max-Age=0; SameSite=Lax; Secure`
+    : `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
 export function openCookieSettings() {

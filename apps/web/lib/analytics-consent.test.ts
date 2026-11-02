@@ -111,6 +111,15 @@ describe("consent carried from the other site", () => {
     expect(optIn).not.toHaveBeenCalled();
   });
 
+  it("keeps a carried decline that storage refused, for the next page to retry", () => {
+    consent = "granted";
+    optOut.mockImplementationOnce(() => {});
+    visit("https:", "__Host-whk_consent_carry=denied");
+    applyCarriedConsent();
+    expect(optOut).toHaveBeenCalledTimes(1);
+    expect(cookies).toEqual([]);
+  });
+
   it("reads the plain cookie in local development over http", () => {
     visit("http:", "whk_consent_carry=granted");
     applyCarriedConsent();
