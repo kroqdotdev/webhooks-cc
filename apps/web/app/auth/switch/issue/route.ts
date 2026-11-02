@@ -78,6 +78,7 @@ export async function GET(request: Request) {
       to,
       next,
       expires: Date.now() + TICKET_LIFETIME_MS,
+      consent: grant.consent,
     });
     await auditUserAction(request, user.id, {
       action: "account.site_switch",

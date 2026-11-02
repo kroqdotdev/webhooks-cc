@@ -33,6 +33,12 @@ import type { SiteKey } from "@/lib/site";
  * made for one account (someone's own, planted in a link) signs no one in
  * from another browser; finish uses up a ticket it refuses, so a copy of it
  * cannot be tried again. GoTrue's token is never in a URL unsealed.
+ *
+ * The page's analytics choice from the cookie banner rides along in the
+ * grant and the ticket, and finish hands it to the page in a short-lived
+ * cookie (consentCarryCookie), so one choice covers both sites for a person
+ * who moves between them. It comes only from the signed-in page itself,
+ * sealed all the way, so no other page can choose for anyone.
  */
 
 const COOKIE_NAME = "whcc_site_switch";
@@ -90,10 +96,18 @@ export function nonceMatches(nonce: string | null, expectedHash: string): boolea
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+/** The cookie banner's answer on the site switched from, when it had one. */
+export type CarriedConsent = "granted" | "denied";
+
+export function parseCarriedConsent(value: unknown): CarriedConsent | undefined {
+  return value === "granted" || value === "denied" ? value : undefined;
+}
+
 /** What the signed-in page asked for: a switch of this account, soon. */
 export interface SwitchGrant {
   userId: string;
   expires: number;
+  consent?: CarriedConsent;
 }
 
 export interface SwitchTicket {
@@ -108,6 +122,22 @@ export interface SwitchTicket {
   /** The page to land on there, a path. */
   next: string;
   expires: number;
+  consent?: CarriedConsent;
+}
+
+const CONSENT_COOKIE_NAME = "whk_consent_carry";
+/** As for the nonce: over https no other host, go.webhooks.cc included, can set it. */
+const SECURE_CONSENT_COOKIE_NAME = `__Host-${CONSENT_COOKIE_NAME}`;
+
+/**
+ * The carried choice for the page finish lands on, which applies it and
+ * clears it (lib/analytics-consent.ts). Readable by scripts on purpose:
+ * posthog-js keeps the choice in localStorage, which only the page can write.
+ */
+export function consentCarryCookie(consent: CarriedConsent, secure: boolean): string {
+  return secure
+    ? `${SECURE_CONSENT_COOKIE_NAME}=${consent}; Path=/; Max-Age=120; SameSite=Lax; Secure`
+    : `${CONSENT_COOKIE_NAME}=${consent}; Path=/; Max-Age=120; SameSite=Lax`;
 }
 
 /** The ticket key from SIGNING_SECRET_KEY, or null when it is missing or not 32 bytes. */
@@ -166,6 +196,7 @@ export function openGrant(sealed: string, now = Date.now()): SwitchGrant | null 
   if (!grant || typeof grant.userId !== "string" || typeof grant.expires !== "number") {
     return null;
   }
+  if (grant.consent !== undefined && !parseCarriedConsent(grant.consent)) return null;
   return grant.expires > now ? grant : null;
 }
 
@@ -183,7 +214,8 @@ export function openTicket(sealed: string, now = Date.now()): SwitchTicket | nul
     typeof ticket.nonce !== "string" ||
     (ticket.to !== "webhooks" && ticket.to !== "mailhooks") ||
     typeof ticket.next !== "string" ||
-    typeof ticket.expires !== "number"
+    typeof ticket.expires !== "number" ||
+    (ticket.consent !== undefined && !parseCarriedConsent(ticket.consent))
   ) {
     return null;
   }

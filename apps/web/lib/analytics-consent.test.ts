@@ -21,7 +21,8 @@ vi.mock("posthog-js", () => ({
 
 vi.stubGlobal("window", {});
 
-const { acceptAnalytics, declineAnalytics, analyticsConsent } = await import("./analytics-consent");
+const { acceptAnalytics, analyticsConsent, applyCarriedConsent, declineAnalytics } =
+  await import("./analytics-consent");
 const { clearPendingUser, identifyUser, reportAuthenticatedUser, resetUser } =
   await import("./analytics");
 
@@ -55,5 +56,64 @@ describe("analytics consent", () => {
     clearPendingUser();
     acceptAnalytics();
     expect(identify).not.toHaveBeenCalled();
+  });
+});
+
+describe("consent carried from the other site", () => {
+  let cookies: string[];
+  function visit(protocol: "https:" | "http:", cookie: string, doNotTrack = "0") {
+    cookies = [];
+    vi.stubGlobal("window", { location: { protocol } });
+    vi.stubGlobal("navigator", { doNotTrack });
+    vi.stubGlobal("document", {
+      get cookie() {
+        return cookie;
+      },
+      set cookie(value: string) {
+        cookies.push(value);
+      },
+    });
+  }
+
+  beforeEach(() => {
+    consent = "pending";
+    optIn.mockClear();
+    optOut.mockClear();
+  });
+
+  it("answers a banner not yet answered here, and clears the cookie", () => {
+    visit("https:", "theme=dark; __Host-whk_consent_carry=granted");
+    applyCarriedConsent();
+    expect(optIn).toHaveBeenCalledTimes(1);
+    expect(cookies).toEqual(["__Host-whk_consent_carry=; Path=/; Max-Age=0; SameSite=Lax; Secure"]);
+  });
+
+  it("never overrides a decline made here with an accept, but a decline always applies", () => {
+    consent = "denied";
+    visit("https:", "__Host-whk_consent_carry=granted");
+    applyCarriedConsent();
+    expect(optIn).not.toHaveBeenCalled();
+
+    consent = "granted";
+    visit("https:", "__Host-whk_consent_carry=denied");
+    applyCarriedConsent();
+    expect(optOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a cookie without the __Host- prefix over https, and Do Not Track wins", () => {
+    visit("https:", "whk_consent_carry=granted");
+    applyCarriedConsent();
+    expect(optIn).not.toHaveBeenCalled();
+    expect(cookies).toEqual([]);
+
+    visit("https:", "__Host-whk_consent_carry=granted", "1");
+    applyCarriedConsent();
+    expect(optIn).not.toHaveBeenCalled();
+  });
+
+  it("reads the plain cookie in local development over http", () => {
+    visit("http:", "whk_consent_carry=granted");
+    applyCarriedConsent();
+    expect(optIn).toHaveBeenCalledTimes(1);
   });
 });

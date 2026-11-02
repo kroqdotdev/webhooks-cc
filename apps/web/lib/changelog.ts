@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.58.0";
+export const APP_VERSION = "0.58.1";
 export const CLI_VERSION = "1.7.0";
 export const SDK_VERSION = "1.20.0";
 export const PYTHON_SDK_VERSION = "0.4.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.58.1",
+    date: "2026-11-02",
+    title: "One Analytics Choice for Both Sites",
+    track: "web",
+    items: [
+      "Switching between webhooks.cc and mailhooks.cc while signed in now takes your cookie banner choice along, so you are not asked again on the other site. An accept only answers a banner you have not answered there; a decline always comes along",
+    ],
+  },
   {
     version: "0.58.0",
     date: "2026-11-02",

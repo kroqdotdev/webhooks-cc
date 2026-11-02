@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearSwitchCookie,
+  consentCarryCookie,
   isNonceHash,
   newNonce,
   nonceHash,
@@ -77,6 +78,22 @@ describe("site switch grants", () => {
     expect(openGrant(sealedTicket)).toBeNull();
     const sealedGrant = sealGrant({ userId: "x", expires: Date.now() + 1000 });
     expect(openTicket(sealedGrant)).toBeNull();
+  });
+  it("carries the cookie banner answer, and only a real one", () => {
+    const grant = { userId: "x", expires: Date.now() + 1000, consent: "granted" as const };
+    expect(openGrant(sealGrant(grant))?.consent).toBe("granted");
+    expect(openGrant(sealGrant({ ...grant, consent: "maybe" as unknown as "granted" }))).toBeNull();
+    expect(openTicket(sealTicket(ticket({ consent: "denied" })))?.consent).toBe("denied");
+  });
+});
+
+describe("carried consent cookie", () => {
+  it("is a __Host- cookie over https that scripts can read", () => {
+    const cookie = consentCarryCookie("granted", true);
+    expect(cookie).toMatch(/^__Host-whk_consent_carry=granted; Path=\/;/);
+    expect(cookie).toContain("Secure");
+    expect(cookie).not.toContain("HttpOnly");
+    expect(consentCarryCookie("denied", false)).toMatch(/^whk_consent_carry=denied; Path=\/;/);
   });
 });
 

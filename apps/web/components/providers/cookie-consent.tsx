@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   acceptAnalytics,
   analyticsConsent,
+  applyCarriedConsent,
   browserDeclinesTracking,
   declineAnalytics,
   OPEN_COOKIE_SETTINGS_EVENT,
@@ -26,8 +27,12 @@ export function CookieConsent() {
 
   useEffect(() => {
     // After PostHogProvider's own effect has run posthog.init, which sets up
-    // where the choice is read from.
-    const timer = setTimeout(() => setOpen(analyticsConsent() === "pending"), 0);
+    // where the choice is read from. A switch from the other site may have
+    // brought the answer along.
+    const timer = setTimeout(() => {
+      applyCarriedConsent();
+      setOpen(analyticsConsent() === "pending");
+    }, 0);
     const reopen = () => {
       setFocusOnOpen(true);
       setOpen(true);
