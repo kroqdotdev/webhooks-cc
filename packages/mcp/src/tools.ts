@@ -330,6 +330,13 @@ const mockResponseSchema = z.object({
 // Argument shapes the sandbox tools share with the full ones (sandbox-tools.ts),
 // so a tool keeps its arguments when the server swaps to the full set.
 
+/** Which site's dashboard lists an endpoint; listing only, both addresses capture either way. */
+const endpointSiteSchema = z
+  .enum(["webhooks", "mailhooks", "both"])
+  .describe(
+    "Which site's dashboard lists the endpoint: webhooks (webhooks.cc), mailhooks (mailhooks.cc) or both (the default when creating). Only the listing: its HTTP URL and email address work either way. Owner only to change."
+  );
+
 export const createEndpointShape = {
   name: z.string().optional().describe("Display name for the endpoint"),
   ephemeral: z.boolean().optional().describe("Create a temporary endpoint that auto-expires"),
@@ -351,6 +358,7 @@ export const createEndpointShape = {
     .describe(
       "URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)"
     ),
+  site: endpointSiteSchema.optional(),
   signingProvider: z
     .string()
     .optional()
@@ -1104,6 +1112,7 @@ export function registerTools(
         mockResponse,
         responseRules,
         notificationUrl,
+        site,
         signingProvider,
         signingSecret,
         signingHeader,
@@ -1128,6 +1137,7 @@ export function registerTools(
           mockResponse,
           responseRules,
           notificationUrl,
+          site,
         });
         // Configure signing after creation (create doesn't support signing fields yet)
         if (signingProvider && signingSecret) {
@@ -1263,6 +1273,7 @@ export function registerTools(
         .boolean()
         .optional()
         .describe("Pick codes and links out of emails (dashboard and forwarded JSON). Owner only."),
+      site: endpointSiteSchema.optional(),
       emailFields: z
         .array(emailFieldSchema)
         .max(20)
@@ -1291,6 +1302,7 @@ export function registerTools(
         signingSecret,
         signingHeader,
         showEmailExtracts,
+        site,
         emailFields,
         layouts,
       }) => {
@@ -1303,6 +1315,7 @@ export function registerTools(
           signingSecret,
           signingHeader,
           showEmailExtracts,
+          site,
           emailFields,
           layouts,
         });

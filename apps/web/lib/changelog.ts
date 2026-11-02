@@ -18,11 +18,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.56.0";
-export const CLI_VERSION = "1.6.0";
-export const SDK_VERSION = "1.19.0";
-export const PYTHON_SDK_VERSION = "0.3.0";
-export const GO_SDK_VERSION = "0.3.0";
-export const MCP_VERSION = "1.15.1";
+export const CLI_VERSION = "1.7.0";
+export const SDK_VERSION = "1.20.0";
+export const PYTHON_SDK_VERSION = "0.4.0";
+export const GO_SDK_VERSION = "0.4.0";
+export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
@@ -1718,6 +1718,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.7.0",
+    date: "2026-11-02",
+    title: "Parsed Emails",
+    track: "cli",
+    items: [
+      "whk requests get and the TUI's request detail show what an email's layout found: its fields, its line items as a table fitted to the terminal, and its parsed attachments",
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-10-28",
     title: "The Agent Sandbox",
@@ -1939,6 +1948,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.20.0",
+    date: "2026-11-02",
+    title: "Layouts, Attachments and Alerts",
+    track: "sdk",
+    items: [
+      "`endpoints.update()` takes `layouts`, `retentionDays`, `deleteAfterDelivery` and `site`; `endpoints.previewLayouts()` tries layouts on a captured email before you save them, and a request's `parsed` holds what its layout found: fields, line items and parsed attachments",
+      "`requests.raw()` downloads an email's exact message and `requests.attachment()` one of its attachments, with its name and type; `requests.redeliver()` and `endpoints.redeliver()` send captured requests through the destinations again",
+      "`alerts.get()` and `alerts.update()` read and change an endpoint's alerts, and `destinations.create()` takes Google Sheets and file drop settings and how attachments travel",
+      "`endpoints.create()` takes `site`, which site's dashboard lists the endpoint (`webhooks`, `mailhooks` or `both`, the default); placeholders read `{{ parsed.* }}`, and the inbound provider shapes carry attachment contents when the email has them",
+    ],
+  },
   {
     version: "1.19.0",
     date: "2026-10-28",
@@ -2287,6 +2308,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.4.0",
+    date: "2026-11-02",
+    title: "Layouts and Downloads",
+    track: "python",
+    items: [
+      "`endpoints.update()` takes `layouts`, `retention_days`, `delete_after_delivery` and `site`, `endpoints.create()` takes `site`, and `endpoints.preview_layouts()` tries layouts on a captured email; a request's `parsed` holds what its layout found",
+      "`requests.raw()` downloads an email's exact message and `requests.attachment()` one of its attachments, with its name and type",
+      "Destinations read the `sheets` and `file_drop` formats",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-10-28",
     title: "The Agent Sandbox",
@@ -2358,6 +2390,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.4.0",
+    date: "2026-11-02",
+    title: "Layouts and Downloads",
+    track: "go",
+    items: [
+      "`Endpoints.Update` takes `Layouts`, `RetentionDays`, `DeleteAfterDelivery` and `Site`, `Endpoints.Create` takes `Site`, and `Endpoints.PreviewLayouts` tries layouts on a captured email; a request's `Parsed` holds what its layout found",
+      "`Requests.Raw` downloads an email's exact message and `Requests.Attachment` one of its attachments, with its name and type",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-10-28",
     title: "The Agent Sandbox",
@@ -2407,6 +2449,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.16.0",
+    date: "2026-11-02",
+    title: "Layouts for Agents",
+    track: "mcp",
+    items: [
+      "`preview_layouts` tries an endpoint's layouts on a captured email, and `update_endpoint` takes `layouts`; emails carry `parsed`, what their layout found, trimmed to fit the output budget",
+      "`create_endpoint` and `update_endpoint` take `site`, which site's dashboard lists the endpoint",
+    ],
+  },
   {
     version: "1.15.1",
     date: "2026-10-29",

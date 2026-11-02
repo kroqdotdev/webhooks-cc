@@ -28,6 +28,7 @@ Create a new webhook endpoint. Returns the endpoint slug and full URL.
 | `signingProvider` | `string`  | no       | Provider for automatic signature verification (e.g., `stripe`, `github`)     |
 | `signingSecret`   | `string`  | no       | Signing secret (encrypted server-side). Required when signingProvider is set |
 | `signingHeader`   | `string`  | no       | Custom header name (only for `generic-hmac` provider)                        |
+| `site`            | `string`  | no       | Which site's dashboard lists it: `webhooks`, `mailhooks` or `both` (default) |
 
 **mockResponse fields:**
 
@@ -80,6 +81,7 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `signingSecret`     | `string`  | no       | New signing secret (encrypted server-side), or `null` to clear                |
 | `signingHeader`     | `string`  | no       | Custom header name (only for `generic-hmac`), or `null` to clear              |
 | `showEmailExtracts` | `boolean` | no       | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
+| `site`              | `string`  | no       | Which site's dashboard lists it: `webhooks`, `mailhooks` or `both`; owner only |
 | `emailFields`       | `array`   | no       | Named fields to pick out of every email, `{ name, from, header?, pattern }` (RE2), at most 20; replaces the list, `null` or `[]` removes them; owner only. See [Fields you pick out](/docs/email-capture#fields-you-pick-out) |
 | `layouts`           | `array`   | no       | How the endpoint reads each sender's emails: `{ id, name, enabled?, match?, fields?, lineItems?, parseAttachments? }`, the first whose `match` holds applies; replaces the list, `null` or `[]` removes them; owner only. See [Layouts](/docs/layouts) |
 
