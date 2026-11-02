@@ -37,22 +37,13 @@ function urls() {
 export interface GoogleConfig {
   clientId: string;
   clientSecret: string;
-  /** For the Drive Picker in the browser; optional. */
-  pickerApiKey: string | null;
-  /** The Cloud project number, the Picker's app id; optional. */
-  projectNumber: string | null;
 }
 
 export function googleConfig(): GoogleConfig | null {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) return null;
-  return {
-    clientId,
-    clientSecret,
-    pickerApiKey: process.env.GOOGLE_PICKER_API_KEY?.trim() || null,
-    projectNumber: process.env.GOOGLE_CLOUD_PROJECT_NUMBER?.trim() || null,
-  };
+  return { clientId, clientSecret };
 }
 
 export class GoogleError extends Error {
@@ -333,6 +324,87 @@ export function authorizationUrl(
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
   return { url: url.toString(), browserNonce };
+}
+
+/**
+ * Choosing a spreadsheet from Drive: Google's picker as a page of its own
+ * (trigger_onepick on the consent URL), opened in a pop-up, rather than the
+ * embedded picker, whose docs.google.com frame needs third-party cookies and
+ * shows a blank page (401) in browsers that block them. Picking a file is
+ * what grants the app access to it (drive.file, per Google account), so the
+ * code Google sends along is never exchanged: the connection's own token
+ * reaches the file from then on.
+ *
+ * Google comes back to the one registered callback, which sends the browser
+ * on to the picked page of the site the pick started on, with the file and
+ * the nonce the dashboard made; the dashboard takes only its own nonce. The
+ * state is sealed under a key of its own, so it never passes for a
+ * connection's state, and it keeps the callback from sending anyone
+ * anywhere but our own sites.
+ */
+export interface PickState {
+  site: "webhooks" | "mailhooks";
+  nonce: string;
+  expires: number;
+}
+
+const PICK = "google drive pick state";
+
+/** The dashboard's nonce for one pick: 32 random bytes, base64url. */
+export function isPickNonce(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value);
+}
+
+export function sealPickState(state: PickState): string {
+  return sealWith(PICK, state);
+}
+
+export function openPickState(sealed: string, now = Date.now()): PickState | null {
+  const state = openWith(PICK, sealed) as Partial<PickState> | null;
+  if (
+    !state ||
+    (state.site !== "webhooks" && state.site !== "mailhooks") ||
+    !isPickNonce(state.nonce) ||
+    typeof state.expires !== "number" ||
+    state.expires <= now
+  ) {
+    return null;
+  }
+  return state as PickState;
+}
+
+/** The first file id Google says was picked, if it looks like one. */
+export function pickedFileId(value: string | null): string | null {
+  const id = value?.split(",", 1)[0]?.trim() ?? "";
+  return /^[A-Za-z0-9_-]{10,200}$/.test(id) ? id : null;
+}
+
+/**
+ * Google's picker for spreadsheets, for the Google account a connection
+ * holds (login_hint), coming back to the callback with the pick state.
+ */
+export function pickerUrl(
+  config: GoogleConfig,
+  site: "webhooks" | "mailhooks",
+  nonce: string,
+  loginHint: string | null
+): string {
+  const url = new URL(urls().auth);
+  url.searchParams.set("client_id", config.clientId);
+  url.searchParams.set("redirect_uri", callbackUrl());
+  url.searchParams.set("response_type", "code");
+  // The only scope Google allows with the picker.
+  url.searchParams.set("scope", "https://www.googleapis.com/auth/drive.file");
+  // Both required by Google to show the picker.
+  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("trigger_onepick", "true");
+  url.searchParams.set("mimetypes", "application/vnd.google-apps.spreadsheet");
+  if (loginHint) url.searchParams.set("login_hint", loginHint);
+  url.searchParams.set(
+    "state",
+    sealPickState({ site, nonce, expires: Date.now() + STATE_LIFETIME_MS })
+  );
+  return url.toString();
 }
 
 /** The cookie header value that holds the nonce for the callback, for 15 minutes. */
