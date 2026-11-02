@@ -34,7 +34,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "A switcher beside the name at the top of every page moves between webhooks.cc and mailhooks.cc, and keeps you signed in on the way",
       "An endpoint is listed on the site it was made on, or on both: choose when you create it, or later under Settings, Receiving. Its HTTP URL and email address work either way",
-      "Endpoints made before, and those made through the API, the SDKs, the CLI or the MCP server, are listed on both sites",
+      "Endpoints made before are listed on both sites, and so are those made through the API, the SDKs, the CLI or the MCP server unless they name a site",
       "The API and the TypeScript SDK take a site when creating or updating an endpoint",
     ],
   },

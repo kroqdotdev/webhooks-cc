@@ -278,7 +278,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       return Response.json(
         {
           error:
-            "Only the endpoint owner can update email, retention, notification, forwarding or signing settings",
+            "Only the endpoint owner can update where it is listed, or its email, retention, notification, forwarding or signing settings",
         },
         { status: 403 }
       );

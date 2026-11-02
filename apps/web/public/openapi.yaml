@@ -2987,16 +2987,20 @@ components:
           maxLength: 2048
           description: URL to POST a JSON summary to after each captured request
         site:
-          $ref: "#/components/schemas/EndpointSite"
+          allOf:
+            - $ref: "#/components/schemas/EndpointSite"
+          default: both
+          description: |
+            Which site's dashboard lists the new endpoint. The dashboard sends the site it is on;
+            left out, it is `both`.
 
     EndpointSite:
       type: string
       enum: [webhooks, mailhooks, both]
-      default: both
       description: |
         Which site's dashboard lists the endpoint: webhooks.cc, mailhooks.cc or both. Only the
         listing: every endpoint keeps its HTTP URL and email address and captures both, whatever
-        this says. The dashboard sets the site it creates an endpoint on; left out, it is `both`.
+        this says.
 
     UpdateEndpointRequest:
       type: object
