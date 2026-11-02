@@ -150,7 +150,11 @@ describe("choosing a spreadsheet from Drive", () => {
       }
       close() {}
     }
-    const script = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1] ?? "";
+    // The page has exactly one script, which our own route wrote.
+    const script = page.slice(
+      page.indexOf("<script>") + "<script>".length,
+      page.indexOf("</script>")
+    );
     new Function("BroadcastChannel", "history", "location", "window", script)(
       FakeChannel,
       { replaceState() {} },
