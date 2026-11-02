@@ -7,15 +7,24 @@ import { createAdminClient } from "./admin";
  * kept but never shown, since every read goes through their endpoints.
  */
 
+const FAVORITES_PAGE = 1000;
+
 /** The ids of every endpoint the person marked, whether or not they can open it now. */
 export async function listFavoriteEndpointIds(userId: string): Promise<Set<string>> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("endpoint_favorites")
-    .select("endpoint_id")
-    .eq("user_id", userId);
-  if (error) throw error;
-  return new Set((data ?? []).map((row) => row.endpoint_id));
+  const ids = new Set<string>();
+  // In pages, because PostgREST caps a read at its max rows without an error.
+  for (let from = 0; ; from += FAVORITES_PAGE) {
+    const { data, error } = await admin
+      .from("endpoint_favorites")
+      .select("endpoint_id")
+      .eq("user_id", userId)
+      .order("endpoint_id")
+      .range(from, from + FAVORITES_PAGE - 1);
+    if (error) throw error;
+    for (const row of data ?? []) ids.add(row.endpoint_id);
+    if (!data || data.length < FAVORITES_PAGE) return ids;
+  }
 }
 
 export async function isFavoriteEndpoint(userId: string, endpointId: string): Promise<boolean> {

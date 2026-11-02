@@ -178,11 +178,28 @@ impl Screen for EndpointsScreen {
     fn handle_message(&mut self, msg: Message) {
         match msg {
             Message::EndpointsLoaded(Ok(list)) => {
+                // Keep the highlight on the same endpoint: a reload can move
+                // it, since favourites are listed first.
+                let selected_slug = self
+                    .table_state
+                    .selected()
+                    .and_then(|i| self.endpoints.get(i))
+                    .map(|ep| ep.slug.clone());
                 self.endpoints = list.owned;
                 self.endpoints.extend(list.shared);
                 self.endpoints.sort_by(|a, b| a.slug.cmp(&b.slug));
                 favorites_first(&mut self.endpoints);
-                if !self.endpoints.is_empty() && self.table_state.selected().is_none() {
+                let kept = selected_slug
+                    .and_then(|slug| self.endpoints.iter().position(|ep| ep.slug == slug));
+                if kept.is_some() {
+                    self.table_state.select(kept);
+                } else if self.endpoints.is_empty() {
+                    self.table_state.select(None);
+                } else if self
+                    .table_state
+                    .selected()
+                    .is_none_or(|i| i >= self.endpoints.len())
+                {
                     self.table_state.select(Some(0));
                 }
                 self.state = State::Loaded;

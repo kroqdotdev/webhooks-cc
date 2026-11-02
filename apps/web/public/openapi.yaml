@@ -254,6 +254,12 @@ paths:
           $ref: "#/components/responses/FavoriteResult"
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
+        "403":
+          description: Claimed account required (an unowned agent key is rejected)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -271,6 +277,12 @@ paths:
           $ref: "#/components/responses/FavoriteResult"
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
+        "403":
+          description: Claimed account required (an unowned agent key is rejected)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":

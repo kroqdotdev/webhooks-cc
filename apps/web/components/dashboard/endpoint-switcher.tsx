@@ -58,8 +58,10 @@ export function EndpointSwitcher() {
         }
       } catch (error) {
         console.error("Failed to load endpoints for switcher:", error);
+        // A failed reload keeps the last list, so the switcher and its star
+        // stay usable; only a first load that fails leaves it empty.
         if (!cancelled && seq === loads) {
-          setData({ owned: [], shared: [] });
+          setData((prev) => prev ?? { owned: [], shared: [] });
         }
       }
     };

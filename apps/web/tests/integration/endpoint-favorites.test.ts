@@ -147,12 +147,29 @@ describe("endpoint favourites", () => {
     expect(asOwner.owned.find((ep) => ep.slug === endpoint.slug)?.favorite).toBe(false);
     expect((await read(owner.apiKey, endpoint.slug)).favorite).toBe(false);
 
+    const favouritesOf = async () => {
+      const { count, error } = await admin
+        .from("endpoint_favorites")
+        .select("endpoint_id", { count: "exact", head: true })
+        .eq("endpoint_id", endpoint.id);
+      if (error) throw error;
+      return count;
+    };
+
+    // Once the share is revoked the member can neither mark nor unmark it,
+    // and their favourite is kept (unseen) in case the share comes back.
+    const { error: revokeError } = await admin
+      .from("team_endpoints")
+      .delete()
+      .eq("team_id", team.id)
+      .eq("endpoint_id", endpoint.id);
+    if (revokeError) throw revokeError;
+    expect((await favorite(member.apiKey, endpoint.slug, false)).status).toBe(404);
+    expect((await favorite(member.apiKey, endpoint.slug, true)).status).toBe(404);
+    expect(await favouritesOf()).toBe(1);
+
     // Deleting the endpoint deletes every favourite of it.
     await admin.from("endpoints").delete().eq("id", endpoint.id);
-    const { count } = await admin
-      .from("endpoint_favorites")
-      .select("endpoint_id", { count: "exact", head: true })
-      .eq("endpoint_id", endpoint.id);
-    expect(count).toBe(0);
+    expect(await favouritesOf()).toBe(0);
   });
 });
