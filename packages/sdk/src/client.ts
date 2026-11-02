@@ -1066,6 +1066,7 @@ export class WebhooksCC {
             responseRules:
               "ResponseRule[]?: ordered conditional rules (first match wins, max 50). Each rule has conditions (field/op/value: method, path, header, query, body, body_path, content_type, size with eq, neq, contains, not_contains, starts_with, ends_with, matches, regex, exists, not_exists, gt, gte, lt, lte) and a response whose body and header values may use {{ placeholders }} such as {{ json.id }}.",
             notificationUrl: "string?",
+            site: "webhooks|mailhooks|both?: which site's dashboard lists it (default both)",
           },
         },
         list: {
@@ -1089,6 +1090,7 @@ export class WebhooksCC {
               "ResponseRule[]|null? — conditional rules (first match wins), or null to clear",
             notificationUrl: "string?",
             showEmailExtracts: "boolean? (owner only)",
+            site: "webhooks|mailhooks|both?: which site's dashboard lists it (owner only)",
             emailFields:
               "{ name, from: subject|text|html|from|to|header, header?, pattern (RE2) }[]|null? (owner only, at most 20)",
             forwardEnabled: "boolean? (owner only; needs forwardUrl)",
@@ -1591,6 +1593,9 @@ export class WebhooksCC {
         body.responseRules = options.responseRules;
       }
 
+      if (options.site !== undefined) {
+        body.site = options.site;
+      }
       const isEphemeral = options.ephemeral === true || options.expiresIn !== undefined;
       if (isEphemeral) {
         body.isEphemeral = true;

@@ -3,6 +3,7 @@
 import type { Condition, MockResponse } from "@webhooks-cc/sdk";
 import type { EmailField, Layout, ParsedEmail } from "@webhooks-cc/sdk/email";
 import type { EmailCapture } from "@/lib/email-capture";
+import type { EndpointSite } from "@/lib/site";
 import type { ClickHouseRequest, Request } from "@/types/request";
 
 export type ResponseRuleCondition = Condition;
@@ -43,6 +44,8 @@ export interface DashboardEndpoint {
   emailAddress?: string | null;
   /** Show codes and links found in captured emails. */
   showEmailExtracts?: boolean;
+  /** Which site's dashboard lists it (owner only to change); both addresses capture either way. */
+  site?: EndpointSite;
   /** Named fields picked out of every email (owner only to change). */
   emailFields?: EmailField[];
   /** Forward captured requests and emails to forwardUrl (lib/forwarding). */

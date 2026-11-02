@@ -2,6 +2,7 @@ import { isbot } from "isbot";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createGuestEndpoint } from "@/lib/supabase/endpoints";
 import { reportError } from "@/lib/observability";
+import { SITE_HEADER, parseSite, twoSites } from "@/lib/site";
 
 const ANON_ENDPOINT_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 const ANON_ENDPOINT_RATE_LIMIT_MAX = 20;
@@ -32,7 +33,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const endpoint = await createGuestEndpoint();
+    // Listed on the site it was made on, which it keeps when its guest signs up.
+    const endpoint = await createGuestEndpoint(
+      twoSites() ? parseSite(request.headers.get(SITE_HEADER)) : undefined
+    );
     return Response.json({
       ...endpoint,
       requestCount: 0,

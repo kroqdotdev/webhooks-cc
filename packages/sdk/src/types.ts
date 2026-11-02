@@ -16,6 +16,12 @@ export interface TeamShare {
   teamName: string;
 }
 
+/**
+ * Which site's dashboard lists an endpoint: webhooks.cc, mailhooks.cc or both.
+ * Only the listing; every endpoint keeps its HTTP URL and email address.
+ */
+export type EndpointSite = "webhooks" | "mailhooks" | "both";
+
 export interface Endpoint {
   /** Unique identifier for this endpoint */
   id: string;
@@ -51,6 +57,8 @@ export interface Endpoint {
   emailAddress?: string | null;
   /** Whether codes and links are picked out of emails (dashboard and forwarded JSON) */
   showEmailExtracts?: boolean;
+  /** Which site's dashboard lists it; both addresses capture either way */
+  site?: EndpointSite;
   /** Named fields picked out of every email (owner only): `fields` in its JSON */
   emailFields?: EmailField[];
   /** Days requests are kept; null keeps them as long as the plan does (owner only) */
@@ -397,6 +405,8 @@ export interface CreateEndpointOptions {
   notificationUrl?: string;
   /** Ordered conditional response rules */
   responseRules?: ResponseRule[];
+  /** Which site's dashboard lists it; "both" when left out */
+  site?: EndpointSite;
 }
 
 /**
@@ -419,6 +429,8 @@ export interface UpdateEndpointOptions {
   signingHeader?: string | null;
   /** Pick codes and links out of emails (owner only) */
   showEmailExtracts?: boolean;
+  /** Which site's dashboard lists it (owner only) */
+  site?: EndpointSite;
   /** Named fields to pick out of every email, at most 20, or null for none (owner only) */
   emailFields?: EmailField[] | null;
   /** Keep requests this many days (1 up to the plan's), or null for the plan's (owner only) */

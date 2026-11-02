@@ -15,6 +15,8 @@ import { RetentionSection } from "./retention-section";
 import { LayoutsSection } from "./layouts-section";
 import { AlertsSection } from "./alerts-section";
 import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
+import { EndpointSiteField, EndpointSiteText } from "./endpoint-site-field";
+import { twoSites, type EndpointSite } from "@/lib/site";
 import {
   Field,
   SaveFooter,
@@ -64,10 +66,13 @@ function ReceivingSection({
   endpoint: EndpointSettingsPanelProps["endpoint"];
   isOwner: boolean;
 }) {
+  const router = useRouter();
   const initialName = endpoint.name ?? "";
+  const initialSite: EndpointSite = endpoint.site ?? "both";
   const initialExtracts = endpoint.showEmailExtracts !== false;
   const initialFieldsKey = JSON.stringify(endpoint.emailFields ?? []);
   const [name, setName] = useState(initialName);
+  const [listedOn, setListedOn] = useState<EndpointSite>(initialSite);
   const [extracts, setExtracts] = useState(initialExtracts);
   const [fields, setFields] = useState<EmailField[]>(() => endpoint.emailFields ?? []);
   const [triedSave, setTriedSave] = useState(false);
@@ -76,11 +81,22 @@ function ReceivingSection({
 
   // The saved endpoint changed (a save, another tab, an alert's AI repair):
   // what was edited here is kept, the rest takes the saved copy.
-  const base = useRef({ name: initialName, extracts: initialExtracts, fields: initialFieldsKey });
+  const base = useRef({
+    name: initialName,
+    site: initialSite,
+    extracts: initialExtracts,
+    fields: initialFieldsKey,
+  });
   useEffect(() => {
     const before = base.current;
-    base.current = { name: initialName, extracts: initialExtracts, fields: initialFieldsKey };
+    base.current = {
+      name: initialName,
+      site: initialSite,
+      extracts: initialExtracts,
+      fields: initialFieldsKey,
+    };
     setName((current) => (current === before.name ? initialName : current));
+    setListedOn((current) => (current === before.site ? initialSite : current));
     setExtracts((current) => (current === before.extracts ? initialExtracts : current));
     setFields((current) =>
       mergeEdits(
@@ -90,17 +106,22 @@ function ReceivingSection({
         (field) => field.name
       )
     );
-  }, [initialName, initialExtracts, initialFieldsKey]);
+  }, [initialName, initialSite, initialExtracts, initialFieldsKey]);
 
   const fieldsChanged = JSON.stringify(fields) !== initialFieldsKey;
   const emailChanged = extracts !== initialExtracts || fieldsChanged;
-  const dirty = name !== initialName || emailChanged;
-  const hint =
-    name !== initialName && emailChanged
-      ? "Name and email settings changed."
-      : name !== initialName
-        ? "Name changed."
-        : "Email settings changed.";
+  const siteChanged = listedOn !== initialSite;
+  const dirty = name !== initialName || siteChanged || emailChanged;
+  const changes = [
+    name !== initialName && "name",
+    siteChanged && "where it is listed",
+    emailChanged && "email settings",
+  ].filter((part): part is string => typeof part === "string");
+  const changed =
+    changes.length > 1
+      ? `${changes.slice(0, -1).join(", ")} and ${changes[changes.length - 1]}`
+      : (changes[0] ?? "");
+  const hint = changed ? `${changed[0].toUpperCase()}${changed.slice(1)} changed.` : "";
 
   return (
     <Section
@@ -116,6 +137,7 @@ function ReceivingSection({
           hint={hint}
           onReset={() => {
             setName(initialName);
+            setListedOn(initialSite);
             setExtracts(initialExtracts);
             setFields(JSON.parse(initialFieldsKey) as EmailField[]);
             setTriedSave(false);
@@ -124,10 +146,20 @@ function ReceivingSection({
           }}
           onSave={() => {
             setTriedSave(true);
+            if (siteChanged) {
+              // Listed elsewhere once saved, it drops out of this site's list:
+              // keep it open here by its slug instead of moving to another.
+              const params = new URLSearchParams(window.location.search);
+              if (params.get("endpoint") !== endpoint.slug) {
+                params.set("endpoint", endpoint.slug);
+                router.replace(`${window.location.pathname}?${params.toString()}`);
+              }
+            }
             void save(
               {
                 // An emptied name is saved as "" (the dashboard then shows the slug).
                 ...(name !== initialName ? { name: name.trim() } : {}),
+                ...(siteChanged ? { site: listedOn } : {}),
                 ...(extracts !== initialExtracts ? { showEmailExtracts: extracts } : {}),
                 ...(fieldsChanged ? { emailFields: fields } : {}),
               },
@@ -150,6 +182,12 @@ function ReceivingSection({
           className="ui-input w-full text-sm py-2!"
         />
       </Field>
+      {twoSites() &&
+        (isOwner ? (
+          <EndpointSiteField value={listedOn} onChange={setListedOn} />
+        ) : (
+          <EndpointSiteText value={initialSite} />
+        ))}
       <Field label="HTTP URL">
         <AddressPill label="HTTP" icon={Globe} value={url} className="w-full" />
       </Field>

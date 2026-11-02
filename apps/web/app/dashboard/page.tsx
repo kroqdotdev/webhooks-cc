@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useSite } from "@/components/providers/site-provider";
+import { switchSite } from "@/lib/site-switch-client";
+import { SITES, endpointHomeSite, listedOn, otherSite, twoSites, type SiteKey } from "@/lib/site";
 import { TemplateImportDialog } from "@/components/dashboard/template-import-dialog";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -41,6 +43,7 @@ import {
   fetchDashboardSearchCount,
   subscribeDashboardEndpointsChanged,
   createDashboardEndpoint,
+  emitDashboardEndpointsChanged,
   claimGuestEndpointForUser,
   type DashboardEndpoint,
   sendTestEmail,
@@ -82,7 +85,9 @@ const COUNT_RESYNC_INTERVAL_MS = 60_000;
 export default function DashboardPage() {
   const { session, isLoading: authLoading } = useAuth();
   const accessToken = session?.access_token ?? null;
-  const [endpoints, setEndpoints] = useState<DashboardEndpoint[] | undefined>(undefined);
+  // Every endpoint the account can open; the list shows those listed on this
+  // site (lib/site.ts), but a link to any of them still opens it.
+  const [allEndpoints, setAllEndpoints] = useState<DashboardEndpoint[] | undefined>(undefined);
   // The account's own endpoints (layouts are the owner's to change).
   const [ownedSlugs, setOwnedSlugs] = useState<Set<string>>(new Set());
   const site = useSite();
@@ -95,7 +100,16 @@ export default function DashboardPage() {
   // A ready-made layout to add, from a mailhooks.cc sender page.
   const templateParam = searchParams.get("template");
 
-  const currentEndpoint = endpoints?.find((ep) => ep.slug === endpointSlug) ?? endpoints?.[0];
+  const endpoints = useMemo(
+    () => allEndpoints?.filter((endpoint) => listedOn(endpoint.site, site.key)),
+    [allEndpoints, site.key]
+  );
+  // Opened by its slug (a link, the other site's switcher) though listed elsewhere.
+  const linkedEndpoint = endpointSlug
+    ? allEndpoints?.find((ep) => ep.slug === endpointSlug)
+    : undefined;
+  const currentEndpoint =
+    endpoints?.find((ep) => ep.slug === endpointSlug) ?? linkedEndpoint ?? endpoints?.[0];
   const currentEndpointId = currentEndpoint?.id;
   const currentSlug = currentEndpoint?.slug;
 
@@ -370,11 +384,11 @@ export default function DashboardPage() {
 
     try {
       const response = await fetchDashboardEndpoints(accessToken);
-      setEndpoints([...response.owned, ...response.shared]);
+      setAllEndpoints([...response.owned, ...response.shared]);
       setOwnedSlugs(new Set(response.owned.map((endpoint) => endpoint.slug)));
     } catch (error) {
       console.error("Failed to load dashboard endpoints:", error);
-      setEndpoints([]);
+      setAllEndpoints([]);
     }
   }, [accessToken]);
 
@@ -1123,12 +1137,22 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleSelect, handleToggleLiveMode, setActiveTab, toggleCollapse]);
 
-  if (authLoading || endpoints === undefined) {
+  if (authLoading || endpoints === undefined || allEndpoints === undefined) {
     return <DashboardSkeleton />;
   }
 
-  if (endpoints.length === 0) {
+  if (allEndpoints.length === 0) {
     return <AutoCreateEndpoint accessToken={accessToken} onCreated={loadEndpoints} />;
+  }
+
+  if (endpoints.length === 0 && !linkedEndpoint) {
+    return (
+      <NoEndpointsHere
+        accessToken={accessToken}
+        elsewhere={allEndpoints.length}
+        onCreated={loadEndpoints}
+      />
+    );
   }
 
   if (!currentEndpoint) return null;
@@ -1176,6 +1200,10 @@ export default function DashboardPage() {
             router.replace(query ? `${pathname}?${query}` : pathname);
           }}
         />
+      )}
+
+      {!listedOn(currentEndpoint.site, site.key) && (
+        <ListedElsewhereNotice slug={currentEndpoint.slug} endpointSite={currentEndpoint.site} />
       )}
 
       <EndpointBar
@@ -1686,6 +1714,11 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
   );
 }
 
+/** What the dashboard sends when it creates an endpoint: the site it is on, when there are two. */
+function siteBody(site: SiteKey): { site?: SiteKey } {
+  return twoSites() ? { site } : {};
+}
+
 function AutoCreateEndpoint({
   accessToken,
   onCreated,
@@ -1693,6 +1726,7 @@ function AutoCreateEndpoint({
   accessToken: string | null;
   onCreated: () => Promise<void>;
 }) {
+  const site = useSite();
   const [error, setError] = useState<string | null>(null);
   const attempted = useRef(false);
 
@@ -1700,10 +1734,14 @@ function AutoCreateEndpoint({
     if (!accessToken || attempted.current) return;
     attempted.current = true;
 
-    createDashboardEndpoint(accessToken, {})
-      .then(() => onCreated())
+    createDashboardEndpoint(accessToken, siteBody(site.key))
+      .then(() => {
+        // The header's endpoint list reloads too.
+        emitDashboardEndpointsChanged();
+        return onCreated();
+      })
       .catch(() => setError("Could not create your first endpoint."));
-  }, [accessToken, onCreated]);
+  }, [accessToken, onCreated, site.key]);
 
   const handleRetry = useCallback(() => {
     attempted.current = false;
@@ -1730,6 +1768,102 @@ function AutoCreateEndpoint({
   return (
     <div className="flex-1 flex items-center justify-center p-8">
       <p className="text-muted-foreground animate-pulse">Setting up your first endpoint...</p>
+    </div>
+  );
+}
+
+/**
+ * The account has endpoints, but none listed on this site: offer one here,
+ * or the other site, where they are (signed in there through the switch).
+ */
+function NoEndpointsHere({
+  accessToken,
+  elsewhere,
+  onCreated,
+}: {
+  accessToken: string | null;
+  elsewhere: number;
+  onCreated: () => Promise<void>;
+}) {
+  const site = useSite();
+  const other = SITES[otherSite(site.key)];
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = () => {
+    if (!accessToken) return;
+    setCreating(true);
+    setError(null);
+    createDashboardEndpoint(accessToken, siteBody(site.key))
+      .then(() => {
+        emitDashboardEndpointsChanged();
+        return onCreated();
+      })
+      .catch(() => {
+        setError("Could not create the endpoint. Try again.");
+        setCreating(false);
+      });
+  };
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="text-center space-y-4 max-w-md">
+        <div className="w-16 h-16 rounded-md border-strong border-line bg-muted flex items-center justify-center mx-auto mb-2">
+          <Send className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h2 className="text-xl font-bold caps">No endpoints on {site.name} yet</h2>
+        <p className="text-muted-foreground">
+          Your {elsewhere === 1 ? "endpoint is" : `${elsewhere} endpoints are`} listed on{" "}
+          {other.name}. An endpoint made here is listed here; change where one is listed under
+          Settings, Receiving.
+        </p>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <button onClick={create} disabled={creating} className="ui-btn-primary">
+            {creating ? "Creating..." : `Create an endpoint on ${site.name}`}
+          </button>
+          <button
+            type="button"
+            onClick={() => void switchSite(other.key, "/dashboard", accessToken)}
+            className="ui-btn-outline"
+          >
+            Open {other.name}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Shown above an endpoint opened here by its link while it is listed on the other site. */
+function ListedElsewhereNotice({
+  slug,
+  endpointSite,
+}: {
+  slug: string;
+  endpointSite: DashboardEndpoint["site"];
+}) {
+  const site = useSite();
+  const { session } = useAuth();
+  const home = SITES[endpointHomeSite(endpointSite, site.key)];
+  return (
+    <div className="shrink-0 border-b border-line bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span>
+        This endpoint is listed on {home.name}, not here. Change that under Settings, Receiving.
+      </span>
+      <button
+        type="button"
+        onClick={() =>
+          void switchSite(
+            home.key,
+            `/dashboard?endpoint=${encodeURIComponent(slug)}`,
+            session?.access_token
+          )
+        }
+        className="font-medium text-foreground underline underline-offset-2 cursor-pointer"
+      >
+        Open it on {home.name}
+      </button>
     </div>
   );
 }

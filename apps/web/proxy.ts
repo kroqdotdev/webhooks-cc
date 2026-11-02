@@ -82,12 +82,14 @@ async function refreshSession(request: NextRequest, pathname: string): Promise<N
   );
 
   // Refresh session (skip for static assets and the auth handoff routes, which
-  // set their own cookies: /auth/callback exchanges the OAuth code and
-  // /auth/confirm verifies an email token hash).
+  // set their own cookies: /auth/callback exchanges the OAuth code,
+  // /auth/confirm verifies an email token hash and /auth/switch carries a
+  // session over from the other site, lib/site-switch.ts).
   if (
     !pathname.startsWith("/_next") &&
     !pathname.startsWith("/auth/callback") &&
-    !pathname.startsWith("/auth/confirm")
+    !pathname.startsWith("/auth/confirm") &&
+    !pathname.startsWith("/auth/switch")
   ) {
     await supabase.auth.getUser();
   }

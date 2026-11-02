@@ -273,6 +273,7 @@ export type {
   TeamInvite,
   TeamMembers,
   CreateEndpointOptions,
+  EndpointSite,
   UpdateEndpointOptions,
   SendOptions,
   SendTemplateOptions,

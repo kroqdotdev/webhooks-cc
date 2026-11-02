@@ -157,7 +157,7 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Only the endpoint owner can update email, retention, notification, forwarding or signing settings",
+        "Only the endpoint owner can update where it is listed, or its email, retention, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
@@ -194,7 +194,7 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Only the endpoint owner can update email, retention, notification, forwarding or signing settings",
+        "Only the endpoint owner can update where it is listed, or its email, retention, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();

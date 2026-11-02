@@ -11,6 +11,9 @@ import { Plus } from "lucide-react";
 import { parseStatusCode } from "@/lib/http";
 import { trackEndpointCreated } from "@/lib/analytics";
 import { createDashboardEndpoint, emitDashboardEndpointsChanged } from "@/lib/dashboard-api";
+import { useSite } from "@/components/providers/site-provider";
+import { twoSites, type EndpointSite } from "@/lib/site";
+import { EndpointSiteField } from "./endpoint-site-field";
 import {
   Dialog,
   DialogContent,
@@ -24,9 +27,12 @@ import {
 export function NewEndpointDialog() {
   const { session } = useAuth();
   const router = useRouter();
+  const site = useSite();
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  // Listed on the site it is made on unless chosen otherwise.
+  const [listedOn, setListedOn] = useState<EndpointSite>(site.key);
   const [mockStatus, setMockStatus] = useState("200");
   const [mockBody, setMockBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,6 +51,7 @@ export function NewEndpointDialog() {
 
       const result = await createDashboardEndpoint(accessToken, {
         name: name || undefined,
+        ...(twoSites() ? { site: listedOn } : {}),
         mockResponse: mockBody
           ? {
               status: parseStatusCode(mockStatus, 200),
@@ -67,6 +74,7 @@ export function NewEndpointDialog() {
 
   const resetForm = () => {
     setName("");
+    setListedOn(site.key);
     setMockStatus("200");
     setMockBody("");
     setIsSubmitting(false);
@@ -108,6 +116,8 @@ export function NewEndpointDialog() {
               className="ui-input w-full text-sm"
             />
           </div>
+
+          {twoSites() && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
 
           <div className="border-strong border-line rounded-lg p-4 space-y-4">
             <div>

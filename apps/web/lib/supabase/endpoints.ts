@@ -13,6 +13,7 @@ import {
 import { serverEnv } from "../env";
 import type { Database, Json } from "./database";
 import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
+import { isEndpointSite, type EndpointSite } from "@/lib/site";
 
 const MAX_SLUG_ATTEMPTS = 5;
 const nanoidSlug = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10);
@@ -44,6 +45,8 @@ type SelectedEndpointRow = Pick<
   layouts?: Json;
   /** Computed column (migration 00069): layouts the billing account's plan uses. */
   layouts_cap?: number | null;
+  /** Which site's dashboard lists it (migration 00078). */
+  site?: string;
   /** Embedded: the old forward* fields and notificationUrl read from these (migration 00063). */
   endpoint_destinations?: EmbeddedDestination[];
 };
@@ -68,7 +71,7 @@ type EmbeddedDestination = Pick<
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 const ENDPOINT_COLUMNS =
-  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, retention_days, delete_after_delivery, retention_cap, layouts, layouts_cap, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
+  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, retention_days, delete_after_delivery, retention_cap, layouts, layouts_cap, site, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -101,6 +104,8 @@ export interface EndpointRecord {
   emailAddress?: string | null;
   /** Show the codes and links found in captured emails in the dashboard. */
   showEmailExtracts: boolean;
+  /** Which site's dashboard lists it; both addresses capture either way (lib/site.ts). */
+  site: EndpointSite;
   /** Named fields picked out of every email (lib/email-fields.ts). */
   emailFields: EmailField[];
   /** Forwarding is on: the kinds below go to forwardUrl (lib/forwarding). */
@@ -170,6 +175,8 @@ export class EphemeralCapacityError extends Error {
 interface CreateEndpointInput {
   userId?: string;
   name?: string;
+  /** Which site's dashboard lists it; both when not given. */
+  site?: EndpointSite;
   isEphemeral?: boolean;
   expiresAt?: number;
   mockResponse?: Record<string, unknown>;
@@ -189,6 +196,7 @@ interface UpdateEndpointInput {
   signingSecret?: string | null;
   signingHeader?: string | null;
   showEmailExtracts?: boolean;
+  site?: EndpointSite;
   /** Validated by the route (lib/email-fields.ts). */
   emailFields?: EmailField[] | null;
   /** Validated by the route (lib/parsing/layouts.ts). */
@@ -281,6 +289,7 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     signingHeader: row.signing_header ?? null,
     emailAddress: emailAddress(row.slug, row.user_id),
     showEmailExtracts: row.show_email_extracts ?? true,
+    site: isEndpointSite(row.site) ? row.site : "both",
     emailFields: storedEmailFields(row.email_fields),
     forwardEnabled: primary?.enabled ?? false,
     forwardUrl: primary?.url ?? null,
@@ -423,6 +432,7 @@ export async function getEndpointBySlugForUser(
 export async function createEndpointForUser({
   userId,
   name,
+  site,
   isEphemeral = false,
   expiresAt,
   mockResponse,
@@ -448,6 +458,7 @@ export async function createEndpointForUser({
     user_id: userId ?? null,
     slug,
     name: name ?? null,
+    site: site ?? "both",
     mock_response: (mockResponse as Json | undefined) ?? null,
     response_rules: (responseRules as Json | undefined) ?? null,
     is_ephemeral: ephemeral,
@@ -507,9 +518,11 @@ export async function getGuestEndpointBySlug(slug: string) {
   return data;
 }
 
-export async function createGuestEndpoint(): Promise<EndpointRecord> {
+/** A guest endpoint, listed on the site it was made on (it keeps that site when claimed). */
+export async function createGuestEndpoint(site?: EndpointSite): Promise<EndpointRecord> {
   return createEndpointForUser({
     isEphemeral: true,
+    site,
   });
 }
 
@@ -557,6 +570,7 @@ export async function updateEndpointBySlugForUser({
   signingSecret,
   signingHeader,
   showEmailExtracts,
+  site,
   emailFields,
   layouts,
   forwardEnabled,
@@ -646,6 +660,9 @@ export async function updateEndpointBySlugForUser({
   }
   if (showEmailExtracts !== undefined) {
     updates.show_email_extracts = showEmailExtracts;
+  }
+  if (site !== undefined) {
+    updates.site = site;
   }
   if (emailFields !== undefined) {
     updates.email_fields = (emailFields ?? []) as unknown as Json;

@@ -1,3 +1,4 @@
+import type { EndpointSite } from "@/lib/site";
 import type { Database } from "./database";
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,8 @@ export interface SharedEndpoint {
   /** The endpoint's capture address; shared endpoints always have an owner. */
   emailAddress: string | null;
   showEmailExtracts: boolean;
+  /** Which site's dashboard lists it, as its owner chose (lib/site.ts). */
+  site: EndpointSite;
   /** Forwarding state without the URL (owner-only): enough to show delivery history. */
   forwardEnabled: boolean;
   hasForwardSecret: boolean;

@@ -177,8 +177,8 @@ paths:
 
         Team members can update `name`, `mockResponse`, and `responseRules` on endpoints shared
         with them. Only the owner can change `showEmailExtracts` (it also decides whether forwarded
-        JSON includes codes and links), `notificationUrl`, the signing settings, `forwardEnabled`,
-        and `forwardUrl`; anyone else who sends one gets `403`.
+        JSON includes codes and links), `site`, `notificationUrl`, the signing settings,
+        `forwardEnabled`, and `forwardUrl`; anyone else who sends one gets `403`.
 
         **Forwarding:** `forwardEnabled: true` needs a `forwardUrl`, sent in the same request or
         saved before. Saving the first URL (or turning forwarding on) creates the endpoint's signing
@@ -2716,6 +2716,8 @@ components:
           description: |
             Whether the one-time codes and links found in emails are shown in the dashboard and
             included (as `codes` and `links`) in forwarded JSON
+        site:
+          $ref: "#/components/schemas/EndpointSite"
         forwardEnabled:
           type: boolean
           description: Whether every captured email is forwarded to `forwardUrl` as signed JSON
@@ -2984,6 +2986,21 @@ components:
           format: uri
           maxLength: 2048
           description: URL to POST a JSON summary to after each captured request
+        site:
+          allOf:
+            - $ref: "#/components/schemas/EndpointSite"
+          default: both
+          description: |
+            Which site's dashboard lists the new endpoint. The dashboard sends the site it is on;
+            left out, it is `both`.
+
+    EndpointSite:
+      type: string
+      enum: [webhooks, mailhooks, both]
+      description: |
+        Which site's dashboard lists the endpoint: webhooks.cc, mailhooks.cc or both. Only the
+        listing: every endpoint keeps its HTTP URL and email address and captures both, whatever
+        this says.
 
     UpdateEndpointRequest:
       type: object
@@ -3017,6 +3034,10 @@ components:
           description: |
             Show the codes and links found in emails, and include them in forwarded JSON.
             Owner only, because it changes what forwarding sends.
+        site:
+          allOf:
+            - $ref: "#/components/schemas/EndpointSite"
+          description: Which site's dashboard lists the endpoint. Owner only.
         forwardEnabled:
           type: boolean
           description: Forward every captured email to `forwardUrl`. Needs a URL. Owner only.

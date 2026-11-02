@@ -54,6 +54,7 @@ export const LOGIN_ERROR_CODES = {
   oauth_denied: "Sign in was cancelled. Try again when you're ready.",
   oauth_error: "The sign-in provider returned an error. Please try again.",
   link_invalid: "That link is invalid or has expired. Sign in, or request a new link.",
+  switch_failed: "Your sign-in could not be carried over from the other site. Sign in here.",
   capture_domain_email:
     "That account's email address is at mailhooks.cc, which can't be used for a webhooks.cc account. Sign in with an account that uses your own email address.",
 } as const;

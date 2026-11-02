@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { trackEndpointSwitched } from "@/lib/analytics";
+import { useSite } from "@/components/providers/site-provider";
+import { listedOn, type EndpointSite } from "@/lib/site";
 
 export function EndpointSwitcher() {
   const { session } = useAuth();
@@ -26,6 +28,7 @@ export function EndpointSwitcher() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentSlug = searchParams.get("endpoint");
+  const site = useSite();
 
   useEffect(() => {
     const accessToken = session?.access_token;
@@ -61,7 +64,12 @@ export function EndpointSwitcher() {
     };
   }, [session?.access_token]);
 
-  const allEndpoints = [...(data?.owned ?? []), ...(data?.shared ?? [])];
+  // The endpoints this site lists, and the one open now even if it is listed
+  // on the other site (opened by its link), as the dashboard does.
+  const shown = (ep: { slug: string; site?: EndpointSite }) =>
+    listedOn(ep.site, site.key) || ep.slug === currentSlug;
+  const owned = (data?.owned ?? []).filter(shown);
+  const allEndpoints = [...owned, ...(data?.shared ?? []).filter(shown)];
 
   if (!data || allEndpoints.length === 0) {
     return null;
@@ -80,9 +88,9 @@ export function EndpointSwitcher() {
     allEndpoints.find((ep) => ep.slug === currentSlug)?.slug ?? allEndpoints[0]?.slug;
 
   // Split owned endpoints into personal (not shared) and shared-by-me
-  const personalEndpoints = data.owned.filter((ep) => !ep.sharedWith || ep.sharedWith.length === 0);
-  const sharedByMe = data.owned.filter((ep) => ep.sharedWith && ep.sharedWith.length > 0);
-  const sharedWithMe = data.shared ?? [];
+  const personalEndpoints = owned.filter((ep) => !ep.sharedWith || ep.sharedWith.length === 0);
+  const sharedByMe = owned.filter((ep) => ep.sharedWith && ep.sharedWith.length > 0);
+  const sharedWithMe = (data.shared ?? []).filter(shown);
 
   const hasSections = sharedByMe.length > 0 || sharedWithMe.length > 0;
 
@@ -141,7 +149,7 @@ export function EndpointSwitcher() {
             )}
           </>
         ) : (
-          data.owned.map((ep) => (
+          owned.map((ep) => (
             <SelectItem key={ep.id} value={ep.slug}>
               {ep.name || ep.slug}
             </SelectItem>

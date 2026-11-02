@@ -1,4 +1,5 @@
 import { auditUserAction } from "@/lib/audit";
+import { isEndpointSite, type EndpointSite } from "@/lib/site";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
@@ -70,6 +71,7 @@ const AUDITED_ENDPOINT_FIELDS = [
   "signingSecret",
   "signingHeader",
   "showEmailExtracts",
+  "site",
   "emailFields",
   "layouts",
   "retentionDays",
@@ -127,6 +129,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   if (body.showEmailExtracts !== undefined && typeof body.showEmailExtracts !== "boolean") {
     return Response.json({ error: "Invalid showEmailExtracts" }, { status: 400 });
+  }
+  if (body.site !== undefined && !isEndpointSite(body.site)) {
+    return Response.json(
+      { error: 'site must be "webhooks", "mailhooks" or "both"' },
+      { status: 400 }
+    );
   }
   if (body.emailFields !== undefined && body.emailFields !== null) {
     const problems = emailFieldsProblems(body.emailFields);
@@ -254,9 +262,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     );
     // showEmailExtracts also decides whether codes and links are in the JSON
     // forwarded to the owner's server, so a team member must not change it.
+    // So is the site: it decides where the endpoint is listed for everyone.
     const ownerOnlyConfigTouched =
       body.notificationUrl !== undefined ||
       body.showEmailExtracts !== undefined ||
+      body.site !== undefined ||
       body.emailFields !== undefined ||
       body.layouts !== undefined ||
       body.retentionDays !== undefined ||
@@ -268,7 +278,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       return Response.json(
         {
           error:
-            "Only the endpoint owner can update email, retention, notification, forwarding or signing settings",
+            "Only the endpoint owner can update where it is listed, or its email, retention, notification, forwarding or signing settings",
         },
         { status: 403 }
       );
@@ -410,6 +420,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       signingHeader:
         body.signingHeader === undefined ? undefined : (body.signingHeader as string | null),
       showEmailExtracts: body.showEmailExtracts as boolean | undefined,
+      site: body.site as EndpointSite | undefined,
       emailFields:
         body.emailFields === undefined || body.emailFields === null
           ? (body.emailFields as null | undefined)
