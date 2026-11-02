@@ -107,10 +107,14 @@ export function SheetsDestinationEditor({
   // (a sheet made in another language calls its first tab "Ark1" or "Hoja 1",
   // not "Sheet1"). A tab that is not there becomes the first one.
   const [tabs, setTabs] = useState<string[] | null>(null);
+  // Saving waits for the list, so it never sends the tab the list would change.
+  const [tabsPending, setTabsPending] = useState(false);
   useEffect(() => {
     setTabs(null);
+    setTabsPending(false);
     if (!accessToken || !connectionId || !spreadsheetId) return;
     let current = true;
+    setTabsPending(true);
     fetchSpreadsheetTabs(accessToken, connectionId, spreadsheetId)
       .then((found) => {
         if (!current) return;
@@ -118,7 +122,10 @@ export function SheetsDestinationEditor({
         setSheet((tab) => (found.length > 0 && !found.includes(tab) ? found[0] : tab));
       })
       // Without the list the tab stays a text field, and saving says what is wrong.
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (current) setTabsPending(false);
+      });
     return () => {
       current = false;
     };
@@ -532,7 +539,7 @@ export function SheetsDestinationEditor({
       <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-line/20">
         <button
           type="button"
-          disabled={!!busy}
+          disabled={!!busy || tabsPending}
           onClick={() => void save()}
           className="ui-btn-primary py-1.5! px-3! text-xs"
         >
