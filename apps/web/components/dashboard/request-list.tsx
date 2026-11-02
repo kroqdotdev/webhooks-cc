@@ -227,7 +227,7 @@ export function RequestList({
   ) : null;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="ph-no-capture flex flex-col h-full">
       {/* Toolbar */}
       <div className="@container border-b-strong border-line px-3 py-2 flex items-center justify-between gap-2 shrink-0">
         {onKindFilterChange ? (

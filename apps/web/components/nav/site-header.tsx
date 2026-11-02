@@ -9,7 +9,7 @@ import { useSite } from "@/components/providers/site-provider";
 import { UserDropdown } from "@/components/nav/user-dropdown";
 import { SiteSwitchRow, SiteSwitcher } from "@/components/nav/site-switcher";
 import { siteHeaderTop } from "@/lib/announcements";
-import { resetUser } from "@/lib/analytics";
+import { resetUser, trackSignOut } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { webhooksOrigin } from "@/lib/site";
 import { cn } from "@/lib/utils";
@@ -69,6 +69,7 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
 
   const handleSignOut = async () => {
     setOpen(false);
+    trackSignOut();
     resetUser();
     await createClient().auth.signOut();
     router.push("/");

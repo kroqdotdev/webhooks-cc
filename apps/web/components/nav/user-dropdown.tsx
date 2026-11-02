@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { resetUser } from "@/lib/analytics";
+import { resetUser, trackSignOut } from "@/lib/analytics";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,6 +79,7 @@ export function UserDropdown() {
   if (!profile) return null;
 
   const handleSignOut = async () => {
+    trackSignOut();
     resetUser();
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -89,12 +90,13 @@ export function UserDropdown() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer outline-none">
+      {/* The name and initials stay out of autocapture. */}
+      <DropdownMenuTrigger className="ph-no-capture flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer outline-none">
         <UserAvatar profile={profile} />
         <span className="hidden lg:inline max-w-[120px] truncate">{displayName}</span>
         <ChevronDown className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
+      <DropdownMenuContent align="end" className="ph-no-capture w-48">
         <DropdownMenuItem onClick={() => router.push("/dashboard")} className="cursor-pointer">
           <LayoutDashboard className="h-4 w-4 mr-2" />
           Dashboard

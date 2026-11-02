@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { nextFromRedirectTo, resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
-import { SIGNUP_SIGNAL_COOKIE, SIGNUP_SIGNAL_COOKIE_OPTIONS } from "@/lib/signup-signal";
 import { mailhooksOrigin, siteForHost } from "@/lib/site";
 import { rememberHomeSite } from "@/lib/supabase/home-site";
 
@@ -75,12 +74,7 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
       if (data?.user) await rememberHomeSite(data.user.id, siteForHost(new URL(base).host));
-      const response = NextResponse.redirect(`${base}${next}`);
-      // "recovery" is a password reset; the other two confirm a new account.
-      if (type !== "recovery") {
-        response.cookies.set(SIGNUP_SIGNAL_COOKIE, "1", SIGNUP_SIGNAL_COOKIE_OPTIONS);
-      }
-      return response;
+      return NextResponse.redirect(`${base}${next}`);
     }
   }
 

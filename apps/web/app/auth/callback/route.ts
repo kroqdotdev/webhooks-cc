@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { DEFAULT_EMAIL_DOMAIN } from "@webhooks-cc/sdk/email";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
-import { SIGNUP_SIGNAL_COOKIE, SIGNUP_SIGNAL_COOKIE_OPTIONS } from "@/lib/signup-signal";
 import { siteForHost } from "@/lib/site";
 import { rememberHomeSite } from "@/lib/supabase/home-site";
 
@@ -34,14 +33,7 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       if (data.user) await rememberHomeSite(data.user.id, siteForHost(new URL(base).host));
-      const response = NextResponse.redirect(`${base}${next}`);
-      // OAuth creates the account during this exchange, so a fresh created_at
-      // here means this sign-in is the signup.
-      const createdAt = Date.parse(data.user?.created_at ?? "");
-      if (Number.isFinite(createdAt) && Date.now() - createdAt < 60_000) {
-        response.cookies.set(SIGNUP_SIGNAL_COOKIE, "1", SIGNUP_SIGNAL_COOKIE_OPTIONS);
-      }
-      return response;
+      return NextResponse.redirect(`${base}${next}`);
     }
   }
 

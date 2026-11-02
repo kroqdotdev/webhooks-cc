@@ -48,8 +48,8 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
     }
 
     if (data) {
+      // Does nothing until the visitor accepts analytics (lib/analytics.ts).
       identifyUser(authUser.id, {
-        email: authUser.email ?? undefined,
         plan: data.plan,
         request_limit: data.request_limit,
       });

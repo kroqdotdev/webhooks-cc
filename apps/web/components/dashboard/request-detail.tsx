@@ -217,7 +217,7 @@ export function RequestDetail({
   const bodyView = bodyViews.includes(bodyViewChoice) ? bodyViewChoice : "formatted";
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="ph-no-capture flex flex-col h-full">
       {/* Summary bar */}
       <div className="border-b-strong border-line px-4 py-3 shrink-0">
         <div className="flex items-center justify-between gap-4">

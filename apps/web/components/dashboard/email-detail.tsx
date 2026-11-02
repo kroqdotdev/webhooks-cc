@@ -987,7 +987,7 @@ export function EmailDetail({
   const rawAvailable = stored || (!!raw && !email.truncated.raw);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="ph-no-capture flex flex-col h-full">
       {/* Envelope */}
       <div className="border-b-strong border-line px-4 md:px-5 pt-4 pb-3.5 shrink-0 bg-card">
         <div className="flex items-start gap-3">

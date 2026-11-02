@@ -130,7 +130,7 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
   }
 
   return (
-    <div ref={containerRef} className="h-full overflow-auto">
+    <div ref={containerRef} className="ph-no-capture h-full overflow-auto">
       <svg ref={svgRef} width={width} height={height + 24} className="select-none">
         {/* Time axis */}
         <line

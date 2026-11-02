@@ -4,8 +4,10 @@ const capture = vi.fn();
 const register = vi.fn();
 const identify = vi.fn();
 const reset = vi.fn();
+let consent = "granted";
 vi.mock("posthog-js", () => ({
   default: {
+    get_explicit_consent_status: () => consent,
     capture: (...args: unknown[]) => capture(...args),
     register: (...args: unknown[]) => register(...args),
     identify: (...args: unknown[]) => identify(...args),
@@ -16,7 +18,13 @@ vi.mock("posthog-js", () => ({
 // The helpers no-op outside the browser, so give them a window to run in.
 vi.stubGlobal("window", {});
 
-const { reportAuthenticatedUser, resetUser, trackUiStyleChanged } = await import("./analytics");
+const {
+  forgetIdentifiedUser,
+  identifyPendingUser,
+  reportAuthenticatedUser,
+  resetUser,
+  trackUiStyleChanged,
+} = await import("./analytics");
 
 describe("trackUiStyleChanged", () => {
   beforeEach(() => {
@@ -34,74 +42,56 @@ describe("trackUiStyleChanged", () => {
 });
 
 describe("reportAuthenticatedUser", () => {
-  const user = {
-    id: "user-1",
-    email: "new@example.com",
-    created_at: new Date(Date.now() - 5 * 60_000).toISOString(),
-    app_metadata: { provider: "github" },
-  };
-  const oldUser = { ...user, created_at: new Date(Date.now() - 40 * 86_400_000).toISOString() };
-
-  function browser(cookie: string) {
-    const store = new Map<string, string>();
-    vi.stubGlobal("localStorage", {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
-    });
-    let jar = cookie;
-    vi.stubGlobal("document", {
-      get cookie() {
-        return jar;
-      },
-      set cookie(value: string) {
-        jar = value.includes("Max-Age=0") ? "" : value;
-      },
-    });
-  }
+  const user = { id: "user-1" };
 
   beforeEach(() => {
     capture.mockClear();
     identify.mockClear();
+    consent = "granted";
     resetUser();
   });
 
-  it("identifies the person and records the signup the auth routes flagged", () => {
-    browser("whk_signup=1");
+  it("identifies the person once analytics is accepted", () => {
     reportAuthenticatedUser(user);
-    expect(identify).toHaveBeenCalledWith("user-1", { email: "new@example.com" });
-    expect(capture).toHaveBeenCalledWith("account_created", {
-      provider: "github",
-      signal: "confirmed",
-    });
-  });
-
-  it("identifies a returning sign-in without recording a signup", () => {
-    browser("theme=dark");
-    reportAuthenticatedUser(oldUser);
-    expect(identify).toHaveBeenCalledTimes(1);
+    expect(identify).toHaveBeenCalledWith("user-1", undefined);
     expect(capture).not.toHaveBeenCalled();
   });
 
-  it("still records a signup when GoTrue's fallback link skipped our auth routes", () => {
-    browser("theme=dark");
-    reportAuthenticatedUser(user);
-    expect(capture).toHaveBeenCalledWith("account_created", {
-      provider: "github",
-      signal: "new_account",
-    });
-  });
-
   it("does nothing on repeat calls for the same user", () => {
-    browser("whk_signup=1");
     reportAuthenticatedUser(user);
     reportAuthenticatedUser(user);
     reportAuthenticatedUser(user);
     expect(identify).toHaveBeenCalledTimes(1);
-    expect(capture).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the browser anonymous until the visitor accepts, then identifies", () => {
+    consent = "pending";
+    reportAuthenticatedUser(user);
+    expect(identify).not.toHaveBeenCalled();
+    consent = "granted";
+    identifyPendingUser();
+    expect(identify).toHaveBeenCalledWith("user-1", undefined);
+  });
+
+  it("never identifies after a decline", () => {
+    consent = "denied";
+    reportAuthenticatedUser(user);
+    identifyPendingUser();
+    expect(identify).not.toHaveBeenCalled();
+  });
+
+  it("identifies again when the visitor declines and later accepts", () => {
+    reportAuthenticatedUser(user);
+    consent = "denied";
+    forgetIdentifiedUser();
+    identifyPendingUser();
+    expect(identify).toHaveBeenCalledTimes(1);
+    consent = "granted";
+    identifyPendingUser();
+    expect(identify).toHaveBeenCalledTimes(2);
   });
 
   it("identifies again after a sign out", () => {
-    browser("theme=dark");
     reportAuthenticatedUser(user);
     resetUser();
     reportAuthenticatedUser(user);
