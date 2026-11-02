@@ -260,10 +260,19 @@ describe("sandbox client", () => {
       exchanges: 0,
       rejectFirstToken: false,
     };
-    mockFetch(...sandboxRoutes(state));
+    const calls = mockFetch(...sandboxRoutes(state));
     const sandbox = await WebhooksCC.sandbox({ baseUrl: BASE, userAgent: "acme-agent/1.0" });
     await sandbox.endpoints.list();
     expect(state.userAgent).toMatch(/^acme-agent\/1\.0 webhooks-cc-sdk\/\S+$/);
+    // Registration and the token exchange name it too.
+    for (const path of [
+      "/api/agent/identity/challenge",
+      "/api/agent/identity",
+      "/api/oauth2/token",
+    ]) {
+      const call = calls.find((c) => c.url.pathname === path);
+      expect(new Headers(call?.init.headers).get("user-agent")).toMatch(/^acme-agent\/1\.0 /);
+    }
   });
 
   it("refuses to wait for more requests than an endpoint can capture", async () => {

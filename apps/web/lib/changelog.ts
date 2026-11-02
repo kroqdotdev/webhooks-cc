@@ -32,7 +32,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Clients Named in Usage Counts",
     track: "web",
     items: [
-      "Account activity counted on our servers now tells the TypeScript SDK, the npm MCP server and the remote MCP server apart from other Node.js clients, by the User-Agent they send from their next releases on. The CLI and an MCP server keep their names when they use an agent's connection",
+      "Account activity counted on our servers now tells the TypeScript SDK, the npm MCP server and the remote MCP server apart from other Node.js clients, by the User-Agent they send from their next releases on. The CLI, the SDKs and the MCP servers keep their names when they use an agent's connection",
     ],
   },
   {

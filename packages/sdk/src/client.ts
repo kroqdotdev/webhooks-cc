@@ -13,6 +13,7 @@
  * });
  * ```
  */
+import { apiUserAgent } from "./user-agent";
 import type {
   AlertEvent,
   AlertSettings,
@@ -140,25 +141,6 @@ const DEFAULT_RETRY_STATUSES = [429, 500, 502, 503, 504];
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
 declare const PKG_VERSION: string | undefined;
 const SDK_VERSION = typeof PKG_VERSION !== "undefined" ? PKG_VERSION : "0.0.0-dev";
-
-/**
- * The User-Agent for calls to the webhooks.cc API: the caller's own product
- * token first, if any, then the SDK's. Browsers keep their own (setting one
- * would only add a header to the CORS preflight), so none is sent there.
- * Throws on NUL, CR or LF in the product token, which fetch would refuse on
- * every request.
- * @internal
- */
-export function apiUserAgent(product: string | undefined): string | undefined {
-  const extra = product?.trim();
-  if (extra && /[\0\r\n]/.test(extra)) {
-    throw new Error("Invalid userAgent: it must not contain NUL, CR or LF characters.");
-  }
-  const userAgent = globalThis.navigator?.userAgent;
-  if (typeof userAgent === "string" && userAgent.startsWith("Mozilla/")) return undefined;
-  const own = `webhooks-cc-sdk/${SDK_VERSION}`;
-  return extra ? `${extra} ${own}` : own;
-}
 const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;
 // How far before the newest request a wait's next poll starts. The receiver
 // stamps receivedAt before the capture commits, and a capture can wait its

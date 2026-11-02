@@ -44,7 +44,13 @@ describe("User-Agent", () => {
   });
 
   it("refuses a product token fetch would refuse", () => {
-    for (const userAgent of ["acme\r\nX-Evil: 1", "acme\n", "acme\0tool"]) {
+    for (const userAgent of [
+      "acme\r\nX-Evil: 1",
+      "acme\n",
+      "acme\0tool",
+      "\u5de5\u5177/1",
+      "acme\ttool",
+    ]) {
       expect(() => new WebhooksCC({ apiKey: "whcc_test", userAgent: ` ${userAgent}x` })).toThrow(
         /userAgent/
       );

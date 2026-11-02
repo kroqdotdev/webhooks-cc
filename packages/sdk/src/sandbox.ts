@@ -38,13 +38,8 @@ import {
   type CredentialSlot,
   type CredentialSlotName,
 } from "./agent-credentials";
-import {
-  apiUserAgent,
-  collectMatchingRequests,
-  validatePathSegment,
-  waitListLimit,
-  WebhooksCC,
-} from "./client";
+import { collectMatchingRequests, validatePathSegment, waitListLimit, WebhooksCC } from "./client";
+import { apiUserAgent } from "./user-agent";
 import { RateLimitError, WebhooksCCError } from "./errors";
 import type { Endpoint, Request, WaitForAllOptions, WaitForOptions } from "./types";
 
@@ -158,7 +153,8 @@ class AssertionTokens {
     private readonly timeout: number | undefined,
     private persisted: PersistedSlot | null = null,
     initial: AccessToken | null = null,
-    private readonly onRevoked?: () => void
+    private readonly onRevoked?: () => void,
+    private readonly userAgent?: string
   ) {
     this.current = initial;
     if (!initial && persisted) {
@@ -186,6 +182,7 @@ class AssertionTokens {
       this.pending = exchange({
         baseUrl: this.baseUrl,
         timeout: this.timeout,
+        userAgent: this.userAgent,
         assertion: this.assertion,
       })
         .then(
@@ -281,7 +278,9 @@ function accountClient(input: AccountClientInput): WebhooksCC {
     input.claimed.identityAssertion,
     input.timeout,
     input.store ? { store: input.store, issuer, name: "claimed", slot } : null,
-    input.claimed.token
+    input.claimed.token,
+    undefined,
+    input.userAgent
   );
   return new WebhooksCC({
     baseUrl: input.baseUrl,
@@ -331,7 +330,12 @@ export class SandboxClient {
       this.baseUrl,
       registration.identityAssertion,
       options.timeout,
-      store && slot ? { store, issuer: normalizeIssuer(this.baseUrl), name: "sandbox", slot } : null
+      store && slot
+        ? { store, issuer: normalizeIssuer(this.baseUrl), name: "sandbox", slot }
+        : null,
+      null,
+      undefined,
+      options.userAgent
     );
   }
 
@@ -522,6 +526,7 @@ export class SandboxClient {
       const attempt = await startClaim({
         baseUrl: this.baseUrl,
         timeout: this.timeout,
+        userAgent: this.userAgent,
         claimToken,
         email,
       });
@@ -540,6 +545,7 @@ export class SandboxClient {
       const attempt = await startClaim({
         baseUrl: this.baseUrl,
         timeout: this.timeout,
+        userAgent: this.userAgent,
         claimToken: pending.claimToken,
       });
       return { ...withoutRegistration(attempt), movesEndpoints: false };
@@ -547,6 +553,7 @@ export class SandboxClient {
     const registration = await registerServiceAuth({
       baseUrl: this.baseUrl,
       timeout: this.timeout,
+      userAgent: this.userAgent,
       email,
       clientName: this.clientName,
     });
@@ -577,6 +584,7 @@ export class SandboxClient {
     }
     const claimed = await waitForAgentClaim({
       baseUrl: this.baseUrl,
+      userAgent: this.userAgent,
       claimToken,
       timeout: options.timeout,
       signal: options.signal,
@@ -689,7 +697,8 @@ export function savedConnection(options: ConnectedOptions = {}): WebhooksCC | nu
     options.timeout,
     { store, issuer: normalizeIssuer(baseUrl), name: "claimed", slot },
     null,
-    options.onRevoked
+    options.onRevoked,
+    options.userAgent
   );
   return new WebhooksCC({
     baseUrl,
@@ -763,6 +772,7 @@ export class PendingConnection implements ClaimAttempt {
   async wait(options: { timeout?: number; signal?: AbortSignal } = {}): Promise<WebhooksCC> {
     const claimed = await waitForAgentClaim({
       baseUrl: this.options.baseUrl,
+      userAgent: this.options.userAgent,
       claimToken: this.claimToken,
       interval: this.interval,
       timeout: options.timeout,
@@ -801,6 +811,7 @@ export class PendingConnection implements ClaimAttempt {
     const attempt = await startClaim({
       baseUrl: this.options.baseUrl,
       timeout: this.options.timeout,
+      userAgent: this.options.userAgent,
       claimToken: this.claimToken,
     });
     return new PendingConnection(this.options, this.registrationId, this.claimToken, attempt);
@@ -814,6 +825,7 @@ export async function connectAccount(options: ConnectOptions): Promise<PendingCo
   const registration = await registerServiceAuth({
     baseUrl,
     timeout: options.timeout,
+    userAgent: options.userAgent,
     email: options.email.trim().toLowerCase(),
     clientName: options.clientName,
   });
