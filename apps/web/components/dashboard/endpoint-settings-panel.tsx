@@ -17,6 +17,7 @@ import { AlertsSection } from "./alerts-section";
 import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import { EndpointSiteField, EndpointSiteText } from "./endpoint-site-field";
 import { twoSites, type EndpointSite } from "@/lib/site";
+import { setOpenEndpoint } from "@/lib/site-switch-client";
 import {
   Field,
   SaveFooter,
@@ -155,11 +156,12 @@ function ReceivingSection({
                 router.replace(`${window.location.pathname}?${params.toString()}`);
               }
             }
+            const savedSite = listedOn;
             void save(
               {
                 // An emptied name is saved as "" (the dashboard then shows the slug).
                 ...(name !== initialName ? { name: name.trim() } : {}),
-                ...(siteChanged ? { site: listedOn } : {}),
+                ...(siteChanged ? { site: savedSite } : {}),
                 ...(extracts !== initialExtracts ? { showEmailExtracts: extracts } : {}),
                 ...(fieldsChanged ? { emailFields: fields } : {}),
               },
@@ -167,7 +169,10 @@ function ReceivingSection({
                 const [problem] = emailFieldIssues(fields);
                 if (problem) throw new Error(`Check the fields: ${problem}.`);
               }
-            );
+            ).then((ok) => {
+              // A site switch before the endpoint list reloads goes by the saved site.
+              if (ok && siteChanged) setOpenEndpoint({ slug: endpoint.slug, site: savedSite });
+            });
           }}
         />
       }

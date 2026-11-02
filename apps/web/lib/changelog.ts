@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.56.3";
+export const APP_VERSION = "0.56.4";
 export const CLI_VERSION = "1.7.0";
 export const SDK_VERSION = "1.20.0";
 export const PYTHON_SDK_VERSION = "0.4.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.56.4",
+    date: "2026-11-02",
+    title: "Switching Sites Leaves Their Endpoints Behind",
+    track: "web",
+    items: [
+      "Switching between webhooks.cc and mailhooks.cc from the dashboard keeps the open endpoint only when the other site lists it. An endpoint listed on one site no longer stays open, and in the endpoint list, on the other; you land on that site's first endpoint instead",
+    ],
+  },
   {
     version: "0.56.3",
     date: "2026-11-02",

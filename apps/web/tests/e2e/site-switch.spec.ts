@@ -231,4 +231,15 @@ test("an endpoint made on mailhooks.cc is listed there, not on webhooks.cc", asy
   await expect(page.getByRole("banner").getByRole("combobox")).toContainText("Made on mail", {
     timeout: 15000,
   });
+
+  // Switching back to webhooks.cc leaves it behind: that site does not list it.
+  await page.getByRole("button", { name: "Switch site" }).click();
+  await page.getByRole("menuitem", { name: /webhooks\.cc/ }).click();
+  await page.waitForURL(
+    (url) => url.origin !== new URL(MAIL!).origin && url.pathname === "/dashboard"
+  );
+  expect(new URL(page.url()).searchParams.get("endpoint")).toBeNull();
+  await expect(page.getByRole("banner").getByRole("combobox")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("banner").getByRole("combobox")).not.toContainText("Made on mail");
+  await expect(page.getByText("This endpoint is listed on mailhooks.cc, not here.")).toBeHidden();
 });

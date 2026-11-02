@@ -1,4 +1,20 @@
-import { siteOrigin, type SiteKey } from "@/lib/site";
+import { siteOrigin, type EndpointSite, type SiteKey } from "@/lib/site";
+
+/**
+ * The endpoint the dashboard has open, and the site it is listed on, so a
+ * switch to the other site keeps it only where it is listed there.
+ */
+let openEndpoint: { slug: string; site: EndpointSite | undefined } | null = null;
+
+/** Set by the dashboard while an endpoint is open; null when it closes. */
+export function setOpenEndpoint(endpoint: typeof openEndpoint): void {
+  openEndpoint = endpoint;
+}
+
+/** The site of the open endpoint with this slug, or null when the dashboard has not said. */
+export function openEndpointSite(slug: string): { site: EndpointSite | undefined } | null {
+  return openEndpoint?.slug === slug ? { site: openEndpoint.site } : null;
+}
 
 /**
  * One switch at a time per page: a second click would make a new ticket,
