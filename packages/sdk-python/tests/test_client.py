@@ -160,6 +160,26 @@ def test_endpoints_create_and_list() -> None:
     assert listed[1].from_teams[0].team_name == "Acme"
 
 
+def test_endpoint_site_is_sent_and_read() -> None:
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else {}
+        bodies.append(body)
+        return httpx.Response(
+            200,
+            json={"id": "e1", "slug": "acme", "createdAt": 1, "site": body.get("site", "both")},
+        )
+
+    client = make_client(handler)
+    assert client.endpoints.create("orders", site="mailhooks").site == "mailhooks"
+    assert bodies[0]["site"] == "mailhooks"
+    assert client.endpoints.create("hooks").site == "both"
+    assert "site" not in bodies[1]
+    assert client.endpoints.update("acme", site="webhooks").site == "webhooks"
+    assert bodies[2] == {"site": "webhooks"}
+
+
 def test_update_sends_only_given_fields() -> None:
     bodies: list[Any] = []
 

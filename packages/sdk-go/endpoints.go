@@ -12,9 +12,22 @@ import (
 // test requests to them. Use it as client.Endpoints.
 type EndpointsService struct{ c *Client }
 
+// EndpointSite is which site's dashboard lists an endpoint. Only the
+// listing: every endpoint keeps its HTTP URL and email address and captures
+// both.
+type EndpointSite string
+
+const (
+	SiteWebhooks  EndpointSite = "webhooks"
+	SiteMailhooks EndpointSite = "mailhooks"
+	SiteBoth      EndpointSite = "both"
+)
+
 // CreateEndpointOptions are the settings of a new endpoint. All are optional.
 type CreateEndpointOptions struct {
 	Name string
+	// Site is which site's dashboard lists it; empty means both.
+	Site EndpointSite
 	// Ephemeral makes the endpoint temporary; ExpiresIn sets when it expires.
 	Ephemeral       bool
 	ExpiresIn       time.Duration
@@ -37,6 +50,9 @@ func (s *EndpointsService) Create(ctx context.Context, opts CreateEndpointOption
 	}
 	if opts.ResponseRules != nil {
 		body["responseRules"] = opts.ResponseRules
+	}
+	if opts.Site != "" {
+		body["site"] = opts.Site
 	}
 	if opts.ExpiresIn < 0 {
 		return nil, errors.New("webhooks.cc: ExpiresIn must not be negative")
@@ -94,6 +110,8 @@ type UpdateEndpointOptions struct {
 	SigningHeader   Field[string]
 	// ShowEmailExtracts turns the codes and links found in emails on or off.
 	ShowEmailExtracts Field[bool]
+	// Site is which site's dashboard lists it (owner only).
+	Site Field[EndpointSite]
 	// EmailFields replaces the named fields picked out of every email the
 	// endpoint captures, at most 20 (owner only); Null removes them all. A
 	// list EmailFieldIssues finds fault with is refused before anything is
@@ -117,8 +135,8 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	if err := validateSegment(slug, "slug"); err != nil {
 		return nil, err
 	}
-	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.ForwardEnabled.isNull() || opts.DeleteAfterDelivery.isNull() {
-		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts, ForwardEnabled and DeleteAfterDelivery cannot be cleared; set them with Value")
+	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.Site.isNull() || opts.ForwardEnabled.isNull() || opts.DeleteAfterDelivery.isNull() {
+		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts, Site, ForwardEnabled and DeleteAfterDelivery cannot be cleared; set them with Value")
 	}
 	if opts.EmailFields.IsSet() && !opts.EmailFields.isNull() {
 		if issues := EmailFieldIssues(opts.EmailFields.value); len(issues) > 0 {
@@ -134,6 +152,7 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	opts.SigningSecret.put(body, "signingSecret")
 	opts.SigningHeader.put(body, "signingHeader")
 	opts.ShowEmailExtracts.put(body, "showEmailExtracts")
+	opts.Site.put(body, "site")
 	opts.EmailFields.put(body, "emailFields")
 	opts.ForwardEnabled.put(body, "forwardEnabled")
 	opts.ForwardURL.put(body, "forwardUrl")

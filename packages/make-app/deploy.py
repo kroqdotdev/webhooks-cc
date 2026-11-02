@@ -30,7 +30,7 @@ if not TOKEN:
     raise SystemExit("MAKE_API_TOKEN is not set")
 
 # Module types by the "type" key of each module file.
-MODULE_TYPE_IDS = {"trigger": 1, "action": 4, "search": 9, "instant_trigger": 10}
+MODULE_TYPE_IDS = {"trigger": 1, "action": 4, "search": 9, "instant_trigger": 10, "universal": 12}
 
 
 def call(method, path, body=None, content_type="application/json", raw=False, missing_ok=False):
@@ -42,7 +42,10 @@ def call(method, path, body=None, content_type="application/json", raw=False, mi
         "User-Agent": "webhooks-cc-make-deploy/1.0",
     }
     if body is not None:
-        data = body.encode() if raw else json.dumps(body).encode()
+        if raw:
+            data = body if isinstance(body, bytes) else body.encode()
+        else:
+            data = json.dumps(body).encode()
         headers["Content-Type"] = content_type
     req = urllib.request.Request(ZONE + path, data=data, method=method, headers=headers)
     for attempt in range(4):
@@ -205,6 +208,16 @@ def main():
         section(f"{mpath}/interface", mod.get("interface", []))
         section(f"{mpath}/samples", mod.get("samples", {}))
         print("module", mod["name"], mod["type"])
+
+    # How the modules are grouped in the scenario editor, the app's readme
+    # and its icon (white on transparent; Make draws it on the theme color).
+    section(f"{app_path}/groups", load("groups.json"))
+    call("PUT", f"{app_path}/readme", open(os.path.join(ROOT, "app-readme.md")).read(),
+         content_type="text/markdown", raw=True)
+    with open(os.path.join(ROOT, "icon.png"), "rb") as f:
+        icon = f.read()
+    call("PUT", f"{app_path}/icon", icon, content_type="image/png", raw=True)
+    print("groups, readme and icon set")
 
 
 if __name__ == "__main__":

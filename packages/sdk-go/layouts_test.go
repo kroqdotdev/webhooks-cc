@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	webhookscc "webhooks.cc/go"
@@ -139,5 +140,47 @@ func TestPreviewLayoutsAndParsedRequests(t *testing.T) {
 	}
 	if again.Parsed == nil || again.Parsed.Pages != 1 || !again.Parsed.Truncated || !again.Email.Stored {
 		t.Errorf("round trip = %+v", again.Parsed)
+	}
+}
+
+func TestEndpointSiteIsSentAndRead(t *testing.T) {
+	api := newFakeAPI(t)
+	reply := func(w http.ResponseWriter, r *http.Request) {
+		var sent map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&sent)
+		site, _ := sent["site"].(string)
+		if site == "" {
+			site = "both"
+		}
+		writeJSON(w, 200, map[string]any{"id": "ep_1", "slug": "acme", "site": site})
+	}
+	api.handle("POST /api/endpoints", reply)
+	api.handle("PATCH /api/endpoints/{slug}", reply)
+	ctx := context.Background()
+
+	created, err := api.client().Endpoints.Create(ctx, webhookscc.CreateEndpointOptions{Name: "Orders", Site: webhookscc.SiteMailhooks})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Site != webhookscc.SiteMailhooks {
+		t.Errorf("created.Site = %q", created.Site)
+	}
+	plain, err := api.client().Endpoints.Create(ctx, webhookscc.CreateEndpointOptions{Name: "Hooks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, body := api.last()
+	if plain.Site != webhookscc.SiteBoth || strings.Contains(body, `"site"`) {
+		t.Errorf("plain.Site = %q, body = %s", plain.Site, body)
+	}
+	moved, err := api.client().Endpoints.Update(ctx, "acme", webhookscc.UpdateEndpointOptions{Site: webhookscc.Value(webhookscc.SiteWebhooks)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.Site != webhookscc.SiteWebhooks {
+		t.Errorf("moved.Site = %q", moved.Site)
+	}
+	if _, err := api.client().Endpoints.Update(ctx, "acme", webhookscc.UpdateEndpointOptions{Site: webhookscc.Null[webhookscc.EndpointSite]()}); err == nil {
+		t.Error("clearing Site was not refused")
 	}
 }

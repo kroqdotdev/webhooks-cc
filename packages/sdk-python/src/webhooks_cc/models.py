@@ -13,6 +13,10 @@ from typing import Any, Literal, cast
 
 RequestKind = Literal["http", "email"]
 
+EndpointSite = Literal["webhooks", "mailhooks", "both"]
+"""Which site's dashboard lists an endpoint. Only the listing: every endpoint
+keeps its HTTP URL and email address and captures both."""
+
 InboundEmailFormat = Literal["postmark", "sendgrid", "mailgun", "cloudmailin"]
 """The inbound mail providers whose shape an email can be sent or rendered in: Postmark's
 inbound JSON, SendGrid's Inbound Parse form, a Mailgun route's form and CloudMailin's
@@ -716,6 +720,8 @@ class Endpoint:
     signing_provider: str | None = None
     has_signing_secret: bool = False
     show_email_extracts: bool | None = None
+    site: EndpointSite | None = None
+    """Which site's dashboard lists it: ``"webhooks"``, ``"mailhooks"`` or ``"both"``."""
     email_fields: list[EmailField] | None = None
     """The named fields picked out of every email the endpoint captures (owner only)."""
     retention_days: int | None = None
@@ -762,6 +768,9 @@ class Endpoint:
             has_signing_secret=data.get("hasSigningSecret") is True,
             show_email_extracts=data.get("showEmailExtracts")
             if isinstance(data.get("showEmailExtracts"), bool)
+            else None,
+            site=cast(EndpointSite, data["site"])
+            if data.get("site") in ("webhooks", "mailhooks", "both")
             else None,
             email_fields=[
                 EmailField.from_dict(item) for item in email_fields if isinstance(item, Mapping)

@@ -1230,6 +1230,9 @@ type Endpoint struct {
 	SigningProvider   string
 	HasSigningSecret  bool
 	ShowEmailExtracts *bool
+	// Site is which site's dashboard lists it: SiteWebhooks, SiteMailhooks or
+	// SiteBoth; empty from an older server.
+	Site EndpointSite
 	// EmailFields are the named fields picked out of every email the
 	// endpoint captures (owner only).
 	EmailFields []EmailField
@@ -1256,6 +1259,15 @@ type Endpoint struct {
 	Raw json.RawMessage
 }
 
+// endpointSite reads a site the API sent; anything else is empty.
+func endpointSite(value string) EndpointSite {
+	switch site := EndpointSite(value); site {
+	case SiteWebhooks, SiteMailhooks, SiteBoth:
+		return site
+	}
+	return ""
+}
+
 // UnmarshalJSON reads an endpoint as the API returns it.
 func (e *Endpoint) UnmarshalJSON(data []byte) error {
 	var o rawObject
@@ -1275,6 +1287,7 @@ func (e *Endpoint) UnmarshalJSON(data []byte) error {
 		SigningProvider:   o.str("signingProvider"),
 		HasSigningSecret:  o.boolean("hasSigningSecret"),
 		ShowEmailExtracts: o.optBool("showEmailExtracts"),
+		Site:              endpointSite(o.str("site")),
 		ForwardEnabled:    o.optBool("forwardEnabled"),
 		ForwardURL:        o.str("forwardUrl"),
 		SharedWith:        o.teams("sharedWith"),
@@ -1341,6 +1354,7 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 		SigningProvider   string         `json:"signingProvider,omitempty"`
 		HasSigningSecret  bool           `json:"hasSigningSecret"`
 		ShowEmailExtracts *bool          `json:"showEmailExtracts,omitempty"`
+		Site              EndpointSite   `json:"site,omitempty"`
 		EmailFields       []EmailField   `json:"emailFields,omitempty"`
 		RetentionDays     *int           `json:"retentionDays,omitempty"`
 		RetentionCapDays  int            `json:"retentionCapDays,omitempty"`
@@ -1354,7 +1368,7 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 	}{
 		e.ID, e.Slug, e.Name, e.URL, e.EmailAddress, millisOf(e.CreatedAt), e.IsEphemeral, millisOf(e.ExpiresAt),
 		e.NotificationURL, e.MockResponse, e.ResponseRules, e.SigningProvider, e.HasSigningSecret,
-		e.ShowEmailExtracts, e.EmailFields, e.RetentionDays, e.RetentionCapDays, e.DeleteAfterDelivery,
+		e.ShowEmailExtracts, e.Site, e.EmailFields, e.RetentionDays, e.RetentionCapDays, e.DeleteAfterDelivery,
 		e.Layouts, e.LayoutsCap, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams,
 	})
 }

@@ -68,6 +68,7 @@ from .models import (
     DestinationTestResult,
     EmailField,
     Endpoint,
+    EndpointSite,
     Layout,
     LayoutsPreview,
     RenderedEmail,
@@ -801,8 +802,13 @@ class Endpoints:
         mock_response: Mapping[str, Any] | None = None,
         notification_url: str | None = None,
         response_rules: Sequence[Mapping[str, Any]] | None = None,
+        site: EndpointSite | None = None,
     ) -> Endpoint:
         """Create an endpoint. ``expires_in`` (or ``ephemeral=True``) makes it temporary.
+
+        ``site`` says which site's dashboard lists it: ``"webhooks"``,
+        ``"mailhooks"`` or ``"both"`` (the default). Only the listing: the endpoint
+        keeps its HTTP URL and email address either way.
 
         ``mock_response`` is what the endpoint answers instead of a plain 200 OK:
         ``{"status": 201, "body": "...", "headers": {...}, "delay": 0}``, the delay
@@ -845,6 +851,8 @@ class Endpoints:
             body["notificationUrl"] = notification_url
         if response_rules is not None:
             body["responseRules"] = [dict(rule) for rule in response_rules]
+        if site is not None:
+            body["site"] = site
         if ephemeral or expires_in is not None:
             body["isEphemeral"] = True
         if expires_in is not None:
@@ -878,6 +886,7 @@ class Endpoints:
         signing_secret: str | None = UNSET,
         signing_header: str | None = UNSET,
         show_email_extracts: bool = UNSET,
+        site: EndpointSite = UNSET,
         email_fields: Sequence[Mapping[str, Any] | EmailField] | None = UNSET,
         forward_enabled: bool = UNSET,
         forward_url: str | None = UNSET,
@@ -902,7 +911,8 @@ class Endpoints:
         is settled. ``layouts`` replaces how the endpoint reads its emails, as
         :class:`~webhooks_cc.models.Layout` objects or dicts in the shape the API
         takes (see https://webhooks.cc/docs/layouts); the server checks them, RE2
-        included. All three are owner only.
+        included. All three are owner only, as is ``site``, which site's
+        dashboard lists the endpoint (see :meth:`create`).
         """
         _validate_segment(slug, "slug")
         if email_fields is not UNSET and email_fields is not None:
@@ -926,6 +936,7 @@ class Endpoints:
             "signingSecret": signing_secret,
             "signingHeader": signing_header,
             "showEmailExtracts": show_email_extracts,
+            "site": site,
             "emailFields": email_fields,
             "forwardEnabled": forward_enabled,
             "forwardUrl": forward_url,

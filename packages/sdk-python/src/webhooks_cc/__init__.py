@@ -20,7 +20,7 @@ hours, and ``WebhooksCC.connect(email)`` connects it to a human's account; see
 Every signature check for each provider is in :mod:`webhooks_cc.verify`.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from .agent import AgentAuthError, ClaimAttempt
 from .client import (
@@ -86,6 +86,7 @@ from .models import (
     EmailExtracts,
     EmailField,
     Endpoint,
+    EndpointSite,
     ExtractedLink,
     Layout,
     LayoutsPreview,
@@ -156,6 +157,7 @@ __all__ = [
     "EmailField",
     "Emails",
     "Endpoint",
+    "EndpointSite",
     "Endpoints",
     "ExtractedLink",
     "Forwarding",
