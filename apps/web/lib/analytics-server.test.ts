@@ -64,6 +64,13 @@ describe("auditAnalyticsEvent", () => {
     expect(event?.properties?.client).toBe("cli");
   });
 
+  it("leaves out refused anonymous agents and agent-chosen names", () => {
+    const refused = { ...row, actor_type: "agent" as const, actor_user_id: null, via: null };
+    expect(auditAnalyticsEvent({ ...refused, outcome: "refused", target_id: null })).toBeNull();
+    const ok = auditAnalyticsEvent({ ...refused, metadata: { client_name: "Acme bot" } });
+    expect(ok?.properties).not.toHaveProperty("client_name");
+  });
+
   it("removes the email from a deleted account's person", () => {
     const event = auditAnalyticsEvent({ ...row, action: "account.deleted" });
     expect(event?.properties?.$unset).toEqual(["email"]);

@@ -68,6 +68,14 @@ export function billingAnalyticsEvent(
   return { event, properties: { product, account_kind } };
 }
 
+function eventTime(data: Record<string, unknown>): Date | undefined {
+  for (const key of ["modified_at", "created_at"]) {
+    const value = data[key];
+    if (typeof value === "string" && Number.isFinite(Date.parse(value))) return new Date(value);
+  }
+  return undefined;
+}
+
 async function teamCreator(teamId: string): Promise<string | null> {
   const { data } = await createAdminClient()
     .from("teams")
@@ -98,6 +106,9 @@ export async function captureBillingEvent(input: {
       event: mapped.event,
       properties: mapped.properties,
       groups: input.teamId ? { team: input.teamId } : undefined,
+      // The payload's own time, so a redelivery on a later day is still the
+      // same event to PostHog's deduplication.
+      timestamp: eventTime(input.data),
       uuid: input.webhookId ? stableEventUuid(`polar:${input.webhookId}`) : undefined,
     });
   } catch (error) {

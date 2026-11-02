@@ -23,35 +23,38 @@ describe("redactAnalyticsEvent", () => {
     expect(event.properties?.count).toBe(3);
   });
 
-  it("drops endpoint slugs, Polar session tokens and auth codes, nested ones too", () => {
+  it("drops endpoint slugs, Polar session tokens and auth codes, in person fields too", () => {
+    // The shape posthog-js hands to before_send: $set and $set_once beside properties.
     const event = redactAnalyticsEvent({
-      event: "$pageview",
+      uuid: "0199-uuid",
+      event: "$identify",
       properties: {
         $current_url: "https://webhooks.cc/dashboard?endpoint=acme-slug-123&tab=email",
-        $set: {
-          $initial_current_url:
-            "https://webhooks.cc/account/plan?customer_session_token=polar_cst_secret&upgraded=1",
-        },
         $elements_chain: 'a:href="/dashboard?endpoint=acme-slug-123"nth-child="1"',
         $referrer: "https://webhooks.cc/auth/callback?code=abc#access_token=jwt",
       },
+      $set_once: {
+        $initial_current_url:
+          "https://webhooks.cc/account/plan?customer_session_token=polar_cst_secret&upgraded=1",
+      },
+      $set: { plan: "pro" },
     });
     const text = JSON.stringify(event);
     for (const secret of ["acme-slug-123", "polar_cst_secret", "code=abc", "jwt"]) {
       expect(text).not.toContain(secret);
     }
-    expect(event.properties?.$current_url).toBe("https://webhooks.cc/dashboard?tab=email");
-    expect((event.properties?.$set as Record<string, unknown>).$initial_current_url).toBe(
+    expect(event.uuid).toBe("0199-uuid");
+    expect(event.properties.$current_url).toBe("https://webhooks.cc/dashboard?tab=email");
+    expect(event.$set_once.$initial_current_url).toBe(
       "https://webhooks.cc/account/plan?upgraded=1"
     );
-    expect(event.properties?.$elements_chain).toBe('a:href="/dashboard"nth-child="1"');
-    expect(event.properties?.$referrer).toBe("https://webhooks.cc/auth/callback");
+    expect(event.properties.$elements_chain).toBe('a:href="/dashboard"nth-child="1"');
+    expect(event.properties.$referrer).toBe("https://webhooks.cc/auth/callback");
+    expect(event.$set).toEqual({ plan: "pro" });
   });
 
-  it("passes through events without properties", () => {
+  it("passes through a dropped event", () => {
     expect(redactAnalyticsEvent(null)).toBeNull();
-    const bare = { event: "x", properties: undefined };
-    expect(redactAnalyticsEvent(bare)).toBe(bare);
   });
 });
 

@@ -33,8 +33,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "web",
     items: [
       "A cookie banner asks once, on each site, whether our analytics may keep an anonymous identifier in your browser. Decline, or do not choose, and visits are only counted, with nothing stored; Do Not Track and Global Privacy Control count as a decline. Cookie settings in the footer and the Privacy Policy change the choice at any time",
-      "Analytics are for our own use only. We never sell or share them, and the Privacy Policy and the sign-in page now say so, along with what we record about how an account is used",
-      "Addresses sent to analytics lose endpoint names, checkout tokens and every query parameter other than campaign ones, as well as share link tokens",
+      "Analytics are for our own use only. We never sell or share them, and the Privacy Policy and the sign-in page now say so, along with what we record about how an account is used. They name an account by its id, never by its email address",
+      "Addresses sent to analytics lose endpoint names, checkout tokens and every query parameter other than campaign ones, as well as share link tokens, and clicks in the parts of the dashboard that show your requests, emails and endpoint names are no longer recorded",
       "Account activity is now counted on our servers, whichever client it comes from (the dashboard, the API, the CLI, the SDKs, the MCP server or an agent), with daily usage counts per account. It never includes what your webhooks or emails contain",
       "Signups are no longer marked with a short-lived cookie",
     ],

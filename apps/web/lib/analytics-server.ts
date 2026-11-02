@@ -35,6 +35,8 @@ function client(): PostHog | null {
         host: HOST,
         flushAt: 50,
         flushInterval: 5_000,
+        // The daily report queues a page of accounts at a time.
+        maxQueueSize: 5_000,
         // The server's address says nothing about where the person is.
         disableGeoip: true,
       })
@@ -130,12 +132,14 @@ interface AuditRowForAnalytics {
 
 /**
  * Metadata that never goes to analytics, though the audit trail keeps it:
- * addresses, domains and names people chose, and refusal messages, which can
- * quote them. Any other string that looks like an address or a URL is
+ * addresses, domains and names people or agents chose, and refusal messages,
+ * which can quote them. Any other string that looks like an address or a URL is
  * dropped too.
  */
 const AUDIT_METADATA_DENYLIST = new Set([
   "reason",
+  "client_name",
+  "clientName",
   "invited_email",
   "email_domain",
   "login_hint_domain",
@@ -168,6 +172,9 @@ export function auditAnalyticsEvent(row: AuditRowForAnalytics): ServerEvent | nu
   if (row.actor_type === "polar" || row.actor_type === "system") return null;
   const userId = row.actor_user_id;
   if (row.actor_type === "user" && !userId) return null;
+  // Refusals of anonymous agents (rate limits, bad proofs of work) are abuse,
+  // not use; a flood of them must not become a flood of analytics.
+  if (!userId && row.outcome !== "ok") return null;
 
   const properties: Record<string, unknown> = {
     outcome: row.outcome,

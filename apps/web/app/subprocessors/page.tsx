@@ -59,7 +59,7 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     name: "PostHog",
     entity: "PostHog, Inc., United States",
     purpose: "Product analytics.",
-    data: "Page views, clicks, page load performance, IP addresses, an anonymous browser identifier when a visitor accepts analytics, and for account holders the account ID, email address, plan, the account actions they take (never their contents) and daily usage counts. Used only for our own analytics, never shared or sold.",
+    data: "Page views, clicks, page load performance, IP addresses, an anonymous browser identifier when a visitor accepts analytics, and for account holders the account ID, plan, the account actions they take (never their contents) and daily usage counts; no email addresses since November 2, 2026. Used only for our own analytics, never shared or sold.",
     location: "Stored in PostHog's EU region in Frankfurt, Germany",
     safeguard: "EU-US Data Privacy Framework and Standard Contractual Clauses",
   },

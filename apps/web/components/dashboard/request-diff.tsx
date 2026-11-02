@@ -66,7 +66,7 @@ export function RequestDiff({ left, right, onExit }: RequestDiffProps) {
   }, [bodyDiff, headerDiff, queryDiff, left.method, right.method, left.path, right.path]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="ph-no-capture flex flex-col h-full">
       {/* Header */}
       <div className="border-b-strong border-line px-4 py-3 shrink-0">
         <div className="flex items-center justify-between">

@@ -388,7 +388,8 @@ export function DeliveriesSection({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              {/* Rows show subjects and paths: kept out of autocapture. */}
+              <tbody className="ph-no-capture">
                 {rows.map((row) => {
                   const isEmail = row.kind === "email";
                   const name = isEmail ? row.subject || "(no subject)" : (row.path ?? "");

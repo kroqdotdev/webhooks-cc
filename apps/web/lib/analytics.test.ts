@@ -42,7 +42,7 @@ describe("trackUiStyleChanged", () => {
 });
 
 describe("reportAuthenticatedUser", () => {
-  const user = { id: "user-1", email: "new@example.com" };
+  const user = { id: "user-1" };
 
   beforeEach(() => {
     capture.mockClear();
@@ -53,7 +53,7 @@ describe("reportAuthenticatedUser", () => {
 
   it("identifies the person once analytics is accepted", () => {
     reportAuthenticatedUser(user);
-    expect(identify).toHaveBeenCalledWith("user-1", { email: "new@example.com" });
+    expect(identify).toHaveBeenCalledWith("user-1", undefined);
     expect(capture).not.toHaveBeenCalled();
   });
 
@@ -70,7 +70,7 @@ describe("reportAuthenticatedUser", () => {
     expect(identify).not.toHaveBeenCalled();
     consent = "granted";
     identifyPendingUser();
-    expect(identify).toHaveBeenCalledWith("user-1", { email: "new@example.com" });
+    expect(identify).toHaveBeenCalledWith("user-1", undefined);
   });
 
   it("never identifies after a decline", () => {

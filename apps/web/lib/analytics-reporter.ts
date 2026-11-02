@@ -16,8 +16,10 @@ import { reportError } from "@/lib/observability";
  * Webhook traffic reaches PostHog only as these daily counts.
  *
  * Each period is claimed in analytics_report_runs before it is sent, so
- * several processes never send it twice; periods missed while the app was
- * down are caught up within the lookback.
+ * several processes never send it twice, and released again when reading it
+ * fails; periods missed while the app was down are caught up within the
+ * lookback. Events carry stable ids and their period's timestamp, so a resend
+ * is dropped by PostHog.
  */
 
 const TICK_MS = 5 * 60_000;
@@ -65,7 +67,7 @@ async function sendSignups(hourStart: Date): Promise<number> {
   const hourEnd = new Date(hourStart.getTime() + HOUR_MS);
   const { data, error } = await createAdminClient()
     .from("users")
-    .select("id, email, plan, home_site, created_at")
+    .select("id, plan, home_site, created_at")
     .gte("created_at", hourStart.toISOString())
     .lt("created_at", hourEnd.toISOString());
   if (error) throw new Error(error.message);
@@ -80,7 +82,7 @@ async function sendSignups(hourStart: Date): Promise<number> {
       timestamp: new Date(user.created_at),
       uuid: stableEventUuid(`signup:${user.id}`),
       properties: { site: user.home_site, provider },
-      set: { email: user.email, plan: user.plan },
+      set: { plan: user.plan },
       setOnce: { signed_up_at: user.created_at, signup_site: user.home_site },
     });
   }
@@ -89,7 +91,6 @@ async function sendSignups(hourStart: Date): Promise<number> {
 
 export interface DailyAccountRow {
   user_id: string;
-  email: string | null;
   plan: string;
   billing_interval: string | null;
   subscription_status: string | null;
@@ -132,7 +133,6 @@ export function dailyAccountEvents(day: string, row: DailyAccountRow): ServerEve
       audited_actions: counts(row.audited_actions),
     },
     set: {
-      email: row.email,
       plan: row.plan,
       billing_interval: row.billing_interval,
       subscription_status: row.subscription_status,
@@ -165,17 +165,37 @@ export function dailyAccountEvents(day: string, row: DailyAccountRow): ServerEve
   ];
 }
 
+/** Rows per page: below PostgREST's row cap, and a page's events fit posthog-node's queue. */
+const DAILY_PAGE_SIZE = 500;
+
 async function sendDailyUsage(dayStart: Date): Promise<number> {
   const day = dayStart.toISOString().slice(0, 10);
-  const { data, error } = await createAdminClient().rpc("analytics_daily_accounts", {
-    p_day: day,
-  });
-  if (error) throw new Error(error.message);
-  const rows = (data ?? []) as unknown as DailyAccountRow[];
-  for (const row of rows) {
-    for (const event of dailyAccountEvents(day, row)) captureServerEvent(event);
+  const admin = createAdminClient();
+  let sent = 0;
+  for (let from = 0; ; from += DAILY_PAGE_SIZE) {
+    const { data, error } = await admin
+      .rpc("analytics_daily_accounts", { p_day: day })
+      .order("user_id")
+      .range(from, from + DAILY_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as unknown as DailyAccountRow[];
+    for (const row of rows) {
+      for (const event of dailyAccountEvents(day, row)) captureServerEvent(event);
+    }
+    sent += rows.length;
+    // Out before the next page, so the queue never holds more than one.
+    await flushServerAnalytics();
+    if (rows.length < DAILY_PAGE_SIZE) return sent;
   }
-  return rows.length;
+}
+
+/** Gives a period back after a failed read, so the next tick tries it again; nothing was sent. */
+async function release(report: Report, periodStart: Date): Promise<void> {
+  await createAdminClient()
+    .from("analytics_report_runs")
+    .delete()
+    .eq("report", report)
+    .eq("period_start", periodStart.toISOString());
 }
 
 async function runReport(report: Report, now: Date): Promise<void> {
@@ -184,7 +204,16 @@ async function runReport(report: Report, now: Date): Promise<void> {
   for (const period of periods) {
     if (done.has(period.getTime())) continue;
     if (!(await claim(report, period))) continue;
-    const sent = report === "signups" ? await sendSignups(period) : await sendDailyUsage(period);
+    let sent: number;
+    try {
+      sent = report === "signups" ? await sendSignups(period) : await sendDailyUsage(period);
+    } catch (error) {
+      // A failed read sent nothing, so the period can be tried again. A
+      // daily page that fails after an earlier one was sent is resent whole;
+      // its events keep their ids, so PostHog drops the repeats.
+      await release(report, period).catch(() => undefined);
+      throw error;
+    }
     if (sent) console.info(`[analytics] ${report} ${period.toISOString()} sent=${sent}`);
   }
 }

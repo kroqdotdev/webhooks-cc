@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   acceptAnalytics,
   analyticsConsent,
+  browserDeclinesTracking,
   declineAnalytics,
   OPEN_COOKIE_SETTINGS_EVENT,
   openCookieSettings,
@@ -32,6 +33,30 @@ export function CookieConsent() {
   }, []);
 
   if (!open) return null;
+
+  // Reachable only from Cookie settings: the banner never opens by itself here.
+  if (browserDeclinesTracking()) {
+    return (
+      <div
+        role="dialog"
+        aria-labelledby="cookie-consent-title"
+        className="ui-card ui-card-static fixed bottom-4 left-4 right-4 z-[60] p-5 sm:right-auto sm:max-w-md"
+      >
+        <p id="cookie-consent-title" className="font-bold">
+          Analytics stay off
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your browser asks sites not to track you (Do Not Track or Global Privacy Control), so we
+          keep nothing in this browser and only count visits. Turn that setting off to choose here.
+        </p>
+        <div className="mt-4 flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+            Close
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const choose = (accept: boolean) => {
     if (accept) acceptAnalytics();

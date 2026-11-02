@@ -200,8 +200,12 @@ export function trackSignOut() {
 }
 
 // ── Identify (after login) ──────────────────────────────────────
+/**
+ * Ties this browser to an account, only once the visitor has accepted
+ * analytics. Never pass the email address: analytics name accounts by id only.
+ */
 export function identifyUser(userId: string, properties?: Record<string, unknown>) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !analyticsConsentGranted()) return;
   try {
     posthog.identify(userId, properties);
   } catch {
@@ -211,11 +215,9 @@ export function identifyUser(userId: string, properties?: Record<string, unknown
 
 interface AuthedUser {
   id: string;
-  email?: string | null;
 }
 
 let reportedUserId: string | null = null;
-let reportedEmail: string | null | undefined;
 /** The signed-in user while the visitor has not accepted analytics, identified if they do. */
 let pendingUser: AuthedUser | null = null;
 
@@ -246,9 +248,8 @@ export function reportAuthenticatedUser(user: AuthedUser) {
     return;
   }
   reportedUserId = user.id;
-  reportedEmail = user.email;
   pendingUser = null;
-  identifyUser(user.id, { email: user.email ?? undefined });
+  identifyUser(user.id);
 }
 
 /** Called once PostHog has loaded and when the visitor accepts: identifies a waiting user. */
@@ -259,7 +260,7 @@ export function identifyPendingUser() {
 /** Called when the visitor declines: PostHog dropped the identity, so a later accept identifies again. */
 export function forgetIdentifiedUser() {
   if (!reportedUserId) return;
-  pendingUser = { id: reportedUserId, email: reportedEmail };
+  pendingUser = { id: reportedUserId };
   reportedUserId = null;
 }
 

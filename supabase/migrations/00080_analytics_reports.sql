@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 00080: product analytics reports
 -- ============================================================================
--- The web app's analytics reporter (apps/web/lib/analytics/reporter.ts) sends
+-- The web app's analytics reporter (apps/web/lib/analytics-reporter.ts) sends
 -- PostHog two kinds of server-side report: the accounts created in each hour,
 -- and a usage snapshot per account for each UTC day. Webhook traffic itself
 -- never goes to PostHog, only these counts.
@@ -13,9 +13,11 @@
 -- chart, never a duplicate.
 --
 -- analytics_daily_accounts(day): every account that captured something, took
--- an audited action, or was created on that day, with the day's counts from
--- endpoint_daily_stats and the account's current state (plan, what it has set
--- up). first_capture marks the account's first day with captured requests.
+-- an audited action, or was created on that UTC day, with the day's counts
+-- from endpoint_daily_stats and the account's current state (plan, what it
+-- has set up), ordered by user id so the reporter can page through it. No
+-- email address: analytics name accounts by id only. first_capture marks the
+-- account's first day with captured requests.
 --
 -- Both are service-role only. No deploy order: the reporter skips a missing
 -- function or table and tries again later.
@@ -34,10 +36,12 @@ create table if not exists public.analytics_report_runs (
 alter table public.analytics_report_runs enable row level security;
 revoke all on table public.analytics_report_runs from anon, authenticated;
 
-create or replace function public.analytics_daily_accounts(p_day date)
+-- Dropped first: an earlier version of this file returned the email address too.
+drop function if exists public.analytics_daily_accounts(date);
+
+create function public.analytics_daily_accounts(p_day date)
 returns table (
   user_id uuid,
-  email text,
   plan text,
   billing_interval text,
   subscription_status text,
@@ -66,7 +70,9 @@ stable
 set search_path = ''
 as $$
   with day_bounds as (
-    select p_day::timestamptz as day_start, (p_day + 1)::timestamptz as day_end
+    -- endpoint_daily_stats.day is a UTC day, whatever the session's time zone.
+    select p_day::timestamp at time zone 'UTC' as day_start,
+           (p_day + 1)::timestamp at time zone 'UTC' as day_end
   ),
   traffic as (
     select s.user_id,
@@ -94,7 +100,6 @@ as $$
      where u.created_at >= b.day_start and u.created_at < b.day_end
   )
   select u.id,
-         u.email,
          u.plan,
          u.billing_interval,
          u.subscription_status,
@@ -130,7 +135,8 @@ as $$
     from active
     join public.users u on u.id = active.user_id
     left join traffic t on t.user_id = u.id
-    left join actions a on a.user_id = u.id;
+    left join actions a on a.user_id = u.id
+   order by u.id;
 $$;
 
 revoke all on function public.analytics_daily_accounts(date) from public, anon, authenticated;

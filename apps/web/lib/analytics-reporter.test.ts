@@ -26,7 +26,6 @@ describe("duePeriods", () => {
 describe("dailyAccountEvents", () => {
   const row = {
     user_id: "user-1",
-    email: "a@acme.test",
     plan: "pro",
     billing_interval: "month",
     subscription_status: "active",

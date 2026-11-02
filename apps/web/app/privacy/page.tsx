@@ -327,7 +327,9 @@ export default function PrivacyPage() {
               views, time on page, clicks on links and buttons, page load performance, the referrer,
               and campaign parameters. Addresses are cleaned before they leave your browser: share
               link tokens, endpoint names in the address, and every query parameter other than
-              campaign parameters are removed. We do not record your sessions, fingerprint your
+              campaign parameters and a few of our own page settings (such as which tab is open) are
+              removed. Clicks inside the parts of the dashboard that show your requests, emails and
+              endpoint names are not recorded. We do not record your sessions, fingerprint your
               browser, or track you across other sites.
             </p>
             <p>
@@ -338,9 +340,9 @@ export default function PrivacyPage() {
               of client made the request. Once a day we also record each active account&apos;s usage
               counts (how many requests and emails it captured) and what it has set up (how many
               endpoints, destinations, domains, API keys and teams). These records are linked to
-              your account, your email address and your plan. They never include the contents of
-              your webhooks or emails, URLs, or secrets. They do not depend on the choice in your
-              browser, because nothing is stored there for them.
+              your account by its id, with your plan, never by your name or email address. They
+              never include the contents of your webhooks or emails, URLs, or secrets. They do not
+              depend on the choice in your browser, because nothing is stored there for them.
             </p>
             <p>
               <span className="font-bold text-foreground">Legal basis.</span> Keeping an identifier
@@ -352,9 +354,10 @@ export default function PrivacyPage() {
             <p>
               <span className="font-bold text-foreground">Location and deletion.</span> Analytics
               are sent through our own address, f.webhooks.cc (from your browser), or directly from
-              our servers, to PostHog&apos;s EU region and stored there. When you delete your
-              account, we remove your email address from them, and what remains is no longer linked
-              to you. See PostHog&apos;s{" "}
+              our servers, to PostHog&apos;s EU region and stored there. Analytics recorded before
+              November 2, 2026 may also hold the email address of a signed-in account; when you
+              delete your account we remove it from your analytics profile. Once your account is
+              deleted, its id no longer leads to you. See PostHog&apos;s{" "}
               <a
                 href="https://posthog.com/privacy"
                 className={linkClass}

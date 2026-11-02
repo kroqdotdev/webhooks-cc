@@ -21,6 +21,17 @@ export function analyticsConsent(): AnalyticsConsent {
   }
 }
 
+/**
+ * Do Not Track or Global Privacy Control: posthog-js treats either as a
+ * decline (respect_dnt) that a click on Accept cannot override, so the banner
+ * says so instead of offering a choice.
+ */
+export function browserDeclinesTracking(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const nav = navigator as Navigator & { globalPrivacyControl?: boolean };
+  return nav.doNotTrack === "1" || nav.globalPrivacyControl === true;
+}
+
 /** Accept: posthog-js may now store its identifier, and a signed-in user is identified. */
 export function acceptAnalytics() {
   try {

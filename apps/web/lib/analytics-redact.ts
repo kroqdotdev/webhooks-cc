@@ -71,13 +71,19 @@ function redactValue(value: unknown, depth: number): unknown {
   return out;
 }
 
-/** posthog-js before_send: the same event with its URLs cleaned. */
-export function redactAnalyticsEvent<T extends { properties?: Record<string, unknown> } | null>(
-  event: T
-): T {
-  if (!event?.properties) return event;
-  return {
-    ...event,
-    properties: redactValue(event.properties, 0) as Record<string, unknown>,
-  };
+/** Event fields that are ours or PostHog's own ids, never a URL. */
+const UNTOUCHED_KEYS = new Set(["uuid", "event", "timestamp"]);
+
+/**
+ * posthog-js before_send: the same event with its URLs cleaned. The person
+ * fields ($set, $set_once, which carry the initial URL and referrer) sit
+ * beside `properties`, not in it, so every field is cleaned.
+ */
+export function redactAnalyticsEvent<T extends object | null>(event: T): T {
+  if (!event) return event;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(event)) {
+    out[key] = UNTOUCHED_KEYS.has(key) ? value : redactValue(value, 0);
+  }
+  return out as T;
 }
