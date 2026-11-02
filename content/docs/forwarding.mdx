@@ -363,7 +363,7 @@ The Postmark shape sends inline contents as `Attachments[].Content` and CloudMai
 A **Google Sheets** destination adds a row to a spreadsheet for each email or request it takes.
 
 1. Add a destination and pick **Google Sheets**, then **Connect a Google account**. webhooks.cc asks only for access to the spreadsheets it creates or that you pick for it (Google's `drive.file` permission), never the rest of your Drive.
-2. **Create it** makes a new spreadsheet with your columns as its header row; **Choose from Drive** picks one you have.
+2. **Create it** makes a new spreadsheet with your columns as its header row; **Choose from Drive** opens Google's picker in a small window to pick one you have (allow pop-ups for the site if your browser blocks it). Picking a spreadsheet is what gives webhooks.cc access to it.
 3. Set the columns: each has a header and a value written with the same [placeholders](#your-own-json) as templates, such as `{{ subject }}`, `{{ from.address }}` or one of your [fields](/docs/email-capture#fields-you-pick-out), `{{ fields.order }}`. **Write these headers to row 1** puts the headers into a spreadsheet you picked; webhooks.cc never changes your header row on its own.
 4. **One per email** adds a row for each email; **One per line item** adds a row for each [line item](/docs/layouts#line-items) a layout found, with `{{ item.sku }}` and the like for its values (an email without line items adds one row).
 

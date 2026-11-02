@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import type { Condition } from "@webhooks-cc/sdk";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -9,7 +9,7 @@ import {
   createGoogleSpreadsheet,
   deleteDestination,
   fetchGoogleConnections,
-  fetchPickerToken,
+  startDrivePick,
   startGoogleConnect,
   updateDestination,
   type DashboardDestination,
@@ -34,39 +34,15 @@ function spreadsheetUrl(id: string): string {
   return `https://docs.google.com/spreadsheets/d/${id}/edit`;
 }
 
-declare global {
-  interface Window {
-    gapi?: { load: (name: string, callback: () => void) => void };
-    google?: {
-      picker: {
-        PickerBuilder: new () => {
-          addView: (view: unknown) => unknown;
-          setOAuthToken: (token: string) => unknown;
-          setDeveloperKey: (key: string) => unknown;
-          setAppId: (id: string) => unknown;
-          setCallback: (cb: (data: Record<string, unknown>) => void) => unknown;
-          build: () => { setVisible: (visible: boolean) => void };
-        };
-        DocsView: new (viewId: unknown) => { setMimeTypes: (types: string) => unknown };
-        ViewId: { SPREADSHEETS: unknown };
-        Action: { PICKED: string };
-      };
-    };
-  }
-}
+/** Where the picked page (app/api/integrations/google/picked) posts the pick. */
+const DRIVE_PICK_CHANNEL = "whcc-drive-pick";
 
-/** Loads Google's picker script once. */
-function loadPicker(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const ready = () => window.gapi!.load("picker", () => resolve());
-    if (window.gapi) return ready();
-    const script = document.createElement("script");
-    script.src = "https://apis.google.com/js/api.js";
-    script.async = true;
-    script.onload = ready;
-    script.onerror = () => reject(new Error("Google's picker could not be loaded."));
-    document.head.appendChild(script);
-  });
+function pickNonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 /**
@@ -173,28 +149,50 @@ export function SheetsDestinationEditor({
     }
   };
 
+  // Google's picker opens in a pop-up as a page of its own: the embedded one
+  // needs third-party cookies, which many browsers block. The pick comes back
+  // from the picked page on a BroadcastChannel, with the nonce of this pick.
+  const pending = useRef<string | null>(null);
+  useEffect(() => {
+    if (typeof BroadcastChannel !== "function") return;
+    const channel = new BroadcastChannel(DRIVE_PICK_CHANNEL);
+    channel.onmessage = (event: MessageEvent) => {
+      const data = event.data as { nonce?: unknown; file?: unknown; error?: unknown } | null;
+      if (!pending.current || data?.nonce !== pending.current) return;
+      pending.current = null;
+      if (typeof data.file === "string") setSpreadsheetId(data.file);
+      else if (data.error === "expired") {
+        setError("Google's window was open too long. Choose from Drive again.");
+      } else if (data.error !== "cancelled") setError("Google did not say which spreadsheet.");
+    };
+    return () => channel.close();
+  }, []);
+
   const pick = async () => {
     if (!accessToken || !connectionId) return;
     setError(null);
+    // The pick comes back on a BroadcastChannel; without one it never would.
+    if (typeof BroadcastChannel !== "function") {
+      setError("This browser cannot take the pick back from Google. Use a current browser.");
+      return;
+    }
+    // Opened in the click itself, so pop-up blockers let it through; Google's
+    // page goes in once the server has made its URL.
+    const popup = window.open("", "whcc-drive-pick", "popup,width=960,height=720");
+    if (!popup) {
+      setError("Your browser blocked Google's window. Allow pop-ups for this site and try again.");
+      return;
+    }
+    const nonce = pickNonce();
+    pending.current = nonce;
     try {
-      const [token] = await Promise.all([
-        fetchPickerToken(accessToken, connectionId),
-        loadPicker(),
-      ]);
-      const picker = window.google!.picker;
-      const view = new picker.DocsView(picker.ViewId.SPREADSHEETS);
-      const builder = new picker.PickerBuilder();
-      builder.addView(view);
-      builder.setOAuthToken(token.accessToken);
-      builder.setDeveloperKey(token.apiKey);
-      builder.setAppId(token.appId);
-      builder.setCallback((data) => {
-        if (data.action !== picker.Action.PICKED) return;
-        const doc = (data.docs as { id: string }[] | undefined)?.[0];
-        if (doc?.id) setSpreadsheetId(doc.id);
-      });
-      builder.build().setVisible(true);
+      const url = await startDrivePick(accessToken, connectionId, nonce);
+      // A later click has taken over the window: its own URL goes in.
+      if (pending.current === nonce) popup.location.href = url;
     } catch (err) {
+      if (pending.current !== nonce) return;
+      popup.close();
+      pending.current = null;
       setError(err instanceof Error ? err.message : "The picker could not open.");
     }
   };
@@ -346,15 +344,13 @@ export function SheetsDestinationEditor({
                 >
                   Create it
                 </button>
-                {google?.picker && (
-                  <button
-                    type="button"
-                    onClick={() => void pick()}
-                    className="ui-btn-outline py-2! px-3! text-xs"
-                  >
-                    Choose from Drive
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => void pick()}
+                  className="ui-btn-outline py-2! px-3! text-xs"
+                >
+                  Choose from Drive
+                </button>
               </div>
             )}
             <Field

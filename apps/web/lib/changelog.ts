@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.56.1";
+export const APP_VERSION = "0.56.2";
 export const CLI_VERSION = "1.7.0";
 export const SDK_VERSION = "1.20.0";
 export const PYTHON_SDK_VERSION = "0.4.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.56.2",
+    date: "2026-11-02",
+    title: "Choose from Drive in Every Browser",
+    track: "web",
+    items: [
+      "Choose from Drive, for Google Sheets destinations, opens Google's picker in a small window of its own, so it works in browsers that block third-party cookies, where it showed a blank page before",
+    ],
+  },
   {
     version: "0.56.1",
     date: "2026-11-02",

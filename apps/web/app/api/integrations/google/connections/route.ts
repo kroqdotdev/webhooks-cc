@@ -8,10 +8,8 @@ export async function GET(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   try {
-    const config = googleConfig();
     return Response.json({
-      available: config !== null,
-      picker: !!config?.pickerApiKey && !!config.projectNumber,
+      available: googleConfig() !== null,
       connections: await listGoogleConnections(auth.userId),
     });
   } catch (error) {

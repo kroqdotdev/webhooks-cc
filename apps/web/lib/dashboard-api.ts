@@ -1159,8 +1159,6 @@ export interface SheetsDestinationConfig {
 export interface GoogleConnectionsInfo {
   /** Google Sheets is set up on this server. */
   available: boolean;
-  /** The Drive picker is set up too. */
-  picker: boolean;
   connections: { id: string; email: string | null; createdAt: number }[];
 }
 
@@ -1208,15 +1206,24 @@ export async function createGoogleSpreadsheet(
   return readJson(response);
 }
 
-export async function fetchPickerToken(
+/**
+ * The URL of Google's Drive picker for a connection's account, to open in a
+ * pop-up; the pick comes back on a BroadcastChannel with `nonce`.
+ */
+export async function startDrivePick(
   accessToken: string,
-  connectionId: string
-): Promise<{ accessToken: string; apiKey: string; appId: string }> {
+  connectionId: string,
+  nonce: string
+): Promise<string> {
   const response = await fetch(
-    `/api/integrations/google/picker?connectionId=${encodeURIComponent(connectionId)}`,
-    withAuthHeaders(accessToken)
+    "/api/integrations/google/pick",
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ connectionId, nonce }),
+    })
   );
-  return readJson(response);
+  return (await readJson<{ url: string }>(response)).url;
 }
 
 /** AI setup and repair for an endpoint (app/api/endpoints/[slug]/layouts/assist). */
