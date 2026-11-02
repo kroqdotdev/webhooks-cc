@@ -19,6 +19,7 @@ const EXPECTED_TOOLS = [
   "create_endpoint",
   "list_endpoints",
   "get_endpoint",
+  "favorite_endpoint",
   "update_endpoint",
   "preview_layouts",
   "preview_response",
@@ -98,6 +99,8 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
       get: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      favorite: vi.fn(),
+      unfavorite: vi.fn(),
       send: vi.fn(),
       sendTemplate: vi.fn(),
       ...(overrides.endpoints ?? {}),
@@ -230,7 +233,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(45);
+    expect(Object.keys(tools)).toHaveLength(46);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
 
@@ -270,7 +273,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(47);
+    expect(Object.keys(tools)).toHaveLength(48);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1253,6 +1256,67 @@ describe("registerTools", () => {
     );
     expect(unshared).toEqual({ shared: false, slug: "abc", teamId: "t1" });
     expect(unshare).toHaveBeenCalledWith("t1", "abc");
+  });
+
+  it("marks and unmarks a favourite endpoint, marking by default", async () => {
+    const favorite = vi.fn(async () => ({ favorite: true }));
+    const unfavorite = vi.fn(async () => ({ favorite: false }));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { favorite, unfavorite } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+
+    const marked = parseJsonResult(await tools.favorite_endpoint.handler({ slug: "abc" }));
+    expect(marked).toEqual({ slug: "abc", favorite: true });
+    expect(favorite).toHaveBeenCalledWith("abc");
+
+    const again = parseJsonResult(
+      await tools.favorite_endpoint.handler({ slug: "abc", favorite: true })
+    );
+    expect(again).toEqual({ slug: "abc", favorite: true });
+    expect(favorite).toHaveBeenCalledTimes(2);
+
+    const unmarked = parseJsonResult(
+      await tools.favorite_endpoint.handler({ slug: "abc", favorite: false })
+    );
+    expect(unmarked).toEqual({ slug: "abc", favorite: false });
+    expect(unfavorite).toHaveBeenCalledWith("abc");
+    expect(favorite).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps favorite on listed and fetched endpoints", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: {
+          list: vi.fn(async () => [
+            { id: "ep1", slug: "abc", createdAt: 1, favorite: true },
+            { id: "ep2", slug: "def", createdAt: 2, favorite: false },
+          ]),
+          get: vi.fn(async () => ({ id: "ep1", slug: "abc", createdAt: 1, favorite: true })),
+        } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+
+    const listed = parseJsonResult(await tools.list_endpoints.handler({}));
+    expect(listed.map((e: { favorite: boolean }) => e.favorite)).toEqual([true, false]);
+    const fetched = parseJsonResult(await tools.get_endpoint.handler({ slug: "abc" }));
+    expect(fetched.favorite).toBe(true);
+  });
+
+  it("returns not_found when favouriting an endpoint the caller cannot open", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: {
+          favorite: vi.fn(async () => {
+            throw new NotFoundError("Endpoint not found");
+          }),
+        } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+
+    const result = await tools.favorite_endpoint.handler({ slug: "missing" });
+    expect(result.isError).toBe(true);
   });
 
   it("surfaces the API error when sharing with a suspended team", async () => {

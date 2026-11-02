@@ -129,6 +129,20 @@ pub enum Command {
         clear_mock: bool,
     },
 
+    /// Mark an endpoint as a favourite: `whk list` and the dashboard show favourites first
+    #[command(alias = "favourite")]
+    Favorite {
+        /// Endpoint slug (yours, or one shared with you through a team)
+        slug: String,
+    },
+
+    /// Remove an endpoint from your favourites
+    #[command(alias = "unfavourite")]
+    Unfavorite {
+        /// Endpoint slug
+        slug: String,
+    },
+
     /// Delete an endpoint
     Delete {
         /// Endpoint slug
@@ -567,6 +581,26 @@ mod tests {
             }) => (email_format, email_path, mailgun_signing_key, no_email),
             other => panic!("expected tunnel, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn favorite_and_unfavorite_take_a_slug() {
+        let parse =
+            |args: &[&str]| Cli::try_parse_from(["whk"].iter().chain(args)).map(|c| c.command);
+        for name in ["favorite", "favourite"] {
+            match parse(&[name, "acme-hooks"]).unwrap() {
+                Some(Command::Favorite { slug }) => assert_eq!(slug, "acme-hooks"),
+                other => panic!("expected favorite, got {other:?}"),
+            }
+        }
+        for name in ["unfavorite", "unfavourite"] {
+            match parse(&[name, "acme-hooks"]).unwrap() {
+                Some(Command::Unfavorite { slug }) => assert_eq!(slug, "acme-hooks"),
+                other => panic!("expected unfavorite, got {other:?}"),
+            }
+        }
+        assert!(parse(&["favorite"]).is_err());
+        assert!(parse(&["unfavorite"]).is_err());
     }
 
     #[test]

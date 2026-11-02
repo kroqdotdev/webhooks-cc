@@ -31,6 +31,15 @@ Durations take `"500ms"`, `"30s"`, `"5m"`, `"2h"`, `"7d"`, a `timedelta`, or a n
 
 Matchers combine with `match_all()` and `match_any()`, and any function that takes a `Request` and returns a bool works too: `match_method`, `match_path` (globs: `*` within a segment, `**` across segments, `?` for one character), `match_header`, `match_query_param`, `match_body_path`, `match_body_subset`, `match_content_type`, `match_verified`, `match_unverified` and `match_email`.
 
+## Favourite endpoints
+
+```python
+client.endpoints.favorite(endpoint.slug)    # True: listed first in the dashboard
+client.endpoints.unfavorite(endpoint.slug)  # False
+```
+
+Both are idempotent and work on your own endpoints and those a team shares with you; a favourite is yours alone. `Endpoint.favorite` is set by `endpoints.list()` and `endpoints.get()`, and `None` on what `create()` and `update()` return. The sandbox client has neither method.
+
 ## pytest
 
 Installing the package adds two fixtures. Tests that use them are skipped when `WHK_API_KEY` is not set.

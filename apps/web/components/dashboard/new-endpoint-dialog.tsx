@@ -91,7 +91,7 @@ export function NewEndpointDialog() {
       <DialogTrigger asChild>
         <button
           data-shortcut="new-endpoint"
-          className="ui-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5"
+          className="ui-btn-primary py-1.5! px-3! text-xs flex shrink-0 items-center gap-1.5 whitespace-nowrap"
         >
           <Plus className="h-3.5 w-3.5" />
           New Endpoint

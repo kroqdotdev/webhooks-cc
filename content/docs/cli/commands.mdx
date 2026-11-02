@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-10-28
+lastUpdated: 2026-11-02
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -70,7 +70,7 @@ whk create my-stripe --signing-provider stripe --signing-secret whsec_...
 
 ## list
 
-List your endpoints and those shared with you through teams, with slug, name, team, and URL.
+List your endpoints and those shared with you through teams, with slug, name, team, and URL. Your [favourites](#favorite) come first, marked with a star; the rest follow in slug order. With `--json` the answer is the API's `{ "owned": [...], "shared": [...] }`, each endpoint carrying `favorite`.
 
 ```bash
 whk list
@@ -83,11 +83,22 @@ whk list --team Payments
 
 ## get
 
-Show an endpoint's details: webhook URL, email address, name, and mock response.
+Show an endpoint's details: webhook URL, email address, name, mock response, and whether it is one of your favourites.
 
 ```bash
 whk get <slug>
 ```
+
+## favorite
+
+Mark an endpoint as a favourite, or remove it again with `unfavorite`. Favourites come first in `whk list`, in the interactive TUI's endpoint lists, and in the dashboard's endpoint switcher. A favourite is yours alone: you can favourite an endpoint shared with you through a team without changing it for anyone else. Both commands are idempotent, and `favourite` and `unfavourite` work as aliases. They need an account, not an agent sandbox.
+
+```bash
+whk favorite <slug>
+whk unfavorite <slug>
+```
+
+With `--json` they print `{ "slug": "<slug>", "favorite": true }` (or `false`).
 
 ## delete
 

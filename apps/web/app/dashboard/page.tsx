@@ -42,6 +42,7 @@ import {
   fetchDashboardSearch,
   fetchDashboardSearchCount,
   subscribeDashboardEndpointsChanged,
+  defaultDashboardEndpoint,
   createDashboardEndpoint,
   emitDashboardEndpointsChanged,
   claimGuestEndpointForUser,
@@ -109,7 +110,9 @@ export default function DashboardPage() {
     ? allEndpoints?.find((ep) => ep.slug === endpointSlug)
     : undefined;
   const currentEndpoint =
-    endpoints?.find((ep) => ep.slug === endpointSlug) ?? linkedEndpoint ?? endpoints?.[0];
+    endpoints?.find((ep) => ep.slug === endpointSlug) ??
+    linkedEndpoint ??
+    (endpoints ? defaultDashboardEndpoint(endpoints) : undefined);
   const currentEndpointId = currentEndpoint?.id;
   const currentSlug = currentEndpoint?.slug;
   const currentSite = currentEndpoint?.site;
@@ -367,9 +370,13 @@ export default function DashboardPage() {
   }, [searchInput]);
 
   const guestClaimAttempted = useRef(false);
+  // Only the latest load counts: every star click starts a reload, and an
+  // older one may answer last with the favourites from before it.
+  const endpointsLoadSeq = useRef(0);
 
   const loadEndpoints = useCallback(async () => {
     if (!accessToken) return;
+    const seq = ++endpointsLoadSeq.current;
 
     // On first load, try to claim a guest endpoint from /go
     if (!guestClaimAttempted.current) {
@@ -390,11 +397,14 @@ export default function DashboardPage() {
 
     try {
       const response = await fetchDashboardEndpoints(accessToken);
+      if (seq !== endpointsLoadSeq.current) return;
       setAllEndpoints([...response.owned, ...response.shared]);
       setOwnedSlugs(new Set(response.owned.map((endpoint) => endpoint.slug)));
     } catch (error) {
       console.error("Failed to load dashboard endpoints:", error);
-      setAllEndpoints([]);
+      // A failed reload keeps the list it had: an empty one would show the
+      // first-endpoint screen, which creates an endpoint on its own.
+      if (seq === endpointsLoadSeq.current) setAllEndpoints((prev) => prev ?? []);
     }
   }, [accessToken]);
 

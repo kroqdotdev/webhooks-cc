@@ -16,6 +16,12 @@ use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
 
+/// The first column of an endpoint row: a star for the caller's favourites,
+/// padding otherwise, so slugs line up either way.
+pub(crate) fn favorite_marker(ep: &crate::types::Endpoint) -> &'static str {
+    if ep.is_favorite() { " \u{2605}" } else { "  " }
+}
+
 /// Messages from async tasks back to the TUI.
 #[derive(Debug)]
 pub enum Message {

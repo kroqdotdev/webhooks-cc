@@ -200,6 +200,10 @@ export function trackEndpointSwitched() {
   capture("endpoint_switched");
 }
 
+export function trackEndpointFavorited(favorite: boolean) {
+  capture(favorite ? "endpoint_favorited" : "endpoint_unfavorited");
+}
+
 // ── Sign out ────────────────────────────────────────────────────
 export function trackSignOut() {
   capture("sign_out");

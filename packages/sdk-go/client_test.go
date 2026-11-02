@@ -184,6 +184,86 @@ func TestUpdateSendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestListAndGetReadFavorites(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/endpoints", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{
+			"owned":  []map[string]any{{"id": "ep_1", "slug": "acme-own", "favorite": true}, {"id": "ep_2", "slug": "acme-plain", "favorite": false}},
+			"shared": []map[string]any{{"id": "ep_3", "slug": "acme-team", "favorite": true}},
+		})
+	})
+	api.handle("GET /api/endpoints/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"id": "ep_3", "slug": r.PathValue("slug"), "favorite": true})
+	})
+	client := api.client()
+	endpoints, err := client.Endpoints.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var favorites []string
+	for _, endpoint := range endpoints {
+		if endpoint.Favorite {
+			favorites = append(favorites, endpoint.Slug)
+		}
+	}
+	if strings.Join(favorites, ",") != "acme-own,acme-team" {
+		t.Errorf("favorites = %v", favorites)
+	}
+	endpoint, err := client.Endpoints.Get(context.Background(), "acme-team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !endpoint.Favorite {
+		t.Errorf("endpoint = %+v", endpoint)
+	}
+}
+
+func TestFavoriteAndUnfavorite(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("PUT /api/endpoints/{slug}/favorite", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("slug") == "missing" {
+			writeJSON(w, 404, map[string]any{"error": "Endpoint not found"})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"favorite": true})
+	})
+	api.handle("DELETE /api/endpoints/{slug}/favorite", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"favorite": false})
+	})
+	client := api.client()
+	ctx := context.Background()
+	if favorite, err := client.Endpoints.Favorite(ctx, "acme-test"); err != nil || !favorite {
+		t.Fatalf("Favorite = %v, %v", favorite, err)
+	}
+	request, body := api.last()
+	if request.Method != http.MethodPut || request.URL.Path != "/api/endpoints/acme-test/favorite" || body != "" {
+		t.Errorf("sent %s %s %q", request.Method, request.URL.Path, body)
+	}
+	if favorite, err := client.Endpoints.Unfavorite(ctx, "acme-test"); err != nil || favorite {
+		t.Fatalf("Unfavorite = %v, %v", favorite, err)
+	}
+	request, body = api.last()
+	if request.Method != http.MethodDelete || request.URL.Path != "/api/endpoints/acme-test/favorite" || body != "" {
+		t.Errorf("sent %s %s %q", request.Method, request.URL.Path, body)
+	}
+	_, err := client.Endpoints.Favorite(ctx, "missing")
+	if !errors.Is(err, webhookscc.ErrNotFound) || !strings.Contains(err.Error(), "Endpoint not found") {
+		t.Errorf("404: %v", err)
+	}
+}
+
+func TestFavoriteRefusedWithoutAnAccount(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("PUT /api/endpoints/{slug}/favorite", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 403, map[string]any{"error": "This needs an account"})
+	})
+	_, err := api.client().Endpoints.Favorite(context.Background(), "acme-test")
+	var apiErr *webhookscc.Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusForbidden {
+		t.Errorf("403: %v", err)
+	}
+}
+
 func TestPreviewResponseSendsOnlyGivenSettings(t *testing.T) {
 	api := newFakeAPI(t)
 	api.handle("POST /api/endpoints/{slug}/responses/preview", func(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +358,12 @@ func TestInvalidSlugsNeverReachTheAPI(t *testing.T) {
 	for _, slug := range []string{"", "../admin", "a/b", "a?b"} {
 		if _, err := client.Endpoints.Get(context.Background(), slug); err == nil {
 			t.Errorf("Get(%q) succeeded", slug)
+		}
+		if _, err := client.Endpoints.Favorite(context.Background(), slug); err == nil {
+			t.Errorf("Favorite(%q) succeeded", slug)
+		}
+		if _, err := client.Endpoints.Unfavorite(context.Background(), slug); err == nil {
+			t.Errorf("Unfavorite(%q) succeeded", slug)
 		}
 	}
 }

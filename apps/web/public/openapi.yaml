@@ -237,6 +237,59 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/endpoints/{slug}/favorite:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    put:
+      operationId: favoriteEndpoint
+      tags: [Endpoints]
+      summary: Favourite endpoint
+      description: |
+        Mark the endpoint as one of the caller's favourites, which the dashboard lists first and
+        opens by default. Idempotent. Anyone who can open the endpoint may, team members included;
+        a favourite is the caller's own. Rate limited to 60 changes a minute.
+      responses:
+        "200":
+          $ref: "#/components/responses/FavoriteResult"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "403":
+          description: Claimed account required (an unowned agent key is rejected)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+
+    delete:
+      operationId: unfavoriteEndpoint
+      tags: [Endpoints]
+      summary: Unfavourite endpoint
+      description: Remove the endpoint from the caller's favourites. Idempotent.
+      responses:
+        "200":
+          $ref: "#/components/responses/FavoriteResult"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "403":
+          description: Claimed account required (an unowned agent key is rejected)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+
   /api/endpoints/claim:
     post:
       operationId: claimEndpoint
@@ -2718,6 +2771,11 @@ components:
             included (as `codes` and `links`) in forwarded JSON
         site:
           $ref: "#/components/schemas/EndpointSite"
+        favorite:
+          type: boolean
+          description: |
+            Whether the caller marked the endpoint as a favourite (their own, also on a shared
+            endpoint). Present on List endpoints and Get endpoint.
         forwardEnabled:
           type: boolean
           description: Whether every captured email is forwarded to `forwardUrl` as signed JSON
@@ -4343,6 +4401,23 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
 
+    FavoriteResult:
+      description: Whether the endpoint is now one of the caller's favourites
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [favorite]
+            properties:
+              favorite:
+                type: boolean
     RateLimited:
       description: Rate limit exceeded
       headers:

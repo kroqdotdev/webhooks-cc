@@ -722,6 +722,11 @@ class Endpoint:
     show_email_extracts: bool | None = None
     site: EndpointSite | None = None
     """Which site's dashboard lists it: ``"webhooks"``, ``"mailhooks"`` or ``"both"``."""
+    favorite: bool | None = None
+    """Whether you marked it as a favourite: your own choice, not the endpoint's. Set
+    by :meth:`Endpoints.list <webhooks_cc.client.Endpoints.list>` and :meth:`Endpoints.get
+    <webhooks_cc.client.Endpoints.get>`; ``None`` where the response leaves it out
+    (create and update)."""
     email_fields: list[EmailField] | None = None
     """The named fields picked out of every email the endpoint captures (owner only)."""
     retention_days: int | None = None
@@ -772,6 +777,7 @@ class Endpoint:
             site=cast(EndpointSite, data["site"])
             if data.get("site") in ("webhooks", "mailhooks", "both")
             else None,
+            favorite=data.get("favorite") if isinstance(data.get("favorite"), bool) else None,
             email_fields=[
                 EmailField.from_dict(item) for item in email_fields if isinstance(item, Mapping)
             ]

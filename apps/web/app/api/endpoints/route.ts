@@ -11,6 +11,7 @@ import {
 } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
+import { listFavoriteEndpointIds } from "@/lib/supabase/endpoint-favorites";
 import {
   getShareMetadataForOwnedEndpoints,
   getSharedEndpointsForUser,
@@ -41,15 +42,17 @@ export async function GET(request: Request) {
     // teams that can otherwise keep reading their endpoint.
     const onActiveTeam = await hasActiveTeamMembership(auth.userId);
 
-    const [endpoints, shareMetadata, sharedEndpoints] = await Promise.all([
+    const [endpoints, shareMetadata, sharedEndpoints, favorites] = await Promise.all([
       listEndpointsForUser(auth.userId),
       getShareMetadataForOwnedEndpoints(auth.userId),
       onActiveTeam ? getSharedEndpointsForUser(auth.userId) : Promise.resolve([]),
+      listFavoriteEndpointIds(auth.userId),
     ]);
 
     const owned = endpoints.map((ep) => ({
       ...ep,
       sharedWith: shareMetadata.get(ep.id) ?? [],
+      favorite: favorites.has(ep.id),
     }));
 
     const shared = sharedEndpoints.map((ep) => ({
@@ -67,6 +70,7 @@ export async function GET(request: Request) {
       site: ep.site,
       forwardEnabled: ep.forwardEnabled,
       hasForwardSecret: ep.hasForwardSecret,
+      favorite: favorites.has(ep.id),
     }));
 
     return Response.json({ owned, shared });

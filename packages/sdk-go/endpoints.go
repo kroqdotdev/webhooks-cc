@@ -214,6 +214,36 @@ func (s *EndpointsService) Delete(ctx context.Context, slug string) error {
 	return s.c.api(ctx, http.MethodDelete, "/endpoints/"+slug, nil, nil, nil)
 }
 
+// Favorite marks an endpoint one of your favourites and returns its
+// favourite state afterwards, true. It is your own choice, on your own
+// endpoints and those shared with you through teams alike, and marking one
+// again changes nothing. ErrNotFound means you cannot open the endpoint. It
+// needs an account: a sandbox or pre-claim agent token gets an *Error with
+// StatusCode 403.
+func (s *EndpointsService) Favorite(ctx context.Context, slug string) (bool, error) {
+	return s.setFavorite(ctx, slug, http.MethodPut)
+}
+
+// Unfavorite removes an endpoint from your favourites and returns its
+// favourite state afterwards, false; one that is not a favourite stays as it
+// is.
+func (s *EndpointsService) Unfavorite(ctx context.Context, slug string) (bool, error) {
+	return s.setFavorite(ctx, slug, http.MethodDelete)
+}
+
+func (s *EndpointsService) setFavorite(ctx context.Context, slug, method string) (bool, error) {
+	if err := validateSegment(slug, "slug"); err != nil {
+		return false, err
+	}
+	var response struct {
+		Favorite bool `json:"favorite"`
+	}
+	if err := s.c.api(ctx, method, "/endpoints/"+slug+"/favorite", nil, nil, &response); err != nil {
+		return false, err
+	}
+	return response.Favorite, nil
+}
+
 // Send sends a request to an endpoint's capture URL. With opts.Provider it is
 // signed like that provider's webhooks, as SendTo does.
 func (s *EndpointsService) Send(ctx context.Context, slug string, opts SendOptions) (*Response, error) {

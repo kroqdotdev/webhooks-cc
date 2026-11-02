@@ -11,6 +11,7 @@ const mockFns = vi.hoisted(() => ({
   deleteEndpointBySlugForUser: vi.fn(),
   isSigningKeyConfigured: vi.fn(),
   endpointRetentionCap: vi.fn(),
+  isFavoriteEndpoint: vi.fn(),
 }));
 
 vi.mock("@/lib/api-auth", () => ({
@@ -42,6 +43,10 @@ vi.mock("@/lib/supabase/endpoints", () => ({
   endpointRetentionCap: mockFns.endpointRetentionCap,
 }));
 
+vi.mock("@/lib/supabase/endpoint-favorites", () => ({
+  isFavoriteEndpoint: mockFns.isFavoriteEndpoint,
+}));
+
 vi.mock("@/lib/crypto", () => ({
   isSigningKeyConfigured: mockFns.isSigningKeyConfigured,
 }));
@@ -55,6 +60,37 @@ function patchRequest(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
 }
+
+describe("GET /api/endpoints/[slug]", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockFns.authenticateRequestRequireUser.mockResolvedValue({ success: true, userId: "member_1" });
+    mockFns.getEndpointBySlugForUser.mockResolvedValue({
+      slug: "demo",
+      notificationUrl: "https://hooks.example.com/secret",
+      forwardUrl: null,
+      forwardHeaders: [],
+    });
+  });
+
+  test("reports the caller's own favourite, also on an endpoint shared with them", async () => {
+    mockFns.resolveEndpointAccess.mockResolvedValue({
+      ownerId: "owner_123",
+      endpointId: "endpoint_123",
+      isOwner: false,
+    });
+    mockFns.isFavoriteEndpoint.mockResolvedValue(true);
+    const { GET } = await import("./route");
+    const response = await GET(new Request("https://webhooks.cc/api/endpoints/demo"), params);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.favorite).toBe(true);
+    expect(body.notificationUrl).toBeUndefined();
+    expect(mockFns.isFavoriteEndpoint).toHaveBeenCalledWith("member_1", "endpoint_123");
+  });
+});
 
 describe("PATCH /api/endpoints/[slug]", () => {
   beforeEach(() => {

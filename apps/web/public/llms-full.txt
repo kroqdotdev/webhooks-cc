@@ -141,6 +141,11 @@ const updated = await client.endpoints.update("my-slug", {
 // Delete endpoint
 await client.endpoints.delete("my-slug");
 
+// Mark or unmark one of your favourites (yours, shared endpoints too);
+// list() and get() carry favorite: boolean
+await client.endpoints.favorite("my-slug");   // { favorite: true }
+await client.endpoints.unfavorite("my-slug"); // { favorite: false }
+
 // Send test webhook to your own endpoint
 const response = await client.endpoints.send("my-slug", {
   method?: string,            // Default: "POST"
@@ -600,6 +605,7 @@ codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 | `create_endpoint` | name?, ephemeral?, expiresIn?, mockResponse?, responseRules?, notificationUrl? | Create a new webhook endpoint |
 | `list_endpoints` | (none) | List all user endpoints |
 | `get_endpoint` | slug | Get endpoint details |
+| `favorite_endpoint` | slug, favorite? (default true) | Mark or unmark one of your favourite endpoints |
 | `update_endpoint` | slug, name?, mockResponse?, responseRules?, notificationUrl? | Update endpoint config |
 | `delete_endpoint` | slug | Delete endpoint |
 | `create_endpoints` | count (1-20), namePrefix?, ephemeral?, expiresIn? | Bulk create endpoints |

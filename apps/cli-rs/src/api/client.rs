@@ -26,6 +26,11 @@ impl ApiClient {
         self.send(Method::PATCH, path, Some(body)).await
     }
 
+    /// Perform a PUT request without a body.
+    pub async fn put(&self, path: &str) -> Result<ApiResponse> {
+        self.send(Method::PUT, path, None).await
+    }
+
     /// Perform a DELETE request.
     pub async fn delete(&self, path: &str) -> Result<ApiResponse> {
         self.send(Method::DELETE, path, None).await

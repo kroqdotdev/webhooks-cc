@@ -11,9 +11,9 @@ use tokio::sync::mpsc;
 use crate::api::ApiClient;
 use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
-use crate::types::{CreateEndpointRequest, Endpoint};
+use crate::types::{CreateEndpointRequest, Endpoint, favorites_first};
 
-use super::{Action, Message, Screen, ScreenId};
+use super::{Action, Message, Screen, ScreenId, favorite_marker};
 
 enum State {
     Loading,
@@ -178,10 +178,28 @@ impl Screen for EndpointsScreen {
     fn handle_message(&mut self, msg: Message) {
         match msg {
             Message::EndpointsLoaded(Ok(list)) => {
+                // Keep the highlight on the same endpoint: a reload can move
+                // it, since favourites are listed first.
+                let selected_slug = self
+                    .table_state
+                    .selected()
+                    .and_then(|i| self.endpoints.get(i))
+                    .map(|ep| ep.slug.clone());
                 self.endpoints = list.owned;
                 self.endpoints.extend(list.shared);
                 self.endpoints.sort_by(|a, b| a.slug.cmp(&b.slug));
-                if !self.endpoints.is_empty() && self.table_state.selected().is_none() {
+                favorites_first(&mut self.endpoints);
+                let kept = selected_slug
+                    .and_then(|slug| self.endpoints.iter().position(|ep| ep.slug == slug));
+                if kept.is_some() {
+                    self.table_state.select(kept);
+                } else if self.endpoints.is_empty() {
+                    self.table_state.select(None);
+                } else if self
+                    .table_state
+                    .selected()
+                    .is_none_or(|i| i >= self.endpoints.len())
+                {
                     self.table_state.select(Some(0));
                 }
                 self.state = State::Loaded;
@@ -261,7 +279,7 @@ impl Screen for EndpointsScreen {
                 let url = format!("{}/w/{}", self.webhook_url, ep.slug);
                 let count = ep.request_count.unwrap_or(0).to_string();
                 Row::new(vec![
-                    format!("  {}", ep.slug),
+                    format!("{} {}", favorite_marker(ep), ep.slug),
                     name.to_string(),
                     count,
                     url,

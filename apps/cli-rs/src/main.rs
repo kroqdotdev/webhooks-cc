@@ -85,6 +85,14 @@ async fn main() -> Result<()> {
             .await?;
         }
 
+        Some(Command::Favorite { slug }) => {
+            cli::endpoints::set_favorite(&client, &slug, true, args.json).await?;
+        }
+
+        Some(Command::Unfavorite { slug }) => {
+            cli::endpoints::set_favorite(&client, &slug, false, args.json).await?;
+        }
+
         Some(Command::Delete { slug, force }) => {
             cli::endpoints::delete(&client, &slug, force, args.json).await?;
         }

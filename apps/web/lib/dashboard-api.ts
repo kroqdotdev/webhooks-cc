@@ -78,6 +78,19 @@ export interface DashboardEndpoint {
   layouts?: Layout[];
   /** Layouts the plan uses; later ones are kept but not used. */
   layoutsCap?: number;
+  /** The caller's own favourite (migration 00079); set on reads. */
+  favorite?: boolean;
+}
+
+/**
+ * The endpoint the dashboard opens when the URL names none: the first
+ * favourite, else the first endpoint. The switcher and the page share it so
+ * they never show different endpoints.
+ */
+export function defaultDashboardEndpoint<T extends { slug: string; favorite?: boolean }>(
+  endpoints: readonly T[]
+): T | undefined {
+  return endpoints.find((endpoint) => endpoint.favorite) ?? endpoints[0];
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
@@ -951,6 +964,18 @@ export async function updateDashboardEndpoint(
     })
   );
   return readJson<DashboardEndpoint>(response);
+}
+
+export async function setDashboardEndpointFavorite(
+  accessToken: string,
+  slug: string,
+  favorite: boolean
+): Promise<void> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}/favorite`,
+    withAuthHeaders(accessToken, { method: favorite ? "PUT" : "DELETE" })
+  );
+  await readJson(response);
 }
 
 export async function deleteDashboardEndpoint(accessToken: string, slug: string): Promise<void> {

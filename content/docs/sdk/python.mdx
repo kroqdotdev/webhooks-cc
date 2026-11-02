@@ -78,6 +78,19 @@ preview = client.endpoints.preview_response(
 print(preview.rule, preview.response)
 ```
 
+## Favourite endpoints
+
+Mark an endpoint, your own or one a team shares with you, as a [favourite](/docs/endpoints): the dashboard lists favourites first and opens the first one by default.
+
+```python
+client.endpoints.favorite(endpoint.slug)    # True
+client.endpoints.unfavorite(endpoint.slug)  # False
+
+favorites = [item for item in client.endpoints.list() if item.favorite]
+```
+
+Both are idempotent and return the endpoint's favourite state afterwards. A favourite is yours alone, so marking a shared endpoint changes nothing for anyone else. `endpoint.favorite` is set on what `endpoints.list()` and `endpoints.get()` return, and `None` on what `create()` and `update()` return. They need an account: the sandbox client has neither method.
+
 ## pytest
 
 Installing the package adds two fixtures. Tests that use them are skipped when `WHK_API_KEY` is not set.

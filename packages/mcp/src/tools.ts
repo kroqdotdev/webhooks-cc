@@ -1231,6 +1231,25 @@ export function registerTools(
   );
 
   server.tool(
+    "favorite_endpoint",
+    "Mark an endpoint as one of your favourites, or unmark it with favorite: false. A favourite is your own choice, so endpoints shared with you through teams can be marked too; list_endpoints and get_endpoint show it as favorite. Idempotent.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      favorite: z
+        .boolean()
+        .optional()
+        .describe("true marks it as a favourite (the default), false unmarks it"),
+    },
+    withErrorHandling(async ({ slug, favorite }) => {
+      const result =
+        favorite === false
+          ? await client.endpoints.unfavorite(slug)
+          : await client.endpoints.favorite(slug);
+      return jsonContent({ slug, favorite: result.favorite });
+    })
+  );
+
+  server.tool(
     "update_endpoint",
     "Update an endpoint name, mock response, conditional response rules, signing configuration, whether codes and links are picked out of its emails, or the named fields picked out of them.",
     {

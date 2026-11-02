@@ -1022,6 +1022,24 @@ class Endpoints:
         _validate_segment(slug, "slug")
         self._client._api("DELETE", f"/endpoints/{slug}")
 
+    def favorite(self, slug: str) -> bool:
+        """Mark an endpoint, your own or one a team shares with you, as a favourite.
+
+        The dashboard lists favourites first and opens the first one by default. A
+        favourite is yours alone: marking a shared endpoint changes nothing for anyone
+        else. Idempotent; returns ``True``. Needs an account, so a sandbox token is
+        refused (403)."""
+        _validate_segment(slug, "slug")
+        response = self._client._api("PUT", f"/endpoints/{slug}/favorite")
+        return isinstance(response, Mapping) and response.get("favorite") is True
+
+    def unfavorite(self, slug: str) -> bool:
+        """Remove an endpoint from your favourites. Idempotent; returns ``False``, the
+        endpoint's favourite state now."""
+        _validate_segment(slug, "slug")
+        response = self._client._api("DELETE", f"/endpoints/{slug}/favorite")
+        return isinstance(response, Mapping) and response.get("favorite") is True
+
     def send(
         self,
         slug: str,

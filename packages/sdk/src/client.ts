@@ -1114,6 +1114,15 @@ export class WebhooksCC {
           description: "Delete endpoint and its requests",
           params: { slug: "string" },
         },
+        favorite: {
+          description:
+            "Mark an endpoint as one of your favourites (your own, team-shared ones too; idempotent)",
+          params: { slug: "string" },
+        },
+        unfavorite: {
+          description: "Unmark a favourite endpoint (idempotent)",
+          params: { slug: "string" },
+        },
         redeliver: {
           description: "Send requests received in a time range through the destinations again",
           params: { slug: "string", since: "number?", until: "number?", kind: '"http"|"email"?' },
@@ -1645,6 +1654,22 @@ export class WebhooksCC {
     delete: async (slug: string): Promise<void> => {
       validatePathSegment(slug, "slug");
       await this.request("DELETE", `/endpoints/${slug}`);
+    },
+
+    /**
+     * Marks the endpoint as one of your favourites. A favourite is your own,
+     * never the endpoint's, so team members can mark shared endpoints too.
+     * Idempotent. Needs an account: sandbox tokens are refused.
+     */
+    favorite: async (slug: string): Promise<{ favorite: boolean }> => {
+      validatePathSegment(slug, "slug");
+      return this.request<{ favorite: boolean }>("PUT", `/endpoints/${slug}/favorite`);
+    },
+
+    /** Unmarks a favourite endpoint. Idempotent. */
+    unfavorite: async (slug: string): Promise<{ favorite: boolean }> => {
+      validatePathSegment(slug, "slug");
+      return this.request<{ favorite: boolean }>("DELETE", `/endpoints/${slug}/favorite`);
     },
 
     /**

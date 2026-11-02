@@ -35,6 +35,31 @@ pub struct Endpoint {
     /// Address the endpoint receives email at (`{slug}@mailhooks.cc`); none for guest endpoints.
     #[serde(rename = "emailAddress", default)]
     pub email_address: Option<String>,
+    /// Whether the caller marked this endpoint as a favourite (their own
+    /// choice, not the endpoint's). List and get carry it; create and update
+    /// answers do not, so it stays unset there and is left out of `--json`
+    /// rather than printed as a guess.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub favorite: Option<bool>,
+}
+
+impl Endpoint {
+    /// True when the caller marked the endpoint as a favourite.
+    pub fn is_favorite(&self) -> bool {
+        self.favorite.unwrap_or(false)
+    }
+}
+
+/// Moves favourites to the front, keeping the order within favourites and
+/// within the rest (a stable sort), so callers sort by slug first if they want.
+pub fn favorites_first(endpoints: &mut [Endpoint]) {
+    endpoints.sort_by_key(|ep| !ep.is_favorite());
+}
+
+/// The answer of `PUT` and `DELETE /api/endpoints/{slug}/favorite`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FavoriteState {
+    pub favorite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -729,6 +754,72 @@ mod tests {
         let mock = ep.mock_response.unwrap();
         assert_eq!(mock.status, 201);
         assert_eq!(mock.body, "{\"ok\":true}");
+    }
+
+    #[test]
+    fn test_deserialize_endpoint_favorite() {
+        let listed = r#"{"id":"1","slug":"a","favorite":true}"#;
+        let ep: Endpoint = serde_json::from_str(listed).unwrap();
+        assert_eq!(ep.favorite, Some(true));
+        assert!(ep.is_favorite());
+
+        let not_listed = r#"{"id":"1","slug":"a","favorite":false}"#;
+        let ep: Endpoint = serde_json::from_str(not_listed).unwrap();
+        assert_eq!(ep.favorite, Some(false));
+        assert!(!ep.is_favorite());
+        assert_eq!(serde_json::to_value(&ep).unwrap()["favorite"], false);
+    }
+
+    #[test]
+    fn test_deserialize_endpoint_without_favorite() {
+        // Create and update answers carry no `favorite`.
+        let json = r#"{"id":"1","slug":"a","createdAt":123}"#;
+        let ep: Endpoint = serde_json::from_str(json).unwrap();
+        assert_eq!(ep.favorite, None);
+        assert!(!ep.is_favorite());
+        let value = serde_json::to_value(&ep).unwrap();
+        assert!(
+            value.get("favorite").is_none(),
+            "unknown favourite state must not be printed"
+        );
+    }
+
+    #[test]
+    fn test_favorites_first_is_stable() {
+        let ep = |slug: &str, favorite: Option<bool>| Endpoint {
+            id: slug.into(),
+            slug: slug.into(),
+            name: None,
+            url: None,
+            is_ephemeral: false,
+            expires_at: None,
+            created_at: None,
+            request_count: None,
+            mock_response: None,
+            shared_with: Vec::new(),
+            from_team: None,
+            from_teams: Vec::new(),
+            email_address: None,
+            favorite,
+        };
+        let mut list = vec![
+            ep("alpha", Some(false)),
+            ep("bravo", Some(true)),
+            ep("charlie", None),
+            ep("delta", Some(true)),
+            ep("echo", Some(false)),
+        ];
+        favorites_first(&mut list);
+        let slugs: Vec<_> = list.iter().map(|e| e.slug.as_str()).collect();
+        assert_eq!(slugs, ["bravo", "delta", "alpha", "charlie", "echo"]);
+    }
+
+    #[test]
+    fn test_deserialize_favorite_state() {
+        let state: FavoriteState = serde_json::from_str(r#"{"favorite":true}"#).unwrap();
+        assert!(state.favorite);
+        let state: FavoriteState = serde_json::from_str(r#"{"favorite":false}"#).unwrap();
+        assert!(!state.favorite);
     }
 
     #[test]

@@ -66,7 +66,7 @@ create(options?: CreateEndpointOptions): Promise<Endpoint>
 
 <ApiMethod method="GET" path="/endpoints" title="client.endpoints.list">
 
-List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`, the oldest share, and `fromTeams`, every one of your teams it is shared with), as one array.
+List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`, the oldest share, and `fromTeams`, every one of your teams it is shared with), as one array. Each carries `favorite`, whether you marked it as a favourite.
 
 ```ts
 list(options?: ListEndpointsOptions): Promise<Endpoint[]>
@@ -158,6 +158,22 @@ Delete an endpoint and all its captured requests.
 
 ```ts
 delete(slug: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="PUT" path="/endpoints/:slug/favorite" title="client.endpoints.favorite">
+
+Mark an endpoint as one of your favourites, and `unfavorite` to unmark it. A favourite is your own choice, never the endpoint's, so you can mark endpoints shared with you through a team too. Both are idempotent and return the new state; `list()` and `get()` report it as `favorite`. They need an account: sandbox tokens are refused.
+
+```ts
+favorite(slug: string): Promise<{ favorite: boolean }>   // PUT /endpoints/:slug/favorite
+unfavorite(slug: string): Promise<{ favorite: boolean }> // DELETE /endpoints/:slug/favorite
+```
+
+```ts
+await client.endpoints.favorite("payments");
+const favourites = (await client.endpoints.list()).filter((e) => e.favorite);
 ```
 
 </ApiMethod>
@@ -1355,6 +1371,7 @@ interface Endpoint {
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;
+  favorite?: boolean; // your own favourite; present on list() and get()
   emailAddress?: string | null; // null for guest endpoints, which receive no email
   showEmailExtracts?: boolean;
   emailFields?: EmailField[]; // { name, from, header?, pattern }

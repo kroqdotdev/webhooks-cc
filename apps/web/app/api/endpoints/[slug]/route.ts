@@ -22,6 +22,7 @@ import { checkOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { checkSentField } from "@/lib/forwarding/timing";
 import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
+import { isFavoriteEndpoint } from "@/lib/supabase/endpoint-favorites";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { checkForwardUrl } from "@/lib/forwarding/target";
 import { TooManyDestinationsError } from "@/lib/supabase/destinations";
@@ -43,10 +44,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
 
-    const endpoint = await getEndpointBySlugForUser(access.ownerId, slug);
-    if (!endpoint) {
+    const [found, favorite] = await Promise.all([
+      getEndpointBySlugForUser(access.ownerId, slug),
+      isFavoriteEndpoint(auth.userId, access.endpointId),
+    ]);
+    if (!found) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
+    // The caller's own favourite, not the owner's.
+    const endpoint = { ...found, favorite };
 
     // Strip notification and forwarding URLs for non-owners: they can be bearer secrets
     if (access.ownerId !== auth.userId) {

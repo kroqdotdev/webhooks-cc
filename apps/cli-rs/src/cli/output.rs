@@ -102,10 +102,18 @@ pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
         println!("  No endpoints found.");
         return;
     }
-    println!(
-        "  {:<20} {:<20} {:<16} {}",
+    for line in endpoint_table_lines(endpoints, webhook_url) {
+        println!("{line}");
+    }
+}
+
+/// What `whk list` prints, line by line: a header, then one row per
+/// endpoint, a favourite marked with a star in the first column.
+fn endpoint_table_lines(endpoints: &[Endpoint], webhook_url: &str) -> Vec<String> {
+    let mut out = vec![format!(
+        "    {:<20} {:<20} {:<16} {}",
         dim("SLUG"), dim("NAME"), dim("TEAM"), dim("URL"),
-    );
+    )];
     for ep in endpoints {
         let name = sanitize(ep.name.as_deref().unwrap_or("-"));
         let slug = sanitize(&ep.slug);
@@ -117,8 +125,17 @@ pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
         } else {
             String::new()
         };
-        println!("  {:<20} {:<20} {:<16} {}", bold(&slug), dim(&name), dim(&team), dim(&url));
+        let star = if ep.is_favorite() { "\u{2605}" } else { " " };
+        out.push(format!(
+            "  {} {:<20} {:<20} {:<16} {}",
+            star,
+            bold(&slug),
+            dim(&name),
+            dim(&team),
+            dim(&url)
+        ));
     }
+    out
 }
 
 /// One search row: like `print_request_line`, plus the endpoint slug because
@@ -325,6 +342,28 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn endpoint_table_stars_favourites() {
+        let endpoints: Vec<Endpoint> = serde_json::from_str(
+            r#"[
+                {"id":"1","slug":"acme-orders","name":"Orders","favorite":true},
+                {"id":"2","slug":"acme-refunds","favorite":false},
+                {"id":"3","slug":"acme-new"}
+            ]"#,
+        )
+        .unwrap();
+        let lines: Vec<String> = endpoint_table_lines(&endpoints, "https://go.example.test")
+            .iter()
+            .map(|line| strip_ansi(line))
+            .collect();
+        assert_eq!(lines.len(), 4);
+        assert!(lines[0].starts_with("    SLUG"), "{lines:#?}");
+        assert!(lines[1].starts_with("  \u{2605} acme-orders"), "{lines:#?}");
+        assert!(lines[2].starts_with("    acme-refunds"), "{lines:#?}");
+        assert!(lines[3].starts_with("    acme-new"), "{lines:#?}");
+        assert!(lines[1].ends_with("https://go.example.test/w/acme-orders"));
     }
 
     #[test]
