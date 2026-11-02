@@ -70,6 +70,12 @@ beforeAll(async () => {
           .writeHead(403)
           .end(JSON.stringify({ error: { message: "The caller does not have permission" } }));
       }
+      // A spreadsheet's tabs.
+      if (req.method === "GET" && req.url?.includes("fields=sheets.properties.title")) {
+        return res
+          .writeHead(200)
+          .end(JSON.stringify({ sheets: [{ properties: { title: "Orders" } }] }));
+      }
       // A sheet whose first row already holds someone's own values.
       if (req.method === "GET" && req.url?.includes(FILLED_SHEET_ID)) {
         return res.writeHead(200).end(JSON.stringify({ values: [["Their", "Own"]] }));

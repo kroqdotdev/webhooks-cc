@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.56.2";
+export const APP_VERSION = "0.56.3";
 export const CLI_VERSION = "1.7.0";
 export const SDK_VERSION = "1.20.0";
 export const PYTHON_SDK_VERSION = "0.4.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.56.3",
+    date: "2026-11-02",
+    title: "Tabs From the Spreadsheet",
+    track: "web",
+    items: [
+      'When you set up or edit a Google Sheets destination, the Tab field lists the tabs of the spreadsheet you chose and picks the first one if the tab set is not there, so a spreadsheet made in another language ("Ark1", "Hoja 1") works without retyping its name. Deliveries keep the saved tab: after renaming a tab in Google, open the destination and save it again',
+      "A tab that is not in the spreadsheet is named in the error, with the tabs that are, instead of a bare 502",
+    ],
+  },
   {
     version: "0.56.2",
     date: "2026-11-02",
