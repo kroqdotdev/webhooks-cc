@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useSite } from "@/components/providers/site-provider";
-import { switchSite } from "@/lib/site-switch-client";
+import { setOpenEndpoint, switchSite } from "@/lib/site-switch-client";
 import { SITES, endpointHomeSite, listedOn, otherSite, twoSites, type SiteKey } from "@/lib/site";
 import { TemplateImportDialog } from "@/components/dashboard/template-import-dialog";
 import Link from "next/link";
@@ -112,6 +112,12 @@ export default function DashboardPage() {
     endpoints?.find((ep) => ep.slug === endpointSlug) ?? linkedEndpoint ?? endpoints?.[0];
   const currentEndpointId = currentEndpoint?.id;
   const currentSlug = currentEndpoint?.slug;
+  const currentSite = currentEndpoint?.site;
+  // The header's site switcher keeps the open endpoint only on a site that lists it.
+  useEffect(() => {
+    setOpenEndpoint(currentSlug ? { slug: currentSlug, site: currentSite } : null);
+    return () => setOpenEndpoint(null);
+  }, [currentSlug, currentSite]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedClickHouseDetail, setSelectedClickHouseDetail] =

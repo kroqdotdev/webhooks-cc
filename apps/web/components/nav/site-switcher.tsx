@@ -9,27 +9,45 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSite } from "@/components/providers/site-provider";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { SITES, twoSites, type SiteKey } from "@/lib/site";
-import { switchSite } from "@/lib/site-switch-client";
+import { SITES, listedOn, twoSites, type EndpointSite, type SiteKey } from "@/lib/site";
+import { openEndpointSite, switchSite } from "@/lib/site-switch-client";
 
 const ORDER: SiteKey[] = ["webhooks", "mailhooks"];
 
 /** App pages both sites serve: switching from one lands on the same page there. */
 const APP_PREFIXES = ["/dashboard", "/account", "/teams"];
 
-/** The page to land on across the switch, from the page shown now. */
-export function switchNextPath(pathname: string, search: string): string {
+/**
+ * The page to land on across the switch, from the page shown now. The open
+ * endpoint goes along only when `target` lists it: the dashboard opens any
+ * endpoint named in the link, so one listed only here would stay open there.
+ * `endpointSite` looks up the site of the endpoint in the query; null means
+ * unknown, and the endpoint is kept.
+ */
+export function switchNextPath(
+  pathname: string,
+  search: string,
+  target: SiteKey,
+  endpointSite: (slug: string) => { site: EndpointSite | undefined } | null = () => null
+): string {
   const inApp = APP_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
-  return inApp ? `${pathname}${search}` : "/";
+  if (!inApp) return "/";
+  const params = new URLSearchParams(search);
+  const slug = params.get("endpoint");
+  const known = slug ? endpointSite(slug) : null;
+  if (!known || listedOn(known.site, target)) return `${pathname}${search}`;
+  params.delete("endpoint");
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 /** Switches to `target`, landing on the page shown now there when it is an app page. */
 function switchFromHere(target: SiteKey, accessToken: string | undefined): void {
   void switchSite(
     target,
-    switchNextPath(window.location.pathname, window.location.search),
+    switchNextPath(window.location.pathname, window.location.search, target, openEndpointSite),
     accessToken
   );
 }
