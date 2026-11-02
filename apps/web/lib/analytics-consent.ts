@@ -4,7 +4,8 @@ import { forgetIdentifiedUser, identifyPendingUser } from "./analytics";
 /**
  * The visitor's analytics choice from the cookie banner, kept by posthog-js in
  * localStorage under this key (a record of the choice, which needs no consent
- * itself). Each site keeps its own, since localStorage is per origin.
+ * itself). Each site keeps its own, since localStorage is per origin; a
+ * switch between the sites carries it over (applyCarriedConsent).
  */
 export const ANALYTICS_CONSENT_KEY = "whk_analytics_consent";
 
@@ -50,6 +51,36 @@ export function declineAnalytics() {
   } catch {
     // PostHog not initialized
   }
+}
+
+/**
+ * Applies the choice a site switch brought from the other site
+ * (consentCarryCookie in lib/site-switch.ts), then clears it. An accept only
+ * answers a banner not yet answered here; a decline always applies, so
+ * withdrawing on one site withdraws on the other too. Over https only the
+ * __Host- cookie counts: a plain one could have been set for the whole
+ * domain by another host under it.
+ */
+export function applyCarriedConsent() {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:";
+  const name = secure ? "__Host-whk_consent_carry" : "whk_consent_carry";
+  const carried = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+  if (carried !== "granted" && carried !== "denied") return;
+  const here = analyticsConsent();
+  if (carried === "denied" && here !== "denied") declineAnalytics();
+  if (carried === "granted" && here === "pending" && !browserDeclinesTracking()) {
+    acceptAnalytics();
+  }
+  // A decline storage refused stays carried, for the next page load to retry.
+  if (carried === "denied" && analyticsConsent() !== "denied") return;
+  document.cookie = secure
+    ? `${name}=; Path=/; Max-Age=0; SameSite=Lax; Secure`
+    : `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
 export function openCookieSettings() {

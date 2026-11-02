@@ -5,6 +5,7 @@ import { resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
 import { reportError } from "@/lib/observability";
 import {
   clearSwitchCookie,
+  consentCarryCookie,
   nonceMatches,
   openTicket,
   switchNonceOf,
@@ -42,7 +43,8 @@ async function burn(ticket: SwitchTicket): Promise<void> {
 /**
  * GET /auth/switch/finish?t=: the last stop (lib/site-switch.ts), back on the
  * site switched to. Signs the ticket's account in here, only for the browser
- * whose nonce cookie the ticket was made for, then lands on its page.
+ * whose nonce cookie the ticket was made for, then lands on its page with
+ * the analytics choice the ticket carries.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -84,5 +86,9 @@ export async function GET(request: Request) {
     status: 200,
     metadata: { to: here, stage: "signed_in" },
   });
-  return done(`${base}${sanitizeNextPath(ticket.next)}`);
+  const response = done(`${base}${sanitizeNextPath(ticket.next)}`);
+  if (ticket.consent) {
+    response.headers.append("set-cookie", consentCarryCookie(ticket.consent, secure));
+  }
+  return response;
 }

@@ -319,8 +319,11 @@ export default function PrivacyPage() {
               sign in, links what you do to your account. If you decline, or have not chosen yet,
               nothing is stored in your browser: visits are counted with a hash of your IP address
               and browser that changes every day, so a visit cannot be followed from one day to the
-              next. Do Not Track and Global Privacy Control count as a decline. You can change your
-              choice at any time with <CookieSettingsLink className={linkClass} />.
+              next. Do Not Track and Global Privacy Control count as a decline. webhooks.cc and
+              mailhooks.cc each keep their own choice; when you move between them signed in, with
+              the site switcher, your choice comes along, and a decline on one site also applies on
+              the other. You can change your choice at any time with{" "}
+              <CookieSettingsLink className={linkClass} />.
             </p>
             <p>
               <span className="font-bold text-foreground">What your browser sends.</span> Page

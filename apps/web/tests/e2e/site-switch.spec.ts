@@ -243,3 +243,44 @@ test("an endpoint made on mailhooks.cc is listed there, not on webhooks.cc", asy
   await expect(page.getByRole("banner").getByRole("combobox")).not.toContainText("Made on mail");
   await expect(page.getByText("This endpoint is listed on mailhooks.cc, not here.")).toBeHidden();
 });
+
+test("the switcher carries the cookie banner answer to the other site", async ({ browser }) => {
+  test.skip(!process.env.NEXT_PUBLIC_POSTHOG_KEY, "no cookie banner without a PostHog key");
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const banner = page.getByRole("dialog", { name: "Analytics, for us only" });
+  const consentHere = () =>
+    page.evaluate(() => window.localStorage.getItem("whk_analytics_consent"));
+  try {
+    await signInTestUser(page, user, "/dashboard");
+    await page.goto(`/dashboard?endpoint=${slugs.both}`);
+    await banner.getByRole("button", { name: "Accept" }).click();
+    await expect(banner).toBeHidden();
+    const accepted = await consentHere();
+    expect(accepted).not.toBeNull();
+
+    // Accepted on webhooks.cc: not asked again on mailhooks.cc.
+    await page.getByRole("button", { name: "Switch site" }).click();
+    await page.getByRole("menuitem", { name: /mailhooks\.cc/ }).click();
+    await expect(page).toHaveURL(`${MAIL}/dashboard?endpoint=${slugs.both}`);
+    await expect.poll(consentHere).toBe(accepted);
+    await expect(banner).toBeHidden();
+    expect(await context.cookies(MAIL!)).not.toContainEqual(
+      expect.objectContaining({ name: expect.stringContaining("whk_consent_carry") })
+    );
+
+    // Declined on mailhooks.cc: the decline comes back to webhooks.cc too.
+    await page.goto(`${MAIL}/privacy`);
+    await page.getByRole("button", { name: "Cookie settings" }).first().click();
+    await banner.getByRole("button", { name: "Decline" }).click();
+    const declined = await consentHere();
+    expect(declined).not.toBe(accepted);
+    await page.goto(`${MAIL}/dashboard?endpoint=${slugs.both}`);
+    await page.getByRole("button", { name: "Switch site" }).click();
+    await page.getByRole("menuitem", { name: /webhooks\.cc/ }).click();
+    await page.waitForURL((url) => url.origin !== new URL(MAIL!).origin);
+    await expect.poll(consentHere).toBe(declined);
+  } finally {
+    await context.close();
+  }
+});

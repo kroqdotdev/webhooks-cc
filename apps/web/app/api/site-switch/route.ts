@@ -2,18 +2,24 @@ import { authenticateSessionRequest } from "@/lib/api-auth";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { parseJsonBody } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
-import { GRANT_LIFETIME_MS, sealGrant, switchKeyConfigured } from "@/lib/site-switch";
+import {
+  GRANT_LIFETIME_MS,
+  parseCarriedConsent,
+  sealGrant,
+  switchKeyConfigured,
+} from "@/lib/site-switch";
 import { SITE_HEADER, otherSite, parseSite, siteOrigin, twoSites } from "@/lib/site";
 
 /** Grants per account per minute: a person clicks a few; a script would ask for many. */
 const GRANTS_PER_MINUTE = 10;
 
 /**
- * POST /api/site-switch { next }: the first stop of carrying the session to
+ * POST /api/site-switch { next, consent? }: the first stop of carrying the session to
  * the other site (lib/site-switch.ts). A browser session only, never an API
  * key: the signed-in page asks with its own bearer token, which a page on
  * another site cannot send. Answers { url }, the other site's
- * /auth/switch/start with a grant for this account.
+ * /auth/switch/start with a grant for this account, carrying the page's
+ * cookie banner answer when it had one.
  */
 export async function POST(request: Request) {
   const auth = await authenticateSessionRequest(request);
@@ -37,7 +43,11 @@ export async function POST(request: Request) {
   const start = new URL("/auth/switch/start", siteOrigin(to));
   start.searchParams.set(
     "g",
-    sealGrant({ userId: auth.userId, expires: Date.now() + GRANT_LIFETIME_MS })
+    sealGrant({
+      userId: auth.userId,
+      expires: Date.now() + GRANT_LIFETIME_MS,
+      consent: parseCarriedConsent(body.consent),
+    })
   );
   start.searchParams.set("next", next);
   return Response.json({ url: start.toString() }, { headers: { "cache-control": "no-store" } });

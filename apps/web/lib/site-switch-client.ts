@@ -1,3 +1,4 @@
+import { analyticsConsent } from "@/lib/analytics-consent";
 import { siteOrigin, type EndpointSite, type SiteKey } from "@/lib/site";
 
 /**
@@ -25,7 +26,8 @@ let switching = false;
 /**
  * Moves the browser to the other site (lib/site-switch.ts). Signed in, it
  * asks this site for a grant with the session's own token and follows it, so
- * the other site signs the same account in; signed out, or when that fails,
+ * the other site signs the same account in and takes this site's cookie
+ * banner answer along; signed out, or when that fails,
  * it opens the other site's page (sign-in, with the page to come back to).
  */
 export async function switchSite(
@@ -51,7 +53,7 @@ export async function switchSite(
     const response = await fetch("/api/site-switch", {
       method: "POST",
       headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ next: nextPath }),
+      body: JSON.stringify({ next: nextPath, consent: analyticsConsent() }),
     });
     if (response.ok) {
       const { url } = (await response.json()) as { url?: string };
