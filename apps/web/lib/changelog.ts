@@ -32,7 +32,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Tabs From the Spreadsheet",
     track: "web",
     items: [
-      'A Google Sheets destination offers the tabs of the spreadsheet you chose, and takes its first tab when the one set is not there, so a spreadsheet made in another language ("Ark1", "Hoja 1") works without retyping its name',
+      'When you set up or edit a Google Sheets destination, the Tab field lists the tabs of the spreadsheet you chose and picks the first one if the tab set is not there, so a spreadsheet made in another language ("Ark1", "Hoja 1") works without retyping its name. Deliveries keep the saved tab: after renaming a tab in Google, open the destination and save it again',
       "A tab that is not in the spreadsheet is named in the error, with the tabs that are, instead of a bare 502",
     ],
   },
