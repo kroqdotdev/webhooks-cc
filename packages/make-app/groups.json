@@ -1,0 +1,5 @@
+[
+  { "label": "Emails", "modules": ["watchEmails", "findEmails", "sendTestEmail"] },
+  { "label": "Endpoints", "modules": ["createEndpoint"] },
+  { "label": "Other", "modules": ["makeApiCall"] }
+]

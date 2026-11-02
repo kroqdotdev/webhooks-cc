@@ -8,6 +8,8 @@ The webhooks.cc and mailhooks.cc custom app for Make, as Make's IML definitions:
 - `modules/create-endpoint.imljson`, `modules/send-test-email.imljson`: actions.
 - `modules/find-emails.imljson`: a search.
 - `rpcs/list-endpoints.imljson`: the endpoints for the dropdowns.
+- `modules/make-api-call.imljson`: **Make an API call**, the universal module Make's review asks for. Its URL is a path under `https://webhooks.cc/api/`, so the key never goes to another host.
+- `groups.json`, `app-readme.md`, `icon.png`: how the editor groups the modules, the app's readme in Make, and its icon (white on transparent; Make draws it on the theme color).
 
 ## Develop
 

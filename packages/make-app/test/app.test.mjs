@@ -138,6 +138,16 @@ describe("the Make app definitions", () => {
     // https://webhooks.cc/api (Make drops the doubled slash), never elsewhere.
     expect(universal.communication.url).toBe("https://webhooks.cc/api/{{parameters.url}}");
   });
+
+  it("puts every module in exactly one group", () => {
+    const groups = JSON.parse(readFileSync(path.join(root, "groups.json"), "utf8"));
+    const grouped = groups.flatMap((group) => group.modules);
+    expect([...grouped].sort()).toEqual(
+      Object.values(modules)
+        .map((m) => m.name)
+        .sort()
+    );
+  });
 });
 
 // Against the running web app.
