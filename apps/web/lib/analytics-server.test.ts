@@ -91,9 +91,9 @@ describe("clientFromUserAgent", () => {
 });
 
 describe("stableEventUuid", () => {
-  it("is a version 5 UUID that depends only on the name", () => {
+  it("is a version 8 UUID that depends only on the name", () => {
     const id = stableEventUuid("daily:user-1:2026-11-01");
-    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(stableEventUuid("daily:user-1:2026-11-01")).toBe(id);
     expect(stableEventUuid("daily:user-1:2026-11-02")).not.toBe(id);
   });

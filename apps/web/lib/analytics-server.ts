@@ -87,10 +87,13 @@ export async function flushServerAnalytics(): Promise<void> {
   }
 }
 
-/** A name-based UUID (version 5 layout over SHA-1), so the same report always gets the same event id. */
+/**
+ * A name-based UUID (version 8 layout over SHA-256), so the same report always
+ * gets the same event id and PostHog drops a resend.
+ */
 export function stableEventUuid(name: string): string {
-  const hash = createHash("sha1").update(`webhooks.cc analytics:${name}`).digest();
-  hash[6] = (hash[6] & 0x0f) | 0x50;
+  const hash = createHash("sha256").update(`webhooks.cc analytics:${name}`).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x80;
   hash[8] = (hash[8] & 0x3f) | 0x80;
   const hex = hash.subarray(0, 16).toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
