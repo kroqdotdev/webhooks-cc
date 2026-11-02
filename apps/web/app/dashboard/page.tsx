@@ -3,15 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useSite } from "@/components/providers/site-provider";
-import {
-  SITES,
-  endpointHomeSite,
-  listedOn,
-  otherSite,
-  siteSwitchUrl,
-  twoSites,
-  type SiteKey,
-} from "@/lib/site";
+import { switchSite } from "@/lib/site-switch-client";
+import { SITES, endpointHomeSite, listedOn, otherSite, twoSites, type SiteKey } from "@/lib/site";
 import { TemplateImportDialog } from "@/components/dashboard/template-import-dialog";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -50,6 +43,7 @@ import {
   fetchDashboardSearchCount,
   subscribeDashboardEndpointsChanged,
   createDashboardEndpoint,
+  emitDashboardEndpointsChanged,
   claimGuestEndpointForUser,
   type DashboardEndpoint,
   sendTestEmail,
@@ -1741,7 +1735,11 @@ function AutoCreateEndpoint({
     attempted.current = true;
 
     createDashboardEndpoint(accessToken, siteBody(site.key))
-      .then(() => onCreated())
+      .then(() => {
+        // The header's endpoint list reloads too.
+        emitDashboardEndpointsChanged();
+        return onCreated();
+      })
       .catch(() => setError("Could not create your first endpoint."));
   }, [accessToken, onCreated, site.key]);
 
@@ -1797,7 +1795,10 @@ function NoEndpointsHere({
     setCreating(true);
     setError(null);
     createDashboardEndpoint(accessToken, siteBody(site.key))
-      .then(() => onCreated())
+      .then(() => {
+        emitDashboardEndpointsChanged();
+        return onCreated();
+      })
       .catch(() => {
         setError("Could not create the endpoint. Try again.");
         setCreating(false);
@@ -1821,9 +1822,13 @@ function NoEndpointsHere({
           <button onClick={create} disabled={creating} className="ui-btn-primary">
             {creating ? "Creating..." : `Create an endpoint on ${site.name}`}
           </button>
-          <a href={siteSwitchUrl(other.key, "/dashboard", true)} className="ui-btn-outline">
+          <button
+            type="button"
+            onClick={() => void switchSite(other.key, "/dashboard", accessToken)}
+            className="ui-btn-outline"
+          >
             Open {other.name}
-          </a>
+          </button>
         </div>
       </div>
     </div>
@@ -1839,18 +1844,26 @@ function ListedElsewhereNotice({
   endpointSite: DashboardEndpoint["site"];
 }) {
   const site = useSite();
+  const { session } = useAuth();
   const home = SITES[endpointHomeSite(endpointSite, site.key)];
   return (
     <div className="shrink-0 border-b border-line bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
       <span>
         This endpoint is listed on {home.name}, not here. Change that under Settings, Receiving.
       </span>
-      <a
-        href={siteSwitchUrl(home.key, `/dashboard?endpoint=${encodeURIComponent(slug)}`, true)}
-        className="font-medium text-foreground underline underline-offset-2"
+      <button
+        type="button"
+        onClick={() =>
+          void switchSite(
+            home.key,
+            `/dashboard?endpoint=${encodeURIComponent(slug)}`,
+            session?.access_token
+          )
+        }
+        className="font-medium text-foreground underline underline-offset-2 cursor-pointer"
       >
         Open it on {home.name}
-      </a>
+      </button>
     </div>
   );
 }

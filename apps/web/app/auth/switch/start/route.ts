@@ -4,20 +4,22 @@ import { newNonce, nonceHash, switchCookie } from "@/lib/site-switch";
 import { otherSite, siteForHost, siteOrigin, twoSites } from "@/lib/site";
 
 /**
- * GET /auth/switch/start?next=: the first stop of carrying a session here
- * from the other site (lib/site-switch.ts). Sets the nonce cookie that ties
- * the switch to this browser, then asks the other site, where the browser is
- * signed in, for a ticket.
+ * GET /auth/switch/start?g=&next=: carrying a session here from the other
+ * site (lib/site-switch.ts). Sets the nonce cookie that ties the switch to
+ * this browser, then takes the grant back to the other site, where the
+ * browser is signed in, for a ticket.
  */
 export function GET(request: Request) {
   const url = new URL(request.url);
   const base = resolveRedirectBase(request, url.origin);
   const next = sanitizeNextPath(url.searchParams.get("next"));
-  if (!twoSites()) return NextResponse.redirect(`${base}${next}`, 303);
+  const grant = url.searchParams.get("g");
+  if (!twoSites() || !grant) return NextResponse.redirect(`${base}${next}`, 303);
 
   const here = siteForHost(new URL(base).host);
   const nonce = newNonce();
   const issue = new URL("/auth/switch/issue", siteOrigin(otherSite(here)));
+  issue.searchParams.set("g", grant);
   issue.searchParams.set("n", nonceHash(nonce));
   issue.searchParams.set("next", next);
 

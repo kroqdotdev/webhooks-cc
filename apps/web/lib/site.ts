@@ -110,19 +110,6 @@ export function listedOn(endpointSite: EndpointSite | undefined, site: SiteKey):
   return endpointSite === undefined || endpointSite === "both" || endpointSite === site;
 }
 
-/**
- * The header switcher's link to the other site. Signed in, it goes through
- * /auth/switch (lib/site-switch.ts) and lands on `nextPath` signed in there;
- * signed out, it is the other site's home page.
- */
-export function siteSwitchUrl(target: SiteKey, nextPath: string, signedIn: boolean): string {
-  const origin = siteOrigin(target);
-  if (!signedIn) return `${origin}/`;
-  const url = new URL("/auth/switch/start", origin);
-  url.searchParams.set("next", nextPath);
-  return url.toString();
-}
-
 /** Where an endpoint's dashboard link should go: its own site, or this one when it is on both. */
 export function endpointHomeSite(endpointSite: EndpointSite | undefined, site: SiteKey): SiteKey {
   return endpointSite === "webhooks" || endpointSite === "mailhooks" ? endpointSite : site;

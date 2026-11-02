@@ -66,6 +66,7 @@ function ReceivingSection({
   endpoint: EndpointSettingsPanelProps["endpoint"];
   isOwner: boolean;
 }) {
+  const router = useRouter();
   const initialName = endpoint.name ?? "";
   const initialSite: EndpointSite = endpoint.site ?? "both";
   const initialExtracts = endpoint.showEmailExtracts !== false;
@@ -145,6 +146,15 @@ function ReceivingSection({
           }}
           onSave={() => {
             setTriedSave(true);
+            if (siteChanged) {
+              // Listed elsewhere once saved, it drops out of this site's list:
+              // keep it open here by its slug instead of moving to another.
+              const params = new URLSearchParams(window.location.search);
+              if (params.get("endpoint") !== endpoint.slug) {
+                params.set("endpoint", endpoint.slug);
+                router.replace(`${window.location.pathname}?${params.toString()}`);
+              }
+            }
             void save(
               {
                 // An emptied name is saved as "" (the dashboard then shows the slug).

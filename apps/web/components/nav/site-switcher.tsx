@@ -8,8 +8,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSite } from "@/components/providers/site-provider";
-import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
-import { SITES, siteSwitchUrl, twoSites, type SiteKey } from "@/lib/site";
+import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { SITES, twoSites, type SiteKey } from "@/lib/site";
+import { switchSite } from "@/lib/site-switch-client";
 
 const ORDER: SiteKey[] = ["webhooks", "mailhooks"];
 
@@ -24,12 +25,12 @@ export function switchNextPath(pathname: string, search: string): string {
   return inApp ? `${pathname}${search}` : "/";
 }
 
-/** Where switching to `target` goes from the page shown now. */
-function switchHref(target: SiteKey, signedIn: boolean): string {
-  return siteSwitchUrl(
+/** Switches to `target`, landing on the page shown now there when it is an app page. */
+function switchFromHere(target: SiteKey, accessToken: string | undefined): void {
+  void switchSite(
     target,
     switchNextPath(window.location.pathname, window.location.search),
-    signedIn
+    accessToken
   );
 }
 
@@ -40,7 +41,7 @@ function switchHref(target: SiteKey, signedIn: boolean): string {
  */
 export function SiteSwitcher() {
   const site = useSite();
-  const signedIn = useIsAuthenticated();
+  const { session } = useAuth();
   if (!twoSites()) return null;
 
   return (
@@ -62,7 +63,7 @@ export function SiteSwitcher() {
               className="cursor-pointer items-start gap-2 py-2"
               aria-current={current ? "page" : undefined}
               onSelect={() => {
-                if (!current) window.location.assign(switchHref(key, signedIn));
+                if (!current) switchFromHere(key, session?.access_token);
               }}
             >
               <span className="flex-1 min-w-0">
@@ -81,7 +82,7 @@ export function SiteSwitcher() {
 /** The phone menu's row: a link to the other site, signed in when this one is. */
 export function SiteSwitchRow({ onNavigate }: { onNavigate?: () => void }) {
   const site = useSite();
-  const signedIn = useIsAuthenticated();
+  const { session } = useAuth();
   if (!twoSites()) return null;
   const other: SiteKey = site.key === "mailhooks" ? "webhooks" : "mailhooks";
   return (
@@ -90,7 +91,7 @@ export function SiteSwitchRow({ onNavigate }: { onNavigate?: () => void }) {
       className="text-left text-foreground font-medium text-lg cursor-pointer"
       onClick={() => {
         onNavigate?.();
-        window.location.assign(switchHref(other, signedIn));
+        switchFromHere(other, session?.access_token);
       }}
     >
       Switch to {SITES[other].name}
