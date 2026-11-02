@@ -71,6 +71,21 @@ describe("auditAnalyticsEvent", () => {
     expect(ok?.properties).not.toHaveProperty("client_name");
   });
 
+  it("names an agent token's client when the client names itself, else counts it as an agent", () => {
+    const agent = { ...row, via: "agent_token" as const };
+    expect(
+      auditAnalyticsEvent({
+        ...agent,
+        user_agent: "webhooks-cc-mcp-remote/0.58.2 webhooks-cc-sdk/1.20.0",
+      })?.properties?.client
+    ).toBe("mcp_remote");
+    expect(auditAnalyticsEvent({ ...agent, user_agent: "whk-cli/1.7.0" })?.properties?.client).toBe(
+      "cli"
+    );
+    expect(auditAnalyticsEvent({ ...agent, user_agent: "node" })?.properties?.client).toBe("agent");
+    expect(auditAnalyticsEvent({ ...agent, user_agent: null })?.properties?.client).toBe("agent");
+  });
+
   it("removes the email from a deleted account's person", () => {
     const event = auditAnalyticsEvent({ ...row, action: "account.deleted" });
     expect(event?.properties?.$unset).toEqual(["email"]);
@@ -87,6 +102,10 @@ describe("clientFromUserAgent", () => {
     ["whk-cli/1.7.0", "cli"],
     ["webhooks-cc-python/0.4.0", "python_sdk"],
     ["webhooks-cc-go/0.4.0", "go_sdk"],
+    ["webhooks-cc-sdk/1.20.0", "typescript_sdk"],
+    ["acme-tool/2.0 webhooks-cc-sdk/1.20.0", "typescript_sdk"],
+    ["webhooks-cc-mcp/1.16.0 webhooks-cc-sdk/1.20.0", "mcp"],
+    ["webhooks-cc-mcp-remote/0.58.2 webhooks-cc-sdk/1.20.0", "mcp_remote"],
     ["Zapier", "zapier"],
     ["Mozilla/5.0 (X11; Linux x86_64)", "browser"],
     ["node", "node"],

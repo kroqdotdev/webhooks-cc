@@ -154,6 +154,8 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
     baseUrl: internalApiUrl(),
     webhookUrl: publicEnv().NEXT_PUBLIC_WEBHOOK_URL,
     fetch: callerFetch(caller?.clientIp ?? null),
+    // Tells the remote server's calls apart from the stdio server's in analytics.
+    userAgent: `webhooks-cc-mcp-remote/${APP_VERSION}`,
   });
   registerTools(toolServer(server, caller?.userId ?? "anonymous"), client, { remote: true });
   return server;

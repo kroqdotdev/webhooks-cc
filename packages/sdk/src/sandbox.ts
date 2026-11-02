@@ -74,7 +74,14 @@ export interface CredentialFileOption {
   credentialsFile?: string | false;
 }
 
-export interface SandboxOptions extends RegisterAnonymousOptions, CredentialFileOption {
+/** The caller's product token for the User-Agent of account clients (see `ClientOptions.userAgent`). */
+export interface UserAgentOption {
+  /** Your own product token, like `my-tool/1.2`, sent before the SDK's. */
+  userAgent?: string;
+}
+
+export interface SandboxOptions
+  extends RegisterAnonymousOptions, CredentialFileOption, UserAgentOption {
   /** Base URL for sending webhooks (default: https://go.webhooks.cc). */
   webhookUrl?: string;
 }
@@ -237,6 +244,7 @@ interface AccountClientInput {
   baseUrl: string;
   webhookUrl?: string;
   timeout?: number;
+  userAgent?: string;
   store: AgentCredentialStore | null;
   registrationId: string;
   email?: string;
@@ -273,6 +281,7 @@ function accountClient(input: AccountClientInput): WebhooksCC {
     baseUrl: input.baseUrl,
     webhookUrl: input.webhookUrl,
     timeout: input.timeout,
+    userAgent: input.userAgent,
     getAccessToken: (refresh) => tokens.get(refresh?.forceRefresh ?? false),
   });
 }
@@ -290,6 +299,7 @@ export class SandboxClient {
   private readonly baseUrl: string;
   private readonly webhookUrl?: string;
   private readonly timeout?: number;
+  private readonly userAgent?: string;
   private readonly clientName?: string;
   private readonly store: AgentCredentialStore | null;
   private pendingClaim: PendingClaim | null = null;
@@ -305,6 +315,7 @@ export class SandboxClient {
     this.baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
     this.webhookUrl = options.webhookUrl;
     this.timeout = options.timeout;
+    this.userAgent = options.userAgent;
     this.clientName = options.clientName;
     this.store = store;
     this.tokens = new AssertionTokens(
@@ -570,6 +581,7 @@ export class SandboxClient {
       baseUrl: this.baseUrl,
       webhookUrl: this.webhookUrl,
       timeout: this.timeout,
+      userAgent: this.userAgent,
       store: this.store,
       registrationId: pending?.registrationId ?? this.registration.registrationId,
       email: pending?.email,
@@ -635,7 +647,7 @@ export async function createSandbox(options: SandboxOptions = {}): Promise<Sandb
   return client;
 }
 
-export interface ConnectedOptions extends CredentialFileOption {
+export interface ConnectedOptions extends CredentialFileOption, UserAgentOption {
   /** Base URL of the webhooks.cc app (default: https://webhooks.cc). */
   baseUrl?: string;
   /** Base URL for sending webhooks (default: https://go.webhooks.cc). */
@@ -672,6 +684,7 @@ export function savedConnection(options: ConnectedOptions = {}): WebhooksCC | nu
     baseUrl,
     webhookUrl: options.webhookUrl,
     timeout: options.timeout,
+    userAgent: options.userAgent,
     getAccessToken: (refresh) => tokens.get(refresh?.forceRefresh ?? false),
   });
 }
@@ -748,6 +761,7 @@ export class PendingConnection implements ClaimAttempt {
       baseUrl: this.options.baseUrl,
       webhookUrl: this.options.webhookUrl,
       timeout: this.options.timeout,
+      userAgent: this.options.userAgent,
       store: AgentCredentialStore.resolve(this.options.credentialsFile),
       registrationId: this.registrationId,
       email: this.options.email.trim().toLowerCase(),

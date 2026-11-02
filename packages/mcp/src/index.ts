@@ -4,10 +4,7 @@ import { registerPrompts } from "./prompts";
 import { registerResources } from "./resources";
 import { registerSandboxTools } from "./sandbox-tools";
 import { registerTools } from "./tools";
-
-declare const PKG_VERSION: string | undefined;
-
-const VERSION = typeof PKG_VERSION !== "undefined" ? PKG_VERSION : "0.0.0-dev";
+import { MCP_USER_AGENT, VERSION } from "./version";
 
 export interface CreateServerOptions {
   /** API key for webhooks.cc (default: reads WHK_API_KEY env var) */
@@ -58,7 +55,7 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
     return server;
   }
 
-  const client = new WebhooksCC({ apiKey, webhookUrl, baseUrl });
+  const client = new WebhooksCC({ apiKey, webhookUrl, baseUrl, userAgent: MCP_USER_AGENT });
 
   registerTools(server, client);
   registerPrompts(server);

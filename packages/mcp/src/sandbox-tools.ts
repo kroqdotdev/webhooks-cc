@@ -10,6 +10,7 @@ import {
   type SandboxClaimAttempt,
 } from "@webhooks-cc/sdk";
 import { compactRequest } from "./compact";
+import { MCP_USER_AGENT } from "./version";
 import {
   createEndpointShape,
   deleteEndpointShape,
@@ -102,6 +103,7 @@ class AgentSession {
       webhookUrl: this.webhookUrl,
       clientName: this.clientName,
       credentialsFile: this.credentialsFile,
+      userAgent: MCP_USER_AGENT,
     };
   }
 
@@ -219,6 +221,7 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
           baseUrl,
           webhookUrl,
           credentialsFile: options.credentialsFile,
+          userAgent: MCP_USER_AGENT,
           // The human disconnected the agent: back to the sandbox, unless a
           // newer connection is already on display.
           onRevoked: () =>
@@ -405,6 +408,7 @@ function sandboxToolSet(
             email: normalized,
             clientName: session.clientName,
             credentialsFile: session.credentialsFile,
+            userAgent: MCP_USER_AGENT,
           });
           session.connect = { via: "connect", pending, email: normalized };
           attempt = pending;

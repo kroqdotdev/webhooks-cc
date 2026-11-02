@@ -140,6 +140,19 @@ const DEFAULT_RETRY_STATUSES = [429, 500, 502, 503, 504];
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
 declare const PKG_VERSION: string | undefined;
 const SDK_VERSION = typeof PKG_VERSION !== "undefined" ? PKG_VERSION : "0.0.0-dev";
+
+/**
+ * The User-Agent for calls to the webhooks.cc API: the caller's own product
+ * token first, if any, then the SDK's. Browsers keep their own (setting one
+ * would only add a header to the CORS preflight), so none is sent there.
+ */
+function apiUserAgent(product: string | undefined): string | undefined {
+  const userAgent = globalThis.navigator?.userAgent;
+  if (typeof userAgent === "string" && userAgent.startsWith("Mozilla/")) return undefined;
+  const own = `webhooks-cc-sdk/${SDK_VERSION}`;
+  const extra = product?.trim();
+  return extra ? `${extra} ${own}` : own;
+}
 const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;
 // How far before the newest request a wait's next poll starts. The receiver
 // stamps receivedAt before the capture commits, and a capture can wait its
@@ -708,6 +721,7 @@ export class WebhooksCC {
   private readonly hooks: ClientHooks;
   private readonly emailDomain: string;
   private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly userAgent: string | undefined;
 
   constructor(options: ClientOptions) {
     if (typeof options.getAccessToken !== "function") {
@@ -726,6 +740,14 @@ export class WebhooksCC {
     this.hooks = options.hooks ?? {};
     this.emailDomain = options.emailDomain ?? DEFAULT_EMAIL_DOMAIN;
     this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.userAgent = apiUserAgent(options.userAgent);
+  }
+
+  /** Headers every call to the API carries: the bearer, and the User-Agent outside browsers. */
+  private apiHeaders(bearer: string): Record<string, string> {
+    const headers: Record<string, string> = { Authorization: `Bearer ${bearer}` };
+    if (this.userAgent) headers["User-Agent"] = this.userAgent;
+    return headers;
   }
 
   /**
@@ -862,7 +884,7 @@ export class WebhooksCC {
     try {
       const response = await this.fetchImpl(`${this.baseUrl}/api${path}`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${await this.bearer()}` },
+        headers: this.apiHeaders(await this.bearer()),
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -923,10 +945,7 @@ export class WebhooksCC {
       try {
         const response = await this.fetchImpl(url, {
           method,
-          headers: {
-            Authorization: `Bearer ${await this.bearer()}`,
-            "Content-Type": "application/json",
-          },
+          headers: { ...this.apiHeaders(await this.bearer()), "Content-Type": "application/json" },
           body: body ? JSON.stringify(body) : undefined,
           signal: controller.signal,
         });
@@ -2787,6 +2806,7 @@ export class WebhooksCC {
       const baseUrl = this.baseUrl;
       const bearer = (forceRefresh?: boolean) => this.bearer(forceRefresh);
       const fetchImpl = this.fetchImpl;
+      const userAgent = this.userAgent;
       const timeoutMs = timeout !== undefined ? parseDuration(timeout) : undefined;
       const idleTimeoutMs = normalizeStreamIdleTimeout(options.idleTimeout);
       const maxReconnectAttempts = Math.max(0, Math.floor(options.maxReconnectAttempts ?? 5));
@@ -2909,7 +2929,10 @@ export class WebhooksCC {
             let response: globalThis.Response;
             try {
               response = await fetchImpl(url, {
-                headers: { Authorization: `Bearer ${await bearer()}` },
+                headers: {
+                  Authorization: `Bearer ${await bearer()}`,
+                  ...(userAgent ? { "User-Agent": userAgent } : {}),
+                },
                 signal: connectionController.signal,
               });
             } finally {

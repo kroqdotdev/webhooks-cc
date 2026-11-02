@@ -111,20 +111,35 @@ export function stableEventUuid(name: string): string {
 }
 
 /**
- * Which client made a request, from its user agent: our CLI and SDKs name
- * themselves, the TypeScript SDK and MCP server run on Node's fetch, and
- * Zapier and Make call from their own platforms.
+ * Which client made a request, from its user agent: our CLI, SDKs and MCP
+ * servers name themselves (the MCP servers and other tools built on the
+ * TypeScript SDK put their own token before the SDK's), and Zapier and Make
+ * call from their own platforms. Older TypeScript SDKs and MCP servers sent
+ * none of their own and show as `node`.
  */
 export function clientFromUserAgent(userAgent: string | null | undefined): string {
   if (!userAgent) return "unknown";
+  if (userAgent.startsWith("webhooks-cc-mcp-remote/")) return "mcp_remote";
+  if (userAgent.startsWith("webhooks-cc-mcp/")) return "mcp";
   if (userAgent.startsWith("whk-cli/")) return "cli";
   if (userAgent.startsWith("webhooks-cc-python/")) return "python_sdk";
   if (userAgent.startsWith("webhooks-cc-go/")) return "go_sdk";
+  if (/(^|\s)webhooks-cc-sdk\//.test(userAgent)) return "typescript_sdk";
   if (/zapier/i.test(userAgent)) return "zapier";
   if (/make\.com|integromat/i.test(userAgent)) return "make";
   if (/^Mozilla\//.test(userAgent)) return "browser";
   if (userAgent === "node" || /undici|node-fetch|^Node\.js/i.test(userAgent)) return "node";
   return "other";
+}
+
+/** Clients that name themselves; an agent token used through one is counted as that client. */
+const OWN_CLIENTS = new Set(["mcp_remote", "mcp", "cli", "python_sdk", "go_sdk", "typescript_sdk"]);
+
+/** The client of an audit row: the one its user agent names, else `agent` for agent tokens. */
+function auditClient(via: AuditRowForAnalytics["via"], userAgent: string | null): string {
+  const client = clientFromUserAgent(userAgent);
+  if (via === "agent_token" && !OWN_CLIENTS.has(client)) return "agent";
+  return client;
 }
 
 interface AuditRowForAnalytics {
@@ -188,7 +203,7 @@ export function auditAnalyticsEvent(row: AuditRowForAnalytics): ServerEvent | nu
   const properties: Record<string, unknown> = {
     outcome: row.outcome,
     via: row.via ?? "agent",
-    client: row.via === "agent_token" ? "agent" : clientFromUserAgent(row.user_agent),
+    client: auditClient(row.via, row.user_agent),
   };
   if (row.team_id) properties.team_id = row.team_id;
   for (const [key, value] of Object.entries(row.metadata)) {

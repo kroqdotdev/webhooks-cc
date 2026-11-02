@@ -17,15 +17,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.58.1";
-export const CLI_VERSION = "1.7.0";
-export const SDK_VERSION = "1.20.0";
-export const PYTHON_SDK_VERSION = "0.4.0";
-export const GO_SDK_VERSION = "0.4.0";
-export const MCP_VERSION = "1.16.0";
+export const APP_VERSION = "0.58.2";
+export const CLI_VERSION = "1.8.0";
+export const SDK_VERSION = "1.21.0";
+export const PYTHON_SDK_VERSION = "0.5.0";
+export const GO_SDK_VERSION = "0.5.0";
+export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.58.2",
+    date: "2026-11-02",
+    title: "Clients Named in Usage Counts",
+    track: "web",
+    items: [
+      "Account activity counted on our servers now tells the TypeScript SDK, the npm MCP server and the remote MCP server apart from other Node.js clients, by the User-Agent they send from their next releases on. The CLI and an MCP server keep their names when they use an agent's connection",
+    ],
+  },
   {
     version: "0.58.1",
     date: "2026-11-02",
@@ -1788,6 +1797,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.8.0",
+    date: "2026-11-02",
+    title: "Favourite Endpoints",
+    track: "cli",
+    items: [
+      "`whk favorite <slug>` and `whk unfavorite <slug>` (also spelled `favourite` and `unfavourite`) mark and unmark an endpoint as one of your favourites; `whk list` and the TUI's endpoint list show favourites first, marked with a star",
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-11-02",
     title: "Parsed Emails",
@@ -2018,6 +2036,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.21.0",
+    date: "2026-11-02",
+    title: "Favourites and a User-Agent",
+    track: "sdk",
+    items: [
+      "`endpoints.favorite()` and `endpoints.unfavorite()` mark and unmark an endpoint as one of your favourites, and endpoints carry `favorite`",
+      "Calls to the API send `User-Agent: webhooks-cc-sdk/<version>` outside browsers, and the `userAgent` option puts your own product token, like `my-tool/1.2`, in front of it. `WebhooksCC.sandbox()`, `connect()` and `fromSavedConnection()` take it too",
+    ],
+  },
   {
     version: "1.20.0",
     date: "2026-11-02",
@@ -2378,6 +2406,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.5.0",
+    date: "2026-11-02",
+    title: "Favourite Endpoints",
+    track: "python",
+    items: [
+      "`endpoints.favorite()` and `endpoints.unfavorite()` mark and unmark an endpoint as one of your favourites, and endpoints carry `favorite`",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-11-02",
     title: "Layouts and Downloads",
@@ -2460,6 +2497,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.5.0",
+    date: "2026-11-02",
+    title: "Favourite Endpoints",
+    track: "go",
+    items: [
+      "`Endpoints.Favorite` and `Endpoints.Unfavorite` mark and unmark an endpoint as one of your favourites, and endpoints carry `Favorite`",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-11-02",
     title: "Layouts and Downloads",
@@ -2519,6 +2565,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.17.0",
+    date: "2026-11-02",
+    title: "Favourite Endpoints",
+    track: "mcp",
+    items: [
+      "`favorite_endpoint` marks an endpoint as one of your favourites, or unmarks it with `favorite: false`; `list_endpoints` and `get_endpoint` show `favorite`",
+      "Calls to the API name the server in their User-Agent (`webhooks-cc-mcp/<version>`)",
+    ],
+  },
   {
     version: "1.16.0",
     date: "2026-11-02",

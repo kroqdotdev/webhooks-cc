@@ -26,6 +26,8 @@ const client = new WebhooksCC({
   retry?: RetryOptions,  // Optional. Automatic retry configuration.
   hooks?: ClientHooks,   // Optional. Lifecycle hooks for observability.
   emailDomain?: string,  // Optional. Domain for emails.address() (default: mailhooks.cc).
+  userAgent?: string,    // Optional. Your product token, like "my-tool/1.2", sent before
+                         // the SDK's (webhooks-cc-sdk/<version>) in the User-Agent.
 });
 ```
 

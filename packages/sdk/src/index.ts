@@ -348,6 +348,7 @@ export type {
   ConnectedOptions,
   ConnectOptions,
   CredentialFileOption,
+  UserAgentOption,
   SandboxClaimAttempt,
   SandboxEndpoint,
   SandboxLimits,
