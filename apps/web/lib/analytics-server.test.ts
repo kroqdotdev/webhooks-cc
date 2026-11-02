@@ -84,6 +84,9 @@ describe("auditAnalyticsEvent", () => {
     );
     expect(auditAnalyticsEvent({ ...agent, user_agent: "node" })?.properties?.client).toBe("agent");
     expect(auditAnalyticsEvent({ ...agent, user_agent: null })?.properties?.client).toBe("agent");
+    expect(
+      auditAnalyticsEvent({ ...agent, user_agent: "webhooks-cc-sdk/1.21.0" })?.properties?.client
+    ).toBe("typescript_sdk");
   });
 
   it("removes the email from a deleted account's person", () => {
@@ -104,6 +107,7 @@ describe("clientFromUserAgent", () => {
     ["webhooks-cc-go/0.4.0", "go_sdk"],
     ["webhooks-cc-sdk/1.20.0", "typescript_sdk"],
     ["acme-tool/2.0 webhooks-cc-sdk/1.20.0", "typescript_sdk"],
+    ["notwebhooks-cc-sdk/1.21.0", "other"],
     ["webhooks-cc-mcp/1.16.0 webhooks-cc-sdk/1.20.0", "mcp"],
     ["webhooks-cc-mcp-remote/0.58.2 webhooks-cc-sdk/1.20.0", "mcp_remote"],
     ["Zapier", "zapier"],

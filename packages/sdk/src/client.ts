@@ -145,12 +145,18 @@ const SDK_VERSION = typeof PKG_VERSION !== "undefined" ? PKG_VERSION : "0.0.0-de
  * The User-Agent for calls to the webhooks.cc API: the caller's own product
  * token first, if any, then the SDK's. Browsers keep their own (setting one
  * would only add a header to the CORS preflight), so none is sent there.
+ * Throws on NUL, CR or LF in the product token, which fetch would refuse on
+ * every request.
+ * @internal
  */
-function apiUserAgent(product: string | undefined): string | undefined {
+export function apiUserAgent(product: string | undefined): string | undefined {
+  const extra = product?.trim();
+  if (extra && /[\0\r\n]/.test(extra)) {
+    throw new Error("Invalid userAgent: it must not contain NUL, CR or LF characters.");
+  }
   const userAgent = globalThis.navigator?.userAgent;
   if (typeof userAgent === "string" && userAgent.startsWith("Mozilla/")) return undefined;
   const own = `webhooks-cc-sdk/${SDK_VERSION}`;
-  const extra = product?.trim();
   return extra ? `${extra} ${own}` : own;
 }
 const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;

@@ -38,7 +38,13 @@ import {
   type CredentialSlot,
   type CredentialSlotName,
 } from "./agent-credentials";
-import { collectMatchingRequests, validatePathSegment, waitListLimit, WebhooksCC } from "./client";
+import {
+  apiUserAgent,
+  collectMatchingRequests,
+  validatePathSegment,
+  waitListLimit,
+  WebhooksCC,
+} from "./client";
 import { RateLimitError, WebhooksCCError } from "./errors";
 import type { Endpoint, Request, WaitForAllOptions, WaitForOptions } from "./types";
 
@@ -300,6 +306,8 @@ export class SandboxClient {
   private readonly webhookUrl?: string;
   private readonly timeout?: number;
   private readonly userAgent?: string;
+  /** The User-Agent header of the sandbox's own calls. */
+  private readonly userAgentHeader?: string;
   private readonly clientName?: string;
   private readonly store: AgentCredentialStore | null;
   private pendingClaim: PendingClaim | null = null;
@@ -316,6 +324,7 @@ export class SandboxClient {
     this.webhookUrl = options.webhookUrl;
     this.timeout = options.timeout;
     this.userAgent = options.userAgent;
+    this.userAgentHeader = apiUserAgent(options.userAgent);
     this.clientName = options.clientName;
     this.store = store;
     this.tokens = new AssertionTokens(
@@ -383,6 +392,7 @@ export class SandboxClient {
         method,
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(this.userAgentHeader ? { "User-Agent": this.userAgentHeader } : {}),
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -627,6 +637,7 @@ function slotRegistration(slot: CredentialSlot): SandboxRegistration {
  * there is one, else a new registration (saved to the file).
  */
 export async function createSandbox(options: SandboxOptions = {}): Promise<SandboxClient> {
+  apiUserAgent(options.userAgent); // refuses a bad userAgent before registering
   const baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
   const store = AgentCredentialStore.resolve(options.credentialsFile);
   const resumed = await SandboxClient.resume(options);
@@ -798,6 +809,7 @@ export class PendingConnection implements ClaimAttempt {
 
 /** Registers service_auth for the human and returns the first code. */
 export async function connectAccount(options: ConnectOptions): Promise<PendingConnection> {
+  apiUserAgent(options.userAgent); // refuses a bad userAgent before registering
   const baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
   const registration = await registerServiceAuth({
     baseUrl,

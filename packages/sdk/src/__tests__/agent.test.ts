@@ -196,7 +196,11 @@ describe("tokens and claims", () => {
 });
 
 describe("sandbox client", () => {
-  function sandboxRoutes(state: { exchanges: number; rejectFirstToken: boolean }): Route[] {
+  function sandboxRoutes(state: {
+    exchanges: number;
+    rejectFirstToken: boolean;
+    userAgent?: string | null;
+  }): Route[] {
     return [
       (url) =>
         url.pathname === "/api/agent/identity/challenge"
@@ -221,6 +225,7 @@ describe("sandbox client", () => {
       },
       (url, init) => {
         if (!url.pathname.startsWith("/api/agent/sandbox/")) return undefined;
+        state.userAgent = new Headers(init.headers).get("user-agent");
         const auth = new Headers(init.headers).get("authorization");
         if (state.rejectFirstToken && auth === "Bearer whcc_t1")
           return { status: 401, body: { error: "Invalid token" } };
@@ -248,6 +253,17 @@ describe("sandbox client", () => {
     const refused = await sandbox.endpoints.create().catch((error) => error);
     expect(refused).toBeInstanceOf(SandboxError);
     expect(refused).toMatchObject({ code: "sandbox_full", status: 503 });
+  });
+
+  it("names the caller and the SDK in the User-Agent of sandbox calls", async () => {
+    const state: { exchanges: number; rejectFirstToken: boolean; userAgent?: string | null } = {
+      exchanges: 0,
+      rejectFirstToken: false,
+    };
+    mockFetch(...sandboxRoutes(state));
+    const sandbox = await WebhooksCC.sandbox({ baseUrl: BASE, userAgent: "acme-agent/1.0" });
+    await sandbox.endpoints.list();
+    expect(state.userAgent).toMatch(/^acme-agent\/1\.0 webhooks-cc-sdk\/\S+$/);
   });
 
   it("refuses to wait for more requests than an endpoint can capture", async () => {
