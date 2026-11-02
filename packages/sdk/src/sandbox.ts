@@ -39,6 +39,7 @@ import {
   type CredentialSlotName,
 } from "./agent-credentials";
 import { collectMatchingRequests, validatePathSegment, waitListLimit, WebhooksCC } from "./client";
+import { apiUserAgent } from "./user-agent";
 import { RateLimitError, WebhooksCCError } from "./errors";
 import type { Endpoint, Request, WaitForAllOptions, WaitForOptions } from "./types";
 
@@ -74,7 +75,14 @@ export interface CredentialFileOption {
   credentialsFile?: string | false;
 }
 
-export interface SandboxOptions extends RegisterAnonymousOptions, CredentialFileOption {
+/** The caller's product token for the User-Agent of account clients (see `ClientOptions.userAgent`). */
+export interface UserAgentOption {
+  /** Your own product token, like `my-tool/1.2`, sent before the SDK's. */
+  userAgent?: string;
+}
+
+export interface SandboxOptions
+  extends RegisterAnonymousOptions, CredentialFileOption, UserAgentOption {
   /** Base URL for sending webhooks (default: https://go.webhooks.cc). */
   webhookUrl?: string;
 }
@@ -145,7 +153,8 @@ class AssertionTokens {
     private readonly timeout: number | undefined,
     private persisted: PersistedSlot | null = null,
     initial: AccessToken | null = null,
-    private readonly onRevoked?: () => void
+    private readonly onRevoked?: () => void,
+    private readonly userAgent?: string
   ) {
     this.current = initial;
     if (!initial && persisted) {
@@ -173,6 +182,7 @@ class AssertionTokens {
       this.pending = exchange({
         baseUrl: this.baseUrl,
         timeout: this.timeout,
+        userAgent: this.userAgent,
         assertion: this.assertion,
       })
         .then(
@@ -237,6 +247,7 @@ interface AccountClientInput {
   baseUrl: string;
   webhookUrl?: string;
   timeout?: number;
+  userAgent?: string;
   store: AgentCredentialStore | null;
   registrationId: string;
   email?: string;
@@ -267,12 +278,15 @@ function accountClient(input: AccountClientInput): WebhooksCC {
     input.claimed.identityAssertion,
     input.timeout,
     input.store ? { store: input.store, issuer, name: "claimed", slot } : null,
-    input.claimed.token
+    input.claimed.token,
+    undefined,
+    input.userAgent
   );
   return new WebhooksCC({
     baseUrl: input.baseUrl,
     webhookUrl: input.webhookUrl,
     timeout: input.timeout,
+    userAgent: input.userAgent,
     getAccessToken: (refresh) => tokens.get(refresh?.forceRefresh ?? false),
   });
 }
@@ -290,6 +304,9 @@ export class SandboxClient {
   private readonly baseUrl: string;
   private readonly webhookUrl?: string;
   private readonly timeout?: number;
+  private readonly userAgent?: string;
+  /** The User-Agent header of the sandbox's own calls. */
+  private readonly userAgentHeader?: string;
   private readonly clientName?: string;
   private readonly store: AgentCredentialStore | null;
   private pendingClaim: PendingClaim | null = null;
@@ -305,13 +322,20 @@ export class SandboxClient {
     this.baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
     this.webhookUrl = options.webhookUrl;
     this.timeout = options.timeout;
+    this.userAgent = options.userAgent;
+    this.userAgentHeader = apiUserAgent(options.userAgent);
     this.clientName = options.clientName;
     this.store = store;
     this.tokens = new AssertionTokens(
       this.baseUrl,
       registration.identityAssertion,
       options.timeout,
-      store && slot ? { store, issuer: normalizeIssuer(this.baseUrl), name: "sandbox", slot } : null
+      store && slot
+        ? { store, issuer: normalizeIssuer(this.baseUrl), name: "sandbox", slot }
+        : null,
+      null,
+      undefined,
+      options.userAgent
     );
   }
 
@@ -372,6 +396,7 @@ export class SandboxClient {
         method,
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(this.userAgentHeader ? { "User-Agent": this.userAgentHeader } : {}),
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -501,6 +526,7 @@ export class SandboxClient {
       const attempt = await startClaim({
         baseUrl: this.baseUrl,
         timeout: this.timeout,
+        userAgent: this.userAgent,
         claimToken,
         email,
       });
@@ -519,6 +545,7 @@ export class SandboxClient {
       const attempt = await startClaim({
         baseUrl: this.baseUrl,
         timeout: this.timeout,
+        userAgent: this.userAgent,
         claimToken: pending.claimToken,
       });
       return { ...withoutRegistration(attempt), movesEndpoints: false };
@@ -526,6 +553,7 @@ export class SandboxClient {
     const registration = await registerServiceAuth({
       baseUrl: this.baseUrl,
       timeout: this.timeout,
+      userAgent: this.userAgent,
       email,
       clientName: this.clientName,
     });
@@ -556,6 +584,7 @@ export class SandboxClient {
     }
     const claimed = await waitForAgentClaim({
       baseUrl: this.baseUrl,
+      userAgent: this.userAgent,
       claimToken,
       timeout: options.timeout,
       signal: options.signal,
@@ -570,6 +599,7 @@ export class SandboxClient {
       baseUrl: this.baseUrl,
       webhookUrl: this.webhookUrl,
       timeout: this.timeout,
+      userAgent: this.userAgent,
       store: this.store,
       registrationId: pending?.registrationId ?? this.registration.registrationId,
       email: pending?.email,
@@ -582,7 +612,12 @@ export class SandboxClient {
   async revokeToken(): Promise<void> {
     const token = this.tokens.peek();
     if (!token) return;
-    await revoke({ baseUrl: this.baseUrl, timeout: this.timeout, token });
+    await revoke({
+      baseUrl: this.baseUrl,
+      timeout: this.timeout,
+      userAgent: this.userAgent,
+      token,
+    });
     this.tokens.reset();
   }
 }
@@ -615,6 +650,7 @@ function slotRegistration(slot: CredentialSlot): SandboxRegistration {
  * there is one, else a new registration (saved to the file).
  */
 export async function createSandbox(options: SandboxOptions = {}): Promise<SandboxClient> {
+  apiUserAgent(options.userAgent); // refuses a bad userAgent before registering
   const baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
   const store = AgentCredentialStore.resolve(options.credentialsFile);
   const resumed = await SandboxClient.resume(options);
@@ -635,7 +671,7 @@ export async function createSandbox(options: SandboxOptions = {}): Promise<Sandb
   return client;
 }
 
-export interface ConnectedOptions extends CredentialFileOption {
+export interface ConnectedOptions extends CredentialFileOption, UserAgentOption {
   /** Base URL of the webhooks.cc app (default: https://webhooks.cc). */
   baseUrl?: string;
   /** Base URL for sending webhooks (default: https://go.webhooks.cc). */
@@ -666,12 +702,14 @@ export function savedConnection(options: ConnectedOptions = {}): WebhooksCC | nu
     options.timeout,
     { store, issuer: normalizeIssuer(baseUrl), name: "claimed", slot },
     null,
-    options.onRevoked
+    options.onRevoked,
+    options.userAgent
   );
   return new WebhooksCC({
     baseUrl,
     webhookUrl: options.webhookUrl,
     timeout: options.timeout,
+    userAgent: options.userAgent,
     getAccessToken: (refresh) => tokens.get(refresh?.forceRefresh ?? false),
   });
 }
@@ -739,6 +777,7 @@ export class PendingConnection implements ClaimAttempt {
   async wait(options: { timeout?: number; signal?: AbortSignal } = {}): Promise<WebhooksCC> {
     const claimed = await waitForAgentClaim({
       baseUrl: this.options.baseUrl,
+      userAgent: this.options.userAgent,
       claimToken: this.claimToken,
       interval: this.interval,
       timeout: options.timeout,
@@ -748,6 +787,7 @@ export class PendingConnection implements ClaimAttempt {
       baseUrl: this.options.baseUrl,
       webhookUrl: this.options.webhookUrl,
       timeout: this.options.timeout,
+      userAgent: this.options.userAgent,
       store: AgentCredentialStore.resolve(this.options.credentialsFile),
       registrationId: this.registrationId,
       email: this.options.email.trim().toLowerCase(),
@@ -776,6 +816,7 @@ export class PendingConnection implements ClaimAttempt {
     const attempt = await startClaim({
       baseUrl: this.options.baseUrl,
       timeout: this.options.timeout,
+      userAgent: this.options.userAgent,
       claimToken: this.claimToken,
     });
     return new PendingConnection(this.options, this.registrationId, this.claimToken, attempt);
@@ -784,10 +825,12 @@ export class PendingConnection implements ClaimAttempt {
 
 /** Registers service_auth for the human and returns the first code. */
 export async function connectAccount(options: ConnectOptions): Promise<PendingConnection> {
+  apiUserAgent(options.userAgent); // refuses a bad userAgent before registering
   const baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
   const registration = await registerServiceAuth({
     baseUrl,
     timeout: options.timeout,
+    userAgent: options.userAgent,
     email: options.email.trim().toLowerCase(),
     clientName: options.clientName,
   });

@@ -1861,7 +1861,10 @@ describe("WebhooksCC", () => {
         2,
         `${BASE_URL}/api/stream/abc123?since=999`,
         expect.objectContaining({
-          headers: { Authorization: `Bearer ${API_KEY}` },
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${API_KEY}`,
+            "User-Agent": expect.stringMatching(/^webhooks-cc-sdk\//),
+          }),
         })
       );
     });
@@ -1955,7 +1958,12 @@ describe("WebhooksCC", () => {
       expect(globalThis.fetch).toHaveBeenNthCalledWith(
         2,
         `${BASE_URL}/api/stream/abc123?since=999`,
-        expect.objectContaining({ headers: { Authorization: `Bearer ${API_KEY}` } })
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${API_KEY}`,
+            "User-Agent": expect.stringMatching(/^webhooks-cc-sdk\//),
+          }),
+        })
       );
       expect(globalThis.fetch).toHaveBeenNthCalledWith(
         3,

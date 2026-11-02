@@ -785,6 +785,12 @@ export interface ClientOptions {
   emailDomain?: string;
   /** The fetch every request goes through (default: the global fetch), for proxies and tests. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Your own product token, like `my-tool/1.2`, sent before the SDK's
+   * (`webhooks-cc-sdk/<version>`) in the User-Agent of API calls. Browsers
+   * keep their own User-Agent.
+   */
+  userAgent?: string;
 }
 
 /** Description of a single SDK operation. */

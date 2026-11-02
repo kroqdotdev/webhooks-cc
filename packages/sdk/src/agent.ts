@@ -8,6 +8,7 @@
  * Everything here is unauthenticated or uses the agent's own assertion and
  * tokens; no API key is involved.
  */
+import { apiUserAgent } from "./user-agent";
 import { solveChallenge, type PowChallenge, type SolveOptions } from "./pow";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
@@ -21,6 +22,8 @@ export interface AgentRequestOptions {
   baseUrl?: string;
   /** Request timeout in ms (default: 30000). */
   timeout?: number;
+  /** Your own product token, like `my-tool/1.2`, sent before the SDK's in the User-Agent. */
+  userAgent?: string;
 }
 
 /** A refused step: `code` is auth.md's or OAuth's error code. */
@@ -58,6 +61,8 @@ async function call(
     body = new URLSearchParams(init.form).toString();
   }
   if (init.token) headers.Authorization = `Bearer ${init.token}`;
+  const userAgent = apiUserAgent(options.userAgent);
+  if (userAgent) headers["User-Agent"] = userAgent;
 
   const response = await fetch(`${base(options)}${path}`, {
     method: init.method ?? (body === undefined ? "GET" : "POST"),
