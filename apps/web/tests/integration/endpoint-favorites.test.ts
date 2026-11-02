@@ -1,6 +1,6 @@
-import { createHash, randomBytes } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
+import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import { GET as listRoute } from "@/app/api/endpoints/route";
 import { GET as getRoute } from "@/app/api/endpoints/[slug]/route";
@@ -40,10 +40,10 @@ async function account(): Promise<{ userId: string; apiKey: string }> {
   if (error) throw error;
   const userId = data.user!.id;
   userIds.push(userId);
-  const apiKey = `whcc_${randomBytes(24).toString("hex")}`;
+  const apiKey = generateApiKey();
   const { error: keyError } = await admin.from("api_keys").insert({
     user_id: userId,
-    key_hash: createHash("sha256").update(apiKey).digest("hex"),
+    key_hash: hashApiKey(apiKey),
     key_prefix: apiKey.slice(0, 12),
     name: "Endpoint favourites test",
   });
