@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { resetUser } from "@/lib/analytics";
+import { resetUser, trackSignOut } from "@/lib/analytics";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,6 +79,7 @@ export function UserDropdown() {
   if (!profile) return null;
 
   const handleSignOut = async () => {
+    trackSignOut();
     resetUser();
     const supabase = createClient();
     await supabase.auth.signOut();

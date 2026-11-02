@@ -85,13 +85,21 @@ function LoginContent() {
       <EmailPasswordForm redirectTo={redirectTo} />
 
       <p className="text-center text-sm text-muted-foreground mt-8">
-        By signing in, you agree to our{" "}
+        By signing in or creating an account, you agree to our{" "}
         <Link href="/terms" className="underline hover:text-foreground">
           Terms of Service
         </Link>{" "}
         and{" "}
         <Link href="/privacy" className="underline hover:text-foreground">
           Privacy Policy
+        </Link>
+        .
+      </p>
+      <p className="text-center text-xs text-muted-foreground mt-3">
+        We record how your account is used to improve the service. That stays with us: we never sell
+        or share it.{" "}
+        <Link href="/privacy#analytics" className="underline hover:text-foreground">
+          How analytics work
         </Link>
       </p>
     </AuthPageShell>

@@ -1,3 +1,4 @@
+import { captureBillingEvent } from "@/lib/analytics-billing";
 import { auditPolarEvent } from "@/lib/audit";
 import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { applyPolarWebhookEvent, resolveWebhookUserId } from "@/lib/supabase/billing";
@@ -83,6 +84,12 @@ export async function POST(request: Request) {
     }
 
     await auditPolarEvent({ eventType: event.type, teamId, data, outcome: "ok" });
+    await captureBillingEvent({
+      eventType: event.type,
+      teamId,
+      data,
+      webhookId: request.headers.get("webhook-id"),
+    });
     return Response.json({ received: true });
   } catch (error) {
     // Both subclass PolarWebhookError, so they are checked before it.

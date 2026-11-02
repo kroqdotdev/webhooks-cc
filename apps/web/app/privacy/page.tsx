@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
+import { CookieSettingsLink } from "@/components/providers/cookie-consent";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = createPageMetadata({
@@ -27,7 +28,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: November 1, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 2, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -216,10 +217,15 @@ export default function PrivacyPage() {
               records, error monitoring, and server logs.
             </p>
             <p>
-              <span className="font-bold text-foreground">To improve the product</span> (GDPR
-              Art.&nbsp;6(1)(f), legitimate interest): the analytics described below.
+              <span className="font-bold text-foreground">To improve the product</span>: the
+              analytics described below, with your consent for what is stored in your browser (GDPR
+              Art.&nbsp;6(1)(a)) and otherwise under legitimate interest (GDPR Art.&nbsp;6(1)(f)).
             </p>
-            <p>We do not sell your data or use it for advertising.</p>
+            <p>
+              We use your data only to run and improve webhooks.cc. We do not sell it, share it with
+              anyone for their own purposes, or use it for advertising. The companies listed under
+              Third-Party Services handle it only on our behalf.
+            </p>
           </div>
         </section>
 
@@ -299,32 +305,56 @@ export default function PrivacyPage() {
               >
                 PostHog
               </a>{" "}
-              to understand how people use webhooks.cc. PostHog keeps a random anonymous identifier
-              in your browser&apos;s localStorage to recognize returning visitors on webhooks.cc. It
-              does not use cookies and does not track you across other sites.
+              to understand how webhooks.cc and mailhooks.cc are used, so we can improve them.{" "}
+              <span className="font-bold text-foreground">
+                Analytics are for our own use only: we do not sell them, share them with anyone for
+                their own purposes, or use them for advertising.
+              </span>{" "}
+              PostHog processes them only on our behalf, as our processor.
             </p>
             <p>
-              <span className="font-bold text-foreground">What we collect.</span> Page views, time
-              on page, clicks on links and buttons, page load performance, referrer URL, UTM
-              campaign parameters, and which of our two visual styles you see. For signed-in users
-              we associate these events with your account and send your email address and plan with
-              them. Like any web request, sending them reveals your IP address to PostHog.
+              <span className="font-bold text-foreground">In your browser.</span> On your first
+              visit we ask whether PostHog may keep an anonymous identifier in your browser&apos;s
+              localStorage. If you accept, it recognizes your browser on later visits and, once you
+              sign in, links what you do to your account. If you decline, or have not chosen yet,
+              nothing is stored in your browser: visits are counted with a hash of your IP address
+              and browser that changes every day, so a visit cannot be followed from one day to the
+              next. Do Not Track and Global Privacy Control count as a decline. You can change your
+              choice at any time with <CookieSettingsLink className={linkClass} />.
             </p>
             <p>
-              <span className="font-bold text-foreground">What we do not collect.</span> We do not
-              record your sessions, fingerprint your browser, track you across sites, or build
-              advertising profiles.
+              <span className="font-bold text-foreground">What your browser sends.</span> Page
+              views, time on page, clicks on links and buttons, page load performance, the referrer,
+              and campaign parameters. Addresses are cleaned before they leave your browser: share
+              link tokens, endpoint names in the address, and every query parameter other than
+              campaign parameters are removed. We do not record your sessions, fingerprint your
+              browser, or track you across other sites.
             </p>
             <p>
-              <span className="font-bold text-foreground">Legal basis.</span> We process this data
-              under legitimate interest (GDPR Art.&nbsp;6(1)(f)) to improve our service. You can
-              object by emailing us, or opt out by using a standard content blocker that blocks
-              PostHog.
+              <span className="font-bold text-foreground">If you have an account.</span> Our servers
+              also record what you do with your account, from the dashboard, the API, the CLI, the
+              SDKs, the MCP server or an agent: for example that you created an endpoint or a
+              destination, changed plans, or invited a teammate, whether it worked, and which kind
+              of client made the request. Once a day we also record each active account&apos;s usage
+              counts (how many requests and emails it captured) and what it has set up (how many
+              endpoints, destinations, domains, API keys and teams). These records are linked to
+              your account, your email address and your plan. They never include the contents of
+              your webhooks or emails, URLs, or secrets. They do not depend on the choice in your
+              browser, because nothing is stored there for them.
             </p>
             <p>
-              <span className="font-bold text-foreground">Data location.</span> Analytics events are
-              sent through our own address, f.webhooks.cc, to PostHog&apos;s EU region and stored
-              there. See PostHog&apos;s{" "}
+              <span className="font-bold text-foreground">Legal basis.</span> Keeping an identifier
+              in your browser relies on your consent (GDPR Art.&nbsp;6(1)(a)), which you can
+              withdraw at any time. Counting visits without storing anything, and the account
+              records above, rely on our legitimate interest in improving the service (GDPR
+              Art.&nbsp;6(1)(f)); you can object by emailing <SupportEmail />.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Location and deletion.</span> Analytics
+              are sent through our own address, f.webhooks.cc (from your browser), or directly from
+              our servers, to PostHog&apos;s EU region and stored there. When you delete your
+              account, we remove your email address from them, and what remains is no longer linked
+              to you. See PostHog&apos;s{" "}
               <a
                 href="https://posthog.com/privacy"
                 className={linkClass}
@@ -404,15 +434,13 @@ export default function PrivacyPage() {
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               <span className="font-bold text-foreground">Cookies.</span> Supabase sets the cookies
-              that keep you signed in. When you create an account we also set a short-lived cookie (
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">whk_signup</code>, at most one
-              hour) so our analytics can count the new account; it is deleted as soon as it has been
-              read. We do not use tracking cookies.
+              that keep you signed in. We do not use tracking cookies.
             </p>
             <p>
               <span className="font-bold text-foreground">localStorage.</span> Your theme and visual
               style, which style you were assigned to if you are part of our design experiment,
-              dashboard layout preferences, and PostHog&apos;s anonymous identifier.
+              dashboard layout preferences, your analytics choice, and, only if you accept
+              analytics, PostHog&apos;s anonymous identifier.
             </p>
           </div>
         </section>

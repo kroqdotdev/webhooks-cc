@@ -59,7 +59,7 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     name: "PostHog",
     entity: "PostHog, Inc., United States",
     purpose: "Product analytics.",
-    data: "Page views, clicks, page load performance, an anonymous browser identifier, IP addresses, and the account ID, email address, and plan of signed-in users.",
+    data: "Page views, clicks, page load performance, IP addresses, an anonymous browser identifier when a visitor accepts analytics, and for account holders the account ID, email address, plan, the account actions they take (never their contents) and daily usage counts. Used only for our own analytics, never shared or sold.",
     location: "Stored in PostHog's EU region in Frankfurt, Germany",
     safeguard: "EU-US Data Privacy Framework and Standard Contractual Clauses",
   },
@@ -81,7 +81,7 @@ export default function SubprocessorsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Subprocessors</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 29, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 2, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>

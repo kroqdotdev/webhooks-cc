@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
 import { isAgentTokenRequest } from "@/lib/agent/token-requests";
 import { reportError } from "@/lib/observability";
+import { captureAuditEvent } from "@/lib/analytics-server";
 
 /**
  * Audit trail for state-changing account, team, billing, and endpoint actions
@@ -292,6 +293,8 @@ export async function auditPolarEvent(input: {
 
 async function recordAuditEvent(row: AuditRow): Promise<void> {
   console.info(`[audit] ${JSON.stringify(row)}`);
+  // The same event for product analytics (lib/analytics-server.ts); never throws.
+  captureAuditEvent(row);
   try {
     const { error } = await createAdminClient()
       .from("audit_events")

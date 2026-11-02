@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CookieSettingsLink } from "@/components/providers/cookie-consent";
 import { SiteHeader } from "@/components/nav/site-header";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import {
@@ -998,6 +999,9 @@ export default async function Home() {
                   >
                     Subprocessors
                   </Link>
+                </li>
+                <li>
+                  <CookieSettingsLink className="text-muted-foreground hover:text-foreground" />
                 </li>
                 <li>
                   <Link href="/support" className="text-muted-foreground hover:text-foreground">

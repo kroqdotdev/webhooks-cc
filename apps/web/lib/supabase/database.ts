@@ -1379,6 +1379,20 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      // Claimed analytics report periods (migration 00080).
+      analytics_report_runs: {
+        Row: {
+          report: "signups" | "daily_usage";
+          period_start: string;
+          claimed_at: string;
+        };
+        Insert: {
+          report: "signups" | "daily_usage";
+          period_start: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
       storage_deletions: {
         Row: {
           id: number;
@@ -1613,6 +1627,10 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      analytics_daily_accounts: {
+        Args: { p_day: string };
+        Returns: Json;
+      };
       append_endpoint_layout: {
         Args: { p_endpoint_id: string; p_layout: Json; p_expected_count: number };
         Returns: boolean;

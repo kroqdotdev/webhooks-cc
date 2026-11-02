@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CookieSettingsLink } from "@/components/providers/cookie-consent";
 import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { webhooksOrigin } from "@/lib/site";
 
@@ -58,6 +59,11 @@ export function MailhooksFooter() {
                   </Link>
                 </li>
               ))}
+              {column.title === "Company" ? (
+                <li>
+                  <CookieSettingsLink className="text-muted-foreground hover:text-foreground" />
+                </li>
+              ) : null}
             </ul>
           </div>
         ))}

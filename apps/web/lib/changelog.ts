@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.57.0";
+export const APP_VERSION = "0.58.0";
 export const CLI_VERSION = "1.7.0";
 export const SDK_VERSION = "1.20.0";
 export const PYTHON_SDK_VERSION = "0.4.0";
@@ -26,6 +26,19 @@ export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.58.0",
+    date: "2026-11-02",
+    title: "Your Choice on Analytics",
+    track: "web",
+    items: [
+      "A cookie banner asks once, on each site, whether our analytics may keep an anonymous identifier in your browser. Decline, or do not choose, and visits are only counted, with nothing stored; Do Not Track and Global Privacy Control count as a decline. Cookie settings in the footer and the Privacy Policy change the choice at any time",
+      "Analytics are for our own use only. We never sell or share them, and the Privacy Policy and the sign-in page now say so, along with what we record about how an account is used",
+      "Addresses sent to analytics lose endpoint names, checkout tokens and every query parameter other than campaign ones, as well as share link tokens",
+      "Account activity is now counted on our servers, whichever client it comes from (the dashboard, the API, the CLI, the SDKs, the MCP server or an agent), with daily usage counts per account. It never includes what your webhooks or emails contain",
+      "Signups are no longer marked with a short-lived cookie",
+    ],
+  },
   {
     version: "0.57.0",
     date: "2026-11-02",

@@ -57,6 +57,11 @@ export async function register() {
     // starts only when the extra-request products are configured.
     const { startOverageReporter } = await import("./lib/billing/overage-reporter");
     startOverageReporter();
+
+    // Signups and a daily usage snapshot per account to PostHog
+    // (lib/analytics-reporter.ts); on in production builds, see ANALYTICS_SERVER.
+    const { startAnalyticsReporter } = await import("./lib/analytics-reporter");
+    startAnalyticsReporter();
   }
 }
 

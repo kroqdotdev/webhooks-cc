@@ -1,10 +1,9 @@
 import posthog from "posthog-js";
-import { consumeSignupSignal } from "./signup-signal";
 import type { UiStyle } from "./ui-style";
 
 /**
  * Track custom analytics events via PostHog.
- * All calls are safe to make even if PostHog is not initialized — they no-op.
+ * All calls are safe to make even if PostHog is not initialized: they no-op.
  */
 
 function capture(event: string, properties?: Record<string, unknown>) {
@@ -12,7 +11,7 @@ function capture(event: string, properties?: Record<string, unknown>) {
   try {
     posthog.capture(event, properties);
   } catch {
-    // PostHog not initialized — silently ignore
+    // PostHog not initialized: silently ignore
   }
 }
 
@@ -30,15 +29,6 @@ export function trackUiStyleChanged(params: { from: UiStyle; to: UiStyle }) {
 // ── Auth ────────────────────────────────────────────────────────
 export function trackSignInStarted(provider: "github" | "google" | "email") {
   capture("sign_in_started", { provider });
-}
-
-/**
- * Fired once per account, on the first authenticated page load after signup.
- * It is the completed side of sign_in_started: without it a funnel cannot tie
- * a signup back to the anonymous visitor who was assigned a style.
- */
-export function trackAccountCreated(provider?: string, signal: SignupSignal = "confirmed") {
-  capture("account_created", { provider: provider ?? "unknown", signal });
 }
 
 // ── Dashboard ───────────────────────────────────────────────────
@@ -222,59 +212,61 @@ export function identifyUser(userId: string, properties?: Record<string, unknown
 interface AuthedUser {
   id: string;
   email?: string | null;
-  created_at?: string;
-  app_metadata?: { provider?: string };
 }
-
-/** How the signup was spotted, so a fallback count can be told apart later. */
-type SignupSignal = "confirmed" | "new_account";
 
 let reportedUserId: string | null = null;
+let reportedEmail: string | null | undefined;
+/** The signed-in user while the visitor has not accepted analytics, identified if they do. */
+let pendingUser: AuthedUser | null = null;
 
-/**
- * GoTrue falls back to its own verify link when it cannot fetch our email
- * template (infra/supabase/gotrue-email-auth.md). That flow confirms the
- * address without passing through our auth routes and leaves the user to sign
- * in by hand, so the cookie never appears. An account this young reaching its
- * first authenticated page is a signup either way.
- */
-const NEW_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-function signupSignalFor(user: AuthedUser): SignupSignal | null {
-  if (consumeSignupSignal()) return "confirmed";
-  const createdAt = Date.parse(user.created_at ?? "");
-  if (Number.isFinite(createdAt) && Date.now() - createdAt < NEW_ACCOUNT_WINDOW_MS) {
-    return "new_account";
+/** True once the visitor accepted analytics storage in the cookie banner. */
+export function analyticsConsentGranted(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return posthog.get_explicit_consent_status() === "granted";
+  } catch {
+    return false;
   }
-  return null;
 }
 
 /**
- * Identifies the person and, when this sign-in created the account, records the
- * signup. The shared auth store calls it on every session change, so it runs on
- * whatever page the user lands on, including the CLI verify and agent claim
- * pages that never mount RequireAuth. Repeat calls for the same user do nothing.
+ * Ties this browser's events to the signed-in account. The shared auth store
+ * calls it on every session change, so it runs on whatever page the user lands
+ * on; repeat calls for the same user do nothing. Without analytics consent the
+ * browser stays anonymous (cookieless) and the account is only identified once
+ * the visitor accepts. Signups are recorded on the server
+ * (lib/analytics-reporter.ts), whatever the browser allows.
  */
 export function reportAuthenticatedUser(user: AuthedUser) {
   if (typeof window === "undefined" || user.id === reportedUserId) return;
-  reportedUserId = user.id;
-  identifyUser(user.id, { email: user.email ?? undefined });
-
-  const signal = signupSignalFor(user);
-  if (!signal) return;
-  const key = `account-created-tracked:${user.id}`;
-  try {
-    if (localStorage.getItem(key)) return;
-    localStorage.setItem(key, "1");
-  } catch {
-    // Blocked storage: better a possible duplicate than a missing signup.
+  // Also covers a session reported before posthog.init ran: PostHogProvider
+  // calls identifyPendingUser once PostHog has loaded.
+  if (!analyticsConsentGranted()) {
+    pendingUser = user;
+    return;
   }
-  trackAccountCreated(user.app_metadata?.provider, signal);
+  reportedUserId = user.id;
+  reportedEmail = user.email;
+  pendingUser = null;
+  identifyUser(user.id, { email: user.email ?? undefined });
+}
+
+/** Called once PostHog has loaded and when the visitor accepts: identifies a waiting user. */
+export function identifyPendingUser() {
+  if (pendingUser) reportAuthenticatedUser(pendingUser);
+}
+
+/** Called when the visitor declines: PostHog dropped the identity, so a later accept identifies again. */
+export function forgetIdentifiedUser() {
+  if (!reportedUserId) return;
+  pendingUser = { id: reportedUserId, email: reportedEmail };
+  reportedUserId = null;
 }
 
 export function resetUser() {
   if (typeof window === "undefined") return;
   reportedUserId = null;
+  pendingUser = null;
   try {
     posthog.reset();
   } catch {
