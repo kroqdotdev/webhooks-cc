@@ -25,12 +25,13 @@ const SUBSCRIPTION_EVENTS: Record<string, string> = {
 };
 
 /** What a Polar product is, in words analytics can group by. */
-export function analyticsProduct(productId: string | null, teamId: string | null): string {
+export function analyticsProduct(productId: string | null): string {
   const plan = planForProduct(productId);
   if (plan) return `${plan.plan}_${plan.interval}`;
   const capacity = capacityProductKind(productId);
   if (capacity) return `${capacity.resource}_${capacity.kind}`;
-  return teamId ? "team_seats" : "unknown";
+  if (productId && productId === process.env.POLAR_TEAMS_PRODUCT_ID) return "team_seats";
+  return "unknown";
 }
 
 function amountOf(data: Record<string, unknown>): number | null {
@@ -46,7 +47,7 @@ export function billingAnalyticsEvent(
   teamId: string | null,
   data: Record<string, unknown>
 ): { event: string; properties: Record<string, unknown> } | null {
-  const product = analyticsProduct(webhookProductId(data), teamId);
+  const product = analyticsProduct(webhookProductId(data));
   const account_kind = teamId ? "team" : "user";
   if (eventType === "order.paid") {
     const revenue = amountOf(data);

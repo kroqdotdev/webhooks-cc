@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { reportAuthenticatedUser } from "@/lib/analytics";
+import { clearPendingUser, reportAuthenticatedUser } from "@/lib/analytics";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextValue {
@@ -35,6 +35,8 @@ function setAuthSession(session: Session | null) {
   };
   storeListeners.forEach((listener) => listener());
   if (authState.user) reportAuthenticatedUser(authState.user);
+  // A session that ends without a sign-out click must not be identified on a later accept.
+  else clearPendingUser();
 }
 
 function startAuthListener() {

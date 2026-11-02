@@ -80,7 +80,16 @@ export function captureServerEvent(input: ServerEvent): void {
   }
 }
 
-/** Sends whatever is queued; for the reporter, which runs rarely and wants its events out. */
+/**
+ * Sends whatever is queued and rejects when PostHog refused it, so the
+ * reporter can give the period back. posthog-node may already have sent
+ * earlier batches on its own timer; a failure there is not seen here.
+ */
+export async function flushServerAnalyticsOrThrow(): Promise<void> {
+  await client()?.flush();
+}
+
+/** Sends whatever is queued, best effort. */
 export async function flushServerAnalytics(): Promise<void> {
   try {
     await client()?.flush();

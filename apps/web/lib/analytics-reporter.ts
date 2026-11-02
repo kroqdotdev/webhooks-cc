@@ -2,6 +2,7 @@ import {
   type ServerEvent,
   captureServerEvent,
   flushServerAnalytics,
+  flushServerAnalyticsOrThrow,
   serverAnalyticsEnabled,
   stableEventUuid,
 } from "@/lib/analytics-server";
@@ -30,6 +31,8 @@ const DAY_MS = 24 * HOUR_MS;
 const SETTLE_MS = 10 * 60_000;
 const SIGNUP_LOOKBACK_HOURS = 48;
 const DAILY_LOOKBACK_DAYS = 3;
+/** Rows per page: below PostgREST's row cap, and a page's events fit posthog-node's queue. */
+const PAGE_SIZE = 500;
 
 type Report = "signups" | "daily_usage";
 
@@ -65,28 +68,36 @@ async function claim(report: Report, periodStart: Date): Promise<boolean> {
 
 async function sendSignups(hourStart: Date): Promise<number> {
   const hourEnd = new Date(hourStart.getTime() + HOUR_MS);
-  const { data, error } = await createAdminClient()
-    .from("users")
-    .select("id, plan, home_site, created_at")
-    .gte("created_at", hourStart.toISOString())
-    .lt("created_at", hourEnd.toISOString());
-  if (error) throw new Error(error.message);
   const admin = createAdminClient();
-  for (const user of data ?? []) {
-    // How they signed up (github, google, email); a failed lookup only loses that.
-    const { data: auth } = await admin.auth.admin.getUserById(user.id);
-    const provider = auth?.user?.app_metadata?.provider ?? "unknown";
-    captureServerEvent({
-      distinctId: user.id,
-      event: "account_signed_up",
-      timestamp: new Date(user.created_at),
-      uuid: stableEventUuid(`signup:${user.id}`),
-      properties: { site: user.home_site, provider },
-      set: { plan: user.plan },
-      setOnce: { signed_up_at: user.created_at, signup_site: user.home_site },
-    });
+  let sent = 0;
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await admin
+      .from("users")
+      .select("id, plan, home_site, created_at")
+      .gte("created_at", hourStart.toISOString())
+      .lt("created_at", hourEnd.toISOString())
+      .order("id")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const users = data ?? [];
+    for (const user of users) {
+      // How they signed up (github, google, email); a failed lookup only loses that.
+      const { data: auth } = await admin.auth.admin.getUserById(user.id);
+      const provider = auth?.user?.app_metadata?.provider ?? "unknown";
+      captureServerEvent({
+        distinctId: user.id,
+        event: "account_signed_up",
+        timestamp: new Date(user.created_at),
+        uuid: stableEventUuid(`signup:${user.id}`),
+        properties: { site: user.home_site, provider },
+        set: { plan: user.plan },
+        setOnce: { signed_up_at: user.created_at, signup_site: user.home_site },
+      });
+    }
+    sent += users.length;
+    await flushServerAnalyticsOrThrow();
+    if (users.length < PAGE_SIZE) return sent;
   }
-  return data?.length ?? 0;
 }
 
 export interface DailyAccountRow {
@@ -165,37 +176,42 @@ export function dailyAccountEvents(day: string, row: DailyAccountRow): ServerEve
   ];
 }
 
-/** Rows per page: below PostgREST's row cap, and a page's events fit posthog-node's queue. */
-const DAILY_PAGE_SIZE = 500;
-
 async function sendDailyUsage(dayStart: Date): Promise<number> {
   const day = dayStart.toISOString().slice(0, 10);
   const admin = createAdminClient();
   let sent = 0;
-  for (let from = 0; ; from += DAILY_PAGE_SIZE) {
+  for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await admin
       .rpc("analytics_daily_accounts", { p_day: day })
       .order("user_id")
-      .range(from, from + DAILY_PAGE_SIZE - 1);
+      .range(from, from + PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as unknown as DailyAccountRow[];
     for (const row of rows) {
       for (const event of dailyAccountEvents(day, row)) captureServerEvent(event);
     }
     sent += rows.length;
-    // Out before the next page, so the queue never holds more than one.
-    await flushServerAnalytics();
-    if (rows.length < DAILY_PAGE_SIZE) return sent;
+    // Out before the next page, so the queue never holds more than one, and
+    // a refused batch gives the period back.
+    await flushServerAnalyticsOrThrow();
+    if (rows.length < PAGE_SIZE) return sent;
   }
 }
 
-/** Gives a period back after a failed read, so the next tick tries it again; nothing was sent. */
+/** Gives a period back after a failed read or send, so the next tick tries it again. */
 async function release(report: Report, periodStart: Date): Promise<void> {
-  await createAdminClient()
+  const { error } = await createAdminClient()
     .from("analytics_report_runs")
     .delete()
     .eq("report", report)
     .eq("period_start", periodStart.toISOString());
+  if (error) {
+    // The claim stays, so the period is skipped: a gap in a chart, said out loud.
+    reportError("[analytics] could not release a report period", error.message, {
+      report,
+      period: periodStart.toISOString(),
+    });
+  }
 }
 
 async function runReport(report: Report, now: Date): Promise<void> {
@@ -208,9 +224,8 @@ async function runReport(report: Report, now: Date): Promise<void> {
     try {
       sent = report === "signups" ? await sendSignups(period) : await sendDailyUsage(period);
     } catch (error) {
-      // A failed read sent nothing, so the period can be tried again. A
-      // daily page that fails after an earlier one was sent is resent whole;
-      // its events keep their ids, so PostHog drops the repeats.
+      // Tried again whole on the next tick. Pages already sent go again
+      // with the same ids and timestamps, so PostHog drops the repeats.
       await release(report, period).catch(() => undefined);
       throw error;
     }

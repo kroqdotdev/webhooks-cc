@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   acceptAnalytics,
@@ -19,12 +19,19 @@ import {
  */
 export function CookieConsent() {
   const [open, setOpen] = useState(false);
+  // Focus moves to the banner only when someone opened it from Cookie
+  // settings; on a page load it is announced instead of taking focus.
+  const [focusOnOpen, setFocusOnOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // After PostHogProvider's own effect has run posthog.init, which sets up
     // where the choice is read from.
     const timer = setTimeout(() => setOpen(analyticsConsent() === "pending"), 0);
-    const reopen = () => setOpen(true);
+    const reopen = () => {
+      setFocusOnOpen(true);
+      setOpen(true);
+    };
     window.addEventListener(OPEN_COOKIE_SETTINGS_EVENT, reopen);
     return () => {
       clearTimeout(timer);
@@ -32,15 +39,22 @@ export function CookieConsent() {
     };
   }, []);
 
+  useEffect(() => {
+    if (open && focusOnOpen) dialogRef.current?.focus();
+  }, [open, focusOnOpen]);
+
   if (!open) return null;
 
   // Reachable only from Cookie settings: the banner never opens by itself here.
   if (browserDeclinesTracking()) {
     return (
       <div
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
+        aria-live="polite"
         aria-labelledby="cookie-consent-title"
-        className="ui-card ui-card-static fixed bottom-4 left-4 right-4 z-[60] p-5 sm:right-auto sm:max-w-md"
+        className="ui-card ui-card-static fixed bottom-4 left-4 right-4 z-[60] p-5 outline-none sm:right-auto sm:max-w-md"
       >
         <p id="cookie-consent-title" className="font-bold">
           Analytics stay off
@@ -61,15 +75,20 @@ export function CookieConsent() {
   const choose = (accept: boolean) => {
     if (accept) acceptAnalytics();
     else declineAnalytics();
-    setOpen(false);
+    // Storage can refuse the write (private modes, full quota); then the
+    // choice did not stick, and the banner stays to say so by staying.
+    if (analyticsConsent() === (accept ? "granted" : "denied")) setOpen(false);
   };
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
+      tabIndex={-1}
+      aria-live="polite"
       aria-labelledby="cookie-consent-title"
       aria-describedby="cookie-consent-text"
-      className="ui-card ui-card-static fixed bottom-4 left-4 right-4 z-[60] p-5 sm:right-auto sm:max-w-md"
+      className="ui-card ui-card-static fixed bottom-4 left-4 right-4 z-[60] p-5 outline-none sm:right-auto sm:max-w-md"
     >
       <p id="cookie-consent-title" className="font-bold">
         Analytics, for us only
@@ -97,6 +116,8 @@ export function CookieConsent() {
 
 /** A footer or policy link that opens the banner again. */
 export function CookieSettingsLink({ className }: { className?: string }) {
+  // Without a PostHog key there is no banner to open.
+  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return null;
   return (
     <button type="button" className={className} onClick={openCookieSettings}>
       Cookie settings

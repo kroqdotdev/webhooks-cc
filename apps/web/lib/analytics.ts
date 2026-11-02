@@ -205,7 +205,12 @@ export function trackSignOut() {
  * analytics. Never pass the email address: analytics name accounts by id only.
  */
 export function identifyUser(userId: string, properties?: Record<string, unknown>) {
-  if (typeof window === "undefined" || !analyticsConsentGranted()) return;
+  if (typeof window === "undefined") return;
+  if (!analyticsConsentGranted()) {
+    // Kept for the identify that follows an accept.
+    if (properties) pendingProperties = { ...pendingProperties, ...properties };
+    return;
+  }
   try {
     posthog.identify(userId, properties);
   } catch {
@@ -218,6 +223,8 @@ interface AuthedUser {
 }
 
 let reportedUserId: string | null = null;
+/** Person properties offered before consent, sent with the identify after it. */
+let pendingProperties: Record<string, unknown> | undefined;
 /** The signed-in user while the visitor has not accepted analytics, identified if they do. */
 let pendingUser: AuthedUser | null = null;
 
@@ -249,12 +256,20 @@ export function reportAuthenticatedUser(user: AuthedUser) {
   }
   reportedUserId = user.id;
   pendingUser = null;
-  identifyUser(user.id);
+  const properties = pendingProperties;
+  pendingProperties = undefined;
+  identifyUser(user.id, properties);
 }
 
 /** Called once PostHog has loaded and when the visitor accepts: identifies a waiting user. */
 export function identifyPendingUser() {
   if (pendingUser) reportAuthenticatedUser(pendingUser);
+}
+
+/** Called when the session ends: a later accept must not identify the former account. */
+export function clearPendingUser() {
+  pendingUser = null;
+  pendingProperties = undefined;
 }
 
 /** Called when the visitor declines: PostHog dropped the identity, so a later accept identifies again. */
@@ -268,6 +283,7 @@ export function resetUser() {
   if (typeof window === "undefined") return;
   reportedUserId = null;
   pendingUser = null;
+  pendingProperties = undefined;
   try {
     posthog.reset();
   } catch {
