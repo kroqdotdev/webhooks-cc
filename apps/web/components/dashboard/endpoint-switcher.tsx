@@ -45,16 +45,20 @@ export function EndpointSwitcher() {
     }
 
     let cancelled = false;
+    // Only the latest load counts: two quick star clicks start two reloads,
+    // and the first to start may answer last with the older favourite.
+    let loads = 0;
 
     const load = async () => {
+      const seq = ++loads;
       try {
         const nextData = await fetchDashboardEndpoints(accessToken);
-        if (!cancelled) {
+        if (!cancelled && seq === loads) {
           setData(nextData);
         }
       } catch (error) {
         console.error("Failed to load endpoints for switcher:", error);
-        if (!cancelled) {
+        if (!cancelled && seq === loads) {
           setData({ owned: [], shared: [] });
         }
       }
@@ -113,9 +117,10 @@ export function EndpointSwitcher() {
     const favorite = !current.favorite;
     const mark = (value: boolean) => (ep: DashboardEndpointWithSharing) =>
       ep.id === current.id ? { ...ep, favorite: value } : ep;
-    // Keep the open endpoint open: without ?endpoint= the dashboard shows the
-    // first favourite, which this change may move.
-    if (!currentSlug) router.replace(`/dashboard?endpoint=${current.slug}`);
+    // Keep the open endpoint open: when the URL names no endpoint, or one
+    // that is gone, the dashboard shows the first favourite, which this
+    // change may move.
+    if (current.slug !== currentSlug) router.replace(`/dashboard?endpoint=${current.slug}`);
     setData((prev) =>
       prev
         ? { owned: prev.owned.map(mark(favorite)), shared: prev.shared.map(mark(favorite)) }

@@ -3,8 +3,9 @@
 -- ============================================================================
 -- A person marks the endpoints they use most; the dashboard lists them first
 -- and opens the first of them by default, and the API reports `favorite` on
--- every endpoint it returns. A favourite belongs to the person, not the
--- endpoint, because a team-shared endpoint is one row seen by every member.
+-- the endpoints it lists and on a single endpoint's read. A favourite
+-- belongs to the person, not the endpoint, because a team-shared endpoint is
+-- one row seen by every member.
 --
 -- Lifetime: deleting the account or the endpoint deletes its favourites.
 -- Losing access to a shared endpoint does not: the row stays, but every read

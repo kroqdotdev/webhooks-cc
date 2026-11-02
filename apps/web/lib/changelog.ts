@@ -34,7 +34,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "Click the star next to the endpoint switcher to mark the open endpoint as a favourite. Favourites are listed first in the switcher, and the dashboard opens your first favourite when you go to it without picking an endpoint",
       "Favourites are yours alone: on an endpoint shared with your team, each member keeps their own. They follow your account to every browser and to both webhooks.cc and mailhooks.cc",
-      "The API reports `favorite` on every endpoint it lists or returns, and `PUT` and `DELETE` on `/api/endpoints/{slug}/favorite` mark and unmark one. The remote MCP server gains a `favorite_endpoint` tool; the SDKs, the CLI and the npm MCP package follow in their next releases",
+      "The API reports `favorite` on every endpoint it lists and on Get endpoint, and `PUT` and `DELETE` on `/api/endpoints/{slug}/favorite` mark and unmark one. The remote MCP server gains a `favorite_endpoint` tool; the SDKs, the CLI and the npm MCP package follow in their next releases",
     ],
   },
   {
