@@ -1,0 +1,71 @@
+{
+  "name": "makeApiCall",
+  "label": "Make an API call",
+  "description": "Performs an arbitrary authorized API call.",
+  "type": "universal",
+  "connection": "apiKey",
+  "parameters": [],
+  "expect": [
+    {
+      "name": "url",
+      "type": "text",
+      "label": "URL",
+      "help": "Enter a path relative to `https://webhooks.cc/api`. For example: `/endpoints`. The API reference is at https://webhooks.cc/docs/api.",
+      "required": true
+    },
+    {
+      "name": "method",
+      "type": "select",
+      "label": "Method",
+      "default": "GET",
+      "required": true,
+      "options": [
+        { "label": "GET", "value": "GET" },
+        { "label": "POST", "value": "POST" },
+        { "label": "PUT", "value": "PUT" },
+        { "label": "PATCH", "value": "PATCH" },
+        { "label": "DELETE", "value": "DELETE" }
+      ]
+    },
+    {
+      "name": "headers",
+      "type": "array",
+      "label": "Headers",
+      "default": [{ "key": "Content-Type", "value": "application/json" }],
+      "spec": [
+        { "name": "key", "type": "text", "label": "Key" },
+        { "name": "value", "type": "text", "label": "Value" }
+      ]
+    },
+    {
+      "name": "qs",
+      "type": "array",
+      "label": "Query String",
+      "spec": [
+        { "name": "key", "type": "text", "label": "Key" },
+        { "name": "value", "type": "text", "label": "Value" }
+      ]
+    },
+    { "name": "body", "type": "any", "label": "Body" }
+  ],
+  "communication": {
+    "url": "https://webhooks.cc/api/{{parameters.url}}",
+    "method": "{{parameters.method}}",
+    "headers": { "{{...}}": "{{toCollection(parameters.headers, 'key', 'value')}}" },
+    "qs": { "{{...}}": "{{toCollection(parameters.qs, 'key', 'value')}}" },
+    "body": "{{parameters.body}}",
+    "type": "text",
+    "response": {
+      "output": {
+        "body": "{{body}}",
+        "headers": "{{headers}}",
+        "statusCode": "{{statusCode}}"
+      }
+    }
+  },
+  "interface": [
+    { "name": "body", "type": "any", "label": "Body" },
+    { "name": "headers", "type": "collection", "label": "Headers" },
+    { "name": "statusCode", "type": "number", "label": "Status code" }
+  ]
+}

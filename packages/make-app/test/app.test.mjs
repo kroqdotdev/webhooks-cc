@@ -124,9 +124,19 @@ describe("the Make app definitions", () => {
     expect(Object.keys(modules).sort()).toEqual([
       "create-endpoint.imljson",
       "find-emails.imljson",
+      "make-api-call.imljson",
       "send-test-email.imljson",
       "watch-emails.imljson",
     ]);
+  });
+
+  it("keeps the universal module's calls on the API, so the key never leaves for another host", () => {
+    const universal = modules["make-api-call.imljson"];
+    expect(universal.type).toBe("universal");
+    expect(universal.label).toBe("Make an API call");
+    // The host is fixed: whatever path is entered, the request goes to
+    // https://webhooks.cc/api (Make drops the doubled slash), never elsewhere.
+    expect(universal.communication.url).toBe("https://webhooks.cc/api/{{parameters.url}}");
   });
 });
 

@@ -30,7 +30,7 @@ if not TOKEN:
     raise SystemExit("MAKE_API_TOKEN is not set")
 
 # Module types by the "type" key of each module file.
-MODULE_TYPE_IDS = {"trigger": 1, "action": 4, "search": 9, "instant_trigger": 10}
+MODULE_TYPE_IDS = {"trigger": 1, "action": 4, "search": 9, "instant_trigger": 10, "universal": 12}
 
 
 def call(method, path, body=None, content_type="application/json", raw=False, missing_ok=False):
