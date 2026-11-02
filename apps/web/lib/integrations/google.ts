@@ -626,6 +626,18 @@ export async function writeHeader(
   );
 }
 
+/** The titles of a spreadsheet's tabs, in order. */
+export async function sheetTitles(token: string, spreadsheetId: string): Promise<string[]> {
+  const result = await sheetsCall<{ sheets?: { properties?: { title?: unknown } }[] }>(
+    token,
+    `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.title`,
+    { method: "GET" }
+  );
+  return (result.sheets ?? [])
+    .map((tab) => tab.properties?.title)
+    .filter((title): title is string => typeof title === "string");
+}
+
 /** The sheet's first row as text (empty when the row is). */
 export async function readFirstRow(
   token: string,

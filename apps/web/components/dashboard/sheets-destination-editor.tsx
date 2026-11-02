@@ -9,6 +9,7 @@ import {
   createGoogleSpreadsheet,
   deleteDestination,
   fetchGoogleConnections,
+  fetchSpreadsheetTabs,
   startDrivePick,
   startGoogleConnect,
   updateDestination,
@@ -101,6 +102,27 @@ export function SheetsDestinationEditor({
   }, [accessToken]);
 
   const headers = useMemo(() => columns.map((column) => column.header), [columns]);
+
+  // The chosen spreadsheet's tabs, so the tab is picked from what is there
+  // (a sheet made in another language calls its first tab "Ark1" or "Hoja 1",
+  // not "Sheet1"). A tab that is not there becomes the first one.
+  const [tabs, setTabs] = useState<string[] | null>(null);
+  useEffect(() => {
+    setTabs(null);
+    if (!accessToken || !connectionId || !spreadsheetId) return;
+    let current = true;
+    fetchSpreadsheetTabs(accessToken, connectionId, spreadsheetId)
+      .then((found) => {
+        if (!current) return;
+        setTabs(found);
+        setSheet((tab) => (found.length > 0 && !found.includes(tab) ? found[0] : tab));
+      })
+      // Without the list the tab stays a text field, and saving says what is wrong.
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [accessToken, connectionId, spreadsheetId]);
 
   const connect = async () => {
     if (!accessToken) return;
@@ -358,13 +380,28 @@ export function SheetsDestinationEditor({
               label="Tab"
               help="The sheet the rows go to; it must exist in the spreadsheet."
             >
-              <input
-                id={`${idPrefix}-sheet`}
-                value={sheet}
-                onChange={(e) => setSheet(e.target.value)}
-                maxLength={100}
-                className="ui-input w-56 text-sm py-2!"
-              />
+              {tabs && tabs.length > 0 ? (
+                <select
+                  id={`${idPrefix}-sheet`}
+                  value={sheet}
+                  onChange={(e) => setSheet(e.target.value)}
+                  className="ui-input w-56 text-sm py-2! px-2!"
+                >
+                  {tabs.map((tab) => (
+                    <option key={tab} value={tab}>
+                      {tab}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id={`${idPrefix}-sheet`}
+                  value={sheet}
+                  onChange={(e) => setSheet(e.target.value)}
+                  maxLength={100}
+                  className="ui-input w-56 text-sm py-2!"
+                />
+              )}
             </Field>
           </>
         )}

@@ -1183,6 +1183,20 @@ export async function startGoogleConnect(accessToken: string, returnTo: string):
   return (await readJson<{ url: string }>(response)).url;
 }
 
+/** A spreadsheet's tabs, in order. */
+export async function fetchSpreadsheetTabs(
+  accessToken: string,
+  connectionId: string,
+  spreadsheetId: string
+): Promise<string[]> {
+  const params = new URLSearchParams({ connectionId, spreadsheetId });
+  const response = await fetch(
+    `/api/integrations/google/spreadsheets?${params}`,
+    withAuthHeaders(accessToken)
+  );
+  return (await readJson<{ tabs: string[] }>(response)).tabs;
+}
+
 export async function createGoogleSpreadsheet(
   accessToken: string,
   input: {

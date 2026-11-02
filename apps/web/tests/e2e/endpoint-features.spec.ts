@@ -321,6 +321,10 @@ test("a Google Sheets destination is set up with a new spreadsheet", async ({ pa
   if (error) throw error;
   const spreadsheetId = "1AcmeOrdersSheetE2eAbCdEfGhIjKlMnOpQrStUvW";
   let created: Record<string, unknown> | null = null;
+  // The new spreadsheet's tabs, read once it is chosen.
+  await page.route("**/api/integrations/google/spreadsheets?*", (route) =>
+    route.fulfill({ json: { tabs: ["Sheet1"] } })
+  );
   await page.route("**/api/integrations/google/spreadsheets", async (route) => {
     created = route.request().postDataJSON();
     await route.fulfill({ json: { id: spreadsheetId, headerWritten: true } });
