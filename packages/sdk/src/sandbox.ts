@@ -612,7 +612,12 @@ export class SandboxClient {
   async revokeToken(): Promise<void> {
     const token = this.tokens.peek();
     if (!token) return;
-    await revoke({ baseUrl: this.baseUrl, timeout: this.timeout, token });
+    await revoke({
+      baseUrl: this.baseUrl,
+      timeout: this.timeout,
+      userAgent: this.userAgent,
+      token,
+    });
     this.tokens.reset();
   }
 }
