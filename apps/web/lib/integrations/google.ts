@@ -359,18 +359,31 @@ export function sealPickState(state: PickState): string {
   return sealWith(PICK, state);
 }
 
-export function openPickState(sealed: string, now = Date.now()): PickState | null {
+/**
+ * The pick state, or null when it is not one of ours or has been changed.
+ * An expired one is still ours (it says where its pop-up came from), so it
+ * comes back marked, for the callback to tell the dashboard rather than
+ * drop the pick without a word.
+ */
+export function openPickState(
+  sealed: string,
+  now = Date.now()
+): (PickState & { expired: boolean }) | null {
   const state = openWith(PICK, sealed) as Partial<PickState> | null;
   if (
     !state ||
     (state.site !== "webhooks" && state.site !== "mailhooks") ||
     !isPickNonce(state.nonce) ||
-    typeof state.expires !== "number" ||
-    state.expires <= now
+    typeof state.expires !== "number"
   ) {
     return null;
   }
-  return state as PickState;
+  return {
+    site: state.site,
+    nonce: state.nonce,
+    expires: state.expires,
+    expired: state.expires <= now,
+  };
 }
 
 /** The first file id Google says was picked, if it looks like one. */

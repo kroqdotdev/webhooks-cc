@@ -161,7 +161,9 @@ export function SheetsDestinationEditor({
       if (!pending.current || data?.nonce !== pending.current) return;
       pending.current = null;
       if (typeof data.file === "string") setSpreadsheetId(data.file);
-      else if (data.error !== "cancelled") setError("Google did not say which spreadsheet.");
+      else if (data.error === "expired") {
+        setError("Google's window was open too long. Choose from Drive again.");
+      } else if (data.error !== "cancelled") setError("Google did not say which spreadsheet.");
     };
     return () => channel.close();
   }, []);
@@ -169,6 +171,11 @@ export function SheetsDestinationEditor({
   const pick = async () => {
     if (!accessToken || !connectionId) return;
     setError(null);
+    // The pick comes back on a BroadcastChannel; without one it never would.
+    if (typeof BroadcastChannel !== "function") {
+      setError("This browser cannot take the pick back from Google. Use a current browser.");
+      return;
+    }
     // Opened in the click itself, so pop-up blockers let it through; Google's
     // page goes in once the server has made its URL.
     const popup = window.open("", "whcc-drive-pick", "popup,width=960,height=720");
@@ -179,8 +186,11 @@ export function SheetsDestinationEditor({
     const nonce = pickNonce();
     pending.current = nonce;
     try {
-      popup.location.href = await startDrivePick(accessToken, connectionId, nonce);
+      const url = await startDrivePick(accessToken, connectionId, nonce);
+      // A later click has taken over the window: its own URL goes in.
+      if (pending.current === nonce) popup.location.href = url;
     } catch (err) {
+      if (pending.current !== nonce) return;
       popup.close();
       pending.current = null;
       setError(err instanceof Error ? err.message : "The picker could not open.");

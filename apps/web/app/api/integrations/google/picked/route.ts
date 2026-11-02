@@ -15,7 +15,8 @@ export function GET(request: Request) {
   const url = new URL(request.url);
   const nonce = url.searchParams.get("n");
   const file = pickedFileId(url.searchParams.get("file"));
-  const error = url.searchParams.get("error") === "cancelled" ? "cancelled" : "failed";
+  const reason = url.searchParams.get("error");
+  const error = reason === "cancelled" || reason === "expired" ? reason : "failed";
   const message = isPickNonce(nonce) ? (file ? { nonce, file } : { nonce, error }) : null;
   // Only checked values reach the script, and "<" is escaped regardless.
   const json = JSON.stringify(message).replace(/</g, "\\u003c");

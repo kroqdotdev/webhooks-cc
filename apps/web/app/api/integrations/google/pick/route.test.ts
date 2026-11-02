@@ -113,9 +113,18 @@ describe("choosing a spreadsheet from Drive", () => {
     );
   });
 
-  it("refuses an expired pick state", () => {
+  it("tells the dashboard when a pick took too long, rather than dropping it", async () => {
     const sealed = sealPickState({ site: "webhooks", nonce: NONCE, expires: Date.now() - 1 });
-    expect(openPickState(sealed)).toBeNull();
+    expect(openPickState(sealed)).toMatchObject({ nonce: NONCE, expired: true });
+    const response = await callback(
+      new Request(
+        `https://webhooks.cc/api/integrations/google/callback?state=${encodeURIComponent(sealed)}&picked_file_ids=${FILE}`
+      )
+    );
+    // The file is not passed on from an expired pick.
+    expect(response.headers.get("location")).toBe(
+      `https://webhooks.cc/api/integrations/google/picked?n=${NONCE}&error=expired`
+    );
   });
 
   it("takes only a file id that looks like one", () => {
@@ -131,7 +140,29 @@ describe("choosing a spreadsheet from Drive", () => {
       )
     ).text();
     expect(page).toContain(`var message = {"nonce":"${NONCE}","file":"${FILE}"};`);
-    expect(page).toContain('new BroadcastChannel("whcc-drive-pick")');
+    // Run the page's script: it posts the pick on the dashboard's channel and closes.
+    const posted: unknown[] = [];
+    let closed = false;
+    class FakeChannel {
+      constructor(readonly name: string) {}
+      postMessage(data: unknown) {
+        posted.push({ name: this.name, data });
+      }
+      close() {}
+    }
+    const script = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1] ?? "";
+    new Function("BroadcastChannel", "history", "location", "window", script)(
+      FakeChannel,
+      { replaceState() {} },
+      { pathname: "/api/integrations/google/picked" },
+      {
+        close() {
+          closed = true;
+        },
+      }
+    );
+    expect(posted).toEqual([{ name: "whcc-drive-pick", data: { nonce: NONCE, file: FILE } }]);
+    expect(closed).toBe(true);
 
     const planted = await (
       await picked(

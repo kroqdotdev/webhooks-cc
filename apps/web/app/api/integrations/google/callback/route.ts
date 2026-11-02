@@ -30,7 +30,8 @@ export async function GET(request: Request) {
     const picked = new URL("/api/integrations/google/picked", `${siteOrigin(pick.site)}/`);
     picked.searchParams.set("n", pick.nonce);
     const file = pickedFileId(url.searchParams.get("picked_file_ids"));
-    if (file) picked.searchParams.set("file", file);
+    if (pick.expired) picked.searchParams.set("error", "expired");
+    else if (file) picked.searchParams.set("file", file);
     else picked.searchParams.set("error", url.searchParams.get("error") ? "cancelled" : "failed");
     return new Response(null, {
       status: 303,
