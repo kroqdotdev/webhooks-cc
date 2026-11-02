@@ -11,8 +11,9 @@ import { capacityProductKind, webhookProductId } from "@/lib/supabase/capacity-b
 /**
  * Billing events for product analytics, from applied Polar webhooks: what was
  * bought, and when a subscription starts, is cancelled or ends. Orders carry
- * `revenue` (in the currency's major unit, before tax) and `currency`, which
- * PostHog's revenue analytics reads. A team's events go to the person who
+ * what PostHog's revenue analytics reads: `revenue` (in cents, before tax),
+ * `currency`, `product`, and `subscription_id` for renewals, from which it
+ * works out MRR. A team's events go to the person who
  * created the team, with the team as their group.
  */
 
@@ -35,7 +36,7 @@ export function analyticsProduct(productId: string | null, teamId: string | null
 function amountOf(data: Record<string, unknown>): number | null {
   for (const key of ["net_amount", "total_amount"]) {
     const value = data[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value / 100;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
   }
   return null;
 }
@@ -56,6 +57,7 @@ export function billingAnalyticsEvent(
         revenue,
         currency: typeof data.currency === "string" ? data.currency.toUpperCase() : "USD",
         billing_reason: typeof data.billing_reason === "string" ? data.billing_reason : null,
+        subscription_id: typeof data.subscription_id === "string" ? data.subscription_id : null,
         product,
         account_kind,
       },

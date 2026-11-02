@@ -10,7 +10,7 @@ describe("billingAnalyticsEvent", () => {
     vi.stubEnv("POLAR_BUSINESS_ANNUAL_PRODUCT_ID", "prod-biz-year");
   });
 
-  it("reports a paid order as revenue before tax, in the major unit", () => {
+  it("reports a paid order as revenue in cents, before tax", () => {
     expect(
       billingAnalyticsEvent("order.paid", null, {
         product_id: "prod-pro",
@@ -18,13 +18,15 @@ describe("billingAnalyticsEvent", () => {
         total_amount: 1000,
         currency: "usd",
         billing_reason: "subscription_cycle",
+        subscription_id: "sub-1",
       })
     ).toEqual({
       event: "order_paid",
       properties: {
-        revenue: 8,
+        revenue: 800,
         currency: "USD",
         billing_reason: "subscription_cycle",
+        subscription_id: "sub-1",
         product: "pro_month",
         account_kind: "user",
       },
