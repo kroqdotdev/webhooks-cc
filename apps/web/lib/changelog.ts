@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.56.0";
+export const APP_VERSION = "0.56.1";
 export const CLI_VERSION = "1.7.0";
 export const SDK_VERSION = "1.20.0";
 export const PYTHON_SDK_VERSION = "0.4.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.56.1",
+    date: "2026-11-02",
+    title: "Where Endpoints Are Listed, Everywhere",
+    track: "web",
+    items: [
+      "The MCP tools reference covers the site an endpoint is listed on, now that the MCP server, the CLI and the Python and Go SDKs can set it",
+    ],
+  },
   {
     version: "0.56.0",
     date: "2026-11-01",
