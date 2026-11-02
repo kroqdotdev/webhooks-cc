@@ -1234,6 +1234,50 @@ describe("WebhooksCC", () => {
     });
   });
 
+  describe("endpoints.favorite and unfavorite", () => {
+    it("sends PUT /api/endpoints/{slug}/favorite and returns the result", async () => {
+      const fetchMock = mockFetch({ body: { favorite: true } });
+      globalThis.fetch = fetchMock;
+
+      const result = await createClient().endpoints.favorite("abc123");
+
+      expect(result).toEqual({ favorite: true });
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/endpoints/abc123/favorite`);
+      expect(opts.method).toBe("PUT");
+      expect(opts.body).toBeUndefined();
+    });
+
+    it("sends DELETE /api/endpoints/{slug}/favorite and returns the result", async () => {
+      const fetchMock = mockFetch({ body: { favorite: false } });
+      globalThis.fetch = fetchMock;
+
+      const result = await createClient().endpoints.unfavorite("abc123");
+
+      expect(result).toEqual({ favorite: false });
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/endpoints/abc123/favorite`);
+      expect(opts.method).toBe("DELETE");
+    });
+
+    it("rejects an invalid slug without calling the API", async () => {
+      const fetchMock = mockFetch({ body: { favorite: true } });
+      globalThis.fetch = fetchMock;
+
+      await expect(createClient().endpoints.favorite("../teams")).rejects.toThrow(/slug/);
+      await expect(createClient().endpoints.unfavorite("")).rejects.toThrow(/slug/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("surfaces a 404 for an endpoint the caller cannot open", async () => {
+      globalThis.fetch = mockFetch({ status: 404, body: { error: "Endpoint not found" } });
+
+      await expect(createClient().endpoints.favorite("missing")).rejects.toBeInstanceOf(
+        NotFoundError
+      );
+    });
+  });
+
   describe("sendTo", () => {
     it("sends a plain POST to an arbitrary URL", async () => {
       const fetchMock = vi.fn().mockResolvedValue({
@@ -1746,6 +1790,8 @@ describe("WebhooksCC", () => {
       });
       expect(Object.keys(description.alerts)).toEqual(["get", "update"]);
       expect(description.endpoints.redeliver).toBeDefined();
+      expect(description.endpoints.favorite.params).toEqual({ slug: "string" });
+      expect(description.endpoints.unfavorite.params).toEqual({ slug: "string" });
       expect(description.endpoints.previewLayouts.params.requestId).toContain("newest");
       expect(description.endpoints.update.params.layouts).toContain("Layout[]");
       expect(description.endpoints.list.params.team).toContain("team id or unique name");

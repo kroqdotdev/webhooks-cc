@@ -1255,6 +1255,10 @@ type Endpoint struct {
 	ForwardURL     string
 	SharedWith     []TeamShare
 	FromTeams      []TeamShare
+	// Favorite is whether you marked the endpoint a favourite, your own
+	// choice on your own and team-shared endpoints alike. List and Get carry
+	// it; Create and Update answer without it, so it is false there.
+	Favorite bool
 	// Raw is the JSON the endpoint was read from.
 	Raw json.RawMessage
 }
@@ -1292,6 +1296,7 @@ func (e *Endpoint) UnmarshalJSON(data []byte) error {
 		ForwardURL:        o.str("forwardUrl"),
 		SharedWith:        o.teams("sharedWith"),
 		FromTeams:         o.teams("fromTeams"),
+		Favorite:          o.boolean("favorite"),
 		Raw:               bytes.Clone(data),
 	}
 	if e.FromTeams == nil {
@@ -1365,11 +1370,12 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 		ForwardURL        string         `json:"forwardUrl,omitempty"`
 		SharedWith        []TeamShare    `json:"sharedWith,omitempty"`
 		FromTeams         []TeamShare    `json:"fromTeams,omitempty"`
+		Favorite          bool           `json:"favorite,omitempty"`
 	}{
 		e.ID, e.Slug, e.Name, e.URL, e.EmailAddress, millisOf(e.CreatedAt), e.IsEphemeral, millisOf(e.ExpiresAt),
 		e.NotificationURL, e.MockResponse, e.ResponseRules, e.SigningProvider, e.HasSigningSecret,
 		e.ShowEmailExtracts, e.Site, e.EmailFields, e.RetentionDays, e.RetentionCapDays, e.DeleteAfterDelivery,
-		e.Layouts, e.LayoutsCap, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams,
+		e.Layouts, e.LayoutsCap, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams, e.Favorite,
 	})
 }
 

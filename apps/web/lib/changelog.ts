@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.56.4";
+export const APP_VERSION = "0.57.0";
 export const CLI_VERSION = "1.7.0";
 export const SDK_VERSION = "1.20.0";
 export const PYTHON_SDK_VERSION = "0.4.0";
@@ -26,6 +26,17 @@ export const MCP_VERSION = "1.16.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.57.0",
+    date: "2026-11-02",
+    title: "Favourite Endpoints",
+    track: "web",
+    items: [
+      "Click the star next to the endpoint switcher to mark the open endpoint as a favourite. Favourites are listed first in the switcher, and the dashboard opens your first favourite when you go to it without picking an endpoint",
+      "Favourites are yours alone: on an endpoint shared with your team, each member keeps their own. They follow your account to every browser and to both webhooks.cc and mailhooks.cc",
+      "The API reports `favorite` on every endpoint it lists or returns, and `PUT` and `DELETE` on `/api/endpoints/{slug}/favorite` mark and unmark one. The remote MCP server gains a `favorite_endpoint` tool; the SDKs, the CLI and the npm MCP package follow in their next releases",
+    ],
+  },
   {
     version: "0.56.4",
     date: "2026-11-02",

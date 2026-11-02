@@ -33,6 +33,7 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 		MockResponse:  &webhookscc.MockResponse{Status: 201, Body: "ok", Headers: map[string]string{"x": "y"}, Delay: 250 * time.Millisecond},
 		ResponseRules: []webhookscc.ResponseRule{{Conditions: []webhookscc.ResponseRuleCondition{{Field: "method", Op: "eq", Value: ""}}, Response: webhookscc.MockResponse{Status: 200, Headers: map[string]string{}}}},
 		SharedWith:    []webhookscc.TeamShare{{TeamID: "t1", TeamName: "Acme"}},
+		Favorite:      true,
 		EmailFields: []webhookscc.EmailField{
 			{Name: "invoice", From: "subject", Pattern: `(INV-\d+)`},
 			{Name: "mailer", From: "header", Header: "X-Mailer", Pattern: ".+"},

@@ -2,12 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Star } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
+  defaultDashboardEndpoint,
+  emitDashboardEndpointsChanged,
   fetchDashboardEndpoints,
+  setDashboardEndpointFavorite,
   subscribeDashboardEndpointsChanged,
+  type DashboardEndpointWithSharing,
   type DashboardEndpointsResponse,
 } from "@/lib/dashboard-api";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -18,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { trackEndpointSwitched } from "@/lib/analytics";
+import { trackEndpointFavorited, trackEndpointSwitched } from "@/lib/analytics";
 import { useSite } from "@/components/providers/site-provider";
 import { listedOn, type EndpointSite } from "@/lib/site";
 
@@ -29,6 +35,7 @@ export function EndpointSwitcher() {
   const searchParams = useSearchParams();
   const currentSlug = searchParams.get("endpoint");
   const site = useSite();
+  const [savingFavorite, setSavingFavorite] = useState(false);
 
   useEffect(() => {
     const accessToken = session?.access_token;
@@ -81,81 +88,123 @@ export function EndpointSwitcher() {
   };
 
   // Resolve the ?endpoint= param the same way the dashboard does (exact match,
-  // else first endpoint): a stale or deleted slug otherwise leaves the Select
-  // with a value no SelectItem carries, rendering an empty trigger while the
-  // dashboard shows the first endpoint.
-  const defaultSlug =
-    allEndpoints.find((ep) => ep.slug === currentSlug)?.slug ?? allEndpoints[0]?.slug;
+  // else the first favourite, else the first endpoint): a stale or deleted
+  // slug otherwise leaves the Select with a value no SelectItem carries,
+  // rendering an empty trigger while the dashboard shows another endpoint.
+  const current =
+    allEndpoints.find((ep) => ep.slug === currentSlug) ?? defaultDashboardEndpoint(allEndpoints);
+  const defaultSlug = current?.slug;
 
-  // Split owned endpoints into personal (not shared) and shared-by-me
-  const personalEndpoints = owned.filter((ep) => !ep.sharedWith || ep.sharedWith.length === 0);
-  const sharedByMe = owned.filter((ep) => ep.sharedWith && ep.sharedWith.length > 0);
-  const sharedWithMe = (data.shared ?? []).filter(shown);
+  // Favourites come first and are not repeated in the groups below.
+  const favorites = allEndpoints.filter((ep) => ep.favorite);
+  const rest = (ep: DashboardEndpointWithSharing) => !ep.favorite;
+  const ownedRest = owned.filter(rest);
+  const personalEndpoints = ownedRest.filter((ep) => !ep.sharedWith || ep.sharedWith.length === 0);
+  const sharedByMe = ownedRest.filter((ep) => ep.sharedWith && ep.sharedWith.length > 0);
+  const sharedWithMe = (data.shared ?? []).filter(shown).filter(rest);
 
-  const hasSections = sharedByMe.length > 0 || sharedWithMe.length > 0;
+  const hasSections = favorites.length > 0 || sharedByMe.length > 0 || sharedWithMe.length > 0;
 
   const labelClass = "text-xs font-bold caps text-muted-foreground";
 
-  return (
-    <Select value={defaultSlug} onValueChange={handleChange}>
-      <SelectTrigger className="min-w-0 flex-1 md:w-[260px] md:flex-none">
-        <SelectValue placeholder="Select endpoint" />
-      </SelectTrigger>
-      <SelectContent>
-        {hasSections ? (
+  const toggleFavorite = async () => {
+    const accessToken = session?.access_token;
+    if (!current || !accessToken || savingFavorite) return;
+    const favorite = !current.favorite;
+    const mark = (value: boolean) => (ep: DashboardEndpointWithSharing) =>
+      ep.id === current.id ? { ...ep, favorite: value } : ep;
+    // Keep the open endpoint open: without ?endpoint= the dashboard shows the
+    // first favourite, which this change may move.
+    if (!currentSlug) router.replace(`/dashboard?endpoint=${current.slug}`);
+    setData((prev) =>
+      prev
+        ? { owned: prev.owned.map(mark(favorite)), shared: prev.shared.map(mark(favorite)) }
+        : prev
+    );
+    setSavingFavorite(true);
+    try {
+      await setDashboardEndpointFavorite(accessToken, current.slug, favorite);
+      trackEndpointFavorited(favorite);
+    } catch (error) {
+      console.error("Failed to change the favourite endpoint:", error);
+      setData((prev) =>
+        prev
+          ? { owned: prev.owned.map(mark(!favorite)), shared: prev.shared.map(mark(!favorite)) }
+          : prev
+      );
+    } finally {
+      setSavingFavorite(false);
+      emitDashboardEndpointsChanged();
+    }
+  };
+
+  // Who shares it, beside its name: the teams of an endpoint the caller shares,
+  // or the team that shares it with them.
+  const teamsOf = (ep: DashboardEndpointWithSharing) =>
+    ep.sharedWith && ep.sharedWith.length > 0
+      ? ep.sharedWith.map((s) => s.teamName).join(", ")
+      : ep.fromTeam || ep.fromTeams
+        ? (ep.fromTeam?.teamName ?? "team")
+        : null;
+  const item = (ep: DashboardEndpointWithSharing, withTeams: boolean) => {
+    const teams = withTeams ? teamsOf(ep) : null;
+    return (
+      <SelectItem key={ep.id} value={ep.slug}>
+        {ep.name || ep.slug}
+        {teams && (
           <>
-            {personalEndpoints.length > 0 && (
-              <SelectGroup>
-                <SelectLabel className={labelClass}>My Endpoints</SelectLabel>
-                {personalEndpoints.map((ep) => (
-                  <SelectItem key={ep.id} value={ep.slug}>
-                    {ep.name || ep.slug}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-            {sharedByMe.length > 0 && (
-              <>
-                {personalEndpoints.length > 0 && <SelectSeparator />}
-                <SelectGroup>
-                  <SelectLabel className={labelClass}>Shared by me</SelectLabel>
-                  {sharedByMe.map((ep) => {
-                    const teamNames = ep.sharedWith!.map((s) => s.teamName).join(", ");
-                    return (
-                      <SelectItem key={ep.id} value={ep.slug}>
-                        {ep.name || ep.slug}{" "}
-                        <span className="text-muted-foreground">({teamNames})</span>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectGroup>
-              </>
-            )}
-            {sharedWithMe.length > 0 && (
-              <>
-                {(personalEndpoints.length > 0 || sharedByMe.length > 0) && <SelectSeparator />}
-                <SelectGroup>
-                  <SelectLabel className={labelClass}>Shared with me</SelectLabel>
-                  {sharedWithMe.map((ep) => (
-                    <SelectItem key={ep.id} value={ep.slug}>
-                      {ep.name || ep.slug}{" "}
-                      <span className="text-muted-foreground">
-                        ({ep.fromTeam?.teamName ?? "team"})
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </>
-            )}
+            {" "}
+            <span className="text-muted-foreground">({teams})</span>
           </>
-        ) : (
-          owned.map((ep) => (
-            <SelectItem key={ep.id} value={ep.slug}>
-              {ep.name || ep.slug}
-            </SelectItem>
-          ))
         )}
-      </SelectContent>
-    </Select>
+      </SelectItem>
+    );
+  };
+
+  const groups = [
+    { label: "Favourites", endpoints: favorites },
+    { label: "My Endpoints", endpoints: personalEndpoints },
+    { label: "Shared by me", endpoints: sharedByMe },
+    { label: "Shared with me", endpoints: sharedWithMe },
+  ].filter((group) => group.endpoints.length > 0);
+
+  const isFavorite = current?.favorite === true;
+  const endpointName = current ? current.name || current.slug : "this endpoint";
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-1 md:flex-initial">
+      <Select value={defaultSlug} onValueChange={handleChange}>
+        <SelectTrigger className="min-w-0 flex-1 md:w-[260px] md:flex-initial">
+          <SelectValue placeholder="Select endpoint" />
+        </SelectTrigger>
+        <SelectContent>
+          {hasSections
+            ? groups.map((group, index) => (
+                <SelectGroup key={group.label}>
+                  {index > 0 && <SelectSeparator />}
+                  <SelectLabel className={labelClass}>{group.label}</SelectLabel>
+                  {group.endpoints.map((ep) => item(ep, group.label !== "My Endpoints"))}
+                </SelectGroup>
+              ))
+            : owned.map((ep) => item(ep, false))}
+        </SelectContent>
+      </Select>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="shrink-0"
+        disabled={!current || savingFavorite}
+        onClick={() => void toggleFavorite()}
+        aria-pressed={isFavorite}
+        title={isFavorite ? "Remove from favourites" : "Add to favourites"}
+        aria-label={
+          isFavorite
+            ? `Remove ${endpointName} from favourites`
+            : `Add ${endpointName} to favourites`
+        }
+      >
+        <Star className={isFavorite ? "h-4 w-4 fill-action text-action" : "h-4 w-4"} />
+      </Button>
+    </div>
   );
 }

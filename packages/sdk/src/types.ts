@@ -59,6 +59,8 @@ export interface Endpoint {
   showEmailExtracts?: boolean;
   /** Which site's dashboard lists it; both addresses capture either way */
   site?: EndpointSite;
+  /** Whether you marked it as one of your favourites (your own choice; present on list and get) */
+  favorite?: boolean;
   /** Named fields picked out of every email (owner only): `fields` in its JSON */
   emailFields?: EmailField[];
   /** Days requests are kept; null keeps them as long as the plan does (owner only) */

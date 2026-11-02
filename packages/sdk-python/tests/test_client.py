@@ -180,6 +180,82 @@ def test_endpoint_site_is_sent_and_read() -> None:
     assert bodies[2] == {"site": "webhooks"}
 
 
+def test_endpoint_favorite_is_read_where_the_api_sends_it() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "e3", "slug": "fresh", "createdAt": 3})
+        if request.url.path == "/api/endpoints/acme":
+            return httpx.Response(
+                200, json={"id": "e1", "slug": "acme", "createdAt": 1, "favorite": True}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "owned": [{"id": "e1", "slug": "acme", "createdAt": 1, "favorite": True}],
+                "shared": [{"id": "e2", "slug": "team", "createdAt": 2, "favorite": False}],
+            },
+        )
+
+    client = make_client(handler)
+    assert [item.favorite for item in client.endpoints.list()] == [True, False]
+    assert client.endpoints.get("acme").favorite is True
+    assert client.endpoints.create("ci").favorite is None
+    assert Endpoint.from_dict({"id": "e1", "slug": "acme", "favorite": "yes"}).favorite is None
+
+
+def test_favorite_and_unfavorite_call_the_favorite_route() -> None:
+    calls: list[tuple[str, str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, request.content))
+        return httpx.Response(200, json={"favorite": request.method == "PUT"})
+
+    client = make_client(handler)
+    assert client.endpoints.favorite("acme") is True
+    assert client.endpoints.unfavorite("acme") is False
+    assert calls == [
+        ("PUT", "/api/endpoints/acme/favorite", b""),
+        ("DELETE", "/api/endpoints/acme/favorite", b""),
+    ]
+    with pytest.raises(ValueError, match="slug"):
+        client.endpoints.favorite("../admin")
+    with pytest.raises(ValueError, match="slug"):
+        client.endpoints.unfavorite("a/b")
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [
+        (404, errors.NotFoundError),
+        (403, errors.WebhooksCCError),
+        (429, errors.RateLimitError),
+    ],
+)
+def test_favorite_errors_are_typed(status: int, error_type: type[Exception]) -> None:
+    client = make_client(
+        lambda request: httpx.Response(status, json={"error": "Endpoint not found"})
+    )
+    with pytest.raises(error_type) as caught:
+        client.endpoints.favorite("acme")
+    assert isinstance(caught.value, errors.WebhooksCCError)
+    assert caught.value.status_code == status
+
+
+def test_a_favorite_is_repeated_after_a_network_error() -> None:
+    attempts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.method)
+        if len(attempts) == 1:
+            raise httpx.ConnectError("reset", request=request)
+        return httpx.Response(200, json={"favorite": True})
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=2, backoff=1))
+    assert client.endpoints.favorite("acme") is True
+    assert attempts == ["PUT", "PUT"]
+
+
 def test_update_sends_only_given_fields() -> None:
     bodies: list[Any] = []
 

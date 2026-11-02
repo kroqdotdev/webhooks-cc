@@ -38,6 +38,15 @@ func TestCheckoutSendsAWebhook(t *testing.T) {
 }
 ```
 
+## Favourite endpoints
+
+```go
+favorite, err := client.Endpoints.Favorite(ctx, endpoint.Slug)  // true
+favorite, err = client.Endpoints.Unfavorite(ctx, endpoint.Slug) // false
+```
+
+A favourite is yours alone, on your own endpoints and team-shared ones alike; the dashboard lists favourites first. Both calls are idempotent, and `Endpoint.Favorite` is set on what `Endpoints.List` and `Endpoints.Get` return. They need an account, so a sandbox has neither.
+
 ## Test email
 
 ```go

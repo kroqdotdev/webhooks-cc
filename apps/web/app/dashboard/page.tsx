@@ -42,6 +42,7 @@ import {
   fetchDashboardSearch,
   fetchDashboardSearchCount,
   subscribeDashboardEndpointsChanged,
+  defaultDashboardEndpoint,
   createDashboardEndpoint,
   emitDashboardEndpointsChanged,
   claimGuestEndpointForUser,
@@ -109,7 +110,9 @@ export default function DashboardPage() {
     ? allEndpoints?.find((ep) => ep.slug === endpointSlug)
     : undefined;
   const currentEndpoint =
-    endpoints?.find((ep) => ep.slug === endpointSlug) ?? linkedEndpoint ?? endpoints?.[0];
+    endpoints?.find((ep) => ep.slug === endpointSlug) ??
+    linkedEndpoint ??
+    (endpoints ? defaultDashboardEndpoint(endpoints) : undefined);
   const currentEndpointId = currentEndpoint?.id;
   const currentSlug = currentEndpoint?.slug;
   const currentSite = currentEndpoint?.site;

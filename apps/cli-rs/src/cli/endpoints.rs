@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, print_endpoint_table, red};
-use crate::types::{CreateEndpointRequest, MockResponse, UpdateEndpointRequest};
+use crate::cli::output::{bold, dim, green, print_endpoint_table, red, sanitize};
+use crate::types::{CreateEndpointRequest, MockResponse, UpdateEndpointRequest, favorites_first};
 use crate::util::format::parse_duration;
 
 #[allow(clippy::too_many_arguments)]
@@ -122,9 +122,9 @@ pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<
         return Ok(());
     }
 
-    // Sort owned first
     all.sort_by(|a, b| a.slug.cmp(&b.slug));
-    let endpoints: Vec<_> = all.into_iter().cloned().collect();
+    let mut endpoints: Vec<_> = all.into_iter().cloned().collect();
+    favorites_first(&mut endpoints);
     print_endpoint_table(&endpoints, &client.webhook_url);
 
     Ok(())
@@ -152,6 +152,9 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     }
     if endpoint.is_ephemeral {
         println!("  {} true", dim("Ephemeral:"));
+    }
+    if endpoint.is_favorite() {
+        println!("  {} yes", dim("Favourite:"));
     }
     if let Some(ref mock) = endpoint.mock_response {
         println!("  {} {} ({})", dim("Mock:"), mock.status, mock.body.chars().take(50).collect::<String>());
@@ -196,6 +199,38 @@ pub async fn update_endpoint(
         println!("{}", serde_json::to_string_pretty(&endpoint)?);
     } else {
         println!("  {} Updated endpoint {}", green("✓"), bold(&endpoint.slug));
+    }
+
+    Ok(())
+}
+
+/// `whk favorite` and `whk unfavorite`: idempotent, so marking a favourite
+/// twice is not an error.
+pub async fn set_favorite(
+    client: &ApiClient,
+    slug: &str,
+    favorite: bool,
+    json: bool,
+) -> Result<()> {
+    let state = client.set_endpoint_favorite(slug, favorite).await?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "slug": slug, "favorite": state.favorite })
+        );
+    } else if state.favorite {
+        println!(
+            "  {} Marked {} as a favourite",
+            green("★"),
+            bold(&sanitize(slug))
+        );
+    } else {
+        println!(
+            "  {} Removed {} from your favourites",
+            green("✓"),
+            bold(&sanitize(slug))
+        );
     }
 
     Ok(())

@@ -13,9 +13,9 @@ use crate::api::stream::join_stream;
 use crate::tui::{keys, theme};
 use crate::tui::widgets::request_list::{RequestList, RequestListState};
 use crate::tui::widgets::spinner::Spinner;
-use crate::types::{Endpoint, SseEvent};
+use crate::types::{Endpoint, SseEvent, favorites_first};
 
-use super::{Action, Message, Screen, ScreenId};
+use super::{Action, Message, Screen, ScreenId, favorite_marker};
 
 enum State {
     LoadingEndpoints,
@@ -126,6 +126,7 @@ impl Screen for ListenScreen {
             Message::EndpointsLoaded(Ok(list)) => {
                 self.endpoints = list.owned;
                 self.endpoints.extend(list.shared);
+                favorites_first(&mut self.endpoints);
                 if !self.endpoints.is_empty() {
                     self.table_state.select(Some(0));
                 }
@@ -177,7 +178,7 @@ impl Screen for ListenScreen {
                     .iter()
                     .map(|ep| {
                         Row::new(vec![
-                            format!("  {}", ep.slug),
+                            format!("{} {}", favorite_marker(ep), ep.slug),
                             ep.name.clone().unwrap_or_else(|| "—".into()),
                         ])
                     })

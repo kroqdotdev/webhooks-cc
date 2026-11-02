@@ -251,6 +251,61 @@ async fn test_usage() {
 // ─── Error handling ─────────────────────────────────────────────────────
 
 #[tokio::test]
+async fn test_endpoint_favorite_roundtrip() {
+    let client = make_client();
+    if client.require_auth().is_err() {
+        eprintln!("SKIPPING: no auth");
+        return;
+    }
+
+    let req = whk::types::CreateEndpointRequest {
+        name: Some("integration-favorite".into()),
+        is_ephemeral: Some(true),
+        expires_at: None,
+        mock_response: None,
+    };
+    let ep = client.create_endpoint(&req).await.expect("create failed");
+    let got = client.get_endpoint(&ep.slug).await.expect("get failed");
+    assert_eq!(got.favorite, Some(false));
+
+    // Marking twice is not an error.
+    for _ in 0..2 {
+        let state = client
+            .set_endpoint_favorite(&ep.slug, true)
+            .await
+            .expect("favorite failed");
+        assert!(state.favorite);
+    }
+    let got = client.get_endpoint(&ep.slug).await.expect("get failed");
+    assert!(got.is_favorite());
+    let list = client.list_endpoints().await.expect("list failed");
+    let listed = list
+        .owned
+        .iter()
+        .find(|e| e.slug == ep.slug)
+        .expect("not listed");
+    assert!(listed.is_favorite());
+
+    let state = client
+        .set_endpoint_favorite(&ep.slug, false)
+        .await
+        .expect("unfavorite failed");
+    assert!(!state.favorite);
+    let got = client.get_endpoint(&ep.slug).await.expect("get failed");
+    assert_eq!(got.favorite, Some(false));
+
+    let missing = client
+        .set_endpoint_favorite("nonexistent-slug-zzz999", true)
+        .await;
+    assert!(missing.is_err());
+
+    client
+        .delete_endpoint(&ep.slug)
+        .await
+        .expect("delete failed");
+}
+
+#[tokio::test]
 async fn test_get_nonexistent_endpoint() {
     let client = make_client();
     if client.require_auth().is_err() {

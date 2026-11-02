@@ -11,9 +11,9 @@ use tokio::sync::mpsc;
 use crate::api::ApiClient;
 use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
-use crate::types::{CreateEndpointRequest, Endpoint};
+use crate::types::{CreateEndpointRequest, Endpoint, favorites_first};
 
-use super::{Action, Message, Screen, ScreenId};
+use super::{Action, Message, Screen, ScreenId, favorite_marker};
 
 enum State {
     Loading,
@@ -181,6 +181,7 @@ impl Screen for EndpointsScreen {
                 self.endpoints = list.owned;
                 self.endpoints.extend(list.shared);
                 self.endpoints.sort_by(|a, b| a.slug.cmp(&b.slug));
+                favorites_first(&mut self.endpoints);
                 if !self.endpoints.is_empty() && self.table_state.selected().is_none() {
                     self.table_state.select(Some(0));
                 }
@@ -261,7 +262,7 @@ impl Screen for EndpointsScreen {
                 let url = format!("{}/w/{}", self.webhook_url, ep.slug);
                 let count = ep.request_count.unwrap_or(0).to_string();
                 Row::new(vec![
-                    format!("  {}", ep.slug),
+                    format!("{} {}", favorite_marker(ep), ep.slug),
                     name.to_string(),
                     count,
                     url,

@@ -138,7 +138,7 @@ With `retry`, GET, PUT and DELETE calls are repeated after a network error, a ti
 
 ## API overview
 
-- `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `send`, `sendTemplate`
+- `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `favorite`, `unfavorite`, `send`, `sendTemplate`
 - `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `count`, `clear`, `export`
 - `client.emails`: `address`, `list`, `get`, `latest`, `waitFor`, `waitForAll`, `sendTest`, `toJson`
 - `client.forwarding`: `configure`, `secret`, `rotateSecret`, `test`, `deliveries`, `summary`, `requestDeliveries`, `redeliver`, `redeliverFailed`
@@ -168,6 +168,10 @@ await client.endpoints.update(endpoint.slug, {
   name: "billing-webhooks-renamed",
   mockResponse: null,
 });
+
+// Your own favourites, shared endpoints included; list() and get() carry `favorite`
+await client.endpoints.favorite(endpoint.slug);
+await client.endpoints.unfavorite(endpoint.slug);
 ```
 
 Answer differently per request with response rules, and echo the request with placeholders. `previewResponse` shows what a captured request would get back without sending anything:

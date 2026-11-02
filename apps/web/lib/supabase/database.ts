@@ -1319,6 +1319,21 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      // Migration 00079: endpoints a person marked as favourites.
+      endpoint_favorites: {
+        Row: {
+          user_id: string;
+          endpoint_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          endpoint_id: string;
+          created_at?: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
       // Migration 00062: read-only snapshots published at /s/{token}.
       request_shares: {
         Row: {

@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 47 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 48 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-10-25
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 47 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 48 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -52,7 +52,7 @@ Create 1--20 endpoints in a single call. Returns an array of created endpoints.
 
 ### list_endpoints
 
-List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`, the oldest share, and `fromTeams`, every one of your teams it is shared with).
+List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`, the oldest share, and `fromTeams`, every one of your teams it is shared with). Each carries `favorite`, whether you marked it as a favourite.
 
 | Parameter | Type     | Required | Description                                                                                                               |
 | --------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -60,11 +60,20 @@ List the endpoints you own (each with `sharedWith`) and those shared with you th
 
 ### get_endpoint
 
-Get details for an endpoint by slug.
+Get details for an endpoint by slug, including `favorite`, whether you marked it as a favourite.
 
 | Parameter | Type     | Required | Description   |
 | --------- | -------- | -------- | ------------- |
 | `slug`    | `string` | yes      | Endpoint slug |
+
+### favorite_endpoint
+
+Mark an endpoint as one of your favourites, or unmark it. A favourite is your own choice, never the endpoint's, so endpoints shared with you through a team can be marked too. Idempotent; returns `{ slug, favorite }`.
+
+| Parameter  | Type      | Required | Description                                                 |
+| ---------- | --------- | -------- | ----------------------------------------------------------- |
+| `slug`     | `string`  | yes      | Endpoint slug                                               |
+| `favorite` | `boolean` | no       | `true` marks it (the default), `false` unmarks it           |
 
 ### update_endpoint
 
