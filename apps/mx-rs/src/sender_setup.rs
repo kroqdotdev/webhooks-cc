@@ -251,6 +251,9 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
     let mut duplicated: Vec<String> = Vec::new();
     // A nested lookup failed, so the count is short by what it would add.
     let mut incomplete = false;
+    // Includes never followed (a macro, or past depth 10): the count leaves
+    // out what they add, though nothing went wrong.
+    let mut unfollowed = false;
     // (domain, depth, reached only through redirects from the top record:
     // such a record's `all` is the one that applies).
     let mut pending: Vec<(String, usize, bool)> = top
@@ -261,8 +264,7 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
         .collect();
     while let Some((target, depth, via_redirect)) = pending.pop() {
         if !followable(&target) || depth > MAX_SPF_DEPTH {
-            // A macro or a chain this deep adds lookups that are not counted.
-            incomplete = true;
+            unfollowed = true;
             continue;
         }
         if fetches >= MAX_SPF_FETCHES {
@@ -306,6 +308,7 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
         "missing_includes": missing,
         "duplicate_includes": duplicated,
         "lookups_incomplete": incomplete,
+        "lookups_unfollowed": unfollowed,
         "ptr": ptr,
     })
 }
@@ -753,8 +756,9 @@ mod tests {
         let found = spf(&dns, "example.com").await;
         assert_eq!(found["all"], json!("?all"));
         assert_eq!(found["lookups"], json!(2));
-        // The macro include was counted but not followed.
-        assert_eq!(found["lookups_incomplete"], json!(true));
+        // The macro include was counted but not followed; nothing failed.
+        assert_eq!(found["lookups_unfollowed"], json!(true));
+        assert_eq!(found["lookups_incomplete"], json!(false));
         assert!(!dns.asked.lock().unwrap().iter().any(|n| n.contains('%')));
     }
 

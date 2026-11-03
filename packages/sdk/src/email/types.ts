@@ -106,6 +106,8 @@ export interface EmailSpfRecord {
   duplicateIncludes: string[];
   /** A nested lookup failed, so `lookups` is short by what that domain would add. */
   lookupsIncomplete: boolean;
+  /** Includes with a macro (or past depth 10) were not followed, so `lookups` leaves out what they add. */
+  lookupsUnfollowed: boolean;
   /** Set when the record could not be looked up. */
   error: string | null;
 }

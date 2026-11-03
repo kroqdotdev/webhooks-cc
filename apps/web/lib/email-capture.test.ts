@@ -217,6 +217,7 @@ describe("toEmailCapture", () => {
         missingIncludes: [],
         duplicateIncludes: [],
         lookupsIncomplete: false,
+        lookupsUnfollowed: false,
         error: null,
       },
       dmarc: {

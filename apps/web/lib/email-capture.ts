@@ -164,6 +164,7 @@ function asSpfRecord(value: Json | undefined): EmailSpfRecord | null {
     missingIncludes: asStrings(spf.missing_includes),
     duplicateIncludes: asStrings(spf.duplicate_includes),
     lookupsIncomplete: spf.lookups_incomplete === true,
+    lookupsUnfollowed: spf.lookups_unfollowed === true,
     error: asString(spf.error),
   };
 }

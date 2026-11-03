@@ -18,6 +18,7 @@ function setup(overrides: Partial<EmailSenderSetup> = {}): EmailSenderSetup {
       missingIncludes: [],
       duplicateIncludes: [],
       lookupsIncomplete: false,
+      lookupsUnfollowed: false,
       error: null,
     },
     dmarc: {
@@ -129,7 +130,7 @@ describe("deliverabilityReport", () => {
       "dmarc-policy": "pass",
       "dmarc-reports": "pass",
       alignment: "pass",
-      "dkim-key-acme.example-s1": "pass",
+      "dkim-key-0-acme.example-s1": "pass",
       ptr: "pass",
       helo: "pass",
       tls: "pass",
@@ -173,11 +174,11 @@ describe("deliverabilityReport", () => {
       "dmarc-policy": "warn",
       "dmarc-testing": "warn",
       "dmarc-reports": "warn",
-      "dkim-key-acme.example-s1": "warn",
-      "dkim-key-acme.example-s1-sha1": "fail",
+      "dkim-key-0-acme.example-s1": "warn",
+      "dkim-key-0-acme.example-s1-sha1": "fail",
       // s1 passes, so a retired or missing extra key only adds noise.
-      "dkim-key-acme.example-old": "warn",
-      "dkim-key-acme.example-gone": "warn",
+      "dkim-key-1-acme.example-old": "warn",
+      "dkim-key-2-acme.example-gone": "warn",
       helo: "warn",
       bimi: "warn",
     });
@@ -423,7 +424,7 @@ describe("deliverabilityReport", () => {
     unreachable.auth!.setup = setup({
       dkim: [{ ...setup().dkim[0], key: null, bits: null, error: "lookup failed" }],
     });
-    expect(byId(report(unreachable).findings)["dkim-key-acme.example-s1"]).toBe("info");
+    expect(byId(report(unreachable).findings)["dkim-key-0-acme.example-s1"]).toBe("info");
   });
 
   it("names includes without an SPF record", () => {
@@ -497,8 +498,19 @@ describe("deliverabilityReport", () => {
     gone.auth!.dkim = [{ result: "permerror", domain: "acme.example", selector: "s1" }];
     gone.auth!.setup = setup({ dkim: [{ ...setup().dkim[0], key: null, bits: null }] });
     const goneIds = byId(report(gone).findings);
-    expect(goneIds["dkim-key-acme.example-s1"]).toBe("fail");
+    expect(goneIds["dkim-key-0-acme.example-s1"]).toBe("fail");
     expect(goneIds["dkim-signature-0-acme.example-s1"]).toBeUndefined();
+  });
+
+  it("judges an SPF count with macro includes on what was counted", () => {
+    const macro = email();
+    macro.auth!.setup = setup({ spf: { ...setup().spf!, lookups: 2, lookupsUnfollowed: true } });
+    const finding = report(macro).findings.find((f) => f.id === "spf-lookups");
+    expect(finding).toMatchObject({ status: "pass", title: "SPF takes at least 2 DNS lookups" });
+    expect(finding?.detail).toContain("macros");
+    const close = email();
+    close.auth!.setup = setup({ spf: { ...setup().spf!, lookups: 9, lookupsUnfollowed: true } });
+    expect(byId(report(close).findings)["spf-lookups"]).toBe("warn");
   });
 
   it("names the subdomain policy only when it is the record's sp", () => {

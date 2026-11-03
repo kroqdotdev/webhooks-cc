@@ -125,7 +125,7 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         "spf-record",
         "warn",
         "No SPF record for the HELO name",
-        `The envelope sender is empty (a bounce or automated message), so SPF checked the server's HELO name, ${domain}, which publishes no SPF record. Publishing "v=spf1 a -all" there lets receivers check bounces too.`
+        `The envelope sender is empty (a bounce or automated message), so SPF checked the server's HELO name, ${domain}, which publishes no SPF record.${setup?.helo?.ipLiteral ? " The server introduced itself with an address rather than a name, so give it a hostname first." : ' Publishing "v=spf1 a -all" there lets receivers check bounces too.'}`
       );
     } else if (spf.records === 0) {
       add(
@@ -167,9 +167,14 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
       if (spf.lookups !== null) {
         const count = spf.lookupsCapped
           ? `more than ${spf.lookups}`
-          : spf.lookupsIncomplete
+          : spf.lookupsIncomplete || spf.lookupsUnfollowed
             ? `at least ${spf.lookups}`
             : String(spf.lookups);
+        // Includes with a macro depend on each message and are never
+        // followed; the verdict stands on what was counted.
+        const unfollowed = spf.lookupsUnfollowed
+          ? " Includes with macros are not followed, so they may add more."
+          : "";
         if (spf.lookups > SPF_LOOKUP_LIMIT || spf.lookupsCapped) {
           add(
             "spf-lookups",
@@ -190,14 +195,14 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
             "spf-lookups",
             "warn",
             "SPF is close to its lookup limit",
-            `Checking the record of ${domain} takes ${count} of the ${SPF_LOOKUP_LIMIT} DNS lookups SPF allows. One more include and it fails for every receiver.`
+            `Checking the record of ${domain} takes ${count} of the ${SPF_LOOKUP_LIMIT} DNS lookups SPF allows. One more include and it fails for every receiver.${unfollowed}`
           );
         } else {
           add(
             "spf-lookups",
             "pass",
-            `SPF takes ${plural(spf.lookups, "DNS lookup")}`,
-            `Well within the limit of ${SPF_LOOKUP_LIMIT}.`
+            `SPF takes ${spf.lookupsUnfollowed ? "at least " : ""}${plural(spf.lookups, "DNS lookup")}`,
+            `Well within the limit of ${SPF_LOOKUP_LIMIT}.${unfollowed}`
           );
         }
       }
@@ -211,8 +216,8 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         add(
           "spf-includes",
           "fail",
-          "SPF includes a broken record",
-          `The record of ${domain} reaches domains whose SPF is broken: ${problems.join("; ")}. A receiver that reaches one fails SPF with a permerror. Remove the include, fix its name, or merge the records.`
+          "SPF points at a broken record",
+          `The record of ${domain} includes or redirects to domains whose SPF is broken: ${problems.join("; ")}. A receiver that reaches one fails SPF with a permerror. Remove the include or redirect, fix its name, or merge the records.`
         );
       }
       if (spf.ptr) {
@@ -372,9 +377,10 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
     );
   }
   const keys = setupOk ? setup.dkim : [];
-  for (const key of keys) {
+  for (const [index, key] of keys.entries()) {
     const name = `${key.selector}._domainkey.${key.domain}`;
-    const id = `dkim-key-${key.domain}-${key.selector}`;
+    // The position keeps ids apart whatever names a sender picks.
+    const id = `dkim-key-${index}-${key.domain}-${key.selector}`;
     // A bad extra signature does not matter while another one passes.
     const otherPasses = auth.dkim.some(
       (signature) =>
