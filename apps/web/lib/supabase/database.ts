@@ -884,7 +884,7 @@ export interface Database {
           overage_reporting_to: number | null;
           overage_report_lease: string | null;
           business: boolean;
-          /** The subscription's interval; null while unsubscribed (migration 00082). */
+          /** The subscription's interval; null while unsubscribed (migration 00083). */
           billing_interval: "month" | "year" | null;
           billing_period_end: string | null;
           pending_plan: "team" | "team_business" | null;
@@ -1390,7 +1390,7 @@ export interface Database {
           request_addons: boolean;
           page_addons: boolean;
           annual_billing: boolean;
-          /** Team keys: parsed pages and AI assists are per seat too (migration 00082). */
+          /** Team keys: parsed pages and AI assists are per seat too (migration 00083). */
           per_seat: boolean;
         };
         Insert: Record<string, never>;

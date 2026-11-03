@@ -32,7 +32,7 @@ export interface Team {
   blockRequests: number;
   /**
    * The team is on Team Business: Business's limits per seat and its features
-   * for shared endpoints (the team plan's own product since migration 00082).
+   * for shared endpoints (the team plan's own product since migration 00083).
    */
   business: boolean;
   /** The subscription's interval: annual billing is only for Team Business; null when unsubscribed. */

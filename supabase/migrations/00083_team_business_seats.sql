@@ -1,4 +1,4 @@
--- 00082: Team Business is the team's own seat subscription.
+-- 00083: Team Business is the team's own seat subscription.
 --
 -- Until now Team Business was a $49 add-on subscription next to the team's
 -- seat subscription (00070, kind team_business in capacity_subscriptions),

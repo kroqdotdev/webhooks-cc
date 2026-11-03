@@ -48,7 +48,7 @@ import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
  *
  * Parsed pages (migration 00070) are bought the same three ways, for
  * Business accounts and Team Business teams (the team plan's own product
- * since migration 00082): the same functions with `resource: "pages"`.
+ * since migration 00083): the same functions with `resource: "pages"`.
  *
  * Extra inbound domains (migration 00073) are recurring blocks only, one
  * unit per domain, with the same mid-period add: `resource: "domains"`.

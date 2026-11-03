@@ -120,7 +120,7 @@ const serverEnvSchema = z
     POLAR_OVERAGE_PRODUCT_ID: z.string().optional(),
     // Business (monthly and annual), and Team Business, the seat-based plan
     // product a team's subscription moves to from Teams (monthly and annual,
-    // migration 00082). Optional: without them they are not offered. The
+    // migration 00083). Optional: without them they are not offered. The
     // names differ from the retired $49 add-on's POLAR_TEAM_BUSINESS_PRODUCT_ID
     // so a stale value can never be read as the seat product.
     POLAR_BUSINESS_PRODUCT_ID: z.string().optional(),

@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 /**
  * Business billing (migration 00070) against the local database: the plan
  * webhook for Business and its annual interval, page add-ons that count only
- * with Business, Team Business as the team's own seat plan (migration 00082)
+ * with Business, Team Business as the team's own seat plan (migration 00083)
  * and its per-seat allowance, page overage
  * reporting and the order pages are charged in, and extra inbound domains
  * (migration 00073). Polar is mocked; the

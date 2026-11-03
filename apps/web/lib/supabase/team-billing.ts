@@ -1376,7 +1376,7 @@ async function currentTeamSubscription(
  * team moves up from Teams to Team Business inside it: Polar charged only the
  * remaining share of the period ("invoice"), so the extra requests and pages
  * come in the same share, and the trigger gives the full allowance back when
- * the period moves on (migration 00082). The time it is applied stands in
+ * the period moves on (migration 00083). The time it is applied stands in
  * for the change's: Polar's modified_at does not move with a product change,
  * so a retry grants a little less, never more.
  */
