@@ -70,7 +70,7 @@ test.beforeAll(async ({}, testInfo) => {
           id: "msg_e2e",
           type: "message",
           role: "assistant",
-          model: "claude-opus-5-5",
+          model: "claude-sonnet-5-5",
           content: [{ type: "text", text: JSON.stringify(proposal) }],
           stop_reason: "end_turn",
           stop_sequence: null,
@@ -171,7 +171,7 @@ async function draftAndFind(page: Page) {
   await draft.click();
 
   const panel = section.getByRole("region", { name: "Draft a layout with AI" });
-  await expect(panel.getByText("500 of 500 AI assists left this 30 days.")).toBeVisible();
+  await expect(panel.getByText("250 of 250 AI assists left this 30 days.")).toBeVisible();
   const propose = panel.getByRole("button", { name: "Propose" });
   // Nothing goes out before the consent box is ticked.
   await expect(propose).toBeDisabled();

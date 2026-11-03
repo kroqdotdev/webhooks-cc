@@ -47,6 +47,8 @@ const maxDomains = business.customDomains + MAX_EXTRA_DOMAINS;
 const assists = `${count(free.aiAssists)} AI assists every 30 days on Free, ${count(pro.aiAssists)} on Pro and Teams, ${count(business.aiAssists)} on Business and Team Business`;
 
 const UPDATED = "2026-10-31";
+/** The AI setup page: Business went from 500 assists to 250. */
+const AI_SETUP_UPDATED = "2026-11-03";
 
 export const MAILHOOKS_FEATURES: readonly MailhooksFeature[] = [
   {
@@ -381,7 +383,7 @@ export const MAILHOOKS_FEATURES: readonly MailhooksFeature[] = [
       },
     ],
     docs: { path: "/docs/layouts#set-it-up-with-ai", label: "AI setup in the layouts docs" },
-    updated: UPDATED,
+    updated: AI_SETUP_UPDATED,
   },
   {
     path: "/integrations",

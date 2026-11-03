@@ -48,7 +48,7 @@ beforeAll(async () => {
           id: `msg_${asked.length}`,
           type: "message",
           role: "assistant",
-          model: "claude-opus-5-5",
+          model: "claude-sonnet-5-5",
           content: "refusal" in next ? [] : [{ type: "text", text: JSON.stringify(next.proposal) }],
           stop_reason: "refusal" in next ? "refusal" : "end_turn",
           stop_sequence: null,
@@ -180,11 +180,11 @@ describe("AI setup and repair", () => {
       },
     ]);
     expect(result.dropped).toBe(1);
-    expect(result).toMatchObject({ allowed: 500, used: 1 });
+    expect(result).toMatchObject({ allowed: 250, used: 1 });
 
     expect(asked).toHaveLength(2);
     const first = asked[0].body;
-    expect(first.model).toBe("claude-opus-5-5");
+    expect(first.model).toBe("claude-sonnet-5-5");
     expect(first.fallbacks).toBe("default");
     expect(asked[0].beta).toContain("server-side-fallback-2026-07-01");
     expect(String(first.system)).toContain("untrusted data");

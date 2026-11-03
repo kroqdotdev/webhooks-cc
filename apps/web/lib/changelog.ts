@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.58.3";
+export const APP_VERSION = "0.58.4";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.58.4",
+    date: "2026-11-03",
+    title: "AI Setup on Sonnet",
+    track: "web",
+    items: [
+      "AI setup and repair now runs on Claude Sonnet 5.5, which answers in about half the time. Every proposal is still tested on the emails you picked before you see it",
+      "Business and Team Business include 250 AI assists every 30 days, down from 500. Free keeps 5 and Pro 20",
+    ],
+  },
   {
     version: "0.58.3",
     date: "2026-11-03",

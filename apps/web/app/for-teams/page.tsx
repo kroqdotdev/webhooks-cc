@@ -293,7 +293,7 @@ export default function ForTeamsPage() {
             Need more? The Team Business add-on is $49 a month on the team&apos;s subscription
             (monthly only): 150,000 more requests in the pool, 2,000 pooled parsed attachment pages
             a month with page blocks and page overage, up to 50 layouts per endpoint on shared
-            endpoints, 500 AI assists, one custom inbound domain, file drops, and 90-day retention
+            endpoints, 250 AI assists, one custom inbound domain, file drops, and 90-day retention
             for team-billed requests. Members&apos; personal endpoints follow their own plan.{" "}
             <Link
               href="/docs/plans-limits#teams-and-shared-endpoints"

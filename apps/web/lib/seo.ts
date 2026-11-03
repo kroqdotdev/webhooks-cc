@@ -27,7 +27,7 @@ const SEO_PASS_UPDATED = new Date("2026-10-20T00:00:00.000Z");
 const PLANS_UPDATED = new Date("2026-10-29T00:00:00.000Z");
 
 // Business's custom inbound domains, file drops and AI assists: the plan pages that name them.
-const BUSINESS_FEATURES_UPDATED = new Date("2026-10-31T00:00:00.000Z");
+const BUSINESS_FEATURES_UPDATED = new Date("2026-11-03T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;

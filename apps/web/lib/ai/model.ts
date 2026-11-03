@@ -12,7 +12,7 @@ import { reportError } from "@/lib/observability";
  * proposed, which is then dropped.
  */
 
-export const AI_MODEL = "claude-opus-5-5";
+export const AI_MODEL = "claude-sonnet-5-5";
 /** One request, answer included, at most; the caller's deadline usually ends it sooner. */
 const REQUEST_TIMEOUT_MS = 75_000;
 /** Patterns, names and a condition: a few thousand tokens with the thinking. */
@@ -136,8 +136,9 @@ export async function proposePatterns(ask: ModelAsk, options: ModelCallOptions):
       {
         model: AI_MODEL,
         max_tokens: MAX_TOKENS,
-        // A request a safety classifier declines is run again on the
-        // recommended fallback model instead of failing.
+        // Some declines are run again on the recommended fallback model
+        // (on Sonnet 5.5, cyber and frontier_llm ones, on Sonnet 5); the
+        // other categories end as a refusal below.
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         output_config: { format: betaZodOutputFormat(ProposalSchema), effort: "medium" },
