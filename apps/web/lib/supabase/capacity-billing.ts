@@ -691,7 +691,7 @@ export async function changeMonthlyBlocks(
   if (current.status === "past_due") {
     throw new CapacityError(
       "past_due",
-      "The last payment for your monthly blocks failed. Update your card from the Polar receipt email first."
+      "The last payment for your monthly blocks failed. Update your payment method under Invoices and payment method first."
     );
   }
 
@@ -815,7 +815,7 @@ export async function setOverage(
   if (current?.status === "past_due") {
     throw new CapacityError(
       "past_due",
-      "The last overage payment failed. Update your card from the Polar receipt email first."
+      "The last overage payment failed. Update your payment method under Invoices and payment method first."
     );
   }
   await writeOverageMax(account, maxRequests, resource);

@@ -18,6 +18,7 @@ import { changeCapacity, fetchCapacity } from "@/lib/capacity-api";
 import { copyToClipboard } from "@/lib/clipboard";
 import type { CapacityState } from "@/lib/supabase/capacity-billing";
 import { formatCents } from "@/lib/team-pricing";
+import { BillingPortalLink } from "@/components/billing/billing-portal";
 import {
   addDomainRequest,
   fetchDomains,
@@ -540,7 +541,11 @@ function ExtraDomains({
           </div>
           {blocks?.pastDue && (
             <p className="text-xs text-destructive mt-1">
-              The last payment failed. Update your card from the Polar receipt email.
+              The last payment failed.{" "}
+              <BillingPortalLink accessToken={accessToken} teamId={teamId}>
+                Update your payment method
+              </BillingPortalLink>
+              .
             </p>
           )}
           {blocks?.cancelAtPeriodEnd && (

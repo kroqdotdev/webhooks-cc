@@ -35,6 +35,7 @@ import { changeCapacity, fetchCapacity } from "@/lib/capacity-api";
 import type { CapacityAction } from "@/lib/capacity-route";
 import type { CapacityState } from "@/lib/supabase/capacity-billing";
 import { formatCents } from "@/lib/team-pricing";
+import { BillingPortalLink } from "@/components/billing/billing-portal";
 
 /** Overage maximums offered, in blocks of 25,000 ($4 each). */
 const OVERAGE_MAX_OPTIONS = [5, 10, 25, 50, 100, 250];
@@ -52,6 +53,27 @@ interface PendingChange {
   body: React.ReactNode;
   confirm: string;
   action: CapacityAction;
+}
+
+/** After a failed payment: the portal for whoever can update the card, a pointer otherwise. */
+function CardUpdate({
+  accessToken,
+  teamId,
+  canManage,
+}: {
+  accessToken: string | null;
+  teamId?: string;
+  canManage: boolean;
+}) {
+  if (!canManage) return <>The team owner can update the payment method.</>;
+  return (
+    <>
+      <BillingPortalLink accessToken={accessToken} teamId={teamId}>
+        Update your payment method
+      </BillingPortalLink>
+      .
+    </>
+  );
 }
 
 /**
@@ -357,7 +379,8 @@ export function CapacityPanel({
               )}
               {blocks?.pastDue && (
                 <p className="text-destructive">
-                  The last payment failed. Update your card from the Polar receipt email.
+                  The last payment failed.{" "}
+                  <CardUpdate accessToken={accessToken} teamId={teamId} canManage={canManage} />
                 </p>
               )}
               {manageRenewing && (
@@ -441,8 +464,8 @@ export function CapacityPanel({
                 )}
                 {overage.pastDue && (
                   <p className="text-destructive">
-                    The last overage payment failed, so overage is paused. Update your card from the
-                    Polar receipt email.
+                    The last overage payment failed, so overage is paused.{" "}
+                    <CardUpdate accessToken={accessToken} teamId={teamId} canManage={canManage} />
                   </p>
                 )}
                 {manageRenewing && (

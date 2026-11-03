@@ -5,6 +5,7 @@ import {
   loggablePolarError,
   planForProduct,
   planProductId,
+  polarAppUrl,
   type BillingInterval,
   type PaidPlan,
 } from "@/lib/polar";
@@ -354,6 +355,26 @@ async function revokeSubscriptionQuietly(id: string): Promise<void> {
     );
     throw error;
   }
+}
+
+/**
+ * A link into Polar's customer portal for the account's own Polar customer:
+ * invoices, receipts and the payment method. Plan and seat changes stay in
+ * this app (the portal has them turned off); cancelling there arrives as the
+ * usual subscription webhooks. The link signs whoever holds it in as that
+ * customer for an hour, so it goes only to the signed-in account itself,
+ * and leads back to the plan page on the site the request came from.
+ */
+export async function createCustomerPortalForUser(userId: string): Promise<string> {
+  const user = await getBillingUser(userId);
+  if (!user.polar_customer_id) {
+    throw new BillingActionError("no_customer", "This account has no invoices yet");
+  }
+  const session = await createPolarClient().customerSessions.create({
+    customer_id: user.polar_customer_id,
+    return_url: `${await returnOrigin(polarAppUrl())}/account/plan`,
+  });
+  return session.customer_portal_url;
 }
 
 /**

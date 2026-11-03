@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
+import { BillingPortalButton } from "@/components/billing/billing-portal";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
 import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
@@ -214,7 +215,11 @@ export default function PlanPage() {
         <Suspense fallback={null}>
           <UpgradeSuccessNotice />
         </Suspense>
-        <PastDueBanner subscriptionStatus={profile.subscription_status} plan={profile.plan} />
+        <PastDueBanner
+          subscriptionStatus={profile.subscription_status}
+          plan={profile.plan}
+          accessToken={accessToken}
+        />
         <RetentionGraceNotice profile={profile} />
 
         <Panel
@@ -260,6 +265,7 @@ export default function PlanPage() {
                     profile={profile}
                     onUpdated={refresh}
                   />
+                  <BillingPortalButton accessToken={accessToken} />
                   {billingEnd && !profile.cancel_at_period_end && (
                     <p className="text-sm text-muted-foreground">
                       Next payment on {longDate(billingEnd)}
