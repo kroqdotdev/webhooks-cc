@@ -17,12 +17,12 @@ const FAQ_ITEMS = [
   {
     question: "What is the difference between webhooks.cc and LocalTunnel?",
     answer:
-      "LocalTunnel is a generic tunnel — it forwards traffic to localhost but does not capture, store, or inspect requests. webhooks.cc is a webhook testing platform — it captures every incoming request with headers, body, and metadata, stores them for inspection, and provides replay, SDK assertions, and MCP tooling. If you only need to forward traffic, LocalTunnel works. If you need to see, search, and test what arrived, webhooks.cc is the better fit.",
+      "LocalTunnel is a generic tunnel: it forwards traffic to localhost but does not capture, store, or inspect requests. webhooks.cc is a webhook testing platform: it captures every incoming request with headers, body, and metadata, stores them for inspection, and provides replay, SDK assertions, and MCP tooling. If you only need to forward traffic, LocalTunnel works. If you need to see, search, and test what arrived, webhooks.cc is the better fit.",
   },
   {
     question: "Is LocalTunnel reliable?",
     answer:
-      "LocalTunnel is free and community-maintained. The public server can be unreliable during high-traffic periods, and URLs change on each restart. For consistent development workflows, self-hosting the LocalTunnel server or using a tool with managed infrastructure (like webhooks.cc) provides more stability.",
+      "LocalTunnel is free, but it is effectively unmaintained: the client's last release was in 2021 and its code last changed in 2022, though the public server still hands out URLs. The public server can be unreliable during high-traffic periods, and URLs change on each restart. For consistent development workflows, self-hosting the LocalTunnel server or using a tool with managed infrastructure (like webhooks.cc) provides more stability.",
   },
   {
     question: "Can I use webhooks.cc as a free ngrok/LocalTunnel alternative?",
@@ -39,19 +39,20 @@ const FAQ_ITEMS = [
 const ROWS = [
   ["Primary purpose", "Webhook testing platform", "Free localhost tunnel"],
   ["Tunnel to localhost", "Yes (whk tunnel)", "Yes (lt --port)"],
-  ["Webhook capture & history", "Yes — persistent, searchable", "No"],
-  ["Request inspection", "Yes — dashboard + CLI + SDK", "No"],
-  ["Mock responses", "Yes — per endpoint", "No"],
+  ["Webhook capture & history", "Yes, persistent, searchable", "No"],
+  ["Request inspection", "Yes, dashboard + CLI + SDK", "No"],
+  ["Mock responses", "Yes, rule-based per endpoint", "No"],
   ["Request replay", "Yes", "No"],
   ["Search & filtering", "Yes", "No"],
-  ["TypeScript SDK", "Yes — @webhooks-cc/sdk", "No"],
+  ["SDKs", "TypeScript, Python and Go", "No"],
   ["CI test assertions", "Yes (waitFor + matchers)", "No"],
-  ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
-  ["Stable URLs", "Yes — slug-based", "No — random per session"],
+  ["MCP server for AI agents", "Yes, remote (OAuth) or local", "No"],
+  ["Stable URLs", "Yes, slug-based", "No, random per session"],
   ["Custom subdomains", "No", "Yes (often unavailable)"],
   ["Non-HTTP protocols", "Email capture (no TCP tunnels)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
-  ["Team collaboration", "$12/seat/mo, pooled quota", "None"],
+  ["Maintenance", "Active", "Last client release 2021"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "None"],
   ["Free tier features", "Every Pro feature", "Fully free"],
 ] as const;
 
@@ -87,14 +88,14 @@ export default function CompareLocalTunnelPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs LocalTunnel</h1>
         <p className="text-lg text-muted-foreground mb-10">
           If you need a LocalTunnel alternative with webhook inspection built in, webhooks.cc gives
-          you a free public URL that forwards traffic to localhost — and also captures every
-          request, stores it for inspection, and lets you replay, search, and assert on payloads.
-          Same starting point, different depth.
+          you a free public URL that forwards traffic to localhost, and also captures every request,
+          stores it for inspection, and lets you replay, search, and assert on payloads. Same
+          starting point, different depth.
         </p>
 
         {/* Feature table */}
@@ -136,7 +137,7 @@ export default function CompareLocalTunnelPage() {
             <p className="text-muted-foreground">
               LocalTunnel opens a pipe from the internet to your local port. What goes through the
               pipe is not stored, indexed, or searchable. webhooks.cc captures every request that
-              arrives — you can search headers, inspect JSON bodies, export to CSV, and replay
+              arrives: you can search headers, inspect JSON bodies, export to CSV, and replay
               requests days later. The tunnel is one feature; the platform builds on top of it.
             </p>
           </div>
@@ -144,21 +145,23 @@ export default function CompareLocalTunnelPage() {
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Reliability</h3>
             <p className="text-muted-foreground">
-              LocalTunnel&apos;s public server is community-run and can be unreliable. URLs change
-              every session, and connections sometimes drop. webhooks.cc endpoints use stable
-              slug-based URLs and run on managed infrastructure, so you can configure a webhook
-              sender once and keep receiving.
+              LocalTunnel&apos;s public server is community-run and can be unreliable, and the
+              project has had no client release since 2021. URLs change every session, and
+              connections sometimes drop. webhooks.cc endpoints use stable slug-based URLs and run
+              on managed infrastructure, so you can configure a webhook sender once and keep
+              receiving.
             </p>
           </div>
 
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Beyond the tunnel</h3>
             <p className="text-muted-foreground">
-              webhooks.cc adds a TypeScript SDK for CI test assertions, an MCP server for AI coding
-              agents, configurable mock responses, and a real-time dashboard. For teams, webhooks.cc
-              shares endpoints across a team at $12/seat/month; LocalTunnel has no team or
-              collaboration features. LocalTunnel is a single-purpose tool — and that simplicity is
-              its strength for quick, throwaway tunneling.
+              webhooks.cc adds SDKs for CI test assertions in TypeScript, Python and Go, an MCP
+              server for AI coding agents, configurable mock responses, email capture, and a
+              real-time dashboard. For teams, webhooks.cc shares endpoints across a team at
+              $12/seat/month; LocalTunnel has no team or collaboration features. LocalTunnel is a
+              single-purpose tool, and that simplicity is its strength for quick, throwaway
+              tunneling.
             </p>
           </div>
         </div>

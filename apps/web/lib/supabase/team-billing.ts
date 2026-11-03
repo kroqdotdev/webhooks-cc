@@ -19,7 +19,7 @@ import {
   type SeatChangeQuote,
 } from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
-import { addMonthUtc, remainingShare } from "./billing";
+import { addMonthsUtc, annualQuotaWindow, MIN_ANNUAL_WINDOW_MS, remainingShare } from "./billing";
 import {
   asNonEmptyString,
   asRecord,
@@ -1621,25 +1621,38 @@ async function applyTeamSubscriptionState(
       team.billing_interval !== "year" ||
       (incomingBillingEndMs !== null &&
         (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
-  const period: TeamUpdate = annual
-    ? // A renewal applied after the monthly cron already moved the period on
-      // (more than a month late) keeps the newer period.
-      newYear && incomingPeriodStart && !isStalePeriod
-      ? { period_start: incomingPeriodStart, period_end: addMonthUtc(incomingPeriodStart) }
-      : {}
-    : {
-        period_start: isStalePeriod ? undefined : incomingPeriodStart,
-        period_end: isStalePeriod ? undefined : incomingPeriodEnd,
-      };
   // A year that starts after the cron fallback already moved the quota
-  // period there keeps the usage counted since.
+  // period there keeps the usage counted since. So does a yearly renewal
+  // whose window the cron opened just before (a window that ended off the
+  // anchored boundaries, joined with the rest of the year); a move to
+  // annual always starts a fresh allowance.
   const resetsUsage = annual
     ? isNewSubscription ||
       (newYear &&
         (storedPeriodStartMs === null ||
           incomingPeriodStartMs === null ||
-          storedPeriodStartMs < incomingPeriodStartMs))
+          storedPeriodStartMs <
+            incomingPeriodStartMs - (team.billing_interval === "year" ? MIN_ANNUAL_WINDOW_MS : 0)))
     : isNewSubscription || isRenewal;
+  const period: TeamUpdate = annual
+    ? // A renewal applied after the monthly cron already moved the period on
+      // (more than a month late) keeps the newer period.
+      // A window the cron opened just before keeps its start, which the
+      // parsed pages count from too.
+      newYear && incomingPeriodStart && !isStalePeriod
+      ? {
+          period_start: resetsUsage ? incomingPeriodStart : undefined,
+          // The year's first window, on the boundaries the monthly reset counts.
+          period_end: annualQuotaWindow(
+            incomingPeriodEnd ?? addMonthsUtc(incomingPeriodStart, 12),
+            incomingPeriodStart
+          ).end,
+        }
+      : {}
+    : {
+        period_start: isStalePeriod ? undefined : incomingPeriodStart,
+        period_end: isStalePeriod ? undefined : incomingPeriodEnd,
+      };
 
   // Teams to Team Business inside the period: the extra allowance pro rata
   // (see upgradeProration). Later events in the same window keep it; a new

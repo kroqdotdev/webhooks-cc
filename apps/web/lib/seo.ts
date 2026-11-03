@@ -5,7 +5,7 @@ export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
 export const DEFAULT_PAGE_TITLE = "Webhook Testing Platform: CLI, SDK & MCP";
 export const DEFAULT_PAGE_DESCRIPTION =
-  "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test in CI with the TypeScript SDK, and automate workflows with the MCP server.";
+  "Capture and inspect webhooks and email in real time. Forward to localhost with the CLI, test in CI with the TypeScript, Python and Go SDKs, and automate workflows with the MCP server.";
 export const DEFAULT_OG_IMAGE_PATH = "/og-image.jpg";
 
 export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
@@ -15,19 +15,11 @@ const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
 // The privacy policy alone: retention on Business and Team Business.
 const PRIVACY_UPDATED = new Date("2026-11-03T00:00:00.000Z");
 
-// Email capture and forwarding: the two email pages (fields, reply text, provider shapes).
-const EMAIL_PAGES_UPDATED = new Date("2026-10-25T00:00:00.000Z");
-
-// The Search Console pass: the public Teams page, the landing page that links
-// it, and comparison pages with fresh tables and the questions people (and AI
-// search) ask about them.
-const SEO_PASS_UPDATED = new Date("2026-10-20T00:00:00.000Z");
-
-// The Business plan and Team Business: pages that list the plans and prices.
-const PLANS_UPDATED = new Date("2026-10-29T00:00:00.000Z");
-
-// Business's custom inbound domains, file drops and AI assists: the plan pages that name them.
-const BUSINESS_FEATURES_UPDATED = new Date("2026-11-03T00:00:00.000Z");
+// The staleness pass over the marketing pages: Python and Go SDKs, destinations,
+// stored attachments, mailhooks.cc links, Devin Desktop in the MCP setup.
+const MARKETING_PASS_UPDATED = new Date("2026-11-03T00:00:00.000Z");
+// Compare pages and their checklist, rechecked against each tool's own site.
+const COMPARE_UPDATED = new Date("2026-11-03T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;
@@ -37,7 +29,7 @@ export interface SitemapPageDefinition {
 }
 
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
-  { path: "/", changeFrequency: "weekly", priority: 1, lastModified: BUSINESS_FEATURES_UPDATED },
+  { path: "/", changeFrequency: "weekly", priority: 1, lastModified: MARKETING_PASS_UPDATED },
   // /go permanently redirects to / (the landing page is the guest dashboard now)
   // Individual /webhooks/[provider] pages are appended in app/sitemap.xml/route.ts
   { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
@@ -45,79 +37,84 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/email-testing",
     changeFrequency: "monthly",
     priority: 0.8,
-    lastModified: EMAIL_PAGES_UPDATED,
+    lastModified: MARKETING_PASS_UPDATED,
   },
   {
     path: "/email-to-webhook",
     changeFrequency: "monthly",
     priority: 0.8,
-    lastModified: EMAIL_PAGES_UPDATED,
+    lastModified: MARKETING_PASS_UPDATED,
   },
   {
     path: "/for-teams",
     changeFrequency: "monthly",
     priority: 0.8,
-    lastModified: BUSINESS_FEATURES_UPDATED,
+    lastModified: MARKETING_PASS_UPDATED,
   },
   // Docs pages are auto-generated from content/docs/ in app/sitemap.xml/route.ts
-  { path: "/compare", changeFrequency: "monthly", priority: 0.7, lastModified: PLANS_UPDATED },
+  { path: "/compare", changeFrequency: "monthly", priority: 0.7, lastModified: COMPARE_UPDATED },
   {
     path: "/compare/webhook-site",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: BUSINESS_FEATURES_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/ngrok",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: BUSINESS_FEATURES_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/beeceptor",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/requestbin",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/hookdeck",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: BUSINESS_FEATURES_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/svix",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: BUSINESS_FEATURES_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/stripe-cli",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: SEO_PASS_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/smee",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: BUSINESS_FEATURES_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   {
     path: "/compare/localtunnel",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: PLANS_UPDATED,
+    lastModified: COMPARE_UPDATED,
   },
   // Blog pages are dynamically generated from Supabase in app/sitemap.xml/route.ts
   // /api-explorer is noindexed - client-only Scalar viewer, /docs/api owns this query
-  { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
+  {
+    path: "/installation",
+    changeFrequency: "monthly",
+    priority: 0.8,
+    lastModified: MARKETING_PASS_UPDATED,
+  },
   // /login is noindexed - excluded from sitemap intentionally
   { path: "/changelog", changeFrequency: "weekly", priority: 0.5 },
   { path: "/support", changeFrequency: "monthly", priority: 0.6 },

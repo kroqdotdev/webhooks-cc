@@ -29,7 +29,9 @@ vi.mock("./admin", () => ({
 }));
 
 import {
+  addMonthsUtc,
   addMonthUtc,
+  annualQuotaWindow,
   applyPolarWebhookEvent,
   changePlanForUser,
   createCustomerPortalForUser,
@@ -748,6 +750,177 @@ describe("plan events apply Polar's current state", () => {
       period_end: "2026-09-01T00:00:00.000Z",
     });
     expect(payload).not.toHaveProperty("requests_used");
+  });
+
+  test("a year from the 31st opens its first window on the boundary the reset job counts", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [storedUser({ plan: "pro" })] })
+    );
+
+    await apply(
+      "subscription.updated",
+      subscriptionEvent({
+        product_id: "prod_business_year",
+        current_period_start: "2027-01-31T10:00:00.000000Z",
+        current_period_end: "2028-01-31T10:00:00.000000Z",
+      })
+    );
+
+    expect(userUpdatePayload()).toMatchObject({
+      period_start: "2027-01-31T10:00:00.000Z",
+      period_end: "2027-02-28T10:00:00.000Z",
+      requests_used: 0,
+    });
+  });
+
+  test("a yearly renewal just after the reset job opened a window keeps its usage", async () => {
+    // A window that drifted to the 28th joined the rest of the year when the
+    // job moved it on: the renewal on the 31st must not reset it again.
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          storedUser({
+            plan: "business",
+            billing_interval: "year",
+            billing_period_end: "2028-01-31T10:00:00.000Z",
+            period_start: "2028-01-28T10:00:00.000Z",
+            period_end: "2028-02-29T10:00:00.000Z",
+          }),
+        ],
+      })
+    );
+
+    await apply(
+      "subscription.updated",
+      subscriptionEvent({
+        product_id: "prod_business_year",
+        current_period_start: "2028-01-31T10:00:00.000000Z",
+        current_period_end: "2029-01-31T10:00:00.000000Z",
+      })
+    );
+
+    const payload = userUpdatePayload();
+    expect(payload).toMatchObject({
+      billing_period_end: "2029-01-31T10:00:00.000Z",
+      period_end: "2028-02-29T10:00:00.000Z",
+    });
+    // The window keeps its start (Jan 28), which the parsed pages count from.
+    expect(payload?.period_start).toBeUndefined();
+    expect(payload).not.toHaveProperty("requests_used");
+  });
+
+  test("a yearly renewal a month after the last reset starts a fresh allowance", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          storedUser({
+            plan: "business",
+            billing_interval: "year",
+            billing_period_end: "2028-01-31T10:00:00.000Z",
+            period_start: "2027-12-31T10:00:00.000Z",
+            period_end: "2028-01-31T10:00:00.000Z",
+          }),
+        ],
+      })
+    );
+
+    await apply(
+      "subscription.updated",
+      subscriptionEvent({
+        product_id: "prod_business_year",
+        current_period_start: "2028-01-31T10:00:00.000000Z",
+        current_period_end: "2029-01-31T10:00:00.000000Z",
+      })
+    );
+
+    expect(userUpdatePayload()).toMatchObject({ requests_used: 0 });
+  });
+
+  test("a move to annual days after a monthly renewal still starts a fresh allowance", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          storedUser({
+            plan: "business",
+            billing_interval: "month",
+            period_start: "2026-08-01T00:00:00.000Z",
+            period_end: "2026-08-31T00:00:00.000Z",
+          }),
+        ],
+      })
+    );
+
+    await apply(
+      "subscription.updated",
+      subscriptionEvent({
+        product_id: "prod_business_year",
+        current_period_start: "2026-08-03T00:00:00.000000Z",
+        current_period_end: "2027-08-03T00:00:00.000000Z",
+      })
+    );
+
+    expect(userUpdatePayload()).toMatchObject({
+      period_start: "2026-08-03T00:00:00.000Z",
+      period_end: "2026-09-03T00:00:00.000Z",
+      requests_used: 0,
+    });
+  });
+
+  test("months counted from one date keep its day through short months", () => {
+    expect(addMonthsUtc("2028-01-31T10:00:00.000Z", -11)).toBe("2027-02-28T10:00:00.000Z");
+    expect(addMonthsUtc("2028-01-31T10:00:00.000Z", -10)).toBe("2027-03-31T10:00:00.000Z");
+    expect(addMonthsUtc("2028-01-31T10:00:00.000Z", 1)).toBe("2028-02-29T10:00:00.000Z");
+    expect(addMonthsUtc("2027-01-15T00:00:00.000Z", -13)).toBe("2025-12-15T00:00:00.000Z");
+  });
+
+  test("annual windows keep the year's day and the last ends with the year", () => {
+    const yearEnd = "2028-01-31T10:00:00.000Z";
+    const ends: string[] = [];
+    let from = "2027-01-31T10:00:00.000Z";
+    for (let i = 0; i < 12; i += 1) {
+      const window = annualQuotaWindow(yearEnd, from);
+      expect(window.start).toBe(from);
+      ends.push(window.end.slice(0, 10));
+      from = window.end;
+    }
+    expect(ends).toEqual([
+      "2027-02-28",
+      "2027-03-31",
+      "2027-04-30",
+      "2027-05-31",
+      "2027-06-30",
+      "2027-07-31",
+      "2027-08-31",
+      "2027-09-30",
+      "2027-10-31",
+      "2027-11-30",
+      "2027-12-31",
+      "2028-01-31",
+    ]);
+  });
+
+  test("an annual window holds the later of where the last ended and now", () => {
+    const yearEnd = "2028-01-31T10:00:00.000Z";
+    // A reset job that was down for months grants one window, holding now.
+    expect(
+      annualQuotaWindow(yearEnd, "2027-03-31T10:00:00.000Z", "2027-06-10T00:00:00.000Z")
+    ).toEqual({ start: "2027-05-31T10:00:00.000Z", end: "2027-06-30T10:00:00.000Z" });
+    // Just before a boundary in the same month belongs to the window before.
+    expect(
+      annualQuotaWindow(yearEnd, "2027-03-31T10:00:00.000Z", "2027-04-30T09:59:59.000Z")
+    ).toEqual({ start: "2027-03-31T10:00:00.000Z", end: "2027-04-30T10:00:00.000Z" });
+    // Past the year's end (a late renewal), the windows go on from it.
+    expect(annualQuotaWindow(yearEnd, yearEnd, "2028-02-01T00:00:00.000Z")).toEqual({
+      start: yearEnd,
+      end: "2028-02-29T10:00:00.000Z",
+    });
+  });
+
+  test("a window that drifted off the boundaries joins the next instead of a few days", () => {
+    expect(annualQuotaWindow("2028-01-31T10:00:00.000Z", "2027-11-28T10:00:00.000Z")).toEqual({
+      start: "2027-11-28T10:00:00.000Z",
+      end: "2027-12-31T10:00:00.000Z",
+    });
   });
 
   test("a month added to the 31st lands on the last day of a shorter month", () => {

@@ -3,7 +3,7 @@ title: "Matchers & Helpers"
 description: "Filter, detect, and parse webhook requests and captured emails with built-in matchers for method, header, body, and email matching. Includes provider detection, JSON body parsing, and one-time code and link extraction."
 section: sdk
 order: 4
-lastUpdated: 2026-10-08
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["webhook matchers", "request matching", "webhook body parsing", "provider detection"]
 seo:
@@ -13,7 +13,7 @@ seo:
 
 ## Matchers
 
-Matchers are predicate functions that return `(request) => boolean`. Use them with `waitFor`, `waitForAll`, and `subscribe` to filter incoming requests by method, headers, path, body content, and more.
+Matchers are predicate functions that return `(request) => boolean`. Use them with `waitFor` and `waitForAll`, or to filter what `subscribe` yields, by method, headers, path, body content, and more.
 
 ```ts
 import {

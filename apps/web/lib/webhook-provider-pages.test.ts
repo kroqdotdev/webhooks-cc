@@ -6,7 +6,7 @@ import {
   getWebhookProviderPage,
   getWebhookProvidersLastModified,
   indefiniteArticle,
-  RELATED_LINKS_CHANGED,
+  SHARED_COPY_CHANGED,
   WEBHOOK_PROVIDER_CATEGORIES,
   WEBHOOK_PROVIDER_SLUGS,
 } from "./webhook-provider-pages";
@@ -68,15 +68,15 @@ describe("webhook provider pages", () => {
   });
 
   it("dates pages by their newest change, and the hub by the newest page", () => {
-    // The related-links change on 26 October touched every page, so it is the
-    // floor; an edit of a page's own content after it moves that page on.
+    // The last change to shared copy touched every page, so it is the floor;
+    // an edit of a page's own content after it moves that page on.
     for (const page of pages) {
-      expect(page.lastModified.toISOString().slice(0, 10) >= RELATED_LINKS_CHANGED, page.slug).toBe(
+      expect(page.lastModified.toISOString().slice(0, 10) >= SHARED_COPY_CHANGED, page.slug).toBe(
         true
       );
     }
     expect(getWebhookProviderPage("zapier")?.lastModified.toISOString()).toBe(
-      `${RELATED_LINKS_CHANGED}T00:00:00.000Z`
+      `${SHARED_COPY_CHANGED}T00:00:00.000Z`
     );
     const newest = Math.max(...pages.map((page) => page.lastModified.getTime()));
     expect(getWebhookProvidersLastModified().getTime()).toBe(newest);
@@ -119,6 +119,7 @@ describe("webhook provider pages", () => {
           "2026-10-20T00:00:00.000Z",
           "2026-10-23T00:00:00.000Z",
           "2026-10-26T00:00:00.000Z",
+          `${SHARED_COPY_CHANGED}T00:00:00.000Z`,
         ],
         page.slug
       ).toContain(page.lastModified.toISOString());

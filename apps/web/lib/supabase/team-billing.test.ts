@@ -1710,6 +1710,85 @@ describe("subscription event guards", () => {
     expect(update!.filters).toContainEqual(["eq", "period_start", "2026-08-01T00:00:00.000Z"]);
   });
 
+  test("an annual team's yearly renewal just after the reset job opened a window keeps its usage", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 3,
+              business: true,
+              billing_interval: "year",
+              billing_period_end: "2028-01-31T10:00:00.000Z",
+              period_start: "2028-01-28T10:00:00.000Z",
+              period_end: "2028-02-29T10:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{ data: [{ id: "team_1" }] }, {}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_1", {
+        product_id: "prod_team_business_year_123",
+        current_period_start: "2028-01-31T10:00:00.000Z",
+        current_period_end: "2029-01-31T10:00:00.000Z",
+      })
+    );
+
+    const payload = teamsUpdates()[0].payload;
+    expect(payload).toMatchObject({
+      billing_period_end: "2029-01-31T10:00:00.000Z",
+      period_end: "2028-02-29T10:00:00.000Z",
+    });
+    // The window keeps its start (Jan 28), which the parsed pages count from.
+    expect((payload as Record<string, unknown>).period_start).toBeUndefined();
+    expect(payload).not.toHaveProperty("requests_used");
+  });
+
+  test("an annual team's yearly renewal a month after the last reset starts a fresh window", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 3,
+              business: true,
+              billing_interval: "year",
+              billing_period_end: "2028-01-31T10:00:00.000Z",
+              period_start: "2027-12-31T10:00:00.000Z",
+              period_end: "2028-01-31T10:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{ data: [{ id: "team_1" }] }, {}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_1", {
+        product_id: "prod_team_business_year_123",
+        current_period_start: "2028-01-31T10:00:00.000Z",
+        current_period_end: "2029-01-31T10:00:00.000Z",
+      })
+    );
+
+    expect(teamsUpdates()[0].payload).toMatchObject({
+      period_start: "2028-01-31T10:00:00.000Z",
+      period_end: "2028-02-29T10:00:00.000Z",
+      requests_used: 0,
+    });
+  });
+
   test("a product this deployment does not know keeps the team's plan", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({

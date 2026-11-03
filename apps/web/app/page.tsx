@@ -22,6 +22,7 @@ import { LandingDashboard } from "@/components/landing/landing-dashboard";
 import { TeamsVideo } from "@/components/landing/teams-video";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
+import { mailhooksUrl } from "@/lib/mailhooks-seo";
 import {
   JsonLd,
   softwareApplicationSchema,
@@ -148,22 +149,22 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Do I need an account to test webhooks?",
     answer:
-      "No. This page gives you a live guest webhook URL the moment you arrive — 25 requests, valid for 12 hours, no signup. When you want to keep it, create a free account, one click with GitHub or Google or a short email-and-password sign-up: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
+      "No. This page gives you a live guest webhook URL the moment you arrive: 25 requests, valid for 12 hours, no signup. When you want to keep it, create a free account, one click with GitHub or Google or a short email-and-password sign-up: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
   },
   {
     question: "What do I get when I sign up free?",
     answer:
-      "Everything on the free plan, no credit card: one click via GitHub or Google, or sign up with an email and password (confirm the email and you are in). You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
+      "Everything on the free plan, no credit card: one click via GitHub or Google, or sign up with an email and password (confirm the email and you are in). You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, email capture, forwarding, and full CLI, SDK & MCP access.",
   },
   {
     question: "Can webhooks.cc receive emails?",
     answer:
-      "Yes. Every endpoint on a free or paid account has an email address, your-slug@mailhooks.cc. Emails show up next to your webhooks with the one-time code and link picked out and the SPF, DKIM and DMARC results, and forwarding can post each one to your server as signed JSON. An email counts as one request. Guest endpoints receive HTTP requests only.",
+      "Yes. Every endpoint on a free or paid account has an email address, your-slug@mailhooks.cc. Emails show up next to your webhooks with the one-time code and link picked out and the SPF, DKIM and DMARC results. Layouts can read fields, line items and CSV, Excel or PDF attachments out of each email, and destinations post it to your server as signed JSON, to Slack or Discord, or to Google Sheets. An email counts as one request. Guest endpoints receive HTTP requests only. mailhooks.cc is the mail-first front door to the same account.",
   },
   {
     question: "How do I test webhooks locally?",
     answer:
-      "Run whk tunnel 3000. The CLI creates a public endpoint and forwards every incoming webhook to your local port — method, headers, and body intact. No port forwarding or ngrok needed.",
+      "Run whk tunnel 3000. The CLI creates a public endpoint and forwards every incoming webhook to your local port, with method, headers, and body intact. No port forwarding or ngrok needed.",
   },
   {
     question: "What is a webhook CLI tunnel?",
@@ -171,14 +172,14 @@ const LANDING_FAQ: FAQItem[] = [
       "A tunnel streams HTTP requests from a public URL to your local machine. webhooks.cc creates the endpoint, receives the webhook, and replays it to localhost over SSE. Your local server handles it as if the sender called it directly.",
   },
   {
-    question: "How do I test webhooks in TypeScript?",
+    question: "How do I test webhooks in TypeScript, Python or Go?",
     answer:
-      "Install @webhooks-cc/sdk, create an endpoint, and call client.requests.waitFor() with composable matchers. Assert on method, headers, or body fields. Works with Vitest, Jest, and any Node.js test runner.",
+      "Install @webhooks-cc/sdk, create an endpoint, and call client.requests.waitFor() with composable matchers. Assert on method, headers, or body fields. Works with Vitest, Jest, and any Node.js test runner. The Python SDK (pip install webhooks-cc, with pytest fixtures) and the Go SDK (go get webhooks.cc/go) have the same waits, matchers and signed sends.",
   },
   {
     question: "Can I send signed Stripe, GitHub, Shopify, and Twilio webhooks?",
     answer:
-      "Yes. Use the Send button in the dashboard and select a provider template. webhooks.cc generates realistic payloads and signature headers for 30+ providers so you can test your verification code end-to-end.",
+      "Yes. Use the Send button in the dashboard and select a provider template. webhooks.cc generates realistic payloads and signature headers for 34 providers so you can test your verification code end-to-end.",
   },
   {
     question: "How do I inspect webhook payloads?",
@@ -227,7 +228,7 @@ export default async function Home() {
           steps: [
             {
               name: "Get a URL",
-              text: "Open webhooks.cc — a live guest webhook URL is created the moment the page loads. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
+              text: "Open webhooks.cc: a live guest webhook URL is created the moment the page loads. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
             },
             {
               name: "Point your service",
@@ -259,9 +260,9 @@ export default async function Home() {
         </nav>
       </SiteHeader>
 
-      {/* Hero — the landing screen IS the dashboard, webhook.site style */}
+      {/* Hero: the landing screen IS the dashboard, webhook.site style */}
       <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">
-        {/* Title strip inside the app chrome — the page's H1 lives here */}
+        {/* Title strip inside the app chrome: the page's H1 lives here */}
         <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-2 text-center">
           <h1 className="text-base md:text-xl font-bold tracking-tight leading-snug">
             The fastest way to{" "}
@@ -270,8 +271,8 @@ export default async function Home() {
             </span>
           </h1>
           <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
-            Your free webhook URL is live below — point any service at it. No signup, no credit
-            card. One click with GitHub or Google, or an email signup,{" "}
+            Your free webhook URL is live below. Point any service at it. No signup, no credit card.
+            One click with GitHub or Google, or an email signup,{" "}
             <Link href="/login" className="font-bold text-foreground hover:text-primary">
               keeps it, free
             </Link>
@@ -285,7 +286,7 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* One-click free upgrade — first thing below the app screen */}
+      {/* One-click free upgrade: first thing below the app screen */}
       <section className="py-16 px-4">
         <div className="max-w-6xl mx-auto flex flex-col items-center gap-8">
           <div className="text-center max-w-2xl">
@@ -300,7 +301,7 @@ export default async function Home() {
           <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
             <div className="ui-card ui-card-static">
               <p className="text-xs font-bold caps text-muted-foreground mb-3">
-                Guest URL — what you have now
+                Guest URL: what you have now
               </p>
               <ul className="space-y-2 text-sm">
                 {[
@@ -321,7 +322,7 @@ export default async function Home() {
                 1 click away
               </div>
               <p className="text-xs font-bold caps text-muted-foreground mb-3">
-                Free account — GitHub, Google, or email
+                Free account: GitHub, Google, or email
               </p>
               <ul className="space-y-2 text-sm">
                 {[
@@ -329,6 +330,7 @@ export default async function Home() {
                   "50 requests/day, unlimited endpoints",
                   "7-day request history",
                   "Mock responses & request replay",
+                  "An email address for every endpoint",
                   "Signed Stripe, GitHub, Shopify test webhooks",
                   "CLI tunnel, plus full SDK & MCP access",
                 ].map((item) => (
@@ -390,7 +392,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "You already have one — it went live the moment you opened this page. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
+                  "You already have one: it went live the moment you opened this page. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
               },
               {
                 step: "2",
@@ -402,7 +404,7 @@ export default async function Home() {
                 step: "3",
                 title: "See what arrives",
                 description:
-                  "Headers, body, query params — live. Forward to localhost or assert in tests.",
+                  "Headers, body and query params show up live. Forward to localhost or assert in tests.",
               },
             ].map((item) => (
               <div key={item.step} className="flex gap-4">
@@ -436,7 +438,7 @@ export default async function Home() {
               </div>
               <h3 className="font-bold text-xl mb-2">See requests the moment they arrive</h3>
               <p className="text-muted-foreground">
-                Headers, body, query params — formatted, searchable, and exportable as JSON or CSV.
+                Headers, body, query params: formatted, searchable, and exportable as JSON or CSV.
                 Live updates, no refresh needed.
               </p>
             </div>
@@ -462,8 +464,8 @@ export default async function Home() {
                 , and{" "}
                 <Link href="/webhooks" className="text-primary font-bold hover:underline">
                   30+ more
-                </Link>{" "}
-                — test your verification code end-to-end.
+                </Link>
+                . Test your verification code end-to-end.
               </p>
             </div>
 
@@ -473,8 +475,9 @@ export default async function Home() {
               </div>
               <h3 className="font-bold text-xl mb-2">Return custom mock responses</h3>
               <p className="text-muted-foreground">
-                Set status codes, headers, and body per endpoint. Changes take effect instantly — no
-                deploy, no restart.
+                Set status codes, headers, and body per endpoint, pick one by rules, and fill in{" "}
+                <code className="font-mono font-bold">{"{{ placeholders }}"}</code> from the
+                request. Changes take effect instantly, with no deploy and no restart.
               </p>
             </div>
 
@@ -485,8 +488,8 @@ export default async function Home() {
               <h3 className="font-bold text-xl mb-2">Forward to localhost. Assert in CI.</h3>
               <p className="text-muted-foreground">
                 <code className="font-mono font-bold">whk tunnel</code> forwards webhooks to your
-                local port. The TypeScript SDK waits for events and asserts payload shape in your
-                test suite.
+                local port. The TypeScript, Python and Go SDKs wait for events and assert payload
+                shape in your test suite.
               </p>
             </div>
 
@@ -496,8 +499,9 @@ export default async function Home() {
               </div>
               <h3 className="font-bold text-xl mb-2">Let your AI agent debug webhooks</h3>
               <p className="text-muted-foreground">
-                Connect Claude Code, Cursor, VS Code, or Codex via MCP. Your agent creates
-                endpoints, sends tests, and inspects requests — through natural language.
+                Connect Claude Code, Cursor, VS Code, Codex, claude.ai or ChatGPT to the remote MCP
+                server with one approval. Your agent creates endpoints, sends tests, and inspects
+                requests through natural language.
               </p>
             </div>
 
@@ -521,7 +525,12 @@ export default async function Home() {
             <h3 className="text-2xl md:text-3xl font-bold mb-3">Catch the emails too</h3>
             <p className="text-lg text-muted-foreground mb-8 max-w-2xl">
               Every endpoint on an account also has an email address. Test the emails your app
-              sends, or forward inbound mail to your server as signed JSON.
+              sends, or turn inbound mail into signed JSON, Google Sheets rows or chat messages.
+              Reading orders, bookings or reports out of mail and its attachments? Start at{" "}
+              <a href={mailhooksUrl("/")} className="text-primary font-bold hover:underline">
+                mailhooks.cc
+              </a>
+              , the mail-first side of the same account.
             </p>
 
             <div className="grid md:grid-cols-2 gap-6">
@@ -566,12 +575,12 @@ export default async function Home() {
       {/* Providers */}
       <ProviderStrip />
 
-      {/* Workflow — install + code */}
+      {/* Workflow: install + code */}
       <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">From terminal to test suite</h2>
           <p className="text-xl text-muted-foreground max-w-2xl">
-            Install the CLI, the SDK, or the MCP server — then script every part of the webhook
+            Install the CLI, an SDK, or the MCP server, then script every part of the webhook
             lifecycle.
           </p>
 
@@ -623,7 +632,7 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Teams — dedicated video section */}
+      {/* Teams: dedicated video section */}
       <section className="py-20 px-4 bg-muted">
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
@@ -632,7 +641,7 @@ export default async function Home() {
               <h2 className="text-3xl md:text-4xl font-bold mb-4">Built for teams</h2>
               <p className="text-xl text-muted-foreground mb-8">
                 Create a team, invite your colleagues, and share endpoints. Everyone sees the same
-                incoming webhooks in real time — no more pasting URLs in Slack.
+                incoming webhooks in real time, with no more pasting URLs in Slack.
               </p>
               <Link href="/for-teams" className="ui-btn-primary inline-block">
                 How Teams works
@@ -677,6 +686,7 @@ export default async function Home() {
                   "7-day data retention",
                   "Unlimited endpoints",
                   "20 parsed attachment pages/month",
+                  "Email capture & destinations",
                   "CLI, SDK & MCP access",
                   "Mock responses & replay",
                 ].map((feature) => (
@@ -797,7 +807,7 @@ export default async function Home() {
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  "100,000 pooled requests per seat / 30 days",
+                  "100,000 pooled requests per seat/month",
                   "31-day retention on team traffic",
                   "100 parsed attachment pages/month",
                   "20 AI assists/30 days",
@@ -862,8 +872,7 @@ export default async function Home() {
               {
                 href: "/compare/webhook-site",
                 title: "vs Webhook.site",
-                summary:
-                  "SDK, MCP, and minimal feature gating vs established browser-based inspection.",
+                summary: "SDKs, MCP, and email parsing vs established browser-based inspection.",
               },
               {
                 href: "/compare/ngrok",
@@ -873,7 +882,7 @@ export default async function Home() {
               {
                 href: "/compare/requestbin",
                 title: "vs RequestBin",
-                summary: "Focused webhook testing vs Pipedream workflow automation.",
+                summary: "Focused webhook testing vs Pipedream Workflows, closing in March 2027.",
               },
               {
                 href: "/compare/hookdeck",
@@ -933,7 +942,7 @@ export default async function Home() {
               <PricingCTA />
             </div>
             <p className="text-sm opacity-80 mt-6">
-              No credit card &middot; or scroll up — your guest URL is already live
+              No credit card &middot; or scroll up: your guest URL is already live
             </p>
           </div>
         </div>

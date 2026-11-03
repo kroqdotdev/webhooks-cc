@@ -61,7 +61,8 @@ export default function InstallationPage() {
             <article className="max-w-3xl">
               <h1 className="text-3xl md:text-4xl font-bold mb-4">Installation</h1>
               <p className="text-lg text-muted-foreground mb-8">
-                Install the CLI, SDK, or MCP server for your AI coding agent.
+                Install the CLI, the SDKs for TypeScript, Python and Go, or the MCP server for your
+                AI coding agent.
               </p>
 
               {/* Tab switcher */}
@@ -432,8 +433,8 @@ console.log(endpoint.url);`}
                   </section>
 
                   <section>
-                    <h3 className="text-lg font-bold mb-3">Windsurf</h3>
-                    <CodeBlock>{`npx @webhooks-cc/mcp setup windsurf --api-key ${key}`}</CodeBlock>
+                    <h3 className="text-lg font-bold mb-3">Devin Desktop (formerly Windsurf)</h3>
+                    <CodeBlock>{`npx @webhooks-cc/mcp setup devin --api-key ${key}`}</CodeBlock>
                   </section>
 
                   <section>

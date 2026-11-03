@@ -1269,9 +1269,11 @@ export async function startDrivePick(
 export interface AiAssistInfo {
   /** The server can make assists. */
   offered: boolean;
-  /** Assists the plan has in 30 days, and used of them. */
+  /** Assists the plan has in a rolling 30 days, and used of them. */
   allowed: number;
   used: number;
+  /** When the oldest counted assist stops counting (ISO time); null when none is counted. */
+  nextAt?: string | null;
 }
 
 export type AiAssistAsk =

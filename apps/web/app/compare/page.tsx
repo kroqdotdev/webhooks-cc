@@ -6,7 +6,7 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 export const metadata = createPageMetadata({
   title: "Webhook Testing Tools Compared: Features & Pricing (2026)",
   description:
-    "One feature checklist for webhooks.cc, Webhook.site, RequestBin, Beeceptor, Hookdeck, ngrok, Svix, Stripe CLI, Smee.io and LocalTunnel: history, replay, CLI, CI SDK and MCP.",
+    "One feature checklist for webhooks.cc, Webhook.site, RequestBin, Beeceptor, Hookdeck, ngrok, Svix, Stripe CLI, Smee.io and LocalTunnel: history, replay, CLI, CI SDKs, email and MCP.",
   path: "/compare",
   keywords: [
     "webhook testing tool comparison",
@@ -30,7 +30,7 @@ const COMPARISONS = [
     href: "/compare/webhook-site",
     title: "webhooks.cc vs Webhook.site",
     summary:
-      "Both capture webhooks and email. webhooks.cc adds an SDK for CI assertions, MCP for AI agents, email forwarded as signed JSON, and every Pro feature on the free plan, with Teams billed separately at $12/seat/mo.",
+      "Both capture webhooks and email. webhooks.cc adds SDKs for CI assertions in TypeScript, Python and Go, MCP for AI agents, forwarding to up to 10 destinations with retries, email parsing, and every Pro feature on the free plan.",
   },
   {
     href: "/compare/ngrok",
@@ -42,7 +42,7 @@ const COMPARISONS = [
     href: "/compare/hookdeck",
     title: "webhooks.cc vs Hookdeck",
     summary:
-      "Hookdeck is production webhook infrastructure (retries, routing). webhooks.cc is a development testing tool. They complement each other.",
+      "Hookdeck is a production event gateway. webhooks.cc is built for testing, and still forwards what it captures to up to 10 destinations with filters, throttling and retries. They complement each other.",
   },
   {
     href: "/compare/svix",
@@ -60,25 +60,25 @@ const COMPARISONS = [
     href: "/compare/requestbin",
     title: "webhooks.cc vs RequestBin (Pipedream)",
     summary:
-      "RequestBin evolved into a workflow automation platform. webhooks.cc stays focused on webhook testing and developer tooling.",
+      "RequestBin became part of Pipedream Workflows, which takes no new signups and shuts down on March 31, 2027. webhooks.cc stays focused on webhook and email testing, and sends what arrives to Slack, Discord, Google Sheets, Zapier or Make without workflow code.",
   },
   {
     href: "/compare/beeceptor",
     title: "webhooks.cc vs Beeceptor",
     summary:
-      "Beeceptor excels at API mocking. webhooks.cc excels at capturing and testing real webhook payloads with SDK and MCP.",
+      "Beeceptor excels at API mocking. webhooks.cc excels at capturing and testing real webhook payloads, with rule-based mock responses, SDKs and MCP.",
   },
   {
     href: "/compare/smee",
     title: "webhooks.cc vs Smee.io",
     summary:
-      "Smee.io is a minimal webhook proxy by GitHub. webhooks.cc adds persistent history, replay, SDK assertions, and MCP on top of forwarding.",
+      "Smee.io is a minimal webhook proxy by GitHub. webhooks.cc adds persistent history, replay, SDK assertions, email capture, and MCP on top of forwarding.",
   },
   {
     href: "/compare/localtunnel",
     title: "webhooks.cc vs LocalTunnel",
     summary:
-      "LocalTunnel is a free, simple tunnel. webhooks.cc tunnels too, and also captures, inspects, replays, and tests every request.",
+      "LocalTunnel is a free, simple tunnel that has had no release since 2021. webhooks.cc tunnels too, and also captures, inspects, replays, and tests every request.",
   },
 ] as const;
 
@@ -103,12 +103,12 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Yes",
     "Yes",
     "As workflow triggers",
-    "Request log",
+    "Request log, Team and up",
     "Event log",
     "Local inspector while running",
     "Svix Play / Cloud logs",
     "In Stripe Dashboard only",
-    "No",
+    "Browser only",
     "No",
   ],
   [
@@ -116,7 +116,7 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "To any URL",
     "Yes",
     "Re-trigger workflow",
-    "No",
+    "Not documented",
     "Redelivery",
     "To local upstream",
     "Resend deliveries",
@@ -126,8 +126,8 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
   ],
   [
     "Mock responses",
-    "Yes",
-    "Paid",
+    "Yes, rule-based",
+    "Static free, dynamic paid",
     "Via workflow code",
     "Yes, rule-based",
     "No",
@@ -142,7 +142,7 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Yes",
     "Yes",
     "No",
-    "No",
+    "Yes",
     "Yes",
     "Yes",
     "Yes (Play)",
@@ -150,28 +150,65 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Yes",
     "Yes",
   ],
-  ["SDK assertions in CI", "Yes", "No", "No", "No", "No", "No", "No", "No", "No", "No"],
+  [
+    "SDK assertions in CI",
+    "TypeScript, Python, Go",
+    "No",
+    "No",
+    "No",
+    "No",
+    "No",
+    "No",
+    "No",
+    "No",
+    "No",
+  ],
   [
     "MCP server",
-    "Yes",
+    "Remote (OAuth) or local",
     "No",
-    "No",
-    "No",
-    "Operations only",
-    "No",
-    "App Portal MCP",
+    "App integrations only",
+    "Mock rules and history",
+    "Gateway operations",
+    "Account operations",
+    "App Portal, for end users",
     "Stripe API ops",
     "No",
     "No",
   ],
-  ["Open source", "Yes", "No", "No", "No", "Partially", "Agent only", "Yes", "Yes", "Yes", "Yes"],
+  [
+    "Inbound email",
+    "{slug}@mailhooks.cc or your own domain",
+    "Every URL",
+    "Email trigger",
+    "No",
+    "Via an email provider",
+    "No",
+    "No",
+    "No",
+    "No",
+    "No",
+  ],
+  [
+    "Open source",
+    "Yes",
+    "MIT edition",
+    "No",
+    "No",
+    "CLI, Outpost",
+    "Agent SDKs",
+    "Yes",
+    "Yes",
+    "Yes",
+    "Yes",
+  ],
   [
     "Team plan",
-    "$12/seat/mo, pooled quota",
+    "From $12/seat/mo, pooled quota",
     "Enterprise, from $69/mo",
     "All plans, unlimited members",
-    "Team+ $25/mo",
-    "Team+ $39/mo",
+    "Team $25/mo",
+    "Team from $39/mo",
     "$20/mo incl. 3 seats",
     "Cloud plans, from $20/mo",
     "Via Stripe account",
@@ -182,15 +219,20 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
 
 const FAQ_ITEMS: FAQItem[] = [
   {
+    question: "Which webhook testing tools also capture email?",
+    answer:
+      "webhooks.cc gives every endpoint on an account, free included, an address at {slug}@mailhooks.cc (and your own domain on Business): each email shows its codes, links and SPF, DKIM and DMARC results, layouts read fields, line items and attachments out of it, and destinations send it on as signed JSON, to Google Sheets, Slack, Zapier or Make. mailhooks.cc is the mail-first front door to the same accounts. Webhook.site gives every URL an address, and acting on email there takes its paid Custom Actions. Pipedream's email trigger closes with its Workflows in March 2027, Hookdeck needs an email provider in front of it, and the other tools here handle HTTP only.",
+  },
+  {
     question:
       "What are the best alternatives to Webhook.site for capturing and inspecting webhook payloads?",
     answer:
-      "webhooks.cc works the same way (an instant URL and a live page of every request) and adds a CLI tunnel to localhost, a TypeScript SDK for assertions in CI and an MCP server, with every Pro feature on the free plan. Beeceptor suits API mocking, RequestBin now lives inside Pipedream's workflow platform, and Hookdeck is production delivery infrastructure.",
+      "webhooks.cc works the same way (an instant URL and a live page of every request, and an email address for each account endpoint) and adds SDKs for assertions in CI in TypeScript, Python and Go, forwarding to up to 10 destinations, email parsing and an MCP server, with every Pro feature on the free plan. Beeceptor suits API mocking and Hookdeck is production delivery infrastructure. RequestBin's home, Pipedream Workflows, takes no new signups and shuts down in March 2027.",
   },
   {
     question: "Which webhook tools have a CLI tunnel to localhost and a free tier?",
     answer:
-      "webhooks.cc (whk tunnel, free plan with 50 requests a day and every feature), Hookdeck (hookdeck listen, free tier with limited events), ngrok (free tier), Stripe CLI (stripe listen, for Stripe events only), and the free, open-source Smee.io and LocalTunnel. Only webhooks.cc and Hookdeck also keep a stored cross-provider history of what arrived.",
+      "webhooks.cc (whk tunnel, free plan with 50 requests a day and every Pro feature), Webhook.site (whcli forward), Beeceptor (beeceptor-cli, with tunnels that end with the session on its free plan), Hookdeck (hookdeck listen, free for one user), ngrok (free tier), Stripe CLI (stripe listen, for Stripe events only), and the free, open-source Smee.io and LocalTunnel. Only webhooks.cc and Hookdeck also keep a stored cross-provider history of what arrived.",
   },
   {
     question: "What should I compare when choosing a paid webhook testing tool?",
@@ -205,7 +247,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Which webhook testing tools support teams?",
     answer:
-      "webhooks.cc Teams shares endpoints with signed-in members at $12 per seat per month, with 100,000 requests per seat pooled and 31-day retention. Webhook.site offers team features on Enterprise, Beeceptor and Hookdeck on their Team+ plans, and ngrok includes three seats on its paid plan. Smee.io and LocalTunnel have no accounts.",
+      "webhooks.cc Teams shares endpoints with signed-in members at $12 per seat per month, with 100,000 requests per seat pooled and 31-day retention; Team Business ($35 per seat) gives each seat Business's limits and 90-day retention. Webhook.site offers team features on Enterprise, Beeceptor and Hookdeck on their Team plans, and ngrok includes three seats on its paid plan. Smee.io and LocalTunnel have no accounts.",
   },
 ];
 
@@ -220,12 +262,12 @@ export default function CompareIndexPage() {
       />
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
       <div className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold caps text-muted-foreground mb-3">Updated October 2026</p>
+        <p className="text-xs font-bold caps text-muted-foreground mb-3">Updated November 2026</p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">Webhook testing tools compared</h1>
         <p className="text-lg text-muted-foreground mb-10">
-          Honest, developer-focused comparisons against popular webhook testing alternatives. The
-          checklist below puts them side by side; each page covers features, tradeoffs, and when to
-          choose each tool.
+          Honest, developer-focused comparisons against popular webhook testing alternatives,
+          including how each handles inbound email. The checklist below puts them side by side; each
+          page covers features, tradeoffs, and when to choose each tool.
         </p>
 
         <h2 className="text-2xl font-bold mb-4">Feature checklist</h2>
@@ -270,8 +312,9 @@ export default function CompareIndexPage() {
           </table>
         </div>
         <p className="text-sm text-muted-foreground mb-10">
-          Other tools as listed on their own sites when we compared; check pricing before you buy.
-          Sharing with a team?{" "}
+          Other tools as listed on their own sites when we compared in November 2026; check pricing
+          before you buy. RequestBin lives on Pipedream Workflows, which takes no new signups and
+          shuts down on March 31, 2027. Sharing with a team?{" "}
           <Link href="/for-teams" className="text-primary font-bold hover:underline">
             Webhook testing for teams
           </Link>

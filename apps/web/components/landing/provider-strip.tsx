@@ -15,7 +15,7 @@ export function ProviderStrip() {
           Signed test webhooks for 30+ providers
         </h2>
         <p className="text-xl text-muted-foreground mb-10 max-w-2xl">
-          Realistic sample payloads with valid signature headers — test your verification code
+          Realistic sample payloads with valid signature headers. Test your verification code
           without touching a production account.
         </p>
         <div className="flex flex-wrap gap-3">

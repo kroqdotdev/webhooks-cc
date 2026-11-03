@@ -117,8 +117,8 @@ export function McpInstallGuide() {
       </section>
 
       <section>
-        <h3 className="text-xl font-bold mb-3">Windsurf</h3>
-        <CodeBlock>{`npx @webhooks-cc/mcp setup windsurf --api-key ${key}`}</CodeBlock>
+        <h3 className="text-xl font-bold mb-3">Devin Desktop (formerly Windsurf)</h3>
+        <CodeBlock>{`npx @webhooks-cc/mcp setup devin --api-key ${key}`}</CodeBlock>
       </section>
 
       <section>

@@ -77,7 +77,7 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
     ...(page.seo?.faq ?? []),
     {
       question: `How do I test ${page.label} webhooks without deploying anything?`,
-      answer: `Create a free endpoint on webhooks.cc — sign in with GitHub, Google, or email, or use a guest endpoint without an account — then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
+      answer: `Create a free endpoint on webhooks.cc (sign in with GitHub, Google, or email, or use a guest endpoint without an account), then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
     },
     page.inSdk
       ? {
@@ -111,7 +111,7 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
 
   items.push({
     question: `Is the ${page.label} webhook tester free?`,
-    answer: `Yes. A free account gets you persistent endpoints, 50 requests per day, 7-day retention, and full CLI, SDK, and MCP access — no credit card. You can also try a guest endpoint without an account: up to 25 requests for 12 hours.`,
+    answer: `Yes. A free account gets you persistent endpoints, 50 requests per day, 7-day retention, and full CLI, SDK, and MCP access, with no credit card. You can also try a guest endpoint without an account: up to 25 requests for 12 hours.`,
   });
 
   return items;
@@ -133,7 +133,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
   const howToSteps = [
     {
       name: "Create a webhook endpoint",
-      text: "Sign in free with GitHub, Google, or email to create a persistent endpoint — or grab an instant guest URL at webhooks.cc without an account.",
+      text: "Sign in free with GitHub, Google, or email to create a persistent endpoint, or grab an instant guest URL at webhooks.cc without an account.",
       url: "https://webhooks.cc",
     },
     {
@@ -146,7 +146,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
     },
     {
       name: "Forward to localhost or assert in CI",
-      text: "Run whk tunnel <port> to forward webhooks to a local server, or use the TypeScript SDK to wait for and assert on deliveries in tests.",
+      text: "Run whk tunnel <port> to forward webhooks to a local server, or use the TypeScript, Python or Go SDK to wait for and assert on deliveries in tests.",
     },
   ];
 
@@ -317,7 +317,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                     {page.verifySupported ? (
                       <span className="inline-flex items-center gap-2">
                         <ShieldCheck className="h-4 w-4 text-primary" />
-                        Supported — add your {page.credentialLabel.toLowerCase()} and every request
+                        Supported: add your {page.credentialLabel.toLowerCase()} and every request
                         is checked automatically
                       </span>
                     ) : (
@@ -439,11 +439,12 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <h2 className="text-2xl md:text-3xl font-bold mb-6">Everything in one place</h2>
           <ul className="grid sm:grid-cols-2 gap-3">
             {[
-              "Live dashboard — see deliveries the moment they arrive",
+              "Live dashboard: see deliveries the moment they arrive",
               "Forward to localhost with whk tunnel",
               "Replay any captured request to any URL",
               "Mock responses with custom status, headers, and body",
-              "TypeScript SDK assertions for CI",
+              "Forward to your servers, Slack or Discord",
+              "TypeScript, Python and Go SDKs for CI assertions",
               "MCP server for AI coding agents",
             ].map((item) => (
               <li key={item} className="flex items-start gap-3">

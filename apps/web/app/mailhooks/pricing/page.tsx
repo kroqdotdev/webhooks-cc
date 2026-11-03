@@ -36,7 +36,7 @@ const PLANS = [
     price: "$8",
     note: "a month",
     lines: [
-      "100,000 emails or webhooks per 30 days",
+      "100,000 emails or webhooks a month",
       "100 parsed attachment pages a month",
       "2 layouts per endpoint",
       "20 AI assists every 30 days",

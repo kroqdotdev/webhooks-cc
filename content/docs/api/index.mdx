@@ -3,7 +3,7 @@ title: "REST API"
 description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests and captured emails, configure forwarding, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-10-25
+lastUpdated: 2026-11-03
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -33,8 +33,9 @@ Authorization: Bearer whcc_...
 API keys are generated from the [API keys page](/account/api-keys). Keys use the `whcc_` prefix and are stored as SHA-256 hashes; the raw key is shown only once at creation time.
 
 <Callout type="warning">
-  Some sensitive operations (account deletion, API key management) require a Supabase session token
-  instead of an API key. These operations return `403` when called with an API key.
+  Some sensitive operations (account settings and deletion, API key management, billing, share
+  links, AI setup) require a Supabase session token instead of an API key. These operations return
+  `403` when called with an API key.
 </Callout>
 
 ## Endpoints
@@ -92,6 +93,11 @@ Email and forwarding fields on every endpoint:
 | `forwardRetrySeconds` | How long failed deliveries are retried: `0`, `3600` or `86400`.                                                  |
 | `forwardKeepOrder`  | One delivery at a time, in capture order.                                                                           |
 | `forwardSentField`  | The JSON body field holding the sender's own timestamp, or `null`. See [Timing](/docs/forwarding#timing).           |
+| `destinationCount`  | How many [destinations](#destinations) the endpoint has.                                                            |
+| `signingProvider`, `hasSigningSecret`, `signingHeader` | [Signature verification](/docs/requests#signature-verification) settings; the secret itself is never included. Send `signingProvider`, `signingSecret` and `signingHeader` (for `generic-hmac`) to change them, `null` to clear. |
+| `layouts`, `layoutsCap` | The endpoint's [layouts](/docs/layouts) and how many of them the plan applies. Send the whole list to change it, `null` or `[]` to remove them. |
+| `retentionDays`, `retentionCapDays` | The endpoint's own retention in days (`null`: the plan's) and the most it can be on the plan. |
+| `deleteAfterDelivery` | Whether requests are deleted once every destination has them ("deliver, then delete").                          |
 
 ### List endpoints
 
@@ -111,7 +117,7 @@ curl https://webhooks.cc/api/endpoints/abc123 \
 
 ### Update endpoint
 
-Update an endpoint's name, mock response, notification webhook, or email settings. Only the fields you send change.
+Update an endpoint's name, mock response, notification webhook, signing, email, layout or retention settings. Only the fields you send change.
 
 ```bash
 curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
@@ -124,7 +130,7 @@ Set `"mockResponse": null` to clear the mock response and return to the default 
 
 Set `"showEmailExtracts": false` to stop picking out codes and links in emails. The `forward*` fields are covered under [Forwarding](#forwarding).
 
-Team members can change `name`, `mockResponse`, and `responseRules` on shared endpoints. `showEmailExtracts`, `site` and the notification, signing, and forwarding settings are owner only and return `403` for anyone else, because `showEmailExtracts` also decides what forwarding sends and `site` where the endpoint is listed for everyone.
+Team members can change `name`, `mockResponse`, and `responseRules` on shared endpoints. `showEmailExtracts`, `site`, `emailFields`, `layouts`, `retentionDays`, `deleteAfterDelivery` and the notification, signing, and forwarding settings are owner only and return `403` for anyone else, because `showEmailExtracts` also decides what forwarding sends and `site` where the endpoint is listed for everyone.
 
 ### Favourite an endpoint
 
@@ -213,7 +219,7 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
 
 `detectedProvider` and `detectedEvent` are best-effort metadata derived from headers and body shape. They power the provider icon and event badge in the dashboard. Signature fields are present when endpoint-level verification is configured.
 
-`kind` is `email` for [captured emails](/docs/email-capture). Those have `method` set to `EMAIL`, the recipient address as `path`, the original message as `body`, and the parsed message (subject, addresses, text and HTML parts, attachment list, sender checks) as `email`.
+`kind` is `email` for [captured emails](/docs/email-capture). Those have `method` set to `EMAIL`, the recipient address as `path`, the original message as `body`, and the parsed message (subject, addresses, text and HTML parts, attachment list, sender checks) as `email`. On an endpoint with [layouts](/docs/layouts), an email also carries `parsed`: the layout that matched, its fields, line items and parsed attachments.
 
 Add `extracts=true` to the request list, the paginated list or a single request, and each email also carries `extracts`: the one-time codes found in it, in the order they appear, and its links, the one it asks you to click first: the same ones the dashboard shows. A signup or login test usually needs only `extracts.codes[0]` or `extracts.links[0].url`. `extracts` is `null` when the endpoint's `showEmailExtracts` is off; HTTP requests never have it. At most 20 codes and 20 links are returned. Search and the stream do not offer it.
 
@@ -260,6 +266,8 @@ Delete all captured requests for an endpoint without deleting the endpoint itsel
 curl -X DELETE "https://webhooks.cc/api/endpoints/abc123/requests" \
   -H "Authorization: Bearer whcc_..."
 ```
+
+Add `?before=<timestamp in ms>` to delete only requests received before then.
 
 ## Send test webhook
 
@@ -468,7 +476,7 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
 | `POST /api/endpoints/:slug/destinations/:id/test`  | Send one delivery now (`kind`, `requestId`), as the forwarding test above, plus `filterPasses`            |
 | `POST /api/endpoints/:slug/destinations/preview`   | Dry run: `destinationId` and/or unsaved `destination` fields, optional `requestId`; nothing is sent       |
 
-A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template`, `chat`, or a mail provider's shape for emails: `postmark`, `sendgrid`, `mailgun`, `cloudmailin`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `mailgunSigningKey` (for `mailgun`; write-only, the destination says `hasMailgunSigningKey`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600) and `position`. A mistake in a template or a condition returns `400` naming the field. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
+A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template`, `chat`, or a mail provider's shape for emails: `postmark`, `sendgrid`, `mailgun`, `cloudmailin`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `mailgunSigningKey` (for `mailgun`; write-only, the destination says `hasMailgunSigningKey`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600), `attachments` (how an email's files travel: `links`, `inline` or `none`) and `position`. [Google Sheets](/docs/forwarding#google-sheets) (`sheets`) and [file drop](/docs/forwarding#file-drops) (`file_drop`, Business) destinations keep their settings in `config` and are easiest to set up in the dashboard. A mistake in a template or a condition returns `400` naming the field. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
 
 ## Search
 
@@ -522,7 +530,7 @@ data: {"_id":"...","_creationTime":1234567890000,"endpointId":"...","method":"PO
 
 ```
 
-The server sends keepalive pings (`:ping`) every 30 seconds to keep the connection alive. Maximum connection duration is 30 minutes; reconnect when the stream closes.
+The stream opens with a `connected` event (`{ "slug", "endpointId" }`). The server sends a keepalive comment (`: keepalive`) every 30 seconds to keep the connection alive. Maximum connection duration is 30 minutes: a `timeout` event comes before the stream closes, so reconnect then. `endpoint_deleted` means the endpoint is gone.
 
 A stream message names the request id `_id` (not `id`) and has no `email` field. Emails arrive as `request` events too, with `"kind": "email"`, `"method": "EMAIL"` and the recipient address as `path`; fetch the request by its `_id` for the parsed message.
 
@@ -546,15 +554,17 @@ curl https://webhooks.cc/api/usage \
   "creditRequests": 0,
   "overage": { "active": false, "used": 0, "max": 0 },
   "plan": "free",
-  "periodEnd": 1234567890000
+  "periodEnd": 1234567890000,
+  "teamBilledEndpoints": 0,
+  "emails": 3
 }
 ```
 
-`limit` is the period's quota including monthly blocks (`blockRequests`), and `used` counts against it. `remaining` is how many more requests are accepted this period: what is left of `limit`, plus one-time blocks (`creditRequests`), plus overage up to its maximum. See [Extra requests](/docs/plans-limits#extra-requests).
+`limit` is the period's quota including monthly blocks (`blockRequests`), and `used` counts against it. `remaining` is how many more requests are accepted this period: what is left of `limit`, plus one-time blocks (`creditRequests`), plus overage up to its maximum. See [Extra requests](/docs/plans-limits#extra-requests). `emails` is how many of `used` were emails, and `teamBilledEndpoints` how many of your endpoints are shared with a subscribed team and bill its pooled quota instead.
 
 ## Teams
 
-Manage teams, share endpoints, and invite members. Any account can create a team; inviting members and sharing endpoints require the team to have an active Teams subscription ($12/seat/month).
+Manage teams, share endpoints, and invite members. Any account can create a team; inviting members and sharing endpoints require the team to have an active [Teams or Team Business](/docs/teams) subscription.
 
 ### List teams
 
@@ -715,7 +725,13 @@ Some routes require a Supabase session token (from browser login) instead of an 
 - `GET /api/api-keys`: list your API keys
 - `POST /api/api-keys`: create a new API key
 - `DELETE /api/api-keys?id=...`: delete an API key
+- `PATCH /api/account`: change account settings
 - `DELETE /api/account`: delete your account and all data
+- `/api/billing/*` and `/api/teams/:id/billing/*`: plans, seats, extra capacity, checkout and cancellation
+- `/api/requests/:id/shares` and `/api/request-shares`: create, list and revoke [share links](/docs/dashboard-features#share-a-request)
+- `/api/endpoints/:slug/layouts/assist`: [AI setup](/docs/layouts#set-it-up-with-ai) for layouts and email fields
+- `/api/agent/registrations`: list and disconnect [connected agents](/docs/agents)
+- `/api/domains`: add, verify and remove [custom inbound domains](/docs/email-capture#your-own-domain)
 
 These routes are designed for the web dashboard, not programmatic access.
 

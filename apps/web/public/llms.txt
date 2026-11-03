@@ -1,12 +1,12 @@
 # webhooks.cc
 
-> Webhook testing tools for developers. Capture, inspect, forward, and test webhooks with a dashboard, CLI, TypeScript SDK, and MCP server for AI agents.
+> Webhook and email testing tools for developers. Capture, inspect, forward, and test webhooks and email with a dashboard, CLI, SDKs for TypeScript, Python and Go, and an MCP server for AI agents.
 
 ## What is webhooks.cc?
 
 webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses with conditional rules (route different responses based on method, path, headers, body, or query params), forward webhooks to localhost for local development, and write automated test assertions against captured requests.
 
-Every endpoint on an account also receives email at its own address, so a signup flow that sends a webhook and a confirmation email can be checked in one place, and captured email can be forwarded to your server as signed JSON.
+Every endpoint on an account also receives email at its own address, so a signup flow that sends a webhook and a confirmation email can be checked in one place, and captured email can be parsed with layouts and forwarded to your server as signed JSON, to Google Sheets or to a chat channel. mailhooks.cc is the mail-first front door to the same accounts, endpoints and plans.
 
 Requests are captured by a Rust receiver, written directly to Postgres via a single stored procedure, and surfaced in the dashboard through Supabase Realtime.
 
@@ -14,24 +14,28 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 
 - Webhook capture: Send any HTTP request to https://go.webhooks.cc/w/<slug> and inspect it instantly
 - Email capture: Every endpoint on an account receives email at <slug>@mailhooks.cc; each email is stored as a request with `kind: "email"` and the parsed message, and the dashboard shows its one-time codes, links, and SPF, DKIM and DMARC results
-- Email forwarding: Forward every email an endpoint captures to your HTTPS URL as parsed JSON, signed with Standard Webhooks headers and retried for about a day
-- Mock responses: Configure status codes, headers, and response bodies per endpoint, with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins)
+- Forwarding: up to 10 destinations per endpoint, each with its own kinds (HTTP, email or both), filter, format, throttle and delay: HTTP requests relayed as received, emails as parsed JSON signed with Standard Webhooks headers, your own JSON template with `{{ placeholders }}`, a Slack or Discord message, Google Sheets rows, a mail provider's inbound shape (Postmark, SendGrid, Mailgun, CloudMailin), or a file drop to SFTP, FTP/FTPS or S3 (Business); retried for about a day and logged
+- Layouts: read named fields and line items out of each email and parse CSV, TSV, Excel, OpenDocument and PDF text attachments before it is delivered; AI setup proposes the patterns from emails you pick, with your consent per request
+- Zapier and Make: apps that add a destination to an endpoint when a Zap or scenario turns on
+- Mock responses: Configure status codes, headers, and response bodies per endpoint, with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins), and `{{ placeholders }}` filled in from the request
 - CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>`, no port forwarding or ngrok needed
-- TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming; `client.emails.waitFor()` and `extractCode()` for email tests, `client.forwarding` and `verifyForwardedEmail()` for email forwarding
+- TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming; `client.emails.waitFor()` and `extractCode()` for email tests, `client.destinations` (and `client.forwarding` for the primary destination) and `verifyForwardedEmail()` for forwarding
 - Python and Go SDKs: `webhooks-cc` on PyPI and `webhooks.cc/go`, with the same waits, signed sends and signature checks, plus pytest fixtures and Go test helpers
 - MCP server: the remote server at https://webhooks.cc/mcp connects coding agents (Claude Code, Cursor, VS Code, Codex) and hosted agents (claude.ai, ChatGPT) with one OAuth approval in the browser; the local `@webhooks-cc/mcp` adds sends to localhost and a keyless sandbox
 - Agent sandbox: AI agents capture webhooks without an account (3 endpoints for 24 hours) and connect to a human's account once; the connection is saved and shared by the MCP server, the SDKs and the CLI
 - Real-time streaming: Dashboard updates via Supabase Realtime Broadcast signals, CLI and SDK via Server-Sent Events
 - Request replay: Resend captured requests to any URL
-- Provider detection: Built-in helpers for Stripe, GitHub, Shopify, Slack, Twilio, Paddle, and Linear webhooks
+- Share links: a frozen, read-only copy of one request at `/s/<token>`, with credential headers removed
+- Teams: share endpoints with a team on its own per-seat subscription and pooled quota
+- Signed test webhooks and signature verification: templates for 34 providers (Stripe, GitHub, Shopify, Slack, Twilio, Paddle, Linear and more), verification of 32 of them (Standard Webhooks included) and of any generic HMAC header on captured requests, and a detection helper for each
 
 ## Pricing
 
 - Guest (no signup): 25 requests per ephemeral endpoint, deleted after 12 hours, no email capture
 - Free: 50 requests per 24 hours, unlimited endpoints, 7-day retention, 20 parsed attachment pages a month, 2 layouts per endpoint, 5 AI assists every 30 days, every Pro feature including email capture, Google Sheets and chat destinations and full CLI/SDK/MCP access
-- Pro ($8/month): 100,000 requests per 30 days, 31-day retention, 100 parsed attachment pages a month, 20 AI assists every 30 days, extra requests in blocks of 25,000
+- Pro ($8/month): 100,000 requests a month, 31-day retention, 100 parsed attachment pages a month, 20 AI assists every 30 days, extra requests in blocks of 25,000
 - Business ($29/month or $290/year): 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month (then page blocks or page overage), up to 50 layouts per endpoint, 250 AI assists every 30 days, one custom inbound domain (extra ones $3/month), file drops to SFTP, FTP/FTPS or S3, extra requests as on Pro; on annual billing requests and pages still reset every month
-- Teams ($12/seat/month, from 2 seats): a separate per-team subscription; each seat adds 100,000 requests per 30 days to a pooled team quota, and requests on endpoints shared with the team are kept 31 days
+- Teams ($12/seat/month, from 2 seats): a separate per-team subscription; each seat adds 100,000 requests a month to a pooled team quota, and requests on endpoints shared with the team are kept 31 days
 - Team Business ($35/seat/month or $350/seat/year, from 2 seats): the team plan with Business per seat: 250,000 requests, 2,000 parsed pages and 250 AI assists per seat, pooled, up to 50 layouts per shared endpoint, one custom inbound domain, file drops and 90-day retention for team-billed requests
 - Emails count against the same quota as webhooks: one request per email per endpoint
 
@@ -54,7 +58,10 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - AI agents (start here, sandbox, connecting an account, OAuth apps, the credential file): https://webhooks.cc/docs/agents
 - Agent skill and Claude Code plugin: https://webhooks.cc/docs/mcp/skills, teaches coding agents to test webhook handlers with signed payloads and generate payload types from captures
 - Email capture: https://webhooks.cc/docs/email-capture
-- Email forwarding: https://webhooks.cc/docs/forwarding
+- Forwarding and destinations: https://webhooks.cc/docs/forwarding
+- Layouts and attachment parsing: https://webhooks.cc/docs/layouts
+- Plans and limits: https://webhooks.cc/docs/plans-limits
+- Teams: https://webhooks.cc/for-teams and https://webhooks.cc/docs/teams
 - Zapier and Make (the apps, in review, and the catch hook that works today): https://webhooks.cc/docs/zapier-make
 - Email testing overview: https://webhooks.cc/email-testing
 - Email to webhook overview: https://webhooks.cc/email-to-webhook
@@ -92,7 +99,7 @@ Take the first option that fits.
 
 Options 2 to 5 are the fallback, and they start in the sandbox. It needs nothing from your human: it is free, anonymous, isolated from every account, and deleted after 24 hours. It lacks more than 3 endpoints, mock responses, forwarding, signature checks and email. Pick it when nobody wants an account, for throwaway captures, in CI, or with no human present. Your human can still keep what you made there through the claim; the remote server does not move sandbox endpoints into the account.
 
-2. The local MCP server, for clients that run local (stdio) servers: `claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`, or `npx -y @webhooks-cc/mcp setup cursor` (or `vscode`, `codex`, `windsurf`, `claude-desktop`). No key needed: your first `create_endpoint` registers a sandbox; `connect_account` then `wait_for_connection` moves everything into your human's account. Connected to an account (an API key or a claim), the local server is also the one you need to send to localhost (`send_to`, `replay_request`, `targetUrl`) and for its prompts and resources, which the remote server lacks.
+2. The local MCP server, for clients that run local (stdio) servers: `claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`, or `npx -y @webhooks-cc/mcp setup cursor` (or `vscode`, `codex`, `devin` for Devin Desktop, formerly Windsurf, `claude-desktop`). No key needed: your first `create_endpoint` registers a sandbox; `connect_account` then `wait_for_connection` moves everything into your human's account. Connected to an account (an API key or a claim), the local server is also the one you need to send to localhost (`send_to`, `replay_request`, `targetUrl`) and for its prompts and resources, which the remote server lacks.
 3. Claude Code with plugins: `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc` (the local MCP server plus the webhook-testing skill).
 4. You can run code. Each of these registers, solves the proof of work and reuses the sandbox on the next run:
    - Python: `pip install webhooks-cc`, then `WebhooksCC.sandbox()`
@@ -226,10 +233,10 @@ The local server, `@webhooks-cc/mcp`, is for sending to localhost, its prompts a
 # Claude Code, local MCP server only
 claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
-# Cursor / VS Code / Windsurf (also codex and claude-desktop)
+# Cursor / VS Code / Devin Desktop, formerly Windsurf (also codex and claude-desktop)
 npx @webhooks-cc/mcp setup cursor
 npx @webhooks-cc/mcp setup vscode
-npx @webhooks-cc/mcp setup windsurf
+npx @webhooks-cc/mcp setup devin
 ```
 
 `WHK_API_KEY` is optional. Without it the local server starts with the full tools when the human connected the agent before (saved in the agent credential file), and otherwise in the keyless sandbox, where `connect_account` and `wait_for_connection` connect an account. To start with your account's tools, set `WHK_API_KEY` or pass `--api-key whcc_...` to `setup`.
