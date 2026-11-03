@@ -54,10 +54,14 @@ async function verifyOtp(request: Request): Promise<Response> {
       });
     }
 
-    if (result.error === "otp_invalid" || result.error === "too_many_keys") {
+    if (
+      result.error === "otp_invalid" ||
+      result.error === "too_many_keys" ||
+      result.error === "interaction_required"
+    ) {
       await auditAgentEvent(request, {
         action: "agent.claim.refused",
-        status: result.error === "otp_invalid" ? 401 : 429,
+        status: result.error === "otp_invalid" ? 401 : result.error === "too_many_keys" ? 429 : 403,
         metadata: { flow: "verified_email", code: result.error },
       });
     }
@@ -75,6 +79,16 @@ async function verifyOtp(request: Request): Promise<Response> {
         return Response.json({ error: "invalid_claim_token" }, { status: 400 });
       case "too_many_keys":
         return Response.json({ error: "too_many_keys" }, { status: 429 });
+      case "interaction_required":
+        // The account has two-factor sign-in: an emailed code is not enough.
+        return Response.json(
+          {
+            error: "interaction_required",
+            error_description:
+              "This account uses two-factor sign-in. Sign in to webhooks.cc and connect the agent from there.",
+          },
+          { status: 403 }
+        );
       default:
         // Exhaustive over VerifyOtpResult["error"]; guard any future variant so
         // the handler never falls through without a response.

@@ -92,7 +92,7 @@ export function OpsInbox({ number }: { number: string | null }) {
   }, [token, view]);
 
   const loadTicket = useCallback(async () => {
-    if (!number) {
+    if (!number || !/^\d{1,12}$/.test(number)) {
       setSelected(null);
       return;
     }

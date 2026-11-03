@@ -129,6 +129,11 @@ export function TicketView({ number }: { number: string }) {
     Number.isInteger(rateParam) && rateParam >= 1 && rateParam <= 5 ? rateParam : null;
 
   const load = useCallback(async () => {
+    // Only a ticket number goes into an API path.
+    if (!/^\d{1,12}$/.test(number)) {
+      setNotFound(true);
+      return;
+    }
     try {
       setTicket(await apiFetch<SupportTicketDetail>(token, `/api/support/tickets/${number}`));
       setError(null);
