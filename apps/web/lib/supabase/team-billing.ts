@@ -862,7 +862,7 @@ export async function changeTeamPlan(
   teamId: string,
   plan: TeamPlan,
   interval: BillingInterval
-): Promise<{ applied: "now" | "renewal" }> {
+): Promise<{ applied: "now" | "renewal"; seatReductionLost?: number }> {
   const { team, productId, applies } = await teamForPlanChange(userId, teamId, plan, interval);
   const polar = createPolarClient();
 
@@ -884,6 +884,28 @@ export async function changeTeamPlan(
       );
     }
     throw error;
+  }
+
+  // An immediate product switch clears Polar's pending update, a scheduled
+  // seat reduction included (checked in the sandbox), so it is scheduled
+  // again, as keepTeamPlan does. A failure is told to the owner, never
+  // thrown: the plan change itself has been made and charged.
+  let seatReductionLost: number | undefined;
+  if (applies === "now" && team.pending_seats !== null && team.pending_seats < team.seats) {
+    try {
+      updated = (await polar.subscriptions.update(team.polar_subscription_id, {
+        seats: team.pending_seats,
+        proration_behavior: "next_period",
+      })) as unknown as Record<string, unknown>;
+      updatedAt = new Date();
+    } catch (seatError) {
+      reportError(
+        "[team-billing] changed the plan but could not schedule the seat reduction again",
+        loggablePolarError(seatError),
+        { teamId }
+      );
+      seatReductionLost = team.pending_seats;
+    }
   }
 
   // Polar has made the change (and charged for an upgrade), so nothing below
@@ -911,7 +933,9 @@ export async function changeTeamPlan(
       );
     }
   }
-  return { applied: applies };
+  return seatReductionLost === undefined
+    ? { applied: applies }
+    : { applied: applies, seatReductionLost };
 }
 
 /**

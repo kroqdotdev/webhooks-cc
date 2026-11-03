@@ -1889,6 +1889,48 @@ describe("changeTeamPlan", () => {
     );
   });
 
+  test("an upgrade schedules a pending seat reduction again, since the switch clears it", async () => {
+    freezeClock();
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed({ seats: 4, pending_seats: 3 })));
+    const update = vi
+      .fn()
+      .mockResolvedValueOnce({ id: "sub_1", product_id: "prod_team_business_123", seats: 4 })
+      .mockResolvedValueOnce({
+        id: "sub_1",
+        product_id: "prod_team_business_123",
+        seats: 4,
+        pending_update: { product_id: null, seats: 3 },
+      });
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: { update, get: vi.fn().mockResolvedValue({ id: "sub_1" }) },
+    });
+
+    await expect(changeTeamPlan("user_1", "team_1", "team_business", "month")).resolves.toEqual({
+      applied: "now",
+    });
+    expect(update).toHaveBeenNthCalledWith(2, "sub_1", {
+      seats: 3,
+      proration_behavior: "next_period",
+    });
+  });
+
+  test("an upgrade says so when the seat reduction cannot be scheduled again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed({ seats: 4, pending_seats: 3 })));
+    const update = vi
+      .fn()
+      .mockResolvedValueOnce({ id: "sub_1", product_id: "prod_team_business_123", seats: 4 })
+      .mockRejectedValueOnce(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: { update, get: vi.fn().mockResolvedValue({ id: "sub_1" }) },
+    });
+
+    await expect(changeTeamPlan("user_1", "team_1", "team_business", "month")).resolves.toEqual({
+      applied: "now",
+      seatReductionLost: 3,
+    });
+  });
+
   test("a move to annual applies now, a move down waits for the renewal", async () => {
     freezeClock();
     const update = vi.fn().mockResolvedValue({

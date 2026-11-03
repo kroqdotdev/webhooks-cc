@@ -118,8 +118,14 @@ comment on column public.teams.billing_period_end is
   'End of Polar''s billing period; period_start/period_end are the monthly quota period.';
 comment on column public.teams.pending_plan is
   'The plan Polar applies at the renewal (pending_update.product_id): team or team_business.';
+comment on column public.teams.pending_interval is
+  'The billing interval of pending_plan: month, or year for annual Team Business.';
 comment on column public.teams.prorated_window is
   'The quota period an upgrade made mid-period was granted pro rata for (prorated_seat_*).';
+comment on column public.teams.prorated_seat_requests is
+  'Requests per seat for prorated_window, between the old plan''s and the new one''s.';
+comment on column public.teams.prorated_seat_pages is
+  'Parsed pages per seat for prorated_window, between the old plan''s and the new one''s.';
 
 alter table public.teams drop constraint if exists teams_billing_interval_check;
 alter table public.teams
@@ -184,8 +190,8 @@ $$;
 
 revoke execute on function public.team_request_limit() from public, anon, authenticated;
 
-drop trigger if exists teams_request_limit on public.teams;
-create trigger teams_request_limit
+-- Replaced in one statement, so no seat change lands between a drop and a create.
+create or replace trigger teams_request_limit
   before insert or update of seats, business, request_limit, period_start,
     prorated_window, prorated_seat_requests on public.teams
   for each row
@@ -345,8 +351,7 @@ $$;
 
 revoke execute on function public.sync_team_business_addons() from public, anon, authenticated;
 
-drop trigger if exists teams_sync_business_addons on public.teams;
-create trigger teams_sync_business_addons
+create or replace trigger teams_sync_business_addons
   after update of business, subscription_status on public.teams
   for each row
   when (old.business is distinct from new.business

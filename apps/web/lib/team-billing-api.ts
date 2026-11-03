@@ -116,13 +116,13 @@ export async function changeTeamPlan(
   teamId: string,
   plan: TeamPlan,
   interval: TeamInterval
-): Promise<{ applied: "now" | "renewal" }> {
+): Promise<{ applied: "now" | "renewal"; seatReductionLost?: number }> {
   const response = await fetch(
     `/api/teams/${teamId}/billing/plan`,
     billingRequest(accessToken, { plan, interval })
   );
   if (!response.ok) throw new Error(await readError(response));
-  return (await response.json()) as { applied: "now" | "renewal" };
+  return (await response.json()) as { applied: "now" | "renewal"; seatReductionLost?: number };
 }
 
 /** Drops a plan change waiting for the renewal. */

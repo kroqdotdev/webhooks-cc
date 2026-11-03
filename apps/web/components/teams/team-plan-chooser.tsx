@@ -121,7 +121,11 @@ export function TeamPlanChooser({
       // A change at the renewal shows as the pending line instead.
       setNotice(
         result.applied === "now"
-          ? `${teamPlanLabel(option.plan, option.interval)} starts now.`
+          ? `${teamPlanLabel(option.plan, option.interval)} starts now.${
+              result.seatReductionLost !== undefined
+                ? ` The reduction to ${result.seatReductionLost} seats was dropped with the change; set the seats again to remove them at the renewal.`
+                : ""
+            }`
           : null
       );
       await onChanged?.();
