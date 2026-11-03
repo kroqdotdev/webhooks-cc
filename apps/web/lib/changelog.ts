@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.59.0";
+export const APP_VERSION = "0.59.1";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.59.1",
+    date: "2026-11-03",
+    title: "Team Business on the Pricing Section",
+    track: "web",
+    items: [
+      "The pricing section on the home page shows the personal plans on one row and the team plans on the next: what a team is, Teams, and Team Business with its per-seat limits and yearly price",
+    ],
+  },
   {
     version: "0.59.0",
     date: "2026-11-03",
