@@ -15,8 +15,11 @@ const mocks = vi.hoisted(() => {
     TeamBillingError,
     authenticateSessionRequest: vi.fn(),
     createTeamCustomerPortal: vi.fn(),
+    reportError: vi.fn(),
   };
 });
+
+vi.mock("@/lib/observability", () => ({ reportError: mocks.reportError }));
 
 vi.mock("@/lib/api-auth", () => ({
   authenticateSessionRequest: mocks.authenticateSessionRequest,
@@ -78,5 +81,24 @@ describe("POST /api/teams/[teamId]/billing/portal", () => {
     const response = await POST(portalRequest(), params);
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: "This team has no invoices yet" });
+    expect(mocks.reportError).not.toHaveBeenCalledWith(
+      expect.stringContaining("no owner member"),
+      undefined,
+      expect.anything()
+    );
+  });
+
+  test("reports a team customer that lost its owner member, since that is ours to fix", async () => {
+    mocks.createTeamCustomerPortal.mockRejectedValueOnce(
+      new mocks.TeamBillingError("no_billing_contact", "The team's billing contact is missing.")
+    );
+
+    const { POST } = await import("./route");
+    expect((await POST(portalRequest(), params)).status).toBe(500);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      expect.stringContaining("no owner member"),
+      undefined,
+      { teamId: "team_123" }
+    );
   });
 });

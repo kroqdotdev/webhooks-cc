@@ -26,6 +26,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   } catch (error) {
     if (error instanceof TeamBillingError) {
       const status = ERROR_STATUS[error.code] ?? 400;
+      if (error.code === "no_billing_contact") {
+        reportError("Team billing portal: the Polar customer has no owner member", undefined, {
+          teamId,
+        });
+      }
       await auditUserAction(request, auth.userId, {
         action: "team.billing_portal_opened",
         status,

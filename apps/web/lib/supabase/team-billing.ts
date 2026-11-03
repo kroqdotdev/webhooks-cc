@@ -219,7 +219,12 @@ export async function createTeamCustomerPortal(userId: string, teamId: string): 
   });
   const member = owners.items[0];
   if (!member) {
-    throw new TeamBillingError("no_customer", "This team's billing contact is missing");
+    // Our fault, not the owner's (the member was removed in Polar): the
+    // route reports it.
+    throw new TeamBillingError(
+      "no_billing_contact",
+      "The team's billing contact is missing. We have been told and will fix it."
+    );
   }
   const session = await polar.customerSessions.create({
     customer_id: team.polar_customer_id,

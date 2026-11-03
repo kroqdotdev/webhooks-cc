@@ -232,6 +232,7 @@ describe("createTeamCustomerPortal", () => {
   });
 
   test("refuses a team customer without an owner member instead of a session for no one", async () => {
+    // A code of its own: the route reports it, unlike a team with no invoices.
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
@@ -245,7 +246,7 @@ describe("createTeamCustomerPortal", () => {
     });
 
     await expect(createTeamCustomerPortal("user_1", "team_1")).rejects.toMatchObject({
-      code: "no_customer",
+      code: "no_billing_contact",
     });
     expect(create).not.toHaveBeenCalled();
   });
