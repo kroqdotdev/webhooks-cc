@@ -56,6 +56,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** An object's own property, never one it inherits (`__proto__` reads its prototype). */
+function ownValue(object: Record<string, unknown>, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(object, key) ? object[key] : undefined;
+}
+
 /**
  * Milliseconds since the epoch, or NaN for anything but an RFC 3339
  * timestamp with a real date and time (no February 30, no hour 24, no leap
@@ -160,7 +165,7 @@ export interface CredentialSlots {
 export function readSlots(file: unknown, issuer: string, now: number): CredentialSlots {
   const none: CredentialSlots = { claimed: null, sandbox: null };
   if (!isObject(file) || file.version !== FORMAT_VERSION || !isObject(file.issuers)) return none;
-  const entry = file.issuers[normalizeIssuer(issuer)];
+  const entry = ownValue(file.issuers, normalizeIssuer(issuer));
   if (!isObject(entry)) return none;
   const live = (value: unknown) => {
     const slot = parseSlot(value);
@@ -191,15 +196,21 @@ export function applyWrite(
       : { version: FORMAT_VERSION };
   const issuers: Record<string, unknown> = isObject(root.issuers) ? root.issuers : {};
   const key = normalizeIssuer(issuer);
-  const entry: Record<string, unknown> = isObject(issuers[key]) ? issuers[key] : {};
+  const slotName = "set" in write ? write.set : write.remove;
+  // The issuer and slot name come from the caller: as "__proto__" (and its
+  // kin) they would write to Object.prototype through the objects below.
+  if (key === "__proto__" || key === "constructor" || key === "prototype") return "unchanged";
+  if (slotName !== "claimed" && slotName !== "sandbox") return "unchanged";
+  const found = ownValue(issuers, key);
+  const entry: Record<string, unknown> = isObject(found) ? found : {};
   if (write.ifRegistration !== undefined) {
-    const current = parseSlot(entry["set" in write ? write.set : write.remove]);
+    const current = parseSlot(ownValue(entry, slotName));
     if (current?.registration_id !== write.ifRegistration) return "unchanged";
   }
   if ("set" in write) {
-    entry[write.set] = write.slot;
+    entry[slotName] = write.slot;
   } else {
-    delete entry[write.remove];
+    delete entry[slotName];
   }
   issuers[key] = entry;
 
