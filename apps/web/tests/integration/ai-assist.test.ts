@@ -514,4 +514,24 @@ describe("AI setup and repair", () => {
     const body = (await route.json()) as { nextAt: string };
     expect(new Date(body.nextAt).getTime()).toBe(tenDaysAgo.getTime() + 30 * 86_400_000);
   });
+
+  it("waits for enough to stop counting when more are used than allowed", async () => {
+    // Free allows 5: seven used (as after a move down from a bigger plan) means
+    // three must stop counting before one comes back, so the third oldest decides.
+    const owner = await signedIn("free");
+    const times = [20, 18, 15, 9, 7, 4, 1].map((days) => new Date(Date.now() - days * 86_400_000));
+    await admin.from("ai_assist_uses").insert(
+      times.map((time) => ({
+        user_id: owner.userId,
+        actor_id: owner.userId,
+        kind: "field",
+        outcome: "proposed",
+        created_at: time.toISOString(),
+      }))
+    );
+    const answer = (await admin.rpc("ai_assists_left", { p_endpoint_id: owner.endpointId }))
+      .data as { allowed: number; used: number; next_at: string };
+    expect(answer).toMatchObject({ allowed: 5, used: 7 });
+    expect(new Date(answer.next_at).getTime()).toBe(times[2].getTime() + 30 * 86_400_000);
+  });
 });

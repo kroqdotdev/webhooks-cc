@@ -68,7 +68,7 @@ const ROWS = [
   ],
   ["Outbound customer portal", "No", "Yes (core Svix feature)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT server + libraries)"],
-  ["Team collaboration", "From $12/seat/mo, pooled quota", "Included on Svix Cloud tiers"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "Svix Cloud plans, from $20/mo"],
 ] as const;
 
 export const metadata = createPageMetadata({

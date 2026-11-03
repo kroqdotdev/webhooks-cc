@@ -69,13 +69,29 @@ export function AiAssistPanel({
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState<string | null>(null);
 
+  // A failed refresh keeps what is shown; only a failed first load hides the count.
   const refreshInfo = useCallback(() => {
+    if (!accessToken) return;
+    fetchAiAssists(accessToken, slug)
+      .then(setInfo)
+      .catch(() => undefined);
+  }, [accessToken, slug]);
+  useEffect(() => {
     if (!accessToken) return;
     fetchAiAssists(accessToken, slug)
       .then(setInfo)
       .catch(() => setInfo(null));
   }, [accessToken, slug]);
-  useEffect(refreshInfo, [refreshInfo]);
+  // With none left, read the count again when the next one comes back (within a day).
+  const nextAt = info?.nextAt ?? null;
+  const noneLeft = info !== null && info.used >= info.allowed;
+  useEffect(() => {
+    if (!noneLeft || !nextAt) return;
+    const wait = new Date(nextAt).getTime() - Date.now() + 1_000;
+    if (!Number.isFinite(wait) || wait < 0 || wait > 86_400_000) return;
+    const timer = setTimeout(refreshInfo, wait);
+    return () => clearTimeout(timer);
+  }, [noneLeft, nextAt, refreshInfo]);
 
   const left = info ? Math.max(info.allowed - info.used, 0) : 0;
   const toggle = (id: string) => {

@@ -28,6 +28,13 @@ describe("assistsLeftText", () => {
     );
   });
 
+  it("says shortly once the time has passed", () => {
+    const past = new Date(2026, 10, 3, 11, 0).toISOString();
+    expect(assistsLeftText({ allowed: 5, used: 5, nextAt: past }, now, "en-GB")).toBe(
+      "No AI assists left. The next one comes back shortly."
+    );
+  });
+
   it("copes with a missing or unreadable time", () => {
     expect(assistsLeftText({ allowed: 5, used: 5 }, now)).toBe("No AI assists left.");
     expect(assistsLeftText({ allowed: 20, used: 3, nextAt: "soon" }, now)).toBe(

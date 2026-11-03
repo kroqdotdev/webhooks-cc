@@ -19,8 +19,9 @@ export function assistsLeftText(
   return `${count} Each one counts for 30 days; the next comes back ${when}.`;
 }
 
-/** "today at 14:05", "tomorrow at 09:30" or "on Nov 14". */
+/** "today at 14:05", "tomorrow at 09:30", "on Nov 14", or "shortly" once the time has passed. */
 function returnsAt(next: Date, now: Date, locale?: string): string {
+  if (next.getTime() <= now.getTime()) return "shortly";
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((day(next) - day(now)) / 86_400_000);
   const time = next.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
