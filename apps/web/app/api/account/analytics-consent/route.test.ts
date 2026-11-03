@@ -49,18 +49,27 @@ describe("/api/account/analytics-consent", () => {
   });
 
   test("GET returns the saved choice", async () => {
-    mocks.getAccountAnalyticsConsent.mockResolvedValue("denied");
+    mocks.getAccountAnalyticsConsent.mockResolvedValue({
+      consent: "denied",
+      savedAt: "2026-11-03T09:00:00.000Z",
+    });
     const { GET } = await import("./route");
     const response = await GET(new Request(URL));
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ consent: "denied" });
+    await expect(response.json()).resolves.toEqual({
+      consent: "denied",
+      savedAt: "2026-11-03T09:00:00.000Z",
+    });
     expect(mocks.getAccountAnalyticsConsent).toHaveBeenCalledWith("user_1");
   });
 
   test("GET returns null when nothing was saved", async () => {
-    mocks.getAccountAnalyticsConsent.mockResolvedValue(null);
+    mocks.getAccountAnalyticsConsent.mockResolvedValue({ consent: null, savedAt: null });
     const { GET } = await import("./route");
-    await expect((await GET(new Request(URL))).json()).resolves.toEqual({ consent: null });
+    await expect((await GET(new Request(URL))).json()).resolves.toEqual({
+      consent: null,
+      savedAt: null,
+    });
   });
 
   test("refuses without a session", async () => {

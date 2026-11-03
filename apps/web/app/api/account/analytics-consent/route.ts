@@ -30,9 +30,9 @@ export async function GET(request: Request) {
   if (rateLimit.response) return rateLimit.response;
 
   try {
-    const consent = await getAccountAnalyticsConsent(auth.userId);
+    const { consent, savedAt } = await getAccountAnalyticsConsent(auth.userId);
     return applyRateLimitHeaders(
-      Response.json({ consent }, { headers: { "Cache-Control": "no-store" } }),
+      Response.json({ consent, savedAt }, { headers: { "Cache-Control": "no-store" } }),
       rateLimit
     );
   } catch (error) {

@@ -7,17 +7,18 @@ export function parseAccountAnalyticsConsent(value: unknown): AccountAnalyticsCo
   return value === "granted" || value === "denied" ? value : null;
 }
 
-/** The account's saved choice, or null when none was saved yet. */
+/** The account's saved choice and when it was saved, both null until one is. */
 export async function getAccountAnalyticsConsent(
   userId: string
-): Promise<AccountAnalyticsConsent | null> {
+): Promise<{ consent: AccountAnalyticsConsent | null; savedAt: string | null }> {
   const { data, error } = await createAdminClient()
     .from("users")
-    .select("analytics_consent")
+    .select("analytics_consent, analytics_consent_at")
     .eq("id", userId)
     .maybeSingle();
   if (error) throw error;
-  return parseAccountAnalyticsConsent(data?.analytics_consent);
+  const consent = parseAccountAnalyticsConsent(data?.analytics_consent);
+  return { consent, savedAt: consent ? (data?.analytics_consent_at ?? null) : null };
 }
 
 /**

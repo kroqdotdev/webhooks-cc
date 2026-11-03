@@ -44,7 +44,7 @@ export function CookieConsent() {
   const dialogRef = useRef<HTMLDivElement>(null);
   // Opened from a Cookie settings link, rather than because nothing answered it yet.
   const openedByHand = useRef(false);
-  const { isLoading, isAuthenticated, user } = useAuth();
+  const { isLoading, user } = useAuth();
   const userId = user?.id ?? null;
 
   useEffect(() => {
@@ -134,9 +134,10 @@ export function CookieConsent() {
     if (analyticsConsent() !== (accept ? "granted" : "denied")) return;
     openedByHand.current = false;
     setOpen(false);
-    if (isAuthenticated) {
+    if (userId) {
+      const at = Date.now();
       void currentAccessToken().then((token) => {
-        if (token) void saveAccountConsent(token, accept ? "granted" : "denied");
+        if (token) void saveAccountConsent(userId, token, accept ? "granted" : "denied", at);
       });
     }
   };
