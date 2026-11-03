@@ -441,7 +441,7 @@ pub struct UsageInfo {
 // ---------------------------------------------------------------------------
 
 /// A team the user owns or belongs to. Seats are both the member cap and the
-/// pooled request quota (seats x 100,000 per 30-day period).
+/// pooled request quota (seats x 100,000 a month on Teams, x 250,000 on Team Business).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Team {
     pub id: String,

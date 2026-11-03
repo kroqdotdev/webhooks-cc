@@ -7,56 +7,76 @@ const FAQ_ITEMS = [
   {
     question: "What are the best RequestBin alternatives in 2026?",
     answer:
-      "webhooks.cc is a strong RequestBin alternative for developers who want focused webhook testing without workflow automation. It offers webhook capture, replay, a TypeScript SDK for CI assertions, a CLI tunnel, and an MCP server — all open source. Other alternatives include Webhook.site (browser-based inspection), Beeceptor (API mocking), and Hookdeck (production webhook infrastructure).",
+      "webhooks.cc is a strong RequestBin alternative for developers who want focused webhook and email testing without workflow code. It offers webhook and email capture, replay, SDKs for CI assertions in TypeScript, Python and Go, a CLI tunnel, forwarding to Slack, Discord, Google Sheets, Zapier or Make, and an MCP server, all open source. Other alternatives include Webhook.site (browser-based inspection), Beeceptor (API mocking), and Hookdeck (production webhook infrastructure).",
+  },
+  {
+    question: "Is RequestBin shutting down?",
+    answer:
+      "Yes, with the rest of Pipedream Workflows. Pipedream announced that Workflows and String shut down on March 31, 2027: Workflows takes no new signups or subscriptions, existing workflows keep running until that date, and all Workflows data is deleted by April 30, 2027. requestbin.com already redirects to Pipedream's home page. If you capture webhooks or email there, move them before the cut-off.",
   },
   {
     question: "Is RequestBin still available as a standalone tool?",
     answer:
-      "The original RequestBin was open source and self-hostable. It was acquired by Pipedream and now lives inside Pipedream's workflow platform. You can still capture requests, but the product has shifted toward workflow automation — triggers, steps, and integrations — rather than standalone webhook inspection.",
+      "No. The original RequestBin was open source and self-hostable. It was acquired by Pipedream and became part of Pipedream's workflow platform, where requests are captured as workflow triggers, and that platform is now closing. Pipedream's focus has moved to Connect and MCP servers for its app integrations.",
+  },
+  {
+    question: "How do I move from RequestBin to webhooks.cc?",
+    answer:
+      "Sign in and create an endpoint (you can also try one without an account), point your webhook senders at its https://go.webhooks.cc/w/{slug} URL, and send email to {slug}@mailhooks.cc, which every account endpoint receives. Where a workflow forwarded requests on, add a destination: your server, Slack or Discord, Google Sheets, or Zapier and Make for other apps. Where a workflow answered the sender, set a mock response or response rules. For code steps, forward to a small handler of your own.",
   },
   {
     question: "What is the difference between webhooks.cc and RequestBin?",
     answer:
-      "webhooks.cc is a focused webhook testing platform: capture, inspect, replay, mock, tunnel to localhost, and assert on payloads in automated tests. RequestBin (Pipedream) captures requests as workflow triggers — the emphasis is on what happens after the webhook arrives (run code, call APIs, transform data). If you just need to test and debug webhooks, webhooks.cc is simpler. If you need workflow automation, Pipedream is more capable.",
+      "webhooks.cc is a focused webhook testing platform: capture, inspect, replay, mock, tunnel to localhost, and assert on payloads in automated tests. RequestBin (Pipedream) captures requests as workflow triggers: the emphasis is on what happens after the webhook arrives (run code, call APIs, transform data). If you just need to test and debug webhooks, webhooks.cc is simpler. Pipedream Workflows, RequestBin included, takes no new signups and shuts down on March 31, 2027.",
   },
   {
     question: "Does webhooks.cc have workflow automation like Pipedream?",
     answer:
-      "No. webhooks.cc does not chain actions, call third-party APIs, or run code in response to webhooks. It is a testing and development tool: capture, inspect, replay, assert. For production webhook processing with workflow steps, Pipedream or similar platforms are the right choice.",
+      "Not as code. webhooks.cc does not run your code or chain steps. Each endpoint can send what arrives to up to 10 destinations, each with its own filter: your server (as received, as signed JSON or as your own JSON template), Slack or Discord, Google Sheets, file drops to SFTP, FTP or S3 on Business, and Zapier or Make for everything else. Response rules choose the answer the sender gets, and layouts read fields, line items and attachments out of email. For multi-step logic, hand off to Zapier, Make or your own handler.",
   },
   {
     question: "Can I self-host webhooks.cc like the original RequestBin?",
     answer:
-      "webhooks.cc is open source (AGPL-3.0 for the web app and receiver, MIT for the CLI, SDK, and MCP server). You can self-host the full stack. The original RequestBin was also open source, but the Pipedream version is not self-hostable.",
+      "webhooks.cc is open source (AGPL-3.0 for the web app and receiver, MIT for the CLI, SDKs, and MCP server). You can self-host the full stack. The original RequestBin was also open source, but the Pipedream version is not self-hostable.",
   },
   {
     question: "Which RequestBin alternatives support longer retention and team access?",
     answer:
-      "On webhooks.cc, Pro keeps requests for 31 days and Business for 90, and Teams shares endpoints with signed-in members only, at $12 per seat per month with 31-day retention for team-billed requests. Guest URLs on any tool, webhooks.cc's included, can be read by anyone who has the address, so capture on account endpoints when the payloads matter.",
+      "On webhooks.cc, Pro keeps requests for 31 days and Business for 90, and Teams shares endpoints with signed-in members only, at $12 per seat per month with 31-day retention for team-billed requests (Team Business: $35 per seat, 90 days). Guest URLs on any tool, webhooks.cc's included, can be read by anyone who has the address, so capture on account endpoints when the payloads matter.",
   },
 ];
 
 const ROWS = [
-  ["Primary focus", "Webhook testing & inspection", "Workflow automation platform"],
-  ["Webhook capture", "Yes — full request storage", "Yes — as workflow trigger"],
-  ["Request inspection UI", "Yes — dedicated dashboard", "Yes — within workflow editor"],
-  ["Mock responses", "Yes — configurable per endpoint", "Yes — via workflow code"],
+  ["Status", "Active", "No new signups, shuts down March 31, 2027"],
+  ["Primary focus", "Webhook & email testing", "Workflow automation platform"],
+  ["Webhook capture", "Yes, full request storage", "Yes, as workflow trigger"],
+  [
+    "Inbound email capture",
+    "Yes, {slug}@mailhooks.cc or your own domain",
+    "Email trigger per workflow",
+  ],
+  ["Request inspection UI", "Yes, dedicated dashboard", "Yes, within workflow editor"],
+  ["Mock responses", "Yes, rule-based with placeholders", "Yes, via workflow code"],
   ["CLI tunnel to localhost", "Yes (whk tunnel)", "No"],
-  ["TypeScript SDK", "Yes — @webhooks-cc/sdk", "No webhook-specific SDK"],
+  ["SDKs", "TypeScript, Python and Go", "No webhook-specific SDK"],
   ["CI test assertions", "Yes (waitFor + matchers)", "No"],
-  ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
-  ["Request replay", "Yes", "No (re-trigger workflow)"],
-  ["Workflow automation", "No", "Yes — core feature"],
-  ["Third-party integrations", "No", "Yes — 1000+ apps"],
+  [
+    "MCP server for AI agents",
+    "Yes, remote (OAuth) or local",
+    "For its app integrations, not bins",
+  ],
+  ["Request replay", "Yes, to any URL", "No (re-trigger workflow)"],
+  ["Workflow automation", "No code steps", "Yes, core feature"],
+  ["Third-party integrations", "Slack, Discord, Google Sheets, Zapier, Make", "Yes, 3,000+ apps"],
   ["Self-hostable", "Yes (open source)", "No"],
-  ["Team collaboration", "$12/seat/mo, pooled quota", "All plans, free unlimited members"],
-  ["Free tier features", "Every Pro feature", "Limited invocations/day"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "All plans, free unlimited members"],
+  ["Free tier features", "Every Pro feature", "Development only, daily credit cap"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "RequestBin Alternative: Open Source & Free (2026)",
   description:
-    "Open-source RequestBin alternative with webhook inspection, replay, TypeScript SDK for CI, CLI tunnel, and MCP server. Free tier, no credit card.",
+    "RequestBin is closing with Pipedream Workflows in March 2027. An open-source alternative for webhooks and email: inspection, replay, SDKs for CI, a CLI tunnel and MCP.",
   path: "/compare/requestbin",
   keywords: [
     "requestbin alternative",
@@ -85,7 +105,7 @@ export default function CompareRequestBinPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
           webhooks.cc vs RequestBin (Pipedream)
@@ -93,8 +113,10 @@ export default function CompareRequestBinPage() {
         <p className="text-lg text-muted-foreground mb-10">
           If you&apos;re looking for a RequestBin alternative, webhooks.cc picks up where the
           original RequestBin left off: a focused tool for capturing, inspecting, replaying, and
-          testing webhooks. RequestBin now lives inside Pipedream as a workflow automation platform.
-          webhooks.cc stays developer-first with a CLI, TypeScript SDK, and MCP server.
+          testing webhooks and email. RequestBin became part of Pipedream&apos;s workflow platform,
+          and Pipedream Workflows now takes no new signups and shuts down on March 31, 2027, with
+          its data deleted by April 30, 2027. webhooks.cc stays developer-first with a CLI, SDKs for
+          TypeScript, Python and Go, and an MCP server.
         </p>
 
         {/* Feature table */}
@@ -145,12 +167,13 @@ export default function CompareRequestBinPage() {
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
-              webhooks.cc includes a native CLI for tunneling webhooks to localhost, a TypeScript
-              SDK with <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code>{" "}
-              for test assertions, and an MCP server for AI agent integration. Team collaboration on
-              webhooks.cc costs $12/seat/month, with each seat adding 100,000 pooled requests per 30
-              days; Pipedream includes team features on all plans with unlimited members. RequestBin
-              focuses on the Pipedream workflow editor and API — it does not offer webhook-specific
+              webhooks.cc includes a native CLI for tunneling webhooks to localhost, SDKs for
+              TypeScript, Python and Go with{" "}
+              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code> for test
+              assertions, and an MCP server for AI agent integration. Team collaboration on
+              webhooks.cc costs $12/seat/month, with each seat adding 100,000 pooled requests a
+              month; Pipedream includes team features on all plans with unlimited members.
+              RequestBin focuses on the Pipedream workflow editor and API, without webhook-specific
               dev tooling.
             </p>
           </div>
@@ -175,15 +198,16 @@ export default function CompareRequestBinPage() {
               <li>SDK assertions in CI test suites</li>
               <li>CLI tunnel for local webhook development</li>
               <li>Self-hosted, open-source deployment</li>
+              <li>A home for RequestBin traffic before Pipedream Workflows closes</li>
             </ul>
           </div>
           <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose RequestBin (Pipedream) when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Workflow automation triggered by webhooks</li>
-              <li>Integrations with 1000+ third-party apps</li>
+              <li>Integrations with 3,000+ third-party apps</li>
               <li>Code execution steps after webhook receipt</li>
-              <li>Production webhook processing, not just testing</li>
+              <li>Production webhook processing, until Workflows closes in March 2027</li>
             </ul>
           </div>
         </div>

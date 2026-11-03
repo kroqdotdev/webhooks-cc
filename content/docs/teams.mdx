@@ -37,7 +37,7 @@ The team owner manages all of this from the team page: subscribe, change the pla
 
 1. Open the **Teams** page from the avatar dropdown in the header
 2. Click **New Team** and enter a name
-3. You are the team owner — you can invite members, manage the team, and delete it
+3. You are the team owner: you can invite members, manage the team, and delete it
 4. Subscribe from the team page to activate it: pick the plan and the number of seats you need (2 or more)
 
 ## Inviting Members
@@ -84,8 +84,8 @@ Sharing an endpoint with an active team moves its billing to that team:
 
 - **Requests draw from the team pool**: seats × 100,000 per period on Teams, seats × 250,000 on Team Business, tracked on the team, not on any member's account
 - **Retention is 31 days** for team-billed requests (90 with Team Business), whatever plan the endpoint owner is on
-- **One team per request** — if an endpoint is shared with several active teams, the oldest share is billed
-- **Suspended teams don't bill** — while a team has no active subscription, requests on its shared endpoints fall back to the endpoint owner's personal quota and retention
+- **One team per request**: if an endpoint is shared with several active teams, the oldest share is billed
+- **Suspended teams don't bill**: while a team has no active subscription, requests on its shared endpoints fall back to the endpoint owner's personal quota and retention
 - **Extra requests**: the owner can add monthly blocks, one-time blocks, or overage to the pool in blocks of 25,000, the same as on Pro (see [Extra requests](/docs/plans-limits#extra-requests))
 - When the pool and its extra requests are exhausted the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset
 
@@ -126,7 +126,7 @@ Invites are deliberately not exposed as MCP tools: accepting one claims a paid s
 
 ## How It Works
 
-- Sharing is **view and edit only**: team members can see requests and change settings, but cannot delete endpoints or clear their requests
-- **Real-time updates** work for shared endpoints — team members see new requests instantly via SSE
+- Sharing is **view and edit only**: team members can see requests, rename the endpoint and change its responses, but cannot change its forwarding, layouts or other settings, delete it, or clear its requests
+- **Real-time updates** work for shared endpoints: team members see new requests instantly via SSE
 - A stream that is open when a team's subscription lapses keeps running until the 30-minute rotation; the reconnect is then refused
 - Deleting a team cancels its subscription and releases every seat; the endpoints themselves are untouched and stay with their owners

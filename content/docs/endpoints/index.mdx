@@ -3,7 +3,7 @@ title: "Endpoints"
 description: "Endpoints are unique URLs that capture incoming webhooks. Each endpoint has its own request history, mock response configuration, and settings."
 section: dashboard
 order: 1
-lastUpdated: 2026-10-29
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["webhook endpoint", "webhook URL", "create endpoint"]
 seo:
@@ -13,7 +13,7 @@ seo:
 
 ## Creating an endpoint
 
-Click **New Endpoint** in the dashboard header. Give it a name and configure an optional mock response.
+Click **New Endpoint** in the dashboard. Give it a name and configure an optional mock response.
 
 Each endpoint gets an auto-generated slug that forms its webhook URL:
 
@@ -21,7 +21,7 @@ Each endpoint gets an auto-generated slug that forms its webhook URL:
 https://go.webhooks.cc/w/<slug>
 ```
 
-Copy the full URL from the dashboard URL bar. Endpoints created by logged-in users, on any plan, never expire: they persist until you delete them manually or programmatically. Only ephemeral endpoints (created without an account or explicitly marked ephemeral) auto-delete after 12 hours.
+Endpoints on an account also receive email at `<slug>@mailhooks.cc` ([Email Capture](/docs/email-capture)). Copy the URL and the address from the bar above the request list. Endpoints created by logged-in users, on any plan, never expire: they persist until you delete them manually or programmatically. Only ephemeral endpoints (created without an account or explicitly marked ephemeral) auto-delete after 12 hours.
 
 ## Switching endpoints
 
@@ -35,18 +35,20 @@ Favourites are yours alone: on an endpoint shared with your team, each member ke
 
 ## Sending test webhooks from the dashboard
 
-Use the **Send** button in the URL bar to send a manual request or a signed provider template. 34 templates are available, including Stripe, GitHub, Shopify, Twilio, Square, HubSpot, Sentry, DocuSign, Adyen, PayPal, Plaid, Resend, and WorkOS.
+Use the **Send** button in the endpoint bar to send a manual request or a signed provider template. 34 templates are available, including Stripe, GitHub, Shopify, Twilio, Square, HubSpot, Sentry, DocuSign, Adyen, PayPal, Plaid, Resend, and WorkOS.
 
 See [Dashboard test webhook docs](/docs/endpoints/test-webhooks) for template presets, signature headers, and verification tips.
 
 ## Endpoint settings
 
-Click the gear icon next to the endpoint name in the URL bar to open settings. You can:
+Open the **Settings** tab under the endpoint name. You can:
 
-- Rename the endpoint
-- Configure a [mock response](/docs/mock-responses)
-- [Forward](/docs/forwarding) what it captures to your servers, or [notify](/docs/notification-webhooks) a Slack or Discord channel when a request arrives
-- Configure [signature verification](/docs/dashboard-features#signature-verification) — select a provider and paste your signing secret to automatically verify every incoming webhook
+- Rename the endpoint, choose which site lists it (webhooks.cc, mailhooks.cc or both), and name [email fields](/docs/email-capture#fields-you-pick-out)
+- Read emails with [layouts](/docs/layouts)
+- Configure a [mock response](/docs/mock-responses) and response rules
+- [Forward](/docs/forwarding) what it captures to up to 10 destinations (your servers, Slack or Discord, Google Sheets, file drops), or [notify](/docs/notification-webhooks) a channel when a request arrives
+- Share it with your [teams](/docs/teams)
+- Configure [signature verification](/docs/dashboard-features#signature-verification): select a provider and paste your signing secret to automatically verify every incoming webhook
 - Keep requests for fewer days than your plan, or only until they are delivered (see [Retention](#retention))
 - Get [alerts](/docs/forwarding#alerts) when email fields stop matching, mail stops arriving or deliveries fail
 - Delete the endpoint and all its captured requests
@@ -66,7 +68,7 @@ Through the API, `PATCH /api/endpoints/{slug}` with `retentionDays` (a number, o
 | Plan         | Endpoints | Requests              | Retention |
 | ------------ | --------- | --------------------- | --------- |
 | Free         | Unlimited | 50 per 24-hour window | 7 days    |
-| **Pro**      | Unlimited | 100,000 per 30 days   | 31 days   |
+| **Pro**      | Unlimited | 100,000 per month     | 31 days   |
 | **Business** | Unlimited | 250,000 per month     | 90 days   |
 
 See [Plans & Limits](/docs/plans-limits) for full details on quotas, retention, rate limits, and billing periods.

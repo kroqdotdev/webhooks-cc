@@ -25,7 +25,7 @@ export function organizationSchema() {
     logo: `${SITE_URL}/icon.png`,
     sameAs: ["https://github.com/kroqdotdev/webhooks-cc"],
     description:
-      "Webhook testing tools for developers. Capture, inspect, forward, and test webhooks with a dashboard, CLI, TypeScript SDK, and MCP server for AI agents.",
+      "Webhook and email testing tools for developers. Capture, inspect, forward, and test webhooks and email with a dashboard, CLI, SDKs for TypeScript, Python and Go, and an MCP server for AI agents.",
   };
 }
 
@@ -41,15 +41,21 @@ export function softwareApplicationSchema() {
     url: SITE_URL,
     downloadUrl: `${SITE_URL}/installation`,
     description:
-      "Webhook testing tools for developers. Capture and inspect webhooks, forward to localhost with the CLI, test programmatically with the TypeScript SDK, and connect AI coding agents via MCP server.",
+      "Webhook and email testing tools for developers. Capture and inspect webhooks and email, forward to localhost with the CLI or to your servers, Slack, Discord and Google Sheets, test programmatically with the TypeScript, Python and Go SDKs, and connect AI agents via the MCP server.",
     featureList: [
       "Webhook capture and inspection",
-      "Mock response configuration",
+      "Email capture at an address per endpoint",
+      "Mock responses with rules and placeholders",
+      "Signed test webhooks for 34 providers",
+      "Signature verification",
       "CLI tunneling to localhost",
-      "TypeScript SDK for test assertions",
-      "MCP server for AI coding agents",
+      "Forwarding to up to 10 destinations per endpoint",
+      "Email parsing with layouts, including CSV, Excel and PDF attachments",
+      "SDKs for TypeScript, Python and Go",
+      "Remote and local MCP server for AI agents",
       "Real-time SSE streaming",
       "Request replay",
+      "Team endpoint sharing",
     ],
     author: {
       "@type": "Organization",

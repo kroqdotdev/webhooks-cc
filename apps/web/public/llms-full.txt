@@ -1,12 +1,12 @@
 # webhooks.cc full reference
 
-> Webhook testing tools for developers. Capture, inspect, forward, and test webhooks with a dashboard, CLI, TypeScript SDK, and MCP server for AI agents.
+> Webhook and email testing tools for developers. Capture, inspect, forward, and test webhooks and email with a dashboard, CLI, SDKs for TypeScript, Python and Go, and an MCP server for AI agents.
 
 ## What is webhooks.cc?
 
 webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses with conditional rules (route different responses based on method, path, headers, body, or query params), forward webhooks to localhost for local development, and write automated test assertions against captured requests.
 
-Every endpoint on an account also receives email at `<slug>@mailhooks.cc`. Captured emails sit in the same request list as webhooks and can be forwarded to your own server as signed JSON.
+Every endpoint on an account also receives email at `<slug>@mailhooks.cc` (Business adds custom inbound domains). Captured emails sit in the same request list as webhooks; layouts can read fields, line items and CSV, Excel or PDF attachments out of them, and destinations send them (and HTTP requests) on to your servers, Slack or Discord, Google Sheets, or SFTP, FTP and S3 file drops. mailhooks.cc is the mail-first front door to the same accounts, endpoints and plans.
 
 The Rust receiver handles 86,000+ requests per second with sub-millisecond capture latency. Requests are written directly to Postgres via a single stored procedure and surfaced in the dashboard through Supabase Realtime.
 
@@ -15,10 +15,10 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 - **Dashboard**: Next.js App Router with real-time updates via Supabase Realtime Broadcast signals (database triggers send id-only signals on private topics; the dashboard then re-reads through authenticated API routes)
 - **Receiver**: Rust (Axum + Tokio) writing directly to Postgres via sqlx and a single stored procedure
 - **Email intake**: a receive-only Rust SMTP host for `mailhooks.cc` that hands each message to the receiver, which stores it through the same stored procedure as webhooks
-- **Email forwarding**: a queue drained by the web app, which signs and posts each captured email to the endpoint's forwarding URL
+- **Forwarding**: a queue drained by the web app, which delivers each capture to the endpoint's destinations (up to 10), each with its own filter, format and retries
 - **Database**: Self-hosted Supabase (Postgres) with row-level security
 - **CLI**: Rust (Clap + Ratatui) connecting via SSE streams
-- **SDK**: TypeScript (`@webhooks-cc/sdk`) published to npm
+- **SDKs**: TypeScript (`@webhooks-cc/sdk` on npm), Python (`webhooks-cc` on PyPI) and Go (`webhooks.cc/go`); the Python and Go SDKs pass the TypeScript SDK's conformance vectors
 - **MCP Server**: a remote server at https://webhooks.cc/mcp (streamable HTTP, OAuth) and the same tools as a local TypeScript server (`@webhooks-cc/mcp`) for AI coding agents
 
 ## URLs
@@ -43,9 +43,9 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 
 - **Guest** (no signup): 25 requests per ephemeral endpoint, deleted after 12 hours, no email capture
 - **Free**: 50 requests per 24 hours, unlimited endpoints, 7-day retention, 20 parsed attachment pages a month, 2 layouts per endpoint, 5 AI assists every 30 days, every Pro feature including email capture, Google Sheets and chat destinations and full CLI/SDK/MCP access
-- **Pro** ($8/month): 100,000 requests per 30 days, 31-day retention, 100 parsed attachment pages a month, 20 AI assists every 30 days. Extra requests: monthly blocks ($2 per 25,000), one-time blocks ($3 per 25,000) or overage ($4 per 25,000, up to a maximum you set).
+- **Pro** ($8/month): 100,000 requests a month, 31-day retention, 100 parsed attachment pages a month, 20 AI assists every 30 days. Extra requests: monthly blocks ($2 per 25,000), one-time blocks ($3 per 25,000) or overage ($4 per 25,000, up to a maximum you set).
 - **Business** ($29/month, or $290/year; annual billing is only for Business and Team Business): 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month, up to 50 layouts per endpoint, 250 AI assists every 30 days, one custom inbound domain (each extra one $3/month, up to 20 domains in all), file drops to SFTP, FTP/FTPS or S3-compatible storage, extra requests as on Pro. More pages: monthly page blocks ($5 per 1,000), one-time page blocks ($8 per 1,000, never expire) or opt-in page overage ($0.01 per page, up to a maximum you set). On annual billing requests and pages still reset every month.
-- **Teams** ($12/seat/month, from 2 seats, monthly only): a separate per-team subscription, not a tier of a personal plan. Each seat adds 100,000 requests per 30 days to a pooled team quota and one member slot. Requests on endpoints shared with an active team are billed to the pool and kept 31 days.
+- **Teams** ($12/seat/month, from 2 seats, monthly only): a separate per-team subscription, not a tier of a personal plan. Each seat adds 100,000 requests a month to a pooled team quota and one member slot. Requests on endpoints shared with an active team are billed to the pool and kept 31 days.
 - **Team Business** ($35/seat/month or $350/seat/year, from 2 seats): the team's plan with Business per seat: 250,000 requests, 2,000 parsed attachment pages (with page blocks and overage) and 250 AI assists per seat, pooled for the team, up to 50 layouts per endpoint on team-shared endpoints, one custom inbound domain per team, file drops for team-shared endpoints, and 90-day retention for team-billed requests. On annual billing the allowance still renews every month. Moving up from Teams applies at once, charged and granted for the rest of the period in proportion; moving down waits for the renewal. Members' personal endpoints follow their own plan.
 - A parsed page is each PDF page (text layer, no OCR), each started 1,000 rows of each sheet in CSV/TSV/XLSX/XLS/ODS, or each plain text attachment; email bodies never count. Without pages left, emails still arrive with attachments as files, unparsed.
 - Emails count against the same quota as webhooks: one request per email per endpoint it is addressed to.
@@ -297,9 +297,28 @@ extractFromEmail(email.email);               // { codes: string[], links: { url,
 
 `requests.replay()` throws for emails, `requests.export()` skips them, and provider detection ignores them. Requests from `requests.subscribe()` carry `kind` but not `email`; call `client.emails.get(id)` for the parsed message.
 
+### Destinations
+
+An endpoint sends what it captures to up to 10 destinations, each with its own kinds (`http`, `email`), filter, format (`as_received`, `json`, `template`, `chat`, `sheets`, `file_drop`, or a mail provider's shape: `postmark`, `sendgrid`, `mailgun`, `cloudmailin`), throttle, delay and `whsec_` secret. Owner only.
+
+```typescript
+const dest = await client.destinations.create("my-slug", {
+  url: "https://example.com/hooks",
+  http: true,
+  email: true,
+  format: "json",
+});
+await client.destinations.list("my-slug", { summary: true }); // with the last 24 hours
+await client.destinations.update("my-slug", dest.id, { throttleSeconds: 1 });
+await client.destinations.secret("my-slug", dest.id);       // "whsec_..."
+await client.destinations.test("my-slug", dest.id);         // one delivery now
+await client.destinations.preview("my-slug", { destinationId: dest.id }); // dry run, nothing sent
+await client.destinations.delete("my-slug", dest.id);
+```
+
 ### Forwarding
 
-Owner only: for anyone else these throw `NotFoundError` (`configure` fails with 403 for team members).
+`client.forwarding` manages the endpoint's primary destination (the one its `forwardUrl` and `forwardEnabled` fields stand for), so code written before destinations keeps working. Owner only: for anyone else these throw `NotFoundError` (`configure` fails with 403 for team members).
 
 ```typescript
 // Set the URL and/or turn forwarding on or off; returns the Endpoint.
@@ -427,6 +446,8 @@ import {
   isStandardWebhook,   // Checks svix-id header (Polar, Svix, Clerk, Resend)
 } from "@webhooks-cc/sdk";
 ```
+
+There is one for each of the other providers too: `isTypeformWebhook`, `isMetaWebhook`, `isLemonSqueezyWebhook`, `isCoinbaseCommerceWebhook`, `isRazorpayWebhook`, `isCalWebhook`, `isIntercomWebhook`, `isTelegramWebhook`, `isSquareWebhook`, `isHubSpotWebhook`, `isMailgunWebhook`, `isCalendlyWebhook`, `isMuxWebhook`, `isSentryWebhook`, `isBitbucketWebhook`, `isDocuSignWebhook`, `isAdyenWebhook`, `isPayPalWebhook`, `isPlaidWebhook`, `isResendWebhook` and `isWorkOSWebhook`.
 
 ### Body Parsing Helpers
 
@@ -587,10 +608,10 @@ The remote server has every tool below except `send_to` and `replay_request`, wh
 # Claude Code
 claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
-# Cursor / VS Code / Windsurf
+# Cursor / VS Code / Devin Desktop (formerly Windsurf)
 npx @webhooks-cc/mcp setup cursor
 npx @webhooks-cc/mcp setup vscode
-npx @webhooks-cc/mcp setup windsurf
+npx @webhooks-cc/mcp setup devin
 
 # Codex
 codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
@@ -600,41 +621,64 @@ codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
 ### MCP Tools
 
+The local server has 48 tools once it is connected to an account; the remote server has the same tools except `send_to` and `replay_request` (46). In the keyless sandbox the local server offers a smaller set, with `connect_account` and `wait_for_connection` to connect a human's account. `describe` returns every tool's parameters.
+
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `create_endpoint` | name?, ephemeral?, expiresIn?, mockResponse?, responseRules?, notificationUrl? | Create a new webhook endpoint |
-| `list_endpoints` | (none) | List all user endpoints |
+| `create_endpoint` | name?, ephemeral?, expiresIn?, mockResponse?, responseRules?, notificationUrl?, site?, signingProvider?, signingSecret?, signingHeader? | Create a new webhook endpoint |
+| `list_endpoints` | team? | List your endpoints and those shared with you through teams |
 | `get_endpoint` | slug | Get endpoint details |
 | `favorite_endpoint` | slug, favorite? (default true) | Mark or unmark one of your favourite endpoints |
-| `update_endpoint` | slug, name?, mockResponse?, responseRules?, notificationUrl? | Update endpoint config |
+| `update_endpoint` | slug, name?, mockResponse?, responseRules?, notificationUrl?, signingProvider?, signingSecret?, signingHeader?, showEmailExtracts?, site?, emailFields?, layouts? | Update endpoint config |
+| `preview_layouts` | slug, requestId?, layouts? | Dry run of an endpoint's layouts on a captured email; no pages used |
+| `preview_response` | slug, requestId?, mockResponse?, responseRules? | Which response rule answers a captured request, with placeholders filled in |
 | `delete_endpoint` | slug | Delete endpoint |
 | `create_endpoints` | count (1-20), namePrefix?, ephemeral?, expiresIn? | Bulk create endpoints |
 | `delete_endpoints` | slugs (array, 1-100) | Bulk delete endpoints |
+| `list_teams` | (none) | Teams you own or belong to, with seats and pooled usage |
+| `list_team_members` | teamId | A team's members and pending invites |
+| `share_endpoint` | slug, teamId | Share an endpoint you own with a team |
+| `unshare_endpoint` | slug, teamId | Stop sharing an endpoint with a team |
 | `send_webhook` | slug, method?, headers?, body?, provider?, template?, event?, secret? | Send test webhook |
-| `list_requests` | endpointSlug, limit (1-100), since? | List recent requests |
-| `search_requests` | slug?, method?, q?, from?, to?, limit, offset, order | Search request history |
-| `count_requests` | slug?, method?, q?, from?, to? | Count matching requests |
+| `list_requests` | endpointSlug, limit (1-100), since?, kind? | List recent requests |
+| `search_requests` | slug?, method?, kind?, q?, from?, to?, limit, offset, order | Search request history |
+| `count_requests` | slug?, method?, kind?, q?, from?, to? | Count matching requests |
 | `get_request` | requestId | Get single request |
 | `wait_for_request` | endpointSlug, timeout?, pollInterval? | Wait for next request |
 | `wait_for_requests` | endpointSlug, count (1-20), timeout?, pollInterval?, method? | Collect N requests |
-| `replay_request` | requestId, targetUrl | Replay request to URL |
+| `replay_request` | requestId, targetUrl | Replay request to URL (local server only) |
 | `compare_requests` | leftRequestId, rightRequestId, ignoreHeaders? | Diff two requests |
 | `generate_payload_schema` | endpointSlug, format?, name?, event?, method?, path?, requestIds?, limit? | TypeScript, Zod, Pydantic, or JSON Schema from captured bodies |
 | `extract_from_request` | requestId, jsonPaths (1-50) | Extract JSON fields |
-| `verify_signature` | requestId, provider, secret?, publicKey?, url? | Verify webhook signature |
+| `verify_signature` | requestId, provider?, secret?, publicKey?, url?, method? | Verify webhook signature |
 | `clear_requests` | slug, before? | Delete captured requests |
-| `send_to` | url, method?, headers?, body?, provider?, template?, event?, secret? | Send to any URL |
-| `preview_webhook` | url, provider?, template?, event?, secret? | Preview without sending |
+| `send_to` | url, method?, headers?, body?, provider?, template?, event?, secret? | Send to any URL (local server only) |
+| `preview_webhook` | url, method?, headers?, body?, provider?, template?, event?, secret? | Preview without sending |
 | `list_provider_templates` | provider? | List providers/templates |
-| `get_usage` | (none) | Get usage and quota info |
+| `get_usage` | (none) | Usage and quota, with each subscribed team's pool |
 | `test_webhook_flow` | provider?, event?, secret?, mockStatus?, targetUrl?, verifySignature?, cleanup? | Full end-to-end test flow |
+| `list_emails` | endpointSlug, limit?, since?, tag?, subject?, from? | Emails an endpoint received, with codes and links |
+| `get_email` | requestId? or endpointSlug (+ tag?), includeHtml? | One captured email |
+| `wait_for_email` | endpointSlug, tag?, subject?, from?, timeout?, since?, includeHtml? | Wait for an email, then return its code and link |
+| `send_test_email` | slug, tag? | Deliver a sample email to an endpoint |
+| `render_email` | requestId, format, mailgunSigningKey?, targetUrl? | An email in Postmark, SendGrid, Mailgun or CloudMailin's inbound shape |
+| `list_destinations` | slug, summary? | Where an endpoint's captures go (owner only) |
+| `add_destination` | slug, url, name?, enabled?, http?, email?, filter?, format?, bodyTemplate?, messageTemplate?, headers?, throttleSeconds?, delaySeconds?, ... | Add a destination (up to 10 per endpoint) |
+| `update_destination` | slug, destinationId, url?, and any destination field | Change a destination |
+| `remove_destination` | slug, destinationId | Remove a destination |
+| `preview_destination` | slug, destinationId? or destination, requestId? | Dry run: does the filter pass, and the exact request it would send |
+| `configure_forwarding` | slug, url?, enabled?, http?, email?, format?, headers?, appendPath?, retrySeconds?, keepOrder?, sentField? | Change the endpoint's primary destination |
+| `get_forwarding_secret` | slug, destinationId?, rotate? | Read or rotate a destination's whsec_ secret |
+| `test_forwarding` | slug, destinationId?, kind?, requestId? | Send one delivery now and report the answer |
+| `list_deliveries` | endpointSlug? or requestId, limit?, status?, destinationId?, before? | The delivery log, or every try of one request |
+| `redeliver` | requestId? or endpointSlug, destinationId? | Forward again with the current settings |
 | `describe` | (none) | Get SDK schema introspection |
 
 ### Supported Providers for Signed Webhooks
 
-Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks
+34 providers: Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, PayPal, Plaid, Resend and WorkOS. Signature verification covers all of them except SendGrid and Plaid, which have templates only.
 
-Each provider signs payloads with its native algorithm (HMAC-SHA256, Ed25519, etc.) so your handler verification code works identically to production.
+Each signed template uses the provider's native algorithm (HMAC-SHA256, Ed25519, etc.) so your handler verification code works identically to production.
 
 ---
 
@@ -680,6 +724,7 @@ whk create [name]                      # Create endpoint
 
 whk list                               # List endpoints
 whk get <slug>                         # Get endpoint details
+whk favorite <slug>                    # Mark a favourite (whk unfavorite <slug> undoes it)
 whk delete <slug> [--force/-f]         # Delete endpoint
 
 whk update-endpoint <slug>             # Update endpoint
@@ -694,6 +739,8 @@ whk tunnel <port>[/path]               # Forward webhooks to localhost
   --endpoint <slug>                    # Reuse existing endpoint
   --ephemeral / -e                     # Delete on exit
   -H, --header KEY:VALUE              # Custom forwarding headers
+  --email-format <format>              # json (default), postmark, sendgrid, mailgun or cloudmailin
+  --email-path <path> / --no-email     # Where emails go, or skip them
 
 whk listen <slug>                      # Stream requests to terminal
 
@@ -723,6 +770,12 @@ whk requests count                     # Count matching requests
 whk requests clear <slug> [--force]    # Delete requests
 whk requests export <slug>             # Export requests
   --format har|curl --limit <n> -o <file>
+
+# Teams
+whk teams list|members|share|unshare|invite|invites|accept|decline
+
+# Agent sandbox (no account)
+whk sandbox create|list|get|delete|requests|request|wait|status|connect|forget
 
 # Other
 whk usage                              # Show quota info
@@ -767,13 +820,19 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted.
 | POST | `/api/send-test` | Bearer | Send test webhook (rate limit: 30/min) |
 | POST | `/api/send-test-email` | Bearer | Deliver a sample email to an endpoint, body `{ "slug": "...", "tag": "..." }` with `tag` optional (rate limit: 10/min) |
 
-### Email forwarding
+### Forwarding
 
 Forwarding settings are owner only. The owner-only routes below answer `404` to anyone else.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| PATCH | `/api/endpoints/[slug]` | Bearer, owner | Set `forwardUrl` and `forwardEnabled` (team members get `403`) |
+| GET/POST | `/api/endpoints/[slug]/destinations` | Bearer, owner | List or add destinations (up to 10) |
+| GET/PATCH/DELETE | `/api/endpoints/[slug]/destinations/[id]` | Bearer, owner | Read, change or remove one destination |
+| GET/POST | `/api/endpoints/[slug]/destinations/[id]/secret` | Bearer, owner | Read or rotate a destination's signing secret |
+| POST | `/api/endpoints/[slug]/destinations/[id]/test` | Bearer, owner | Send one delivery now and report the answer |
+| POST | `/api/endpoints/[slug]/destinations/preview` | Bearer, owner | Dry run of a destination against a captured request |
+| PUT | `/api/endpoints/[slug]/destinations/order` | Bearer, owner | Reorder destinations |
+| PATCH | `/api/endpoints/[slug]` | Bearer, owner | Set `forwardUrl` and `forwardEnabled` for the primary destination (team members get `403`) |
 | GET | `/api/endpoints/[slug]/forwarding` | Bearer, owner | Get the signing secret: `{ "secret": "whsec_..." }` |
 | POST | `/api/endpoints/[slug]/forwarding` | Bearer, owner | Rotate the signing secret, returns the new one |
 | POST | `/api/endpoints/[slug]/forwarding/test` | Bearer, owner | Post the newest email (or a sample) once and report the answer (rate limit: 10/min) |
@@ -1060,7 +1119,7 @@ Limits and SMTP replies:
 
 Docs: https://webhooks.cc/docs/forwarding
 
-Forwarding posts every email an endpoint captures to your own URL as parsed JSON, usually within a second or two. HTTP requests are not forwarded. Only the endpoint's owner can configure it. It is available on every plan and does not use request quota (each email already counted once when it arrived).
+Forwarding sends what an endpoint captures, HTTP requests and emails, to up to 10 destinations, usually within a second or two (see Destinations in the TypeScript SDK Reference). This section covers the signed JSON format for emails, set up through the endpoint's primary destination; an HTTP request sent as received keeps its own method, headers and body, plus signed `webhooks-cc-*` headers. Only the endpoint's owner can configure forwarding. It is available on every plan and does not use request quota (each email already counted once when it arrived).
 
 ### Set up
 
@@ -1241,3 +1300,4 @@ interface Delivery {
 - After moving to a plan with shorter retention, the old retention is kept for 7 more days
 - Ephemeral endpoints: 12 hours, max 25 requests
 - Emails and their forwarding deliveries follow the same retention as HTTP requests
+- An endpoint can keep its requests for fewer days than the plan, or delete each one as soon as every destination has its copy

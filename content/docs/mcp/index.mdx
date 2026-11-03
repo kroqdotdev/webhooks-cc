@@ -3,7 +3,7 @@ title: "Webhook MCP Server (@webhooks-cc/mcp)"
 description: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 48 MCP tools, a remote server at webhooks.cc/mcp with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 section: mcp
 order: 1
-lastUpdated: 2026-10-29
+lastUpdated: 2026-11-03
 schema: faq
 keywords:
   [
@@ -99,7 +99,7 @@ To get everything else, the agent connects to your account: `connect_account` wi
 
 The sandbox and the connection are saved in the [agent credential file](/docs/agents#the-agent-credential-file) (`~/.config/whk/agent.json` on Linux; `WHK_AGENT_FILE` moves it), which the server shares with the [CLI](/docs/cli/commands#sandbox) and the SDKs. A new session starts where the last one stopped, so you approve the agent once. The connection lasts 90 days; when you disconnect the agent under Account, Connected agents, the sandbox tools come back. Sandbox endpoints from an earlier session cannot move into your account, because only the process that registered holds the claim token: `connect_account` then connects through a new registration and says so, and those endpoints stay in the sandbox until they expire.
 
-Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-code`, `vscode`, `codex`, `windsurf`, `claude-desktop`) writes the config without `WHK_API_KEY`; add `--api-key whcc_...` to start with your account's tools.
+Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-code`, `vscode`, `codex`, `devin` for Devin Desktop, formerly Windsurf, `claude-desktop`) writes the config without `WHK_API_KEY`; add `--api-key whcc_...` to start with your account's tools.
 
 ## Registry and client support
 
@@ -110,7 +110,7 @@ Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-c
 - **Official MCP Registry**: `io.github.kroqdotdev/webhooks-cc`, published with each release from [`server.json`](https://github.com/kroqdotdev/webhooks-cc/blob/main/packages/mcp/server.json)
 - **Claude Code plugin**: the server bundled with the [webhook testing skill](/docs/mcp/skills), installed with `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc`
 - **Glama**: ships with [`glama.json`](https://glama.ai/mcp/servers) metadata
-- **Supported MCP clients**: Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, claude.ai, Claude Desktop, ChatGPT, and any client that takes remote MCP servers connect to the remote one; Claude Code (`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`), Cursor, VS Code, OpenAI Codex, Windsurf, and Claude Desktop also run the local server
+- **Supported MCP clients**: Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, claude.ai, Claude Desktop, ChatGPT, and any client that takes remote MCP servers connect to the remote one; Claude Code (`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`), Cursor, VS Code, OpenAI Codex, Devin Desktop (formerly Windsurf), and Claude Desktop also run the local server
 
 ## Available tools
 
@@ -124,7 +124,8 @@ The local server exposes 48 tools your AI agent can call, and the remote server 
 | `list_endpoints`    | List all your endpoints                       |
 | `get_endpoint`      | Get details for an endpoint by slug           |
 | `favorite_endpoint` | Mark or unmark an endpoint as a favourite     |
-| `update_endpoint`   | Update an endpoint name or mock response      |
+| `update_endpoint`   | Update an endpoint's name, mock response, signing, email fields or layouts |
+| `preview_layouts`   | Dry-run the endpoint's layouts on a captured email |
 | `preview_response`  | Show what a request would get back, unsent    |
 | `delete_endpoint`   | Delete an endpoint and its requests           |
 | `create_endpoints`  | Create multiple endpoints in one call (1-20)  |
@@ -289,7 +290,7 @@ Agent: Replayed to http://localhost:3000/webhooks - got 200 OK
 <FAQ>
 <FAQItem question="Which AI coding agents support @webhooks-cc/mcp?">
 
-Claude Code, Cursor, VS Code (GitHub Copilot) and OpenAI Codex all connect to the remote server at `https://webhooks.cc/mcp`, which is the easiest way in: you approve it once in your browser, with no key to paste. The local `@webhooks-cc/mcp` server works with those and with Windsurf and Claude Desktop, and any client that supports the Model Context Protocol over stdio can run it with `npx -y @webhooks-cc/mcp`.
+Claude Code, Cursor, VS Code (GitHub Copilot) and OpenAI Codex all connect to the remote server at `https://webhooks.cc/mcp`, which is the easiest way in: you approve it once in your browser, with no key to paste. The local `@webhooks-cc/mcp` server works with those and with Devin Desktop (formerly Windsurf) and Claude Desktop, and any client that supports the Model Context Protocol over stdio can run it with `npx -y @webhooks-cc/mcp`.
 
 </FAQItem>
 <FAQItem question="Can I use webhooks.cc from claude.ai or ChatGPT?">

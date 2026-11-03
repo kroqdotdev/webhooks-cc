@@ -3,7 +3,7 @@ title: "Dashboard Test Webhooks"
 description: "Use the dashboard Send button to fire manual requests or realistic provider webhook templates with correct signatures. Verify your handler end-to-end without deploying or configuring an external service."
 section: dashboard
 order: 2
-lastUpdated: 2026-05-15
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["test webhook", "webhook template", "provider webhook", "stripe webhook test"]
 seo:
@@ -14,7 +14,7 @@ seo:
 ## Open the sender
 
 1. Open an endpoint in the dashboard.
-2. Click **Send** in the URL bar.
+2. Click **Send** in the bar above the request list and pick **Send test request**.
 3. Select either manual mode or a provider template mode.
 4. Send the request and inspect the captured result in the request list.
 
@@ -50,7 +50,7 @@ Provider templates generate realistic payload structure and signature headers so
 | **Vercel**            | deployment.created, deployment.succeeded, deployment.error                       | `application/json`                  | `x-vercel-signature` (HMAC SHA-1 over raw body)                                                              |
 | **GitLab**            | push, merge_request                                                              | `application/json`                  | `x-gitlab-token` (raw token comparison)                                                                      |
 | **Typeform**          | form_response, partial_response, payment                                         | `application/json`                  | `typeform-signature` (`sha256=` Base64 HMAC SHA-256 over raw body)                                           |
-| **Standard Webhooks** | No presets — user-provided body                                                  | `application/json`                  | `webhook-id` + `webhook-timestamp` + `webhook-signature` (v1, Base64 HMAC SHA-256 over msgId.timestamp.body) |
+| **Standard Webhooks** | No presets; user-provided body                                                  | `application/json`                  | `webhook-id` + `webhook-timestamp` + `webhook-signature` (v1, Base64 HMAC SHA-256 over msgId.timestamp.body) |
 | **Meta**              | whatsapp.messages, page.messages, instagram.comments                             | `application/json`                  | `x-hub-signature-256` (`sha256=` HMAC SHA-256 over raw body, keyed by app secret)                            |
 | **Lemon Squeezy**     | order_created, subscription_created, subscription_payment_success                | `application/json`                  | `x-signature` (hex HMAC SHA-256 over raw body)                                                               |
 | **Coinbase Commerce** | charge:confirmed, charge:failed, charge:pending                                  | `application/json`                  | `x-cc-webhook-signature` (hex HMAC SHA-256 over raw body)                                                    |
@@ -60,7 +60,7 @@ Provider templates generate realistic payload structure and signature headers so
 | **Telegram**          | message, callback_query, edited_message                                          | `application/json`                  | `x-telegram-bot-api-secret-token` (raw token comparison)                                                     |
 | **Square**            | payment.created, payment.updated, refund.created                                 | `application/json`                  | `x-square-hmacsha256-signature` (Base64 HMAC SHA-256 over notification URL + raw body)                       |
 | **HubSpot**           | contact.creation, contact.propertyChange, deal.creation                          | `application/json`                  | `x-hubspot-signature-v3` (Base64 HMAC SHA-256 over method + URI + body + timestamp)                          |
-| **Mailgun**           | delivered, failed, opened                                                        | `application/json`                  | None — signs body fields `signature.{timestamp,token,signature}` (hex HMAC SHA-256)                          |
+| **Mailgun**           | delivered, failed, opened                                                        | `application/json`                  | None; signs body fields `signature.{timestamp,token,signature}` (hex HMAC SHA-256)                          |
 | **Calendly**          | invitee.created, invitee.canceled, routing_form_submission.created               | `application/json`                  | `calendly-webhook-signature` (`t=...,v1=...` hex HMAC SHA-256 over timestamp.body)                           |
 | **Mux**               | video.asset.created, video.asset.ready, video.upload.asset_created               | `application/json`                  | `mux-signature` (`t=...,v1=...` hex HMAC SHA-256 over timestamp.body)                                        |
 | **Sentry**            | issue.created, issue.resolved, error.created                                     | `application/json`                  | `sentry-hook-signature` (hex HMAC SHA-256 over raw body)                                                     |
@@ -69,6 +69,8 @@ Provider templates generate realistic payload structure and signature headers so
 | **Adyen**             | AUTHORISATION, CAPTURE, REFUND                                                   | `application/json`                  | Body field `additionalData.hmacSignature` (Base64 HMAC SHA-256 over Adyen notification fields)               |
 | **PayPal**            | PAYMENT.CAPTURE.COMPLETED, CHECKOUT.ORDER.APPROVED, BILLING.SUBSCRIPTION.CREATED | `application/json`                  | `paypal-transmission-sig` placeholder; real PayPal signatures require PayPal's private key                   |
 | **Plaid**             | TRANSACTIONS, ITEM, AUTH                                                         | `application/json`                  | `plaid-verification` placeholder JWT; verification requires Plaid JWT/JWK lookup credentials                 |
+| **Resend** | email.sent, email.delivered, email.bounced, email.clicked, contact.created | `application/json` | `svix-signature` (Svix: `v1,` Base64 HMAC SHA-256 over svix-id.svix-timestamp.body) |
+| **WorkOS** | user.created, dsync.user.created, connection.activated, session.created, organization.created | `application/json` | `workos-signature` (`t=..., v1=...` hex HMAC SHA-256 over t.body) |
 
 ### Send the same template from code
 

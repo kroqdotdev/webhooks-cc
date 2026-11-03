@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import type { Condition } from "@webhooks-cc/sdk";
 import type { EmailField } from "@webhooks-cc/sdk/email";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { assistsLeftText } from "@/lib/ai-assists-left";
 import {
   askAiAssist,
   fetchAiAssists,
@@ -68,12 +69,13 @@ export function AiAssistPanel({
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refreshInfo = useCallback(() => {
     if (!accessToken) return;
     fetchAiAssists(accessToken, slug)
       .then(setInfo)
       .catch(() => setInfo(null));
   }, [accessToken, slug]);
+  useEffect(refreshInfo, [refreshInfo]);
 
   const left = info ? Math.max(info.allowed - info.used, 0) : 0;
   const toggle = (id: string) => {
@@ -111,11 +113,18 @@ export function AiAssistPanel({
         consent: true,
       });
       setResult(answer);
-      setInfo({ offered: true, allowed: answer.allowed, used: answer.used });
+      setInfo((current) => ({
+        ...current,
+        offered: true,
+        allowed: answer.allowed,
+        used: answer.used,
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The AI service could not be asked.");
     } finally {
       setBusy(false);
+      // Asks change the count and when the next one comes back, failed ones included.
+      refreshInfo();
     }
   };
 
@@ -228,11 +237,7 @@ export function AiAssistPanel({
             >
               {busy ? "Asking..." : "Propose"}
             </button>
-            {info && (
-              <span className="text-xs text-muted-foreground">
-                {left} of {info.allowed} AI assists left this 30 days.
-              </span>
-            )}
+            {info && <span className="text-xs text-muted-foreground">{assistsLeftText(info)}</span>}
           </div>
         </>
       )}

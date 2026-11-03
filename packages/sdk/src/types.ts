@@ -310,7 +310,8 @@ export interface ListEndpointsOptions {
 
 /**
  * A team you own or belong to. Seats are both the member cap and the
- * pooled request quota (seats x 100,000 per 30-day period).
+ * pooled request quota (seats x 100,000 a month on Teams, x 250,000 on
+ * Team Business).
  */
 export interface Team {
   /** Team identifier */

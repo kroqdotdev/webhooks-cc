@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-02
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -26,6 +26,17 @@ whk
 | Flag      | Description                                                  |
 | --------- | ------------------------------------------------------------ |
 | `--nogui` | Disable the TUI and print help instead (also: `WHK_NOGUI=1`) |
+
+## Global flags
+
+These work with every subcommand.
+
+| Flag            | Description                                                         |
+| --------------- | ------------------------------------------------------------------- |
+| `--json`        | Print JSON instead of plain text, where the command supports it     |
+| `--api-url`     | Use another API base URL (also: `WHK_API_URL`)                      |
+| `--webhook-url` | Use another webhook receiver URL (also: `WHK_WEBHOOK_URL`)          |
+| `--no-color`    | Disable colored output                                              |
 
 ## auth login
 
@@ -59,10 +70,15 @@ Create a new endpoint. An optional name can be provided; the slug is auto-genera
 whk create [name]
 ```
 
-| Flag                 | Description                                                              |
-| -------------------- | ------------------------------------------------------------------------ |
-| `--signing-provider` | Provider for automatic signature verification (e.g., `stripe`, `github`) |
-| `--signing-secret`   | Signing secret (encrypted server-side, never stored locally)             |
+| Flag                 | Description                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| `--ephemeral, -e`    | Create the endpoint as ephemeral (it expires)                                                         |
+| `--expires-in`       | Expiry duration (e.g., `12h`, `7d`)                                                                   |
+| `--mock-status`      | Mock response status code (100-599)                                                                   |
+| `--mock-body`        | Mock response body; [placeholders](/docs/mock-responses) such as `{{ json.id }}` are filled in per request |
+| `--mock-header`      | Mock response header (repeatable, format: `Key:Value`)                                                |
+| `--signing-provider` | Provider for automatic signature verification (e.g., `stripe`, `github`)                              |
+| `--signing-secret`   | Signing secret (encrypted server-side, never stored locally; also: `WHK_SIGNING_SECRET`)              |
 
 ```bash
 whk create my-stripe --signing-provider stripe --signing-secret whsec_...
@@ -89,6 +105,22 @@ Show an endpoint's details: webhook URL, email address, name, mock response, and
 whk get <slug>
 ```
 
+## update-endpoint
+
+Change an endpoint's name or mock response.
+
+```bash
+whk update-endpoint <slug> --mock-status 202 --mock-body '{"ok":true}'
+```
+
+| Flag            | Description                                             |
+| --------------- | ------------------------------------------------------- |
+| `--name`        | New display name                                        |
+| `--mock-status` | Mock response status code                               |
+| `--mock-body`   | Mock response body (placeholders are filled in)         |
+| `--mock-header` | Mock response header (repeatable, format: `Key:Value`)  |
+| `--clear-mock`  | Remove the mock response                                |
+
 ## favorite
 
 Mark an endpoint as a favourite, or remove it again with `unfavorite`. Favourites come first in `whk list`, in the interactive TUI's endpoint lists, and in the dashboard's endpoint switcher. A favourite is yours alone: you can favourite an endpoint shared with you through a team without changing it for anyone else. Both commands are idempotent, and `favourite` and `unfavourite` work as aliases. They need an account, not an agent sandbox.
@@ -114,7 +146,7 @@ whk delete <slug>
 
 ## tunnel
 
-Forward webhooks to a local port. Creates a new endpoint unless `--endpoint` is set. Captured emails are posted too, as webhooks.cc's email JSON or in a mail provider's shape ([emails](/docs/cli/tunnel#emails)).
+Forward webhooks to a local port, optionally with a path (`whk tunnel 8080/api/webhooks`). Creates a new endpoint unless `--endpoint` is set. Captured emails are posted too, as webhooks.cc's email JSON or in a mail provider's shape ([emails](/docs/cli/tunnel#emails)).
 
 ```bash
 whk tunnel <port>
@@ -162,6 +194,10 @@ List, read, search, count, clear, and export captured requests. Run `whk request
 ```bash
 whk requests list <slug>          # newest first, --limit (default 25), --since, --cursor
 whk requests get <request-id>
+whk requests search -q invoice --slug <slug> --from 1h   # across retained requests: --method, --to, --limit, --offset, --order
+whk requests count --slug <slug> --method POST           # same filters as search
+whk requests clear <slug>         # --before <time or duration>, --force to skip the prompt
+whk requests export <slug> --format har -o requests.har  # or --format curl; --limit (default 100), --since
 ```
 
 Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the address they arrived at, and their subject:
@@ -185,6 +221,28 @@ whk replay <request-id>
 | Flag   | Description                                              |
 | ------ | -------------------------------------------------------- |
 | `--to` | Target URL for replay (default: `http://localhost:8080`) |
+
+## send
+
+Send a test webhook to one of your endpoints. The body can be a string or `@file`.
+
+```bash
+whk send <slug> -d '{"event":"test"}' -H "Content-Type: application/json"
+```
+
+| Flag           | Description                                         |
+| -------------- | --------------------------------------------------- |
+| `--method`     | HTTP method (default: `POST`)                       |
+| `--header, -H` | Request header (repeatable, format: `Key:Value`)    |
+| `--data, -d`   | Request body, a string or `@file` (up to 10 MB)     |
+
+## send-to
+
+Send a webhook from your machine to any URL, with the same flags as `send`.
+
+```bash
+whk send-to http://localhost:3000/webhooks -d @payload.json
+```
 
 ## teams
 
@@ -265,6 +323,14 @@ Update whk to the latest version.
 
 ```bash
 whk update
+```
+
+## completions
+
+Print a shell completion script (`bash`, `zsh`, `fish`, `elvish` or `powershell`).
+
+```bash
+whk completions zsh > ~/.zfunc/_whk
 ```
 
 ## --version

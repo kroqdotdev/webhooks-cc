@@ -3,7 +3,7 @@ title: "How to Verify Webhook Signatures"
 description: "Step-by-step guide to verifying webhook signatures for Stripe, GitHub, Shopify, Slack, Discord, and 32 providers using HMAC-SHA256, Ed25519, and RSA-SHA256."
 section: guides
 order: 5
-lastUpdated: 2026-10-20
+lastUpdated: 2026-11-03
 schema: howto
 keywords:
   [
@@ -431,7 +431,7 @@ const paypal = await verifySignature(request, {
 | Slack             | `x-slack-signature` + `x-slack-request-timestamp`        | HMAC-SHA256      | 5-minute timestamp window                                           |
 | Paddle            | `paddle-signature`                                       | HMAC-SHA256      | `ts=timestamp;h1=hash` format                                       |
 | Linear            | `linear-signature`                                       | HMAC-SHA256      | Hex-encoded, optional `sha256=` prefix                              |
-| Clerk             | `webhook-signature` (Standard Webhooks / Svix)           | HMAC-SHA256      | Delegates to Standard Webhooks signing                              |
+| Clerk             | `svix-signature` or `webhook-signature` (Svix)           | HMAC-SHA256      | Delegates to Standard Webhooks signing                              |
 | Discord           | `x-signature-ed25519` + `x-signature-timestamp`          | Ed25519          | Uses public key, not shared secret                                  |
 | Vercel            | `x-vercel-signature`                                     | HMAC-SHA1        | Hex-encoded hash                                                    |
 | GitLab            | `x-gitlab-token`                                         | Token comparison | Raw secret sent in header                                           |

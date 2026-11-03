@@ -3,7 +3,7 @@ title: "API Reference"
 description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-10-25
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -26,6 +26,7 @@ const client = new WebhooksCC({
   retry?: RetryOptions,  // Optional. Automatic retry configuration.
   hooks?: ClientHooks,   // Optional. Lifecycle hooks for observability.
   emailDomain?: string,  // Optional. Domain for emails.address() (default: mailhooks.cc).
+  fetch?: typeof fetch,  // Optional. The fetch every call goes through (proxies, tests).
   userAgent?: string,    // Optional. Your product token, like "my-tool/1.2", sent before
                          // the SDK's (webhooks-cc-sdk/<version>) in the User-Agent.
 });
@@ -49,8 +50,9 @@ create(options?: CreateEndpointOptions): Promise<Endpoint>
 | ----------------- | -------------- | -------- | ------------------------------------------ |
 | `name`            | `string`       | no       | Display name                               |
 | `ephemeral`       | `boolean`      | no       | Auto-delete after TTL                      |
-| `expiresIn`       | `string`       | no       | Custom expiry duration                     |
+| `expiresIn`       | `string \| number` | no   | Custom expiry duration, like `"12h"` or `"7d"`; implies `ephemeral` |
 | `mockResponse`    | `MockResponse` | no       | Mock response config                       |
+| `responseRules`   | `ResponseRule[]` | no     | [Response rules](/docs/mock-responses#conditional-response-rules), first match wins |
 | `notificationUrl` | `string`       | no       | Adds a Notifications [destination](#destinations): a chat message, at most one a second |
 | `site`            | `EndpointSite` | no       | Which site's dashboard lists it: `"webhooks"`, `"mailhooks"` or `"both"` (the default). Listing only; both addresses work either way |
 
@@ -95,7 +97,7 @@ get(slug: string): Promise<Endpoint>
 
 <ApiMethod method="PATCH" path="/endpoints/:slug" title="client.endpoints.update">
 
-Update an endpoint's name, mock response or response rules.
+Update an endpoint's settings. Only the options you pass change.
 
 ```ts
 update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
@@ -113,6 +115,12 @@ update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
 | `showEmailExtracts` | `boolean`              | no       | Pick codes and links out of emails (owner only)                                     |
 | `site`            | `EndpointSite`           | no       | Which site's dashboard lists it (owner only)                                        |
 | `emailFields`     | `EmailField[] \| null`   | no       | [Named fields](/docs/email-capture#fields-you-pick-out) to pick out of every email, at most 20; replaces the list (owner only) |
+| `layouts`         | `Layout[] \| null`       | no       | [Layouts](/docs/layouts) that read the endpoint's emails before delivery, at most 50; replaces the list (owner only) |
+| `retentionDays`   | `number \| null`         | no       | Keep requests this many days (1 up to the plan's), or `null` for the plan's (owner only) |
+| `deleteAfterDelivery` | `boolean`            | no       | Delete each request once every delivery is settled (owner only)                     |
+| `signingProvider` | `string \| null`         | no       | Provider for [server-side signature verification](/docs/sdk/signatures#server-side-verification), or `null` to turn it off |
+| `signingSecret`   | `string \| null`         | no       | The provider's signing secret (stored encrypted, never returned)                    |
+| `signingHeader`   | `string \| null`         | no       | The header name for the `generic-hmac` provider                                     |
 
 </ParamTable>
 
@@ -152,6 +160,30 @@ const preview = await client.endpoints.previewResponse("payments", {
 ```
 
 The SDK also exports the rule language itself: `evaluateConditions(group, subject)` checks conditions against a request and `renderTemplate(template, context)` fills in placeholders, with the same results as the receiver.
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/layouts/preview" title="client.endpoints.previewLayouts">
+
+A dry run of the endpoint's [layouts](/docs/layouts) on a captured email: which layout matches and what it finds. Uses the endpoint's newest email unless `requestId` is given, and the saved layouts unless `layouts` are. Nothing is saved or sent and no parsed pages are used: attachments show an earlier parse, never a new one. Owner only.
+
+```ts
+previewLayouts(slug: string, options?: { layouts?: Layout[]; requestId?: string }): Promise<LayoutsPreview>
+// Returns: { problems, layoutsCap, request, parsed }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/replay" title="client.endpoints.redeliver">
+
+Send the endpoint's requests received in a time range through its destinations again, at most 500, oldest first: after a pattern was fixed or a destination came back. Owner only.
+
+```ts
+redeliver(
+  slug: string,
+  range?: { since?: number; until?: number; kind?: "http" | "email" }
+): Promise<{ requests: number; queued: number }>
+```
+
 </ApiMethod>
 
 <ApiMethod method="DELETE" path="/endpoints/:slug" title="client.endpoints.delete">
@@ -215,7 +247,7 @@ sendTemplate(slug: string, options: SendTemplateOptions): Promise<Response>
 | `slug`      | `string`                 | yes      | Endpoint slug                                                                                                         |
 | `provider`  | `TemplateProvider`       | yes      | Provider template to generate                                                                                         |
 | `template`  | `string`                 | no       | Provider-specific template preset                                                                                     |
-| `secret`    | `string`                 | yes      | Shared secret for signature generation                                                                                |
+| `secret`    | `string`                 | yes      | Shared secret for signature generation; not needed for unsigned templates (`secretRequired: false`, such as `sendgrid`, `discord`, `plaid`) |
 | `event`     | `string`                 | no       | Provider event/topic override                                                                                         |
 | `method`    | `string`                 | no       | HTTP method override (defaults to POST)                                                                               |
 | `timestamp` | `number`                 | no       | Unix timestamp override for signature generation                                                                      |
@@ -242,6 +274,7 @@ sendTo(url: string, options?: SendToOptions): Promise<Response>
 | ----------- | ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `url`       | `string`                 | yes      | Target URL (http or https)                                                                                                                                        |
 | `provider`  | `TemplateProvider`       | no       | Provider template for signing                                                                                                                                     |
+| `template`  | `string`                 | no       | Provider-specific template preset, like `"checkout.session.completed"`; its sample body is sent when `body` is left out                                         |
 | `secret`    | `string`                 | no       | Secret for signature generation (required when provider is set)                                                                                                   |
 | `body`      | `unknown`                | no       | Request body (JSON-serialized if not a string)                                                                                                                    |
 | `headers`   | `Record<string, string>` | no       | Additional headers                                                                                                                                                |
@@ -313,6 +346,29 @@ Get a single captured request by ID. For a captured email, `kind` is `"email"` a
 get(requestId: string): Promise<Request>
 ```
 
+When the endpoint has [layouts](/docs/layouts), `parsed` holds what they found once the parse is done.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id/raw" title="client.requests.raw">
+
+A captured email's exact message (RFC 5322 bytes), and `attachment()` one of its attachments by its index in `email.attachments`, from 0 to 99. Both work for emails kept in storage (`email.stored`).
+
+```ts
+raw(requestId: string): Promise<Uint8Array>
+attachment(requestId: string, index: number): Promise<AttachmentDownload> // { bytes, filename, contentType }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/replay" title="client.requests.redeliver">
+
+Send a captured request through its endpoint's [destinations](#destinations) again, with their current settings. True when at least one delivery was queued. To send it to one destination only, use [`forwarding.redeliver()`](#forwarding).
+
+```ts
+redeliver(requestId: string): Promise<boolean>
+```
+
 </ApiMethod>
 
 <ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.waitFor">
@@ -376,7 +432,10 @@ subscribe(slug: string, options?: SubscribeOptions): AsyncIterable<Request>
 | `signal`               | `AbortSignal`      | no       | Signal to cancel the subscription |
 | `timeout`              | `number \| string` | no       | Max stream duration               |
 | `reconnect`            | `boolean`          | no       | Auto-reconnect on disconnect      |
-| `maxReconnectAttempts` | `number`           | no       | Max reconnection attempts         |
+| `maxReconnectAttempts` | `number`           | no       | Max reconnection attempts (default: 5) |
+| `reconnectBackoffMs`   | `number \| string` | no       | Base backoff between reconnects (default: 1000) |
+| `idleTimeout`          | `number \| string` | no       | Treat the stream as dead after this long without data (default: `"90s"`; `0` turns it off) |
+| `onReconnect`          | `(attempt) => void` | no      | Called before each reconnect attempt |
 
 </ParamTable>
 
@@ -418,8 +477,8 @@ search(filters?: SearchFilters): Promise<SearchResult[]>
 | `method` | `string`            | no       | Filter by HTTP method              |
 | `kind`   | `"http" \| "email"` | no       | Only HTTP requests, or only emails |
 | `q`      | `string`            | no       | Free-text search                   |
-| `from`   | `string`            | no       | Start time (duration or timestamp) |
-| `to`     | `string`            | no       | End time (duration or timestamp)   |
+| `from`   | `string \| number`  | no       | Start time (duration or timestamp) |
+| `to`     | `string \| number`  | no       | End time (duration or timestamp)   |
 | `limit`  | `number`            | no       | Max results (default: 50)          |
 | `offset` | `number`            | no       | Pagination offset                  |
 | `order`  | `"asc" \| "desc"`   | no       | Sort order (default: `"desc"`)     |
@@ -450,7 +509,7 @@ clear(slug: string, options?: ClearRequestsOptions): Promise<void>
 | Param    | Type     | Required | Description                                    |
 | -------- | -------- | -------- | ---------------------------------------------- |
 | `slug`   | `string` | yes      | Endpoint slug                                  |
-| `before` | `string` | no       | Delete requests before this duration/timestamp |
+| `before` | `string \| number` | no | Delete requests before this duration/timestamp |
 
 </ParamTable>
 </ApiMethod>
@@ -811,7 +870,7 @@ redeliverFailed(endpointSlug: string, options?: { destinationId?: string }): Pro
 
 ## Destinations
 
-Each destination of an endpoint decides what it gets (`http`, `email`, a `filter`), how it is sent (`format`: `"as_received"`, `"json"`, `"template"` with your `bodyTemplate`, or `"chat"` with an optional `messageTemplate`) and when (`throttleSeconds`, `delaySeconds`). See [Forwarding](/docs/forwarding) for what each does.
+Each destination of an endpoint decides what it gets (`http`, `email`, a `filter`), how it is sent (`format`: `"as_received"`, `"json"`, `"template"` with your `bodyTemplate`, or `"chat"` with an optional `messageTemplate`, `"sheets"` rows in a Google Sheet, or `"file_drop"` files on your own server) and when (`throttleSeconds`, `delaySeconds`). See [Forwarding](/docs/forwarding) for what each does.
 
 ```ts
 const zap = await client.destinations.create(slug, {
@@ -841,19 +900,20 @@ get(endpointSlug: string, destinationId: string): Promise<Destination>
 Add a destination, up to 10 per endpoint. It is on unless `enabled: false`, and gets a signing secret of its own. Templates and filters are checked before the request is sent, so a mistake throws with the field it is in.
 
 ```ts
-create(endpointSlug: string, input: DestinationInput & { url: string }): Promise<Destination>
+create(endpointSlug: string, input: DestinationCreateInput): Promise<Destination>
+// DestinationCreateInput: DestinationInput with a url, or a file drop's format and config
 ```
 
 <ParamTable>
 
 | Param             | Type                                                         | Required | Description                                                                                                   |
 | ----------------- | ------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------- |
-| `url`             | `string`                                                     | yes      | An `https` URL on a public host name, or a Slack or Discord webhook                                           |
+| `url`             | `string`                                                     | yes      | An `https` URL on a public host name, or a Slack or Discord webhook (not for a file drop)                     |
 | `name`            | `string \| null`                                             | no       | For the list and the log                                                                                      |
 | `enabled`         | `boolean`                                                    | no       | Send to it (default `true`)                                                                                   |
 | `http`, `email`   | `boolean`                                                    | no       | Which kinds it takes (default both)                                                                           |
 | `filter`          | `{ logic?: "and" \| "or"; conditions: Condition[] } \| null` | no       | Send only matching captures. See [Send only some captures](/docs/forwarding#send-only-some-captures)          |
-| `format`          | `DestinationFormat`                                          | no       | Default `"auto"`: chat for Slack and Discord URLs, as received otherwise. Also `"as_received"`, `"json"`, `"template"`, `"chat"`, and for emails a mail provider's shape: `"postmark"`, `"sendgrid"`, `"mailgun"`, `"cloudmailin"` |
+| `format`          | `DestinationFormat`                                          | no       | Default `"auto"`: chat for Slack and Discord URLs, as received otherwise. Also `"as_received"`, `"json"`, `"template"`, `"chat"`, `"sheets"` ([Google Sheets](/docs/forwarding#google-sheets)), `"file_drop"` ([File drops](/docs/forwarding#file-drops), Business), and for emails a mail provider's shape: `"postmark"`, `"sendgrid"`, `"mailgun"`, `"cloudmailin"` |
 | `mailgunSigningKey` | `string \| null`                                           | no       | With `"mailgun"`: your Mailgun signing key, so `signature` verifies (write-only; `hasMailgunSigningKey` says one is saved) |
 | `bodyTemplate`    | JSON                                                         | no       | With `"template"`: the body; its strings hold `{{ placeholders }}` ([Your own JSON](/docs/forwarding#your-own-json)) |
 | `messageTemplate` | `string \| null`                                             | no       | With `"chat"`: your own message text; `null` sends the standard message                                       |
@@ -864,6 +924,9 @@ create(endpointSlug: string, input: DestinationInput & { url: string }): Promise
 | `sentField`       | `string \| null`                                             | no       | A JSON body field with the sender's own timestamp                                                             |
 | `throttleSeconds` | `number`                                                     | no       | At most one delivery every so many seconds (0 to 3,600); the rest are not sent                                |
 | `delaySeconds`    | `number`                                                     | no       | Wait this long after the capture before sending (0 to 3,600)                                                  |
+| `attachments`     | `"links" \| "inline" \| "none"`                              | no       | How a stored email's attachments travel: signed links (default), inline base64, or names only                 |
+| `config`          | `SheetsConfig \| FileDropConfig \| null`                     | no       | With `"sheets"`: the spreadsheet, tab and columns; with `"file_drop"`: the server, folder and file layout       |
+| `dropSecret`      | `{ password?, privateKey?, secretAccessKey? } \| null`       | no       | With `"file_drop"`: the login secret, write-only, needed again when the server or login changes              |
 | `position`        | `number`                                                     | no       | Its place in the list                                                                                         |
 
 </ParamTable>
@@ -931,6 +994,25 @@ A dry run against a captured request: whether the destination takes its kind (`t
 
 ```ts
 preview(endpointSlug: string, options: PreviewDestinationOptions): Promise<DestinationPreview>
+```
+
+</ApiMethod>
+
+## Alerts
+
+<ApiMethod method="GET" path="/endpoints/:slug/alerts" title="client.alerts">
+
+An endpoint's [alerts](/docs/forwarding#alerts): when its email fields stop finding values, mail stops arriving, or a delivery fails for good. `get()` returns the settings and the recent alerts, open (`resolvedAt: null`) or resolved; `update()` changes only the settings you pass and returns them.
+
+```ts
+get(slug: string): Promise<{ settings: AlertSettings; events: AlertEvent[] }>
+update(slug: string, settings: Partial<AlertSettings>): Promise<AlertSettings>
+// AlertSettings: { enabled, fieldFailures, fieldFailureShare, requiredFields, silenceHours,
+//                  destinationFailures, notifyEmail, notifyDestinationIds }
+```
+
+```ts
+await client.alerts.update(slug, { enabled: true, silenceHours: 24, notifyEmail: true });
 ```
 
 </ApiMethod>
@@ -1094,6 +1176,20 @@ const endpoints = await client.endpoints.list(); // includes the sandbox endpoin
 ```
 
 `waitForClaim()` rejects with `AgentAuthError` `expired_token` when the 15-minute code runs out (call `claim()` again for a new one), or `access_denied` when the human declines. After the claim the sandbox client stops working; the returned client renews its token from the claimed assertion for 90 days.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(credential file)" title="WebhooksCC.connected / WebhooksCC.connect">
+
+The connection is saved in the agent credential file that the MCP server, the CLI and the Python and Go SDKs share (`~/.config/whk/agent.json`, or `WHK_AGENT_FILE`), so a later process picks it up. `connected()` returns a client for the connected account, or `null` when there is none or the human has disconnected the agent; `fromSavedConnection()` is the synchronous form that does not check first. `connect()` connects an agent to a human's account without a sandbox.
+
+```ts
+const client = (await WebhooksCC.connected()) ?? (await WebhooksCC.sandbox());
+
+const pending = await WebhooksCC.connect({ email: "dev@example.com" });
+console.log(`Open ${pending.verificationUri}, sign in, and enter ${pending.userCode}`);
+const account = await pending.wait();
+```
 
 </ApiMethod>
 
@@ -1313,9 +1409,15 @@ import {
   verifyMuxSignature,
   verifySentrySignature,
   verifyBitbucketSignature,
+  verifyDocuSignSignature,
+  verifyAdyenSignature,
+  verifyPayPalSignature,
   verifyResendSignature,
   verifyWorkOSSignature,
   verifyForwardedEmail,
+  verifyForwardedRequest,
+  verifyForwardedJson,
+  verifyRelayedRequest,
 } from "@webhooks-cc/sdk";
 
 // Universal verifier (dispatches by provider)
@@ -1376,7 +1478,13 @@ interface Endpoint {
   favorite?: boolean; // your own favourite; present on list() and get()
   emailAddress?: string | null; // null for guest endpoints, which receive no email
   showEmailExtracts?: boolean;
+  site?: "webhooks" | "mailhooks" | "both";
   emailFields?: EmailField[]; // { name, from, header?, pattern }
+  layouts?: Layout[]; // owner only
+  retentionDays?: number | null; // owner only; null keeps the plan's
+  deleteAfterDelivery?: boolean; // owner only
+  sharedWith?: TeamShare[]; // { teamId, teamName }; when you own it
+  fromTeams?: TeamShare[]; // when it is shared with you
   forwardEnabled?: boolean;
   forwardUrl?: string | null; // only returned to the owner
   hasForwardSecret?: boolean;
@@ -1389,6 +1497,7 @@ interface Request {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  bodyRaw?: string; // base64 raw bytes, only for non-UTF-8 payloads
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -1399,12 +1508,15 @@ interface Request {
   signingProvider?: string | null;
   kind?: "http" | "email";
   email?: EmailCapture | null; // the parsed message, for a captured email
+  parsed?: ParsedEmail | null; // what the endpoint's layouts found, once parsed
 }
 
 // A captured email: method "EMAIL", path is the recipient address, body the raw message
 interface EmailRequest extends Request {
   kind: "email";
   email: EmailCapture;
+  emailFields?: Record<string, string | null> | null; // named fields, from emails.get()
+  replyText?: string | null; // the new text of a reply, from emails.get()
 }
 
 interface EmailCapture {
@@ -1429,8 +1541,10 @@ interface EmailCapture {
     inline: boolean;
   }[];
   auth: EmailAuth | null; // SPF, DKIM, DMARC and reverse DNS results
+  spam?: EmailSpam | null; // the spam score
   smtp: EmailSmtp | null; // client IP, HELO, TLS, envelope; smtp.test marks sample emails
   parseError: boolean;
+  stored?: boolean; // the raw message and attachments are kept: requests.raw(), requests.attachment()
   truncated: {
     raw: boolean;
     text: boolean;

@@ -18,8 +18,8 @@ import { isUuid } from "@/lib/uuid";
 
 /**
  * AI setup and repair (lib/ai/assist.ts) for an endpoint's layouts and
- * fields. GET: whether it is offered and how many assists are left this
- * 30 days. POST { ask, requestIds, consent: true }: sends the picked emails
+ * fields. GET: whether it is offered, how many assists are left in the
+ * rolling 30 days, and when the next one comes back (nextAt). POST { ask, requestIds, consent: true }: sends the picked emails
  * (1 to 5 of the endpoint's own) to the model, with the person's consent
  * each time, and answers only proposals that compile and find a value in
  * every sample; nothing is saved. A session only: consent is a person's.
@@ -28,13 +28,21 @@ import { isUuid } from "@/lib/uuid";
 
 type Params = { params: Promise<{ slug: string }> };
 
-async function left(endpointId: string): Promise<{ allowed: number; used: number }> {
+/** Assists in the rolling 30 days, and when the oldest counted one stops counting. */
+async function left(
+  endpointId: string
+): Promise<{ allowed: number; used: number; nextAt: string | null }> {
   const { data, error } = await createAdminClient().rpc("ai_assists_left", {
     p_endpoint_id: endpointId,
   });
   if (error) throw error;
-  const result = (data ?? {}) as { allowed?: number; used?: number };
-  return { allowed: result.allowed ?? 0, used: result.used ?? 0 };
+  const result = (data ?? {}) as { allowed?: number; used?: number; next_at?: string | null };
+  const nextAt = typeof result.next_at === "string" ? new Date(result.next_at) : null;
+  return {
+    allowed: result.allowed ?? 0,
+    used: result.used ?? 0,
+    nextAt: nextAt && !Number.isNaN(nextAt.getTime()) ? nextAt.toISOString() : null,
+  };
 }
 
 export async function GET(request: Request, { params }: Params) {
