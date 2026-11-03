@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   settings: { POLAR_AUTO_REFUNDS: true, POLAR_AUTO_REFUND_MAX_CENTS: 30_000 },
   upserts: [] as Array<{ row: Record<string, unknown>; options: unknown }>,
-  updates: [] as Array<{ id: unknown; patch: Record<string, unknown> }>,
+  updates: [] as Array<{
+    id: unknown;
+    status: unknown;
+    patch: Record<string, unknown>;
+  }>,
   claimed: [] as Record<string, unknown>[],
   orders: {} as Record<string, Record<string, unknown>>,
   refunds: [] as Record<string, unknown>[],
@@ -33,12 +37,20 @@ vi.mock("@/lib/supabase/admin", () => ({
         mocks.upserts.push({ row, options });
         return { error: null };
       },
-      update: (patch: Record<string, unknown>) => ({
-        eq: async (_column: string, id: unknown) => {
-          mocks.updates.push({ id, patch });
-          return { error: null };
-        },
-      }),
+      update: (patch: Record<string, unknown>) => {
+        const filters: Record<string, unknown> = {};
+        const builder = {
+          eq: (column: string, value: unknown) => {
+            filters[column] = value;
+            return builder;
+          },
+          then: (resolve: (value: { error: null }) => void) => {
+            mocks.updates.push({ id: filters.id, status: filters.status, patch });
+            resolve({ error: null });
+          },
+        };
+        return builder;
+      },
     }),
     rpc: async () => ({ data: mocks.claimed, error: null }),
   }),
@@ -180,6 +192,16 @@ describe("processRefund", () => {
       refund_ids: ["ref_1"],
       planned_cents: 2900,
       lease_until: null,
+    });
+    // Every write is on the row as claimed, so a dismissal meanwhile wins.
+    expect(
+      mocks.updates.every((update) => update.id === "row_1" && update.status === "pending")
+    ).toBe(true);
+    // What it would refund is noted before refunding, keeping the lease.
+    expect(mocks.updates[0].patch).toEqual({
+      orders: [expect.objectContaining({ order_id: "ord_1", net: 2900 })],
+      planned_cents: 2900,
+      updated_at: expect.any(String),
     });
     expect(mocks.auditSystemEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -342,6 +364,85 @@ describe("processRefund", () => {
 
     expect(mocks.refundsCreate.mock.calls.map(([body]) => body.order_id)).toEqual(["seen"]);
     expect(lastUpdate()).toMatchObject({ status: "refunded", refunded_cents: 50_000 });
+  });
+
+  it("checks a refund Polar still has pending again later, then closes the row", async () => {
+    mocks.refundsCreate.mockImplementationOnce(async (body: Record<string, unknown>) => {
+      const refund = {
+        id: "ref_slow",
+        status: "pending",
+        amount: body.amount,
+        tax_amount: 725,
+        order_id: body.order_id,
+        metadata: body.metadata,
+      };
+      mocks.refunds.push(refund);
+      return refund;
+    });
+
+    await expect(processRefund(row())).resolves.toBe("waiting");
+    expect(lastUpdate()).toMatchObject({ last_error: "refund_pending" });
+    expect(lastUpdate()).not.toHaveProperty("status");
+
+    // Settled: the next pass records it and makes no second refund.
+    mocks.refunds[0].status = "succeeded";
+    mocks.orders.ord_1 = order("ord_1", {
+      status: "refunded",
+      refundable_amount: 0,
+      refunded_amount: 2900,
+    });
+    await expect(
+      processRefund(
+        row({ attempts: 2, orders: [{ order_id: "ord_1", net: 2900 }], planned_cents: 2900 })
+      )
+    ).resolves.toBe("refunded");
+    expect(mocks.refundsCreate).toHaveBeenCalledTimes(1);
+    expect(lastUpdate()).toMatchObject({
+      status: "refunded",
+      refund_ids: ["ref_slow"],
+      refunded_cents: 2900,
+      // The first pass's list is kept.
+      orders: [{ order_id: "ord_1", net: 2900 }],
+    });
+  });
+
+  it("hands a refund that failed at Polar to a person instead of trying again", async () => {
+    mocks.refunds.push({
+      id: "ref_failed",
+      status: "failed",
+      amount: 2900,
+      order_id: "ord_1",
+      metadata: { [REFUND_METADATA_KEY]: "row_1" },
+    });
+
+    await expect(processRefund(row())).resolves.toBe("failed");
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+    expect(lastUpdate()).toMatchObject({ status: "failed", last_error: "refund_failed_at_polar" });
+  });
+
+  it("sends an approval with nothing prepared back to a person, refunding nothing", async () => {
+    await expect(
+      processRefund(row({ target: "subscription:sub_x", approved_at: "2026-11-03T11:59:00Z" }))
+    ).resolves.toBe("held");
+
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+    expect(lastUpdate()).toMatchObject({
+      status: "held",
+      hold_reason: "manual",
+      approved_at: null,
+      planned_cents: 2900,
+    });
+  });
+
+  it("tries again when the check after a refusal cannot reach Polar", async () => {
+    mocks.refundsCreate.mockRejectedValueOnce({ statusCode: 422 });
+    mocks.ordersGet
+      .mockImplementationOnce(async () => order("ord_1"))
+      .mockRejectedValueOnce({ statusCode: 503 });
+
+    await expect(processRefund(row())).resolves.toBe("retry");
+    expect(lastUpdate()).toMatchObject({ last_error: "polar_unavailable" });
+    expect(lastUpdate()).not.toHaveProperty("status");
   });
 
   it("tries again later when Polar is unavailable", async () => {

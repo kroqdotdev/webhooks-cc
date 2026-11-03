@@ -138,7 +138,7 @@ const serverEnvSchema = z
     POLAR_DOMAINS_PRODUCT_ID: z.string().optional(),
     POLAR_DOMAINS_ADD_PRODUCT_ID: z.string().optional(),
     // Refunds for charges that bought nothing (lib/billing/refunds.ts,
-    // migration 00085). Off: every one is held for a person; on: the clear
+    // migration 00086). Off: every one is held for a person; on: the clear
     // cases are refunded, up to the cap in cents before tax per refund.
     POLAR_AUTO_REFUNDS: z
       .union([z.boolean(), z.string()])

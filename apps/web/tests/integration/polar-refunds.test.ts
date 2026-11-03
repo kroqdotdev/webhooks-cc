@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Refunds for charges that bought nothing (migration 00085) against the local
+ * Refunds for charges that bought nothing (migration 00086) against the local
  * database: the queue's functions (claim, approve, dismiss), and the Polar
  * webhook paths that record a refund. Polar is mocked. Automatic refunds are
  * off here (POLAR_AUTO_REFUNDS unset), so every refund is held for a person.
@@ -213,6 +213,17 @@ describe("the refund queue", () => {
     });
     expect((await refundRow(String(held.target)))?.approved_at).not.toBeNull();
 
+    // Nothing prepared yet: nobody saw what it would refund.
+    const unprepared = await insertRow({
+      target: `order:approve_unprepared_${ts}`,
+      reason: "deleted_account",
+      status: "held",
+      hold_reason: "manual",
+    });
+    const { data: notYet } = await admin.rpc("approve_polar_refund", { p_id: unprepared.id });
+    expect(notYet).toBe(false);
+    expect(await refundRow(String(unprepared.target))).toMatchObject({ status: "held" });
+
     const refunded = await insertRow({
       target: `order:approve_done_${ts}`,
       reason: "deleted_account",
@@ -336,6 +347,30 @@ describe("webhooks that record a refund", () => {
       user_id: null,
       status: "held",
     });
+  });
+
+  it("the late end of a deleted team's own add-on records nothing", async () => {
+    // Team deletion revokes its add-ons, then the row goes; their events follow.
+    const goneTeamId = crypto.randomUUID();
+    const addon = {
+      ...subscription(
+        `sub_addon_gone_${ts}`,
+        { external_id: `team:${goneTeamId}`, metadata: { teamId: goneTeamId } },
+        "prod_monthly_blocks_test"
+      ),
+      units: 2,
+      status: "canceled",
+      ended_at: new Date().toISOString(),
+    };
+    targets.push(`subscription:${addon.id}`);
+    polarMocks.get.mockResolvedValue(addon);
+    polarMocks.revoke.mockClear();
+
+    await deliver("subscription.revoked", addon);
+    await deliver("subscription.updated", addon);
+
+    expect(polarMocks.revoke).not.toHaveBeenCalled();
+    expect(await refundRow(`subscription:${addon.id}`)).toBeNull();
   });
 
   it("an add-on order paid for a deleted team is held for review", async () => {

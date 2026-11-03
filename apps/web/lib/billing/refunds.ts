@@ -8,7 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database, Json, PolarRefundReason, PolarRefundStatus } from "@/lib/supabase/database";
 
 /**
- * Refunds for Polar charges that bought nothing (migration 00085): a second
+ * Refunds for Polar charges that bought nothing (migration 00086): a second
  * plan or extra-domains subscription the webhook revoked, an add-on order
  * paid for an account or team deleted meanwhile, extra domains with nothing
  * left to add them to, and a plan or team subscription whose checkout
@@ -157,7 +157,7 @@ async function targetOrders(polar: Polar, target: RefundTarget): Promise<PolarOr
   return page.items as PolarOrder[];
 }
 
-/** Refunds Polar already made for this row on an order (a retry after a crash). */
+/** Refunds Polar holds for this row on an order, whatever their state (a retry after a crash). */
 async function refundsMadeFor(
   polar: Polar,
   orderId: string,
@@ -165,32 +165,42 @@ async function refundsMadeFor(
 ): Promise<PolarRefund[]> {
   const page = await polar.refunds.list({ order_id: orderId, limit: 100 });
   return (page.items as PolarRefund[]).filter(
-    (refund) =>
-      refund.metadata?.[REFUND_METADATA_KEY] === rowId &&
-      (refund.status === "pending" || refund.status === "succeeded")
+    (refund) => refund.metadata?.[REFUND_METADATA_KEY] === rowId
   );
 }
 
+/**
+ * Writes the claimed row, only while it still has the status it was claimed
+ * with: a person's decision made meanwhile (a dismissal) is never
+ * overwritten. Releases the lease unless the work goes on.
+ */
 async function updateRow(
-  id: string,
-  patch: Database["public"]["Tables"]["polar_refunds"]["Update"]
+  row: RefundRow,
+  patch: Database["public"]["Tables"]["polar_refunds"]["Update"],
+  release = true
 ): Promise<void> {
   const { error } = await createAdminClient()
     .from("polar_refunds")
-    .update({ ...patch, lease_until: null, updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .update({
+      ...patch,
+      ...(release ? { lease_until: null } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", row.id)
+    .eq("status", row.status);
   if (error) throw error;
 }
 
 async function hold(
   row: RefundRow,
-  holdReason: "over_cap" | "old_orders",
+  holdReason: "manual" | "over_cap" | "old_orders",
   lines: RefundOrderLine[],
   plannedCents: number
 ): Promise<void> {
-  await updateRow(row.id, {
+  await updateRow(row, {
     status: "held",
     hold_reason: holdReason,
+    approved_at: null,
     orders: lines as unknown as Json,
     planned_cents: plannedCents,
   });
@@ -203,7 +213,7 @@ async function hold(
 }
 
 async function fail(row: RefundRow, code: string, error?: unknown): Promise<void> {
-  await updateRow(row.id, { status: "failed", last_error: code });
+  await updateRow(row, { status: "failed", last_error: code });
   reportError(
     "[refunds] refund failed",
     error === undefined ? undefined : loggablePolarError(error),
@@ -226,7 +236,7 @@ async function retryLater(
     await fail(row, code, error);
     return "failed";
   }
-  await updateRow(row.id, {
+  await updateRow(row, {
     last_error: code,
     next_attempt_at: new Date(Date.now() + backoffMs(row.attempts)).toISOString(),
   });
@@ -256,11 +266,12 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   }
 
   // An approved row refunds what the person saw, nothing that came after.
-  const approvedLines = row.approved_at && Array.isArray(row.orders) ? row.orders : null;
+  const approvedLines =
+    row.approved_at && Array.isArray(row.orders)
+      ? (row.orders as unknown as RefundOrderLine[])
+      : null;
   if (approvedLines) {
-    const approved = new Set(
-      (approvedLines as unknown as RefundOrderLine[]).map((line) => line.order_id)
-    );
+    const approved = new Set(approvedLines.map((line) => line.order_id));
     orders = orders.filter((order) => approved.has(order.id));
   }
 
@@ -272,9 +283,16 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
     return retryLater(row, "not_paid_yet", "waiting");
   }
 
+  // Approved with nothing prepared (only a hand-made row can be): nobody saw
+  // what it would refund, so it goes back to a person with the list.
+  if (row.approved_at && !approvedLines) {
+    await hold(row, "manual", lines, plannedCents);
+    return "held";
+  }
+
   if (row.status === "held") {
     if (lines.length === 0) {
-      await updateRow(row.id, {
+      await updateRow(row, {
         status: "nothing",
         orders: [] as unknown as Json,
         planned_cents: 0,
@@ -283,7 +301,7 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
       console.info(`[refunds] nothing to refund for ${row.reason}`);
       return "nothing";
     }
-    await updateRow(row.id, {
+    await updateRow(row, {
       orders: lines as unknown as Json,
       planned_cents: plannedCents,
       last_error: null,
@@ -308,22 +326,37 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
       await hold(row, "old_orders", lines, plannedCents);
       return "held";
     }
+    // Noted before refunding, once (a retry keeps what the first pass saw),
+    // so a row that fails can be reviewed.
+    if (!Array.isArray(row.orders)) {
+      await updateRow(
+        row,
+        { orders: lines as unknown as Json, planned_cents: plannedCents },
+        false
+      );
+    }
   }
 
   // Orders refunded before (by this row after a crash, or by a person) are
-  // checked for this row's own refunds, so they are recorded too.
+  // checked for this row's own refunds, so they are recorded too. A refund
+  // Polar still has pending is checked again later; one that failed there
+  // needs a person.
   let refundedCents = 0;
   const refundIds: string[] = [];
+  let pendingAtPolar = false;
   for (const order of orders) {
     if (!isRefundable(order) && order.refunded_amount === 0) continue;
     try {
       const made = await refundsMadeFor(polar, order.id, row.id);
+      const succeeded = made.filter((refund) => refund.status === "succeeded");
+      const pending = made.filter((refund) => refund.status === "pending");
+      for (const refund of [...succeeded, ...pending]) refundIds.push(refund.id);
+      for (const refund of succeeded) refundedCents += refund.amount;
+      if (pending.length > 0) pendingAtPolar = true;
+      if (succeeded.length > 0 || pending.length > 0) continue;
       if (made.length > 0) {
-        for (const refund of made) {
-          refundIds.push(refund.id);
-          refundedCents += refund.amount;
-        }
-        continue;
+        await fail(row, "refund_failed_at_polar");
+        return "failed";
       }
       if (!isRefundable(order)) continue;
 
@@ -335,7 +368,8 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
         metadata: { [REFUND_METADATA_KEY]: row.id, reason: row.reason },
       });
       refundIds.push(refund.id);
-      refundedCents += refund.amount;
+      if (refund.status === "succeeded") refundedCents += refund.amount;
+      else pendingAtPolar = true;
       console.info(`[refunds] refunded ${refund.amount} cents for ${row.reason}`);
       await auditSystemEvent({
         action: "billing.refund_issued",
@@ -348,6 +382,7 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
           amount_cents: refund.amount,
           tax_cents: refund.tax_amount,
           refund_id: refund.id,
+          refund_status: refund.status,
           refund_row: row.id,
         },
       });
@@ -358,18 +393,30 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
       }
       // Refused: refunded meanwhile (by Polar against a chargeback, or by a
       // person) needs nothing more; anything else needs a person.
-      const now = await polar.orders.get(order.id).catch(() => null);
-      if (now && now.refundable_amount === 0) continue;
+      let now: PolarOrder;
+      try {
+        now = await polar.orders.get(order.id);
+      } catch (checkError) {
+        if (isTransientPolarError(checkError)) {
+          return retryLater(row, "polar_unavailable", "retry", checkError);
+        }
+        await fail(row, polarErrorCode(error) ?? "refund_refused", error);
+        return "failed";
+      }
+      if (now.refundable_amount === 0) continue;
       await fail(row, polarErrorCode(error) ?? "refund_refused", error);
       return "failed";
     }
   }
 
+  if (pendingAtPolar) return retryLater(row, "refund_pending", "waiting");
+
   const status: PolarRefundStatus = refundIds.length > 0 ? "refunded" : "nothing";
-  await updateRow(row.id, {
+  const saved = Array.isArray(row.orders);
+  await updateRow(row, {
     status,
-    orders: (approvedLines ?? lines) as unknown as Json,
-    planned_cents: approvedLines ? row.planned_cents : plannedCents,
+    orders: (saved ? row.orders : lines) as Json,
+    planned_cents: saved ? row.planned_cents : plannedCents,
     refunded_cents: refundedCents,
     refund_ids: refundIds,
     last_error: null,

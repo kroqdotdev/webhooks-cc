@@ -32,8 +32,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Refunds for Charges That Bought Nothing",
     track: "web",
     items: [
-      "A charge that bought nothing now goes back to the card it came from: a second plan or extra-domains subscription from a checkout completed twice, an add-on paid for an account or team that was deleted meanwhile, and extra domains paid for after their subscription had ended",
-      "A plan or team subscription whose checkout completed after its account or team was deleted is now ended instead of charging every month, and refunded",
+      "A charge that bought nothing is now set aside for a refund to the card it came from: a second plan or extra-domains subscription from a checkout completed twice, an add-on paid for an account or team that was deleted meanwhile, and extra domains paid for after their subscription had ended",
+      "A plan or team subscription whose checkout completed after its account or team was deleted is now ended instead of charging every month, and set aside for a refund",
     ],
   },
   {

@@ -1023,8 +1023,14 @@ async function applySubscriptionEvent(
   }
 
   if (status === "no_account") {
-    // The account or team is gone (deleted while a checkout was open):
-    // nothing may keep charging for it, and what it charged goes back.
+    // The account or team is gone. Deleting it revokes its add-ons first,
+    // and their late events land here too: those are ended in Polar's
+    // current state and change nothing (refunding them would give back
+    // months that were used). One still live was bought while a checkout
+    // stayed open across the deletion: nothing may keep charging for it,
+    // and what it charged goes back, recorded before the revoke so a
+    // failure is retried with the webhook.
+    if (ended || asNonEmptyString(subscription.ended_at)) return;
     await refundFor(account, { subscription: subscriptionId }, "deleted_account");
     await revokeQuietly(subscriptionId);
     console.warn("[capacity] ended an add-on subscription for a deleted account");

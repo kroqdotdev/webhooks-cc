@@ -334,6 +334,10 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
       reason: "deleted_account",
       userId: "user_1",
     });
+    // Recorded first: after the revoke a redelivery would read it as ended.
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      polarRevoke.mock.invocationCallOrder[0]
+    );
   });
 
   test("leaves alone a late event for the subscription the account deletion ended", async () => {
@@ -639,6 +643,9 @@ describe("plan events apply Polar's current state", () => {
       reason: "duplicate_plan",
       userId: "user_1",
     });
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      polarRevoke.mock.invocationCallOrder[0]
+    );
   });
 
   test("a new subscription replaces one Polar no longer has live", async () => {

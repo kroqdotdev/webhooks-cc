@@ -593,12 +593,41 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     );
 
     expect(mockFns.subscriptionsRevoke).toHaveBeenCalledWith("sub_orphan");
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      mockFns.subscriptionsRevoke.mock.invocationCallOrder[0]
+    );
     expect(mockFns.recordRefund).toHaveBeenCalledWith({
       target: { subscription: "sub_orphan" },
       reason: "deleted_account",
       userId: "user_1",
       teamId: null,
     });
+  });
+
+  it("records nothing for the late end of an add-on the account deletion revoked", async () => {
+    // Deleting an account revokes its add-ons, then the rows go: their
+    // revoke and update events arrive for an account that is gone.
+    mockFns.rpc.mockResolvedValue({ data: { status: "no_account" }, error: null });
+    await applyCapacityWebhookEvent(
+      "subscription.revoked",
+      USER,
+      { resource: "requests", kind: "monthly" },
+      { id: "sub_gone", status: "canceled", ended_at: "2026-11-03T10:00:00Z" }
+    );
+    mockFns.subscriptionsGet.mockResolvedValue({
+      id: "sub_gone",
+      status: "canceled",
+      ended_at: "2026-11-03T10:00:00Z",
+    });
+    await applyCapacityWebhookEvent(
+      "subscription.updated",
+      USER,
+      { resource: "requests", kind: "monthly" },
+      { id: "sub_gone" }
+    );
+
+    expect(mockFns.recordRefund).not.toHaveBeenCalled();
+    expect(mockFns.subscriptionsRevoke).not.toHaveBeenCalled();
   });
 
   it("ends a second extra-domains subscription and records its refund", async () => {

@@ -1375,6 +1375,9 @@ describe("webhook events for a deleted team", () => {
       reason: "deleted_account",
       teamId: "team_gone",
     });
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      revoke.mock.invocationCallOrder[0]
+    );
   });
 
   test("customer_seat.revoked no-ops without deleting anything", async () => {

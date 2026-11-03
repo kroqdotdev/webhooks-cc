@@ -412,12 +412,14 @@ async function applyPlanSubscription(
     // ends, and what it charged goes back (lib/billing/refunds.ts).
     const orphanId = asNonEmptyString(data.id);
     if (orphanId && LIVE_STATUSES.has(String(data.status)) && !asNonEmptyString(data.ended_at)) {
-      await revokeSubscriptionQuietly(orphanId);
+      // Recorded first: once revoked, a redelivery reads it as ended and
+      // would never record it.
       await recordRefund({
         target: { subscription: orphanId },
         reason: "deleted_account",
         userId,
       });
+      await revokeSubscriptionQuietly(orphanId);
     }
     return true;
   }
@@ -445,12 +447,14 @@ async function applyPlanSubscription(
     // tabs): the account keeps the one it has, and the new one ends
     // before it charges again. What it charged goes back.
     if (stored.polar_subscription_id && (await isLiveSubscription(stored.polar_subscription_id))) {
-      await revokeSubscriptionQuietly(subscriptionId);
+      // Recorded first: once revoked, a redelivery reads it as ended and
+      // would never record it.
       await recordRefund({
         target: { subscription: subscriptionId },
         reason: "duplicate_plan",
         userId,
       });
+      await revokeSubscriptionQuietly(subscriptionId);
       return true;
     }
   }

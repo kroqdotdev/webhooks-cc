@@ -1,10 +1,10 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-/** Why a refund was recorded (migration 00085, lib/billing/refunds.ts). */
+/** Why a refund was recorded (migration 00086, lib/billing/refunds.ts). */
 export type PolarRefundReason =
   "duplicate_plan" | "duplicate_addon" | "deleted_account" | "addon_not_applied" | "addon_ended";
 
-/** Where a recorded refund stands (migration 00085). */
+/** Where a recorded refund stands (migration 00086). */
 export type PolarRefundStatus =
   "held" | "pending" | "refunded" | "nothing" | "failed" | "dismissed";
 

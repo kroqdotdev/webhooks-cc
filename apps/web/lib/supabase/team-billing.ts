@@ -1442,6 +1442,13 @@ async function endOrphanTeamSubscription(
       current.status === "past_due") &&
     !asNonEmptyString(current.ended_at);
   if (!subscriptionId || !live) return;
+  // Recorded first: once revoked, a redelivery reads it as ended and would
+  // never record it.
+  await recordRefund({
+    target: { subscription: subscriptionId },
+    reason: "deleted_account",
+    teamId,
+  });
   try {
     await createPolarClient().subscriptions.revoke(subscriptionId);
   } catch (error) {
@@ -1457,11 +1464,6 @@ async function endOrphanTeamSubscription(
       throw error;
     }
   }
-  await recordRefund({
-    target: { subscription: subscriptionId },
-    reason: "deleted_account",
-    teamId,
-  });
 }
 
 async function applyTeamSubscriptionState(

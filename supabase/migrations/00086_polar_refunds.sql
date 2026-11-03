@@ -1,4 +1,4 @@
--- 00085: refunds the web app issues through Polar, or holds for a person.
+-- 00086: refunds the web app issues through Polar, or holds for a person.
 --
 -- Some Polar charges buy nothing: a second plan or extra-domains
 -- subscription that the webhook revokes, an add-on order paid for an account
@@ -106,7 +106,9 @@ as $$
 $$;
 
 -- A person's decision on a held (or failed) row. Approving queues it for
--- the worker with a fresh count of attempts; dismissing closes it.
+-- the worker with a fresh count of attempts, only once the worker noted
+-- which orders it would refund (orders), since an approval refunds exactly
+-- those; dismissing closes it.
 create or replace function public.approve_polar_refund(p_id uuid)
 returns boolean
 language sql
@@ -123,6 +125,7 @@ as $$
            updated_at = now()
      where id = p_id
        and status in ('held', 'failed')
+       and orders is not null
     returning 1
   )
   select exists (select 1 from approved);
