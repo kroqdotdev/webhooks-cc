@@ -768,7 +768,7 @@ function AuthenticationPane({
                 ? `${clientIp} resolves to ${iprev.ptr} and back.`
                 : `${clientIp} has no reverse DNS name that resolves back to it.`}
             </CheckRow>
-            {arc && arc.sets > 0 && (
+            {arc && (arc.sets > 0 || arc.result === "skipped") && (
               <CheckRow
                 name="ARC"
                 verdict={verdictOf(arc.result)}

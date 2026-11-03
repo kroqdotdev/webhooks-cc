@@ -246,6 +246,11 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
     // Included domains without an SPF record: RFC 7208 makes that a
     // permerror whenever the include is reached.
     let mut missing: Vec<String> = Vec::new();
+    // Included or redirected domains with more than one SPF record: also a
+    // permerror when reached.
+    let mut duplicated: Vec<String> = Vec::new();
+    // A nested lookup failed, so the count is short by what it would add.
+    let mut incomplete = false;
     // (domain, depth, reached only through redirects from the top record:
     // such a record's `all` is the one that applies).
     let mut pending: Vec<(String, usize, bool)> = top
@@ -264,8 +269,12 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
         }
         fetches += 1;
         let Ok(found) = spf_records(dns, &target).await else {
+            incomplete = true;
             continue;
         };
+        if found.len() > 1 && duplicated.len() < MAX_REPORT_URIS {
+            duplicated.push(cut(&target, MAX_URI_CHARS));
+        }
         let Some(record) = found.first() else {
             if !via_redirect && missing.len() < MAX_REPORT_URIS {
                 missing.push(cut(&target, MAX_URI_CHARS));
@@ -291,6 +300,8 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
         "lookups": lookups,
         "lookups_capped": capped,
         "missing_includes": missing,
+        "duplicate_includes": duplicated,
+        "lookups_incomplete": incomplete,
         "ptr": ptr,
     })
 }
@@ -490,12 +501,21 @@ fn bimi_record(record: &str) -> Option<(bool, bool)> {
     Some((present("l"), present("a")))
 }
 
-/// The organizational domain, roughly: the last two labels. Good enough
-/// for where to look next, never used to decide anything.
+/// Second-level labels under which country domains register names
+/// (example.co.uk, example.com.au): a partial public suffix list.
+const SECOND_LEVEL_SUFFIXES: [&str; 8] = ["co", "com", "org", "net", "ac", "gov", "edu", "ne"];
+
+/// The organizational domain, roughly: the last two labels, or three under
+/// a country's second-level suffix such as co.uk. Where to look next for a
+/// BIMI record, never used to decide anything.
 fn parent_domain(domain: &str) -> Option<&str> {
     let labels: Vec<&str> = domain.split('.').collect();
-    (labels.len() > 2).then(|| {
-        let keep = labels[labels.len() - 2..].join(".").len();
+    let n = labels.len();
+    let country_suffix =
+        n >= 2 && labels[n - 1].len() == 2 && SECOND_LEVEL_SUFFIXES.contains(&labels[n - 2]);
+    let keep_labels = if country_suffix { 3 } else { 2 };
+    (n > keep_labels).then(|| {
+        let keep = labels[n - keep_labels..].join(".").len();
         &domain[domain.len() - keep..]
     })
 }
@@ -660,6 +680,24 @@ mod tests {
         let found = spf(&dns, "example.com").await;
         assert_eq!(found["missing_includes"], json!(["gone.example"]));
         assert_eq!(found["lookups"], json!(2));
+        assert_eq!(found["lookups_incomplete"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn notices_includes_with_two_records_and_failed_lookups() {
+        let dns = StubDns {
+            failing: vec!["down.example".into()],
+            ..StubDns::default()
+        }
+        .with(
+            "example.com",
+            &["v=spf1 include:two.example include:down.example -all"],
+        )
+        .with("two.example", &["v=spf1 -all", "v=spf1 ~all"]);
+        let found = spf(&dns, "example.com").await;
+        assert_eq!(found["duplicate_includes"], json!(["two.example"]));
+        assert_eq!(found["lookups_incomplete"], json!(true));
+        assert_eq!(found["missing_includes"], json!([]));
     }
 
     #[tokio::test]
@@ -835,6 +873,9 @@ mod tests {
         assert_eq!(bimi(&dns, "example.org").await, json!({ "found": false }));
         assert_eq!(parent_domain("a.b.example.com"), Some("example.com"));
         assert_eq!(parent_domain("example.com"), None);
+        assert_eq!(parent_domain("news.example.co.uk"), Some("example.co.uk"));
+        assert_eq!(parent_domain("example.co.uk"), None);
+        assert_eq!(parent_domain("a.b.example.com.au"), Some("example.com.au"));
     }
 
     #[tokio::test]

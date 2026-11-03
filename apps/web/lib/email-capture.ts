@@ -162,6 +162,8 @@ function asSpfRecord(value: Json | undefined): EmailSpfRecord | null {
     lookupsCapped: spf.lookups_capped === true,
     ptr: spf.ptr === true,
     missingIncludes: asStrings(spf.missing_includes),
+    duplicateIncludes: asStrings(spf.duplicate_includes),
+    lookupsIncomplete: spf.lookups_incomplete === true,
     error: asString(spf.error),
   };
 }

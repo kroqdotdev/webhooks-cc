@@ -157,13 +157,25 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         );
       }
       if (spf.lookups !== null) {
-        const count = spf.lookupsCapped ? `more than ${spf.lookups}` : String(spf.lookups);
+        const count = spf.lookupsCapped
+          ? `more than ${spf.lookups}`
+          : spf.lookupsIncomplete
+            ? `at least ${spf.lookups}`
+            : String(spf.lookups);
         if (spf.lookups > SPF_LOOKUP_LIMIT || spf.lookupsCapped) {
           add(
             "spf-lookups",
             "fail",
             "SPF takes too many DNS lookups",
             `Checking the record of ${domain} takes ${count} DNS lookups, includes followed. Past ${SPF_LOOKUP_LIMIT}, SPF fails with a permerror for every receiver. Drop includes you no longer send through, or replace them with ip4 and ip6 ranges.`
+          );
+        } else if (spf.lookupsIncomplete) {
+          // A record that could not be read may add any number: no verdict.
+          add(
+            "spf-lookups",
+            "info",
+            "SPF lookup count incomplete",
+            `Checking the record of ${domain} takes ${count} DNS lookups, but a record it includes could not be looked up when the email arrived, so the total may be higher.`
           );
         } else if (spf.lookups >= SPF_LOOKUP_LIMIT - 1) {
           add(
@@ -181,12 +193,18 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
           );
         }
       }
-      if (spf.missingIncludes.length > 0) {
+      if (spf.missingIncludes.length > 0 || spf.duplicateIncludes.length > 0) {
+        const problems = [
+          spf.missingIncludes.length > 0 &&
+            `${list(spf.missingIncludes)} ${spf.missingIncludes.length === 1 ? "publishes" : "publish"} no SPF record`,
+          spf.duplicateIncludes.length > 0 &&
+            `${list(spf.duplicateIncludes)} ${spf.duplicateIncludes.length === 1 ? "publishes" : "publish"} more than one`,
+        ].filter(Boolean);
         add(
           "spf-includes",
           "fail",
-          "SPF includes a domain without SPF",
-          `The record of ${domain} includes ${list(spf.missingIncludes)}, which ${spf.missingIncludes.length === 1 ? "publishes" : "publish"} no SPF record. A receiver that reaches that include fails SPF with a permerror. Remove the include or fix its name.`
+          "SPF includes a broken record",
+          `The record of ${domain} reaches domains whose SPF is broken: ${problems.join("; ")}. A receiver that reaches one fails SPF with a permerror. Remove the include, fix its name, or merge the records.`
         );
       }
       if (spf.ptr) {
@@ -313,6 +331,18 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
       "fail",
       "Not signed with DKIM",
       "The email carries no DKIM signature. Gmail and Yahoo require DKIM from bulk senders, and it is what survives forwarding when SPF does not."
+    );
+  }
+  // Each signature that does not verify, whatever its key looks like.
+  for (const signature of auth.dkim) {
+    if (signature.result !== "fail" && signature.result !== "permerror") continue;
+    const otherPasses = auth.dkim.some((other) => other !== signature && other.result === "pass");
+    const by = signature.domain ?? "an unknown domain";
+    add(
+      `dkim-signature-${signature.domain ?? "unknown"}-${signature.selector ?? "unknown"}`,
+      otherPasses ? "warn" : "fail",
+      "DKIM signature does not verify",
+      `The signature by ${by}${signature.selector ? ` (selector ${signature.selector})` : ""} does not check out (${signature.result}): the message changed after signing, or the key does not match.${otherPasses ? " Another signature on the email passes, so delivery does not depend on this one." : ""}`
     );
   }
   const keys = setupOk ? setup.dkim : [];
@@ -530,13 +560,26 @@ function header(headers: Record<string, string>, name: string): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
-/** "www." dropped; the last two labels, for telling sites apart without the public suffix list. */
+/**
+ * Second-level labels under which country domains register names
+ * (example.co.uk, example.com.au): a partial public suffix list, the same as
+ * the MX host's for BIMI (sender_setup.rs).
+ */
+const SECOND_LEVEL_SUFFIXES = new Set(["co", "com", "org", "net", "ac", "gov", "edu", "ne"]);
+
+/**
+ * "www." dropped; the registrable domain, roughly: the last two labels, or
+ * three under a country's second-level suffix, so paypal.co.uk and
+ * attacker.co.uk stay apart without the full public suffix list.
+ */
 function site(host: string): string {
   const labels = host
     .toLowerCase()
     .replace(/^www\./, "")
     .split(".");
-  return labels.slice(-2).join(".");
+  const n = labels.length;
+  const country = n >= 3 && labels[n - 1].length === 2 && SECOND_LEVEL_SUFFIXES.has(labels[n - 2]);
+  return labels.slice(country ? -3 : -2).join(".");
 }
 
 /**
@@ -571,7 +614,8 @@ function isIpHost(host: string): boolean {
 
 /** Attributes read per image tag; real ones are far shorter. */
 const MAX_IMG_TAG_CHARS = 2000;
-const IMG_SIZE = /\b(?:width|height)\s*[=:]\s*["']?\s*(\d+)/gi;
+/** A width or height attribute or style, never data-width or ?width= in a URL. */
+const IMG_SIZE = /(?<=[\s"';])(?:width|height)\s*[=:]\s*["']?\s*(\d+)/gi;
 
 /**
  * The images a reader sees: tracking pixels (an image 2 pixels wide or high

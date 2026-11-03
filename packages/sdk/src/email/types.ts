@@ -102,6 +102,10 @@ export interface EmailSpfRecord {
   ptr: boolean;
   /** Included domains that publish no SPF record (at most 3): a permerror when reached. */
   missingIncludes: string[];
+  /** Included or redirected domains that publish more than one SPF record (at most 3): also a permerror. */
+  duplicateIncludes: string[];
+  /** A nested lookup failed, so `lookups` is short by what that domain would add. */
+  lookupsIncomplete: boolean;
   /** Set when the record could not be looked up. */
   error: string | null;
 }

@@ -16,6 +16,8 @@ function setup(overrides: Partial<EmailSenderSetup> = {}): EmailSenderSetup {
       lookupsCapped: false,
       ptr: false,
       missingIncludes: [],
+      duplicateIncludes: [],
+      lookupsIncomplete: false,
       error: null,
     },
     dmarc: {
@@ -430,6 +432,51 @@ describe("deliverabilityReport", () => {
     const finding = report(capture).findings.find((f) => f.id === "spf-includes");
     expect(finding?.status).toBe("fail");
     expect(finding?.detail).toContain("_spf.gone.example");
+  });
+
+  it("covers broken includes, failing signatures, country domains and image sizes", () => {
+    // Includes with two records, and a lookup count that a failed nested
+    // lookup left short.
+    const spf = email();
+    spf.auth!.setup = setup({
+      spf: {
+        ...setup().spf!,
+        duplicateIncludes: ["_spf.two.example"],
+        lookups: 4,
+        lookupsIncomplete: true,
+      },
+    });
+    const spfFindings = report(spf).findings;
+    expect(byId(spfFindings)).toMatchObject({ "spf-includes": "fail", "spf-lookups": "info" });
+    expect(spfFindings.find((f) => f.id === "spf-includes")?.detail).toContain(
+      "_spf.two.example publishes more than one"
+    );
+    expect(spfFindings.find((f) => f.id === "spf-lookups")?.detail).toContain("at least 4");
+
+    // A signature that does not verify is a finding of its own.
+    const failed = email();
+    failed.auth!.dkim = [{ result: "fail", domain: "acme.example", selector: "s1" }];
+    expect(byId(report(failed).findings)["dkim-signature-acme.example-s1"]).toBe("fail");
+    const extra = email();
+    extra.auth!.dkim = [
+      { result: "pass", domain: "acme.example", selector: "s1" },
+      { result: "fail", domain: "esp.example", selector: "k1" },
+    ];
+    expect(byId(report(extra).findings)["dkim-signature-esp.example-k1"]).toBe("warn");
+
+    // Country suffixes keep two different sites apart.
+    const uk = email({
+      html: `<a href="https://attacker.co.uk/login">paypal.co.uk</a><a href="https://www.acme.co.uk/">acme.co.uk</a><p>${"words ".repeat(50)}</p>`,
+    });
+    const ukFinding = report(uk).findings.find((f) => f.id === "links-text");
+    expect(ukFinding?.detail).toContain("paypal.co.uk goes to attacker.co.uk");
+    expect(ukFinding?.detail).not.toContain("acme.co.uk goes");
+
+    // data-width and ?width= are not the image's size.
+    const sized = email({
+      html: '<img src="a.png?width=1" data-width="1"><img src="b.png?h=1&width=1"><p>Sale</p>',
+    });
+    expect(byId(report(sized).findings).images).toBe("warn");
   });
 
   it("says nothing about checks that could not run", () => {

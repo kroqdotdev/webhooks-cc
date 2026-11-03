@@ -177,6 +177,22 @@ fn fit(json: &mut Value) {
     {
         arc.remove("sealers");
     }
+    // The header written for the user repeats what the fields say.
+    if size(json) > MAX_AUTH_JSON_BYTES
+        && let Some(map) = json.as_object_mut()
+    {
+        map.remove("authentication_results");
+    }
+    // Signatures past the first ones, last: what is left still has to fit,
+    // or the receiver keeps no verdict at all.
+    while size(json) > MAX_AUTH_JSON_BYTES {
+        match json.get_mut("dkim").and_then(Value::as_array_mut) {
+            Some(signatures) if !signatures.is_empty() => {
+                signatures.pop();
+            }
+            _ => break,
+        }
+    }
 }
 
 /// Removes NUL from every string, and the text `\u0000` too: jsonb refuses
@@ -355,8 +371,8 @@ async fn run(
                 let signature = output.signature();
                 json!({
                     "result": dkim_result(output.result()),
-                    "domain": signature.map(|s| s.d.clone()),
-                    "selector": signature.map(|s| s.s.clone()),
+                    "domain": signature.map(|s| clip(&s.d)),
+                    "selector": signature.map(|s| clip(&s.s)),
                 })
             })
             .collect(),
@@ -372,34 +388,44 @@ async fn run(
         "dkim": dmarc_result(dmarc.dkim_result()),
     });
 
-    // After the verdicts above, and within the setup deadline: a sealer's
-    // slow nameserver must not cost the results already in hand.
-    let arc = match arc_skip_reason(&request.raw) {
-        Some(reason) => {
-            json["arc"] = json!({ "result": "skipped", "reason": reason });
-            None
-        }
-        None => match tokio::time::timeout_at(setup_deadline, authenticator.verify_arc(&message))
-            .await
-        {
-            Ok(arc) => {
-                json["arc"] = json!({
-                    "result": dkim_result(arc.result()),
-                    "sets": arc.sets().len(),
-                    "sealers": arc
-                        .sets()
-                        .iter()
-                        .map(|set| set.seal.header.d.chars().take(MAX_DOMAIN_CHARS).collect::<String>())
-                        .collect::<Vec<_>>(),
-                });
-                Some(arc)
-            }
-            Err(_) => {
-                json["arc"] = json!({ "result": "skipped", "reason": "timeout" });
-                None
+    setup.from_domain = (!dmarc.domain().is_empty()).then(|| dmarc.domain());
+    setup.dkim = dkim
+        .iter()
+        .filter_map(|output| output.signature())
+        .map(|s| (s.d.clone(), s.s.clone(), s.a))
+        .collect();
+    setup.dmarc = dmarc.dmarc_record();
+
+    // ARC and the sender's setup need nothing from each other, so they run
+    // side by side after the verdicts above, each within the setup
+    // deadline: a sealer's slow nameserver costs neither the verdicts nor
+    // the setup facts.
+    let skip_arc = arc_skip_reason(&request.raw);
+    let (arc, setup_json) = tokio::join!(
+        async {
+            match skip_arc {
+                Some(_) => None,
+                None => tokio::time::timeout_at(setup_deadline, authenticator.verify_arc(&message))
+                    .await
+                    .ok(),
             }
         },
+        setup_within(authenticator, &setup, setup_deadline),
+    );
+    json["arc"] = match (&arc, skip_arc) {
+        (_, Some(reason)) => json!({ "result": "skipped", "reason": reason }),
+        (None, None) => json!({ "result": "skipped", "reason": "timeout" }),
+        (Some(arc), None) => json!({
+            "result": dkim_result(arc.result()),
+            "sets": arc.sets().len(),
+            "sealers": arc
+                .sets()
+                .iter()
+                .map(|set| clip(&set.seal.header.d))
+                .collect::<Vec<_>>(),
+        }),
     };
+    json["setup"] = setup_json;
 
     let mut results = AuthenticationResults::new(hostname)
         .with_dkim_results(&dkim, message.from())
@@ -409,16 +435,12 @@ async fn run(
     }
     results = results.with_dmarc_result(&dmarc);
     json["authentication_results"] = Value::String(results.to_string());
-
-    setup.from_domain = (!dmarc.domain().is_empty()).then(|| dmarc.domain());
-    setup.dkim = dkim
-        .iter()
-        .filter_map(|output| output.signature())
-        .map(|s| (s.d.clone(), s.s.clone(), s.a))
-        .collect();
-    setup.dmarc = dmarc.dmarc_record();
-    json["setup"] = setup_within(authenticator, &setup, setup_deadline).await;
     json
+}
+
+/// A domain or selector from a header, at most `MAX_DOMAIN_CHARS` long.
+fn clip(name: &str) -> String {
+    name.chars().take(MAX_DOMAIN_CHARS).collect()
 }
 
 /// Index just past the blank line that ends the header section.
@@ -687,6 +709,17 @@ mod tests {
         });
         fit(&mut large);
         assert_eq!(large["setup"], json!({ "error": "too large" }));
+        // Long signature names (each clipped, but ten of them) still fit.
+        let mut signed = json!({
+            "spf": { "result": "pass" },
+            "dkim": (0..10).map(|_| json!({ "result": "fail", "domain": "d".repeat(253), "selector": "s".repeat(1500) })).collect::<Vec<_>>(),
+            "authentication_results": "a".repeat(4000),
+        });
+        fit(&mut signed);
+        assert!(serde_json::to_string(&signed).unwrap().len() <= MAX_AUTH_JSON_BYTES);
+        assert!(signed.get("authentication_results").is_none());
+        assert!(!signed["dkim"].as_array().unwrap().is_empty());
+        assert_eq!(signed["spf"], json!({ "result": "pass" }));
         assert_eq!(large["arc"], json!({ "result": "pass" }));
         assert_eq!(large["spf"], json!({ "result": "pass" }));
     }

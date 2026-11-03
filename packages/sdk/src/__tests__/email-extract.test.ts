@@ -241,9 +241,9 @@ describe("emailAnchors", () => {
     expect(emailAnchors(html)).toEqual([{ url: "http://x.io/p", text: "Plain" }]);
   });
 
-  it("stops at 500 links and stays fast on hostile input", () => {
+  it("keeps every link and stays fast on hostile input", () => {
     const many = '<a href="https://x.io/a">a</a>'.repeat(2_000);
-    expect(emailAnchors(many)).toHaveLength(500);
+    expect(emailAnchors(many)).toHaveLength(2_000);
     const started = Date.now();
     emailAnchors("<a href=x>".repeat(20_000) + "<a".repeat(50_000));
     expect(Date.now() - started).toBeLessThan(1_000);
