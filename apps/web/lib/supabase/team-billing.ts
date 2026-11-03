@@ -1,7 +1,7 @@
 import {
   createPolarClient,
-  getPolarTeamsCheckoutConfig,
   loggablePolarError,
+  polarAppUrl,
   polarErrorCode,
   teamPlanForProduct,
   teamPlanProductId,
@@ -249,43 +249,62 @@ function requireTeamPlanProduct(plan: TeamPlan, interval: BillingInterval): stri
 // Subscription management (owner-initiated)
 // ---------------------------------------------------------------------------
 
+/** A team's open Polar checkout session, from the `pending_checkout` cache. */
+interface OpenCheckout {
+  id: string | null;
+  url: string;
+  seats: number | null;
+  product: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
 /**
- * The cached Polar session's URL when it is reusable for this seat count, else
- * null. Polar's own session expiry is authoritative when stored; the 30-minute
- * TTL on created_at is the fallback for caches without one. A "creating" lease
- * (no url yet) is never reusable.
+ * The cached Polar session while it can still be paid, else null. Polar's own
+ * session expiry is authoritative when stored; the 30-minute TTL on
+ * created_at is the fallback for caches without one. A "creating" lease (no
+ * url yet) is not a session.
  */
-function reusablePendingCheckoutUrl(
-  pendingCheckout: unknown,
-  seats: number,
-  productId: string
-): string | null {
+function openPendingCheckout(pendingCheckout: unknown): OpenCheckout | null {
   const pending = asRecord(pendingCheckout);
   const url = pending ? asNonEmptyString(pending.url) : null;
-  if (url === null || typeof pending?.seats !== "number" || pending.seats !== seats) {
-    return null;
-  }
-  // A session for another plan (or one cached before plans were stored) is not reused.
-  if (pending.product !== productId) {
-    return null;
-  }
+  const createdAtRaw = pending ? asNonEmptyString(pending.created_at) : null;
+  if (!pending || url === null || createdAtRaw === null) return null;
 
-  const createdAtRaw = asNonEmptyString(pending.created_at);
-  const createdAt = createdAtRaw ? Date.parse(createdAtRaw) : NaN;
+  const createdAt = Date.parse(createdAtRaw);
   const expiresAtRaw = asNonEmptyString(pending.expires_at);
   const expiresAt = expiresAtRaw ? Date.parse(expiresAtRaw) : NaN;
   const sessionStillOpen = Number.isFinite(expiresAt)
     ? Date.now() < expiresAt
     : Number.isFinite(createdAt) && Date.now() - createdAt < PENDING_CHECKOUT_TTL_MS;
+  if (!sessionStillOpen) return null;
 
-  return sessionStillOpen ? url : null;
+  return {
+    id: asNonEmptyString(pending.id),
+    url,
+    seats: typeof pending.seats === "number" ? pending.seats : null,
+    // Sessions cached before plans were stored are for Teams.
+    product: asNonEmptyString(pending.product) ?? teamPlanProductId("team", "month"),
+    createdAt: createdAtRaw,
+    expiresAt: expiresAtRaw,
+  };
+}
+
+/** Every team plan product that is offered, the chosen one first. */
+function checkoutProducts(productId: string): string[] {
+  const offered = [
+    teamPlanProductId("team", "month"),
+    teamPlanProductId("team_business", "month"),
+    teamPlanProductId("team_business", "year"),
+  ].filter((id): id is string => id !== null && id !== productId);
+  return [productId, ...offered];
 }
 
 /**
  * Atomically claims the right to mint a Polar checkout session for a team by
  * writing a "creating" lease into `pending_checkout`. The claim succeeds when
- * the slot is empty, holds an abandoned lease (older than the lease TTL), an
- * expired session, or a session for a different seat count — exactly the
+ * the slot is empty, holds an abandoned lease (older than the lease TTL), or
+ * an expired session: exactly the
  * states `createTeamCheckout` would mint over. Concurrent requests race this
  * single conditional UPDATE, so at most one of them mints while the lease
  * holds; the losers reuse the winner's session or report checkout_in_progress.
@@ -308,6 +327,7 @@ export async function claimPendingCheckoutSlot(
   const admin = createAdminClient();
   const now = Date.now();
   const leaseCutoff = new Date(now - CHECKOUT_LEASE_TTL_MS).toISOString();
+  const ttlCutoff = new Date(now - PENDING_CHECKOUT_TTL_MS).toISOString();
   const nowIso = new Date(now).toISOString();
 
   const { data, error } = await admin
@@ -319,11 +339,11 @@ export async function claimPendingCheckoutSlot(
     .or(
       [
         "pending_checkout.is.null",
-        `pending_checkout->>created_at.lt."${leaseCutoff}"`,
-        `pending_checkout->>seats.neq.${seats}`,
-        "pending_checkout->>product.is.null",
-        `pending_checkout->>product.neq."${productId}"`,
+        // An abandoned "creating" lease: no session was ever stored.
+        `and(pending_checkout->>url.is.null,pending_checkout->>created_at.lt."${leaseCutoff}")`,
         `pending_checkout->>expires_at.lt."${nowIso}"`,
+        // A session cached without Polar's expiry, past the fallback TTL.
+        `and(pending_checkout->>expires_at.is.null,pending_checkout->>created_at.lt."${ttlCutoff}")`,
       ].join(",")
     )
     .select("id")
@@ -371,6 +391,49 @@ export async function releasePendingCheckoutLease(
   await writePendingCheckoutIfLeaseHeld(teamId, leaseToken, null);
 }
 
+/**
+ * Moves the team's open checkout session to another plan or seat count and
+ * returns its URL. The cache is rewritten only while it still holds this
+ * session (fenced on its created_at). A session Polar no longer lets change
+ * (being paid, or opened before it held every plan) is not replaced by a
+ * second one: the owner finishes it or waits for it to expire.
+ */
+async function switchOpenCheckout(
+  teamId: string,
+  open: OpenCheckout,
+  seats: number,
+  productId: string
+): Promise<string> {
+  const stillOpen = new TeamBillingError(
+    "checkout_in_progress",
+    "A checkout for this team is still open. Finish it, or try again once it expires."
+  );
+  if (open.id === null) throw stillOpen;
+  try {
+    await createPolarClient().checkouts.update(open.id, { product_id: productId, seats });
+  } catch (error) {
+    // Expected while the session is being paid; only worth a line.
+    console.warn("[team-billing] could not move the open checkout to another plan", {
+      teamId,
+      error: loggablePolarError(error),
+    });
+    throw stillOpen;
+  }
+  try {
+    await writePendingCheckoutIfLeaseHeld(teamId, open.createdAt, {
+      id: open.id,
+      url: open.url,
+      seats,
+      product: productId,
+      created_at: open.createdAt,
+      expires_at: open.expiresAt,
+    });
+  } catch (cacheError) {
+    reportError("[team-billing] failed to cache pending checkout", cacheError, { teamId });
+  }
+  return open.url;
+}
+
 export async function createTeamCheckout(
   userId: string,
   teamId: string,
@@ -386,12 +449,17 @@ export async function createTeamCheckout(
     throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
   }
 
-  // Reuse the open checkout session for the same plan and seat count: a
-  // double-click or second tab must not create a second session that could
-  // ALSO be completed.
-  const cachedUrl = reusablePendingCheckoutUrl(team.pending_checkout, seats, productId);
-  if (cachedUrl !== null) {
-    return cachedUrl;
+  // One open checkout session per team, whatever was asked for: a
+  // double-click, a second tab or a change of plan or seats must not leave a
+  // second session that could ALSO be completed (Polar has no way to expire
+  // one). The same request gets the same session; another plan or seat count
+  // updates it in place, which works because every team plan is in it.
+  const open = openPendingCheckout(team.pending_checkout);
+  if (open !== null) {
+    if (open.seats === seats && open.product === productId) {
+      return open.url;
+    }
+    return switchOpenCheckout(team.id, open, seats, productId);
   }
 
   // Serialize minting: exactly one concurrent request wins the lease and
@@ -401,7 +469,7 @@ export async function createTeamCheckout(
   const leaseToken = await claimPendingCheckoutSlot(teamId, seats, productId);
   if (leaseToken === null) {
     // Another request holds the slot. One re-read settles whether it already
-    // finished (reuse its session) or is still minting (tell the caller to
+    // finished (use its session) or is still minting (tell the caller to
     // retry in a moment rather than minting a double).
     const admin = createAdminClient();
     const { data: fresh, error } = await admin
@@ -412,24 +480,28 @@ export async function createTeamCheckout(
 
     if (error) throw error;
 
-    const freshUrl = reusablePendingCheckoutUrl(fresh?.pending_checkout ?? null, seats, productId);
-    if (freshUrl !== null) {
-      return freshUrl;
+    const freshOpen = openPendingCheckout(fresh?.pending_checkout ?? null);
+    if (freshOpen !== null) {
+      return freshOpen.seats === seats && freshOpen.product === productId
+        ? freshOpen.url
+        : switchOpenCheckout(teamId, freshOpen, seats, productId);
     }
 
     throw new TeamBillingError(
       "checkout_in_progress",
-      "A checkout session is already being prepared for this team — try again in a moment"
+      "A checkout session is already being prepared for this team. Try again in a moment."
     );
   }
 
   try {
     const polar = createPolarClient();
-    const { appUrl } = getPolarTeamsCheckoutConfig();
+    const appUrl = polarAppUrl();
     const customerId = await ensureTeamPolarCustomerId(team);
 
     const checkout = await polar.checkouts.create({
-      products: [productId],
+      // The chosen plan first (Polar selects it); the others so a later
+      // change of plan can update this session instead of opening another.
+      products: checkoutProducts(productId),
       seats,
       success_url: `${await returnOrigin(appUrl)}/teams/${teamId}?subscribed=true`,
       customer_id: customerId,
@@ -828,11 +900,16 @@ export async function changeTeamPlan(
     const { reconcileAddonsWithPlan } = await import("./capacity-billing");
     await reconcileAddonsWithPlan({ kind: "team", teamId });
   } catch (followUpError) {
-    reportError(
-      "[team-billing] Polar changed the plan but the team row was not updated",
-      followUpError,
-      { teamId }
-    );
+    // The webhook for the same change got there first: nothing is missing.
+    if (followUpError instanceof TeamBillingError && followUpError.code === "concurrent_update") {
+      console.info("[team-billing] the plan change was already applied by its webhook", { teamId });
+    } else {
+      reportError(
+        "[team-billing] Polar changed the plan but the team row was not updated",
+        followUpError,
+        { teamId }
+      );
+    }
   }
   return { applied: applies };
 }
@@ -1376,6 +1453,23 @@ async function applyTeamSubscriptionState(
   // unbilled reactivation. Mixed states (one of id/status set, the other not)
   // fall through: they only arise from manual intervention, and the full-state
   // upsert below is the correct repair.
+  // Nor may a subscription that has already ended, or that is still waiting
+  // for its first payment: it would open the team with nothing paid. Its
+  // next event says what it became.
+  const notLive =
+    asNonEmptyString(data.ended_at) !== null ||
+    data.status === "incomplete" ||
+    data.status === "incomplete_expired" ||
+    data.status === "unpaid";
+  if (team.subscription_status === null && notLive) {
+    console.warn("[team-billing] ignoring an ended or unpaid subscription for an inactive team", {
+      teamId,
+      eventType,
+      eventSubscriptionId: asNonEmptyString(data.id),
+    });
+    return;
+  }
+
   if (
     team.polar_subscription_id === null &&
     team.subscription_status === null &&
@@ -1397,11 +1491,30 @@ async function applyTeamSubscriptionState(
   // every request the team is paying for — floor the pool at one seat instead.
   const seats = payloadSeats ?? (team.seats > 0 ? team.seats : 1);
 
-  // The plan and interval come from the product; a product that is none of
-  // today's team plans is the original Teams product.
-  const sold = teamPlanForProduct(
-    asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id)
-  ) ?? { plan: "team" as const, interval: "month" as const };
+  // The plan and interval come from the product. A product that is none of
+  // the configured team plans (a product id missing from this deployment's
+  // configuration) keeps the plan the team has, so a misconfiguration never
+  // takes Team Business away from a paying team; a team without one is on
+  // Teams, the original product.
+  const productId =
+    asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id);
+  let sold = teamPlanForProduct(productId);
+  if (sold === null) {
+    if (productId !== null) {
+      reportError(
+        "[team-billing] team subscription for a product that is not a team plan",
+        undefined,
+        {
+          teamId,
+          productId,
+        }
+      );
+    }
+    sold = {
+      plan: team.business ? "team_business" : "team",
+      interval: team.billing_interval === "year" ? "year" : "month",
+    };
+  }
   const business = sold.plan === "team_business";
   const annual = sold.interval === "year";
 

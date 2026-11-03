@@ -549,7 +549,9 @@ describe("pending-checkout claim", () => {
     expect(await claimPendingCheckoutSlot(teamId, 3, "prod_teams")).not.toBeNull();
   });
 
-  it("refuses over an open same-plan session, claims for another seat count or plan", async () => {
+  it("refuses over an open session, whatever its seats or plan", async () => {
+    // Another seat count or plan moves the open session (createTeamCheckout),
+    // so a second session that could also be paid is never minted.
     const session: Json = {
       id: "co_claim",
       url: "https://example.com/checkout",
@@ -560,12 +562,35 @@ describe("pending-checkout claim", () => {
     };
     await setPending(session);
     expect(await claimPendingCheckoutSlot(teamId, 3, "prod_teams")).toBeNull();
-    await setPending(session);
-    expect(await claimPendingCheckoutSlot(teamId, 5, "prod_teams")).not.toBeNull();
-    await setPending(session);
-    expect(await claimPendingCheckoutSlot(teamId, 3, "prod_team_business")).not.toBeNull();
-    // A session cached before plans were stored is never reused.
-    await setPending({ ...session, product: null });
+    expect(await claimPendingCheckoutSlot(teamId, 5, "prod_teams")).toBeNull();
+    expect(await claimPendingCheckoutSlot(teamId, 3, "prod_team_business")).toBeNull();
+  });
+
+  it("refuses over an open session older than the lease, claims past the fallback TTL", async () => {
+    await setPending({
+      id: "co_old",
+      url: "https://example.com/checkout",
+      seats: 3,
+      product: "prod_teams",
+      created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+    });
+    expect(await claimPendingCheckoutSlot(teamId, 3, "prod_teams")).toBeNull();
+
+    // Cached without Polar's expiry: open for 30 minutes.
+    await setPending({
+      id: "co_ttl",
+      url: "https://example.com/checkout",
+      seats: 3,
+      created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+    });
+    expect(await claimPendingCheckoutSlot(teamId, 3, "prod_teams")).toBeNull();
+    await setPending({
+      id: "co_ttl",
+      url: "https://example.com/checkout",
+      seats: 3,
+      created_at: new Date(Date.now() - 31 * 60_000).toISOString(),
+    });
     expect(await claimPendingCheckoutSlot(teamId, 3, "prod_teams")).not.toBeNull();
   });
 

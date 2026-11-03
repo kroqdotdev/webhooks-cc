@@ -30,17 +30,15 @@ export function createPolarClient(): Polar {
   });
 }
 
+/** The app's origin, which checkouts return to (by way of returnOrigin()). */
+export function polarAppUrl(): string {
+  return publicEnv().NEXT_PUBLIC_APP_URL;
+}
+
 export function getPolarCheckoutConfig() {
   return {
     appUrl: publicEnv().NEXT_PUBLIC_APP_URL,
     proProductId: requireEnv("POLAR_PRO_PRODUCT_ID"),
-  };
-}
-
-export function getPolarTeamsCheckoutConfig() {
-  return {
-    appUrl: publicEnv().NEXT_PUBLIC_APP_URL,
-    teamsProductId: requireEnv("POLAR_TEAMS_PRODUCT_ID"),
   };
 }
 

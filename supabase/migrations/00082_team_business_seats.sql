@@ -139,7 +139,9 @@ alter table public.teams
   add constraint teams_prorated_check
   check (
     (prorated_window is null and prorated_seat_requests is null and prorated_seat_pages is null)
-    or (prorated_window is not null and prorated_seat_requests >= 0 and prorated_seat_pages >= 0)
+    or (prorated_window is not null
+        and prorated_seat_requests is not null and prorated_seat_requests >= 0
+        and prorated_seat_pages is not null and prorated_seat_pages >= 0)
   ) not valid;
 
 -- Every subscribed team so far is monthly.

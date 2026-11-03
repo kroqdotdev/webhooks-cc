@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -73,6 +73,9 @@ export function TeamPlanChooser({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Only the latest quote request may fill the dialog: one for a plan the
+  // owner has since moved away from can answer last.
+  const quoteRequest = useRef(0);
 
   const current = currentTeamPlan(team);
   // When a change waiting for the renewal applies: the year's end on annual billing.
@@ -88,14 +91,23 @@ export function TeamPlanChooser({
 
   const open = async (option: Option) => {
     if (!accessToken) return setError("Your session expired. Please sign in again.");
+    const request = ++quoteRequest.current;
     setConfirm(option);
     setQuote(null);
     setQuoteError(null);
     try {
-      setQuote(await quoteTeamPlan(accessToken, team.id, option.plan, option.interval));
+      const next = await quoteTeamPlan(accessToken, team.id, option.plan, option.interval);
+      if (request === quoteRequest.current) setQuote(next);
     } catch (err) {
-      setQuoteError(err instanceof Error ? err.message : "Could not price the change.");
+      if (request === quoteRequest.current) {
+        setQuoteError(err instanceof Error ? err.message : "Could not price the change.");
+      }
     }
+  };
+
+  const close = () => {
+    quoteRequest.current += 1;
+    setConfirm(null);
   };
 
   const run = async (option: Option) => {
@@ -132,6 +144,9 @@ export function TeamPlanChooser({
       await onChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "The plan could not be kept.");
+      // A failure can come after Polar dropped the change (the seat reduction
+      // could not be scheduled again), so show what the team has now.
+      await onChanged?.();
     } finally {
       setBusy(false);
     }
@@ -162,7 +177,11 @@ export function TeamPlanChooser({
 
   return (
     <div className="space-y-2">
-      {pending ? (
+      {team.cancelAtPeriodEnd ? (
+        <p className="text-sm text-muted-foreground">
+          Keep the subscription to change the team&apos;s plan.
+        </p>
+      ) : pending ? (
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm">
             Changes to {teamPlanLabel(pending.plan, pending.interval)}
@@ -177,10 +196,6 @@ export function TeamPlanChooser({
             {busy ? "Keeping..." : `Keep ${teamPlanLabel(current.plan, current.interval)}`}
           </Button>
         </div>
-      ) : team.cancelAtPeriodEnd ? (
-        <p className="text-sm text-muted-foreground">
-          Keep the subscription to change the team&apos;s plan.
-        </p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2">
@@ -218,10 +233,7 @@ export function TeamPlanChooser({
           {error}
         </p>
       )}
-      <AlertDialog
-        open={confirm !== null}
-        onOpenChange={(isOpen) => !isOpen && !busy && setConfirm(null)}
-      >
+      <AlertDialog open={confirm !== null} onOpenChange={(isOpen) => !isOpen && !busy && close()}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>

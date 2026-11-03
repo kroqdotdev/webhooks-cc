@@ -108,8 +108,8 @@ const serverEnvSchema = z
     MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
     AGENT_SANDBOX_MAX_ENDPOINTS: z.coerce.number().int().min(1).default(200),
     EPHEMERAL_TTL_HOURS: z.coerce.number().min(0.1).default(12),
-    // Polar seat-based Teams product. Optional so deploys without Teams billing keep working;
-    // getPolarTeamsCheckoutConfig() throws at call time when it is missing.
+    // Polar seat-based Teams product. Optional so deploys without Teams billing keep
+    // working; without it Teams is not offered (teamPlanProductId()).
     POLAR_TEAMS_PRODUCT_ID: z.string().optional(),
     // Extra request capacity (lib/capacity.ts): one-time blocks, monthly blocks,
     // monthly blocks added mid-period, and metered overage. Offered only when all

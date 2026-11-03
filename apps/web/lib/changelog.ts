@@ -33,7 +33,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "web",
     items: [
       "Team Business is now a team plan of its own, priced per seat: $35 a seat a month, or $350 a seat a year. Each seat brings Business's limits to the team's pool: 250,000 requests, 2,000 parsed attachment pages and 250 AI assists, with 90-day retention, up to 50 layouts per endpoint, a custom inbound domain and file drops for the endpoints shared with the team. It replaces the $49 add-on",
-      "Pick Teams or Team Business, monthly or yearly, when the team subscribes, and change it on the team page. Moving up applies at once: the dialog shows about what is charged for the rest of the period, and the extra requests and pages come in the same proportion. Moving down waits for the renewal and can be undone until then",
+      "Pick Teams, or Team Business monthly or yearly, when the team subscribes, and change it on the team page. Moving up applies at once, and the dialog shows about what is charged now. From Teams to Team Business within the month, the extra requests and pages for the rest of the period come in the same proportion as the charge; a move to yearly starts a new year with a fresh allowance. Moving down waits for the renewal and can be undone until then",
       "A team on annual Team Business still gets a fresh allowance every month",
       "A missed Team Business payment no longer switches off its custom domain or extra pages while Polar retries the card",
       "Teams and Team Business start at 2 seats. Teams that already have one seat keep it",
