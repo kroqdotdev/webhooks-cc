@@ -24,6 +24,14 @@ export type DestinationFormat =
 /** How a destination's deliveries carry attachments (migration 00068). */
 export type DestinationAttachments = "none" | "links" | "inline";
 
+/** A support ticket's topic (migration 00087). */
+export type SupportCategory =
+  "billing" | "bug" | "email" | "forwarding" | "account" | "idea" | "other";
+
+/** What an event line in a ticket records (migration 00087). */
+export type SupportEvent =
+  "access_granted" | "access_withdrawn" | "closed" | "reopened" | "auto_closed" | "reminded";
+
 /** Rows of plan_entitlements (migration 00067). */
 export type PlanKey = "free" | "pro" | "business" | "team" | "team_business";
 
@@ -671,6 +679,8 @@ export interface Database {
           page_overage_reporting_to: number | null;
           page_overage_report_lease: string | null;
           extra_domains: number;
+          /** Test accounts, left out of the ops metrics (migration 00087). */
+          internal: boolean;
         };
         Insert: {
           id: string;
@@ -779,6 +789,7 @@ export interface Database {
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
           extra_domains?: number;
+          internal?: boolean;
         };
         Relationships: [];
       };
@@ -1716,9 +1727,425 @@ export interface Database {
         };
         Relationships: [];
       };
+      // Staff, support tickets and ops metrics (migration 00087).
+      mfa_recovery_codes: {
+        Row: {
+          id: number;
+          user_id: string;
+          code_hash: string;
+          used_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: string;
+          code_hash: string;
+          used_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: string;
+          code_hash?: string;
+          used_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      staff: {
+        Row: {
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      support_tickets: {
+        Row: {
+          id: string;
+          number: number;
+          user_id: string;
+          site: "webhooks" | "mailhooks";
+          category: SupportCategory;
+          subject: string;
+          status: "open" | "closed";
+          waiting_on: "support" | "user";
+          waiting_since: string;
+          blocking: boolean;
+          endpoint_id: string | null;
+          notify_email: boolean;
+          access_granted: boolean;
+          access_changed_at: string | null;
+          snoozed_until: string | null;
+          spam: boolean;
+          context: Json;
+          has_attachments: boolean;
+          reminder_sent_at: string | null;
+          user_notified_at: string | null;
+          closed_at: string | null;
+          closed_by: "user" | "staff" | "auto" | null;
+          rating: number | null;
+          rating_comment: string | null;
+          rated_at: string | null;
+          last_message_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          number?: number;
+          user_id: string;
+          site?: "webhooks" | "mailhooks";
+          category: SupportCategory;
+          subject: string;
+          status?: "open" | "closed";
+          waiting_on?: "support" | "user";
+          waiting_since?: string;
+          blocking?: boolean;
+          endpoint_id?: string | null;
+          notify_email?: boolean;
+          access_granted?: boolean;
+          access_changed_at?: string | null;
+          snoozed_until?: string | null;
+          spam?: boolean;
+          context?: Json;
+          has_attachments?: boolean;
+          reminder_sent_at?: string | null;
+          user_notified_at?: string | null;
+          closed_at?: string | null;
+          closed_by?: "user" | "staff" | "auto" | null;
+          rating?: number | null;
+          rating_comment?: string | null;
+          rated_at?: string | null;
+          last_message_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          number?: number;
+          user_id?: string;
+          site?: "webhooks" | "mailhooks";
+          category?: SupportCategory;
+          subject?: string;
+          status?: "open" | "closed";
+          waiting_on?: "support" | "user";
+          waiting_since?: string;
+          blocking?: boolean;
+          endpoint_id?: string | null;
+          notify_email?: boolean;
+          access_granted?: boolean;
+          access_changed_at?: string | null;
+          snoozed_until?: string | null;
+          spam?: boolean;
+          context?: Json;
+          has_attachments?: boolean;
+          reminder_sent_at?: string | null;
+          user_notified_at?: string | null;
+          closed_at?: string | null;
+          closed_by?: "user" | "staff" | "auto" | null;
+          rating?: number | null;
+          rating_comment?: string | null;
+          rated_at?: string | null;
+          last_message_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      support_messages: {
+        Row: {
+          id: string;
+          ticket_id: string;
+          author: "user" | "staff" | "system";
+          author_id: string | null;
+          kind: "message" | "note" | "event";
+          body: string;
+          event: SupportEvent | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          ticket_id: string;
+          author: "user" | "staff" | "system";
+          author_id?: string | null;
+          kind: "message" | "note" | "event";
+          body?: string;
+          event?: SupportEvent | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          ticket_id?: string;
+          author?: "user" | "staff" | "system";
+          author_id?: string | null;
+          kind?: "message" | "note" | "event";
+          body?: string;
+          event?: SupportEvent | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      support_attachments: {
+        Row: {
+          id: string;
+          ticket_id: string;
+          message_id: string;
+          content_type: "image/png" | "image/jpeg" | "image/webp";
+          bytes: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          ticket_id: string;
+          message_id: string;
+          content_type: "image/png" | "image/jpeg" | "image/webp";
+          bytes: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          ticket_id?: string;
+          message_id?: string;
+          content_type?: "image/png" | "image/jpeg" | "image/webp";
+          bytes?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      support_notifications: {
+        Row: {
+          id: number;
+          ticket_id: string;
+          kind: "reply" | "closed" | "reminder" | "staff_new" | "staff_reply";
+          due_at: string;
+          locked_until: string | null;
+          attempts: number;
+          sent_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          ticket_id: string;
+          kind: "reply" | "closed" | "reminder" | "staff_new" | "staff_reply";
+          due_at?: string;
+          locked_until?: string | null;
+          attempts?: number;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          ticket_id?: string;
+          kind?: "reply" | "closed" | "reminder" | "staff_new" | "staff_reply";
+          due_at?: string;
+          locked_until?: string | null;
+          attempts?: number;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      support_saved_replies: {
+        Row: {
+          id: string;
+          title: string;
+          body: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          body: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          body?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      support_access_log: {
+        Row: {
+          id: number;
+          user_id: string;
+          ticket_id: string | null;
+          staff_id: string | null;
+          action: "view_started" | "view_endpoint" | "view_request" | "view_ended";
+          target_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: string;
+          ticket_id?: string | null;
+          staff_id?: string | null;
+          action: "view_started" | "view_endpoint" | "view_request" | "view_ended";
+          target_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: string;
+          ticket_id?: string | null;
+          staff_id?: string | null;
+          action?: "view_started" | "view_endpoint" | "view_request" | "view_ended";
+          target_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      support_view_sessions: {
+        Row: {
+          id: string;
+          staff_id: string;
+          user_id: string;
+          ticket_id: string;
+          created_at: string;
+          expires_at: string;
+          ended_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          staff_id: string;
+          user_id: string;
+          ticket_id: string;
+          created_at?: string;
+          expires_at: string;
+          ended_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          staff_id?: string;
+          user_id?: string;
+          ticket_id?: string;
+          created_at?: string;
+          expires_at?: string;
+          ended_at?: string | null;
+        };
+        Relationships: [];
+      };
+      ops_daily_metrics: {
+        Row: {
+          day: string;
+          signups: number;
+          cohort_signups: number | null;
+          cohort_activated: number | null;
+          active_accounts: number;
+          captured: number;
+          quota_rejected: number;
+          paid_accounts: number | null;
+          new_paid: number | null;
+          lost_paid: number | null;
+          mrr_cents: number | null;
+          new_subscriptions: number | null;
+          canceled_subscriptions: number | null;
+          computed_at: string;
+        };
+        Insert: {
+          day: string;
+          signups?: number;
+          cohort_signups?: number | null;
+          cohort_activated?: number | null;
+          active_accounts?: number;
+          captured?: number;
+          quota_rejected?: number;
+          paid_accounts?: number | null;
+          new_paid?: number | null;
+          lost_paid?: number | null;
+          mrr_cents?: number | null;
+          new_subscriptions?: number | null;
+          canceled_subscriptions?: number | null;
+          computed_at?: string;
+        };
+        Update: {
+          day?: string;
+          signups?: number;
+          cohort_signups?: number | null;
+          cohort_activated?: number | null;
+          active_accounts?: number;
+          captured?: number;
+          quota_rejected?: number;
+          paid_accounts?: number | null;
+          new_paid?: number | null;
+          lost_paid?: number | null;
+          mrr_cents?: number | null;
+          new_subscriptions?: number | null;
+          canceled_subscriptions?: number | null;
+          computed_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      is_staff: {
+        Args: { p_user_id: string };
+        Returns: boolean;
+      };
+      support_create_ticket: {
+        Args: {
+          p_user_id: string;
+          p_site: string;
+          p_category: string;
+          p_subject: string;
+          p_body: string;
+          p_blocking: boolean;
+          p_endpoint_id: string | null;
+          p_notify: boolean;
+          p_grant: boolean;
+          p_context: Json;
+        };
+        Returns: { ticket_id: string; ticket_number: number; message_id: string }[];
+      };
+      support_post_message: {
+        Args: {
+          p_ticket_id: string;
+          p_author: "user" | "staff";
+          p_author_id: string;
+          p_kind: "message" | "note";
+          p_body: string;
+          p_close?: boolean;
+        };
+        Returns: {
+          message_id: string | null;
+          status: "open" | "closed";
+          waiting_on: "support" | "user";
+        }[];
+      };
+      support_close_ticket: {
+        Args: { p_ticket_id: string; p_by: "user" | "staff" | "auto"; p_actor_id: string | null };
+        Returns: boolean;
+      };
+      support_set_access: {
+        Args: { p_ticket_id: string; p_user_id: string; p_granted: boolean };
+        Returns: boolean;
+      };
+      support_claim_notifications: {
+        Args: { p_limit: number };
+        Returns: Database["public"]["Tables"]["support_notifications"]["Row"][];
+      };
+      ops_rollup_day: {
+        Args: { p_day: string; p_snapshot?: boolean };
+        Returns: undefined;
+      };
+      ops_today: {
+        Args: Record<string, never>;
+        Returns: { signups: number; captured: number; active_accounts: number }[];
+      };
+      ops_excluded_users: {
+        Args: Record<string, never>;
+        Returns: { user_id: string }[];
+      };
       analytics_daily_accounts: {
         Args: { p_day: string };
         Returns: Json;

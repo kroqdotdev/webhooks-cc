@@ -18,8 +18,11 @@ export interface ObjectStorageConfig {
   secretAccessKey: string;
 }
 
-/** A request's objects live under this prefix (requests.object_prefix). */
-export const OBJECT_PREFIX = /^m\/[0-9a-f-]{36}\/$/;
+/**
+ * A request's objects live under this prefix (requests.object_prefix); a
+ * support ticket's screenshots under t/{ticket_id}/ (migration 00087).
+ */
+export const OBJECT_PREFIX = /^[mt]\/[0-9a-f-]{36}\/$/;
 
 /** The settings, or null when object storage is not configured. */
 export function objectStorageConfig(): ObjectStorageConfig | null {

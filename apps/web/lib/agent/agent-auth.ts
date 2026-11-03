@@ -1,4 +1,5 @@
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { hasVerifiedFactor } from "@/lib/mfa";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -204,7 +205,8 @@ export type VerifyOtpResult =
         | "previously_claimed"
         | "otp_expired"
         | "otp_invalid"
-        | "too_many_keys";
+        | "too_many_keys"
+        | "interaction_required";
     };
 
 /**
@@ -249,6 +251,16 @@ export async function verifyVerifiedEmailOtp(args: {
   }
 
   const userId = await resolveOrProvisionUser(claim.email, claim.client_name);
+
+  // An emailed code proves the inbox, not the authenticator app. An account
+  // with two-factor sign-in gets no key this way; its owner signs in (with
+  // the code) and connects the agent from there.
+  const { data: owner, error: ownerError } =
+    await createAdminClient().auth.admin.getUserById(userId);
+  if (ownerError) throw ownerError;
+  if (owner.user && hasVerifiedFactor(owner.user)) {
+    return { ok: false, error: "interaction_required" };
+  }
 
   const { count, error: countError } = await admin
     .from("api_keys")

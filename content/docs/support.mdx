@@ -1,0 +1,39 @@
+---
+title: Support and Account Security
+description: "Open a support ticket from your account, decide whether support may view what you capture, see every time it did, and turn on two-factor sign-in."
+section: features
+order: 21
+lastUpdated: 2026-11-03
+schema: none
+seo:
+  ogTitle: "Support Tickets and Support Access"
+  ogDescription: "Open a support ticket from your account, decide whether support may view what you capture, and turn on two-factor sign-in."
+---
+
+# Support and Account Security
+
+## Open a ticket
+
+Signed in on webhooks.cc or mailhooks.cc, open [Support](/support) from the account menu, the account pages, or **Guide > Get support** in the dashboard (which fills in the endpoint you are on). Pick what it is about, describe what happened and what you expected, and attach up to five screenshots (PNG, JPEG or WebP, 5 MB each). Request ids and endpoint names help.
+
+A ticket shows whose turn it is. When support answers, the ticket waits on you; when you answer, it waits on support. **Email me when support replies or closes this ticket** is ticked by default: the email carries support's answer, and you reply on the ticket, not to the email.
+
+A ticket waiting on your answer gets a reminder after 3 days and closes after 7. Answer within 30 days of a close and the ticket opens again; after that, open a new one. Tickets are private to the person who opened them, even within a team.
+
+No account, or cannot sign in? Email support@webhooks.cc.
+
+## Support access
+
+Support never reads what you capture unless you allow it. Without your permission, support sees what it needs to find most problems: your plan and billing state, endpoint names, how many requests arrived and were refused, and whether deliveries failed.
+
+Tick **Let support view my account while this ticket is open** on a new ticket, or press **Give access** on an open one, and support can read your endpoints, captured requests and emails, read-only, until 7 days after that ticket closes. Support cannot change anything, send anything, or sign in as you.
+
+**Account > Support access** lists the tickets that give access, with a **Withdraw** button that ends it at once, and every time support looked: each view it opened, each endpoint whose requests it listed, and each request it opened.
+
+## Two-factor sign-in
+
+Under **Account > Security**, **Set up two-factor sign-in** shows a QR code for an authenticator app (1Password, Google Authenticator, Authy and the like). Scan it and enter the code it shows. From then on every new sign-in, with a password, an email link, GitHub or Google, asks for the current code, and the dashboard and API refuse a session that skipped it. API keys are not affected.
+
+When you turn it on you get ten recovery codes. They are shown once, so copy or download them and keep them somewhere safe, like a password manager. If you lose your authenticator, choose **Use a recovery code instead** when signing in: each code works once, signs you in, and turns two-factor sign-in off so you can set it up again with your new phone or app. We email you whenever that happens. **Make new recovery codes** under Account > Security replaces the old ones.
+
+Lost the authenticator and the recovery codes? Email support@webhooks.cc from the account's address.

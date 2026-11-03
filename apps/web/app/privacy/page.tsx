@@ -241,6 +241,14 @@ export default function PrivacyPage() {
               use it for anything else.
             </p>
             <p>
+              <span className="font-bold text-foreground">Support access:</span> To answer a support
+              ticket we can see your account&apos;s settings and counts (plan, billing state,
+              endpoint names, how many requests arrived and whether deliveries failed), but not what
+              you captured. We read captured requests and emails only when you allow it on a ticket,
+              read-only, until 7 days after that ticket closes. You can withdraw it at any time, and
+              every time we look is listed under Account, Support access.
+            </p>
+            <p>
               If your organization needs a data processing agreement (DPA) under GDPR
               Article&nbsp;28, email <SupportEmail />. We review each request individually and reply
               with what we can offer.
@@ -411,6 +419,11 @@ export default function PrivacyPage() {
             <p>
               <span className="font-bold text-foreground">Account data:</span> Your account,
               endpoints, teams, and API keys are kept until you delete them or your account.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Support tickets:</span> Your tickets,
+              their screenshots and the list of when support viewed your account are kept until you
+              delete your account.
             </p>
             <p>
               <span className="font-bold text-foreground">Audit and sign-in records:</span> Deleted

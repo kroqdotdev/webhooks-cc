@@ -9,6 +9,7 @@ import {
   Copy,
   Globe,
   HelpCircle,
+  LifeBuoy,
   ListChecks,
   Lock,
   Mail,
@@ -101,9 +102,11 @@ export function AddressPill({
 function SetupMenu({
   hasRequests,
   onOpenGuide,
+  slug,
 }: {
   hasRequests: boolean;
   onOpenGuide: () => void;
+  slug: string;
 }) {
   const setup = useGettingStarted(hasRequests);
   const label = setup.open ? `Setup ${setup.progress}/${setup.total}` : "Guide";
@@ -154,6 +157,14 @@ function SetupMenu({
         <DropdownMenuItem onSelect={onOpenGuide}>
           <HelpCircle className="h-3.5 w-3.5" />
           Dashboard guide
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link
+            href={`/support/new?endpoint=${encodeURIComponent(slug)}&from=${encodeURIComponent("/dashboard")}`}
+          >
+            <LifeBuoy className="h-3.5 w-3.5" />
+            Get support
+          </Link>
         </DropdownMenuItem>
         {setup.open && (
           <DropdownMenuItem onSelect={setup.dismiss} className="text-muted-foreground">
@@ -297,7 +308,7 @@ export function EndpointBar({
           )}
         </div>
         <div className="relative order-2 md:order-3 ml-auto flex items-center gap-2">
-          <SetupMenu hasRequests={hasRequests} onOpenGuide={() => setGuideOpen(true)} />
+          <SetupMenu hasRequests={hasRequests} onOpenGuide={() => setGuideOpen(true)} slug={slug} />
           <SendMenu slug={slug} canEmail={!!emailAddress} />
           {exportMenu}
         </div>

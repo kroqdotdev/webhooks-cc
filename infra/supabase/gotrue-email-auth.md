@@ -252,7 +252,13 @@ docker logs supabase-auth --since 5m | grep run_hook
 Delete the `cfg-check` auth user afterwards (Studio, or
 `DELETE <api url>/auth/v1/admin/users/<id>` with the service role key).
 
-Not configured on purpose: CAPTCHA, MFA, magic links, email change, and
-rate-limit tuning. GoTrue's built-in email rate limits plus
+TOTP two-factor sign-in (Account > Security, required for staff on /ops)
+runs on GoTrue's defaults: enrolling and verifying TOTP factors is on unless
+`GOTRUE_MFA_TOTP_ENROLL_ENABLED` or `GOTRUE_MFA_TOTP_VERIFY_ENABLED` is set
+to false, so leave both unset (or true). Recovery codes are the web app's
+own (`mfa_recovery_codes`), not GoTrue's.
+
+Not configured on purpose: CAPTCHA, phone MFA, magic links, email change,
+and rate-limit tuning. GoTrue's built-in email rate limits plus
 `SMTP_MAX_FREQUENCY` (one email per minute per address by default) are the
 current backstop against signup-form abuse.

@@ -82,6 +82,7 @@ export async function sendViaSmtp(
       subject: message.subject,
       text: message.text,
       ...(message.html ? { html: message.html } : {}),
+      ...(message.headers ? { headers: message.headers } : {}),
     });
     return {
       messageId: info.messageId,

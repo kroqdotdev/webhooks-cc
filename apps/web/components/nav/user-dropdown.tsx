@@ -11,7 +11,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, LayoutDashboard, LogOut, Palette, Settings, Users } from "lucide-react";
+import {
+  ChevronDown,
+  Gauge,
+  LayoutDashboard,
+  LifeBuoy,
+  LogOut,
+  Palette,
+  Settings,
+  Users,
+} from "lucide-react";
+import { useStaff } from "@/components/ops/use-staff";
 import { useEffect, useState } from "react";
 
 interface UserProfile {
@@ -55,9 +65,12 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
 }
 
 export function UserDropdown() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, session } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  // Asked when the menu first opens, not on every page load.
+  const [menuOpened, setMenuOpened] = useState(false);
+  const staff = useStaff(authUser?.id ?? null, session?.access_token ?? null, menuOpened);
 
   useEffect(() => {
     if (!authUser) {
@@ -89,7 +102,7 @@ export function UserDropdown() {
   const displayName = profile.name || profile.email.split("@")[0];
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && setMenuOpened(true)}>
       {/* The name and initials stay out of autocapture. */}
       <DropdownMenuTrigger className="ph-no-capture flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer outline-none">
         <UserAvatar profile={profile} />
@@ -116,6 +129,24 @@ export function UserDropdown() {
           <Users className="h-4 w-4 mr-2" />
           Teams
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push("/support")} className="cursor-pointer">
+          <LifeBuoy className="h-4 w-4 mr-2" />
+          Support
+        </DropdownMenuItem>
+        {staff?.staff && (
+          <DropdownMenuItem
+            onClick={() => router.push("/ops")}
+            className="cursor-pointer text-staff focus:text-staff"
+          >
+            <Gauge className="h-4 w-4 mr-2" />
+            Operations
+            {staff.waiting ? (
+              <span className="ml-auto rounded-sm bg-staff-wash px-1.5 text-xs font-semibold tabular-nums text-staff">
+                {staff.waiting}
+              </span>
+            ) : null}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
           <LogOut className="h-4 w-4 mr-2" />

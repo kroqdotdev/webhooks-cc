@@ -8,6 +8,7 @@ import { createAdminClient } from "./supabase/admin";
 import { validateApiKeyWithMetadata } from "./supabase/api-keys";
 import { markAgentTokenRequest } from "./agent/token-requests";
 import { reportError } from "@/lib/observability";
+import { needsSecondFactor } from "@/lib/mfa";
 
 export type { UserPlan } from "./entitlements";
 import type { UserPlan } from "./entitlements";
@@ -48,6 +49,12 @@ async function validateSupabaseSessionWithPlan(
   } = await admin.auth.getUser(accessToken);
 
   if (authError || !user) {
+    return null;
+  }
+
+  // An account with two-factor sign-in on needs a session that passed it:
+  // a password alone (aal1) is not enough for any route.
+  if (needsSecondFactor(user, accessToken)) {
     return null;
   }
 

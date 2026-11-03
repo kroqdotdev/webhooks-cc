@@ -27,6 +27,8 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html?: string;
+  /** Extra headers, such as Auto-Submitted on automatic notices. */
+  headers?: Record<string, string>;
 }
 
 export async function sendEmail(message: EmailMessage): Promise<void> {

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { PASSWORD_MIN_LENGTH } from "@/components/auth/email-password-form";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import { MfaGate } from "@/components/auth/mfa-challenge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,9 @@ import { mapAuthError } from "@/lib/auth-errors";
 export default function ResetPasswordPage() {
   return (
     <SupabaseAuthProvider>
-      <ResetPasswordContent />
+      <MfaGate>
+        <ResetPasswordContent />
+      </MfaGate>
     </SupabaseAuthProvider>
   );
 }

@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.61.0";
+export const APP_VERSION = "0.62.0";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,18 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.62.0",
+    date: "2026-11-03",
+    title: "Support Tickets and Two-Factor Sign-In",
+    track: "web",
+    items: [
+      "Support has tickets. Signed in on webhooks.cc or mailhooks.cc, open one from Support (in the account menu, the dashboard's guide menu and the account pages), follow the answer there, and add screenshots. The ticket shows whose turn it is, and support's replies arrive by email too unless you untick that",
+      'Support never sees what you capture unless you allow it: tick "Let support view my account" on a ticket and support can read your endpoints, requests and emails, read-only, until 7 days after the ticket closes. Withdraw it at any time; every time support looks is listed under Account > Support access',
+      "A ticket waiting on your answer gets a reminder after 3 days and closes after 7. Answer within 30 days of a close and it opens again. Rate how we did when it closes",
+      "Two-factor sign-in: turn on an authenticator app under Account > Security, and every new sign-in asks for its code. You get ten recovery codes when you turn it on; if you lose the authenticator, one of them signs you in and turns two-factor off so you can set it up again",
+    ],
+  },
   {
     version: "0.61.0",
     date: "2026-11-03",

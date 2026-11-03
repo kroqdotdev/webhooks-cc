@@ -75,7 +75,25 @@ export type AuditAction =
   | "team.checkout_started"
   | "team.subscription_canceled"
   | "team.subscription_resumed"
-  | "team.seats_changed";
+  | "team.seats_changed"
+  | "support.ticket_created"
+  | "support.reply_posted"
+  | "support.ticket_closed"
+  | "support.ticket_updated"
+  | "support.access_changed"
+  | "account.recovery_codes_created"
+  | "account.mfa_recovered"
+  | "ops.account_viewed"
+  | "ops.mfa_reset"
+  | "ops.account_updated"
+  | "ops.ticket_replied"
+  | "ops.note_added"
+  | "ops.ticket_updated"
+  | "ops.view_started"
+  | "ops.view_ended"
+  | "ops.refund_approved"
+  | "ops.refund_dismissed"
+  | "ops.saved_reply_changed";
 
 /** Agent registration (auth.md) events: no signed-in user is behind most of them. */
 export type AgentAuditAction =
