@@ -736,7 +736,7 @@ export default async function Home() {
                   "250,000 requests/month",
                   "90-day data retention",
                   "2,000 parsed attachment pages/month",
-                  "Up to 50 layouts, 500 AI assists/30 days",
+                  "Up to 50 layouts, 250 AI assists/30 days",
                   "1 custom inbound domain, extra ones $3/mo",
                   "File drops to SFTP, FTP/FTPS & S3",
                 ].map((feature) => (

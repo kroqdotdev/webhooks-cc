@@ -53,7 +53,7 @@ const PLANS = [
       "250,000 emails or webhooks a month",
       "2,000 parsed attachment pages a month",
       "Up to 50 layouts per endpoint",
-      "500 AI assists every 30 days",
+      "250 AI assists every 30 days",
       "90-day retention",
       "1 custom inbound domain, extra ones $3 a month",
       "File drops to SFTP, FTP/FTPS and S3",
@@ -80,7 +80,7 @@ const FAQ: FAQItem[] = [
   {
     question: "What is an AI assist?",
     answer:
-      "One ask to AI setup: it proposes the patterns for a field or a whole layout from up to 5 emails you pick, or repairs a field that stopped matching. Free includes 5 every 30 days, Pro 20 and Business 500. The patterns then run on our servers like any others; the AI never reads your mail after that.",
+      "One ask to AI setup: it proposes the patterns for a field or a whole layout from up to 5 emails you pick, or repairs a field that stopped matching. Free includes 5 every 30 days, Pro 20 and Business 250. The patterns then run on our servers like any others; the AI never reads your mail after that.",
   },
   {
     question: "What if I need more pages on Business?",
@@ -141,7 +141,7 @@ export default function MailhooksPricing() {
             <p className="text-muted-foreground">
               $12 per seat a month, with 100,000 pooled requests per seat. Add Team Business for $49
               a month: 150,000 more requests in the pool, 2,000 pooled parsed pages, 50 layouts per
-              endpoint, 500 AI assists, a custom domain, file drops and 90-day retention for the
+              endpoint, 250 AI assists, a custom domain, file drops and 90-day retention for the
               endpoints you share.{" "}
               <Link href={`${webhooksOrigin()}/for-teams`} className="underline">
                 About teams

@@ -12,7 +12,7 @@ import { reportError } from "@/lib/observability";
  * proposed, which is then dropped.
  */
 
-export const AI_MODEL = "claude-opus-5-5";
+export const AI_MODEL = "claude-sonnet-5-5";
 /** One request, answer included, at most; the caller's deadline usually ends it sooner. */
 const REQUEST_TIMEOUT_MS = 75_000;
 /** Patterns, names and a condition: a few thousand tokens with the thinking. */
