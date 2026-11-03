@@ -132,6 +132,8 @@ export function TeamPlanChooser({
     } catch (err) {
       setConfirm(null);
       setError(err instanceof Error ? err.message : "The plan could not be changed.");
+      // The change may have been made in Polar before the request failed.
+      await onChanged?.();
     } finally {
       setBusy(false);
     }

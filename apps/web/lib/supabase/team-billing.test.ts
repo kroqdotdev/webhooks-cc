@@ -395,6 +395,8 @@ describe("createTeamCheckout", () => {
         },
       },
     });
+    const cacheWrite = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
+    expect(cacheWrite?.filters).toContainEqual(["eq", "pending_checkout->>created_at", createdAt]);
   });
 
   test("does not open a second session when the open one cannot change", async () => {
