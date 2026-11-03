@@ -9,6 +9,7 @@ export {
   extractFromEmail,
   extractCode,
   extractLink,
+  emailAnchors,
   htmlToText,
   type EmailContent,
   type EmailLike,

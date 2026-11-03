@@ -127,9 +127,18 @@ describe("toEmailCapture", () => {
     expect(capture?.auth).toEqual({
       spf: { result: "fail", domain: "tidewater.app" },
       dkim: [{ result: "pass", domain: "tidewater.app", selector: "s1" }],
-      dmarc: { result: "none", domain: "tidewater.app", policy: "none", reason: null },
+      dmarc: {
+        result: "none",
+        domain: "tidewater.app",
+        policy: "none",
+        reason: null,
+        spf: "none",
+        dkim: "none",
+      },
       iprev: { result: "pass", ptr: "localhost" },
       authenticationResults: "mx.mailhooks.cc;\r\n\tspf=fail smtp.mailfrom=no-reply@tidewater.app",
+      arc: null,
+      setup: null,
       error: null,
     });
     expect(capture?.smtp).toEqual({
@@ -141,6 +150,113 @@ describe("toEmailCapture", () => {
       envelopeTo: ["acme-signup-flow+signup@mailhooks.cc"],
       size: 1485,
       test: false,
+    });
+  });
+
+  it("maps the ARC chain and the sender's setup", () => {
+    const auth = toEmailCapture({
+      auth: {
+        arc: { result: "pass", sets: 2, sealers: ["lists.example.org", 7] },
+        setup: {
+          spf: {
+            domain: "tidewater.app",
+            records: 1,
+            record: "v=spf1 include:_spf.example.net ~all",
+            all: "~all",
+            redirect: false,
+            lookups: 4,
+            lookups_capped: false,
+            ptr: false,
+          },
+          dmarc: {
+            p: "none",
+            sp: null,
+            adkim: "relaxed",
+            aspf: "strict",
+            rua: ["dmarc@tidewater.app"],
+            ruf: 0,
+            testing: false,
+          },
+          dkim: [
+            {
+              domain: "tidewater.app",
+              selector: "s1",
+              algorithm: "rsa-sha256",
+              key: "rsa",
+              bits: 1024,
+            },
+            { domain: "tidewater.app" },
+          ],
+          bimi: { found: false },
+          helo: {
+            name: "mail.tidewater.app",
+            ip_literal: false,
+            fqdn: true,
+            resolves: true,
+            matches_ptr: false,
+          },
+        },
+      },
+    })?.auth;
+    expect(auth?.arc).toEqual({
+      result: "pass",
+      sets: 2,
+      sealers: ["lists.example.org"],
+      reason: null,
+    });
+    expect(auth?.setup).toEqual({
+      spf: {
+        domain: "tidewater.app",
+        records: 1,
+        record: "v=spf1 include:_spf.example.net ~all",
+        all: "~all",
+        redirect: false,
+        lookups: 4,
+        lookupsCapped: false,
+        ptr: false,
+        missingIncludes: [],
+        duplicateIncludes: [],
+        lookupsIncomplete: false,
+        lookupsUnfollowed: false,
+        error: null,
+      },
+      dmarc: {
+        p: "none",
+        sp: null,
+        adkim: "relaxed",
+        aspf: "strict",
+        rua: ["dmarc@tidewater.app"],
+        ruf: 0,
+        testing: false,
+      },
+      dkim: [
+        {
+          domain: "tidewater.app",
+          selector: "s1",
+          algorithm: "rsa-sha256",
+          key: "rsa",
+          bits: 1024,
+          revoked: false,
+          error: null,
+        },
+      ],
+      bimi: { found: false, domain: null, logo: false, authority: false, error: null },
+      helo: {
+        name: "mail.tidewater.app",
+        ipLiteral: false,
+        fqdn: true,
+        resolves: true,
+        matchesPtr: false,
+      },
+      error: null,
+    });
+    expect(toEmailCapture({ auth: { setup: { error: "timeout" } } })?.auth?.setup).toEqual({
+      spf: null,
+      dmarc: null,
+      dkim: [],
+      bimi: null,
+      helo: null,
+      error: "timeout",
     });
   });
 
@@ -157,6 +273,8 @@ describe("toEmailCapture", () => {
       dmarc: null,
       iprev: null,
       authenticationResults: null,
+      arc: null,
+      setup: null,
       error: "timeout",
     });
   });

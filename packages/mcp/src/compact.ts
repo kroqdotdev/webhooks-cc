@@ -66,6 +66,20 @@ export function omitHeaders(holder: JsonObject): void {
   holder.headersOmitted = `${count} headers left out to fit the output`;
 }
 
+/**
+ * Keeps the verdicts of an email's sender checks, without what the sender's
+ * DNS said about its setup and the Authentication-Results header.
+ */
+export function trimAuth(holder: JsonObject): void {
+  const auth = holder.auth;
+  if (auth && typeof auth === "object" && !Array.isArray(auth)) {
+    const verdicts: JsonObject = { ...(auth as JsonObject) };
+    delete verdicts.setup;
+    delete verdicts.authenticationResults;
+    holder.auth = verdicts;
+  }
+}
+
 /** Keeps rspamd's score, threshold and action (or why there is none), without the rules. */
 export function trimSpam(holder: JsonObject): void {
   const spam = holder.spam;
@@ -244,8 +258,9 @@ const ESSENTIAL_EMAIL_FIELDS = [
  * they are. An email's `body` is the raw MIME message (up to 1 MB) and its
  * HTML part can reach 256 KB, either of which would use up the output
  * budget: both are left out and the text part is cut. An email that is still
- * too big loses its headers, then the rules of its spam verdict (keeping
- * the score), then the extra entries of its sender, address
+ * too big loses its headers, then the sender's DNS setup and the
+ * Authentication-Results header (keeping the verdicts), then the rules of
+ * its spam verdict (keeping the score), then the extra entries of its sender, address
  * and attachment lists, then text down to TEXT_FLOOR characters, then
  * everything but its subject, first sender, tag, date and as much text as
  * then fits, and at last part of its subject, so it always fits a list on
@@ -281,6 +296,7 @@ export function compactRequest<T extends CompactableRequest>(request: T): T | Co
   shrinkToFit(root, budget, [
     () => trimParsed(compact),
     () => omitHeaders(compact),
+    () => trimAuth(email),
     () => trimSpam(email),
     () => capLists(email),
     () => cutStringToFit(root, email, "text", "textTruncated", budget, TEXT_FLOOR),

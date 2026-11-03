@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.60.0";
+export const APP_VERSION = "0.61.0";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -27,13 +27,26 @@ export const MCP_VERSION = "1.17.0";
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
   {
-    version: "0.60.0",
+    version: "0.61.0",
     date: "2026-11-03",
     title: "Refunds for Charges That Bought Nothing",
     track: "web",
     items: [
       "A charge that bought nothing is now set aside for a refund to the card it came from: a second plan or extra-domains subscription from a checkout completed twice, an add-on paid for an account or team that was deleted meanwhile, and extra domains paid for after their subscription had ended",
       "A plan or team subscription whose checkout completed after its account or team was deleted is now ended instead of charging every month, and set aside for a refund",
+    ],
+  },
+  {
+    version: "0.60.0",
+    date: "2026-11-03",
+    title: "Deliverability Report for Every Email",
+    track: "web",
+    items: [
+      "The Authentication tab of an email now has a deliverability report: what Gmail, Yahoo and Outlook would hold against it, each item marked as fine, worth improving, or to fix, and a badge in the email header that sums it up",
+      "Domain setup, as it was when the email arrived: SPF records and how they end, the DNS lookups SPF takes with its includes (it fails past 10), the DMARC policy, reports and alignment with the From domain, DKIM key sizes and SHA-1 signatures, and a BIMI logo",
+      "The sending server: reverse DNS, whether its HELO name resolves to it, and TLS. The message: From, Message-ID, Date and Subject, a plain-text part, one-click unsubscribe, links whose text names another site, link shorteners, mostly-image emails, and HTML large enough for Gmail to clip",
+      "Forwarded mail now has its ARC chain checked, so the tab shows which servers it passed through and whether they sealed what they received",
+      "Like the spam score, none of it decides whether mail is captured, and links are never opened to check them, so sign-in and confirmation links stay unused",
     ],
   },
   {
