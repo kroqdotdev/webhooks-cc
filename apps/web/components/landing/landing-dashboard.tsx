@@ -90,7 +90,7 @@ function LandingDashboardInner() {
   const [storageReady, setStorageReady] = useState(false);
   const [upgradeDismissed, setUpgradeDismissed] = useState(false);
 
-  // Dashboard pane state — mirrors the /go inspector
+  // Dashboard pane state: mirrors the /go inspector
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [liveMode, setLiveMode] = useState(true);
   const [sortNewest, setSortNewest] = useState(true);
@@ -119,7 +119,7 @@ function LandingDashboardInner() {
   // Gates auto-create to one attempt per arming; clearDemoEndpoint re-arms it so a
   // vanished endpoint self-heals with a fresh one on the next human signal.
   const autoCreateAttempted = useRef(false);
-  // Allow only one silent self-heal per mount — a persistent create/read mismatch
+  // Allow only one silent self-heal per mount: a persistent create/read mismatch
   // must surface the error state instead of looping through the create API.
   const selfHealAttempted = useRef(false);
 
@@ -142,7 +142,7 @@ function LandingDashboardInner() {
     activeSlugRef.current = null;
     requestsRetryAt.current = 0;
     requestsFailures.current = 0;
-    // Re-arm auto-create only on the silent path — when an error is being
+    // Re-arm auto-create only on the silent path: when an error is being
     // surfaced, an immediate re-create would clobber it (and could loop).
     if (nextError === null) {
       autoCreateAttempted.current = false;
@@ -254,13 +254,13 @@ function LandingDashboardInner() {
         setExpiresAt(stored.expiresAt);
       }
     } catch {
-      // localStorage can throw in locked-down browsing modes — start fresh.
+      // localStorage can throw in locked-down browsing modes: start fresh.
     } finally {
       setStorageReady(true);
     }
   }, []);
 
-  // Auto-create a guest endpoint for signed-out visitors — but only after a human
+  // Auto-create a guest endpoint for signed-out visitors, but only after a human
   // input signal, so crawlers rendering the page never consume the ephemeral pool.
   useEffect(() => {
     if (!storageReady || isLoading || endpointSlug || autoCreateAttempted.current) return;
@@ -301,7 +301,7 @@ function LandingDashboardInner() {
   // endpoint-row read (watchdog) notices the request counter moving, which arms
   // the catch-up poll below to fetch the new requests.
 
-  // Catch-up poll — only while the endpoint counter says requests exist that we
+  // Catch-up poll: only while the endpoint counter says requests exist that we
   // haven't loaded yet.
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;
@@ -336,7 +336,7 @@ function LandingDashboardInner() {
     };
   }, [endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
 
-  // Slow sync while blurred — background tabs throttle timers anyway, and a
+  // Slow sync while blurred: background tabs throttle timers anyway, and a
   // blurred tab only needs to be roughly current when it comes back.
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;
@@ -349,7 +349,7 @@ function LandingDashboardInner() {
     return () => window.clearInterval(interval);
   }, [endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
 
-  // Focused watchdog — the primary sync channel for guests (see above). A single
+  // Focused watchdog: the primary sync channel for guests (see above). A single
   // cheap endpoint-row read updates the request counter, which arms the catch-up
   // poll above. Fast while waiting for the first request, slower once requests exist.
   const hasLoadedRequests = requests.length > 0;
@@ -441,15 +441,14 @@ function LandingDashboardInner() {
   const remainingRequests = Math.max(0, REQUEST_LIMIT - requestCount);
   const hasRequests = requests.length > 0;
 
-  // Signed-in visitors already have persistent endpoints — send them there.
+  // Signed-in visitors already have persistent endpoints: send them there.
   if (isAuthenticated) {
     return (
       <DashboardFrame>
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
           <p className="text-lg font-bold">You&apos;re signed in</p>
           <p className="text-sm text-muted-foreground max-w-sm">
-            Your persistent endpoints live in the dashboard — guest URLs are for first-time
-            visitors.
+            Your persistent endpoints live in the dashboard; guest URLs are for first-time visitors.
           </p>
           <Link href="/dashboard" className="ui-btn-primary inline-block">
             Go to dashboard
@@ -485,7 +484,7 @@ function LandingDashboardInner() {
 
   if (!endpointUrl) {
     // No create in flight and no human signal yet (reader who hasn't interacted,
-    // or an automated browser) — show an honest manual CTA instead of a fake
+    // or an automated browser): show an honest manual CTA instead of a fake
     // spinner. Any real gesture still auto-creates for regular visitors.
     if (!isCreating && humanSignal !== "human") {
       return (
@@ -494,7 +493,7 @@ function LandingDashboardInner() {
             <p className="text-sm text-muted-foreground max-w-sm">
               {humanSignal === "automated"
                 ? "Guest endpoints are created on demand in automated sessions."
-                : "Your free guest URL is created the moment you interact with the page — or right now:"}
+                : "Your free guest URL is created the moment you interact with the page, or right now:"}
             </p>
             <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
               Get your webhook URL
@@ -522,7 +521,7 @@ function LandingDashboardInner() {
   return (
     <DashboardFrame>
       <ErrorBoundary resetKey={endpoint?.id}>
-        {/* URL bar — same layout as the real dashboard */}
+        {/* URL bar: same layout as the real dashboard */}
         <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex items-center gap-3">
           <span className="font-bold text-sm caps shrink-0 hidden sm:inline">Your endpoint</span>
           <UrlCopy url={endpointUrl} />
@@ -555,7 +554,7 @@ function LandingDashboardInner() {
           </div>
         </div>
 
-        {/* Registration push — appears once the first webhook lands */}
+        {/* Registration push: appears once the first webhook lands */}
         {hasRequests && !upgradeDismissed ? (
           <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex items-center justify-between gap-4">
             <p className="text-sm font-medium">
@@ -579,7 +578,7 @@ function LandingDashboardInner() {
           </div>
         ) : null}
 
-        {/* Dashboard body — split pane like /dashboard */}
+        {/* Dashboard body: split pane like /dashboard */}
         <div className="flex-1 min-h-0">
           {hasRequests ? (
             <>
@@ -739,7 +738,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
     if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
     sentTimeoutRef.current = setTimeout(() => setSent(false), SEND_FEEDBACK_MS);
     setSending(false);
-    // Eagerly poll for the new request — don't wait for realtime
+    // Eagerly poll for the new request: don't wait for realtime
     setTimeout(() => onSent?.(), 150);
     setTimeout(() => onSent?.(), 500);
   }, [onSent]);
@@ -856,7 +855,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Guest URLs expire after 12 hours — one click with GitHub or Google keeps yours and
+            Guest URLs expire after 12 hours. One click with GitHub or Google keeps yours and
             unlocks the full free plan (email and password sign-up works too).
           </p>
         </div>
@@ -865,7 +864,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
   );
 }
 
-/** Full-bleed dashboard shell — fills the hero viewport like a real app screen.
+/** Full-bleed dashboard shell: fills the hero viewport like a real app screen.
  *  Top edge is provided by the title strip above it. */
 function DashboardFrame({ children }: { children: React.ReactNode }) {
   return (

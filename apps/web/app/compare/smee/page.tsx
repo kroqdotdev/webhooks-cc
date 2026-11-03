@@ -7,7 +7,7 @@ const FAQ_ITEMS = [
   {
     question: "What are the best Smee.io alternatives in 2026?",
     answer:
-      "webhooks.cc is a strong Smee.io alternative that adds persistent request history, replay, a TypeScript SDK for CI test assertions, and an MCP server for AI agents on top of localhost forwarding. Other alternatives include ngrok (general-purpose tunnel), LocalTunnel (free open-source tunnel), and Webhook.site (browser-based inspection).",
+      "webhooks.cc is a strong Smee.io alternative that adds persistent request history, replay, SDKs for CI test assertions in TypeScript, Python and Go, and an MCP server for AI agents on top of localhost forwarding. Other alternatives include ngrok (general-purpose tunnel), LocalTunnel (free open-source tunnel), and Webhook.site (browser-based inspection).",
   },
   {
     question: "What is Smee.io?",
@@ -17,35 +17,36 @@ const FAQ_ITEMS = [
   {
     question: "What is the difference between webhooks.cc and Smee.io?",
     answer:
-      "Smee.io is a minimal webhook proxy — it forwards payloads to localhost in real time but does not store request history, offer search, provide replay, or support test assertions. webhooks.cc is a full webhook testing platform with persistent request storage, a dashboard, CLI tunnel, TypeScript SDK, MCP server, and mock response configuration.",
+      "Smee.io is a minimal webhook proxy: it forwards payloads to localhost in real time but stores nothing on its server (the channel page keeps recent payloads in your browser), and offers no search, replay, or test assertions. webhooks.cc is a full webhook testing platform with persistent request storage, a dashboard, CLI tunnel, SDKs, MCP server, mock responses, and email capture.",
   },
   {
     question: "Is Smee.io free?",
     answer:
-      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
+      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every Pro feature. Paid plans raise request limits and retention, Business adds more parsed pages, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately from $12/seat/mo.",
   },
   {
     question: "Should I use Smee.io or webhooks.cc for GitHub App development?",
     answer:
-      "Either works for forwarding GitHub webhooks to localhost. Smee.io was purpose-built for this and is the simplest option if forwarding is all you need. webhooks.cc adds request history, payload inspection, replay, and SDK assertions — useful if you want to inspect GitHub webhook payloads in detail or write automated tests for your GitHub App's webhook handler.",
+      "Either works for forwarding GitHub webhooks to localhost. Smee.io was purpose-built for this and is the simplest option if forwarding is all you need. webhooks.cc adds request history, payload inspection, replay, and SDK assertions, useful if you want to inspect GitHub webhook payloads in detail or write automated tests for your GitHub App's webhook handler.",
   },
 ];
 
 const ROWS = [
   ["Primary purpose", "Webhook testing platform", "Webhook proxy for localhost"],
   ["Webhook forwarding to localhost", "Yes (CLI tunnel)", "Yes (SSE client)"],
-  ["Request history & storage", "Yes — persistent, searchable", "No — session only"],
+  ["Request history & storage", "Yes, persistent, searchable", "No, kept in your browser only"],
   ["Request inspection dashboard", "Yes", "Minimal (channel page)"],
-  ["Mock responses", "Yes — per endpoint", "No"],
-  ["Request replay", "Yes — to any URL", "No"],
+  ["Mock responses", "Yes, rule-based per endpoint", "No"],
+  ["Request replay", "Yes, to any URL", "No"],
   ["Search & filtering", "Yes", "No"],
   ["Export (JSON / CSV)", "Yes", "No"],
-  ["TypeScript SDK", "Yes — @webhooks-cc/sdk", "No"],
+  ["SDKs", "TypeScript, Python and Go", "No (smee-client forwards only)"],
   ["CI test assertions", "Yes (waitFor + matchers)", "No"],
-  ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
-  ["Auth / user accounts", "Yes (optional)", "No — anonymous channels"],
-  ["Open source", "Yes (AGPL + MIT)", "Yes (ISC)"],
-  ["Team collaboration", "$12/seat/mo, pooled quota", "None"],
+  ["MCP server for AI agents", "Yes, remote (OAuth) or local", "No"],
+  ["Inbound email capture", "Yes, {slug}@mailhooks.cc", "No"],
+  ["Auth / user accounts", "Yes (optional)", "No, anonymous channels"],
+  ["Open source", "Yes (AGPL + MIT)", "Yes (MIT server, ISC client)"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "None"],
   ["Free tier features", "Every Pro feature", "Free (fully open)"],
 ] as const;
 
@@ -81,12 +82,12 @@ export default function CompareSmeePage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Smee.io</h1>
         <p className="text-lg text-muted-foreground mb-10">
           If you&apos;ve outgrown Smee.io and need more than a simple proxy, webhooks.cc is a full
-          webhook testing platform — it captures, stores, inspects, replays, and lets you write
+          webhook testing platform: it captures, stores, inspects, replays, and lets you write
           automated assertions on webhook payloads. Smee.io forwards payloads to localhost over SSE.
           Smee is simpler; webhooks.cc does more.
         </p>
@@ -128,23 +129,23 @@ export default function CompareSmeePage() {
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Proxy vs platform</h3>
             <p className="text-muted-foreground">
-              Smee.io does one thing: forward incoming webhooks to your local machine via SSE. It
-              does not store request history, offer search, or provide replay. When you close the
-              browser tab, the data is gone. webhooks.cc stores every request with full headers,
-              body, and metadata — searchable, exportable, and replayable from the dashboard, CLI,
-              or SDK.
+              Smee.io does one thing: forward incoming webhooks to your local machine via SSE. Its
+              server stores nothing, and it offers no search or replay; the channel page keeps
+              recent payloads only in your own browser. webhooks.cc stores every request with full
+              headers, body, and metadata: searchable, exportable, and replayable from the
+              dashboard, CLI, or SDK.
             </p>
           </div>
 
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
-              webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions,
-              a native CLI with built-in tunneling, and an MCP server for AI coding agents. For
-              teams, webhooks.cc shares endpoints across a team at $12/seat/month; Smee.io has no
-              team or collaboration features. Smee.io provides a small npm client (
+              webhooks.cc provides SDKs for TypeScript, Python and Go for programmatic access and CI
+              test assertions, a native CLI with built-in tunneling, and an MCP server for AI coding
+              agents. For teams, webhooks.cc shares endpoints across a team at $12/seat/month;
+              Smee.io has no team or collaboration features. Smee.io provides a small npm client (
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">smee-client</code>) for
-              forwarding — no SDK, no test helpers, no MCP.
+              forwarding: no SDK, no test helpers, no MCP.
             </p>
           </div>
 
@@ -153,8 +154,8 @@ export default function CompareSmeePage() {
             <p className="text-muted-foreground">
               Smee.io was built specifically for GitHub App webhook development and is recommended
               in GitHub&apos;s docs. It works well for that narrow use case. If you need to go
-              beyond forwarding — inspect payloads across multiple webhook sources, replay failed
-              deliveries, or assert on GitHub event payloads in tests — webhooks.cc covers the
+              beyond forwarding (inspect payloads across multiple webhook sources, replay failed
+              deliveries, or assert on GitHub event payloads in tests), webhooks.cc covers the
               broader workflow.
             </p>
           </div>
@@ -178,7 +179,7 @@ export default function CompareSmeePage() {
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>The simplest possible localhost forwarding</li>
               <li>Quick GitHub App development with zero setup</li>
-              <li>No account, no auth — just a URL and a client</li>
+              <li>No account, no auth: just a URL and a client</li>
               <li>Open-source proxy you can self-host</li>
             </ul>
           </div>

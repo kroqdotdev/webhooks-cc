@@ -405,7 +405,7 @@ Add conditions under **What it gets** to send only the requests that match, with
 | **Email field**  | one of the endpoint's [named fields](/docs/email-capture#fields-you-pick-out), as text or a number |
 | **Spam score**   | the rspamd score, as a number                                                              |
 | **Sender check** | the SPF, DKIM or DMARC result: `pass`, `fail`, `softfail`, `neutral`, `none`, ...          |
-| **Signature**    | the endpoint's [signature check](/docs/signature-verification): `verified`, `failed` or `missing` |
+| **Signature**    | the endpoint's [signature check](/docs/dashboard-features#signature-verification): `verified`, `failed` or `missing` |
 
 A request the conditions turn down is not sent, and the log lists it as **Filtered out**. A condition on the signature waits up to 30 seconds for the check to finish before deciding. Forwarding only verified requests to your server, or only emails whose subject contains "invoice" to your accounting tool, is one condition each.
 

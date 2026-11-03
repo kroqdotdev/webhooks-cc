@@ -34,9 +34,9 @@ seo:
 | Guest             | 25               | 12 hours | 12 hours  | Ephemeral only (12hr TTL)    | Free (no signup)                 |
 | Agent             | 100 per agent    | 24 hours | 24 hours  | 3 at a time (24hr TTL)       | Free (no signup)                 |
 | Free              | 50               | 24 hours | 7 days    | Unlimited, never expire      | Free                             |
-| **Pro**           | 100,000          | 30 days  | 31 days   | Unlimited, never expire      | $8/month                         |
+| **Pro**           | 100,000          | 1 month  | 31 days   | Unlimited, never expire      | $8/month                         |
 | **Business**      | 250,000          | 1 month  | 90 days   | Unlimited, never expire      | $29/month or $290/year           |
-| **Teams**         | 100,000 per seat | 30 days  | 31 days   | Endpoints shared to the team | $12/seat/month, from 2 seats     |
+| **Teams**         | 100,000 per seat | 1 month  | 31 days   | Endpoints shared to the team | $12/seat/month, from 2 seats     |
 | **Team Business** | 250,000 per seat | 1 month  | 90 days   | Endpoints shared to the team | $35/seat/month or $350/seat/year |
 
 Free has every Pro feature except extra requests (monthly blocks, one-time blocks and overage), which need a Pro or Business account or a subscribed team. Webhook and [email capture](/docs/email-capture), inspection, replay, mock responses and response rules, [forwarding destinations](/docs/forwarding) (Google Sheets included), attachment contents in deliveries, failure alerts, [layouts](/docs/layouts), CLI tunneling, the TypeScript, Python and Go SDKs, and the MCP server work on every plan. Paid plans raise the volume and the retention, and Business adds attachment parsing at volume, more layouts per endpoint, a [custom inbound domain](#custom-inbound-domains), [file drops](/docs/forwarding#file-drops) to SFTP, FTP and S3, and 90-day retention (see [Email parsing](#email-parsing)).
@@ -53,7 +53,7 @@ Endpoints created by logged-in users, on any plan, **never expire**. They persis
 
 **Free**: billing periods activate lazily. Your 24-hour window starts when your first webhook request is captured, not when you sign up. Once the period expires, the counter resets and the next request starts a new 24-hour window.
 
-**Pro**: 30-day rolling billing periods. The counter resets automatically at the end of each period. Canceled subscriptions remain active until the current period ends, then downgrade to Free.
+**Pro**: monthly billing periods. The counter resets automatically with each renewal. Canceled subscriptions remain active until the current period ends, then downgrade to Free.
 
 **Business**: billed monthly ($29) or yearly ($290); annual billing is only offered on Business and Team Business. On monthly billing, requests and parsed pages reset with each renewal, as on Pro. On annual billing you pay once a year, and requests and parsed pages still reset every month. A canceled subscription stays active until the end of the period you paid for, then the account moves to Free.
 
@@ -65,7 +65,7 @@ Quotas limit how many webhook requests your endpoints can capture within a billi
 
 When it runs out, we email you that webhooks are being rejected, with the endpoints that have rejected any so far: on Free at most once a week, on Pro and Business at most once per billing period, after any [extra requests](#extra-requests) are used up too.
 
-Quotas are enforced atomically inside a single Postgres stored procedure — no race conditions, even under high concurrency.
+Quotas are enforced atomically inside a single Postgres stored procedure, so there are no race conditions, even under high concurrency.
 
 Emails sent to an endpoint's address count against the same quota: one request per endpoint the email is addressed to. When the quota is used up, new mail is refused with `552 5.2.2 Mailbox full`, so the sender gets a bounce instead of the email disappearing. The account page shows how much of your usage was email.
 
@@ -167,6 +167,8 @@ Business includes one [custom inbound domain](/docs/email-capture#your-own-domai
 | Business      | 250                      |
 | Team Business | 250 per seat, pooled     |
 
+Assists do not reset with your billing period: each one counts for 30 days from the moment it was used, then comes back. AI setup shows how many are left and when the next one comes back.
+
 Endpoints shared with an active team (one with a subscription) count against the team's assists, as their requests count against its pool. Others, including endpoints shared with a team that is not subscribed, count against their owner's.
 
 ## Teams and shared endpoints
@@ -175,7 +177,7 @@ Teams are billed per team, from 2 seats: **Teams** at **$12/seat/month**, or **T
 
 **Seats decide two things:**
 
-- **The member cap** — a team can hold exactly as many members as it has purchased seats (the owner occupies one). Adding a member beyond that means buying another seat first.
+- **The member cap**: a team can hold exactly as many members as it has purchased seats (the owner occupies one). Adding a member beyond that means buying another seat first.
 - **The request pool**: each seat adds 100,000 requests per period on Teams, or 250,000 on Team Business, to a single pool shared by the whole team.
 
 **Whose quota gets used.** Once an endpoint is shared with a team that has an active subscription, its captured requests draw from that team's pool instead of the endpoint owner's personal quota, and they are retained for 31 days (90 with Team Business) regardless of the owner's plan. If an endpoint is shared with several active teams, the oldest share is billed, never more than one team per request. Endpoints that are not shared with an active team keep counting against their owner's own quota and retention.
@@ -221,7 +223,6 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Forwarding retries              | 8, over about a day (or 4 within an hour, or none) |
 | Deliveries waiting per endpoint | 1,000                                              |
 | Paginated request listing       | 100 per page                                       |
-| Ephemeral endpoints (per user)  | 25 concurrent                                      |
 | SSE stream connection           | 30 minutes max                                     |
 | SSE keepalive interval          | 30 seconds                                         |
 | Teams owned per user            | 10                                                 |
@@ -246,7 +247,7 @@ The API returns a `429 Too Many Requests` response with a `Retry-After` header. 
 </FAQItem>
 <FAQItem question="When does my free plan period start?">
 
-On your first captured request, not when you sign up. The 24-hour window activates lazily — if you create an account and do not receive any webhooks, no quota is consumed and no period is started.
+On your first captured request, not when you sign up. The 24-hour window activates lazily: if you create an account and do not receive any webhooks, no quota is consumed and no period is started.
 
 </FAQItem>
 <FAQItem question="Whose quota do team-shared endpoints use?">
@@ -271,7 +272,7 @@ Each PDF page (its text layer, without OCR), each started 1,000 rows of each she
 </FAQItem>
 <FAQItem question="Do I need Pro to create a team?">
 
-No. Any account can create a team. The team needs its own Teams subscription ($12/seat/month) before it can invite members or share endpoints, and personal Free, Pro or Business plans have no bearing on team access.
+No. Any account can create a team. The team needs its own subscription (Teams at $12/seat/month, or Team Business at $35/seat/month) before it can invite members or share endpoints, and personal Free, Pro or Business plans have no bearing on team access.
 
 </FAQItem>
 </FAQ>

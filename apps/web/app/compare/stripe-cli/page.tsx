@@ -8,7 +8,7 @@ const FAQ_ITEMS = [
     question:
       "Are there any webhook tools with a CLI that forwards to localhost like the Stripe CLI does?",
     answer:
-      "Yes. The webhooks.cc CLI (whk tunnel <port>) works like stripe listen --forward-to, but for any HTTP webhook provider. Every HTTP request sent to https://go.webhooks.cc/w/{slug} is captured in a searchable history, verified, and forwarded to your local server. For inbound emails sent to {slug}@mailhooks.cc, you can configure endpoint forwarding to post each captured email as signed JSON to your server or test locally with the SDK and dashboard.",
+      "Yes. The webhooks.cc CLI (whk tunnel <port>) works like stripe listen --forward-to, but for any HTTP webhook provider. Every HTTP request sent to https://go.webhooks.cc/w/{slug} is captured in a searchable history, verified, and forwarded to your local server. For inbound emails sent to {slug}@mailhooks.cc, you can add a destination that posts each captured email as signed JSON to your server, or test locally with the SDK and dashboard.",
   },
   {
     question: "Can webhooks.cc replace stripe listen for testing Stripe webhooks?",
@@ -28,7 +28,7 @@ const FAQ_ITEMS = [
   {
     question: "Does the Stripe CLI store webhook history or support team sharing?",
     answer:
-      "Stripe logs webhook events in the Stripe Dashboard for your Stripe account, while stripe listen prints events to your local terminal session. webhooks.cc provides a unified, searchable inbox across all your webhook and email providers, with one-click replay to any URL and shared team endpoints ($12/seat/mo).",
+      "Stripe logs webhook events in the Stripe Dashboard for your Stripe account, while stripe listen prints events to your local terminal session. webhooks.cc provides a unified, searchable inbox across all your webhook and email providers, with one-click replay to any URL and shared team endpoints (from $12/seat/mo).",
   },
 ];
 
@@ -68,8 +68,13 @@ const ROWS = [
     "Yes (dashboard, CLI, SDK, or MCP)",
     "stripe events resend (to Stripe URL)",
   ],
-  ["Mock custom status codes & bodies", "Yes (configurable per endpoint)", "No"],
-  ["MCP server for AI coding agents", "Yes (@webhooks-cc/mcp, 48 tools)", "Stripe MCP (API ops)"],
+  ["Mock custom status codes & bodies", "Yes (rule-based, per endpoint)", "No"],
+  ["SDKs for tests", "TypeScript, Python and Go", "Stripe API libraries"],
+  [
+    "MCP server for AI coding agents",
+    "Yes, remote (OAuth) or local (@webhooks-cc/mcp, 48 tools)",
+    "Stripe MCP (remote, Stripe API operations)",
+  ],
   ["Open source", "Yes (AGPL + MIT)", "Yes (Apache 2.0 CLI)"],
 ] as const;
 
@@ -103,7 +108,7 @@ export default function CompareStripeCliPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Stripe CLI</h1>
         <p className="text-lg text-muted-foreground mb-10">
@@ -111,7 +116,7 @@ export default function CompareStripeCliPage() {
           <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe listen</code> and{" "}
           <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe trigger</code>) set the
           standard for local Stripe webhook testing. webhooks.cc brings that same workflow to every
-          webhook and email provider in your stack: a fast Go CLI tunnel (
+          webhook and email provider in your stack: a fast Rust CLI tunnel (
           <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">whk tunnel</code>), a hosted
           request and email inbox that captures deliveries even when your terminal is closed, and a
           TypeScript SDK that sends genuine{" "}
@@ -222,7 +227,7 @@ export default function CompareStripeCliPage() {
               <li>A Stripe-CLI-style workflow across 32+ webhook providers and email</li>
               <li>Signed Stripe, GitHub, Shopify, and Clerk payloads in CI without a tunnel</li>
               <li>A permanent URL that captures webhooks while your terminal is closed</li>
-              <li>Shared staging endpoints for your team ($12/seat/mo)</li>
+              <li>Shared staging endpoints for your team (from $12/seat/mo)</li>
               <li>MCP tools so Claude Code or Cursor can trigger and inspect webhooks</li>
             </ul>
           </div>

@@ -119,6 +119,13 @@ test("signature is valid", async () => {
 
   // The x-shopify-hmac-sha256 header contains the base64-encoded HMAC
   expect(headers["x-shopify-hmac-sha256"]).toBeDefined();
+  expect(
+    await verifyShopifySignature(
+      body,
+      headers["x-shopify-hmac-sha256"],
+      process.env.SHOPIFY_WEBHOOK_SECRET!
+    )
+  ).toBe(true);
 });
 ```
 

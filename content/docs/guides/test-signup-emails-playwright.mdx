@@ -3,7 +3,7 @@ title: "How to Test Signup and Login Emails in Playwright"
 description: "Test the confirmation codes, magic links and password reset emails your app sends, end to end in Playwright, with a real email address per test run. No mail server and no mocks."
 section: guides
 order: 10
-lastUpdated: 2026-10-08
+lastUpdated: 2026-11-03
 schema: howto
 keywords:
   [
@@ -76,7 +76,7 @@ export const test = base.extend<{ inbox: Inbox }>({
 export { expect } from "@playwright/test";
 ```
 
-Tags are case-sensitive and may use letters, digits and `.`, `_`, `-` or `=`; keep the whole address part before the `@` under 64 characters.
+Tags are case-sensitive and may use letters, digits and most punctuation such as `.`, `_`, `-` or `=` (no spaces, quotes, brackets, `@`, `,`, `;` or `:`); keep the whole address part before the `@` within 64 characters.
 
 </Step>
 <Step title="Sign up and enter the code from the email">

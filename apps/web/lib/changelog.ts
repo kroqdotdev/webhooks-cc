@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.59.3";
+export const APP_VERSION = "0.59.4";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,21 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.59.4",
+    date: "2026-11-03",
+    title: "Comparisons and Docs Brought Up to Date",
+    track: "web",
+    items: [
+      "The comparison pages are checked again against each tool's own site: RequestBin's home, Pipedream Workflows, takes no new signups and closes on March 31, 2027; Beeceptor now has a CLI tunnel and an MCP server; ngrok has an MCP server; Webhook.site has an open-source edition. The checklist gains a row for inbound email",
+      "The comparisons also describe webhooks.cc as it is now: SDKs for TypeScript, Python and Go, forwarding to up to 10 destinations with filters, throttling and retries, response rules, email parsing on mailhooks.cc, the remote MCP server and Team Business",
+      "The docs, the home page, the email and teams pages, llms.txt and llms-full.txt are brought up to date: destinations, layouts, Python and Go, CLI commands and flags that were missing, the API's newer fields, 48 MCP tools, and Devin Desktop (formerly Windsurf) in the MCP setup",
+      "The docs Quick Start sends an email as well as a webhook, and only pages added in the last few weeks are marked new in the docs sidebar",
+      "Pro's 100,000 requests and each Teams seat's 100,000 are described as a month everywhere, and the plan comparison under Account > Plan shows Business's 250 AI assists instead of 500",
+      "The keyboard shortcuts dialog lists 5 for the Signature tab",
+      "AI setup says when your next assist comes back. Assists count for 30 days from when each was used rather than resetting with the billing period, and the line under AI setup used to give only the count",
+    ],
+  },
   {
     version: "0.59.3",
     date: "2026-11-03",

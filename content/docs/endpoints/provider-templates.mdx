@@ -49,7 +49,7 @@ seo:
   ogDescription: "Payload shapes, signature methods, headers, and event types for all 34 supported webhook provider templates. Covers Stripe, GitHub, Shopify, Meta, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, PayPal, Plaid, Resend, WorkOS, and more."
 ---
 
-Templates generate realistic payloads with correct provider headers. Providers with shared-secret or token-style signing also get matching signature material — usually a signature header, except Mailgun, which embeds its signature fields in the request body. Use templates from the [dashboard](/docs/endpoints/test-webhooks), the [SDK](/docs/sdk/api), or the [MCP server](/docs/mcp/tools).
+Templates generate realistic payloads with correct provider headers. Providers with shared-secret or token-style signing also get matching signature material: usually a signature header, except Mailgun, which embeds its signature fields in the request body. Use templates from the [dashboard](/docs/endpoints/test-webhooks), the [SDK](/docs/sdk/api), or the [MCP server](/docs/mcp/tools).
 
 ## Use templates from code
 
@@ -306,7 +306,7 @@ console.log(detected);
 
 ## Clerk
 
-**Signature:** Standard Webhooks (Svix) — HMAC-SHA256 over `{msgId}.{timestamp}.{body}`, base64-encoded. Both `webhook-*` and `svix-*` headers are sent.
+**Signature:** Standard Webhooks (Svix): HMAC-SHA256 over `{msgId}.{timestamp}.{body}`, base64-encoded. Both `webhook-*` and `svix-*` headers are sent.
 
 | Event             | Description          |
 | ----------------- | -------------------- |
@@ -490,7 +490,7 @@ console.log(detected);
 
 ## Meta (WhatsApp / Messenger / Instagram)
 
-**Signature:** HMAC-SHA256 over the raw body in `x-hub-signature-256` header (prefixed `sha256=`), keyed by your Meta **app secret** — the same scheme as GitHub. Auto-detection uses the body shape (`object` + `entry`), so configure `meta` explicitly when verifying server-side.
+**Signature:** HMAC-SHA256 over the raw body in `x-hub-signature-256` header (prefixed `sha256=`), keyed by your Meta **app secret**, the same scheme as GitHub. Auto-detection uses the body shape (`object` + `entry`), so configure `meta` explicitly when verifying server-side.
 
 | Template             | Description                  |
 | -------------------- | ---------------------------- |
@@ -725,7 +725,7 @@ console.log(detected);
 <Callout type="info">
   Square mixes the destination URL into the signed payload, so verification needs the exact URL
   Square delivers to. When verifying with the SDK, pass the `url` option (see the [signature
-  guide](/docs/guides/verify-webhook-signatures#handle-square-and-hubspot-url-and-method)).
+  guide](/docs/guides/verify-webhook-signatures#step-by-step-verification)).
 </Callout>
 
 | Template          | Description     |
@@ -768,7 +768,7 @@ console.log(detected);
   HubSpot v3 signs the HTTP method and request URI alongside the body, and rejects signatures whose
   timestamp is more than 5 minutes old. When verifying with the SDK, pass both the `url` and
   `method` options (see the [signature
-  guide](/docs/guides/verify-webhook-signatures#handle-square-and-hubspot-url-and-method)).
+  guide](/docs/guides/verify-webhook-signatures#step-by-step-verification)).
 </Callout>
 
 | Template                 | Description              |
@@ -801,7 +801,7 @@ console.log(detected);
 
 ## Mailgun
 
-**Signature:** HMAC-SHA256 over `{timestamp}{token}`, hex-encoded. Mailgun has **no signature header** — the values live in the request body under `signature.{timestamp,token,signature}`.
+**Signature:** HMAC-SHA256 over `{timestamp}{token}`, hex-encoded. Mailgun has **no signature header**: the values live in the request body under `signature.{timestamp,token,signature}`.
 
 <Callout type="info">
   Because Mailgun signs body fields rather than a header, auto-detection keys on the presence of
@@ -926,7 +926,7 @@ console.log(detected);
 
 ## Bitbucket
 
-**Signature:** HMAC-SHA256 over the raw body, hex-encoded in the `x-hub-signature` header with a `sha256=` prefix — the same scheme as GitHub. The event key is sent in the unique `x-event-key` header.
+**Signature:** HMAC-SHA256 over the raw body, hex-encoded in the `x-hub-signature` header with a `sha256=` prefix, the same scheme as GitHub. The event key is sent in the unique `x-event-key` header.
 
 <Callout type="info">
   Bitbucket and Intercom both send `x-hub-signature`. Auto-detection keys on Bitbucket's unique
