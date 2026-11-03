@@ -46,7 +46,8 @@
 --    session_mfa_ok(), which they call, is the one function here client
 --    roles may execute.
 --
--- storage_deletions now takes ticket prefixes (t/{id}/) as well.
+-- storage_deletions now takes ticket prefixes (t/{id}/) as well, and
+-- mfa_recovery_codes holds the hashed two-factor recovery codes.
 --
 -- Everything else is service-role only. Re-runnable. Apply in autocommit mode.
 -- ============================================================================
@@ -781,6 +782,29 @@ drop policy if exists webhooks_cc_topics_mfa on realtime.messages;
 create policy webhooks_cc_topics_mfa on realtime.messages
   as restrictive for select to authenticated
   using ((select public.session_mfa_ok()));
+
+
+-- 2c. Recovery codes --------------------------------------------------------
+-- GoTrue's TOTP has no recovery codes, so the web app keeps its own: ten
+-- one-time codes made when two-factor sign-in is turned on, stored as
+-- SHA-256 hashes only. A code used on the sign-in screen removes the
+-- account's authenticators (lib/mfa-recovery.ts), so the person can sign in
+-- and set two-factor up again; the account is emailed when that happens.
+create table if not exists public.mfa_recovery_codes (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references public.users(id) on delete cascade,
+  code_hash  text not null check (code_hash ~ '^[0-9a-f]{64}$'),
+  used_at    timestamptz,
+  created_at timestamptz not null default now(),
+  unique (user_id, code_hash)
+);
+
+create index if not exists mfa_recovery_codes_user
+  on public.mfa_recovery_codes (user_id);
+
+alter table public.mfa_recovery_codes enable row level security;
+revoke all on table public.mfa_recovery_codes from public, anon, authenticated;
+grant select, insert, update, delete on table public.mfa_recovery_codes to service_role;
 
 
 -- 3. Ops metrics -------------------------------------------------------------

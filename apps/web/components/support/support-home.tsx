@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { BookOpen, Mail } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { MfaGate } from "@/components/auth/mfa-challenge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, shortDay, timeAgo } from "@/lib/support/client";
@@ -40,7 +41,9 @@ export function SupportHome() {
       {isLoading ? (
         <ListSkeleton />
       ) : isAuthenticated ? (
-        <TicketList token={session?.access_token ?? null} userId={session?.user.id ?? null} />
+        <MfaGate>
+          <TicketList token={session?.access_token ?? null} userId={session?.user.id ?? null} />
+        </MfaGate>
       ) : (
         <SignedOut />
       )}

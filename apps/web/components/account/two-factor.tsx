@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { apiFetch } from "@/lib/support/client";
+import { copyToClipboard } from "@/lib/clipboard";
 
 interface Factor {
   id: string;
@@ -32,6 +35,10 @@ export function TwoFactor() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const { session } = useAuth();
+  const token = session?.access_token ?? null;
 
   const load = useCallback(async () => {
     const { data, error: listError } = await createClient().auth.mfa.listFactors();
@@ -42,11 +49,43 @@ export function TwoFactor() {
     setFactors(data.all as Factor[]);
   }, []);
 
+  const loadRemaining = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await apiFetch<{ remaining: number }>(token, "/api/account/mfa/recovery-codes");
+      setRemaining(data.remaining);
+    } catch {
+      setRemaining(null);
+    }
+  }, [token]);
+
+  const makeCodes = async (accessToken: string | null) => {
+    try {
+      const data = await apiFetch<{ codes: string[] }>(
+        accessToken,
+        "/api/account/mfa/recovery-codes",
+        {
+          method: "POST",
+        }
+      );
+      setCodes(data.codes);
+      setRemaining(data.codes.length);
+    } catch (codesError) {
+      setError(
+        codesError instanceof Error ? codesError.message : "Recovery codes could not be made."
+      );
+    }
+  };
+
   useEffect(() => {
     void load();
   }, [load]);
 
   const verified = (factors ?? []).find((factor) => factor.status === "verified");
+
+  useEffect(() => {
+    if (verified) void loadRemaining();
+  }, [verified, loadRemaining]);
 
   const start = async () => {
     setBusy(true);
@@ -94,6 +133,9 @@ export function TwoFactor() {
     setCode("");
     setMessage("Two-factor sign-in is on. Every new sign-in asks for a code from your app.");
     await load();
+    // The session just moved to aal2; the codes need that session's token.
+    const { data: fresh } = await createClient().auth.getSession();
+    await makeCodes(fresh.session?.access_token ?? token);
   };
 
   const turnOff = async () => {
@@ -167,6 +209,8 @@ export function TwoFactor() {
             Cancel
           </Button>
         </form>
+      ) : codes ? (
+        <RecoveryCodes codes={codes} onDone={() => setCodes(null)} />
       ) : (
         <div className="space-y-3">
           <p className="text-sm">
@@ -176,10 +220,35 @@ export function TwoFactor() {
           </p>
           {message && <InlineMessage tone="success">{message}</InlineMessage>}
           {error && <InlineMessage tone="error">{error}</InlineMessage>}
+          {verified && (
+            <p className="text-sm text-muted-foreground">
+              {remaining === null
+                ? "Recovery codes let you sign in if you lose your authenticator."
+                : remaining === 0
+                  ? "You have no recovery codes left. Make new ones so you can still sign in if you lose your authenticator."
+                  : `${remaining} recovery code${remaining === 1 ? "" : "s"} left. Each signs you in once if you lose your authenticator.`}
+            </p>
+          )}
           {verified ? (
-            <Button variant="outline" disabled={busy} onClick={() => void turnOff()}>
-              Turn off two-factor sign-in
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    remaining === 0 ||
+                    window.confirm("Make new recovery codes? The codes you have now stop working.")
+                  ) {
+                    void makeCodes(token);
+                  }
+                }}
+              >
+                Make new recovery codes
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => void turnOff()}>
+                Turn off two-factor sign-in
+              </Button>
+            </div>
           ) : (
             <Button disabled={busy} onClick={() => void start()}>
               Set up two-factor sign-in
@@ -188,5 +257,53 @@ export function TwoFactor() {
         </div>
       )}
     </Panel>
+  );
+}
+
+/** The codes, once: copy, download, and a confirmation that they are kept. */
+function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const text = `webhooks.cc recovery codes\nEach code signs you in once, without your authenticator.\n\n${codes.join("\n")}\n`;
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "webhooks-cc-recovery-codes.txt";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">Save your recovery codes</p>
+        <p className="text-sm text-muted-foreground">
+          If you lose your authenticator, each code signs you in once and turns two-factor sign-in
+          off so you can set it up again. Keep them somewhere safe, like a password manager. They
+          are shown only now.
+        </p>
+      </div>
+      <ol className="ph-no-capture grid max-w-sm grid-cols-2 gap-x-6 gap-y-1 rounded-md border border-line p-4 font-mono text-sm tabular-nums">
+        {codes.map((code) => (
+          <li key={code}>{code}</li>
+        ))}
+      </ol>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={async () => {
+            if (await copyToClipboard(codes.join("\n"))) {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }
+          }}
+        >
+          {copied ? "Copied" : "Copy codes"}
+        </Button>
+        <Button variant="outline" onClick={download}>
+          Download
+        </Button>
+        <Button onClick={onDone}>I saved them</Button>
+      </div>
+    </div>
   );
 }

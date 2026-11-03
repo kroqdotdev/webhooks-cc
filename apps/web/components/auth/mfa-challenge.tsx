@@ -43,6 +43,9 @@ export function useNeedsSecondFactor(sessionKey: string | null): boolean | null 
 /** Asks for the authenticator app's code after a password or link sign-in. */
 export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
   const router = useRouter();
+  const { session } = useAuth();
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [recovered, setRecovered] = useState(false);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -50,9 +53,44 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
 
   useEffect(() => inputRef.current?.focus(), []);
 
+  const recover = async () => {
+    if (!code.trim()) {
+      setError("Enter one of your recovery codes.");
+      return;
+    }
+    setChecking(true);
+    try {
+      const response = await fetch("/api/account/mfa/recover", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "That recovery code did not work.");
+        return;
+      }
+      // A fresh session lets everything that read the account while it
+      // still owed a code (the account menu) read it again.
+      await createClient().auth.refreshSession();
+      setRecovered(true);
+    } catch {
+      setError("The code could not be checked. Try again.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const verify = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    if (useRecovery) {
+      await recover();
+      return;
+    }
     const digits = code.replace(/\s+/g, "");
     if (!/^\d{6}$/.test(digits)) {
       setError("Enter the 6-digit code from your authenticator app.");
@@ -90,6 +128,34 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
     router.push("/login");
   };
 
+  if (recovered) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-6">
+        <div className="ui-card ui-card-static w-full max-w-sm space-y-4">
+          <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
+          <h1 className="text-xl font-bold clean:font-semibold">You are signed in</h1>
+          <p className="text-sm text-muted-foreground">
+            The recovery code worked, and two-factor sign-in is now off. Set it up again with your
+            new phone or app; we also emailed you about this.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => {
+                onVerified();
+                router.push("/account/security");
+              }}
+            >
+              Set it up again
+            </Button>
+            <Button variant="outline" onClick={onVerified}>
+              Later
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-6">
       <form onSubmit={verify} className="ui-card ui-card-static w-full max-w-sm space-y-4">
@@ -97,7 +163,9 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
         <div className="space-y-1">
           <h1 className="text-xl font-bold clean:font-semibold">Two-factor sign-in</h1>
           <p className="text-sm text-muted-foreground">
-            Enter the 6-digit code from your authenticator app to finish signing in.
+            {useRecovery
+              ? "Enter one of the recovery codes you saved when you set up two-factor sign-in."
+              : "Enter the 6-digit code from your authenticator app to finish signing in."}
           </p>
         </div>
         <label htmlFor="mfa-code" className="sr-only">
@@ -106,12 +174,12 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
         <Input
           ref={inputRef}
           id="mfa-code"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={7}
+          inputMode={useRecovery ? "text" : "numeric"}
+          autoComplete={useRecovery ? "off" : "one-time-code"}
+          maxLength={useRecovery ? 16 : 7}
           value={code}
           onChange={(event) => setCode(event.target.value)}
-          className="text-center font-mono text-lg tracking-[0.3em]"
+          className="text-center font-mono text-lg tracking-[0.3em] uppercase"
         />
         {error && (
           <p role="alert" className="text-sm text-destructive">
@@ -121,8 +189,19 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
         <Button type="submit" className="w-full" disabled={checking}>
           {checking ? "Checking..." : "Verify"}
         </Button>
+        <button
+          type="button"
+          className="text-sm text-primary underline underline-offset-2"
+          onClick={() => {
+            setUseRecovery((value) => !value);
+            setCode("");
+            setError(null);
+          }}
+        >
+          {useRecovery ? "Use the authenticator app instead" : "Use a recovery code instead"}
+        </button>
         <p className="text-xs text-muted-foreground">
-          Lost your authenticator?{" "}
+          Lost your authenticator and your recovery codes?{" "}
           <a href="mailto:support@webhooks.cc" className="underline underline-offset-2">
             Email support
           </a>{" "}

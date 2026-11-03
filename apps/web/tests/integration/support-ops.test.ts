@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
+import { createHmac } from "node:crypto";
+import { redeemRecoveryCode, replaceRecoveryCodes } from "@/lib/mfa-recovery";
 
 /**
  * Migration 00087: staff on Business without a subscription, the ticket
@@ -296,5 +298,67 @@ describe("ops rollup", () => {
     expect(data).toHaveLength(1);
     const today = await admin.rpc("ops_today");
     expect(today.error).toBeNull();
+  });
+});
+
+function totp(secret: string): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const c of secret.replace(/=+$/, "").toUpperCase()) {
+    bits += alphabet.indexOf(c).toString(2).padStart(5, "0");
+  }
+  const key: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) key.push(parseInt(bits.slice(i, i + 8), 2));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const hmac = createHmac("sha1", Buffer.from(key)).update(counter).digest();
+  const offset = hmac[19] & 15;
+  return String((hmac.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
+
+describe("recovery codes", () => {
+  it("work once and remove the authenticator", async () => {
+    const email = `test-support-recovery-${ts}@webhooks-test.local`;
+    const password = "TestPassword123!";
+    const { data: created } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    const userId = created.user!.id;
+    userIds.push(userId);
+
+    // A real authenticator, enrolled and verified the way the browser does.
+    const client = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+      }
+    );
+    await client.auth.signInWithPassword({ email, password });
+    const { data: factor, error: enrollError } = await client.auth.mfa.enroll({
+      factorType: "totp",
+    });
+    expect(enrollError).toBeNull();
+    const { error: verifyError } = await client.auth.mfa.challengeAndVerify({
+      factorId: factor!.id,
+      code: totp(factor!.totp.secret),
+    });
+    expect(verifyError).toBeNull();
+
+    const codes = await replaceRecoveryCodes(userId);
+    expect(codes).toHaveLength(10);
+    expect(await redeemRecoveryCode(userId, "AAAAA-AAAAA")).toBe(false);
+    expect(await redeemRecoveryCode(userId, codes[3].toLowerCase())).toBe(true);
+    expect(await redeemRecoveryCode(userId, codes[3])).toBe(false);
+
+    const { data: factors } = await admin.auth.admin.mfa.listFactors({ userId });
+    expect(factors!.factors.filter((entry) => entry.status === "verified")).toHaveLength(0);
+    const { count } = await admin
+      .from("mfa_recovery_codes")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    expect(count).toBe(0);
   });
 });

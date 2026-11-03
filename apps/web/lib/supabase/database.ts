@@ -1728,6 +1728,30 @@ export interface Database {
         Relationships: [];
       };
       // Staff, support tickets and ops metrics (migration 00087).
+      mfa_recovery_codes: {
+        Row: {
+          id: number;
+          user_id: string;
+          code_hash: string;
+          used_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: string;
+          code_hash: string;
+          used_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: string;
+          code_hash?: string;
+          used_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       staff: {
         Row: {
           user_id: string;

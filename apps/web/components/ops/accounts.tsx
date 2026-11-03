@@ -117,6 +117,23 @@ export function AccountInspector({ id }: { id: string }) {
     }
   };
 
+  const resetTwoFactor = async () => {
+    if (!account) return;
+    if (
+      !window.confirm(`Turn off two-factor sign-in for ${account.email}? They will be emailed.`)
+    ) {
+      return;
+    }
+    try {
+      await apiFetch(token, `/api/ops/accounts/${id}/two-factor`, { method: "DELETE" });
+      setAccount({ ...account, twoFactor: false });
+    } catch (resetError) {
+      setError(
+        resetError instanceof Error ? resetError.message : "Two-factor sign-in is still on."
+      );
+    }
+  };
+
   if (!account) {
     return (
       <div className="p-6 lg:p-8">
@@ -358,6 +375,18 @@ export function AccountInspector({ id }: { id: string }) {
             <dt className="text-muted-foreground">Two-factor</dt>
             <dd>{account.twoFactor ? "On" : "Off"}</dd>
           </dl>
+          {account.twoFactor && !account.staff && (
+            <div className="ui-card ui-card-static space-y-2 text-sm">
+              <h2 className="font-semibold">Lost authenticator</h2>
+              <p className="text-muted-foreground">
+                Only after they proved who they are, for example by writing from the account&rsquo;s
+                address. This removes their authenticator and recovery codes and emails them.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => void resetTwoFactor()}>
+                Turn off two-factor sign-in
+              </Button>
+            </div>
+          )}
           <div className="ui-card ui-card-static space-y-2 text-sm">
             <h2 className="font-semibold">View as {firstName}</h2>
             {account.activeGrant ? (
