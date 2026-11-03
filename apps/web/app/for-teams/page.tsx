@@ -67,8 +67,8 @@ const CHECKLIST = [
   "Email capture: each shared endpoint has its own address",
   "CLI, TypeScript SDK and MCP server see shared endpoints like your own",
   "Owner-only delete, sharing, invites and billing",
-  "Pooled quota: 100,000 requests per seat per 30 days",
-  "Team Business add-on: +150,000 requests, 2,000 parsed attachment pages a month, 50 layouts per endpoint, a custom inbound domain and file drops",
+  "Pooled quota: 100,000 requests per seat per 30 days, from 2 seats",
+  "Team Business: 250,000 requests, 2,000 parsed attachment pages and 250 AI assists per seat, 50 layouts per endpoint, a custom inbound domain and file drops",
 ];
 
 const PERMISSIONS: readonly (readonly [string, boolean, boolean])[] = [
@@ -125,17 +125,17 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How much does webhooks.cc cost for a team?",
     answer:
-      "$12 per seat per month, billed per team on a 30-day period. Each seat is one member, the owner included, and adds 100,000 requests per 30 days to a pool the whole team shares. A team of 5 pays $60 a month for 500,000 requests. The optional Team Business add-on, $49 a month, adds 150,000 requests, 2,000 parsed attachment pages a month, a custom inbound domain, file drops and 90-day retention.",
+      "Teams is $12 per seat per month, from 2 seats, billed per team on a 30-day period. Each seat is one member, the owner included, and adds 100,000 requests per 30 days to a pool the whole team shares. A team of 5 pays $60 a month for 500,000 requests. Team Business is $35 per seat per month, or $350 per seat per year, with Business's limits per seat: 250,000 requests, 2,000 parsed attachment pages and 250 AI assists, plus a custom inbound domain, file drops and 90-day retention for the team.",
   },
   {
     question: "Do team members need a paid plan?",
     answer:
-      "No. Members can be on the Free plan. Requests on endpoints shared with an active team draw from the team's pool and keep 31-day retention (90 days with Team Business), whatever plan the endpoint owner is on.",
+      "No. Members can be on the Free plan. Requests on endpoints shared with an active team draw from the team's pool and keep 31-day retention (90 days on Team Business), whatever plan the endpoint owner is on.",
   },
   {
     question: "Which webhook testing tools support longer retention and access control for teams?",
     answer:
-      "On webhooks.cc, team-billed requests are kept for 31 days, or 90 with the Team Business add-on, and shared endpoints can only be read by signed-in team members. Guest URLs on any tool, webhooks.cc's included, are readable by anyone who knows the address, so a team should capture on shared account endpoints instead.",
+      "On webhooks.cc, team-billed requests are kept for 31 days, or 90 on Team Business, and shared endpoints can only be read by signed-in team members. Guest URLs on any tool, webhooks.cc's included, are readable by anyone who knows the address, so a team should capture on shared account endpoints instead.",
   },
   {
     question: "What happens when the team's quota runs out?",
@@ -290,11 +290,13 @@ export default function ForTeamsPage() {
             ))}
           </div>
           <p className="text-muted-foreground mb-8">
-            Need more? The Team Business add-on is $49 a month on the team&apos;s subscription
-            (monthly only): 150,000 more requests in the pool, 2,000 pooled parsed attachment pages
-            a month with page blocks and page overage, up to 50 layouts per endpoint on shared
-            endpoints, 250 AI assists, one custom inbound domain, file drops, and 90-day retention
-            for team-billed requests. Members&apos; personal endpoints follow their own plan.{" "}
+            Teams start at 2 seats. Need more? Team Business is $35 a seat a month, or $350 a seat a
+            year, and gives each seat Business&apos;s limits: 250,000 requests, 2,000 parsed
+            attachment pages (with page blocks and page overage) and 250 AI assists, pooled for the
+            team, plus up to 50 layouts per endpoint on shared endpoints, one custom inbound domain,
+            file drops, and 90-day retention for team-billed requests. Moving up from Teams applies
+            at once, charged for the rest of the period. Members&apos; personal endpoints follow
+            their own plan.{" "}
             <Link
               href="/docs/plans-limits#teams-and-shared-endpoints"
               className="text-primary font-bold hover:underline"

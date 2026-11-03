@@ -188,12 +188,12 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access, with every Pro feature. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Business ($29/month or $290/year) gives 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month, up to 50 layouts per endpoint, a custom inbound domain and file drops to SFTP, FTP or S3. Teams is billed separately at $12/seat/mo.",
+      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access, with every Pro feature. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Business ($29/month or $290/year) gives 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month, up to 50 layouts per endpoint, a custom inbound domain and file drops to SFTP, FTP or S3. Teams are billed separately, from 2 seats: Teams at $12/seat/mo, or Team Business at $35/seat/mo ($350/seat/yr) with Business's limits per seat.",
   },
   {
     question: "Whose quota is used for shared team endpoints?",
     answer:
-      "The team's. Once an endpoint is shared with a team that has an active Teams subscription, its incoming webhooks draw from the team's pooled quota (100,000 requests per seat per 30 days) instead of the owner's personal quota, and they are kept for 31 days, or 90 with the Team Business add-on, no matter which plan the owner is on. Endpoints that are not shared with an active team still count against the owner's own limit.",
+      "The team's. Once an endpoint is shared with a team that has an active Teams subscription, its incoming webhooks draw from the team's pooled quota (100,000 requests per seat per period on Teams, 250,000 on Team Business) instead of the owner's personal quota, and they are kept for 31 days, or 90 on Team Business, no matter which plan the owner is on. Endpoints that are not shared with an active team still count against the owner's own limit.",
   },
   {
     question: "How do I connect an AI coding agent?",
@@ -763,12 +763,12 @@ export default async function Home() {
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  "100,000 pooled requests per seat / 30 days",
+                  "100,000 pooled requests per seat / 30 days, from 2 seats",
                   "Seats are the member cap",
                   "Shared endpoints, real-time for everyone",
                   "31-day retention on team traffic",
                   "Billed per team, not per account",
-                  "Team Business add-on, $49/mo: +150,000 requests and Business features",
+                  "Team Business, $35/seat/mo or $350/seat/yr: Business per seat",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />

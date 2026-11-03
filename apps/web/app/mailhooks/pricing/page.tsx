@@ -139,10 +139,11 @@ export default function MailhooksPricing() {
           <div className="ui-card ui-card-static mt-8">
             <h2 className="font-bold text-xl mb-2">Teams</h2>
             <p className="text-muted-foreground">
-              $12 per seat a month, with 100,000 pooled requests per seat. Add Team Business for $49
-              a month: 150,000 more requests in the pool, 2,000 pooled parsed pages, 50 layouts per
-              endpoint, 250 AI assists, a custom domain, file drops and 90-day retention for the
-              endpoints you share.{" "}
+              From 2 seats, billed per team. Teams is $12 per seat a month, with 100,000 pooled
+              requests per seat. Team Business is $35 per seat a month, or $350 per seat a year:
+              each seat brings Business&apos;s 250,000 requests, 2,000 parsed pages and 250 AI
+              assists to the team&apos;s pool, with 50 layouts per endpoint, a custom domain, file
+              drops and 90-day retention for the endpoints you share.{" "}
               <Link href={`${webhooksOrigin()}/for-teams`} className="underline">
                 About teams
               </Link>

@@ -35,7 +35,7 @@ describe("startTeamCheckout", () => {
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe("/api/teams/team-1/billing/checkout");
     expect(init.method).toBe("POST");
-    expect(init.body).toBe(JSON.stringify({ seats: 3 }));
+    expect(init.body).toBe(JSON.stringify({ seats: 3, plan: "team", interval: "month" }));
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer token-1");
     expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
   });

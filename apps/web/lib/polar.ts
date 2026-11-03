@@ -112,11 +112,6 @@ export function getDomainProductIds(): DomainProductIds | null {
   return { monthly, monthlyAdd };
 }
 
-/** The Team Business add-on product, or null when it is not offered. */
-export function teamBusinessProductId(): string | null {
-  return process.env.POLAR_TEAM_BUSINESS_PRODUCT_ID || null;
-}
-
 export type PaidPlan = "pro" | "business";
 export type BillingInterval = "month" | "year";
 
@@ -142,6 +137,37 @@ export function planForProduct(
   }
   if (productId === process.env.POLAR_BUSINESS_ANNUAL_PRODUCT_ID) {
     return { plan: "business", interval: "year" };
+  }
+  return null;
+}
+
+/** A team's plan: Teams, or Team Business with Business's limits per seat. */
+export type TeamPlan = "team" | "team_business";
+
+/** The Polar product of a team plan and interval, or null when it is not offered. */
+export function teamPlanProductId(plan: TeamPlan, interval: BillingInterval): string | null {
+  if (plan === "team") {
+    return interval === "month" ? process.env.POLAR_TEAMS_PRODUCT_ID || null : null;
+  }
+  return interval === "year"
+    ? process.env.POLAR_TEAM_BUSINESS_ANNUAL_PRODUCT_ID || null
+    : process.env.POLAR_TEAM_BUSINESS_MONTHLY_PRODUCT_ID || null;
+}
+
+/**
+ * The team plan and interval a Polar product sells, or null for any other
+ * product. Annual billing is only for Team Business.
+ */
+export function teamPlanForProduct(
+  productId: string | null | undefined
+): { plan: TeamPlan; interval: BillingInterval } | null {
+  if (!productId) return null;
+  if (productId === process.env.POLAR_TEAMS_PRODUCT_ID) return { plan: "team", interval: "month" };
+  if (productId === process.env.POLAR_TEAM_BUSINESS_MONTHLY_PRODUCT_ID) {
+    return { plan: "team_business", interval: "month" };
+  }
+  if (productId === process.env.POLAR_TEAM_BUSINESS_ANNUAL_PRODUCT_ID) {
+    return { plan: "team_business", interval: "year" };
   }
   return null;
 }

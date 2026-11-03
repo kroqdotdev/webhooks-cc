@@ -31,6 +31,8 @@ export interface Entitlements {
   /** Page blocks and page overage. */
   pageAddons: boolean;
   annualBilling: boolean;
+  /** Team keys: parsed pages and AI assists are per seat too (requests always are). */
+  perSeat: boolean;
 }
 
 export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
@@ -48,6 +50,7 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     requestAddons: false,
     pageAddons: false,
     annualBilling: false,
+    perSeat: false,
   },
   pro: {
     key: "pro",
@@ -63,6 +66,7 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     requestAddons: true,
     pageAddons: false,
     annualBilling: false,
+    perSeat: false,
   },
   business: {
     key: "business",
@@ -78,6 +82,7 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     requestAddons: true,
     pageAddons: true,
     annualBilling: true,
+    perSeat: false,
   },
   team: {
     key: "team",
@@ -93,11 +98,12 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     requestAddons: true,
     pageAddons: false,
     annualBilling: false,
+    perSeat: false,
   },
   team_business: {
     key: "team_business",
-    requestLimit: 100_000,
-    poolRequests: 150_000,
+    requestLimit: 250_000,
+    poolRequests: 0,
     quotaPeriod: "month",
     retentionDays: 90,
     parsedPages: 2_000,
@@ -107,7 +113,8 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     fileDrops: true,
     requestAddons: true,
     pageAddons: true,
-    annualBilling: false,
+    annualBilling: true,
+    perSeat: true,
   },
 };
 
@@ -122,15 +129,30 @@ export function planEntitlements(plan: string | null | undefined): Readonly<Enti
   return isUserPlan(plan) ? ENTITLEMENTS[plan] : ENTITLEMENTS.free;
 }
 
-/** A subscribed team's entitlements: with the Business add-on or without. */
+/** A subscribed team's entitlements: Team Business or Teams. */
 export function teamEntitlements(business: boolean): Readonly<Entitlements> {
   return business ? ENTITLEMENTS.team_business : ENTITLEMENTS.team;
 }
 
+/** What a team gets for its seats in a quota period: requests, parsed pages and AI assists. */
+export function teamAllowance(
+  seats: number,
+  business: boolean
+): { requests: number; parsedPages: number; aiAssists: number } {
+  const e = teamEntitlements(business);
+  const count = Math.max(0, Math.floor(seats));
+  // The database counts at least one seat for pages and assists.
+  const scale = e.perSeat ? Math.max(1, count) : 1;
+  return {
+    requests: count * e.requestLimit + e.poolRequests,
+    parsedPages: e.parsedPages * scale,
+    aiAssists: e.aiAssists * scale,
+  };
+}
+
 /** A team's pooled request allowance for `seats` seats. */
 export function teamRequestLimit(seats: number, business: boolean): number {
-  const e = teamEntitlements(business);
-  return Math.max(0, Math.floor(seats)) * e.requestLimit + e.poolRequests;
+  return teamAllowance(seats, business).requests;
 }
 
 /** The name shown for a personal plan. */

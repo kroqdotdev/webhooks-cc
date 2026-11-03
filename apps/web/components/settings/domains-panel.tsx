@@ -503,7 +503,7 @@ function ExtraDomains({
       {state.offered && state.eligible && state.planEnding && (
         <Notice tone="warning" title={`Extra domains end on ${renewal}`}>
           {teamId
-            ? "Team Business is set to end, and extra domains end with it. Keep Team Business to change them."
+            ? "Team Business ends at the renewal, and extra domains end with it. Keep Team Business to change them."
             : "Your plan leaves Business then, and extra domains end with it. Keep Business to change them."}
         </Notice>
       )}

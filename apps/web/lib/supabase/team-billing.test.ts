@@ -13,11 +13,18 @@ vi.mock("@/lib/polar", async (importOriginal) => {
     getPolarTeamsCheckoutConfig: mockFns.getPolarTeamsCheckoutConfig,
     loggablePolarError: (error: unknown) => error,
     polarErrorCode: actual.polarErrorCode,
+    teamPlanForProduct: actual.teamPlanForProduct,
+    teamPlanProductId: actual.teamPlanProductId,
   };
 });
 
 vi.mock("./admin", () => ({
   createAdminClient: mockFns.createAdminClient,
+}));
+
+// Plan changes reconcile the add-ons afterwards; that module has its own tests.
+vi.mock("./capacity-billing", () => ({
+  reconcileAddonsWithPlan: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { errors } from "@polar-sh/sdk/2026-10";
@@ -26,9 +33,11 @@ import {
   applyTeamPolarWebhookEvent,
   assignTeamSeat,
   cancelTeamSubscription,
+  changeTeamPlan,
   createTeamCheckout,
   ensureOwnerSeat,
   extractTeamIdFromWebhook,
+  keepTeamPlan,
   quoteTeamSeatChange,
   resubscribeTeam,
   revokeTeamSeat,
@@ -157,11 +166,15 @@ beforeEach(() => {
     appUrl: "https://webhooks.cc",
     teamsProductId: "prod_teams_123",
   });
+  vi.stubEnv("POLAR_TEAMS_PRODUCT_ID", "prod_teams_123");
+  vi.stubEnv("POLAR_TEAM_BUSINESS_MONTHLY_PRODUCT_ID", "prod_team_business_123");
+  vi.stubEnv("POLAR_TEAM_BUSINESS_ANNUAL_PRODUCT_ID", "prod_team_business_year_123");
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 // Pending-seat syncs are versioned by our own clock; tests pin it.
@@ -323,6 +336,7 @@ describe("createTeamCheckout", () => {
               id: "co_1",
               url: "https://sandbox.polar.sh/checkout/cached",
               seats: 5,
+              product: "prod_teams_123",
               created_at: new Date(Date.now() - 60_000).toISOString(),
             },
           }),
@@ -347,6 +361,7 @@ describe("createTeamCheckout", () => {
               id: "co_1",
               url: "https://sandbox.polar.sh/checkout/cached",
               seats: 3,
+              product: "prod_teams_123",
               created_at: new Date(Date.now() - 60_000).toISOString(),
             },
           }),
@@ -399,6 +414,7 @@ describe("createTeamCheckout", () => {
               id: "co_1",
               url: "https://sandbox.polar.sh/checkout/cached",
               seats: 5,
+              product: "prod_teams_123",
               created_at: new Date(Date.now() - 45 * 60_000).toISOString(),
               expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
             },
@@ -424,6 +440,7 @@ describe("createTeamCheckout", () => {
               id: "co_1",
               url: "https://sandbox.polar.sh/checkout/expired",
               seats: 5,
+              product: "prod_teams_123",
               created_at: new Date(Date.now() - 60_000).toISOString(),
               expires_at: new Date(Date.now() - 1_000).toISOString(),
             },
@@ -454,6 +471,7 @@ describe("createTeamCheckout", () => {
               id: "co_1",
               url: "https://sandbox.polar.sh/checkout/stale",
               seats: 5,
+              product: "prod_teams_123",
               created_at: new Date(Date.now() - 31 * 60_000).toISOString(),
             },
           }),
@@ -485,6 +503,7 @@ describe("createTeamCheckout", () => {
                 id: "co_w",
                 url: "https://sandbox.polar.sh/checkout/winner",
                 seats: 5,
+                product: "prod_teams_123",
                 created_at: new Date(Date.now() - 5_000).toISOString(),
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               },
@@ -710,7 +729,12 @@ describe("updateTeamSeats", () => {
     expect(recorded).toContainEqual({
       table: "teams",
       op: "update",
-      payload: { pending_seats: null, pending_seats_as_of: NOW.toISOString() },
+      payload: {
+        pending_seats: null,
+        pending_plan: null,
+        pending_interval: null,
+        pending_seats_as_of: NOW.toISOString(),
+      },
     });
   });
 
@@ -825,7 +849,12 @@ describe("updateTeamSeats", () => {
     expect(recorded).toContainEqual({
       table: "teams",
       op: "update",
-      payload: { pending_seats: 3, pending_seats_as_of: NOW.toISOString() },
+      payload: {
+        pending_seats: 3,
+        pending_plan: null,
+        pending_interval: null,
+        pending_seats_as_of: NOW.toISOString(),
+      },
     });
     const sync = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
     expect(sync!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
@@ -1415,6 +1444,8 @@ describe("subscription event guards", () => {
     expect(teamsUpdates()[0].payload).not.toHaveProperty("pending_seats");
     expect(teamsUpdates()[1].payload).toEqual({
       pending_seats: 3,
+      pending_plan: null,
+      pending_interval: null,
       pending_seats_as_of: NOW.toISOString(),
     });
     const sync = recordedFilters.filter((c) => c.table === "teams" && c.op === "update")[1];
@@ -1459,6 +1490,8 @@ describe("subscription event guards", () => {
 
     expect(teamsUpdates()[1].payload).toEqual({
       pending_seats: null,
+      pending_plan: null,
+      pending_interval: null,
       pending_seats_as_of: NOW.toISOString(),
     });
   });
@@ -1491,9 +1524,9 @@ describe("subscription event guards", () => {
       )
     ).rejects.toThrow("polar down");
 
-    // The state write already happened and is safe to repeat on redelivery;
-    // the schedule is left for the retry.
-    expect(teamsUpdates()).toHaveLength(1);
+    // The current state is read before anything is written, so nothing is,
+    // and the redelivery applies it all.
+    expect(teamsUpdates()).toHaveLength(0);
   });
 
   test("the renewal reset is conditioned on the observed subscription id and period start", async () => {
@@ -1610,5 +1643,211 @@ describe("TeamBillingError", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe("not_owner");
     expect(error.message).toBe("Only the team owner can manage billing");
+  });
+});
+
+describe("seat minimum", () => {
+  test("refuses fewer than two seats, except the one a team already has", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP, OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({ polar_subscription_id: "sub_1", seats: 3, pending_seats: null }),
+          teamRow({ polar_subscription_id: "sub_1", seats: 1, pending_seats: null }),
+        ],
+      })
+    );
+
+    await expect(updateTeamSeats("user_1", "team_1", 1)).rejects.toMatchObject({
+      code: "invalid_seats",
+    });
+    // A team subscribed with one seat before the minimum keeps it: asking for
+    // its own count changes nothing.
+    await expect(updateTeamSeats("user_1", "team_1", 1)).resolves.toBeUndefined();
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("a checkout needs two seats", async () => {
+    await expect(createTeamCheckout("user_1", "team_1", 1)).rejects.toMatchObject({
+      code: "invalid_seats",
+    });
+  });
+});
+
+describe("changeTeamPlan", () => {
+  const subscribed = (overrides: Record<string, unknown> = {}) =>
+    teamRow({
+      polar_subscription_id: "sub_1",
+      subscription_status: "active",
+      seats: 2,
+      business: false,
+      billing_interval: "month",
+      pending_plan: null,
+      pending_interval: null,
+      pending_seats: null,
+      ...overrides,
+    });
+
+  function admin(team: QueryResult, extra: Record<string, QueryResult[]> = {}) {
+    return createFakeAdmin({
+      "team_members:select": [OWNER_MEMBERSHIP],
+      "teams:select": [team],
+      ...extra,
+    });
+  }
+
+  test("an upgrade switches the product now and charges the difference", async () => {
+    freezeClock();
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed()));
+    const update = vi.fn().mockResolvedValue({
+      id: "sub_1",
+      product_id: "prod_team_business_123",
+      seats: 2,
+      status: "active",
+    });
+    const get = vi.fn().mockResolvedValue({ id: "sub_1", pending_update: null });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update, get } });
+
+    await expect(changeTeamPlan("user_1", "team_1", "team_business", "month")).resolves.toEqual({
+      applied: "now",
+    });
+    expect(update).toHaveBeenCalledWith("sub_1", {
+      product_id: "prod_team_business_123",
+      proration_behavior: "invoice",
+    });
+  });
+
+  test("a move to annual applies now, a move down waits for the renewal", async () => {
+    freezeClock();
+    const update = vi.fn().mockResolvedValue({
+      id: "sub_1",
+      product_id: "prod_team_business_123",
+      pending_update: { product_id: "prod_teams_123", seats: null },
+    });
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: { update, get: vi.fn().mockResolvedValue({ id: "sub_1" }) },
+    });
+
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed({ business: true })));
+    await expect(changeTeamPlan("user_1", "team_1", "team_business", "year")).resolves.toEqual({
+      applied: "now",
+    });
+    expect(update).toHaveBeenLastCalledWith("sub_1", {
+      product_id: "prod_team_business_year_123",
+      proration_behavior: "invoice",
+    });
+
+    recorded = [];
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed({ business: true })));
+    await expect(changeTeamPlan("user_1", "team_1", "team", "month")).resolves.toEqual({
+      applied: "renewal",
+    });
+    expect(update).toHaveBeenLastCalledWith("sub_1", {
+      product_id: "prod_teams_123",
+      proration_behavior: "next_period",
+    });
+    // Polar's pending update is mirrored with the time it was confirmed.
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: {
+        pending_seats: null,
+        pending_plan: "team",
+        pending_interval: "month",
+        pending_seats_as_of: NOW.toISOString(),
+      },
+    });
+  });
+
+  test("refuses what Polar would refuse or what needs another step first", async () => {
+    const update = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update } });
+
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed({ seats: 1 })));
+    await expect(
+      changeTeamPlan("user_1", "team_1", "team_business", "month")
+    ).rejects.toMatchObject({ code: "seats_below_minimum" });
+
+    mockFns.createAdminClient.mockReturnValue(
+      admin(subscribed({ business: true, pending_plan: "team", pending_interval: "month" }))
+    );
+    await expect(changeTeamPlan("user_1", "team_1", "team_business", "year")).rejects.toMatchObject(
+      { code: "change_pending" }
+    );
+
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed({ cancel_at_period_end: true })));
+    await expect(
+      changeTeamPlan("user_1", "team_1", "team_business", "month")
+    ).rejects.toMatchObject({ code: "plan_ending" });
+
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed()));
+    await expect(changeTeamPlan("user_1", "team_1", "team", "month")).rejects.toMatchObject({
+      code: "unchanged",
+    });
+
+    // Teams is monthly only.
+    await expect(changeTeamPlan("user_1", "team_1", "team", "year")).rejects.toMatchObject({
+      code: "not_offered",
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  test("a declined card changes nothing", async () => {
+    const declined = Object.create(errors.SubscriptionsUpdate402Error.prototype) as {
+      error: { error: string };
+    };
+    declined.error = { error: "PaymentFailed" };
+    const update = vi.fn().mockRejectedValue(declined);
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update } });
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed()));
+
+    await expect(
+      changeTeamPlan("user_1", "team_1", "team_business", "month")
+    ).rejects.toMatchObject({ code: "payment_failed" });
+    expect(recorded.filter((call) => call.op === "update")).toEqual([]);
+  });
+});
+
+describe("keepTeamPlan", () => {
+  test("clears Polar's pending update and schedules a seat reduction again", async () => {
+    freezeClock();
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            polar_subscription_id: "sub_1",
+            subscription_status: "active",
+            seats: 4,
+            business: true,
+            pending_plan: "team",
+            pending_interval: "month",
+            pending_seats: 3,
+          }),
+        ],
+      })
+    );
+    const update = vi
+      .fn()
+      .mockResolvedValueOnce({ id: "sub_1", pending_update: null })
+      .mockResolvedValueOnce({ id: "sub_1", pending_update: { product_id: null, seats: 3 } });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update } });
+
+    await keepTeamPlan("user_1", "team_1");
+    expect(update).toHaveBeenNthCalledWith(1, "sub_1", { pending_update: null });
+    expect(update).toHaveBeenNthCalledWith(2, "sub_1", {
+      seats: 3,
+      proration_behavior: "next_period",
+    });
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: {
+        pending_seats: 3,
+        pending_plan: null,
+        pending_interval: null,
+        pending_seats_as_of: NOW.toISOString(),
+      },
+    });
   });
 });

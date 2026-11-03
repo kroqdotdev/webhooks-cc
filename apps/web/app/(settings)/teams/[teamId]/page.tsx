@@ -18,7 +18,6 @@ import { QuotaMeter, seatSlotsFor } from "@/components/settings/quota-meter";
 import { useSettingsData } from "@/components/settings/settings-data";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
-import { TeamBusinessPanel } from "@/components/teams/team-business-panel";
 import { DomainsPanel } from "@/components/settings/domains-panel";
 import { TeamBillingPanel } from "@/components/teams/team-billing-panel";
 import {
@@ -83,8 +82,6 @@ function TeamDetailContent() {
   const team = settings.teams.find((t) => t.id === teamId) ?? null;
 
   const [members, setMembers] = useState<TeamMember[] | null>(null);
-  // Bumped when Team Business changes, which the pages panel reads.
-  const [businessVersion, setBusinessVersion] = useState(0);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [endpoints, setEndpoints] = useState<TeamEndpoint[]>([]);
   const [ownedEndpoints, setOwnedEndpoints] = useState<OwnedEndpoint[]>([]);
@@ -512,7 +509,11 @@ function TeamDetailContent() {
           <Panel
             id="usage"
             title="Seats and usage"
-            description="Each seat adds 100,000 requests to the pool everyone on the team shares."
+            description={
+              team.business
+                ? "Each seat adds 250,000 requests, 2,000 parsed pages and 250 AI assists to what everyone on the team shares."
+                : "Each seat adds 100,000 requests to the pool everyone on the team shares."
+            }
           >
             <QuotaMeter
               used={team.requestsUsed}
@@ -545,19 +546,6 @@ function TeamDetailContent() {
           />
         )}
 
-        {subscribed && (
-          <TeamBusinessPanel
-            accessToken={accessToken}
-            teamId={team.id}
-            business={team.business}
-            canManage={isOwner}
-            onChanged={() => {
-              setBusinessVersion((version) => version + 1);
-              void settings.refresh();
-            }}
-          />
-        )}
-
         {subscribed && team.business && (
           <ParsedPagesPanel
             accessToken={accessToken}
@@ -567,7 +555,8 @@ function TeamDetailContent() {
               team.subscriptionStatus,
               team.periodEnd,
               team.business,
-              businessVersion,
+              team.billingInterval,
+              team.pendingPlan,
             ].join(":")}
           />
         )}

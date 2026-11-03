@@ -62,6 +62,9 @@ export async function createTeam(userId: string, name: string): Promise<Team | {
     requestLimit: 0,
     blockRequests: 0,
     business: false,
+    billingInterval: null,
+    pendingPlan: null,
+    pendingInterval: null,
     periodEnd: null,
     cancelAtPeriodEnd: false,
     pendingSeats: null,
@@ -93,7 +96,7 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
   const { data: teamsData, error: teamsError } = await admin
     .from("teams")
     .select(
-      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, block_requests, period_end, cancel_at_period_end, pending_seats, business"
+      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, block_requests, period_end, cancel_at_period_end, pending_seats, business, billing_interval, pending_plan, pending_interval"
     )
     .in("id", teamIds);
 
@@ -131,6 +134,9 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
     requestLimit: team.request_limit + team.block_requests,
     blockRequests: team.block_requests,
     business: team.business === true,
+    billingInterval: team.billing_interval,
+    pendingPlan: team.pending_plan,
+    pendingInterval: team.pending_interval,
     periodEnd: team.period_end ? parseMillis(team.period_end) : null,
     cancelAtPeriodEnd: team.cancel_at_period_end,
     pendingSeats: team.pending_seats,

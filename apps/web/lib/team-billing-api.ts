@@ -1,12 +1,13 @@
 "use client";
 
-import type { SeatChangeQuote } from "@/lib/team-pricing";
+import type { PlanChangeQuote, SeatChangeQuote, TeamInterval, TeamPlan } from "@/lib/team-pricing";
 
 /**
  * Browser-side wrappers for `/api/teams/[teamId]/billing/*`.
  *
- * Checkout answers 200 `{ url }`; cancel, resubscribe and seats answer 204 with
- * an empty body, so those three never parse a response. Failures always carry a
+ * Checkout answers 200 `{ url }` and a plan change `{ applied }`; cancel,
+ * resubscribe, seats and keeping the plan answer 204 with an empty body, so
+ * those never parse a response. Failures always carry a
  * JSON `{ error }` string, optionally with a `detail` string (e.g. Polar
  * validation detail); both are folded into the thrown message for inline
  * display.
@@ -37,11 +38,13 @@ async function readError(response: Response): Promise<string> {
 export async function startTeamCheckout(
   accessToken: string,
   teamId: string,
-  seats: number
+  seats: number,
+  plan: TeamPlan = "team",
+  interval: TeamInterval = "month"
 ): Promise<string> {
   const response = await fetch(
     `/api/teams/${teamId}/billing/checkout`,
-    billingRequest(accessToken, { seats })
+    billingRequest(accessToken, { seats, plan, interval })
   );
   if (!response.ok) throw new Error(await readError(response));
 
@@ -90,4 +93,43 @@ export async function quoteTeamSeats(
   );
   if (!response.ok) throw new Error(await readError(response));
   return (await response.json()) as SeatChangeQuote;
+}
+
+/** About what moving to a plan costs now, priced by the server from Polar's data. */
+export async function quoteTeamPlan(
+  accessToken: string,
+  teamId: string,
+  plan: TeamPlan,
+  interval: TeamInterval
+): Promise<PlanChangeQuote> {
+  const query = new URLSearchParams({ plan, interval });
+  const response = await fetch(`/api/teams/${teamId}/billing/plan?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()) as PlanChangeQuote;
+}
+
+/** Moves the team to a plan: an upgrade applies now, a downgrade at the renewal. */
+export async function changeTeamPlan(
+  accessToken: string,
+  teamId: string,
+  plan: TeamPlan,
+  interval: TeamInterval
+): Promise<{ applied: "now" | "renewal" }> {
+  const response = await fetch(
+    `/api/teams/${teamId}/billing/plan`,
+    billingRequest(accessToken, { plan, interval })
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()) as { applied: "now" | "renewal" };
+}
+
+/** Drops a plan change waiting for the renewal. */
+export async function keepTeamPlan(accessToken: string, teamId: string): Promise<void> {
+  const response = await fetch(
+    `/api/teams/${teamId}/billing/plan`,
+    billingRequest(accessToken, { action: "keep" })
+  );
+  if (!response.ok) throw new Error(await readError(response));
 }

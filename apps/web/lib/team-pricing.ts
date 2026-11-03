@@ -1,21 +1,55 @@
 /**
- * Seat pricing copy for the Teams plan.
+ * Seat pricing copy for the team plans: Teams and Team Business.
  *
- * Pure display helpers only — the authoritative seat range and request pool
- * live server-side in `lib/supabase/team-billing.ts`. `MAX_TEAM_SEATS` mirrors
- * that module so the stepper cannot offer a value the API would reject.
+ * Pure display helpers only. The authoritative seat range and request pool
+ * live server-side in `lib/supabase/team-billing.ts` and Polar's products.
+ * `MIN_TEAM_SEATS` and `MAX_TEAM_SEATS` mirror that module so the stepper
+ * cannot offer a value the API would reject.
  */
 
-/** Display price per seat, in whole US dollars. */
-export const TEAM_SEAT_PRICE_USD = 12;
+/** A team's plan. */
+export type TeamPlan = "team" | "team_business";
+export type TeamInterval = "month" | "year";
 
-export const MIN_TEAM_SEATS = 1;
+/** Display price per seat, in whole US dollars, for Teams (monthly). */
+export const TEAM_SEAT_PRICE_USD = 12;
+/** Team Business, per seat: monthly, or for a year. */
+export const TEAM_BUSINESS_SEAT_PRICE_USD = 35;
+export const TEAM_BUSINESS_SEAT_ANNUAL_PRICE_USD = 350;
+
+/** Both team plans start at two seats (the Polar products' first tier). */
+export const MIN_TEAM_SEATS = 2;
 export const MAX_TEAM_SEATS = 1000;
 export const DEFAULT_TEAM_SEATS = 3;
 
+/** The plans a team can be on, in the order they are offered. */
+export const TEAM_PLAN_OPTIONS: ReadonlyArray<{ plan: TeamPlan; interval: TeamInterval }> = [
+  { plan: "team", interval: "month" },
+  { plan: "team_business", interval: "month" },
+  { plan: "team_business", interval: "year" },
+];
+
+/** Price per seat in whole dollars for a plan and interval. */
+export function teamSeatPriceUsd(plan: TeamPlan, interval: TeamInterval): number {
+  if (plan === "team") return TEAM_SEAT_PRICE_USD;
+  return interval === "year" ? TEAM_BUSINESS_SEAT_ANNUAL_PRICE_USD : TEAM_BUSINESS_SEAT_PRICE_USD;
+}
+
+/** "Teams", "Team Business" or "Team Business, annual". */
+export function teamPlanLabel(plan: TeamPlan, interval: TeamInterval = "month"): string {
+  if (plan === "team") return "Teams";
+  return interval === "year" ? "Team Business, annual" : "Team Business";
+}
+
 /** Live checkout copy, e.g. `3 × $12/seat/mo = $36/mo`. */
-export function formatSeatPricing(seats: number): string {
-  return `${seats} × $${TEAM_SEAT_PRICE_USD}/seat/mo = $${seats * TEAM_SEAT_PRICE_USD}/mo`;
+export function formatSeatPricing(
+  seats: number,
+  plan: TeamPlan = "team",
+  interval: TeamInterval = "month"
+): string {
+  const price = teamSeatPriceUsd(plan, interval);
+  const unit = interval === "year" ? "yr" : "mo";
+  return `${seats} × $${price}/seat/${unit} = $${(seats * price).toLocaleString("en-US")}/${unit}`;
 }
 
 /** Coerces stepper input to a whole seat count inside the allowed range. */
@@ -116,4 +150,76 @@ export function creditBalanceFromOrders(
 export function formatCents(cents: number): string {
   const sign = cents < 0 ? "-" : "";
   return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
+}
+
+/** A plan change priced the way Polar bills it. All amounts are in cents. */
+export interface PlanChangeQuote {
+  plan: TeamPlan;
+  interval: TeamInterval;
+  seats: number;
+  /**
+   * "now": an upgrade, charged at once ("invoice"); "renewal": a downgrade,
+   * which changes nothing until the period ends.
+   */
+  applies: "now" | "renewal";
+  /** The unused part of the current price, credited against the new one. */
+  creditCents: number;
+  /** The new price for what the change covers: the rest of the period, or a new year. */
+  chargeCents: number;
+  /** Unused account credit Polar spends first. */
+  creditAppliedCents: number;
+  /** About what the card is charged on confirm; 0 for a downgrade. */
+  dueNowCents: number;
+  /** The price the subscription renews at. */
+  renewalCents: number;
+  /** When the change applies or, for an upgrade, when the new plan first renews. */
+  periodEnd: string;
+}
+
+/**
+ * Prices a plan change as Polar bills it (checked in the sandbox). An
+ * upgrade within the same interval keeps the period: Polar credits the
+ * unused share of the current price and charges the same share of the new
+ * one. A move to annual starts a new year at once: the full yearly price,
+ * less the unused share of the month. A downgrade waits for the renewal and
+ * costs nothing now. Rounding is Polar's, so the amount is "about".
+ */
+export function quotePlanChange(input: {
+  plan: TeamPlan;
+  interval: TeamInterval;
+  seats: number;
+  currentInterval: TeamInterval;
+  currentAmountCents: number;
+  newPricePerSeatCents: number;
+  applies: "now" | "renewal";
+  periodStartMs: number;
+  periodEndMs: number;
+  creditBalanceCents: number;
+  nowMs?: number;
+}): PlanChangeQuote {
+  const nowMs = input.nowMs ?? Date.now();
+  const renewalCents = input.seats * input.newPricePerSeatCents;
+  const periodMs = input.periodEndMs - input.periodStartMs;
+  const left = periodMs > 0 ? Math.min(1, Math.max(0, (input.periodEndMs - nowMs) / periodMs)) : 0;
+  const newYear = input.interval === "year" && input.currentInterval !== "year";
+  const now = input.applies === "now";
+  const creditCents = now ? Math.round(input.currentAmountCents * left) : 0;
+  const chargeCents = now ? (newYear ? renewalCents : Math.round(renewalCents * left)) : 0;
+  const net = Math.max(0, chargeCents - creditCents);
+  const creditAppliedCents = Math.min(Math.max(0, input.creditBalanceCents), net);
+  const periodEnd = newYear
+    ? new Date(nowMs).setUTCFullYear(new Date(nowMs).getUTCFullYear() + 1)
+    : input.periodEndMs;
+  return {
+    plan: input.plan,
+    interval: input.interval,
+    seats: input.seats,
+    applies: input.applies,
+    creditCents,
+    chargeCents,
+    creditAppliedCents,
+    dueNowCents: net - creditAppliedCents,
+    renewalCents,
+    periodEnd: new Date(periodEnd).toISOString(),
+  };
 }

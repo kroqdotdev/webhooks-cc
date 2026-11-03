@@ -19,11 +19,10 @@ import {
   getPageProductIds,
   isEndedSubscriptionError,
   loggablePolarError,
-  teamBusinessProductId,
   type CapacityProductIds,
 } from "@/lib/polar";
 import { reportError } from "@/lib/observability";
-import { planEntitlements, teamEntitlements } from "@/lib/entitlements";
+import { planEntitlements, teamAllowance, teamEntitlements } from "@/lib/entitlements";
 import { createAdminClient } from "./admin";
 import { addMonthUtc, ensurePolarCustomerId, getBillingUser } from "./billing";
 import { returnOrigin } from "@/lib/site-server";
@@ -48,10 +47,8 @@ import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
  *   count to Polar's meter, which bills it at the end of the period.
  *
  * Parsed pages (migration 00070) are bought the same three ways, for
- * Business accounts and teams with Team Business: the same functions with
- * `resource: "pages"`. The Team Business add-on is a monthly subscription
- * on the team's customer, aligned and ended with the team's plan the same
- * way; while it is live the team is a Business team (sync_capacity_account).
+ * Business accounts and Team Business teams (the team plan's own product
+ * since migration 00082): the same functions with `resource: "pages"`.
  *
  * Extra inbound domains (migration 00073) are recurring blocks only, one
  * unit per domain, with the same mid-period add: `resource: "domains"`.
@@ -76,9 +73,10 @@ type ResourceProducts = Pick<CapacityProductIds, "monthly" | "monthlyAdd"> &
   Partial<Pick<CapacityProductIds, "oneTime" | "overage">>;
 
 /** An add-on product, as the webhook routes it. */
-export type CapacityProductKind =
-  | { resource: CapacityResource; kind: "one_time" | "monthly" | "monthly_add" | "overage" }
-  | { resource: "team"; kind: "team_business" };
+export type CapacityProductKind = {
+  resource: CapacityResource;
+  kind: "one_time" | "monthly" | "monthly_add" | "overage";
+};
 
 interface ResourceSpec {
   /** The recurring blocks' and overage's subscription kinds (null: not sold). */
@@ -209,7 +207,7 @@ export interface CapacityState {
 
 interface AccountRow {
   plan_active: boolean;
-  /** Page add-ons count: Business, or a team with Team Business, on a live plan. */
+  /** Page add-ons count: Business, or Team Business, on a live plan. */
   pages_active: boolean;
   /** Extra pages end at the renewal: the plan changes to one without them. */
   pages_ending: boolean;
@@ -222,11 +220,11 @@ interface AccountRow {
   extra_domains: number;
   /**
    * The quota period is the plan's last before it ends or changes: always
-   * for monthly plans and teams, only the year's last month on an annual
-   * plan, whose add-ons renew monthly until then.
+   * for monthly plans, only the year's last month on an annual plan (a
+   * person's or a team's), whose add-ons renew monthly until then.
    */
   last_period: boolean;
-  /** An annual plan's billing period end (null for monthly plans and teams). */
+  /** An annual plan's billing period end (null for monthly plans). */
   annual_end: string | null;
   /** Pages count per quota period; otherwise (Free) a month from the first parse. */
   pages_follow_period: boolean;
@@ -267,25 +265,38 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
   if (account.kind === "team") {
     const { data, error } = await admin
       .from("teams")
-      .select(`${ACCOUNT_COLUMNS}, subscription_status, business`)
+      .select(
+        `${ACCOUNT_COLUMNS}, subscription_status, business, seats, pending_plan, billing_interval, billing_period_end`
+      )
       .eq("id", account.teamId)
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
-    const live = data.subscription_status !== null;
+    const {
+      business,
+      seats,
+      pending_plan: pendingPlan,
+      billing_interval: interval,
+      billing_period_end: billingEnd,
+      ...row
+    } = data;
+    const live = row.subscription_status !== null;
+    const entitlements = teamEntitlements(business);
+    // A change to Teams waiting for the renewal takes Team Business's
+    // page and domain add-ons with it.
+    const leavingBusiness = business && pendingPlan === "team";
     return {
-      ...data,
+      ...row,
       plan_active: live,
-      pages_active: live && data.business,
-      // Set from the Team Business add-on by requireEligible when it matters.
-      pages_ending: false,
-      domains_active: live && teamEntitlements(data.business).customDomains > 0,
-      domains_ending: false,
-      plan_custom_domains: teamEntitlements(data.business).customDomains,
-      last_period: true,
-      annual_end: null,
+      pages_active: live && entitlements.pageAddons,
+      pages_ending: leavingBusiness,
+      domains_active: live && entitlements.customDomains > 0,
+      domains_ending: leavingBusiness,
+      plan_custom_domains: entitlements.customDomains,
+      last_period: interval !== "year" || endsBeforeNextWindow(billingEnd, row.period_end),
+      annual_end: interval === "year" ? billingEnd : null,
       pages_follow_period: true,
-      plan_pages: teamEntitlements(data.business).parsedPages,
+      plan_pages: teamAllowance(seats, business).parsedPages,
     };
   }
 
@@ -401,7 +412,7 @@ async function requireEligible(
     throw new CapacityError(
       "plan_required",
       account.kind === "team"
-        ? "Extra parsed pages come with Team Business. Add it to the team first."
+        ? "Extra parsed pages come with Team Business. Upgrade the team first."
         : "Extra parsed pages are part of Business. Upgrade first."
     );
   }
@@ -409,7 +420,7 @@ async function requireEligible(
     throw new CapacityError(
       "plan_required",
       account.kind === "team"
-        ? "Custom domains come with Team Business. Add it to the team first."
+        ? "Custom domains come with Team Business. Upgrade the team first."
         : "Custom domains are part of Business. Upgrade first."
     );
   }
@@ -423,18 +434,12 @@ async function requireEligible(
   }
   if (renewing && resource !== "requests") {
     const noun = resource === "pages" ? "extra parsed pages" : "extra domains";
-    const ending =
-      account.kind === "team"
-        ? (liveOfKind(await liveSubscriptions(account), "team_business")?.cancel_at_period_end ??
-          false)
-        : resource === "pages"
-          ? row.pages_ending
-          : row.domains_ending;
+    const ending = resource === "pages" ? row.pages_ending : row.domains_ending;
     if (ending && row.last_period) {
       throw new CapacityError(
         "plan_ending",
         account.kind === "team"
-          ? `Team Business is set to end, and ${noun} end with it. Keep Team Business first.`
+          ? `The team moves to Teams at the renewal, and ${noun} end with Team Business. Keep Team Business first.`
           : `Your plan changes from Business at the renewal, and ${noun} end with it. Keep Business first.`
       );
     }
@@ -531,17 +536,13 @@ async function pageState(account: CapacityAccount, row: AccountRow): Promise<Cap
   const blocks = liveOfKind(subscriptions, "page_blocks");
   const overage = liveOfKind(subscriptions, "page_overage");
   const overageMax = row.page_overage_max;
-  const teamBusinessEnding =
-    liveOfKind(subscriptions, "team_business")?.cancel_at_period_end ?? false;
   return {
     offered: getPageProductIds() !== null,
     eligible: row.pages_active,
-    // Extra pages end with the plan, a change away from Business, or the
-    // end of Team Business.
+    // Extra pages end with the plan, or a change away from Business or
+    // Team Business.
     planEnding:
-      row.pages_active &&
-      row.last_period &&
-      (row.cancel_at_period_end || row.pages_ending || teamBusinessEnding),
+      row.pages_active && row.last_period && (row.cancel_at_period_end || row.pages_ending),
     periodStart: balance?.window_start ?? row.period_start,
     periodEnd: row.pages_follow_period
       ? row.period_end
@@ -589,15 +590,11 @@ async function domainState(account: CapacityAccount, row: AccountRow): Promise<C
   if (error) throw error;
   const subscriptions = await liveSubscriptions(account);
   const blocks = liveOfKind(subscriptions, "domain_blocks");
-  const teamBusinessEnding =
-    liveOfKind(subscriptions, "team_business")?.cancel_at_period_end ?? false;
   return {
     offered: getDomainProductIds() !== null,
     eligible: row.domains_active,
     planEnding:
-      row.domains_active &&
-      row.last_period &&
-      (row.cancel_at_period_end || row.domains_ending || teamBusinessEnding),
+      row.domains_active && row.last_period && (row.cancel_at_period_end || row.domains_ending),
     periodStart: row.period_start,
     periodEnd: row.period_end,
     planRequests: row.domains_active ? row.plan_custom_domains : 0,
@@ -855,61 +852,6 @@ async function writeOverageMax(
   if (error) throw error;
 }
 
-/**
- * Adds Team Business to a subscribed team: a checkout for the add-on on the
- * team's customer. Bought mid-period it is charged in full and its first
- * period ends with the team's (alignWithPlan), and it counts at once.
- */
-export async function createTeamBusinessCheckout(
-  account: Extract<CapacityAccount, { kind: "team" }>,
-  actingUserId: string
-): Promise<string> {
-  const productId = teamBusinessProductId();
-  if (!productId) {
-    throw new CapacityError("not_offered", "Team Business is not available yet", 404);
-  }
-  await requireEligible(account, { renewing: true });
-  if (liveOfKind(await liveSubscriptions(account), "team_business")) {
-    throw new CapacityError("already_business", "The team already has Team Business");
-  }
-  const customerId = await ensureCustomer(account, actingUserId);
-  const checkout = await createPolarClient().checkouts.create({
-    products: [productId],
-    customer_id: customerId,
-    success_url: await successUrl(account, "business", {
-      accountPath: "/account/plan",
-      anchor: "team-business",
-    }),
-    metadata: { capacity: "team_business" },
-  });
-  return checkout.url;
-}
-
-/** Ends Team Business at the period end, or keeps it when it was set to end. */
-/** Whether the team's Team Business is set to end, and when its period ends. */
-export async function getTeamBusinessState(
-  account: Extract<CapacityAccount, { kind: "team" }>
-): Promise<{ active: boolean; ending: boolean; periodEnd: string | null }> {
-  const current = liveOfKind(await liveSubscriptions(account), "team_business");
-  return {
-    active: current !== null,
-    ending: current?.cancel_at_period_end ?? false,
-    periodEnd: current?.period_end ?? null,
-  };
-}
-
-export async function setTeamBusinessEnding(
-  account: Extract<CapacityAccount, { kind: "team" }>,
-  ending: boolean
-): Promise<void> {
-  const current = liveOfKind(await liveSubscriptions(account), "team_business");
-  if (!current) throw new CapacityError("not_found", "The team has no Team Business", 404);
-  if (!ending) await requireEligible(account, { renewing: true });
-  await setAddonEnding(account, current, ending, false);
-  // Extra pages need Team Business: they end with it, and come back with it.
-  await reconcileAddonsWithPlan(account);
-}
-
 async function markSubscription(
   id: string,
   patch: Database["public"]["Tables"]["capacity_subscriptions"]["Update"]
@@ -931,7 +873,6 @@ export function capacityProductKind(productId: string | null): CapacityProductKi
   // Each set id on its own: with one id missing, the others' events must
   // still stay away from the plan handlers.
   if (!productId) return null;
-  if (productId === teamBusinessProductId()) return { resource: "team", kind: "team_business" };
   const all: [CapacityResource, Partial<CapacityProductIds>][] = [
     ["requests", configuredCapacityProductIds()],
     ["pages", configuredPageProductIds()],
@@ -1083,13 +1024,6 @@ async function applySubscriptionEvent(
     return;
   }
 
-  if (status === "ok" && ended && kind === "team_business") {
-    // Team Business is what lets a team's page add-ons run: they end with it
-    // (kept as one-time pages where they were paid up), not renew on.
-    await reconcileAddonsWithPlan(account);
-    return;
-  }
-
   if (status === "ok" && !ended) {
     // Polar only moves the period of an active subscription.
     if (addonStatus(subscription) === "active") {
@@ -1097,11 +1031,6 @@ async function applySubscriptionEvent(
     }
     // Bought just as the plan was set to end (a checkout opened before):
     // it ends with the plan too.
-    await reconcileAddonsWithPlan(account);
-  } else if (status === "ok" && kind === "team_business") {
-    // Team Business ended (a revoke mid-period, not only at the renewal):
-    // the page and domain add-ons that needed it end now, rather than at
-    // their own next renewal, which would charge once more.
     await reconcileAddonsWithPlan(account);
   }
 }
@@ -1167,8 +1096,8 @@ async function settleDuplicate(
       credits
     );
   }
-  if (kind === "team_business" || kind === "domain_blocks") {
-    // Neither has a one-time form to keep what was paid.
+  if (kind === "domain_blocks") {
+    // Domains have no one-time form to keep what was paid.
     reportError(`[capacity] a second ${kind} subscription was revoked; refund it`, undefined, {
       subscriptionId,
     });
@@ -1361,9 +1290,7 @@ export async function applyCapacityWebhookEvent(
     case "subscription.past_due":
     case "subscription.cycled":
     case "subscription.revoked":
-      if (productKind.resource === "team") {
-        await applySubscriptionEvent(eventType, account, "team_business", data);
-      } else if (productKind.kind === "monthly" || productKind.kind === "overage") {
+      if (productKind.kind === "monthly" || productKind.kind === "overage") {
         const spec = RESOURCES[productKind.resource];
         const kind = productKind.kind === "monthly" ? spec.blocks : spec.overage;
         if (kind) await applySubscriptionEvent(eventType, account, kind, data);
@@ -1371,10 +1298,7 @@ export async function applyCapacityWebhookEvent(
       return;
 
     case "order.paid":
-      if (
-        productKind.resource !== "team" &&
-        (productKind.kind === "one_time" || productKind.kind === "monthly_add")
-      ) {
+      if (productKind.kind === "one_time" || productKind.kind === "monthly_add") {
         await applyPaidOrder(account, productKind.resource, productKind.kind, data);
       }
       return;
@@ -1506,38 +1430,12 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
   const plan = await readAccount(account);
   if (!plan) return;
 
-  // Page and domain add-ons also end when the account leaves Business at the
-  // renewal or the team's Team Business ends.
-  const teamBusiness = liveOfKind(rows, "team_business");
-  const teamBusinessEnding = teamBusiness?.cancel_at_period_end ?? false;
-  const pagesLeaving = plan.pages_ending || teamBusinessEnding;
-  const domainsLeaving = plan.domains_ending || teamBusinessEnding;
-  // A Team Business payment that failed stops it counting, but it is not
-  // gone: Polar retries the card, and what needs it waits rather than ends.
-  // Only while the team's plan and Team Business go on: with the plan gone or
-  // ending, what needs Team Business ends with it in this same pass.
-  const teamBusinessPastDue =
-    teamBusiness?.status === "past_due" &&
-    !teamBusinessEnding &&
-    plan.plan_active &&
-    !plan.cancel_at_period_end;
-
-  // Behind on payment and set to end: what needs it is set to end with it,
-  // not ended now, since Polar may still collect the payment.
-  const teamBusinessPastDueEnding =
-    teamBusiness?.status === "past_due" &&
-    teamBusinessEnding &&
-    plan.plan_active &&
-    !plan.cancel_at_period_end;
+  // Page and domain add-ons also end when the account leaves Business (or
+  // the team leaves Team Business) at the renewal.
+  const pagesLeaving = plan.pages_ending;
+  const domainsLeaving = plan.domains_ending;
 
   for (const row of rows) {
-    if (teamBusinessPastDue && (PAGE_KINDS.has(row.kind) || DOMAIN_KINDS.has(row.kind))) {
-      continue;
-    }
-    if (teamBusinessPastDueEnding && (PAGE_KINDS.has(row.kind) || DOMAIN_KINDS.has(row.kind))) {
-      if (!row.cancel_at_period_end) await setAddonEnding(account, row, true, true);
-      continue;
-    }
     // Page and domain add-ons need Business (or Team Business); the rest the plan.
     const active = PAGE_KINDS.has(row.kind)
       ? plan.pages_active
@@ -1551,18 +1449,7 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
     if (!active) {
       // The plan is gone, not merely ending: a later plan is a new decision,
       // so nothing here is marked to come back with it.
-      if (row.kind === "team_business") {
-        // It is the team's plan's add-on: nothing to keep once that is gone.
-        // One that was going to renew lost a period it paid for (bought
-        // after the plan ended, or the plan was revoked mid-period).
-        if (!row.cancel_at_period_end && row.status === "active") {
-          reportError("[capacity] Team Business ended with its team's plan; refund it", undefined, {
-            subscriptionId: row.polar_subscription_id,
-          });
-        }
-        await revokeQuietly(row.polar_subscription_id);
-        await markEnded(account, row);
-      } else if (BLOCK_KINDS.has(row.kind)) {
+      if (BLOCK_KINDS.has(row.kind)) {
         // Paid-up blocks that were going to renew lost a period they paid
         // for (the plan was revoked mid-period, or they were bought just
         // after it ended): what was paid stays as one-time blocks. Blocks

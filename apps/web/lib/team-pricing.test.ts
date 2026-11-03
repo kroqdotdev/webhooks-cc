@@ -8,7 +8,9 @@ import {
   creditBalanceFromOrders,
   formatCents,
   formatSeatPricing,
+  quotePlanChange,
   quoteSeatChange,
+  teamPlanLabel,
 } from "./team-pricing";
 
 describe("formatSeatPricing", () => {
@@ -16,8 +18,9 @@ describe("formatSeatPricing", () => {
     expect(formatSeatPricing(3)).toBe("3 × $12/seat/mo = $36/mo");
   });
 
-  test("handles a single seat", () => {
-    expect(formatSeatPricing(1)).toBe("1 × $12/seat/mo = $12/mo");
+  test("prices Team Business by the month and by the year", () => {
+    expect(formatSeatPricing(2, "team_business", "month")).toBe("2 × $35/seat/mo = $70/mo");
+    expect(formatSeatPricing(4, "team_business", "year")).toBe("4 × $350/seat/yr = $1,400/yr");
   });
 
   test("scales the total with the seat count", () => {
@@ -170,5 +173,95 @@ describe("formatCents", () => {
     expect(formatCents(1166)).toBe("$11.66");
     expect(formatCents(1200)).toBe("$12.00");
     expect(formatCents(-1199)).toBe("-$11.99");
+  });
+});
+
+describe("teamPlanLabel", () => {
+  test("names each plan", () => {
+    expect(teamPlanLabel("team")).toBe("Teams");
+    expect(teamPlanLabel("team_business", "month")).toBe("Team Business");
+    expect(teamPlanLabel("team_business", "year")).toBe("Team Business, annual");
+  });
+});
+
+// Sandbox orders of 2026-11-03 for the same changes, a minute into the period.
+describe("quotePlanChange", () => {
+  const start = Date.parse("2026-11-03T01:54:47Z");
+  const end = Date.parse("2026-12-03T01:54:47Z");
+  const nowMs = start + 60_000;
+
+  test("credits the unused Teams time and charges the same share of Team Business", () => {
+    const quote = quotePlanChange({
+      plan: "team_business",
+      interval: "month",
+      seats: 2,
+      currentInterval: "month",
+      currentAmountCents: 2400,
+      newPricePerSeatCents: 3500,
+      applies: "now",
+      periodStartMs: start,
+      periodEndMs: end,
+      creditBalanceCents: 0,
+      nowMs,
+    });
+    expect(quote.creditCents).toBe(2400);
+    expect(quote.chargeCents).toBe(7000);
+    expect(quote.dueNowCents).toBe(4600);
+    expect(quote.renewalCents).toBe(7000);
+    expect(quote.periodEnd).toBe(new Date(end).toISOString());
+  });
+
+  test("starts a new year when moving to annual", () => {
+    const quote = quotePlanChange({
+      plan: "team_business",
+      interval: "year",
+      seats: 3,
+      currentInterval: "month",
+      currentAmountCents: 10500,
+      newPricePerSeatCents: 35000,
+      applies: "now",
+      periodStartMs: start,
+      periodEndMs: end,
+      creditBalanceCents: 0,
+      nowMs,
+    });
+    expect(quote.chargeCents).toBe(105000);
+    expect(quote.creditCents).toBe(10500);
+    expect(quote.dueNowCents).toBe(94500);
+    expect(quote.periodEnd).toBe(new Date("2027-11-03T01:55:47Z").toISOString());
+  });
+
+  test("charges nothing for a downgrade and spends credit first on an upgrade", () => {
+    const down = quotePlanChange({
+      plan: "team",
+      interval: "month",
+      seats: 2,
+      currentInterval: "month",
+      currentAmountCents: 7000,
+      newPricePerSeatCents: 1200,
+      applies: "renewal",
+      periodStartMs: start,
+      periodEndMs: end,
+      creditBalanceCents: 0,
+      nowMs,
+    });
+    expect(down.dueNowCents).toBe(0);
+    expect(down.renewalCents).toBe(2400);
+
+    const up = quotePlanChange({
+      plan: "team_business",
+      interval: "month",
+      seats: 2,
+      currentInterval: "month",
+      currentAmountCents: 2400,
+      newPricePerSeatCents: 3500,
+      applies: "now",
+      periodStartMs: start,
+      periodEndMs: end,
+      creditBalanceCents: 1000,
+      nowMs,
+    });
+    expect(up.creditAppliedCents).toBe(1000);
+    expect(up.dueNowCents).toBe(3600);
   });
 });
