@@ -7,7 +7,7 @@ import { createClient } from "./client";
 // once, by the policy on realtime.messages.
 //
 //   endpoint:<id>  request_created, request_updated, endpoint_deleted
-//   user:<id>      profile_changed
+//   user:<id>      profile_changed, support_ticket (migration 00087)
 
 // supabase-js hands out one channel per topic, so components that listen to
 // the same topic share it. The channel is removed shortly after its last
@@ -86,5 +86,12 @@ export function subscribeToEndpointRequestChanges(endpointId: string, onChange: 
 export function subscribeToUserProfileChanges(userId: string, onChange: () => void) {
   return subscribeToTopic(`user:${userId}`, (event) => {
     if (event === "profile_changed") onChange();
+  });
+}
+
+/** Calls `onChange` when one of the user's support tickets gets a reply or changes state. */
+export function subscribeToSupportTickets(userId: string, onChange: () => void) {
+  return subscribeToTopic(`user:${userId}`, (event) => {
+    if (event === "support_ticket") onChange();
   });
 }

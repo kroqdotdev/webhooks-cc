@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import { MfaGate } from "@/components/auth/mfa-challenge";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -41,9 +42,11 @@ type Phase =
 export default function AgentClaimPage() {
   return (
     <SupabaseAuthProvider>
-      <Suspense fallback={<Loading />}>
-        <AgentClaimContent />
-      </Suspense>
+      <MfaGate>
+        <Suspense fallback={<Loading />}>
+          <AgentClaimContent />
+        </Suspense>
+      </MfaGate>
     </SupabaseAuthProvider>
   );
 }

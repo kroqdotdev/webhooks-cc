@@ -87,3 +87,17 @@ export function redactAnalyticsEvent<T extends object | null>(event: T): T {
   }
   return out as T;
 }
+
+/**
+ * Pages whose events are never sent: the operations center shows other
+ * people's accounts and tickets, so nothing there is captured or recorded.
+ */
+export function isUntrackedPath(pathname: string): boolean {
+  return pathname === "/ops" || pathname.startsWith("/ops/");
+}
+
+/** before_send for the browser: drops staff pages, then cleans URLs. */
+export function analyticsBeforeSend<T extends object | null>(event: T, pathname: string): T | null {
+  if (isUntrackedPath(pathname)) return null;
+  return redactAnalyticsEvent(event);
+}

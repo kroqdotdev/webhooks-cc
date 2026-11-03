@@ -92,6 +92,9 @@ body {
   --color-method-delete: hsl(var(--method-delete));
   --color-kind-email: hsl(var(--kind-email));
   --color-kind-email-ink: hsl(var(--kind-email-ink));
+  --color-staff: hsl(var(--staff));
+  --color-staff-wash: hsl(var(--staff-wash));
+  --color-staff-line: hsl(var(--staff-line));
 
   --border-width-strong: var(--line-width);
 
@@ -162,6 +165,10 @@ body {
        dark enough to be text on the page (the fill as text fails contrast). */
     --kind-email: 211 100% 60%;
     --kind-email-ink: 211 100% 40%;
+    /* Staff: everything only staff see (notes, the support view band, ops). */
+    --staff: 36 85% 32%;
+    --staff-wash: 46 100% 90%;
+    --staff-line: 40 80% 55%;
 
     --app-font-sans: var(--font-space-grotesk), system-ui, sans-serif;
     --app-font-mono: var(--font-jetbrains-mono), monospace;
@@ -201,6 +208,9 @@ body {
     --syntax-string: var(--secondary);
     --kind-email: 211 100% 66%;
     --kind-email-ink: 211 100% 66%;
+    --staff: 42 90% 62%;
+    --staff-wash: 38 50% 16%;
+    --staff-line: 40 60% 38%;
   }
 
   :root[data-style="clean"] {
@@ -262,6 +272,10 @@ body {
     --method-delete: 2 70% 46%;
     --kind-email: 222 70% 45%;
     --kind-email-ink: 222 70% 45%;
+    /* Staff: ochre, for what only staff see (notes, the support view band, ops). */
+    --staff: 36 80% 30%;
+    --staff-wash: 44 92% 93%;
+    --staff-line: 42 70% 78%;
 
     /* Bold renders as semibold; Plex at 700 is heavier than the look calls for */
     --font-weight-bold: 600;
@@ -315,6 +329,9 @@ body {
     --method-delete: 2 85% 68%;
     --kind-email: 213 90% 70%;
     --kind-email-ink: 213 90% 70%;
+    --staff: 40 85% 64%;
+    --staff-wash: 38 40% 13%;
+    --staff-line: 38 45% 32%;
   }
 }
 

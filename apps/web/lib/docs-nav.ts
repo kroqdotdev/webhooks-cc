@@ -50,6 +50,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Dashboard Features", href: "/docs/dashboard-features" },
       { title: "Notification Webhooks", href: "/docs/notification-webhooks" },
       { title: "Teams", href: "/docs/teams" },
+      { title: "Support and Security", href: "/docs/support", isNew: true },
     ],
   },
   {

@@ -193,6 +193,9 @@ export default function PlanPage() {
     profile.plan === "business" ? "business" : profile.plan === "pro" ? "pro" : "free";
   // An annual plan's quota renews monthly; its payment comes with the year.
   const billingEnd = profile.billing_period_end ?? profile.period_end;
+  // A paid plan without a subscription is a staff account's (migration 00087):
+  // nothing to buy, change or cancel.
+  const comped = !isFree && !profile.polar_subscription_id;
 
   const caption = profile.period_end ? (
     isFree ? (
@@ -235,45 +238,56 @@ export default function PlanPage() {
           )}
         </Panel>
 
-        <CapacityPanel
-          accessToken={accessToken}
-          canManage
-          onChanged={refresh}
-          reloadKey={[
-            profile.plan,
-            profile.subscription_status,
-            profile.cancel_at_period_end,
-            profile.period_end,
-            profile.block_requests,
-            profile.credit_requests > 0,
-            profile.overage_active,
-            profile.overage_max,
-          ].join(":")}
-        />
+        {comped && (
+          <Notice tone="success" title={`${planName(profile.plan)} through a staff account`}>
+            This account has {planName(profile.plan)} without a subscription. There is nothing to
+            pay, change or cancel here.
+          </Notice>
+        )}
+
+        {!comped && (
+          <CapacityPanel
+            accessToken={accessToken}
+            canManage
+            onChanged={refresh}
+            reloadKey={[
+              profile.plan,
+              profile.subscription_status,
+              profile.cancel_at_period_end,
+              profile.period_end,
+              profile.block_requests,
+              profile.credit_requests > 0,
+              profile.overage_active,
+              profile.overage_max,
+            ].join(":")}
+          />
+        )}
 
         <Panel
           id="plan"
           title="Your plan"
           flush
           footer={
-            <div className="w-full space-y-3">
-              <PlanChooser accessToken={accessToken} profile={profile} onChanged={refresh} />
-              {!isFree && (
-                <div className="flex flex-wrap items-center gap-3">
-                  <ManageSubscriptionDialog
-                    accessToken={accessToken}
-                    profile={profile}
-                    onUpdated={refresh}
-                  />
-                  <BillingPortalButton accessToken={accessToken} />
-                  {billingEnd && !profile.cancel_at_period_end && (
-                    <p className="text-sm text-muted-foreground">
-                      Next payment on {longDate(billingEnd)}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            comped ? undefined : (
+              <div className="w-full space-y-3">
+                <PlanChooser accessToken={accessToken} profile={profile} onChanged={refresh} />
+                {!isFree && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <ManageSubscriptionDialog
+                      accessToken={accessToken}
+                      profile={profile}
+                      onUpdated={refresh}
+                    />
+                    <BillingPortalButton accessToken={accessToken} />
+                    {billingEnd && !profile.cancel_at_period_end && (
+                      <p className="text-sm text-muted-foreground">
+                        Next payment on {longDate(billingEnd)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
           }
         >
           {!isFree && profile.cancel_at_period_end && billingEnd && (

@@ -67,3 +67,14 @@ describe("redactUrls", () => {
     expect(redactUrls("1/2?")).toBe("1/2?");
   });
 });
+
+describe("staff pages", () => {
+  it("sends nothing from the operations center", async () => {
+    const { analyticsBeforeSend, isUntrackedPath } = await import("./analytics-redact");
+    expect(isUntrackedPath("/ops")).toBe(true);
+    expect(isUntrackedPath("/ops/tickets/1002")).toBe(true);
+    expect(isUntrackedPath("/opsx")).toBe(false);
+    expect(analyticsBeforeSend({ event: "$pageview" }, "/ops/accounts")).toBeNull();
+    expect(analyticsBeforeSend({ event: "$pageview" }, "/support")).toEqual({ event: "$pageview" });
+  });
+});

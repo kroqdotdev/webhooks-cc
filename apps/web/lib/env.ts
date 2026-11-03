@@ -211,6 +211,8 @@ const serverEnvSchema = z
       z.string().optional()
     ),
     AGENT_EMAIL_FROM: z.string().default("webhooks.cc <noreply@webhooks.cc>"),
+    // Where staff hear about new tickets and replies (lib/support/notifications.ts).
+    SUPPORT_ALERT_EMAIL: z.string().email().default("support@webhooks.cc"),
     // Emails free users whose quota ran out (lib/quota-emails.ts). Opt-in so a
     // local production build, which sends real SMTP mail, never emails users
     // in the dev database. Set it on the production host only.
@@ -358,6 +360,7 @@ export function serverEnv() {
       SMTP_PASS: process.env.SMTP_PASS,
       EMAIL_FROM: process.env.EMAIL_FROM,
       AGENT_EMAIL_FROM: process.env.AGENT_EMAIL_FROM,
+      SUPPORT_ALERT_EMAIL: process.env.SUPPORT_ALERT_EMAIL || undefined,
       QUOTA_EMAILS_ENABLED: process.env.QUOTA_EMAILS_ENABLED,
       AGENT_REGISTER_RATE_LIMIT: process.env.AGENT_REGISTER_RATE_LIMIT,
       AGENT_REGISTER_RATE_WINDOW_MS: process.env.AGENT_REGISTER_RATE_WINDOW_MS,

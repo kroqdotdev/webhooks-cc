@@ -39,6 +39,8 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
 
 function shouldNoIndexPath(pathname: string): boolean {
   if (pathname === "/login" || pathname === "/api-explorer") return true;
+  // /support itself is a public page; a ticket or the form is not.
+  if (pathname.startsWith("/support/")) return true;
   const privatePrefixes = [
     "/dashboard",
     "/account",
@@ -54,6 +56,8 @@ function shouldNoIndexPath(pathname: string): boolean {
     // The OAuth consent page and the remote MCP server.
     "/oauth",
     "/mcp",
+    // Staff only. Never listed in robots.txt or the sitemap, which would advertise it.
+    "/ops",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

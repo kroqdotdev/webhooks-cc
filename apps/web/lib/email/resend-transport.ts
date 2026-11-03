@@ -17,6 +17,7 @@ export async function sendViaResend(message: EmailMessage, apiKey: string): Prom
     subject: message.subject,
     text: message.text,
     ...(message.html ? { html: message.html } : {}),
+    ...(message.headers ? { headers: message.headers } : {}),
   });
 
   if (error) {

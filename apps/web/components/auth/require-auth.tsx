@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import { MfaChallenge, useNeedsSecondFactor } from "./mfa-challenge";
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   return (
@@ -13,8 +14,12 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function RequireAuthInner({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, session } = useAuth();
   const router = useRouter();
+  // An account with an authenticator app finishes signing in here; the API
+  // refuses its session until it has (lib/mfa.ts).
+  const needsSecondFactor = useNeedsSecondFactor(session?.access_token ?? null);
+  const [verified, setVerified] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -22,7 +27,7 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  if (isLoading) {
+  if (isLoading || (isAuthenticated && needsSecondFactor === null)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
@@ -32,6 +37,10 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return null;
+  }
+
+  if (needsSecondFactor && !verified) {
+    return <MfaChallenge onVerified={() => setVerified(true)} />;
   }
 
   return <>{children}</>;

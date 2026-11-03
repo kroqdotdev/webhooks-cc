@@ -189,6 +189,13 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
                 >
                   Teams
                 </Link>
+                <Link
+                  href="/support"
+                  className="text-foreground font-medium text-lg"
+                  onClick={() => setOpen(false)}
+                >
+                  Support
+                </Link>
                 <div className="pt-3 border-t-strong border-foreground/20">
                   <button
                     type="button"

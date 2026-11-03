@@ -25,6 +25,8 @@ const ACCOUNT_ITEMS: NavItem[] = [
   { href: "/account/agents", label: "Connected agents" },
   { href: "/account/share-links", label: "Share links" },
   { href: "/account/domains", label: "Domains" },
+  { href: "/account/security", label: "Security" },
+  { href: "/account/support-access", label: "Support access" },
 ];
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -147,12 +149,14 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
                 </li>
               </ul>
             </div>
-            <Link
-              href="/changelog"
-              className="block px-3 text-xs text-muted-foreground hover:text-foreground"
-            >
-              Version {APP_VERSION}
-            </Link>
+            <div className="space-y-1 px-3 text-xs text-muted-foreground">
+              <Link href="/support" className="block hover:text-foreground">
+                Get support
+              </Link>
+              <Link href="/changelog" className="block hover:text-foreground">
+                Version {APP_VERSION}
+              </Link>
+            </div>
           </nav>
         </aside>
 

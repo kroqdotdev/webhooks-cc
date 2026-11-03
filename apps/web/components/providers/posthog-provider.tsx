@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
-import { redactAnalyticsEvent } from "@/lib/analytics-redact";
+import { analyticsBeforeSend } from "@/lib/analytics-redact";
 import { identifyPendingUser } from "@/lib/analytics";
 import { ANALYTICS_CONSENT_KEY } from "@/lib/analytics-consent";
 import { siteForHost } from "@/lib/site";
@@ -34,8 +34,9 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
         element_allowlist: ["a", "button"],
       },
       defaults: "2026-01-30",
-      // URLs lose share tokens, slugs and every unlisted query parameter.
-      before_send: redactAnalyticsEvent,
+      // URLs lose share tokens, slugs and every unlisted query parameter;
+      // nothing at all is sent from the operations center.
+      before_send: (event) => analyticsBeforeSend(event, window.location.pathname),
       loaded: (ph) => {
         // Which of the two sites an event came from (lib/site.ts).
         ph.register({ site: siteForHost(window.location.host) });

@@ -1,0 +1,64 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+export interface StaffStatus {
+  staff: boolean;
+  /** The session passed two-factor sign-in. */
+  aal2: boolean;
+  /** The account has an authenticator app set up. */
+  hasFactor: boolean;
+  /** Tickets waiting on support, when known. */
+  waiting: number | null;
+}
+
+const CACHE_KEY = "whk-staff";
+
+/**
+ * Whether the signed-in person is staff, asked once per browser tab and
+ * remembered for the tab: most people are not, and the answer is the same
+ * 404 every ops route gives them.
+ */
+export function useStaff(userId: string | null, token: string | null): StaffStatus | null {
+  const [status, setStatus] = useState<{ userId: string; value: StaffStatus } | null>(null);
+
+  useEffect(() => {
+    if (!userId || !token) return;
+    let cancelled = false;
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) ?? "null") as {
+        userId: string;
+        staff: boolean;
+      } | null;
+      if (cached?.userId === userId && !cached.staff) {
+        setStatus({
+          userId,
+          value: { staff: false, aal2: false, hasFactor: false, waiting: null },
+        });
+        return;
+      }
+    } catch {
+      // Ask again.
+    }
+    void fetch("/api/ops/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (response) => {
+        const value: StaffStatus = response.ok
+          ? ((await response.json()) as StaffStatus)
+          : { staff: false, aal2: false, hasFactor: false, waiting: null };
+        if (cancelled) return;
+        setStatus({ userId, value });
+        try {
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify({ userId, staff: value.staff }));
+        } catch {
+          // Not remembered.
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, token]);
+
+  if (!userId) return null;
+  return status?.userId === userId ? status.value : null;
+}

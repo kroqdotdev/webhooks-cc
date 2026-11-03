@@ -64,6 +64,13 @@ export async function register() {
     const { startRefundWorker } = await import("./lib/billing/refunds");
     startRefundWorker();
 
+    // Support ticket emails (lib/support/notifications.ts) and the ops
+    // overview's daily rollups (lib/ops/metrics.ts).
+    const { startSupportNotifier } = await import("./lib/support/notifications");
+    startSupportNotifier();
+    const { startOpsRollups } = await import("./lib/ops/metrics");
+    startOpsRollups();
+
     // Signups and a daily usage snapshot per account to PostHog
     // (lib/analytics-reporter.ts); on in production builds, see ANALYTICS_SERVER.
     const { startAnalyticsReporter } = await import("./lib/analytics-reporter");

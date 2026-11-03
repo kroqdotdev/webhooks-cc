@@ -143,6 +143,9 @@ const MAILHOOKS_PREFIXES = [
   "/endpoints",
   "/api",
   "/s",
+  "/support",
+  // The docs search index, which the support form suggests articles from.
+  "/_pagefind",
   "/mailhooks",
   "/email-templates",
   "/_next",

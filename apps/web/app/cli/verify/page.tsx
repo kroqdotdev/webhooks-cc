@@ -5,12 +5,15 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import { MfaGate } from "@/components/auth/mfa-challenge";
 import { trackCliDeviceAuthorized } from "@/lib/analytics";
 
 export default function CliVerifyPage() {
   return (
     <SupabaseAuthProvider>
-      <CliVerifyContent />
+      <MfaGate>
+        <CliVerifyContent />
+      </MfaGate>
     </SupabaseAuthProvider>
   );
 }
