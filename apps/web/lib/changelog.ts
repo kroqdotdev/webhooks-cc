@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.59.3";
+export const APP_VERSION = "0.60.0";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.60.0",
+    date: "2026-11-03",
+    title: "Refunds for Charges That Bought Nothing",
+    track: "web",
+    items: [
+      "A charge that bought nothing now goes back to the card it came from: a second plan or extra-domains subscription from a checkout completed twice, an add-on paid for an account or team that was deleted meanwhile, and extra domains paid for after their subscription had ended",
+      "A plan or team subscription whose checkout completed after its account or team was deleted is now ended instead of charging every month, and refunded",
+    ],
+  },
   {
     version: "0.59.3",
     date: "2026-11-03",

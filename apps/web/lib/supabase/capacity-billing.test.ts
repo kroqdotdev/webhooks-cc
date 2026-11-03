@@ -19,7 +19,10 @@ const mockFns = vi.hoisted(() => ({
   subscriptionsRevoke: vi.fn(),
   subscriptionsGet: vi.fn(),
   reportError: vi.fn(),
+  recordRefund: vi.fn(),
 }));
+
+vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
 
 // Rows the fake database answers with, per table.
 const tables: {
@@ -590,6 +593,76 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     );
 
     expect(mockFns.subscriptionsRevoke).toHaveBeenCalledWith("sub_orphan");
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { subscription: "sub_orphan" },
+      reason: "deleted_account",
+      userId: "user_1",
+      teamId: null,
+    });
+  });
+
+  it("ends a second extra-domains subscription and records its refund", async () => {
+    mockFns.subscriptionsGet.mockResolvedValue({ id: "sub_domains_2", status: "active", units: 2 });
+    mockFns.rpc.mockResolvedValueOnce({ data: { status: "duplicate" }, error: null });
+
+    await applyCapacityWebhookEvent(
+      "subscription.created",
+      USER,
+      { resource: "domains", kind: "monthly" },
+      { id: "sub_domains_2" }
+    );
+
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { subscription: "sub_domains_2" },
+      reason: "duplicate_addon",
+      userId: "user_1",
+      teamId: null,
+    });
+    expect(mockFns.subscriptionsRevoke).toHaveBeenCalledWith("sub_domains_2");
+    // Recorded before the revoke, so a failure is retried with the webhook.
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      mockFns.subscriptionsRevoke.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("records a refund for a paid order whose account is gone", async () => {
+    mockFns.rpc.mockResolvedValueOnce({ data: { status: "no_account" }, error: null });
+
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      { kind: "team", teamId: "team_gone" },
+      { resource: "requests", kind: "one_time" },
+      { id: "order_1", units: 2, total_amount: 1800 }
+    );
+
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { order: "order_1" },
+      reason: "deleted_account",
+      userId: null,
+      teamId: "team_gone",
+    });
+  });
+
+  it("records a refund for paid domains with no subscription left to add them to", async () => {
+    mockFns.rpc.mockResolvedValueOnce({
+      data: { status: "ok", kind: "domain_increase", unapplied: true, synced: true },
+      error: null,
+    });
+
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "domains", kind: "monthly_add" },
+      { id: "order_domains", units: 1, total_amount: 300 }
+    );
+
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { order: "order_domains" },
+      reason: "addon_not_applied",
+      userId: "user_1",
+      teamId: null,
+    });
+    expect(mockFns.subscriptionsUpdate).not.toHaveBeenCalled();
   });
 
   it("ends a new add-on with a plan that is already set to end", async () => {

@@ -137,6 +137,14 @@ const serverEnvSchema = z
     // mid-period add; offered only when both are set (getDomainProductIds()).
     POLAR_DOMAINS_PRODUCT_ID: z.string().optional(),
     POLAR_DOMAINS_ADD_PRODUCT_ID: z.string().optional(),
+    // Refunds for charges that bought nothing (lib/billing/refunds.ts,
+    // migration 00085). Off: every one is held for a person; on: the clear
+    // cases are refunded, up to the cap in cents before tax per refund.
+    POLAR_AUTO_REFUNDS: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => (typeof v === "string" ? v === "true" || v === "1" || v === "on" : v))
+      .default(false),
+    POLAR_AUTO_REFUND_MAX_CENTS: z.coerce.number().int().min(0).default(30_000),
     // Resolvers for custom inbound domain checks (lib/supabase/inbound-domains.ts),
     // comma separated; public ones by default, so a customer's nameservers
     // never see this host.
@@ -329,6 +337,8 @@ export function serverEnv() {
       POLAR_PAGE_OVERAGE_PRODUCT_ID: process.env.POLAR_PAGE_OVERAGE_PRODUCT_ID,
       POLAR_DOMAINS_PRODUCT_ID: process.env.POLAR_DOMAINS_PRODUCT_ID,
       POLAR_DOMAINS_ADD_PRODUCT_ID: process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
+      POLAR_AUTO_REFUNDS: process.env.POLAR_AUTO_REFUNDS,
+      POLAR_AUTO_REFUND_MAX_CENTS: process.env.POLAR_AUTO_REFUND_MAX_CENTS,
       DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
       FILE_DROP_PROXY_URL: process.env.FILE_DROP_PROXY_URL,
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,

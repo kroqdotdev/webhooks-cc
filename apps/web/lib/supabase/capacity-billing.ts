@@ -21,6 +21,7 @@ import {
   loggablePolarError,
   type CapacityProductIds,
 } from "@/lib/polar";
+import { recordRefund, type RefundTarget } from "@/lib/billing/refunds";
 import { reportError } from "@/lib/observability";
 import { planEntitlements, teamAllowance, teamEntitlements } from "@/lib/entitlements";
 import { createAdminClient } from "./admin";
@@ -250,6 +251,20 @@ interface AccountRow {
 
 const ACCOUNT_COLUMNS =
   "polar_customer_id, cancel_at_period_end, requests_used, request_limit, block_requests, credit_requests, overage_active, overage_max, overage_used, overage_period_start, period_start, period_end, credit_pages, page_block_pages, page_overage_active, page_overage_max, extra_domains";
+
+/** Records a refund for the account (lib/billing/refunds.ts). */
+async function refundFor(
+  account: CapacityAccount,
+  target: RefundTarget,
+  reason: "duplicate_addon" | "deleted_account" | "addon_not_applied" | "addon_ended"
+): Promise<void> {
+  await recordRefund({
+    target,
+    reason,
+    userId: account.kind === "user" ? account.userId : null,
+    teamId: account.kind === "team" ? account.teamId : null,
+  });
+}
 
 function accountIds(account: CapacityAccount): {
   p_user_id: string | null;
@@ -1009,11 +1024,10 @@ async function applySubscriptionEvent(
 
   if (status === "no_account") {
     // The account or team is gone (deleted while a checkout was open):
-    // nothing may keep charging for it.
+    // nothing may keep charging for it, and what it charged goes back.
+    await refundFor(account, { subscription: subscriptionId }, "deleted_account");
     await revokeQuietly(subscriptionId);
-    reportError("[capacity] add-on subscription for a deleted account was ended", undefined, {
-      subscriptionId,
-    });
+    console.warn("[capacity] ended an add-on subscription for a deleted account");
     return;
   }
 
@@ -1097,10 +1111,8 @@ async function settleDuplicate(
     );
   }
   if (kind === "domain_blocks") {
-    // Domains have no one-time form to keep what was paid.
-    reportError(`[capacity] a second ${kind} subscription was revoked; refund it`, undefined, {
-      subscriptionId,
-    });
+    // Domains have no one-time form to keep what was paid: it goes back.
+    await refundFor(account, { subscription: subscriptionId }, "duplicate_addon");
   }
   await revokeQuietly(subscriptionId);
 }
@@ -1133,14 +1145,13 @@ async function applyPaidOrder(
 
   const granted = asRecord(result);
   if (granted?.status === "no_account") {
-    reportError("[capacity] paid order for a deleted account: refund it", undefined, { orderId });
+    // Paid for an account or team deleted while the checkout was open.
+    await refundFor(account, { order: orderId }, "deleted_account");
     return;
   }
   if (granted?.unapplied === true) {
     // Domains added to a subscription that ended while the checkout was open.
-    reportError("[capacity] paid increase with nothing to raise: refund it", undefined, {
-      orderId,
-    });
+    await refundFor(account, { order: orderId }, "addon_not_applied");
     return;
   }
   if (granted?.kind !== spec.increase || granted.synced === true) return;
@@ -1246,9 +1257,8 @@ async function settleEndedIncrease(account: CapacityAccount, orderId: string): P
         ? "page_credits"
         : null;
   if (!credits) {
-    reportError("[capacity] paid increase on an add-on that ended: refund it", undefined, {
-      orderId,
-    });
+    // Domains have no one-time form to keep what was paid: it goes back.
+    await refundFor(account, { order: orderId }, "addon_ended");
     return;
   }
   const { data: granted, error: grantError } = await admin.rpc("grant_capacity_purchase", {

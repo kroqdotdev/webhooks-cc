@@ -9,6 +9,7 @@ import {
   type PaidPlan,
 } from "@/lib/polar";
 import { planEntitlements } from "@/lib/entitlements";
+import { recordRefund } from "@/lib/billing/refunds";
 import { reportError } from "@/lib/observability";
 import { returnOrigin } from "@/lib/site-server";
 import { createAdminClient } from "./admin";
@@ -345,13 +346,9 @@ async function revokeSubscriptionQuietly(id: string): Promise<void> {
   } catch (error) {
     // Revoked by an earlier delivery of the same event.
     if (isEndedSubscriptionError(error)) return;
-    reportError(
-      "[billing] could not revoke a second plan subscription",
-      loggablePolarError(error),
-      {
-        subscriptionId: id,
-      }
-    );
+    reportError("[billing] could not revoke a plan subscription", loggablePolarError(error), {
+      subscriptionId: id,
+    });
     throw error;
   }
 }
@@ -407,7 +404,23 @@ async function applyPlanSubscription(
     }>();
 
   if (storedError) throw storedError;
-  if (!stored) return true;
+  if (!stored) {
+    // No account: its checkout completed after the account was deleted.
+    // Deletion revokes the account's own subscription first, so a late event
+    // for that one reads as ended here (data is Polar's current state) and
+    // changes nothing. A live one would charge every month for nobody: it
+    // ends, and what it charged goes back (lib/billing/refunds.ts).
+    const orphanId = asNonEmptyString(data.id);
+    if (orphanId && LIVE_STATUSES.has(String(data.status)) && !asNonEmptyString(data.ended_at)) {
+      await revokeSubscriptionQuietly(orphanId);
+      await recordRefund({
+        target: { subscription: orphanId },
+        reason: "deleted_account",
+        userId,
+      });
+    }
+    return true;
+  }
 
   const currentPeriodStart = parseEventTimestamp(data.current_period_start);
   const currentPeriodEnd = parseEventTimestamp(data.current_period_end);
@@ -430,11 +443,13 @@ async function applyPlanSubscription(
     if (!LIVE_STATUSES.has(String(data.status))) return true;
     // A second live plan subscription (two checkouts completed in two
     // tabs): the account keeps the one it has, and the new one ends
-    // before it charges again. Someone refunds what it charged.
+    // before it charges again. What it charged goes back.
     if (stored.polar_subscription_id && (await isLiveSubscription(stored.polar_subscription_id))) {
       await revokeSubscriptionQuietly(subscriptionId);
-      reportError("[billing] a second plan subscription was revoked; refund it", undefined, {
-        subscriptionId,
+      await recordRefund({
+        target: { subscription: subscriptionId },
+        reason: "duplicate_plan",
+        userId,
       });
       return true;
     }
