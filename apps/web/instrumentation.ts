@@ -58,6 +58,12 @@ export async function register() {
     const { startOverageReporter } = await import("./lib/billing/overage-reporter");
     startOverageReporter();
 
+    // Refunds for charges that bought nothing (lib/billing/refunds.ts):
+    // prepares held ones for review and refunds pending ones; starts only
+    // when Polar is configured.
+    const { startRefundWorker } = await import("./lib/billing/refunds");
+    startRefundWorker();
+
     // Signups and a daily usage snapshot per account to PostHog
     // (lib/analytics-reporter.ts); on in production builds, see ANALYTICS_SERVER.
     const { startAnalyticsReporter } = await import("./lib/analytics-reporter");

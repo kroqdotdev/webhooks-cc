@@ -189,6 +189,33 @@ export async function auditUserAction(
 }
 
 /**
+ * Records something the app did on its own, not for a request: a refund the
+ * refund worker issued through Polar (lib/billing/refunds.ts), say. Only ids,
+ * amounts and our own codes go in.
+ */
+export async function auditSystemEvent(input: {
+  action: "billing.refund_issued";
+  outcome: AuditOutcome;
+  userId?: string | null;
+  teamId?: string | null;
+  targetId?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  await recordAuditEvent({
+    actor_type: "system",
+    actor_user_id: null,
+    via: null,
+    user_agent: null,
+    action: input.action,
+    outcome: input.outcome,
+    team_id: input.teamId ?? null,
+    target_user_id: input.userId ?? null,
+    target_id: truncate(input.targetId, MAX_TARGET_ID),
+    metadata: input.metadata ?? {},
+  });
+}
+
+/**
  * Records an agent registration, claim or sandbox event. The actor is the
  * agent unless `actorUserId` is set (a signed-in human confirming a claim).
  * Only ids and our own codes go in: never credentials, claim tokens, codes,

@@ -1,5 +1,6 @@
 import {
   createPolarClient,
+  isEndedSubscriptionError,
   loggablePolarError,
   polarAppUrl,
   polarErrorCode,
@@ -28,6 +29,7 @@ import {
 } from "./billing-shared";
 import type { Database } from "./database";
 import { removeMemberShares } from "./teams-endpoints";
+import { recordRefund } from "@/lib/billing/refunds";
 import { reportError } from "@/lib/observability";
 
 /** Pooled request allowance granted per Teams seat, per period. */
@@ -1456,6 +1458,49 @@ function upgradeProration(
   };
 }
 
+/**
+ * A subscription for a team that is gone: its checkout completed after the
+ * team was deleted. Deletion revokes the team's own subscription first, so a
+ * late event for that one reads as ended in Polar's current state and changes
+ * nothing. A live one would charge every month for nobody: it ends, and what
+ * it charged goes back (lib/billing/refunds.ts).
+ */
+async function endOrphanTeamSubscription(
+  teamId: string,
+  event: Record<string, unknown>
+): Promise<void> {
+  const { subscription: current } = await currentTeamSubscription(event);
+  const subscriptionId = asNonEmptyString(current.id);
+  const live =
+    (current.status === "active" ||
+      current.status === "trialing" ||
+      current.status === "past_due") &&
+    !asNonEmptyString(current.ended_at);
+  if (!subscriptionId || !live) return;
+  // Recorded first: once revoked, a redelivery reads it as ended and would
+  // never record it.
+  await recordRefund({
+    target: { subscription: subscriptionId },
+    reason: "deleted_account",
+    teamId,
+  });
+  try {
+    await createPolarClient().subscriptions.revoke(subscriptionId);
+  } catch (error) {
+    // Revoked by an earlier delivery of the same event.
+    if (!isEndedSubscriptionError(error)) {
+      reportError(
+        "[team-billing] could not revoke a deleted team's subscription",
+        loggablePolarError(error),
+        {
+          subscriptionId,
+        }
+      );
+      throw error;
+    }
+  }
+}
+
 async function applyTeamSubscriptionState(
   eventType: string,
   teamId: string,
@@ -1475,6 +1520,7 @@ async function applyTeamSubscriptionState(
   }
 
   if (!team) {
+    await endOrphanTeamSubscription(teamId, event);
     return;
   }
 

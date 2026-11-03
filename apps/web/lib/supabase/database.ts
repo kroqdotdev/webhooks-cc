@@ -1,5 +1,13 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
+/** Why a refund was recorded (migration 00086, lib/billing/refunds.ts). */
+export type PolarRefundReason =
+  "duplicate_plan" | "duplicate_addon" | "deleted_account" | "addon_not_applied" | "addon_ended";
+
+/** Where a recorded refund stands (migration 00086). */
+export type PolarRefundStatus =
+  "held" | "pending" | "refunded" | "nothing" | "failed" | "dismissed";
+
 /** How a destination's deliveries go out (migration 00063). */
 export type DestinationFormat =
   | "as_received"
@@ -1063,6 +1071,72 @@ export interface Database {
         };
         Relationships: [];
       };
+      polar_refunds: {
+        Row: {
+          id: string;
+          target: string;
+          reason: PolarRefundReason;
+          user_id: string | null;
+          team_id: string | null;
+          status: PolarRefundStatus;
+          hold_reason: "manual" | "over_cap" | "old_orders" | null;
+          orders: Json | null;
+          planned_cents: number | null;
+          refunded_cents: number;
+          refund_ids: string[];
+          approved_at: string | null;
+          attempts: number;
+          next_attempt_at: string;
+          lease_until: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+          finished_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          target: string;
+          reason: PolarRefundReason;
+          user_id?: string | null;
+          team_id?: string | null;
+          status: PolarRefundStatus;
+          hold_reason?: "manual" | "over_cap" | "old_orders" | null;
+          orders?: Json | null;
+          planned_cents?: number | null;
+          refunded_cents?: number;
+          refund_ids?: string[];
+          approved_at?: string | null;
+          attempts?: number;
+          next_attempt_at?: string;
+          lease_until?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          finished_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          target?: string;
+          reason?: PolarRefundReason;
+          user_id?: string | null;
+          team_id?: string | null;
+          status?: PolarRefundStatus;
+          hold_reason?: "manual" | "over_cap" | "old_orders" | null;
+          orders?: Json | null;
+          planned_cents?: number | null;
+          refunded_cents?: number;
+          refund_ids?: string[];
+          approved_at?: string | null;
+          attempts?: number;
+          next_attempt_at?: string;
+          lease_until?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          finished_at?: string | null;
+        };
+        Relationships: [];
+      };
       capacity_purchases: {
         Row: {
           id: string;
@@ -2075,6 +2149,21 @@ export interface Database {
           p_team_id: string | null;
         };
         Returns: undefined;
+      };
+      claim_polar_refunds: {
+        Args: {
+          p_limit: number;
+          p_lease_seconds: number;
+        };
+        Returns: Database["public"]["Tables"]["polar_refunds"]["Row"][];
+      };
+      approve_polar_refund: {
+        Args: { p_id: string };
+        Returns: boolean;
+      };
+      dismiss_polar_refund: {
+        Args: { p_id: string };
+        Returns: boolean;
       };
       claim_overage_reports: {
         Args: {
