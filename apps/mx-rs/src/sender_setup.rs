@@ -261,6 +261,8 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
         .collect();
     while let Some((target, depth, via_redirect)) = pending.pop() {
         if !followable(&target) || depth > MAX_SPF_DEPTH {
+            // A macro or a chain this deep adds lookups that are not counted.
+            incomplete = true;
             continue;
         }
         if fetches >= MAX_SPF_FETCHES {
@@ -276,7 +278,9 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
             duplicated.push(cut(&target, MAX_URI_CHARS));
         }
         let Some(record) = found.first() else {
-            if !via_redirect && missing.len() < MAX_REPORT_URIS {
+            // RFC 7208 5.2 and 6.1: an include or redirect to a domain
+            // without SPF is a permerror.
+            if missing.len() < MAX_REPORT_URIS {
                 missing.push(cut(&target, MAX_URI_CHARS));
             }
             continue;
@@ -749,6 +753,8 @@ mod tests {
         let found = spf(&dns, "example.com").await;
         assert_eq!(found["all"], json!("?all"));
         assert_eq!(found["lookups"], json!(2));
+        // The macro include was counted but not followed.
+        assert_eq!(found["lookups_incomplete"], json!(true));
         assert!(!dns.asked.lock().unwrap().iter().any(|n| n.contains('%')));
     }
 

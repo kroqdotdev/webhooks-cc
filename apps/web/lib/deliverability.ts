@@ -119,6 +119,14 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         "SPF record not checked",
         `The SPF record of ${domain} could not be looked up.`
       );
+    } else if (spf.records === 0 && !email.smtp?.envelopeFrom) {
+      // A bounce: SPF checked the HELO name, which often has no record.
+      add(
+        "spf-record",
+        "warn",
+        "No SPF record for the HELO name",
+        `The envelope sender is empty (a bounce or automated message), so SPF checked the server's HELO name, ${domain}, which publishes no SPF record. Publishing "v=spf1 a -all" there lets receivers check bounces too.`
+      );
     } else if (spf.records === 0) {
       add(
         "spf-record",
@@ -261,7 +269,14 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
       dmarc?.policy === "none" || dmarc?.policy === "quarantine" || dmarc?.policy === "reject"
         ? dmarc.policy
         : (record?.p ?? null);
-    const fromSubdomainPolicy = record !== null && applied !== null && applied !== record.p;
+    // Name where the policy came from only when it is the record's sp; a
+    // policy lowered by t=y, or a record with rua and no p, is not that.
+    const fromSubdomainPolicy =
+      record !== null &&
+      applied !== null &&
+      applied !== record.p &&
+      applied === record.sp &&
+      !record.testing;
     if (applied === "none" || (applied === null && record !== null)) {
       add(
         "dmarc-policy",
@@ -333,13 +348,24 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
       "The email carries no DKIM signature. Gmail and Yahoo require DKIM from bulk senders, and it is what survives forwarding when SPF does not."
     );
   }
-  // Each signature that does not verify, whatever its key looks like.
-  for (const signature of auth.dkim) {
+  // Each signature that does not verify. A missing or retired key gets its
+  // own finding below, which already says why.
+  const keyExplains = (domain: string | null, selector: string | null) =>
+    setupOk &&
+    setup.dkim.some(
+      (key) =>
+        key.domain === domain &&
+        key.selector === selector &&
+        !key.error &&
+        (key.revoked || key.key === null)
+    );
+  for (const [index, signature] of auth.dkim.entries()) {
     if (signature.result !== "fail" && signature.result !== "permerror") continue;
+    if (keyExplains(signature.domain, signature.selector)) continue;
     const otherPasses = auth.dkim.some((other) => other !== signature && other.result === "pass");
     const by = signature.domain ?? "an unknown domain";
     add(
-      `dkim-signature-${signature.domain ?? "unknown"}-${signature.selector ?? "unknown"}`,
+      `dkim-signature-${index}-${signature.domain ?? "unknown"}-${signature.selector ?? "unknown"}`,
       otherPasses ? "warn" : "fail",
       "DKIM signature does not verify",
       `The signature by ${by}${signature.selector ? ` (selector ${signature.selector})` : ""} does not check out (${signature.result}): the message changed after signing, or the key does not match.${otherPasses ? " Another signature on the email passes, so delivery does not depend on this one." : ""}`
@@ -596,7 +622,8 @@ const COMMON_TLDS = new Set(
 
 /** The host a link's text names, when the text is a URL or a domain. */
 function hostInText(text: string): string | null {
-  if (text.length === 0 || text.length > 200 || /\s/.test(text)) return null;
+  // An email address is not a site: support@acme.com is not acme.com.
+  if (text.length === 0 || text.length > 200 || /[\s@]/.test(text)) return null;
   const scheme = /^https?:\/\//i.test(text);
   try {
     const host = new URL(scheme ? text : `https://${text}`).hostname.toLowerCase();
@@ -669,7 +696,16 @@ function messageFindings({ email, headers, receivedAt }: DeliverabilityInput, ad
   }
 
   const date = email.date ? Date.parse(email.date) : NaN;
-  if (!email.date) {
+  // The receiver stores no date it cannot read; the header may still be there.
+  const rawDate = header(headers, "date");
+  if (!email.date && rawDate) {
+    add(
+      "date",
+      "warn",
+      "Unreadable Date header",
+      `The Date header "${rawDate.slice(0, 100)}" is not a date in the form RFC 5322 asks for, such as "Tue, 3 Nov 2026 10:00:00 +0000".`
+    );
+  } else if (!email.date) {
     add(
       "date",
       "fail",

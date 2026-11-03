@@ -367,7 +367,9 @@ describe("deliverabilityReport", () => {
   it("judges the policy that applies to a subdomain", () => {
     const capture = email({ from: [{ name: null, address: "news@news.acme.example" }] });
     capture.auth!.dmarc = { ...capture.auth!.dmarc!, domain: "news.acme.example", policy: "none" };
+    // _dmarc.acme.example: p=reject; sp=none
     capture.auth!.setup = setup({
+      dmarc: { ...setup().dmarc!, sp: "none" },
       bimi: { found: true, domain: "acme.example", logo: true, authority: true, error: null },
     });
     const findings = report(capture).findings;
@@ -456,13 +458,13 @@ describe("deliverabilityReport", () => {
     // A signature that does not verify is a finding of its own.
     const failed = email();
     failed.auth!.dkim = [{ result: "fail", domain: "acme.example", selector: "s1" }];
-    expect(byId(report(failed).findings)["dkim-signature-acme.example-s1"]).toBe("fail");
+    expect(byId(report(failed).findings)["dkim-signature-0-acme.example-s1"]).toBe("fail");
     const extra = email();
     extra.auth!.dkim = [
       { result: "pass", domain: "acme.example", selector: "s1" },
       { result: "fail", domain: "esp.example", selector: "k1" },
     ];
-    expect(byId(report(extra).findings)["dkim-signature-esp.example-k1"]).toBe("warn");
+    expect(byId(report(extra).findings)["dkim-signature-1-esp.example-k1"]).toBe("warn");
 
     // Country suffixes keep two different sites apart.
     const uk = email({
@@ -477,6 +479,58 @@ describe("deliverabilityReport", () => {
       html: '<img src="a.png?width=1" data-width="1"><img src="b.png?h=1&width=1"><p>Sale</p>',
     });
     expect(byId(report(sized).findings).images).toBe("warn");
+  });
+
+  it("keeps findings apart and explains each cause once", () => {
+    // Two unparseable signatures get two findings, not one shared id.
+    const twice = email();
+    twice.auth!.dkim = [
+      { result: "permerror", domain: null, selector: null },
+      { result: "permerror", domain: null, selector: null },
+    ];
+    const ids = report(twice).findings.map((f) => f.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((id) => id.startsWith("dkim-signature-"))).toHaveLength(2);
+
+    // A signature that fails because its key is gone is the key's finding.
+    const gone = email();
+    gone.auth!.dkim = [{ result: "permerror", domain: "acme.example", selector: "s1" }];
+    gone.auth!.setup = setup({ dkim: [{ ...setup().dkim[0], key: null, bits: null }] });
+    const goneIds = byId(report(gone).findings);
+    expect(goneIds["dkim-key-acme.example-s1"]).toBe("fail");
+    expect(goneIds["dkim-signature-0-acme.example-s1"]).toBeUndefined();
+  });
+
+  it("names the subdomain policy only when it is the record's sp", () => {
+    // t=y lowered reject to quarantine on the From domain itself.
+    const testing = email();
+    testing.auth!.dmarc!.policy = "quarantine";
+    testing.auth!.setup = setup({ dmarc: { ...setup().dmarc!, testing: true } });
+    const detail = report(testing).findings.find((f) => f.id === "dmarc-policy")?.detail;
+    expect(detail).not.toContain("subdomains");
+  });
+
+  it("reads bounces, unreadable dates and addresses as link text fairly", () => {
+    const bounce = email();
+    bounce.smtp = { ...bounce.smtp!, envelopeFrom: null };
+    bounce.auth!.setup = setup({
+      spf: { ...setup().spf!, domain: "mail.acme.example", records: 0 },
+    });
+    const spfFinding = report(bounce).findings.find((f) => f.id === "spf-record");
+    expect(spfFinding?.status).toBe("warn");
+    expect(spfFinding?.title).toBe("No SPF record for the HELO name");
+
+    const badDate = email({ date: null });
+    const dateFinding = report(badDate, { date: "yesterday-ish" }).findings.find(
+      (f) => f.id === "date"
+    );
+    expect(dateFinding).toMatchObject({ status: "warn", title: "Unreadable Date header" });
+    expect(byId(report(email({ date: null })).findings).date).toBe("fail");
+
+    const address = email({
+      html: `<a href="https://acme.zendesk.example/hc">support@acme.com</a><p>${"words ".repeat(50)}</p>`,
+    });
+    expect(byId(report(address).findings)["links-text"]).toBeUndefined();
   });
 
   it("says nothing about checks that could not run", () => {

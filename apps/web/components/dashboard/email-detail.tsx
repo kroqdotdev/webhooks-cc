@@ -775,10 +775,10 @@ function AuthenticationPane({
                 label={resultLabel(verdictOf(arc.result))}
               >
                 {arc.result === "pass"
-                  ? `Forwarded by ${arc.sealers.join(", ") || `${arc.sets} servers`}; every hop sealed what it received.`
+                  ? `Forwarded by ${arc.sealers.join(", ") || `${arc.sets} ${arc.sets === 1 ? "server" : "servers"}`}; every hop sealed what it received.`
                   : arc.result === "skipped"
                     ? `Not checked${arc.reason ? `: ${arc.reason}` : ""}.`
-                    : `Forwarded by ${arc.sealers.join(", ") || `${arc.sets} servers`}, but the chain does not verify (${arc.result}).`}
+                    : `Forwarded by ${arc.sealers.join(", ") || `${arc.sets} ${arc.sets === 1 ? "server" : "servers"}`}, but the chain does not verify (${arc.result}).`}
               </CheckRow>
             )}
             {auth.authenticationResults && (

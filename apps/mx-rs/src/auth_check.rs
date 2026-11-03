@@ -201,18 +201,38 @@ fn fit(json: &mut Value) {
 fn without_nul(json: &mut Value) {
     match json {
         Value::String(text) => {
-            if text.contains('\0') {
-                text.retain(|c| c != '\0');
-            }
-            // Each pass removes a backslash, so `\\u0000` cannot rebuild one.
-            while text.contains("\\u0000") {
-                *text = text.replace("\\u0000", "u0000");
+            if text.contains('\0') || text.contains("\\u0000") {
+                *text = nul_free(text);
             }
         }
         Value::Array(items) => items.iter_mut().for_each(without_nul),
         Value::Object(map) => map.values_mut().for_each(without_nul),
         _ => {}
     }
+}
+
+/// `text` without NUL and without a backslash before any `u0000`, in one
+/// pass: a sender controls these strings (a DKIM `i=` of 100,000
+/// backslashes), so the work must stay linear. Each backslash is dropped at
+/// most once, and a run of them is dropped whole, so none can come to stand
+/// before a `u0000` again.
+fn nul_free(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars().filter(|&c| c != '\0') {
+        out.push(c);
+        if out.ends_with("u0000") {
+            let stem = out.len() - "u0000".len();
+            let slashes = out.as_bytes()[..stem]
+                .iter()
+                .rev()
+                .take_while(|&&b| b == b'\\')
+                .count();
+            if slashes > 0 {
+                out.replace_range(stem - slashes..stem, "");
+            }
+        }
+    }
+    out
 }
 
 /// The PTR names to look at; more are ignored.
@@ -382,7 +402,7 @@ async fn run(
     // (SPF failed and no signature passed); "none" only without a record.
     json["dmarc"] = json!({
         "result": dmarc_result(&dmarc.result()),
-        "domain": dmarc.domain(),
+        "domain": clip(dmarc.domain()),
         "policy": policy(dmarc.policy()),
         "spf": dmarc_result(dmarc.spf_result()),
         "dkim": dmarc_result(dmarc.dkim_result()),
@@ -734,6 +754,22 @@ mod tests {
         assert_eq!(json["dkim"][0]["domain"], json!("ab.example"));
         let text = serde_json::to_string(&json).unwrap();
         assert!(!text.contains("\\u0000"), "{text}");
+    }
+
+    #[test]
+    fn removes_nul_in_linear_time() {
+        assert_eq!(nul_free("a\\\\\\u0000b\0c"), "au0000bc");
+        assert_eq!(nul_free("\\u00\\u0000"), "\\u00u0000");
+        assert_eq!(nul_free("plain \\n text"), "plain \\n text");
+        // A sender's DKIM i= can hold this many; the old loop took minutes.
+        let hostile = format!("{}u0000", "\\".repeat(200_000)).repeat(3);
+        let started = std::time::Instant::now();
+        let clean = nul_free(&hostile);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(clean, "u0000u0000u0000");
+        let mut json = json!({ "authentication_results": hostile });
+        fit(&mut json);
+        assert!(!serde_json::to_string(&json).unwrap().contains("\\u0000"));
     }
 
     #[test]
