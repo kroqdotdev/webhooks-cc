@@ -638,8 +638,8 @@ export default async function Home() {
                 How Teams works
               </Link>
               <p className="text-sm text-muted-foreground mt-3">
-                $12/seat/mo — every seat adds 100,000 requests per 30 days to the team&apos;s shared
-                pool
+                From $12/seat/mo, or $35/seat/mo for Team Business with Business&apos;s limits per
+                seat
               </p>
             </div>
             <div className="ui-card ui-card-static p-0! overflow-hidden">
@@ -660,9 +660,10 @@ export default async function Home() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Personal plans */}
+          <div className="grid md:grid-cols-3 gap-6">
             {/* Free Plan */}
-            <div className="ui-card">
+            <div className="ui-card flex flex-col">
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Free</h3>
                 <p className="text-5xl font-bold">
@@ -685,11 +686,13 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <PricingCTA />
+              <div className="mt-auto">
+                <PricingCTA />
+              </div>
             </div>
 
             {/* Pro Plan */}
-            <div className="ui-card border-primary relative">
+            <div className="ui-card border-primary relative flex flex-col">
               <div className="absolute -top-3 -right-3 bg-secondary text-secondary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
                 Popular
               </div>
@@ -715,14 +718,14 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center">
+              <p className="text-sm text-muted-foreground mb-3 text-center mt-auto">
                 Start free, upgrade later
               </p>
               <PricingCTA />
             </div>
 
             {/* Business Plan */}
-            <div className="ui-card">
+            <div className="ui-card flex flex-col">
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Business</h3>
                 <p className="text-5xl font-bold">
@@ -746,14 +749,45 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center">
+              <p className="text-sm text-muted-foreground mb-3 text-center mt-auto">
                 Start free, upgrade later
               </p>
               <PricingCTA />
             </div>
+          </div>
+
+          {/* Team plans: what a team is, then its two plans */}
+          <div className="grid md:grid-cols-3 gap-6 mt-6">
+            <div className="ui-card ui-card-static flex flex-col">
+              <div className="mb-6">
+                <h3 className="font-bold text-2xl mb-2">Team plans</h3>
+                <p className="text-muted-foreground">
+                  Share endpoints with the people you work with. A team has its own subscription,
+                  billed per seat from 2 seats, whatever plan each member is on.
+                </p>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {[
+                  "Shared endpoints, real-time for everyone",
+                  "Seats are the member cap",
+                  "One pooled quota for the whole team",
+                  "Billed per team, not per account",
+                  "Any account can create a team",
+                ].map((feature) => (
+                  <li key={feature} className="flex items-center gap-3">
+                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/for-teams" className="ui-btn-outline w-full text-center block mt-auto">
+                How Teams works
+                <ArrowRight className="inline-block ml-2 h-5 w-5" />
+              </Link>
+            </div>
 
             {/* Teams Plan */}
-            <div className="ui-card">
+            <div className="ui-card flex flex-col">
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Teams</h3>
                 <p className="text-5xl font-bold">
@@ -763,12 +797,11 @@ export default async function Home() {
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  "100,000 pooled requests per seat / 30 days, from 2 seats",
-                  "Seats are the member cap",
-                  "Shared endpoints, real-time for everyone",
+                  "100,000 pooled requests per seat / 30 days",
                   "31-day retention on team traffic",
-                  "Billed per team, not per account",
-                  "Team Business, $35/seat/mo or $350/seat/yr: Business per seat",
+                  "100 parsed attachment pages/month",
+                  "20 AI assists/30 days",
+                  "Extra requests in 25,000 blocks",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
@@ -776,10 +809,38 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center">
-                Any account can create a team
-              </p>
-              <Link href="/teams" className="ui-btn-outline w-full text-center block">
+              <Link href="/teams" className="ui-btn-outline w-full text-center block mt-auto">
+                Create a team
+                <ArrowRight className="inline-block ml-2 h-5 w-5" />
+              </Link>
+            </div>
+
+            {/* Team Business Plan */}
+            <div className="ui-card flex flex-col">
+              <div className="mb-6">
+                <h3 className="font-bold text-2xl mb-2">Team Business</h3>
+                <p className="text-5xl font-bold">
+                  $35
+                  <span className="text-lg font-normal text-muted-foreground">/seat/mo</span>
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">or $350/seat/year</p>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {[
+                  "250,000 pooled requests per seat/month",
+                  "90-day retention on team traffic",
+                  "2,000 parsed attachment pages per seat/month",
+                  "Up to 50 layouts, 250 AI assists per seat",
+                  "1 custom inbound domain per team",
+                  "File drops to SFTP, FTP/FTPS & S3",
+                ].map((feature) => (
+                  <li key={feature} className="flex items-center gap-3">
+                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/teams" className="ui-btn-outline w-full text-center block mt-auto">
                 Create a team
                 <ArrowRight className="inline-block ml-2 h-5 w-5" />
               </Link>
