@@ -616,6 +616,71 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
   });
 });
 
+describe("applyCapacityWebhookEvent: an add-on's renewal moves onto the plan's", () => {
+  async function renewAddon(now: string, planEnd: string, addonEnd: string) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(now));
+    try {
+      tables.users = proAccount({ period_end: planEnd });
+      tables.capacity_subscriptions = [blocksRow({ period_end: addonEnd })];
+      mockFns.subscriptionsGet.mockResolvedValue({
+        id: "sub_blocks",
+        status: "active",
+        units: 2,
+        current_period_end: addonEnd,
+      });
+      await applyCapacityWebhookEvent(
+        "subscription.updated",
+        USER,
+        { resource: "requests", kind: "monthly" },
+        { id: "sub_blocks" }
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+    return mockFns.subscriptionsUpdate.mock.calls
+      .filter(([, body]) => "current_billing_period_end" in (body as object))
+      .map(
+        ([, body]) => (body as { current_billing_period_end: string }).current_billing_period_end
+      );
+  }
+
+  it("moves a later add-on back to the plan's renewal", async () => {
+    expect(
+      await renewAddon("2026-11-01T00:00:00Z", "2026-11-15T00:00:00Z", "2026-11-27T00:00:00Z")
+    ).toEqual(["2026-11-15T00:00:00.000Z"]);
+  });
+
+  it("gives back the days a short month took, once, so it keeps the plan's day", async () => {
+    // Aligned with a window that ended Feb 28, Polar renews it on the 28th
+    // while the plan's window runs to the 31st.
+    expect(
+      await renewAddon("2027-03-01T00:00:00Z", "2027-03-31T10:00:00Z", "2027-03-28T10:00:00Z")
+    ).toEqual(["2027-03-31T10:00:00.000Z"]);
+  });
+
+  it("never moves an add-on later by more than a short month took", async () => {
+    // The plan renewed and the add-on's own renewal is not in yet.
+    expect(
+      await renewAddon("2027-03-30T00:00:00Z", "2027-04-30T10:00:00Z", "2027-03-31T10:00:00Z")
+    ).toEqual([]);
+    // Days apart, but across a month's end.
+    expect(
+      await renewAddon("2027-03-01T00:00:00Z", "2027-04-01T10:00:00Z", "2027-03-30T10:00:00Z")
+    ).toEqual([]);
+    // Four days in the same month is not a short month.
+    expect(
+      await renewAddon("2027-03-01T00:00:00Z", "2027-03-31T10:00:00Z", "2027-03-27T10:00:00Z")
+    ).toEqual([]);
+  });
+
+  it("leaves an add-on alone once its period is over", async () => {
+    expect(
+      await renewAddon("2027-03-28T10:00:30Z", "2027-03-31T10:00:00Z", "2027-03-28T10:00:00Z")
+    ).toEqual([]);
+  });
+});
+
 describe("reconcileAddonsWithPlan", () => {
   const overageRow = {
     ...blocksRow(),

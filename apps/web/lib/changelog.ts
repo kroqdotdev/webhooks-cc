@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.59.3";
+export const APP_VERSION = "0.59.4";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,17 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.59.4",
+    date: "2026-11-03",
+    title: "Annual Plans Reset on the Day They Started",
+    track: "web",
+    items: [
+      "An annual plan that started on the 29th, 30th or 31st now resets its monthly quota on that day in every month that has it, instead of moving to the 28th after February and staying there",
+      "The last monthly quota of an annual plan now ends exactly when the year renews, so usage resets once at the renewal, not twice a few days apart",
+      "Monthly add-ons on such a plan go back to renewing on the plan's day after a short month",
+    ],
+  },
   {
     version: "0.59.3",
     date: "2026-11-03",
