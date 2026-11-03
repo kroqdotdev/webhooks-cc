@@ -6,7 +6,10 @@ const mockFns = vi.hoisted(() => ({
   createPolarClient: vi.fn(),
   getPolarCheckoutConfig: vi.fn(),
   reconcileAddonsWithPlan: vi.fn(),
+  recordRefund: vi.fn(),
 }));
+
+vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
 
 vi.mock("@/lib/polar", async (importOriginal) => ({
   // The real product matching reads the product env vars set in each test.
@@ -320,14 +323,64 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
     expect(update!.payload).not.toHaveProperty("requests_used");
   });
 
-  test("no-ops for a user row that no longer exists", async () => {
+  test("ends a live subscription whose account is gone and records its refund", async () => {
+    // A checkout that completed after the account was deleted.
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "users:select": [{ data: null }] })
     );
 
+    await apply("subscription.created", subscriptionEvent());
+
+    expect(userUpdatePayload()).toBeUndefined();
+    expect(polarRevoke).toHaveBeenCalledWith("sub_1");
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { subscription: "sub_1" },
+      reason: "deleted_account",
+      userId: "user_1",
+    });
+    // Recorded first: after the revoke a redelivery would read it as ended.
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      polarRevoke.mock.invocationCallOrder[0]
+    );
+  });
+
+  test("records nothing when Polar ended the subscription since the event was read", async () => {
+    // The account deletion's own revoke landed between the two reads.
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [{ data: null }] })
+    );
+    let reads = 0;
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: {
+        get: async () =>
+          ++reads === 1
+            ? subscriptionEvent()
+            : subscriptionEvent({ status: "canceled", ended_at: "2026-08-02T00:00:00Z" }),
+        revoke: polarRevoke,
+      },
+    });
+
+    await apply("subscription.updated", subscriptionEvent());
+
+    expect(polarRevoke).not.toHaveBeenCalled();
+    expect(mockFns.recordRefund).not.toHaveBeenCalled();
+  });
+
+  test("leaves alone a late event for the subscription the account deletion ended", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [{ data: null }] })
+    );
+    // Polar's current state, which the handler reads, is ended.
+    polarSubscriptions.sub_1 = subscriptionEvent({
+      status: "canceled",
+      ended_at: "2026-08-02T00:00:00Z",
+    });
+
     await apply("subscription.updated", subscriptionEvent());
 
     expect(userUpdatePayload()).toBeUndefined();
+    expect(polarRevoke).not.toHaveBeenCalled();
+    expect(mockFns.recordRefund).not.toHaveBeenCalled();
   });
 });
 
@@ -628,7 +681,7 @@ describe("plan events apply Polar's current state", () => {
     expect(userUpdatePayload()).toBeUndefined();
   });
 
-  test("a second live plan subscription is revoked and reported, and the account keeps its own", async () => {
+  test("a second live plan subscription is revoked and refunded, and the account keeps its own", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_first" })] })
     );
@@ -638,10 +691,13 @@ describe("plan events apply Polar's current state", () => {
 
     expect(polarRevoke).toHaveBeenCalledWith("sub_second");
     expect(userUpdatePayload()).toBeUndefined();
-    expect(mockFns.reportError).toHaveBeenCalledWith(
-      expect.stringContaining("refund it"),
-      undefined,
-      { subscriptionId: "sub_second" }
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { subscription: "sub_second" },
+      reason: "duplicate_plan",
+      userId: "user_1",
+    });
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      polarRevoke.mock.invocationCallOrder[0]
     );
   });
 

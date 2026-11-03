@@ -3,12 +3,16 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   createPolarClient: vi.fn(),
+  recordRefund: vi.fn(),
 }));
+
+vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
 
 vi.mock("@/lib/polar", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/polar")>();
   return {
     createPolarClient: mockFns.createPolarClient,
+    isEndedSubscriptionError: actual.isEndedSubscriptionError,
     loggablePolarError: (error: unknown) => error,
     polarErrorCode: actual.polarErrorCode,
     polarAppUrl: () => "https://webhooks.cc",
@@ -1397,6 +1401,15 @@ describe("webhook events for a deleted team", () => {
     "subscription.revoked",
   ])("%s no-ops without writes", async (eventType) => {
     mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [NO_TEAM] }));
+    // The team's own subscription, which the deletion revoked: Polar's
+    // current state says so, whatever the late event carried.
+    const revoke = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: {
+        get: vi.fn().mockResolvedValue({ id: "sub_1", status: "canceled", ended_at: "2026-08-02" }),
+        revoke,
+      },
+    });
 
     await applyTeamPolarWebhookEvent(eventType, "team_gone", {
       id: "sub_1",
@@ -1406,6 +1419,38 @@ describe("webhook events for a deleted team", () => {
     });
 
     expect(recorded.filter((call) => call.op !== "select")).toEqual([]);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(mockFns.recordRefund).not.toHaveBeenCalled();
+  });
+
+  test("ends a live subscription whose team is gone and records its refund", async () => {
+    // A checkout that completed after the team was deleted.
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [NO_TEAM] }));
+    const revoke = vi.fn().mockResolvedValue({});
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: {
+        get: vi.fn().mockResolvedValue({ id: "sub_late", status: "active", ended_at: null }),
+        revoke,
+      },
+    });
+
+    await applyTeamPolarWebhookEvent("subscription.created", "team_gone", {
+      id: "sub_late",
+      customer_id: "cus_1",
+      status: "active",
+      seats: 2,
+    });
+
+    expect(recorded.filter((call) => call.op !== "select")).toEqual([]);
+    expect(revoke).toHaveBeenCalledWith("sub_late");
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { subscription: "sub_late" },
+      reason: "deleted_account",
+      teamId: "team_gone",
+    });
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      revoke.mock.invocationCallOrder[0]
+    );
   });
 
   test("customer_seat.revoked no-ops without deleting anything", async () => {
