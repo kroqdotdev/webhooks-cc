@@ -7,67 +7,76 @@ const FAQ_ITEMS = [
   {
     question: "What are the best Webhook.site alternatives in 2026?",
     answer:
-      "webhooks.cc is a strong Webhook.site alternative for developers who need automated webhook testing. It adds a TypeScript SDK with test assertions, a native CLI tunnel, an MCP server for AI coding agents, and a free tier with every Pro feature, with Teams (invite members, share endpoints) billed separately at $12/seat/mo. Other alternatives include Beeceptor (API mocking focus), RequestBin/Pipedream (workflow automation), and Hookdeck (production webhook infrastructure).",
+      "webhooks.cc is a strong Webhook.site alternative for developers who need automated webhook testing. It adds SDKs with test assertions for TypeScript, Python and Go, a native CLI tunnel, an MCP server for AI coding agents, email parsing, and a free tier with every Pro feature, with Teams (invite members, share endpoints) billed separately from $12/seat/mo. Other alternatives include Beeceptor (API mocking focus) and Hookdeck (production webhook infrastructure).",
   },
   {
     question: "What is the main difference between webhooks.cc and Webhook.site?",
     answer:
-      "Both tools capture and inspect incoming webhooks. webhooks.cc adds a TypeScript SDK for writing webhook assertions in automated tests, a native CLI for tunneling to localhost, and an MCP server so AI coding agents can create, inspect, and replay webhooks programmatically.",
+      "Both tools capture and inspect incoming webhooks. webhooks.cc adds SDKs for TypeScript, Python and Go for writing webhook assertions in automated tests, forwarding to up to 10 destinations per endpoint with filters and retries, and an MCP server so AI coding agents can create, inspect, and replay webhooks programmatically. Both have a CLI that forwards to localhost.",
   },
   {
     question: "Does webhooks.cc have a free plan like Webhook.site?",
     answer:
-      "Yes. The free plan has every Pro feature: inspection, replay, mock responses, CLI tunnel, SDK, and MCP. Paid plans raise request limits and retention, and Business adds attachment parsing, more layouts, custom inbound domains and file drops. Teams (invite members, share endpoints) is a separate per-team subscription at $12/seat/mo.",
+      "Yes. The free plan has every Pro feature: inspection, replay, mock responses, CLI tunnel, SDK, and MCP. Paid plans raise request limits and retention, and Business adds attachment parsing, more layouts, custom inbound domains and file drops. Teams (invite members, share endpoints) is a separate per-team subscription: $12/seat/mo, or $35/seat/mo for Team Business with Business's limits per seat.",
   },
   {
     question: "Can I use webhooks.cc for CI/CD webhook testing?",
     answer:
-      "Yes. The TypeScript SDK provides a waitFor() method that polls for incoming requests with configurable matchers (method, headers, body fields). You can assert on webhook payloads directly inside Vitest or Jest test suites.",
+      "Yes. The TypeScript SDK provides a waitFor() method that polls for incoming requests with configurable matchers (method, headers, body fields). You can assert on webhook payloads directly inside Vitest or Jest test suites, and the Python (wait_for, with pytest fixtures) and Go (WaitFor) SDKs do the same.",
   },
   {
     question: "Does webhooks.cc capture emails like Webhook.site?",
     answer:
-      "Yes. Every endpoint on a webhooks.cc account, free included, has an email address at mailhooks.cc. Each email shows the one-time code and main link it contains and its SPF, DKIM and DMARC results, and forwarding posts it to your server as signed JSON with retries. Webhook.site gives every URL an email address without an account; acting on incoming email there takes Custom Actions, which are part of its paid plans.",
+      "Yes. Every endpoint on a webhooks.cc account, free included, has an email address at mailhooks.cc. Each email shows the one-time code and main link it contains and its SPF, DKIM and DMARC results, layouts read named fields, line items and attachments (CSV, Excel, PDF text) out of it, and forwarding posts it to your server as signed JSON with retries, or to Google Sheets, Slack, Zapier or Make. Business adds your own inbound domain. mailhooks.cc is the mail-first front door to the same accounts. Webhook.site gives every URL an email address without an account; acting on incoming email there takes Custom Actions, which are part of its paid plans.",
   },
   {
     question: "Does Webhook.site have an SDK or MCP server?",
     answer:
-      "Webhook.site offers an API but no first-party TypeScript SDK with test assertion helpers. It also does not provide an MCP server for AI coding agent integration.",
+      "Webhook.site offers a REST API, a WebSocket API and a CLI, but no first-party SDK with test assertion helpers. It does not provide a first-party MCP server; the ones that exist are third-party.",
   },
   {
     question: "Which Webhook.site alternatives work for teams?",
     answer:
-      "webhooks.cc Teams shares endpoints with signed-in team members, keeps team-billed requests for 31 days, and costs $12 per seat per month with 100,000 requests per seat pooled across the team. Webhook.site lists team features on its Enterprise plan.",
+      "webhooks.cc Teams shares endpoints with signed-in team members, keeps team-billed requests for 31 days, and costs $12 per seat per month with 100,000 requests per seat pooled across the team. Team Business ($35 per seat per month) gives each seat Business's limits and keeps team traffic for 90 days. Webhook.site lists team features (multiple users, roles, SSO) on its Enterprise plan.",
   },
 ];
 
 const ROWS = [
   ["Webhook capture & inspection", "Yes", "Yes"],
-  ["Mock responses", "Yes", "Yes (paid)"],
+  [
+    "Mock responses",
+    "Yes, rule-based with placeholders",
+    "Static on free, dynamic through paid Custom Actions",
+  ],
   ["Request replay", "Yes", "Yes"],
   ["Search & filtering", "Yes", "Yes"],
   ["Export (JSON / CSV)", "Yes", "Yes"],
   ["CLI tunnel to localhost", "Yes", "Yes"],
   ["Email capture", "Yes, every account endpoint on every plan", "Yes, every URL"],
   [
+    "Email fields and attachment parsing",
+    "Yes, layouts on every plan (more on Business)",
+    "Through Custom Actions (paid plans)",
+  ],
+  [
     "Email forwarded as signed JSON, with retries",
     "Yes, every plan",
     "Through Custom Actions (paid plans)",
   ],
-  ["TypeScript SDK", "Yes — @webhooks-cc/sdk", "No first-party SDK"],
+  ["SDKs", "TypeScript, Python and Go", "No first-party SDK"],
   ["CI test assertions (waitFor)", "Yes", "No"],
-  ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
+  ["MCP server for AI agents", "Yes, remote (OAuth) or local", "No first-party server"],
   ["Request body matchers", "Yes (method, header, body path)", "No"],
   ["SSE real-time streaming", "Yes", "No"],
-  ["Open source", "Yes (AGPL + MIT)", "No"],
-  ["Team collaboration", "$12/seat/mo, pooled quota", "Enterprise only, from $69/mo"],
+  ["Open source", "Yes (AGPL + MIT)", "MIT edition, without Custom Actions"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "Enterprise only, from $69/mo"],
   ["Free tier features", "Every Pro feature", "Some features paid-only"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Webhook.site Alternative: Full Comparison (2026)",
   description:
-    "Webhook.site alternative with a TypeScript SDK for CI testing, CLI tunnel to localhost, and MCP server for AI agents. Free tier has every Pro feature; Teams is billed separately.",
+    "Webhook.site alternative with SDKs for CI testing in TypeScript, Python and Go, a CLI tunnel to localhost, email parsing, and an MCP server for AI agents. Free tier has every Pro feature.",
   path: "/compare/webhook-site",
   keywords: [
     "webhook.site alternative",
@@ -96,15 +105,15 @@ export default function CompareWebhookSitePage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Webhook.site</h1>
         <p className="text-lg text-muted-foreground mb-10">
           If you&apos;re evaluating Webhook.site alternatives, here&apos;s the short version: both
-          tools capture and inspect webhooks. webhooks.cc goes further with a TypeScript SDK for CI
-          test assertions, a CLI tunnel for local development, and an MCP server for AI-assisted
-          workflows, with every Pro feature on the free plan and Teams (invite members, share
-          endpoints) billed separately at $12/seat/mo.
+          tools capture and inspect webhooks and email. webhooks.cc goes further with SDKs for CI
+          test assertions in TypeScript, Python and Go, forwarding to up to 10 destinations, email
+          parsing, and an MCP server for AI-assisted workflows, with every Pro feature on the free
+          plan and Teams (invite members, share endpoints) billed separately from $12/seat/mo.
         </p>
 
         {/* Feature table */}
@@ -148,7 +157,8 @@ export default function CompareWebhookSitePage() {
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/sdk</code> on
               npm. Use <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code>{" "}
               to poll for incoming requests during integration tests, match on method, headers, or
-              JSON body paths, and assert directly in Vitest or Jest. Webhook.site offers an API but
+              JSON body paths, and assert directly in Vitest or Jest. The Python SDK (with pytest
+              fixtures) and the Go SDK run the same checks. Webhook.site offers an API and a CLI but
               no first-party SDK with built-in test helpers.
             </p>
           </div>
@@ -156,11 +166,13 @@ export default function CompareWebhookSitePage() {
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">MCP server for AI agents</h3>
             <p className="text-muted-foreground">
+              The remote MCP server at webhooks.cc/mcp connects with one OAuth approval in the
+              browser, and the local{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/mcp</code>{" "}
-              exposes 48 tools to create endpoints, send test payloads, inspect captured requests,
-              replay, generate payload types and more, so Cursor, Claude Code, Windsurf, or any
-              MCP-compatible agent can drive webhook workflows without leaving the editor.
-              Webhook.site does not offer MCP support.
+              package exposes 48 tools to create endpoints, send test payloads, inspect captured
+              requests, replay, generate payload types and more, so Claude Code, Cursor, Codex, or
+              any MCP-compatible agent can drive webhook workflows without leaving the editor.
+              Webhook.site has no first-party MCP server.
             </p>
           </div>
 
@@ -170,10 +182,12 @@ export default function CompareWebhookSitePage() {
               Both tools give you an email address to send test mail to. Webhook.site hands one out
               with every URL, no account needed. webhooks.cc gives one to every endpoint on an
               account, free included, picks out the one-time code and main link, and shows the SPF,
-              DKIM and DMARC results. Its forwarding posts every email to your server as parsed
-              JSON, signed with Standard Webhooks headers and retried for about a day, on every
-              plan. On Webhook.site, acting on incoming email takes Custom Actions, which are part
-              of its paid plans. See{" "}
+              DKIM and DMARC results. Layouts read named fields, line items and attachments (CSV,
+              Excel, PDF text) out of each email, and forwarding posts it to your server as parsed
+              JSON, signed with Standard Webhooks headers and retried for about a day, or to Google
+              Sheets, Slack, Discord, Zapier or Make, on every plan. Business adds your own inbound
+              domain and file drops to SFTP, FTP or S3. On Webhook.site, acting on incoming email
+              takes Custom Actions, which are part of its paid plans. See{" "}
               <Link href="/email-testing" className="font-semibold hover:text-primary">
                 email testing
               </Link>{" "}
@@ -190,10 +204,12 @@ export default function CompareWebhookSitePage() {
             <p className="text-muted-foreground">
               The free plan has every Pro feature. Teams (invite members, share endpoints) is its
               own per-team subscription at $12/seat/month, where each seat adds 100,000 pooled
-              requests. Webhook.site reserves team collaboration for its Enterprise tier, starting
-              at $69/month. Paid plans raise request limits and retention, and Business adds
-              attachment parsing, more layouts, custom inbound domains and file drops. Webhook.site
-              gates some features (custom responses, API access) behind paid tiers.
+              requests; Team Business is $35/seat/month with Business&apos;s limits per seat.
+              Webhook.site reserves team collaboration for its Enterprise tier, starting at
+              $69/month. Paid plans raise request limits and retention, and Business adds more
+              parsed pages, more layouts, custom inbound domains and file drops. Webhook.site keeps
+              Custom Actions, Schedules and Databases for its paid tiers (Basic, Pro and
+              Enterprise).
             </p>
           </div>
         </div>
@@ -208,7 +224,8 @@ export default function CompareWebhookSitePage() {
               <li>A CLI tunnel purpose-built for webhook forwarding</li>
               <li>Email capture with codes, links and sender checks</li>
               <li>Inbound email forwarded to your server as signed JSON, on the free plan</li>
-              <li>Every Pro feature on the free plan, plus teams at $12/seat/mo</li>
+              <li>Fields and attachments parsed out of email, on your own domain if you like</li>
+              <li>Every Pro feature on the free plan, plus teams from $12/seat/mo</li>
               <li>Open-source codebase you can inspect and self-host</li>
             </ul>
           </div>
@@ -218,7 +235,8 @@ export default function CompareWebhookSitePage() {
               <li>A well-established tool with a large existing user base</li>
               <li>Quick browser-only inspection with no install</li>
               <li>An email address without creating an account</li>
-              <li>Familiarity — your team already uses it</li>
+              <li>A self-hostable MIT edition of the core tool</li>
+              <li>Familiarity: your team already uses it</li>
             </ul>
           </div>
         </div>

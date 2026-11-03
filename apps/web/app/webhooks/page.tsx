@@ -42,7 +42,7 @@ export default function WebhooksHubPage() {
             Test webhooks from any provider
           </h1>
           <p className="text-xl text-muted-foreground mb-6">
-            Point a provider at a webhooks.cc URL and inspect every delivery — or send realistic,
+            Point a provider at a webhooks.cc URL and inspect every delivery, or send realistic,
             correctly-signed sample payloads without touching a production account. Pick your
             provider for setup steps, signature details, and sample events.
           </p>
@@ -107,7 +107,7 @@ export default function WebhooksHubPage() {
         <div className="ui-card ui-card-static bg-muted mt-4">
           <h2 className="font-bold text-xl mb-2">Using a provider we don&apos;t list?</h2>
           <p className="text-muted-foreground">
-            Every webhooks.cc endpoint accepts any HTTP webhook — the provider pages just add signed
+            Every webhooks.cc endpoint accepts any HTTP webhook; the provider pages just add signed
             sample payloads and signature verification.{" "}
             <Link href="/" className="text-primary font-bold hover:underline">
               Create a free endpoint

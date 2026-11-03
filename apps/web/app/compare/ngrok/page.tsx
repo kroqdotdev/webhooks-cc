@@ -7,12 +7,12 @@ const FAQ_ITEMS = [
   {
     question: "What are the best ngrok alternatives for webhook testing in 2026?",
     answer:
-      "webhooks.cc is a strong ngrok alternative if your primary use case is webhook testing. It captures, inspects, and replays webhooks with a TypeScript SDK for CI assertions and an MCP server for AI agents. Other alternatives include LocalTunnel (free open-source tunnel), Smee.io (GitHub's webhook proxy), and Hookdeck (production webhook infrastructure).",
+      "webhooks.cc is a strong ngrok alternative if your primary use case is webhook testing. It captures, inspects, and replays webhooks and email, with SDKs for CI assertions in TypeScript, Python and Go and an MCP server for AI agents. Other alternatives include LocalTunnel (free open-source tunnel), Smee.io (GitHub's webhook proxy), and Hookdeck (production webhook infrastructure).",
   },
   {
     question: "ngrok vs Hookdeck: which is better for webhook testing?",
     answer:
-      "ngrok is a general-purpose tunnel that exposes local ports over HTTP/TCP and inspects traffic only while the agent runs. Hookdeck is production webhook infrastructure with an event gateway, retries, and hookdeck listen for local forwarding. If your goal is testing webhooks in development and CI, webhooks.cc combines both strengths: a permanent capture URL, whk tunnel to localhost, 32-provider signature verification, a TypeScript SDK for CI assertions, and an MCP server.",
+      "ngrok is a general-purpose tunnel that exposes local ports over HTTP/TCP and inspects traffic only while the agent runs. Hookdeck is production webhook infrastructure with an event gateway, retries, and hookdeck listen for local forwarding. If your goal is testing webhooks in development and CI, webhooks.cc combines both strengths: a permanent capture URL, whk tunnel to localhost, 32-provider signature verification, SDKs for CI assertions, and an MCP server.",
   },
   {
     question: "Can I replace ngrok with webhooks.cc?",
@@ -27,12 +27,12 @@ const FAQ_ITEMS = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan has every Pro feature: webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. Paid plans raise rate limits and retention, Business adds attachment parsing, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
+      "Yes. The free plan has every Pro feature: webhook and email capture, inspection, replay, mock responses, forwarding, CLI tunnel, SDKs, and MCP server. Paid plans raise request limits and retention, Business adds more parsed pages, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately from $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
   },
   {
     question: "Does ngrok have a webhook testing SDK?",
     answer:
-      "ngrok provides client libraries for embedding tunnels into applications, but no SDK designed for webhook test assertions. webhooks.cc's TypeScript SDK includes waitFor() with request matchers (method, headers, body path) for use in Vitest or Jest integration tests.",
+      "ngrok provides client libraries for embedding tunnels into applications, but no SDK designed for webhook test assertions. webhooks.cc's TypeScript SDK includes waitFor() with request matchers (method, headers, body path) for use in Vitest or Jest integration tests, and its Python and Go SDKs do the same in pytest and go test.",
   },
   {
     question: "ngrok vs Webhook.site for receiving webhooks on localhost?",
@@ -61,14 +61,18 @@ const ROWS = [
   ["CLI tunnel to localhost", "Yes (whk tunnel)", "Yes (ngrok http)"],
   ["Mock responses", "Yes, configurable per endpoint", "No"],
   ["Request replay", "Yes, to any URL", "Yes, to the local upstream"],
-  ["TypeScript SDK", "Yes (@webhooks-cc/sdk)", "No webhook-testing SDK"],
+  ["SDKs", "TypeScript, Python and Go, for testing", "No webhook-testing SDK"],
   ["CI test assertions", "Yes (waitFor + matchers)", "No"],
-  ["MCP server for AI agents", "Yes (@webhooks-cc/mcp)", "No"],
-  ["TCP / non-HTTP tunneling", "No (HTTP webhooks only)", "Yes"],
-  ["Custom domains", "No", "Yes (paid)"],
-  ["Edge computing / traffic policy", "No", "Yes (paid)"],
-  ["Open source", "Yes (AGPL + MIT)", "Partially (agent)"],
-  ["Team collaboration", "$12/seat/mo, pooled quota", "$20/mo incl. 3 seats, then $5/seat"],
+  [
+    "MCP server for AI agents",
+    "Yes, for testing: remote (OAuth) or local",
+    "Yes, for account and traffic operations",
+  ],
+  ["TCP / non-HTTP tunneling", "No TCP tunnels; captures email too", "Yes"],
+  ["Custom domains", "For inbound email, on Business", "Yes (paid)"],
+  ["Edge computing / traffic policy", "Response rules for mock answers", "Yes (paid)"],
+  ["Open source", "Yes (AGPL + MIT)", "Partially (agent SDKs)"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "$20/mo incl. 3 seats, then $5/seat"],
   ["Free tier features", "Every Pro feature", "Limited connections + features"],
 ] as const;
 
@@ -105,14 +109,15 @@ export default function CompareNgrokPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs ngrok</h1>
         <p className="text-lg text-muted-foreground mb-10">
           If you use ngrok mainly for webhook development, webhooks.cc is a purpose-built
-          alternative that captures, inspects, replays, and forwards webhooks to localhost with a
-          TypeScript SDK, CLI tunnel, and MCP server included. ngrok is a general-purpose tunnel for
-          exposing any local service to the internet. Different tools, different focus.
+          alternative that captures, inspects, replays, and forwards webhooks to localhost, with
+          SDKs for TypeScript, Python and Go, a CLI tunnel, and an MCP server included. ngrok is a
+          general-purpose tunnel for exposing any local service to the internet. Different tools,
+          different focus.
         </p>
 
         {/* Feature table */}
@@ -154,20 +159,22 @@ export default function CompareNgrokPage() {
             <p className="text-muted-foreground">
               ngrok tunnels traffic to your local server and shows it in a local inspector at
               localhost:4040 while the agent runs, with replay to the same upstream; its dashboard
-              Traffic Inspector keeps traffic for longer. webhooks.cc captures every request
-              automatically (headers, body, query params, IP, timing) and makes it searchable,
-              exportable, and replayable from the dashboard, CLI, or SDK.
+              Traffic Inspector keeps traffic for 24 hours on the free plan and 72 hours on paid
+              plans. webhooks.cc captures every request automatically (headers, body, query params,
+              IP, timing) and makes it searchable, exportable, and replayable from the dashboard,
+              CLI, or SDK.
             </p>
           </div>
 
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Testing and CI integration</h3>
             <p className="text-muted-foreground">
-              webhooks.cc provides a TypeScript SDK with{" "}
+              webhooks.cc provides SDKs for TypeScript, Python and Go with{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code>: create
               an endpoint, trigger your integration, and assert on the captured webhook in your test
               suite. This works in CI without opening any tunnels. ngrok is designed for runtime
-              tunneling, not test-time assertions.
+              tunneling, not test-time assertions; its MCP server manages endpoints, traffic and
+              policies rather than tests.
             </p>
           </div>
 
@@ -194,6 +201,7 @@ export default function CompareNgrokPage() {
               <li>MCP integration for AI-assisted webhook workflows</li>
               <li>Mock responses returned to the webhook sender</li>
               <li>A tunnel that captures and inspects, not just forwards</li>
+              <li>Email captured at its own address next to your webhooks</li>
             </ul>
           </div>
           <div className="ui-card ui-card-static">

@@ -3,7 +3,7 @@ title: "Tool Reference"
 description: "Complete reference for all 48 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-10-25
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
@@ -268,7 +268,7 @@ Full-text search across captured requests. Supports time ranges, method filters,
 
 ### count_requests
 
-Count requests matching the given filters. Accepts the same filter parameters as `search_requests`.
+Count requests matching the given filters. Takes the filters of `search_requests`, without its paging and order.
 
 | Parameter | Type     | Required | Description             |
 | --------- | -------- | -------- | ----------------------- |
@@ -278,9 +278,6 @@ Count requests matching the given filters. Accepts the same filter parameters as
 | `q`       | `string` | no       | Search query            |
 | `from`    | `string` | no       | Start time              |
 | `to`      | `string` | no       | End time                |
-| `limit`   | `number` | no       | Max results             |
-| `offset`  | `number` | no       | Pagination offset       |
-| `order`   | `string` | no       | `"asc"` or `"desc"`     |
 
 ### clear_requests
 
@@ -531,8 +528,8 @@ Extract specific JSON fields from a captured request body using dot-notation pat
 
 Verify the webhook signature on a captured request. Supports two modes:
 
-1. **Stored result** (no provider/secret) — returns the pre-computed server-side verification result when signing is configured on the endpoint
-2. **Client-side** (with provider + secret for HMAC providers, or provider + publicKey for Discord) — performs verification on demand
+1. **Stored result** (no provider/secret): returns the pre-computed server-side verification result when signing is configured on the endpoint
+2. **Client-side** (with provider + secret for HMAC providers, or provider + publicKey for Discord): performs verification on demand
 
 | Parameter   | Type     | Required | Description                                                                                                                                                                                                                                                                                                                                                                                  |
 | ----------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

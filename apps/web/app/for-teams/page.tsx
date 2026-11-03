@@ -63,11 +63,11 @@ const CHECKLIST = [
   "Live updates in the dashboard and over SSE for every member",
   "Replay any captured request to any URL",
   "Search across path, body and headers",
-  "Mock responses members can edit; signing and forwarding stay with the endpoint owner",
+  "Mock responses members can edit; signing and destinations stay with the endpoint owner",
   "Email capture: each shared endpoint has its own address",
-  "CLI, TypeScript SDK and MCP server see shared endpoints like your own",
+  "CLI, the TypeScript, Python and Go SDKs and the MCP server see shared endpoints like your own",
   "Owner-only delete, sharing, invites and billing",
-  "Pooled quota: 100,000 requests per seat per 30 days, from 2 seats",
+  "Pooled quota: 100,000 requests per seat per month, from 2 seats",
   "Team Business: 250,000 requests, 2,000 parsed attachment pages and 250 AI assists per seat, 50 layouts per endpoint, a custom inbound domain and file drops",
 ];
 
@@ -89,10 +89,10 @@ const PRICE_EXAMPLES = [
 
 // Team pricing as each compare page lists it; keep the two in sync.
 const TEAM_PRICING = [
-  { tool: "webhooks.cc", team: "$12/seat/mo, pooled quota", href: null },
+  { tool: "webhooks.cc", team: "From $12/seat/mo, pooled quota", href: null },
   { tool: "Webhook.site", team: "Enterprise only, from $69/mo", href: "/compare/webhook-site" },
-  { tool: "Beeceptor", team: "Team+ ($25/mo), unlimited members", href: "/compare/beeceptor" },
-  { tool: "Hookdeck", team: "Team+ ($39/mo), unlimited seats", href: "/compare/hookdeck" },
+  { tool: "Beeceptor", team: "Team ($25/mo), unlimited members", href: "/compare/beeceptor" },
+  { tool: "Hookdeck", team: "Team (from $39/mo), unlimited seats", href: "/compare/hookdeck" },
   { tool: "ngrok", team: "$20/mo incl. 3 seats, then $5/seat", href: "/compare/ngrok" },
   { tool: "Smee.io", team: "None (anonymous channels)", href: "/compare/smee" },
 ];
@@ -104,7 +104,7 @@ const STEPS = [
   },
   {
     name: "Choose seats and subscribe",
-    text: "Each seat is one member, the owner included, and adds 100,000 requests per 30 days to the team's pool. $12 per seat per month.",
+    text: "Each seat is one member, the owner included, and adds 100,000 requests a month to the team's pool. $12 per seat per month.",
   },
   {
     name: "Invite your team",
@@ -145,7 +145,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Is there a free trial for Teams?",
     answer:
-      "Every webhooks.cc feature works on the free personal plan, so you can try capture, replay, the CLI and the SDK on your own first. A team itself starts working once it has an active subscription; until then it is kept but suspended.",
+      "Every Pro feature works on the free personal plan, so you can try capture, replay, email, the CLI and the SDKs on your own first. A team itself starts working once it has an active subscription; until then it is kept but suspended.",
   },
   {
     question: "Can we cancel or change the number of seats?",
@@ -267,15 +267,15 @@ export default function ForTeamsPage() {
           <p className="text-sm text-muted-foreground mt-3 flex items-start gap-2">
             <Lock className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
             Shared endpoints are only readable by signed-in members. Members cannot delete an
-            endpoint or clear its requests, and its signing, forwarding, email and notification
-            settings stay with the person who owns it.
+            endpoint or clear its requests, and its signing, destination (forwarding and
+            notifications) and email settings stay with the person who owns it.
           </p>
         </section>
 
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Pricing</h2>
           <p className="text-muted-foreground mb-6">
-            Billed per team, not per account, on a 30-day period that starts when the team
+            Billed per team, not per account, on a monthly period that starts when the team
             subscribes. Prices include VAT where it applies.
           </p>
           <div className="grid sm:grid-cols-3 gap-4 mb-6">
@@ -283,9 +283,7 @@ export default function ForTeamsPage() {
               <div key={example.seats} className="ui-card ui-card-static text-center">
                 <p className="text-sm text-muted-foreground mb-1">{example.seats} seats</p>
                 <p className="text-3xl font-bold mb-1">${example.price}/mo</p>
-                <p className="text-sm text-muted-foreground">
-                  {example.requests} requests per 30 days
-                </p>
+                <p className="text-sm text-muted-foreground">{example.requests} requests a month</p>
               </div>
             ))}
           </div>

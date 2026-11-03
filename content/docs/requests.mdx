@@ -3,7 +3,7 @@ title: "Requests"
 description: "Every webhook sent to your endpoint is captured and displayed in real time. Inspect headers, body, query parameters, method, and IP address for each incoming request."
 section: dashboard
 order: 3
-lastUpdated: 2026-10-07
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["webhook request", "request inspector", "webhook body", "webhook headers"]
 seo:
@@ -15,24 +15,25 @@ seo:
 
 The left panel shows captured requests sorted by time. Each entry displays the HTTP method, a short ID, relative timestamp, and provider badges when webhooks.cc can identify the sender. [Emails](/docs/email-capture) sent to the endpoint's address appear in the same list with an **EMAIL** badge, and a switch above the list shows all requests, HTTP only, or email only.
 
-- **Live mode** — new requests are auto-selected as they arrive
-- **Paused mode** — review at your pace; a banner shows how many new requests arrived
-- **Sort** — toggle between newest-first and oldest-first
-- **Filter** — filter by HTTP method or search by path, body, or request ID
-- **Provider badge** — Stripe, GitHub, Shopify, Typeform, and other known providers show an icon in the list
-- **Event badge** — known event names like `checkout.session.completed`, `push`, or `form_response` appear under the request
+- **Live mode**: new requests are auto-selected as they arrive
+- **Paused mode**: review at your pace; a banner shows how many new requests arrived
+- **Sort**: toggle between newest-first and oldest-first
+- **Filter**: filter by HTTP method or search by path, body, or request ID
+- **Provider badge**: Stripe, GitHub, Shopify, Typeform, and other known providers show an icon in the list
+- **Event badge**: known event names like `checkout.session.completed`, `push`, or `form_response` appear under the request
 
 ## Request detail
 
-Click a request to view its details. Five tabs organize the data:
+Click a request to view its details. Tabs organize the data:
 
-- **Body** — auto-formatted based on content type (JSON, XML, form data, plain text)
-- **Headers** — all request headers in a key-value table
-- **Query** — parsed query string parameters
-- **Raw** — unformatted request body
-- **Signature** — verify the request's webhook signature (client-side or server-side)
+- **Body**: auto-formatted based on content type (JSON, XML, form data, plain text)
+- **Headers**: all request headers in a key-value table
+- **Query**: parsed query string parameters
+- **Raw**: unformatted request body
+- **Signature**: verify the request's webhook signature (client-side or server-side)
+- **Deliveries**: each [forwarding](/docs/forwarding) destination's tries for this request, with **Redeliver** (once the endpoint has destinations)
 
-A format badge (JSON, XML, FORM, TEXT) appears above the body for quick identification.
+A format badge (JSON, XML, FORM, TEXT) appears above the body for quick identification. Emails open their own view with a preview, codes and links, and sender checks; see [Email Capture](/docs/email-capture#in-the-dashboard).
 
 ### Provider detection
 
@@ -53,9 +54,9 @@ Use the provider badge as a quick visual cue while triaging mixed traffic on one
 
 When signature verification is configured on an endpoint, each request includes a verification status:
 
-- `signatureVerified: true` — the signature is valid (shield icon in the request list)
-- `signatureVerified: false` — the signature is invalid, with details in `signatureError`
-- `signatureVerified: null` — verification is not configured for this endpoint
+- `signatureVerified: true`: the signature is valid (shield icon in the request list)
+- `signatureVerified: false`: the signature is invalid, with details in `signatureError`
+- `signatureVerified: null`: verification is not configured for this endpoint
 
 See [Dashboard Features](/docs/dashboard-features#signature-verification) for the full guide.
 
@@ -70,3 +71,7 @@ Click **Replay** to send the captured request to a different URL. Enter a destin
 ## Export
 
 Use the **Export** menu next to the endpoint name to download requests as JSON or CSV. Exports include the currently visible (filtered) requests.
+
+## Share
+
+Click **Share** above a request to publish a read-only copy at a link anyone can open, with credentials and signatures hidden. See [Share a request](/docs/dashboard-features#share-a-request).

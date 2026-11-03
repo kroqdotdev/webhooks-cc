@@ -11,7 +11,7 @@ seo:
   ogDescription: "Test Standard Webhooks handlers (Polar, Svix, Clerk, Resend) locally using @webhooks-cc/sdk sendTo with signed payloads and Vitest assertions."
 ---
 
-Test webhook handlers for services that use the **Standard Webhooks** spec — Polar.sh, Svix, Clerk, Resend, and others. Uses `sendTo` to send signed payloads directly to localhost.
+Test webhook handlers for services that use the **Standard Webhooks** spec: Polar.sh, Svix, Clerk, Resend, and others. Uses `sendTo` to send signed payloads directly to localhost.
 
 ## Test a Polar webhook handler
 
@@ -151,13 +151,14 @@ describe("standard webhooks inspection", () => {
 
 ## Deterministic signatures for snapshots
 
-Pass a fixed `timestamp` to generate deterministic signatures, useful for snapshot testing:
+Pass a fixed `timestamp` and `messageId` to generate deterministic signatures, useful for snapshot testing (the message id is signed too, and random when left out):
 
 ```ts
 const res = await client.sendTo("http://localhost:3000/api/webhooks", {
   provider: "standard-webhooks",
   secret: "dGVzdC1zZWNyZXQ=", // base64("test-secret")
   timestamp: 1700000000, // fixed timestamp
+  messageId: "msg_snapshot_1", // fixed message id
   body: { type: "test.event", data: {} },
 });
 ```

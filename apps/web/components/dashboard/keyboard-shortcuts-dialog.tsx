@@ -18,12 +18,14 @@ const SHORTCUT_GROUPS: { title: string; shortcuts: ShortcutDef[] }[] = [
     ],
   },
   {
+    // The keys the dashboard's handler maps to TABS in request-detail.tsx; change them together.
     title: "Tabs",
     shortcuts: [
       { key: "1", label: "Body tab" },
       { key: "2", label: "Headers tab" },
       { key: "3", label: "Query tab" },
       { key: "4", label: "Raw tab" },
+      { key: "5", label: "Signature tab" },
     ],
   },
   {

@@ -16,7 +16,7 @@ canonical: ${appUrl}/
 
 > Webhook and email testing for developers and AI agents. Capture, inspect, forward and test webhooks with a dashboard, a CLI, SDKs for TypeScript, Python and Go, and an MCP server.
 
-Every endpoint has a capture URL, \`https://go.webhooks.cc/w/<slug>\`, that records any HTTP request sent to it, and endpoints on an account also receive email at \`<slug>@mailhooks.cc\`. Inspect captures in real time, answer senders with mock responses, send correctly signed test webhooks for Stripe, GitHub, Shopify and many more providers, forward deliveries to localhost or another server, and assert on captures in tests.
+Every endpoint has a capture URL, \`https://go.webhooks.cc/w/<slug>\`, that records any HTTP request sent to it, and endpoints on an account also receive email at \`<slug>@mailhooks.cc\`. Inspect captures in real time, answer senders with mock responses, send correctly signed test webhooks for Stripe, GitHub, Shopify and 31 more providers, forward deliveries to localhost or to up to 10 destinations (your servers, Slack or Discord, Google Sheets), read fields and attachments out of email with layouts, and assert on captures in tests. [mailhooks.cc](https://mailhooks.cc) is the mail-first side of the same account.
 
 ## Quick start for people
 
@@ -29,7 +29,7 @@ Every endpoint has a capture URL, \`https://go.webhooks.cc/w/<slug>\`, that reco
      -d '{"event": "payment.success", "amount": 4999}'
    \`\`\`
 
-3. Watch it arrive in the dashboard, or forward live deliveries to your local server with the CLI (\`brew install kroqdotdev/tap/whk\`, then \`whk tunnel 3000\`).
+3. Watch it arrive in the dashboard, or forward live deliveries to your local server with the CLI (\`curl -fsSL https://webhooks.cc/install.sh | sh\`, then \`whk tunnel 3000\`).
 
 More: [Quick start](${appUrl}/docs), [installation](${appUrl}/installation), [plans and limits](${appUrl}/docs/plans-limits).
 
