@@ -433,6 +433,52 @@ describe("agent credential vectors", () => {
   });
 });
 
+describe("applyWrite with keys that name a prototype", () => {
+  const live = () => ({
+    ...CLAIMED,
+    assertion_expires: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+
+  afterEach(() => {
+    // Nothing may leak into every object, whatever a test did.
+    delete (Object.prototype as Record<string, unknown>).claimed;
+  });
+
+  it("writes nothing for an issuer named __proto__ or constructor", () => {
+    for (const issuer of ["__proto__", "constructor", "prototype"]) {
+      expect(applyWrite(null, issuer, { set: "claimed", slot: live() }, Date.now())).toBe(
+        "unchanged"
+      );
+    }
+    expect(({} as Record<string, unknown>).claimed).toBeUndefined();
+  });
+
+  it("writes nothing for a slot name that is not a slot", () => {
+    const write = { set: "__proto__", slot: live() } as unknown as Parameters<typeof applyWrite>[2];
+    expect(applyWrite(null, "https://webhooks.cc", write, Date.now())).toBe("unchanged");
+  });
+
+  it("keeps a file's own __proto__ key an ordinary key", () => {
+    // JSON.parse makes "__proto__" an own property, as a hostile file would.
+    const file = JSON.parse(
+      `{"version":1,"issuers":{"__proto__":{"claimed":${JSON.stringify(live())}}}}`
+    );
+    // Read as the file's own data, not through Object.prototype.
+    expect(readSlots(file, "__proto__", Date.now()).claimed?.registration_id).toBe(
+      CLAIMED.registration_id
+    );
+    const next = applyWrite(
+      file,
+      "https://webhooks.cc",
+      { set: "claimed", slot: live() },
+      Date.now()
+    );
+    expect(next).not.toBe("unchanged");
+    expect(({} as Record<string, unknown>).claimed).toBeUndefined();
+    expect(readSlots(next, "https://webhooks.cc", Date.now()).claimed).not.toBeNull();
+  });
+});
+
 describe("AgentCredentialStore", () => {
   let dir: string;
   let path: string;
