@@ -33,7 +33,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "web",
     items: [
       "An annual plan that started on the 29th, 30th or 31st now resets its monthly quota on that day in every month that has it, instead of moving to the 28th after February and staying there",
-      "The last monthly quota of an annual plan now ends exactly when the year renews, so usage resets once at the renewal, not twice a few days apart",
+      "The last monthly quota of an annual plan now ends exactly when the year renews, so usage resets once at the renewal, not twice a few days apart. An annual plan from before this release moves back to its day at its next reset, with that one quota period lasting a few days longer",
       "Monthly add-ons on such a plan go back to renewing on the plan's day after a short month",
     ],
   },

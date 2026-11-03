@@ -657,6 +657,14 @@ describe("applyCapacityWebhookEvent: an add-on's renewal moves onto the plan's",
     expect(
       await renewAddon("2027-03-01T00:00:00Z", "2027-03-31T10:00:00Z", "2027-03-28T10:00:00Z")
     ).toEqual(["2027-03-31T10:00:00.000Z"]);
+    // The stored end moves with it, so the sweep never reads it as overdue.
+    expect(
+      updates.some(
+        (update) =>
+          update.table === "capacity_subscriptions" &&
+          update.patch.period_end === "2027-03-31T10:00:00.000Z"
+      )
+    ).toBe(true);
   });
 
   it("never moves an add-on later by more than a short month took", async () => {

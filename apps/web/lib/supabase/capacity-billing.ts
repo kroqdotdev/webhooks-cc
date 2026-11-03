@@ -992,12 +992,27 @@ async function alignWithPlan(
   if (planEndMs < Date.now() + 2 * 60_000 || Math.abs(addonEndMs - planEndMs) < 60_000) return;
   if (addonEndMs < planEndMs && !catchesUpShortMonth(addonEndMs, planEndMs)) return;
 
+  const planEnd = new Date(planEndMs).toISOString();
   try {
     await createPolarClient().subscriptions.update(subscriptionId, {
-      current_billing_period_end: new Date(planEndMs).toISOString(),
+      current_billing_period_end: planEnd,
     });
   } catch (error) {
     reportError("[capacity] failed to align an add-on with the plan", loggablePolarError(error), {
+      subscriptionId,
+    });
+    return;
+  }
+  // The stored end follows at once rather than with Polar's event: an end
+  // moved later and stored as the old one would read as overdue to the
+  // reset job's sweep (two days past the end) if that event were late.
+  // Best effort: the event writes the same end.
+  const { error: storeError } = await createAdminClient()
+    .from("capacity_subscriptions")
+    .update({ period_end: planEnd, updated_at: new Date().toISOString() })
+    .eq("polar_subscription_id", subscriptionId);
+  if (storeError) {
+    reportError("[capacity] could not store an aligned add-on's end", storeError.message, {
       subscriptionId,
     });
   }
