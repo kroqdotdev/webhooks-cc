@@ -11,33 +11,34 @@ import { createClient } from "@/lib/supabase/client";
 /**
  * Whether the signed-in session still owes its second factor: the account
  * has an authenticator app and this session signed in without its code.
- * Null while it is being worked out (from the session itself, no request).
+ * Null only until the first answer for this person. When the session's token
+ * changes (a refresh, or passing the code), it is checked again while the
+ * last answer stays, so a token refresh never unmounts the page behind it.
  */
-export function useNeedsSecondFactor(sessionKey: string | null): boolean | null {
-  // Keyed by the session, so a new session reads as unknown until checked.
-  const [state, setState] = useState<{ key: string; needs: boolean } | null>(null);
+export function useNeedsSecondFactor(userId: string | null, token: string | null): boolean | null {
+  const [state, setState] = useState<{ userId: string; needs: boolean } | null>(null);
   useEffect(() => {
-    if (!sessionKey) return;
+    if (!userId || !token) return;
     let cancelled = false;
     void createClient()
       .auth.mfa.getAuthenticatorAssuranceLevel()
       .then(({ data }) => {
         if (!cancelled) {
           setState({
-            key: sessionKey,
+            userId,
             needs: data?.nextLevel === "aal2" && data.currentLevel !== "aal2",
           });
         }
       })
       .catch(() => {
-        if (!cancelled) setState({ key: sessionKey, needs: false });
+        if (!cancelled) setState({ userId, needs: false });
       });
     return () => {
       cancelled = true;
     };
-  }, [sessionKey]);
-  if (!sessionKey) return false;
-  return state?.key === sessionKey ? state.needs : null;
+  }, [userId, token]);
+  if (!userId || !token) return false;
+  return state?.userId === userId ? state.needs : null;
 }
 
 /** Asks for the authenticator app's code after a password or link sign-in. */
@@ -227,7 +228,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
  */
 export function MfaGate({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
-  const needs = useNeedsSecondFactor(session?.access_token ?? null);
+  const needs = useNeedsSecondFactor(session?.user.id ?? null, session?.access_token ?? null);
   const [verified, setVerified] = useState(false);
   if (session && needs === null) return null;
   if (needs && !verified) return <MfaChallenge onVerified={() => setVerified(true)} />;

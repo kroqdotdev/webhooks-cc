@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.0";
+export const APP_VERSION = "0.62.1";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.62.1",
+    date: "2026-11-03",
+    title: "Recovery Codes Show When Two-Factor Is Turned On",
+    track: "web",
+    items: [
+      "Turning on two-factor sign-in shows your ten recovery codes again. They were made but the page reloaded before showing them; make new ones under Account > Security if you never saw yours",
+      'Signed-in pages no longer flash "Loading" and start over when your session renews in the background, about once an hour',
+    ],
+  },
   {
     version: "0.62.0",
     date: "2026-11-03",

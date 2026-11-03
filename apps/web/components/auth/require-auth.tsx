@@ -18,7 +18,10 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   // An account with an authenticator app finishes signing in here; the API
   // refuses its session until it has (lib/mfa.ts).
-  const needsSecondFactor = useNeedsSecondFactor(session?.access_token ?? null);
+  const needsSecondFactor = useNeedsSecondFactor(
+    session?.user.id ?? null,
+    session?.access_token ?? null
+  );
   const [verified, setVerified] = useState(false);
 
   useEffect(() => {
