@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, FileDown, ImageOff, Paperclip, Send, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  ExternalLink,
+  FileDown,
+  ImageOff,
+  Info,
+  Paperclip,
+  Send,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes } from "@/types/request";
@@ -17,6 +28,13 @@ import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { fetchAttachment, fetchEmailDetails, fetchRawEmail } from "@/lib/dashboard-api";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { highlightBody } from "@/lib/highlight";
+import {
+  deliverabilityReport,
+  type DeliverabilityReport,
+  type Finding,
+  type FindingGroup,
+  type FindingStatus,
+} from "@/lib/deliverability";
 import { JsonTree } from "./json-tree";
 import { NoteBar, type DisplayableRequest } from "./request-detail";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
@@ -166,10 +184,12 @@ function tlsLabel(smtp: EmailSmtp | null): string | null {
 function Verdicts({
   email,
   isTest,
+  report,
   onOpen,
 }: {
   email: EmailCapture;
   isTest: boolean;
+  report: DeliverabilityReport | null;
   onOpen: () => void;
 }) {
   if (isTest) {
@@ -181,6 +201,7 @@ function Verdicts({
   }
   const auth = email.auth;
   const spam = spamChip(email);
+  const issues = report ? issuesChip(report) : null;
   if (!auth || auth.error) {
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -193,6 +214,16 @@ function Verdicts({
             title="Show the spam score"
           >
             <VerdictBadge verdict={spam.verdict} label={spam.label} />
+          </button>
+        )}
+        {issues && (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="cursor-pointer"
+            title="Show the deliverability report"
+          >
+            <VerdictBadge verdict={issues.verdict} label={issues.label} />
           </button>
         )}
       </div>
@@ -223,6 +254,7 @@ function Verdicts({
       />
       <VerdictBadge verdict={tls ? "pass" : "none"} label={tls ?? "No TLS"} />
       {spam && <VerdictBadge verdict={spam.verdict} label={spam.label} />}
+      {issues && <VerdictBadge verdict={issues.verdict} label={issues.label} />}
     </button>
   );
 }
@@ -249,6 +281,94 @@ function spamChip(email: EmailCapture): { verdict: Verdict; label: string } | nu
     return { verdict: "fail", label: `Spam ${score}` };
   }
   return { verdict: "none", label: `Looks spammy ${score}` };
+}
+
+/** The chip that sums up the deliverability report: what is left to fix. */
+function issuesChip(report: DeliverabilityReport): { verdict: Verdict; label: string } | null {
+  const fails = report.findings.filter((finding) => finding.status === "fail").length;
+  const warnings = report.findings.filter((finding) => finding.status === "warn").length;
+  if (fails > 0) return { verdict: "fail", label: `${fails} to fix` };
+  if (warnings > 0) return { verdict: "none", label: `${warnings} to improve` };
+  return report.findings.length > 0 ? { verdict: "pass", label: "Deliverability" } : null;
+}
+
+const FINDING_GROUPS: { group: FindingGroup; title: string }[] = [
+  { group: "authentication", title: "Domain setup" },
+  { group: "server", title: "Sending server" },
+  { group: "message", title: "Message" },
+];
+
+const STATUS_ORDER: Record<FindingStatus, number> = { fail: 0, warn: 1, info: 2, pass: 3 };
+
+function FindingIcon({ status }: { status: FindingStatus }) {
+  const Icon =
+    status === "pass" ? Check : status === "fail" ? X : status === "warn" ? AlertTriangle : Info;
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm",
+        status === "pass" && "bg-method-get/15 text-method-get",
+        status === "fail" && "bg-method-delete/15 text-method-delete",
+        status === "warn" && "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+        status === "info" && "bg-muted text-muted-foreground"
+      )}
+      aria-label={status}
+    >
+      <Icon className="h-3 w-3" />
+    </span>
+  );
+}
+
+/** What a mailbox provider would hold against the email, as a checklist. */
+function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
+  const count = (status: FindingStatus) =>
+    report.findings.filter((finding) => finding.status === status).length;
+  const fails = count("fail");
+  const warnings = count("warn");
+  return (
+    <section className="ui-card ui-card-static p-4!">
+      <h3 className="text-sm font-bold caps mb-1">Deliverability</h3>
+      <p className="text-sm py-2">
+        {fails + warnings === 0
+          ? "Nothing to fix: this email is set up the way Gmail, Yahoo and Outlook expect."
+          : [fails > 0 && `${fails} to fix`, warnings > 0 && `${warnings} to improve`]
+              .filter(Boolean)
+              .join(", ") + ", from what mailbox providers look at."}{" "}
+        <span className="text-muted-foreground">
+          {report.setupRecorded
+            ? "Records are as they were when the email arrived."
+            : "The sender's DNS records were not recorded for this email, so only what the message shows is checked."}
+        </span>
+      </p>
+      {FINDING_GROUPS.map(({ group, title }) => {
+        const findings = report.findings
+          .filter((finding) => finding.group === group)
+          .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+        if (findings.length === 0) return null;
+        return (
+          <div key={group} className="mt-3">
+            <h4 className="text-[10px] font-bold caps text-muted-foreground mb-1">{title}</h4>
+            <ul>
+              {findings.map((finding: Finding) => (
+                <li
+                  key={finding.id}
+                  className="flex gap-2.5 py-2 border-t border-line/15 first:border-t-0 text-sm"
+                >
+                  <FindingIcon status={finding.status} />
+                  <span className="min-w-0">
+                    <span className="font-semibold">{finding.title}</span>
+                    <span className="block text-muted-foreground clean:text-foreground/80 [overflow-wrap:anywhere]">
+                      {finding.detail}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </section>
+  );
 }
 
 /** "label | value | buttons", the same idiom as the endpoint's address pills. */
@@ -562,8 +682,17 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
   );
 }
 
-function AuthenticationPane({ email, ip }: { email: EmailCapture; ip: string }) {
+function AuthenticationPane({
+  email,
+  ip,
+  report,
+}: {
+  email: EmailCapture;
+  ip: string;
+  report: DeliverabilityReport | null;
+}) {
   const auth = email.auth;
+  const arc = auth?.arc;
   const smtp = email.smtp;
   const clientIp = smtp?.clientIp || ip || "the sending server";
   const spf = auth?.spf;
@@ -622,9 +751,13 @@ function AuthenticationPane({ email, ip }: { email: EmailCapture; ip: string }) 
                 ? `${dmarc?.domain ?? "The sender's domain"} publishes no DMARC policy, so nothing was enforced.`
                 : dmarc.result === "skipped"
                   ? `Not checked${dmarc.reason ? `: ${dmarc.reason}` : ""}.`
-                  : dmarc.result === "pass"
-                    ? `The email passes the DMARC policy of ${dmarc.domain}.`
-                    : `The email fails the DMARC policy of ${dmarc.domain}${dmarc.policy ? ` (policy: ${dmarc.policy})` : ""}.`}
+                  : dmarc.result === "permerror"
+                    ? `The DMARC record of ${dmarc.domain} could not be read (permerror).`
+                    : dmarc.result === "temperror"
+                      ? `The DMARC record of ${dmarc.domain} could not be looked up (temperror).`
+                      : dmarc.result === "pass"
+                        ? `The email passes the DMARC policy of ${dmarc.domain}.`
+                        : `The email fails the DMARC policy of ${dmarc.domain}${dmarc.policy ? ` (policy: ${dmarc.policy})` : ""}.`}
             </CheckRow>
             <CheckRow
               name="Reverse DNS"
@@ -635,6 +768,19 @@ function AuthenticationPane({ email, ip }: { email: EmailCapture; ip: string }) 
                 ? `${clientIp} resolves to ${iprev.ptr} and back.`
                 : `${clientIp} has no reverse DNS name that resolves back to it.`}
             </CheckRow>
+            {arc && (arc.sets > 0 || arc.result === "skipped") && (
+              <CheckRow
+                name="ARC"
+                verdict={verdictOf(arc.result)}
+                label={resultLabel(verdictOf(arc.result))}
+              >
+                {arc.result === "pass"
+                  ? `Forwarded by ${arc.sealers.join(", ") || `${arc.sets} ${arc.sets === 1 ? "server" : "servers"}`}; every hop sealed what it received.`
+                  : arc.result === "skipped"
+                    ? `Not checked${arc.reason ? `: ${arc.reason}` : ""}.`
+                    : `Forwarded by ${arc.sealers.join(", ") || `${arc.sets} ${arc.sets === 1 ? "server" : "servers"}`}, but the chain does not verify (${arc.result}).`}
+              </CheckRow>
+            )}
             {auth.authenticationResults && (
               <pre className="ui-code text-xs! whitespace-pre-wrap break-all mt-3 shadow-none!">
                 Authentication-Results: {auth.authenticationResults}
@@ -643,6 +789,7 @@ function AuthenticationPane({ email, ip }: { email: EmailCapture; ip: string }) 
           </>
         )}
       </section>
+      {report && <DeliverabilitySection report={report} />}
       {email.spam && <SpamSection spam={email.spam} />}
       <section className="ui-card ui-card-static p-4!">
         <h3 className="text-sm font-bold caps mb-1">Delivery</h3>
@@ -816,6 +963,14 @@ export function EmailDetail({
   const raw = useMemo(() => rawMessage(request), [request]);
   // From the receiver, not the message: any sender can write a header.
   const isTest = email?.smtp?.test === true;
+  // Our own sample is not judged: it says nothing about the user's mail.
+  const report = useMemo(
+    () =>
+      email && !isTest
+        ? deliverabilityReport({ email, headers: request.headers, receivedAt: request.receivedAt })
+        : null,
+    [email, isTest, request.headers, request.receivedAt]
+  );
   const extracts = useMemo(
     () => (email && showExtracts ? extractFromEmail(email) : { codes: [], links: [] }),
     [email, showExtracts]
@@ -1042,7 +1197,12 @@ export function EmailDetail({
           </dd>
         </dl>
         <div className="mt-3">
-          <Verdicts email={email} isTest={isTest} onOpen={() => setTab("authentication")} />
+          <Verdicts
+            email={email}
+            isTest={isTest}
+            report={report}
+            onOpen={() => setTab("authentication")}
+          />
         </div>
         {(showExtracts || fields) && (
           <FoundInEmail
@@ -1297,7 +1457,9 @@ export function EmailDetail({
           </div>
         )}
 
-        {activeTab === "authentication" && <AuthenticationPane email={email} ip={request.ip} />}
+        {activeTab === "authentication" && (
+          <AuthenticationPane email={email} ip={request.ip} report={report} />
+        )}
 
         {activeTab === "raw" &&
           (stored ? (

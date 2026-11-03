@@ -82,7 +82,7 @@ Emails show up in the request list with an **EMAIL** badge, their subject, the s
 Selecting an email opens its own view:
 
 - **Envelope**: subject, sender, recipients (with the tag highlighted), when it arrived and its size.
-- **Sender checks**: one badge each for SPF, DKIM, DMARC and TLS, and the spam score.
+- **Sender checks**: one badge each for SPF, DKIM, DMARC and TLS, the spam score, and what the [deliverability report](#deliverability-report) found to fix.
 - **Found in this email**: the one-time code, the main link and [your fields](#fields-you-pick-out), each with a copy button.
 - **Tabs**: JSON (the parsed email, shown first), Preview (when the email has HTML), Text (with **Reply only** when the email [quotes an earlier one](#reply-text)), Headers, Attachments (when there are any), Authentication, Raw, and Deliveries when [forwarding](/docs/forwarding) is on.
 - **Download .eml**: saves the original message, when it was stored in full.
@@ -137,9 +137,20 @@ The **Authentication** tab explains each check our mail server ran when the mess
 | DKIM    | Whether the message carries a valid signature, and for which domain.             |
 | DMARC   | Whether SPF or DKIM passed for the domain in the From address, and its policy.   |
 | Reverse DNS | Whether the sending server's IP address has a matching host name. |
+| ARC     | For a forwarded message (a mailing list, a forwarding rule): whether the servers it passed through sealed what they received, so the original results can still be trusted. |
 | TLS     | Whether the message arrived over an encrypted connection, and with which cipher. |
 
 Failing a check does not stop a message from being captured. The results are there so you can see what a real inbox provider would think of your mail before you ship it.
+
+### Deliverability report
+
+Below the checks, the **Authentication** tab lists what a mailbox provider such as Gmail, Yahoo or Outlook would hold against the email, each item marked as fine, worth improving, or to fix:
+
+- **Domain setup**, from the sender's DNS as it was when the email arrived: whether there is exactly one SPF record, how it ends (`-all`, `~all`, `?all` or `+all`), how many DNS lookups it takes with its includes (SPF fails past 10), and includes that name a domain without SPF; the DMARC policy that applies to the From domain (`none` only monitors, and a subdomain follows the record's `sp`), whether the record can be read at all, whether reports are on, and whether SPF or DKIM aligns with the From domain; each DKIM key's type and size (1024-bit RSA works but 2048 is recommended) and SHA-1 signatures; the ARC chain of forwarded mail.
+- **Sending server**: reverse DNS, whether the name the server introduced itself with (HELO) resolves to it, TLS, and a BIMI record for a brand logo.
+- **Message**: From, Message-ID, Date and Subject; a plain-text part beside the HTML; one-click unsubscribe (`List-Unsubscribe` with `List-Unsubscribe-Post`), which Gmail and Yahoo require for bulk mail; links whose text names a different site, link shorteners and links to IP addresses; mostly-image emails; and HTML over the 102 KB at which Gmail clips a message.
+
+The badge in the email header sums it up (**2 to fix**, **3 to improve**, or **Deliverability** when nothing is left). Like the spam score, it never decides whether mail is captured. Links are never opened to check them, because opening a sign-in or confirmation link would use it up. The domain setup is looked up as each email arrives, so emails captured before the report existed show only the message checks.
 
 ### Spam score
 

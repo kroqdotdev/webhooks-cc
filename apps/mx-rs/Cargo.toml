@@ -8,7 +8,7 @@ base64 = "0.23.1"
 chrono = "0.4.45"
 hex = "0.4.3"
 hmac = "0.13"
-mail-auth = { version = "0.13.3", default-features = false, features = ["ring"] }
+mail-auth = { version = "0.13.3", default-features = false, features = ["ring", "arc"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rustls-pki-types = "1.15.1"
 serde = { version = "1.0.229", features = ["derive"] }

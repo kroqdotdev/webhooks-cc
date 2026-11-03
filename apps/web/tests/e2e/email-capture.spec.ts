@@ -84,6 +84,45 @@ async function insertEmail(slug: string) {
           dkim: "pass",
         },
         iprev: { result: "pass", ptr: "mail.tidewater.app" },
+        // What the MX host records about the sender's DNS (sender_setup.rs).
+        setup: {
+          spf: {
+            domain: "tidewater.app",
+            records: 1,
+            record: "v=spf1 include:_spf.example.net ~all",
+            all: "~all",
+            redirect: false,
+            lookups: 4,
+            lookups_capped: false,
+            ptr: false,
+          },
+          dmarc: {
+            p: "reject",
+            sp: null,
+            adkim: "relaxed",
+            aspf: "relaxed",
+            rua: ["dmarc@tidewater.app"],
+            ruf: 0,
+            testing: false,
+          },
+          dkim: [
+            {
+              domain: "tidewater.app",
+              selector: "s1",
+              algorithm: "rsa-sha256",
+              key: "rsa",
+              bits: 1024,
+            },
+          ],
+          bimi: { found: false },
+          helo: {
+            name: "mail.tidewater.app",
+            ip_literal: false,
+            fqdn: true,
+            resolves: true,
+            matches_ptr: true,
+          },
+        },
       },
       spam: {
         score: 7.46,
@@ -234,6 +273,14 @@ for (const style of ["classic", "clean"] as const) {
       await expect(shown(page.getByText("Spam score", { exact: true }))).toBeVisible();
       await expect(shown(page.getByText("SUBJ_ALL_CAPS"))).toBeVisible();
       await expect(shown(page.getByText("+3.00"))).toBeVisible();
+
+      // The deliverability report: the 1024-bit key is worth improving;
+      // the logo and tracking pixel above the code are ordinary mail.
+      await expect(shown(page.getByText("1 to improve")).first()).toBeVisible();
+      await expect(shown(page.getByText("Deliverability", { exact: true }))).toBeVisible();
+      await expect(shown(page.getByText("DKIM key is 1024 bits"))).toBeVisible();
+      await expect(shown(page.getByText("1 image with text"))).toBeVisible();
+      await expect(shown(page.getByText("SPF record ends in ~all"))).toBeVisible();
 
       await shown(page.getByRole("button", { name: /^Raw$/i })).click();
       await expect(shown(page.getByText(`Subject: ${SUBJECT}`))).toBeVisible();
