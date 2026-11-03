@@ -22,7 +22,9 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
     session?.user.id ?? null,
     session?.access_token ?? null
   );
-  const [verified, setVerified] = useState(false);
+  // Who passed the code here: another account signed in from another tab
+  // must pass its own.
+  const [verifiedUserId, setVerifiedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -42,8 +44,8 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (needsSecondFactor && !verified) {
-    return <MfaChallenge onVerified={() => setVerified(true)} />;
+  if (needsSecondFactor && verifiedUserId !== (session?.user.id ?? null)) {
+    return <MfaChallenge onVerified={() => setVerifiedUserId(session?.user.id ?? null)} />;
   }
 
   return <>{children}</>;

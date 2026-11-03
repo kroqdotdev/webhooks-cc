@@ -236,9 +236,14 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
  */
 export function MfaGate({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
-  const needs = useNeedsSecondFactor(session?.user.id ?? null, session?.access_token ?? null);
-  const [verified, setVerified] = useState(false);
+  const userId = session?.user.id ?? null;
+  const needs = useNeedsSecondFactor(userId, session?.access_token ?? null);
+  // Who passed the code here: another account signed in from another tab
+  // must pass its own.
+  const [verifiedUserId, setVerifiedUserId] = useState<string | null>(null);
   if (session && needs === null) return null;
-  if (needs && !verified) return <MfaChallenge onVerified={() => setVerified(true)} />;
+  if (needs && verifiedUserId !== userId) {
+    return <MfaChallenge onVerified={() => setVerifiedUserId(userId)} />;
+  }
   return <>{children}</>;
 }
