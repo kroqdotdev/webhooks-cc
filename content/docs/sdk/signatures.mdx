@@ -3,7 +3,7 @@ title: "verifySignature() API Reference (@webhooks-cc/sdk)"
 description: "API reference for verifySignature(), verifyRelayedRequest(), verifyForwardedEmail(), and 32 provider-specific verifier functions in the @webhooks-cc/sdk TypeScript package."
 section: sdk
 order: 5
-lastUpdated: 2026-10-20
+lastUpdated: 2026-11-03
 schema: faq
 keywords:
   [
@@ -529,6 +529,7 @@ The options type is a discriminated union:
   secret: string;
   url?: string;    // Required for twilio, square, and hubspot
   method?: string; // Used by hubspot (defaults to "POST")
+  fetchCertificate?: (url: string) => Promise<string>; // PayPal: your own certificate download
 }
 
 // Ed25519-based provider (discord)

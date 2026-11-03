@@ -38,6 +38,7 @@ import {
   cancelTeamSubscription,
   changeTeamPlan,
   createTeamCheckout,
+  createTeamCustomerPortal,
   ensureOwnerSeat,
   extractTeamIdFromWebhook,
   keepTeamPlan,
@@ -182,6 +183,78 @@ function freezeClock() {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
 }
+
+describe("createTeamCustomerPortal", () => {
+  test("opens the portal as the team customer's owner member, back to the team page", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_customer_id: "cus_team" })],
+      })
+    );
+    const list = vi.fn().mockResolvedValue({ items: [{ id: "mem_owner", role: "owner" }] });
+    const create = vi.fn().mockResolvedValue({ customer_portal_url: "https://polar.test/portal" });
+    mockFns.createPolarClient.mockReturnValue({
+      customers: { members: { list } },
+      customerSessions: { create },
+    });
+
+    await expect(createTeamCustomerPortal("user_1", "team_1")).resolves.toBe(
+      "https://polar.test/portal"
+    );
+    expect(list).toHaveBeenCalledWith("cus_team", { role: "owner", limit: 1 });
+    expect(create).toHaveBeenCalledWith({
+      customer_id: "cus_team",
+      member_id: "mem_owner",
+      return_url: "https://webhooks.cc/teams/team_1",
+    });
+  });
+
+  test("is for the team owner only", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "team_members:select": [{ data: null }] })
+    );
+
+    await expect(createTeamCustomerPortal("user_2", "team_1")).rejects.toMatchObject({
+      code: "not_owner",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("refuses a team that never had a Polar customer", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+      })
+    );
+
+    await expect(createTeamCustomerPortal("user_1", "team_1")).rejects.toMatchObject({
+      code: "no_customer",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("refuses a team customer without an owner member instead of a session for no one", async () => {
+    // A code of its own: the route reports it, unlike a team with no invoices.
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_customer_id: "cus_team" })],
+      })
+    );
+    const create = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({
+      customers: { members: { list: vi.fn().mockResolvedValue({ items: [] }) } },
+      customerSessions: { create },
+    });
+
+    await expect(createTeamCustomerPortal("user_1", "team_1")).rejects.toMatchObject({
+      code: "no_billing_contact",
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+});
 
 describe("createTeamCheckout", () => {
   test("rejects a seat count below one before touching the database", async () => {
@@ -1680,6 +1753,85 @@ describe("subscription event guards", () => {
     expect(update).toBeDefined();
     expect(update!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
     expect(update!.filters).toContainEqual(["eq", "period_start", "2026-08-01T00:00:00.000Z"]);
+  });
+
+  test("an annual team's yearly renewal just after the reset job opened a window keeps its usage", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 3,
+              business: true,
+              billing_interval: "year",
+              billing_period_end: "2028-01-31T10:00:00.000Z",
+              period_start: "2028-01-28T10:00:00.000Z",
+              period_end: "2028-02-29T10:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{ data: [{ id: "team_1" }] }, {}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_1", {
+        product_id: "prod_team_business_year_123",
+        current_period_start: "2028-01-31T10:00:00.000Z",
+        current_period_end: "2029-01-31T10:00:00.000Z",
+      })
+    );
+
+    const payload = teamsUpdates()[0].payload;
+    expect(payload).toMatchObject({
+      billing_period_end: "2029-01-31T10:00:00.000Z",
+      period_end: "2028-02-29T10:00:00.000Z",
+    });
+    // The window keeps its start (Jan 28), which the parsed pages count from.
+    expect((payload as Record<string, unknown>).period_start).toBeUndefined();
+    expect(payload).not.toHaveProperty("requests_used");
+  });
+
+  test("an annual team's yearly renewal a month after the last reset starts a fresh window", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 3,
+              business: true,
+              billing_interval: "year",
+              billing_period_end: "2028-01-31T10:00:00.000Z",
+              period_start: "2027-12-31T10:00:00.000Z",
+              period_end: "2028-01-31T10:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{ data: [{ id: "team_1" }] }, {}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_1", {
+        product_id: "prod_team_business_year_123",
+        current_period_start: "2028-01-31T10:00:00.000Z",
+        current_period_end: "2029-01-31T10:00:00.000Z",
+      })
+    );
+
+    expect(teamsUpdates()[0].payload).toMatchObject({
+      period_start: "2028-01-31T10:00:00.000Z",
+      period_end: "2028-02-29T10:00:00.000Z",
+      requests_used: 0,
+    });
   });
 
   test("a product this deployment does not know keeps the team's plan", async () => {

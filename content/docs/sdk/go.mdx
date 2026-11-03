@@ -173,6 +173,25 @@ reply := email.ReplyText                // "Thanks, paid." without the quoted me
 
 Every email the client reads carries the values in `EmailFields`, by name (`""` for a field that found nothing, and a nil map when the endpoint has no fields), and forwarding templates read them as `{{ fields.invoice }}`. `endpoint.EmailFields` lists the saved fields, and `webhookscc.Null[[]webhookscc.EmailField]()` removes them. `Update` refuses a list that `webhookscc.EmailFieldIssues` finds fault with (names, sources, headers, pattern lengths) before sending it; the API checks the patterns themselves. `ReplyText` is the [new text of a reply](/docs/email-capture#reply-text), or `""` when the email quotes no earlier message.
 
+### Layouts and stored messages
+
+An endpoint's [layouts](/docs/layouts) read each email before it is delivered: fields, line items and attachments. Set `Layouts` in `UpdateEndpointOptions` (`webhookscc.Null[[]webhookscc.Layout]()` removes them), try them on a captured email first with `Endpoints.PreviewLayouts`, and read the result as `Request.Parsed`:
+
+```go
+preview, err := client.Endpoints.PreviewLayouts(ctx, endpoint.Slug, webhookscc.PreviewLayoutsOptions{})
+if err != nil {
+	t.Fatal(err)
+}
+fmt.Println(preview.Problems, preview.Parsed) // the saved layouts on the newest email
+
+email, err = client.Requests.Get(ctx, email.ID)
+if err == nil && email.Parsed != nil {
+	fmt.Println(email.Parsed.LineItems)
+}
+```
+
+The preview saves nothing and uses no parsed pages. For an email kept in storage (`EmailCapture.Stored`), `client.Requests.Raw(ctx, id)` returns the exact message and `client.Requests.Attachment(ctx, id, index)` one attachment (`Body`, `Filename`, `ContentType`).
+
 ### Test an inbound email handler
 
 If your app already receives email through Postmark, SendGrid, Mailgun or CloudMailin, render a captured email in that provider's shape and post it to the handler you wrote for it, on localhost or anywhere else:

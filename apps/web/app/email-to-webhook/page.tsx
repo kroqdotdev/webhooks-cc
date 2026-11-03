@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
+import { mailhooksUrl } from "@/lib/mailhooks-seo";
 import { JsonLd, breadcrumbSchema, faqSchema, howToSchema, type FAQItem } from "@/lib/schemas";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
@@ -37,15 +38,15 @@ const STEPS = [
   },
   {
     name: "Add your URL",
-    text: "In the endpoint's Settings, under Forwarding, enter your server's https URL and save. A signing secret starting with whsec_ is created; copy it into your handler.",
+    text: "In the endpoint's Settings, under Forwarding, pick Your server, enter your server's https URL and click Add destination. It gets a signing secret of its own, starting with whsec_; copy it into your handler.",
   },
   {
     name: "Send a test delivery",
     text: "Send test delivery posts the newest email, or a sample, to your URL once and shows the status, the time and the start of your server's answer.",
   },
   {
-    name: "Turn forwarding on",
-    text: "From then on every email the endpoint receives is posted to your URL as JSON, usually within a second or two.",
+    name: "Let the mail flow",
+    text: "The destination is on as soon as it is added: every email the endpoint receives is posted to your URL as JSON, usually within a second or two.",
   },
 ];
 
@@ -120,7 +121,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How do I receive email as a webhook?",
     answer:
-      "Create a webhooks.cc endpoint, enter your URL under Forwarding in its Settings, and turn forwarding on. Every email sent to the endpoint's mailhooks.cc address is then posted to your URL as JSON, signed with Standard Webhooks headers.",
+      "Create a webhooks.cc endpoint and add your URL as a destination under Forwarding in its Settings. Every email sent to the endpoint's mailhooks.cc address is then posted to your URL as JSON, signed with Standard Webhooks headers.",
   },
   {
     question: "What does the JSON contain?",
@@ -140,7 +141,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How are forwarded emails signed?",
     answer:
-      "With Standard Webhooks headers: webhook-id, webhook-timestamp and webhook-signature, an HMAC-SHA256 of the id, the timestamp and the body with your endpoint's whsec_ secret. The webhooks.cc SDK and the official Standard Webhooks libraries verify them.",
+      "With Standard Webhooks headers: webhook-id, webhook-timestamp and webhook-signature, an HMAC-SHA256 of the id, the timestamp and the body with the destination's whsec_ secret. The webhooks.cc SDKs for TypeScript, Python and Go and the official Standard Webhooks libraries verify them.",
   },
   {
     question: "What happens when my server is down?",
@@ -155,7 +156,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Does forwarding cost extra?",
     answer:
-      "No. Forwarding is on every plan, Free included, and does not use your quota: each email already counted as one request when it arrived.",
+      "No. Forwarding is on every plan, Free included, with up to 10 destinations per endpoint, and does not use your quota: each email already counted as one request when it arrived.",
   },
   {
     question: "Can I forward to localhost?",
@@ -247,7 +248,7 @@ export default function EmailToWebhookPage() {
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Verify the signature</h2>
           <p className="text-muted-foreground mb-6">
             The signature is an HMAC-SHA256 of the id, the timestamp and the raw body, keyed with
-            your endpoint&apos;s secret. The SDK&apos;s{" "}
+            the destination&apos;s secret. The TypeScript SDK&apos;s{" "}
             <code className="font-mono text-sm">verifyForwardedEmail</code> checks it and the
             timestamp, then hands you the parsed email:
           </p>
@@ -265,7 +266,15 @@ export default function EmailToWebhookPage() {
             >
               Standard Webhooks libraries
             </a>{" "}
-            verify the same headers in Go, Python, Ruby, Java, PHP, Rust, C# and more.
+            verify the same headers in Ruby, Java, PHP, Rust, C# and more, and the webhooks.cc{" "}
+            <Link href="/docs/sdk/python" className="text-primary font-bold hover:underline">
+              Python
+            </Link>{" "}
+            and{" "}
+            <Link href="/docs/sdk/go" className="text-primary font-bold hover:underline">
+              Go
+            </Link>{" "}
+            SDKs have the same check.
           </p>
         </section>
 
@@ -291,7 +300,7 @@ export default function EmailToWebhookPage() {
               "Every try logged, with a Redeliver button",
               "https URLs on public host names only",
               "Text and HTML up to 256 KB each; attachments as signed links or inline",
-              "Every plan, Free included",
+              "Every plan, Free included; up to 10 destinations per endpoint",
               "No extra quota: each email counted once when it arrived",
             ].map((item) => (
               <li key={item} className="flex items-start gap-3">
@@ -300,6 +309,14 @@ export default function EmailToWebhookPage() {
               </li>
             ))}
           </ul>
+          <p className="text-sm text-muted-foreground mt-4">
+            Want orders, bookings or reports read out of each email and its CSV, Excel or PDF
+            attachments first? That is what layouts do; see{" "}
+            <a href={mailhooksUrl("/")} className="text-primary font-bold hover:underline">
+              mailhooks.cc
+            </a>
+            , the mail-first side of the same account.
+          </p>
           <p className="text-sm text-muted-foreground mt-4">
             Testing the emails your own app sends rather than handling inbound mail? See{" "}
             <Link href="/email-testing" className="text-primary font-bold hover:underline">

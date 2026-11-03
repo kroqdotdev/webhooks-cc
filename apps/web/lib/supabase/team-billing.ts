@@ -20,7 +20,7 @@ import {
   type SeatChangeQuote,
 } from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
-import { addMonthUtc, remainingShare } from "./billing";
+import { addMonthsUtc, annualQuotaWindow, MIN_ANNUAL_WINDOW_MS, remainingShare } from "./billing";
 import {
   asNonEmptyString,
   asRecord,
@@ -199,6 +199,41 @@ export async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<stri
   await updateTeamById(team.id, { polar_customer_id: customer.id });
 
   return customer.id;
+}
+
+/**
+ * A link into Polar's customer portal for the team's Polar customer, for its
+ * owner: invoices, receipts and the payment method. A team customer's
+ * session is for one of its members, and the team owner is the customer's
+ * owner member (ensureTeamPolarCustomerId), looked up rather than assumed so
+ * a customer made before the owner carried our id works too. Plan and seat
+ * changes stay on the team page.
+ */
+export async function createTeamCustomerPortal(userId: string, teamId: string): Promise<string> {
+  const team = await getTeamForOwner(userId, teamId);
+  if (!team.polar_customer_id) {
+    throw new TeamBillingError("no_customer", "This team has no invoices yet");
+  }
+  const polar = createPolarClient();
+  const owners = await polar.customers.members.list(team.polar_customer_id, {
+    role: "owner",
+    limit: 1,
+  });
+  const member = owners.items[0];
+  if (!member) {
+    // Our fault, not the owner's (the member was removed in Polar): the
+    // route reports it.
+    throw new TeamBillingError(
+      "no_billing_contact",
+      "The team's billing contact is missing. We have been told and will fix it."
+    );
+  }
+  const session = await polar.customerSessions.create({
+    customer_id: team.polar_customer_id,
+    member_id: member.id,
+    return_url: `${await returnOrigin(polarAppUrl())}/teams/${teamId}`,
+  });
+  return session.customer_portal_url;
 }
 
 /**
@@ -790,8 +825,8 @@ function declinedCharge(error: unknown, what: string): TeamBillingError | null {
   return new TeamBillingError(
     "payment_failed",
     error.error.error === "PaymentActionRequired"
-      ? `Your bank needs you to approve this payment, so ${what} yet. Approve it from the link in your Polar receipt email, or update the card there, and try again.`
-      : `Your payment method was declined, so ${what}. Update the card from the link in your Polar receipt email and try again.`
+      ? `Your bank needs you to approve this payment, so ${what} yet. Approve it from the link in your Polar receipt email, or update the payment method under Invoices and payment method, and try again.`
+      : `Your payment method was declined, so ${what}. Update the payment method under Invoices and payment method and try again.`
   );
 }
 
@@ -1632,25 +1667,38 @@ async function applyTeamSubscriptionState(
       team.billing_interval !== "year" ||
       (incomingBillingEndMs !== null &&
         (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
-  const period: TeamUpdate = annual
-    ? // A renewal applied after the monthly cron already moved the period on
-      // (more than a month late) keeps the newer period.
-      newYear && incomingPeriodStart && !isStalePeriod
-      ? { period_start: incomingPeriodStart, period_end: addMonthUtc(incomingPeriodStart) }
-      : {}
-    : {
-        period_start: isStalePeriod ? undefined : incomingPeriodStart,
-        period_end: isStalePeriod ? undefined : incomingPeriodEnd,
-      };
   // A year that starts after the cron fallback already moved the quota
-  // period there keeps the usage counted since.
+  // period there keeps the usage counted since. So does a yearly renewal
+  // whose window the cron opened just before (a window that ended off the
+  // anchored boundaries, joined with the rest of the year); a move to
+  // annual always starts a fresh allowance.
   const resetsUsage = annual
     ? isNewSubscription ||
       (newYear &&
         (storedPeriodStartMs === null ||
           incomingPeriodStartMs === null ||
-          storedPeriodStartMs < incomingPeriodStartMs))
+          storedPeriodStartMs <
+            incomingPeriodStartMs - (team.billing_interval === "year" ? MIN_ANNUAL_WINDOW_MS : 0)))
     : isNewSubscription || isRenewal;
+  const period: TeamUpdate = annual
+    ? // A renewal applied after the monthly cron already moved the period on
+      // (more than a month late) keeps the newer period.
+      // A window the cron opened just before keeps its start, which the
+      // parsed pages count from too.
+      newYear && incomingPeriodStart && !isStalePeriod
+      ? {
+          period_start: resetsUsage ? incomingPeriodStart : undefined,
+          // The year's first window, on the boundaries the monthly reset counts.
+          period_end: annualQuotaWindow(
+            incomingPeriodEnd ?? addMonthsUtc(incomingPeriodStart, 12),
+            incomingPeriodStart
+          ).end,
+        }
+      : {}
+    : {
+        period_start: isStalePeriod ? undefined : incomingPeriodStart,
+        period_end: isStalePeriod ? undefined : incomingPeriodEnd,
+      };
 
   // Teams to Team Business inside the period: the extra allowance pro rata
   // (see upgradeProration). Later events in the same window keep it; a new

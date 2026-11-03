@@ -37,6 +37,42 @@ export const CHANGELOG: ChangelogEntry[] = [
     ],
   },
   {
+    version: "0.59.6",
+    date: "2026-11-03",
+    title: "Invoices and Payment Method",
+    track: "web",
+    items: [
+      "Invoices and payment method, on the plan page, opens your Polar customer portal: download invoices and receipts and change the card on file. Team owners find it under Billing on the team page",
+      "After a failed payment, the notices on the plan, team and domains pages now open the portal to update the payment method, instead of pointing to a Polar receipt email",
+    ],
+  },
+  {
+    version: "0.59.5",
+    date: "2026-11-03",
+    title: "Annual Plans Reset on the Day They Started",
+    track: "web",
+    items: [
+      "An annual plan that started on the 29th, 30th or 31st now resets its monthly quota on that day in every month that has it, instead of moving to the 28th after February and staying there",
+      "The last monthly quota of an annual plan now ends exactly when the year renews, so usage resets once at the renewal, not twice a few days apart. An annual plan from before this release moves back to its day at its next reset, with that one quota period lasting a few days longer",
+      "Monthly add-ons on such a plan go back to renewing on the plan's day after a short month",
+    ],
+  },
+  {
+    version: "0.59.4",
+    date: "2026-11-03",
+    title: "Comparisons and Docs Brought Up to Date",
+    track: "web",
+    items: [
+      "The comparison pages are checked again against each tool's own site: RequestBin's home, Pipedream Workflows, takes no new signups and closes on March 31, 2027; Beeceptor now has a CLI tunnel and an MCP server; ngrok has an MCP server; Webhook.site has an open-source edition. The checklist gains a row for inbound email",
+      "The comparisons also describe webhooks.cc as it is now: SDKs for TypeScript, Python and Go, forwarding to up to 10 destinations with filters, throttling and retries, response rules, email parsing on mailhooks.cc, the remote MCP server and Team Business",
+      "The docs, the home page, the email and teams pages, llms.txt and llms-full.txt are brought up to date: destinations, layouts, Python and Go, CLI commands and flags that were missing, the API's newer fields, 48 MCP tools, and Devin Desktop (formerly Windsurf) in the MCP setup",
+      "The docs Quick Start sends an email as well as a webhook, and only pages added in the last few weeks are marked new in the docs sidebar",
+      "Pro's 100,000 requests and each Teams seat's 100,000 are described as a month everywhere, and the plan comparison under Account > Plan shows Business's 250 AI assists instead of 500",
+      "The keyboard shortcuts dialog lists 5 for the Signature tab",
+      "AI setup says when your next assist comes back. Assists count for 30 days from when each was used rather than resetting with the billing period, and the line under AI setup used to give only the count",
+    ],
+  },
+  {
     version: "0.59.3",
     date: "2026-11-03",
     title: "Testing Guides for Python and Go",

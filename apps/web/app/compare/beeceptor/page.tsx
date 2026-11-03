@@ -7,27 +7,27 @@ const FAQ_ITEMS = [
   {
     question: "What are the best Beeceptor alternatives in 2026?",
     answer:
-      "webhooks.cc is a strong Beeceptor alternative if your focus is webhook testing rather than API mocking. It captures real webhook payloads with replay, a TypeScript SDK for CI assertions, and an MCP server for AI agents. Other alternatives include Webhook.site (browser-based inspection), RequestBin/Pipedream (workflow automation), and Hookdeck (production infrastructure).",
+      "webhooks.cc is a strong Beeceptor alternative if your focus is webhook testing rather than API mocking. It captures real webhook payloads and email with replay, SDKs for CI assertions in TypeScript, Python and Go, and an MCP server for AI agents. Other alternatives include Webhook.site (browser-based inspection) and Hookdeck (production infrastructure).",
   },
   {
     question: "What is the difference between webhooks.cc and Beeceptor?",
     answer:
-      "Beeceptor is primarily an API mocking and interception tool — you define mock API endpoints with rules that return canned responses. webhooks.cc is a webhook testing platform — you capture real incoming webhooks, inspect them, replay them, and assert on payloads in automated tests. Both can inspect HTTP requests, but the workflows they optimize for differ.",
+      "Beeceptor is primarily an API mocking and interception tool: you define mock API endpoints with rules that return canned responses. webhooks.cc is a webhook testing platform: you capture real incoming webhooks and email, inspect them, replay them, forward them, and assert on payloads in automated tests. Both can inspect HTTP requests, but the workflows they optimize for differ.",
   },
   {
     question: "Can Beeceptor test webhooks?",
     answer:
-      "Beeceptor can capture incoming requests and display them, similar to webhook inspection. However, it does not provide a TypeScript SDK for automated test assertions, an MCP server for AI agents, or purpose-built CLI tunneling for webhook development workflows.",
+      "Beeceptor can capture incoming requests and display them, similar to webhook inspection, and its CLI (beeceptor-cli) can tunnel an endpoint to localhost. It does not provide an SDK for automated test assertions (CI integration goes through its management API on the Team plan and up), and request history needs the Team plan or higher. Its MCP server is built around mock rules and request history.",
   },
   {
     question: "Does webhooks.cc support API mocking?",
     answer:
-      "webhooks.cc supports mock responses — you configure a status code, headers, and body that get returned to the webhook sender. This is useful for simulating your server's response during webhook integration testing. For full API mocking with routing rules and proxy interception, Beeceptor is more comprehensive.",
+      "Partly. webhooks.cc mock responses set the status code, headers, and body returned to the sender, and response rules pick a different answer by method, path, headers, query or body, with placeholders that fill in values from the request. That covers simulating your server's response during webhook integration testing. For full API mocking with stateful rules and proxy interception, Beeceptor is more comprehensive.",
   },
   {
     question: "Which tool is better for CI/CD webhook testing?",
     answer:
-      "webhooks.cc. Its TypeScript SDK provides waitFor() with request matchers for method, headers, and JSON body paths. You can create a test endpoint, trigger your webhook sender, and assert on the captured payload inside Vitest or Jest — no mocking server required.",
+      "webhooks.cc. Its TypeScript SDK provides waitFor() with request matchers for method, headers, and JSON body paths, and the Python and Go SDKs do the same. You can create a test endpoint, trigger your webhook sender, and assert on the captured payload inside Vitest, Jest, pytest or go test, with no mocking server required.",
   },
   {
     question: "Does Beeceptor capture webhooks?",
@@ -37,26 +37,31 @@ const FAQ_ITEMS = [
 ];
 
 const ROWS = [
-  ["Primary focus", "Webhook testing & inspection", "API mocking & interception"],
-  ["Webhook capture & history", "Yes — full request storage", "Yes — request logging"],
-  ["Mock responses", "Yes — per-endpoint config", "Yes — rule-based routing"],
-  ["API mocking / proxy rules", "No", "Yes — core feature"],
-  ["CLI tunnel to localhost", "Yes (whk tunnel)", "No native CLI"],
-  ["TypeScript SDK", "Yes — @webhooks-cc/sdk", "No"],
+  ["Primary focus", "Webhook & email testing", "API mocking & interception"],
+  ["Webhook capture & history", "Yes, full request storage", "Yes, history on Team and up"],
+  ["Mock responses", "Yes, rule-based with placeholders", "Yes, rule-based routing"],
+  ["API mocking / proxy rules", "Response rules, no proxy", "Yes, core feature"],
+  ["CLI tunnel to localhost", "Yes (whk tunnel)", "Yes (beeceptor-cli)"],
+  ["SDKs", "TypeScript, Python and Go", "No (management API)"],
   ["CI test assertions", "Yes (waitFor + matchers)", "No"],
-  ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
-  ["Request replay", "Yes", "No"],
+  [
+    "MCP server for AI agents",
+    "Yes, remote (OAuth) or local",
+    "Yes, remote (OAuth), for mock rules",
+  ],
+  ["Request replay", "Yes, to any URL", "Not documented"],
+  ["Inbound email capture", "Yes, {slug}@mailhooks.cc or your own domain", "No"],
   ["Real-time SSE streaming", "Yes", "No"],
   ["CORS proxy", "No", "Yes"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
-  ["Team collaboration", "$12/seat/mo, pooled quota", "Team+ ($25/mo), unlimited members"],
-  ["Free tier features", "Every Pro feature", "Limited endpoints + requests"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "Team ($25/mo), unlimited members"],
+  ["Free tier features", "Every Pro feature", "3 rules, limited requests"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Beeceptor Alternative for Webhook Testing (2026)",
   description:
-    "Beeceptor alternative focused on webhook testing. Inspect, replay, and assert on payloads with a TypeScript SDK, CLI tunnel, and MCP server.",
+    "Beeceptor alternative focused on webhook and email testing. Inspect, replay, and assert on payloads with SDKs for TypeScript, Python and Go, a CLI tunnel, and MCP.",
   path: "/compare/beeceptor",
   keywords: [
     "beeceptor alternative",
@@ -84,13 +89,13 @@ export default function CompareBeeceptorPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Beeceptor</h1>
         <p className="text-lg text-muted-foreground mb-10">
           If you&apos;re looking for a Beeceptor alternative focused on webhook testing, webhooks.cc
           captures real payloads, replays them, and lets you assert on them in automated tests.
-          Beeceptor excels at API mocking — define rules, return canned responses, proxy requests.
+          Beeceptor excels at API mocking: define rules, return canned responses, proxy requests.
           Both inspect HTTP requests, but they solve different problems.
         </p>
 
@@ -131,10 +136,12 @@ export default function CompareBeeceptorPage() {
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">API mocking vs webhook inspection</h3>
             <p className="text-muted-foreground">
-              Beeceptor&apos;s strength is simulating APIs you depend on — define URL patterns, set
+              Beeceptor&apos;s strength is simulating APIs you depend on: define URL patterns, set
               response rules, proxy traffic to real backends. webhooks.cc does the opposite: it
-              receives real webhooks from services you integrate with (Stripe, GitHub, Twilio) and
-              gives you tools to inspect, search, replay, and assert on those payloads.
+              receives real webhooks from services you integrate with (Stripe, GitHub, Twilio), and
+              email at its own addresses, and gives you tools to inspect, search, replay, forward,
+              and assert on those payloads. Its response rules answer the sender, but it does not
+              proxy traffic to a backend.
             </p>
           </div>
 
@@ -142,20 +149,21 @@ export default function CompareBeeceptorPage() {
             <h3 className="text-lg font-bold mb-2">Developer tooling depth</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides three integration layers beyond the dashboard: a CLI for
-              tunneling webhooks to localhost, a TypeScript SDK for programmatic access and CI
-              assertions, and an MCP server for AI coding agents. Team collaboration on webhooks.cc
-              costs $12/seat/month, with each seat adding 100,000 pooled requests, while
-              Beeceptor&apos;s Team+ plan costs $25/month. Beeceptor is browser-first with API
-              access on paid plans.
+              tunneling webhooks to localhost, SDKs for TypeScript, Python and Go for programmatic
+              access and CI assertions, and an MCP server for AI coding agents. Beeceptor has a CLI
+              tunnel and a remote MCP server too, built around its mock rules, and offers its
+              management API for CI on the Team plan and up. Team collaboration on webhooks.cc costs
+              $12/seat/month, with each seat adding 100,000 pooled requests, while Beeceptor&apos;s
+              Team plan costs $25/month.
             </p>
           </div>
 
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Request replay</h3>
             <p className="text-muted-foreground">
-              webhooks.cc lets you replay any captured request to a target URL — useful for
+              webhooks.cc lets you replay any captured request to a target URL, useful for
               re-triggering webhook handlers during debugging without asking the sender to resend.
-              Beeceptor focuses on request logging rather than replay workflows.
+              Beeceptor focuses on request logging (exported as HAR) rather than replay workflows.
             </p>
           </div>
         </div>
@@ -170,6 +178,7 @@ export default function CompareBeeceptorPage() {
               <li>SDK assertions for webhook payloads in CI</li>
               <li>MCP integration for AI coding agent workflows</li>
               <li>CLI tunnel that captures + forwards in one step</li>
+              <li>Email capture alongside webhooks, parsed and forwarded as JSON</li>
             </ul>
           </div>
           <div className="ui-card ui-card-static">

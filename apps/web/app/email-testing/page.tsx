@@ -113,7 +113,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How do I read a one-time code in a Playwright or Cypress test?",
     answer:
-      "Sign up with a tagged address such as your-slug+run-42@mailhooks.cc, so each test run finds its own email. With the TypeScript SDK, client.emails.waitFor(slug, { tag }) waits for the email and extractCode(email) returns the code. From other languages, poll the requests API with kind=email; each email comes back as JSON with its subject, sender, text, HTML and attachment list.",
+      "Sign up with a tagged address such as your-slug+run-42@mailhooks.cc, so each test run finds its own email. With the TypeScript SDK, client.emails.waitFor(slug, { tag }) waits for the email and extractCode(email) returns the code; the Python SDK has client.emails.wait_for and extract_code, and the Go SDK client.Emails.WaitFor and ExtractCode. From any other language, poll the requests API with kind=email and extracts=true; each email comes back as JSON with its subject, sender, text, HTML, attachment list and the codes and links found in it.",
   },
   {
     question: "Does email testing cost extra?",
@@ -225,9 +225,9 @@ export default function EmailTestingPage() {
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Read the email in your test</h2>
           <p className="text-muted-foreground mb-6">
-            The TypeScript SDK waits for the email your test triggered and picks out the code or the
-            link, with the same finder the dashboard uses. Give each run its own tag so parallel
-            tests never read each other&apos;s mail.
+            The SDKs wait for the email your test triggered and pick out the code or the link, with
+            the same finder the dashboard uses. Give each run its own tag so parallel tests never
+            read each other&apos;s mail.
           </p>
           <div className="ui-code overflow-x-auto">
             <pre className="text-sm">
@@ -235,7 +235,15 @@ export default function EmailTestingPage() {
             </pre>
           </div>
           <p className="text-sm text-muted-foreground mt-3">
-            Create the API key on your account page. Not on Node? The{" "}
+            Create the API key on your account page. The{" "}
+            <Link href="/docs/sdk/python" className="text-primary font-bold hover:underline">
+              Python
+            </Link>{" "}
+            and{" "}
+            <Link href="/docs/sdk/go" className="text-primary font-bold hover:underline">
+              Go
+            </Link>{" "}
+            SDKs have the same waits and code finder, and the{" "}
             <Link href="/docs/api" className="text-primary font-bold hover:underline">
               REST API
             </Link>{" "}
@@ -258,7 +266,7 @@ export default function EmailTestingPage() {
           <div className="ui-card ui-card-static">
             <h2 className="text-xl md:text-2xl font-bold mb-2">Need the email in your own app?</h2>
             <p className="text-muted-foreground mb-4">
-              Turn on forwarding and every email the endpoint receives is posted to your server as
+              Add a destination and every email the endpoint receives is posted to your server as
               signed JSON, retried until your server accepts it. No mail server to run and no MIME
               to parse.
             </p>
@@ -276,8 +284,8 @@ export default function EmailTestingPage() {
               "Every plan, Free included; an email counts as one request",
               "Messages up to 10 MB, up to 20 recipients each",
               "Text and HTML stored up to 256 KB each",
-              "Original .eml kept for messages up to 1 MB",
-              "Attachments listed by name, type and size",
+              "The original .eml kept whole",
+              "Attachments kept and downloadable",
               "Same retention as your HTTP requests",
             ].map((item) => (
               <li key={item} className="flex items-start gap-3">

@@ -152,6 +152,20 @@ email.reply_text    # "Thanks, paid." without the quoted message and the signatu
 
 Every email the client reads carries the values as `email_fields` (`None` for a field that found nothing, and `None` altogether when the endpoint has no fields), and forwarding templates read them as `{{ fields.invoice }}`. `endpoint.email_fields` lists the saved fields, and `email_fields=None` removes them. The client refuses a list that `email_field_issues()` finds fault with (names, sources, headers, pattern lengths) before sending it; the API checks the patterns themselves. `reply_text` is the [new text of a reply](/docs/email-capture#reply-text), or `None` when the email quotes no earlier message.
 
+### Layouts and stored messages
+
+An endpoint's [layouts](/docs/layouts) read each email before it is delivered: fields, line items and attachments. Pass `layouts=` to `endpoints.update()` (as `Layout` objects or dicts in the API's shape, `None` removes them), try them on a captured email first with `preview_layouts()`, and read the result as `request.parsed`:
+
+```python
+preview = client.endpoints.preview_layouts(endpoint.slug)  # the saved layouts on the newest email
+print(preview.problems, preview.parsed.fields if preview.parsed else None)
+
+email = client.requests.get(email.id)
+print(email.parsed.line_items if email.parsed else None)
+```
+
+The preview saves nothing and uses no parsed pages. For an email kept in storage (`email.email.stored`), `client.requests.raw(id)` returns the exact message as bytes and `client.requests.attachment(id, index)` one attachment (`content`, `filename`, `content_type`).
+
 ### Test an inbound email handler
 
 If your app already receives email through Postmark, SendGrid, Mailgun or CloudMailin, render a captured email in that provider's shape and post it to the handler you wrote for it, on localhost or anywhere else:

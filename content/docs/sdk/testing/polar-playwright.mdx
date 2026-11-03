@@ -1,6 +1,6 @@
 ---
 title: "Polar.sh + Playwright"
-description: "Simulate the full Polar subscription lifecycle — created, updated, canceled, reactivated — by sending signed Standard Webhooks payloads to your localhost handler with Playwright."
+description: "Simulate the full Polar subscription lifecycle (created, updated, canceled, reactivated) by sending signed Standard Webhooks payloads to your localhost handler with Playwright."
 section: sdk
 order: 8
 lastUpdated: 2026-03-10
@@ -11,7 +11,7 @@ seo:
   ogDescription: "Simulate the full Polar subscription lifecycle by sending signed Standard Webhooks payloads to your localhost handler with Playwright."
 ---
 
-Simulate the full Polar subscription lifecycle — created, updated, canceled, reactivated — by sending signed Standard Webhooks payloads directly to your localhost handler. No Polar dashboard needed.
+Simulate the full Polar subscription lifecycle (created, updated, canceled, reactivated) by sending signed Standard Webhooks payloads directly to your localhost handler. No Polar dashboard needed.
 
 ## Full lifecycle test
 
@@ -131,10 +131,10 @@ console.log(body); // JSON string
 
 ## Tips
 
-- **Capture first, test later** — Don't build payloads from scratch. Point your Polar webhook to a webhooks.cc endpoint first, trigger a real event, then copy the captured payload as your test fixture. Polar's SDK validates many required fields in snake_case — getting them right manually is tedious.
-- **snake_case field names** — Polar's webhook payloads use snake_case (`recurring_interval`, `current_period_end`). Their Zod schema rejects camelCase.
-- **Body timestamp** — Polar requires a `timestamp` ISO-8601 field in the body alongside `type` and `data`. The SDK generates the header timestamp but the body timestamp is your responsibility.
-- **Error diagnosis** — If your handler returns 500, read the response body: `const text = await res.text(); expect(res.status, text).toBe(200);`
+- **Capture first, test later**: Don't build payloads from scratch. Point your Polar webhook to a webhooks.cc endpoint first, trigger a real event, then copy the captured payload as your test fixture. Polar's SDK validates many required fields in snake_case, and getting them right manually is tedious.
+- **snake_case field names**: Polar's webhook payloads use snake_case (`recurring_interval`, `current_period_end`). Their Zod schema rejects camelCase.
+- **Body timestamp**: Polar requires a `timestamp` ISO-8601 field in the body alongside `type` and `data`. The SDK generates the header timestamp but the body timestamp is your responsibility.
+- **Error diagnosis**: If your handler returns 500, read the response body: `const text = await res.text(); expect(res.status, text).toBe(200);`
 
 ## More examples
 

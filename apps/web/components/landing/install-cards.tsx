@@ -15,9 +15,9 @@ export function InstallCards() {
           </code>
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Also works with{" "}
+          Also with{" "}
           <Link href="/installation" className="text-primary hover:underline font-bold">
-            pnpm, yarn, and bun
+            pnpm, yarn, and bun, or for Python and Go
           </Link>
         </p>
       </div>
@@ -39,7 +39,7 @@ export function InstallCards() {
       <Link href="/docs/mcp" className="ui-card ui-card-static block group">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">MCP</p>
         <p className="text-sm font-bold group-hover:text-primary transition-colors">
-          Connect your AI coding agent — Claude Code, Cursor, VS Code, Codex & more.
+          Connect your AI agent: Claude Code, Cursor, VS Code, Codex, claude.ai & more.
         </p>
         <p className="text-xs text-primary font-bold mt-2 group-hover:underline">
           Setup guide &rarr;

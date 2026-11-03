@@ -3,7 +3,7 @@ title: "Agent Workflows"
 description: "Multi-turn conversation examples showing how AI agents use webhooks.cc MCP tools to create endpoints, inspect payloads, debug integrations, and verify webhook flows."
 section: mcp
 order: 3
-lastUpdated: 2026-10-11
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["MCP workflows", "AI agent webhook testing", "Claude Code webhooks", "webhook debugging"]
 seo:
@@ -19,13 +19,13 @@ Create an endpoint, capture a webhook from an external service, inspect the payl
 You: "Create an endpoint for testing my payment service"
 Agent: [calls create_endpoint] Created "payment-test" at https://go.webhooks.cc/w/abc123
 
-You: "I just triggered a payment — check what arrived"
+You: "I just triggered a payment, check what arrived"
 Agent: [calls list_requests] 1 request captured:
-  POST /w/abc123 — application/json, 342 bytes
+  POST /w/abc123: application/json, 342 bytes
   Body: {"event": "payment.completed", "amount": 4999}
 
 You: "Replay that to my local server"
-Agent: [calls replay_request] Replayed to http://localhost:3000/webhooks — 200 OK
+Agent: [calls replay_request] Replayed to http://localhost:3000/webhooks: 200 OK
 ```
 
 The agent handles the full lifecycle: endpoint creation, request inspection, and replay. No manual curl commands or dashboard switching needed.
@@ -101,7 +101,7 @@ Diagnose why webhooks stopped arriving. The agent checks endpoint status, review
 ```
 You: "My Shopify webhooks aren't arriving at my endpoint"
 Agent: [calls get_endpoint] Endpoint "shopify-prod" exists, URL: https://go.webhooks.cc/w/xyz789
-       [calls list_requests with limit: 5] Last 5 requests — all from 2 days ago, none recent
+       [calls list_requests with limit: 5] Last 5 requests, all from 2 days ago, none recent
 
 You: "Can you send a test to see if it works?"
 Agent: [calls send_webhook with provider: "shopify", event: "orders/create"]
@@ -109,8 +109,8 @@ Agent: [calls send_webhook with provider: "shopify", event: "orders/create"]
        [calls wait_for_request] Request arrived in 340ms
        Response: 200 OK
 
-Agent: The endpoint is working. The issue is likely on Shopify's side —
-       check your webhook configuration in Shopify admin.
+Agent: The endpoint is working. The issue is likely on Shopify's side.
+       Check your webhook configuration in Shopify admin.
 
 You: "Compare the test webhook to the last real one"
 Agent: [calls compare_requests] Differences:
@@ -139,7 +139,7 @@ Result:
   Sent signed Stripe webhook
   Request captured in 280ms
   Signature verified (HMAC-SHA256)
-  Replayed to localhost:3000 — 200 OK
+  Replayed to localhost:3000: 200 OK
   Cleaned up endpoint
 ```
 
@@ -238,5 +238,5 @@ Returns full details of a single captured request -- headers, body, IP, timestam
 <LinkCard
   href="/docs/mcp/tools"
   title="Tool Reference"
-  description="Complete parameter reference for all 39 MCP tools and the sandbox tools."
+  description="Complete parameter reference for all 48 MCP tools and the sandbox tools."
 />

@@ -7,7 +7,7 @@ export interface NavItem {
   title: string;
   href: string;
   depth?: number; // 1 = indented sub-item in sidebar
-  isNew?: boolean; // shows "NEW" badge in sidebar
+  isNew?: boolean; // shows "NEW" badge in sidebar: pages added in about the last three weeks; drop it as they age
 }
 
 export interface NavSection {
@@ -24,10 +24,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Quick Start", href: "/docs" },
       { title: "Installation", href: "/installation" },
       { title: "Core Concepts", href: "/docs/core-concepts" },
-      { title: "Plans & Limits", href: "/docs/plans-limits", isNew: true },
-      { title: "REST API", href: "/docs/api", isNew: true },
-      { title: "API Explorer", href: "/api-explorer", depth: 1, isNew: true },
-      { title: "AI Agents", href: "/docs/agents", isNew: true },
+      { title: "Plans & Limits", href: "/docs/plans-limits" },
+      { title: "REST API", href: "/docs/api" },
+      { title: "API Explorer", href: "/api-explorer", depth: 1 },
+      { title: "AI Agents", href: "/docs/agents" },
     ],
   },
   {
@@ -35,22 +35,21 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "dashboard",
     items: [
       { title: "Endpoints", href: "/docs/endpoints" },
-      { title: "Test Webhooks", href: "/docs/endpoints/test-webhooks", depth: 1, isNew: true },
+      { title: "Test Webhooks", href: "/docs/endpoints/test-webhooks", depth: 1 },
       {
         title: "Provider Templates",
         href: "/docs/endpoints/provider-templates",
         depth: 1,
-        isNew: true,
       },
-      { title: "Requests", href: "/docs/requests", isNew: true },
-      { title: "Email Capture", href: "/docs/email-capture", isNew: true },
+      { title: "Requests", href: "/docs/requests" },
+      { title: "Email Capture", href: "/docs/email-capture" },
       { title: "Layouts", href: "/docs/layouts", depth: 1, isNew: true },
-      { title: "Forwarding", href: "/docs/forwarding", depth: 1, isNew: true },
+      { title: "Forwarding", href: "/docs/forwarding", depth: 1 },
       { title: "Zapier and Make", href: "/docs/zapier-make", depth: 1, isNew: true },
       { title: "Mock Responses", href: "/docs/mock-responses" },
-      { title: "Dashboard Features", href: "/docs/dashboard-features", isNew: true },
-      { title: "Notification Webhooks", href: "/docs/notification-webhooks", isNew: true },
-      { title: "Teams", href: "/docs/teams", isNew: true },
+      { title: "Dashboard Features", href: "/docs/dashboard-features" },
+      { title: "Notification Webhooks", href: "/docs/notification-webhooks" },
+      { title: "Teams", href: "/docs/teams" },
     ],
   },
   {
@@ -66,10 +65,10 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "SDK",
     id: "sdk",
     items: [
-      { title: "Overview", href: "/docs/sdk", isNew: true },
-      { title: "API Reference", href: "/docs/sdk/api", isNew: true },
-      { title: "Matchers & Helpers", href: "/docs/sdk/matchers", isNew: true },
-      { title: "Signature Verification", href: "/docs/sdk/signatures", isNew: true },
+      { title: "Overview", href: "/docs/sdk" },
+      { title: "API Reference", href: "/docs/sdk/api" },
+      { title: "Matchers & Helpers", href: "/docs/sdk/matchers" },
+      { title: "Signature Verification", href: "/docs/sdk/signatures" },
       { title: "Python", href: "/docs/sdk/python", isNew: true },
       { title: "Go", href: "/docs/sdk/go", isNew: true },
       { title: "Testing", href: "/docs/sdk/testing" },
@@ -87,8 +86,8 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "MCP",
     id: "mcp",
     items: [
-      { title: "MCP Server", href: "/docs/mcp", isNew: true },
-      { title: "Tool Reference", href: "/docs/mcp/tools", isNew: true },
+      { title: "MCP Server", href: "/docs/mcp" },
+      { title: "Tool Reference", href: "/docs/mcp/tools" },
       { title: "Agent Workflows", href: "/docs/mcp/workflows" },
       { title: "Agent Skill", href: "/docs/mcp/skills", isNew: true },
     ],
@@ -101,12 +100,11 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Test Stripe Webhooks", href: "/docs/guides/test-stripe-webhooks" },
       { title: "Test GitHub Webhooks", href: "/docs/guides/test-github-webhooks" },
       { title: "Test Shopify Webhooks", href: "/docs/guides/test-shopify-webhooks" },
-      { title: "Verify Signatures", href: "/docs/guides/verify-webhook-signatures", isNew: true },
+      { title: "Verify Signatures", href: "/docs/guides/verify-webhook-signatures" },
       { title: "Webhook Testing in CI/CD", href: "/docs/guides/webhook-testing-ci-cd" },
       {
         title: "Test Signup Emails in Playwright",
         href: "/docs/guides/test-signup-emails-playwright",
-        isNew: true,
       },
     ],
   },

@@ -18,7 +18,7 @@ interface ProviderEditorial {
 const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
   stripe: {
     blurb:
-      "Stripe sends webhooks for payments, checkout sessions, invoices, subscriptions, and disputes — they are the backbone of most billing integrations.",
+      "Stripe sends webhooks for payments, checkout sessions, invoices, subscriptions, and disputes; they are the backbone of most billing integrations.",
     configHint: "Stripe Dashboard → Developers → Webhooks → Add endpoint",
     category: "Payments & billing",
     updated: "2026-08-21",
@@ -88,7 +88,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
   },
   vercel: {
     blurb:
-      "Vercel sends webhooks for deployment lifecycle events — created, succeeded, failed — across your projects.",
+      "Vercel sends webhooks for deployment lifecycle events (created, succeeded, failed) across your projects.",
     configHint: "Vercel Dashboard → Team Settings → Webhooks",
     category: "Dev & deploy",
     updated: "2026-08-21",
@@ -157,7 +157,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
   },
   telegram: {
     blurb:
-      "Telegram bots receive updates — messages, callback queries, edits — via a webhook URL registered with setWebhook.",
+      "Telegram bots receive updates (messages, callback queries, edits) via a webhook URL registered with setWebhook.",
     configHint: "Bot API → call setWebhook with your endpoint URL",
     category: "Communication",
     updated: "2026-08-21",
@@ -170,7 +170,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
   },
   hubspot: {
     blurb:
-      "HubSpot sends webhooks for CRM object changes — contact creation, property changes, deal updates.",
+      "HubSpot sends webhooks for CRM object changes: contact creation, property changes, deal updates.",
     configHint: "HubSpot developer account → your app → Webhooks",
     category: "Commerce & SaaS",
     updated: "2026-08-21",
@@ -189,7 +189,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
   },
   mux: {
     blurb:
-      "Mux sends webhooks for video asset lifecycle events — uploads, processing, ready states, and live streams.",
+      "Mux sends webhooks for video asset lifecycle events: uploads, processing, ready states, and live streams.",
     configHint: "Mux Dashboard → Settings → Webhooks",
     category: "Dev & deploy",
     updated: "2026-10-13",
@@ -1283,11 +1283,13 @@ export const WEBHOOK_PROVIDER_SLUGS: readonly string[] = [
 let pagesBySlug: ReadonlyMap<string, WebhookProviderPage> | null = null;
 
 /**
- * Every page's "More providers" links changed on this day, from the first
- * three of the category to the next three (and Stripe and Standard Webhooks
- * gained a comparison link), so no page is dated earlier.
+ * The last change to copy every page shares, so no page is dated earlier:
+ * on 26 October the "More providers" links (the next three of the category
+ * instead of the first three, plus comparison links for Stripe and Standard
+ * Webhooks); on 3 November the shared steps, checklist and questions (the
+ * Python and Go SDKs, destinations).
  */
-export const RELATED_LINKS_CHANGED = "2026-10-26";
+export const SHARED_COPY_CHANGED = "2026-11-03";
 
 /** The latest of several YYYY-MM-DD days. */
 function latestDay(...days: string[]): string {
@@ -1347,7 +1349,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
   const updated = latestDay(
     editorial.updated,
     showsSnippet ? PROVIDER_TEST_SNIPPET_ADDED : editorial.updated,
-    RELATED_LINKS_CHANGED
+    SHARED_COPY_CHANGED
   );
 
   return {
@@ -1392,7 +1394,7 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
     signatureNote: provider.signatureNote,
     inSdk: false,
     signatureOptional: provider.signatureOptional ?? false,
-    lastModified: new Date(`${latestDay(provider.updated, RELATED_LINKS_CHANGED)}T00:00:00.000Z`),
+    lastModified: new Date(`${latestDay(provider.updated, SHARED_COPY_CHANGED)}T00:00:00.000Z`),
     seo: PROVIDER_SEO[slug] ?? null,
   };
 }

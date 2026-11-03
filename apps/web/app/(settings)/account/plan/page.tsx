@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
+import { BillingPortalButton } from "@/components/billing/billing-portal";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
 import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
@@ -78,7 +79,7 @@ function UpgradeSuccessNotice() {
     >
       {show === "business"
         ? "Your subscription is active: 250,000 requests and 2,000 parsed pages a month, kept for 90 days, up to 50 layouts per endpoint, a custom inbound domain and file drops."
-        : "Your subscription is active: 100,000 requests every 30 days, kept for 31 days."}
+        : "Your subscription is active: 100,000 requests a month, kept for 31 days."}
     </Notice>
   );
 }
@@ -86,7 +87,7 @@ function UpgradeSuccessNotice() {
 type PlanKey = "free" | "pro" | "business";
 
 const PLAN_ROWS: { label: string; free: string; pro: string; business: string }[] = [
-  { label: "Requests", free: "50 a day", pro: "100,000 per 30 days", business: "250,000 a month" },
+  { label: "Requests", free: "50 a day", pro: "100,000 a month", business: "250,000 a month" },
   { label: "Requests kept for", free: "7 days", pro: "31 days", business: "90 days" },
   {
     label: "Parsed attachment pages",
@@ -99,7 +100,7 @@ const PLAN_ROWS: { label: string; free: string; pro: string; business: string }[
     label: "AI assists",
     free: "5 every 30 days",
     pro: "20 every 30 days",
-    business: "500 every 30 days",
+    business: "250 every 30 days",
   },
   {
     label: "Custom inbound domains",
@@ -214,7 +215,11 @@ export default function PlanPage() {
         <Suspense fallback={null}>
           <UpgradeSuccessNotice />
         </Suspense>
-        <PastDueBanner subscriptionStatus={profile.subscription_status} plan={profile.plan} />
+        <PastDueBanner
+          subscriptionStatus={profile.subscription_status}
+          plan={profile.plan}
+          accessToken={accessToken}
+        />
         <RetentionGraceNotice profile={profile} />
 
         <Panel
@@ -260,6 +265,7 @@ export default function PlanPage() {
                     profile={profile}
                     onUpdated={refresh}
                   />
+                  <BillingPortalButton accessToken={accessToken} />
                   {billingEnd && !profile.cancel_at_period_end && (
                     <p className="text-sm text-muted-foreground">
                       Next payment on {longDate(billingEnd)}

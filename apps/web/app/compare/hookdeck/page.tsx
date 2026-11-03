@@ -7,12 +7,12 @@ const FAQ_ITEMS = [
   {
     question: "What are the best Hookdeck alternatives in 2026?",
     answer:
-      "It depends on what you need. If you need a webhook development and testing tool, webhooks.cc is a strong alternative — it captures, inspects, and replays webhooks with SDK assertions and MCP tooling. If you need production webhook infrastructure with retries and routing, alternatives include Svix and cloud-native solutions like AWS EventBridge. webhooks.cc and Hookdeck are complementary tools — one for development, one for production.",
+      "It depends on what you need. If you need a webhook development and testing tool, webhooks.cc is a strong alternative: it captures, inspects, and replays webhooks and email with SDK assertions and MCP tooling. If you need production webhook infrastructure with retries and routing, alternatives include Svix and cloud-native solutions like AWS EventBridge. webhooks.cc and Hookdeck are complementary tools: one built for development, one for production.",
   },
   {
     question: "What is the difference between webhooks.cc and Hookdeck?",
     answer:
-      "Hookdeck is webhook infrastructure for production — it sits between webhook senders and your server, handling retries, rate limiting, routing, and delivery guarantees. webhooks.cc is a development and testing tool — it captures webhooks so you can inspect, replay, and assert on payloads during development and CI. Hookdeck solves reliability in production. webhooks.cc solves visibility during development.",
+      "Hookdeck is webhook infrastructure for production: it sits between webhook senders and your server, handling queuing, retries, rate limiting, routing, and delivery guarantees. webhooks.cc is a development and testing tool: it captures webhooks and email so you can inspect, replay, and assert on payloads during development and CI, and it can forward what it captures to up to 10 destinations with filters, throttling and retries. Hookdeck solves reliability in production. webhooks.cc solves visibility during development.",
   },
   {
     question: "Can I use webhooks.cc and Hookdeck together?",
@@ -22,12 +22,12 @@ const FAQ_ITEMS = [
   {
     question: "Does Hookdeck have a free tier?",
     answer:
-      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every Pro feature. Paid plans raise rate limits and retention, Business adds attachment parsing, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
+      "Yes. Hookdeck's Developer plan is free for one user, with 10,000 events a month and 3-day retention. webhooks.cc also offers a free tier with every Pro feature. Paid plans raise request limits and retention, Business adds more parsed pages, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately from $12/seat/mo.",
   },
   {
     question: "Does webhooks.cc handle webhook retries and delivery guarantees?",
     answer:
-      "No. webhooks.cc is a testing tool — it captures and stores incoming webhooks for inspection, replay, and automated assertions. It does not sit in your production webhook delivery path. For production reliability (retries, rate limiting, dead-letter queues), Hookdeck or a similar infrastructure tool is the right choice.",
+      "Partly. Forwarding sends each captured request or email to up to 10 destinations per endpoint, each with its own filter, throttle, delay and format, retries a failed delivery for about a day, logs every try, and lets you redeliver what failed. The sender gets its answer from webhooks.cc (a mock response or a plain 200), not from your server, so it is not a gateway in front of production traffic. For production reliability at volume (queuing in front of your own service, delivery guarantees and alerting), Hookdeck or a similar infrastructure tool is the right choice.",
   },
   {
     question: "Is Hookdeck good for testing webhooks in development?",
@@ -47,27 +47,40 @@ const FAQ_ITEMS = [
 ];
 
 const ROWS = [
-  ["Primary focus", "Webhook testing & development", "Webhook infrastructure & reliability"],
-  ["Webhook capture & inspection", "Yes — core feature", "Yes — event log"],
-  ["Retry & delivery guarantees", "No", "Yes — core feature"],
-  ["Rate limiting & throttling", "No", "Yes"],
-  ["Webhook routing & fan-out", "No", "Yes"],
-  ["Dead-letter queue", "No", "Yes"],
-  ["Mock responses", "Yes — per endpoint", "No"],
-  ["Request replay", "Yes — to any URL", "Yes — redelivery"],
+  ["Primary focus", "Webhook & email testing", "Webhook infrastructure & reliability"],
+  ["Webhook capture & inspection", "Yes, core feature", "Yes, event log"],
+  [
+    "Retries",
+    "Forwarded deliveries, for about a day",
+    "Yes, with delivery guarantees (core feature)",
+  ],
+  ["Rate limiting & throttling", "Throttle per destination", "Yes"],
+  ["Routing & fan-out", "Up to 10 destinations per endpoint, with filters", "Yes"],
+  ["Failed deliveries", "Listed per endpoint, redeliver in bulk", "Issues and bulk retry"],
+  ["Mock responses", "Yes, rule-based with placeholders", "No"],
+  ["Request replay", "Yes, to any URL", "Yes, redelivery"],
   ["CLI tunnel to localhost", "Yes (whk tunnel)", "Yes (hookdeck listen)"],
-  ["TypeScript SDK", "Yes — test assertions", "Yes — infrastructure API"],
+  ["SDKs", "TypeScript, Python, Go, with test assertions", "Yes, infrastructure API"],
   ["CI test assertions (waitFor)", "Yes", "No"],
-  ["MCP server for AI agents", "Yes, @webhooks-cc/mcp", "Yes, for Event Gateway operations"],
-  ["Open source", "Yes (AGPL + MIT)", "Partially"],
-  ["Team collaboration", "$12/seat/mo, pooled quota", "Team+ ($39/mo), unlimited seats"],
-  ["Free tier features", "Every Pro feature", "Limited events/month"],
+  [
+    "Inbound email capture",
+    "Yes, {slug}@mailhooks.cc or your own domain",
+    "Through an email provider",
+  ],
+  [
+    "MCP server for AI agents",
+    "Yes, remote (OAuth) or local",
+    "Yes, local, for Event Gateway operations",
+  ],
+  ["Open source", "Yes (AGPL + MIT)", "CLI and Outpost (Apache 2.0)"],
+  ["Team collaboration", "From $12/seat/mo, pooled quota", "Team (from $39/mo), unlimited seats"],
+  ["Free tier features", "Every Pro feature", "1 user, 10,000 events/month"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Hookdeck Alternative: vs ngrok & Webhook.site (2026)",
   description:
-    "Hookdeck alternative for webhook development and testing. Inspect, replay, and assert on payloads with SDK, CLI tunnel, and MCP server.",
+    "Hookdeck alternative for webhook development and testing. Inspect, replay, forward and assert on webhooks and email with SDKs, a CLI tunnel, and an MCP server.",
   path: "/compare/hookdeck",
   keywords: [
     "hookdeck alternative",
@@ -95,14 +108,15 @@ export default function CompareHookdeckPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated October 2026
+          Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Hookdeck</h1>
         <p className="text-lg text-muted-foreground mb-10">
           Looking for a Hookdeck alternative for webhook development and testing? webhooks.cc
-          captures webhooks, inspects payloads, replays requests, and lets you write automated test
-          assertions. Hookdeck handles production infrastructure — retries, rate limiting, routing,
-          and delivery guarantees. They solve different problems and work well together.
+          captures webhooks and email, inspects payloads, replays requests, forwards them to the
+          destinations you choose, and lets you write automated test assertions. Hookdeck handles
+          production infrastructure: queuing, retries, rate limiting, routing, and delivery
+          guarantees. They solve different problems and work well together.
         </p>
 
         {/* Feature table */}
@@ -145,8 +159,10 @@ export default function CompareHookdeckPage() {
             </h3>
             <p className="text-muted-foreground">
               webhooks.cc captures every incoming webhook and makes it available for inspection,
-              search, export, and replay. Its SDK lets you assert on payloads in CI test suites.
-              Hookdeck sits in your production webhook delivery path — it receives webhooks, applies
+              search, export, and replay. Its SDKs let you assert on payloads in CI test suites, and
+              its forwarding sends what arrives to up to 10 destinations with filters, a throttle
+              and retries, which suits staging, email to webhook and team alerts. Hookdeck sits in
+              your production webhook delivery path: it receives webhooks, queues them, applies
               retries, rate limiting, and routing rules, then delivers them to your server. One is
               for building; the other is for running.
             </p>
@@ -156,11 +172,13 @@ export default function CompareHookdeckPage() {
             <h3 className="text-lg font-bold mb-2">AI agent integration</h3>
             <p className="text-muted-foreground">
               Both ship an MCP server, for different jobs. The webhooks.cc MCP server is for
-              testing: AI coding agents like Cursor, Claude Code, and Windsurf create endpoints,
-              send signed test payloads, inspect what arrived, and replay requests without opening
-              the dashboard. Hookdeck&apos;s MCP server (hookdeck gateway mcp, part of its CLI) is
-              for operating its Event Gateway: agents read connections, events, delivery attempts,
-              issues, and metrics to diagnose production traffic.
+              testing: AI coding agents like Claude Code, Cursor, and Codex create endpoints, send
+              signed test payloads, inspect what arrived, and replay requests without opening the
+              dashboard, through the remote server at webhooks.cc/mcp (one OAuth approval) or the
+              local package. Hookdeck&apos;s MCP server (hookdeck gateway mcp, part of its CLI, read
+              only unless you allow writes) is for operating its Event Gateway: agents read
+              connections, events, delivery attempts, issues, and metrics to diagnose production
+              traffic.
             </p>
           </div>
 
@@ -170,8 +188,8 @@ export default function CompareHookdeckPage() {
               These tools are not mutually exclusive. A common pattern: use webhooks.cc during
               development to capture and debug webhook payloads, write SDK assertions in your test
               suite, then use Hookdeck in production for reliable delivery with retries and rate
-              limiting. For teams, webhooks.cc costs $12/seat/month, while Hookdeck&apos;s Team plan
-              starts at $39/month with unlimited seats.
+              limiting. For teams, webhooks.cc costs $12/seat/month ($35 for Team Business), while
+              Hookdeck&apos;s Team plan starts at $39/month with unlimited seats.
             </p>
           </div>
         </div>
@@ -186,6 +204,7 @@ export default function CompareHookdeckPage() {
               <li>Replay captured requests against your handler</li>
               <li>AI agent tooling for webhook workflows (MCP)</li>
               <li>Mock responses returned to webhook senders</li>
+              <li>Inbound email captured, parsed and forwarded as JSON</li>
             </ul>
           </div>
           <div className="ui-card ui-card-static">
