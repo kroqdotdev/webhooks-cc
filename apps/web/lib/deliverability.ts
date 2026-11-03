@@ -49,8 +49,9 @@ const SPF_LOOKUP_LIMIT = 10;
 const GMAIL_CLIP_BYTES = 102 * 1024;
 /** A Date header further than this from the arrival time looks wrong. */
 const DATE_SKEW_MS = 24 * 60 * 60 * 1000;
-/** Less visible text than this next to images reads as an image-only email. */
-const MIN_TEXT_WITH_IMAGES = 200;
+/** Visible text an email with images needs at the least, and per image past the first. */
+const MIN_TEXT_ANY = 20;
+const MIN_TEXT_PER_IMAGE = 100;
 /** Examples named in a finding. */
 const MAX_EXAMPLES = 3;
 
@@ -180,6 +181,14 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
           );
         }
       }
+      if (spf.missingIncludes.length > 0) {
+        add(
+          "spf-includes",
+          "fail",
+          "SPF includes a domain without SPF",
+          `The record of ${domain} includes ${list(spf.missingIncludes)}, which ${spf.missingIncludes.length === 1 ? "publishes" : "publish"} no SPF record. A receiver that reaches that include fails SPF with a permerror. Remove the include or fix its name.`
+        );
+      }
       if (spf.ptr) {
         add(
           "spf-ptr",
@@ -192,19 +201,34 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
   }
 
   const dmarc = auth.dmarc;
-  const record = setup?.dmarc ?? null;
+  const setupOk = setup !== null && setup.error === null;
+  const record = setupOk ? setup.dmarc : null;
   const fromDomain = dmarc?.domain || "The From domain";
-  // DMARC does not apply to mail without exactly one From domain. Without
-  // the recorded setup (older mail, or lookups that ran out of time), a
-  // result of "none" still means no record was found.
-  const applies = Boolean(dmarc?.domain) && email.from.length === 1;
+  const result = dmarc?.result ?? null;
+  const dkimPassed = auth.dkim.some((signature) => signature.result === "pass");
+  // DMARC is evaluated only for mail with one From domain (the MX host
+  // leaves the domain empty otherwise). Before the MX host took
+  // mail-auth's own verdict, "none" also covered a record that nothing
+  // aligned with, so for mail without the recorded setup it only means "no
+  // record" when SPF or DKIM passed.
   const noRecord =
-    applies &&
-    (setup && !setup.error
-      ? record === null && dmarc?.result !== "temperror"
-      : dmarc?.result === "none");
-  if (dmarc?.result === "skipped") {
-    // The message was too unusual to verify; nothing to say about DMARC.
+    Boolean(dmarc?.domain) &&
+    result === "none" &&
+    (setupOk || auth.spf?.result === "pass" || dkimPassed);
+  if (result === "permerror") {
+    add(
+      "dmarc-record",
+      "fail",
+      "DMARC record is invalid",
+      `The DMARC record of ${fromDomain} could not be read (permerror), so receivers apply no policy at all. Check its syntax: v=DMARC1 first, then p=none, quarantine or reject.`
+    );
+  } else if (result === "temperror") {
+    add(
+      "dmarc-record",
+      "info",
+      "DMARC not checked",
+      `The DMARC record of ${fromDomain} could not be looked up when the email arrived.`
+    );
   } else if (noRecord) {
     add(
       "dmarc-record",
@@ -212,23 +236,30 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
       "No DMARC record",
       `${fromDomain} publishes no DMARC record. Gmail and Yahoo require one from bulk senders, and without it anyone can put ${fromDomain} in the From line.`
     );
-  } else if (record) {
-    if (record.p === "none" || record.p === null) {
+  } else if (result === "pass" || result === "fail") {
+    // The policy that applied to this From domain: for a subdomain that is
+    // the record's sp (or np), not its p.
+    const applied =
+      dmarc?.policy === "none" || dmarc?.policy === "quarantine" || dmarc?.policy === "reject"
+        ? dmarc.policy
+        : (record?.p ?? null);
+    const fromSubdomainPolicy = record !== null && applied !== null && applied !== record.p;
+    if (applied === "none" || (applied === null && record !== null)) {
       add(
         "dmarc-policy",
         "warn",
         "DMARC only monitors",
-        `The policy of ${fromDomain} is p=none: mail that fails DMARC is delivered as usual. Once the reports show only your own servers, move to quarantine and then reject.`
+        `The policy that applies to ${fromDomain} is none${fromSubdomainPolicy ? " (the record's policy for subdomains)" : ""}: mail that fails DMARC is delivered as usual. Once the reports show only your own servers, move to quarantine and then reject.`
       );
-    } else {
+    } else if (applied !== null) {
       add(
         "dmarc-policy",
         "pass",
-        `DMARC policy is ${record.p}`,
-        `Mail that fails DMARC for ${fromDomain} is ${record.p === "reject" ? "refused" : "sent to spam"}.`
+        `DMARC policy is ${applied}`,
+        `Mail that fails DMARC for ${fromDomain} is ${applied === "reject" ? "refused" : "sent to spam"}${fromSubdomainPolicy ? " (the record's policy for subdomains)" : ""}.`
       );
     }
-    if (record.testing) {
+    if (record?.testing) {
       add(
         "dmarc-testing",
         "warn",
@@ -236,14 +267,14 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         "The record has t=y, so receivers apply a weaker policy than it names."
       );
     }
-    if (record.rua.length === 0) {
+    if (record && record.rua.length === 0) {
       add(
         "dmarc-reports",
         "warn",
         "No DMARC reports",
         "The record has no rua address, so you never learn which servers send mail as your domain or whether it passes."
       );
-    } else {
+    } else if (record) {
       add(
         "dmarc-reports",
         "pass",
@@ -251,15 +282,13 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         `Aggregate reports go to ${list(record.rua)}.`
       );
     }
-  }
 
-  if (dmarc && (dmarc.result === "pass" || dmarc.result === "fail")) {
     const dkimDomains = auth.dkim
-      .filter((s) => s.result === "pass" && s.domain)
-      .map((s) => s.domain!);
+      .filter((signature) => signature.result === "pass" && signature.domain)
+      .map((signature) => signature.domain!);
     const parts: string[] = [];
-    if (dmarc.dkim === "pass") parts.push(`DKIM (${list([...new Set(dkimDomains)])})`);
-    if (dmarc.spf === "pass") parts.push(`SPF (${auth.spf?.domain ?? "the envelope sender"})`);
+    if (dmarc?.dkim === "pass") parts.push(`DKIM (${list([...new Set(dkimDomains)])})`);
+    if (dmarc?.spf === "pass") parts.push(`SPF (${auth.spf?.domain ?? "the envelope sender"})`);
     if (parts.length > 0) {
       add(
         "alignment",
@@ -272,12 +301,13 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         "alignment",
         "fail",
         "Not aligned with the From domain",
-        `Neither a passing DKIM signature nor the SPF domain matches ${fromDomain}${record ? ` (alignment: DKIM ${record.adkim}, SPF ${record.aspf})` : ""}. Sign with a key on ${fromDomain}, or send from an envelope address on it.`
+        `Neither a passing DKIM signature nor a passing SPF domain matches ${fromDomain}${record ? ` (alignment: DKIM ${record.adkim}, SPF ${record.aspf})` : ""}, so the email fails DMARC. Sign with a key on ${fromDomain}, or send from an envelope address on it through a server its SPF lists.`
       );
     }
   }
 
-  if (auth.dkim.length === 0) {
+  // Skipped means the message was too unusual to verify, not unsigned.
+  if (auth.dkim.length === 0 && result !== "skipped") {
     add(
       "dkim-signed",
       "fail",
@@ -285,30 +315,47 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
       "The email carries no DKIM signature. Gmail and Yahoo require DKIM from bulk senders, and it is what survives forwarding when SPF does not."
     );
   }
-  const keys = setup?.dkim ?? [];
+  const keys = setupOk ? setup.dkim : [];
   for (const key of keys) {
     const name = `${key.selector}._domainkey.${key.domain}`;
     const id = `dkim-key-${key.domain}-${key.selector}`;
-    if (key.revoked) {
+    // A bad extra signature does not matter while another one passes.
+    const otherPasses = auth.dkim.some(
+      (signature) =>
+        signature.result === "pass" &&
+        !(signature.domain === key.domain && signature.selector === key.selector)
+    );
+    const severity: FindingStatus = otherPasses ? "warn" : "fail";
+    const besides = otherPasses
+      ? " Another signature on the email passes, so delivery does not depend on this one."
+      : "";
+    if (key.error) {
       add(
         id,
-        "fail",
+        "info",
+        "DKIM key not checked",
+        `The key at ${name} could not be looked up when the email arrived.`
+      );
+    } else if (key.revoked) {
+      add(
+        id,
+        severity,
         "DKIM key revoked",
-        `${name} publishes an empty key: this selector was retired, so the signature cannot pass.`
+        `${name} publishes an empty key: this selector was retired, so the signature cannot pass.${besides}`
       );
     } else if (key.key === null) {
       add(
         id,
-        "fail",
+        severity,
         "No DKIM key published",
-        `Nothing is published at ${name}, so the signature cannot be checked.`
+        `Nothing is published at ${name}, so the signature cannot be checked.${besides}`
       );
     } else if (key.key === "rsa" && key.bits !== null && key.bits < 1024) {
       add(
         id,
-        "fail",
+        severity,
         `DKIM key is ${key.bits} bits`,
-        `The RSA key at ${name} is too short: receivers ignore keys under 1024 bits. Publish a 2048-bit key.`
+        `The RSA key at ${name} is too short: receivers ignore keys under 1024 bits. Publish a 2048-bit key.${besides}`
       );
     } else if (key.key === "rsa" && key.bits !== null && key.bits < 2048) {
       add(
@@ -328,9 +375,9 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
     if (key.algorithm === "rsa-sha1") {
       add(
         `${id}-sha1`,
-        "fail",
+        severity,
         "Signed with rsa-sha1",
-        `The signature by ${key.domain} uses SHA-1, which receivers must no longer accept (RFC 8301). Sign with rsa-sha256.`
+        `The signature by ${key.domain} uses SHA-1, which receivers must no longer accept (RFC 8301). Sign with rsa-sha256.${besides}`
       );
     }
   }
@@ -432,13 +479,14 @@ function serverFindings({ email }: DeliverabilityInput, add: Add) {
         "tls",
         "warn",
         "Sent without TLS",
-        "The server did not start TLS. Gmail requires TLS from bulk senders and marks unencrypted mail with a red padlock."
+        "The server did not start TLS. Gmail lists TLS among its requirements for every sender and marks unencrypted mail with a red padlock."
       );
     }
   }
 
   const bimi = auth?.setup?.bimi ?? null;
-  const policy = auth?.setup?.dmarc?.p ?? null;
+  // The policy that applied to this From domain (sp for a subdomain).
+  const policy = auth?.dmarc?.policy ?? auth?.setup?.dmarc?.p ?? null;
   const enforced = policy === "quarantine" || policy === "reject";
   if (bimi && !bimi.error) {
     if (bimi.found && bimi.logo) {
@@ -491,12 +539,27 @@ function site(host: string): string {
   return labels.slice(-2).join(".");
 }
 
+/**
+ * Top-level domains a bare "name.tld" link text must end in to count as an
+ * address. Without a scheme or "www.", text such as "invoice.pdf" or
+ * "Node.js" is a file or a product name, not a site.
+ */
+const COMMON_TLDS = new Set(
+  (
+    "com net org io co app dev ai me info biz us uk de fr nl dk se no fi eu ca au nz es it " +
+    "ch at be pl ie pt cz jp in br mx"
+  ).split(" ")
+);
+
 /** The host a link's text names, when the text is a URL or a domain. */
 function hostInText(text: string): string | null {
   if (text.length === 0 || text.length > 200 || /\s/.test(text)) return null;
+  const scheme = /^https?:\/\//i.test(text);
   try {
-    const host = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`).hostname;
-    return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(host) ? host : null;
+    const host = new URL(scheme ? text : `https://${text}`).hostname.toLowerCase();
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) return null;
+    if (scheme || host.startsWith("www.")) return host;
+    return COMMON_TLDS.has(host.slice(host.lastIndexOf(".") + 1)) ? host : null;
   } catch {
     return null;
   }
@@ -506,10 +569,30 @@ function isIpHost(host: string): boolean {
   return host.startsWith("[") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 }
 
+/** Attributes read per image tag; real ones are far shorter. */
+const MAX_IMG_TAG_CHARS = 2000;
+const IMG_SIZE = /\b(?:width|height)\s*[=:]\s*["']?\s*(\d+)/gi;
+
+/**
+ * The images a reader sees: tracking pixels (an image 2 pixels wide or high
+ * or less, or hidden) are left out. Linear: the end of a tag is looked for
+ * once per tag, and only its first characters are read.
+ */
 function countImages(html: string): number {
   const lower = html.toLowerCase();
   let count = 0;
-  for (let at = lower.indexOf("<img"); at !== -1; at = lower.indexOf("<img", at + 4)) count++;
+  let close = -1;
+  for (let at = lower.indexOf("<img"); at !== -1; at = lower.indexOf("<img", at + 4)) {
+    if (close < at) close = lower.indexOf(">", at);
+    if (close === -1) break;
+    const tag = lower.slice(at, Math.min(close, at + MAX_IMG_TAG_CHARS));
+    if (/display\s*:\s*none/.test(tag)) continue;
+    let pixel = false;
+    for (const size of tag.matchAll(IMG_SIZE)) {
+      if (Number(size[1]) <= 2) pixel = true;
+    }
+    if (!pixel) count++;
+  }
   return count;
 }
 
@@ -526,7 +609,7 @@ function messageFindings({ email, headers, receivedAt }: DeliverabilityInput, ad
       "from",
       "warn",
       "More than one From address",
-      "Receivers exempt such mail from DMARC, and many score it as spam."
+      "RFC 5322 allows that only with a Sender header, and receivers often refuse such mail or check DMARC for every domain in it. Send from one address."
     );
   }
 
@@ -686,7 +769,9 @@ function messageFindings({ email, headers, receivedAt }: DeliverabilityInput, ad
   const images = countImages(html);
   if (images > 0) {
     const text = htmlToText(html).length;
-    if (text < MIN_TEXT_WITH_IMAGES) {
+    // A logo above a short sign-in code is normal; a picture with nothing
+    // beside it, or several with little text, is what filters flag.
+    if (text < MIN_TEXT_PER_IMAGE * Math.max(images - 1, 0) || text < MIN_TEXT_ANY) {
       add(
         "images",
         "warn",

@@ -164,6 +164,7 @@ impl AuthChecker {
 /// Keeps the document under `MAX_AUTH_JSON_BYTES`: the sender-setup facts
 /// go first, then the ARC sealers. The verdicts themselves are small.
 fn fit(json: &mut Value) {
+    without_nul(json);
     let size = |json: &Value| serde_json::to_string(json).map_or(usize::MAX, |s| s.len());
     if size(json) <= MAX_AUTH_JSON_BYTES {
         return;
@@ -175,6 +176,26 @@ fn fit(json: &mut Value) {
         && let Some(arc) = json.get_mut("arc").and_then(Value::as_object_mut)
     {
         arc.remove("sealers");
+    }
+}
+
+/// Removes NUL from every string, and the text `\u0000` too: jsonb refuses
+/// the one, and the receiver drops a document whose JSON contains the other
+/// (it cannot tell them apart). Names come from the sender's DNS and headers.
+fn without_nul(json: &mut Value) {
+    match json {
+        Value::String(text) => {
+            if text.contains('\0') {
+                text.retain(|c| c != '\0');
+            }
+            // Each pass removes a backslash, so `\\u0000` cannot rebuild one.
+            while text.contains("\\u0000") {
+                *text = text.replace("\\u0000", "u0000");
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(without_nul),
+        Value::Object(map) => map.values_mut().for_each(without_nul),
+        _ => {}
     }
 }
 
@@ -328,26 +349,6 @@ async fn run(
             &spf,
         ))
         .await;
-    let arc = match arc_skip_reason(&request.raw) {
-        Some(reason) => {
-            json["arc"] = json!({ "result": "skipped", "reason": reason });
-            None
-        }
-        None => {
-            let arc = authenticator.verify_arc(&message).await;
-            json["arc"] = json!({
-                "result": dkim_result(arc.result()),
-                "sets": arc.sets().len(),
-                "sealers": arc
-                    .sets()
-                    .iter()
-                    .map(|set| set.seal.header.d.chars().take(MAX_DOMAIN_CHARS).collect::<String>())
-                    .collect::<Vec<_>>(),
-            });
-            Some(arc)
-        }
-    };
-
     json["dkim"] = Value::Array(
         dkim.iter()
             .map(|output| {
@@ -360,27 +361,45 @@ async fn run(
             })
             .collect(),
     );
-    let aligned = |r: &DmarcResult| matches!(r, DmarcResult::Pass);
-    let overall = if aligned(dmarc.spf_result()) || aligned(dmarc.dkim_result()) {
-        "pass"
-    } else if matches!(dmarc.dkim_result(), DmarcResult::None)
-        && matches!(dmarc.spf_result(), DmarcResult::None)
-    {
-        "none"
-    } else if matches!(dmarc.dkim_result(), DmarcResult::TempError(_))
-        || matches!(dmarc.spf_result(), DmarcResult::TempError(_))
-    {
-        "temperror"
-    } else {
-        "fail"
-    };
+    // mail-auth's own verdict: with a record and nothing aligned it is a
+    // failure, even when neither mechanism produced a result of its own
+    // (SPF failed and no signature passed); "none" only without a record.
     json["dmarc"] = json!({
-        "result": overall,
+        "result": dmarc_result(&dmarc.result()),
         "domain": dmarc.domain(),
         "policy": policy(dmarc.policy()),
         "spf": dmarc_result(dmarc.spf_result()),
         "dkim": dmarc_result(dmarc.dkim_result()),
     });
+
+    // After the verdicts above, and within the setup deadline: a sealer's
+    // slow nameserver must not cost the results already in hand.
+    let arc = match arc_skip_reason(&request.raw) {
+        Some(reason) => {
+            json["arc"] = json!({ "result": "skipped", "reason": reason });
+            None
+        }
+        None => match tokio::time::timeout_at(setup_deadline, authenticator.verify_arc(&message))
+            .await
+        {
+            Ok(arc) => {
+                json["arc"] = json!({
+                    "result": dkim_result(arc.result()),
+                    "sets": arc.sets().len(),
+                    "sealers": arc
+                        .sets()
+                        .iter()
+                        .map(|set| set.seal.header.d.chars().take(MAX_DOMAIN_CHARS).collect::<String>())
+                        .collect::<Vec<_>>(),
+                });
+                Some(arc)
+            }
+            Err(_) => {
+                json["arc"] = json!({ "result": "skipped", "reason": "timeout" });
+                None
+            }
+        },
+    };
 
     let mut results = AuthenticationResults::new(hostname)
         .with_dkim_results(&dkim, message.from())
@@ -670,6 +689,18 @@ mod tests {
         assert_eq!(large["setup"], json!({ "error": "too large" }));
         assert_eq!(large["arc"], json!({ "result": "pass" }));
         assert_eq!(large["spf"], json!({ "result": "pass" }));
+    }
+
+    #[test]
+    fn leaves_no_nul_for_the_receiver_to_refuse() {
+        let mut json = json!({
+            "dkim": [{ "domain": "a\0b.example" }],
+            "setup": { "spf": { "record": "v=spf1 \\u0000 \\\\u0000 -all" } },
+        });
+        fit(&mut json);
+        assert_eq!(json["dkim"][0]["domain"], json!("ab.example"));
+        let text = serde_json::to_string(&json).unwrap();
+        assert!(!text.contains("\\u0000"), "{text}");
     }
 
     #[test]

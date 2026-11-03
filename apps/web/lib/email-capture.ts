@@ -161,6 +161,7 @@ function asSpfRecord(value: Json | undefined): EmailSpfRecord | null {
     lookups: asNumber(spf.lookups),
     lookupsCapped: spf.lookups_capped === true,
     ptr: spf.ptr === true,
+    missingIncludes: asStrings(spf.missing_includes),
     error: asString(spf.error),
   };
 }
@@ -194,6 +195,7 @@ function asDkimKeys(value: Json | undefined): EmailDkimKey[] {
         key: asString(key.key),
         bits: asNumber(key.bits),
         revoked: key.revoked === true,
+        error: asString(key.error),
       },
     ];
   });

@@ -751,9 +751,13 @@ function AuthenticationPane({
                 ? `${dmarc?.domain ?? "The sender's domain"} publishes no DMARC policy, so nothing was enforced.`
                 : dmarc.result === "skipped"
                   ? `Not checked${dmarc.reason ? `: ${dmarc.reason}` : ""}.`
-                  : dmarc.result === "pass"
-                    ? `The email passes the DMARC policy of ${dmarc.domain}.`
-                    : `The email fails the DMARC policy of ${dmarc.domain}${dmarc.policy ? ` (policy: ${dmarc.policy})` : ""}.`}
+                  : dmarc.result === "permerror"
+                    ? `The DMARC record of ${dmarc.domain} could not be read (permerror).`
+                    : dmarc.result === "temperror"
+                      ? `The DMARC record of ${dmarc.domain} could not be looked up (temperror).`
+                      : dmarc.result === "pass"
+                        ? `The email passes the DMARC policy of ${dmarc.domain}.`
+                        : `The email fails the DMARC policy of ${dmarc.domain}${dmarc.policy ? ` (policy: ${dmarc.policy})` : ""}.`}
             </CheckRow>
             <CheckRow
               name="Reverse DNS"

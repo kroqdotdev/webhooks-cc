@@ -214,6 +214,7 @@ describe("toEmailCapture", () => {
         lookups: 4,
         lookupsCapped: false,
         ptr: false,
+        missingIncludes: [],
         error: null,
       },
       dmarc: {
@@ -233,6 +234,7 @@ describe("toEmailCapture", () => {
           key: "rsa",
           bits: 1024,
           revoked: false,
+          error: null,
         },
       ],
       bimi: { found: false, domain: null, logo: false, authority: false, error: null },

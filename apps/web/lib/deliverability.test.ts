@@ -15,6 +15,7 @@ function setup(overrides: Partial<EmailSenderSetup> = {}): EmailSenderSetup {
       lookups: 3,
       lookupsCapped: false,
       ptr: false,
+      missingIncludes: [],
       error: null,
     },
     dmarc: {
@@ -34,6 +35,7 @@ function setup(overrides: Partial<EmailSenderSetup> = {}): EmailSenderSetup {
         key: "rsa",
         bits: 2048,
         revoked: false,
+        error: null,
       },
     ],
     bimi: { found: false, domain: null, logo: false, authority: false, error: null },
@@ -161,6 +163,7 @@ describe("deliverabilityReport", () => {
       },
       bimi: { found: true, domain: "acme.example", logo: true, authority: false, error: null },
     });
+    capture.auth!.dmarc!.policy = "none";
     expect(byId(report(capture).findings)).toMatchObject({
       "spf-all": "fail",
       "spf-lookups": "fail",
@@ -170,8 +173,9 @@ describe("deliverabilityReport", () => {
       "dmarc-reports": "warn",
       "dkim-key-acme.example-s1": "warn",
       "dkim-key-acme.example-s1-sha1": "fail",
-      "dkim-key-acme.example-old": "fail",
-      "dkim-key-acme.example-gone": "fail",
+      // s1 passes, so a retired or missing extra key only adds noise.
+      "dkim-key-acme.example-old": "warn",
+      "dkim-key-acme.example-gone": "warn",
       helo: "warn",
       bimi: "warn",
     });
@@ -312,9 +316,120 @@ describe("deliverabilityReport", () => {
 
     const images = email({ html: '<img src="a.png"><img src="b.png"><p>Sale</p>' });
     expect(byId(report(images).findings).images).toBe("warn");
+    const pictureOnly = email({
+      html: '<a href="https://acme.example/sale"><img src="sale.png"></a>',
+    });
+    expect(byId(report(pictureOnly).findings).images).toBe("warn");
+    // A logo and a tracking pixel above a short sign-in code is ordinary mail.
+    const signIn = email({
+      html: '<img src="logo.png" width="120"><p>Your sign-in code is 482913. It expires in 10 minutes.</p><img src="https://t.example/o.gif" width="1" height="1">',
+    });
+    expect(byId(report(signIn).findings).images).toBe("pass");
+
+    // File and product names are not addresses; a bare domain is.
+    const names = email({
+      html: [
+        '<a href="https://cdn.files.example/x/invoice.pdf">invoice.pdf</a>',
+        '<a href="https://nodejs.org/">Node.js</a>',
+        `<p>${"words ".repeat(50)}</p>`,
+      ].join(""),
+    });
+    expect(byId(report(names).findings)["links-text"]).toBeUndefined();
+    const bare = email({
+      html: `<a href="https://login.evil.example/">paypal.com</a><p>${"words ".repeat(50)}</p>`,
+    });
+    expect(byId(report(bare).findings)["links-text"]).toBe("warn");
 
     const large = email({ html: `<p>${"x".repeat(110 * 1024)}</p>` });
     expect(byId(report(large).findings).size).toBe("warn");
+  });
+
+  it("reports a DMARC failure that no mechanism aligned with", () => {
+    // SPF failed and no signature passed: mail-auth's verdict is fail.
+    const capture = email();
+    capture.auth!.spf = { result: "fail", domain: "acme.example" };
+    capture.auth!.dkim = [];
+    capture.auth!.dmarc = {
+      result: "fail",
+      domain: "acme.example",
+      policy: "reject",
+      reason: null,
+      spf: "none",
+      dkim: "none",
+    };
+    const ids = byId(report(capture).findings);
+    expect(ids).toMatchObject({ alignment: "fail", "dmarc-policy": "pass", "dkim-signed": "fail" });
+    expect(ids["dmarc-record"]).toBeUndefined();
+  });
+
+  it("judges the policy that applies to a subdomain", () => {
+    const capture = email({ from: [{ name: null, address: "news@news.acme.example" }] });
+    capture.auth!.dmarc = { ...capture.auth!.dmarc!, domain: "news.acme.example", policy: "none" };
+    capture.auth!.setup = setup({
+      bimi: { found: true, domain: "acme.example", logo: true, authority: true, error: null },
+    });
+    const findings = report(capture).findings;
+    expect(byId(findings)).toMatchObject({ "dmarc-policy": "warn", bimi: "warn" });
+    expect(findings.find((f) => f.id === "dmarc-policy")?.detail).toContain("for subdomains");
+  });
+
+  it("calls an unreadable record invalid, not missing", () => {
+    const capture = email();
+    capture.auth!.setup = setup({ dmarc: null });
+    capture.auth!.dmarc = {
+      result: "permerror",
+      domain: "acme.example",
+      policy: "unspecified",
+      reason: null,
+      spf: "permerror",
+      dkim: "permerror",
+    };
+    const ids = byId(report(capture).findings);
+    expect(ids["dmarc-record"]).toBe("fail");
+    expect(report(capture).findings.find((f) => f.id === "dmarc-record")?.title).toBe(
+      "DMARC record is invalid"
+    );
+    expect(ids.alignment).toBeUndefined();
+  });
+
+  it("does not guess on older mail whose DMARC result was ambiguous", () => {
+    const old = email();
+    old.auth = {
+      ...old.auth!,
+      setup: null,
+      dkim: [],
+      spf: { result: "softfail", domain: "acme.example" },
+    };
+    old.auth.dmarc = { result: "none", domain: "acme.example", policy: null, reason: null };
+    expect(byId(report(old).findings)["dmarc-record"]).toBeUndefined();
+  });
+
+  it("tells skipped and unreachable apart from missing", () => {
+    const skipped = email();
+    skipped.auth!.dkim = [];
+    skipped.auth!.dmarc = {
+      result: "skipped",
+      domain: null,
+      policy: null,
+      reason: "too many DKIM signatures",
+    };
+    expect(byId(report(skipped).findings)["dkim-signed"]).toBeUndefined();
+
+    const unreachable = email();
+    unreachable.auth!.setup = setup({
+      dkim: [{ ...setup().dkim[0], key: null, bits: null, error: "lookup failed" }],
+    });
+    expect(byId(report(unreachable).findings)["dkim-key-acme.example-s1"]).toBe("info");
+  });
+
+  it("names includes without an SPF record", () => {
+    const capture = email();
+    capture.auth!.setup = setup({
+      spf: { ...setup().spf!, missingIncludes: ["_spf.gone.example"] },
+    });
+    const finding = report(capture).findings.find((f) => f.id === "spf-includes");
+    expect(finding?.status).toBe("fail");
+    expect(finding?.detail).toContain("_spf.gone.example");
   });
 
   it("says nothing about checks that could not run", () => {

@@ -115,31 +115,44 @@ pub struct SetupInput<'a> {
 }
 
 pub(crate) async fn sender_setup(dns: &impl Dns, input: &SetupInput<'_>) -> Value {
-    let mut setup = json!({
-        "spf": spf(dns, input.spf_domain).await,
-        "helo": helo(dns, input).await,
-        "dkim": dkim_keys(dns, &input.dkim).await,
-    });
+    // Independent lookups, side by side: each DATA reply waits for them.
+    let (spf, helo, dkim, bimi) = tokio::join!(
+        spf(dns, input.spf_domain),
+        helo(dns, input),
+        dkim_keys(dns, &input.dkim),
+        async {
+            match input.from_domain {
+                Some(domain) => Some(bimi(dns, domain).await),
+                None => None,
+            }
+        },
+    );
+    let mut setup = json!({ "spf": spf, "helo": helo, "dkim": dkim });
     if let Some(record) = input.dmarc {
         setup["dmarc"] = dmarc(record);
     }
-    if let Some(domain) = input.from_domain {
-        setup["bimi"] = bimi(dns, domain).await;
+    if let Some(bimi) = bimi {
+        setup["bimi"] = bimi;
     }
     setup
 }
 
+/// At most `max` characters of text from DNS or a header, without control
+/// characters. (The whole document is cleaned of NUL once more before it
+/// leaves, see `auth_check::fit`.)
 fn cut(text: &str, max: usize) -> String {
-    text.chars().take(max).collect()
+    text.chars().filter(|c| !c.is_control()).take(max).collect()
 }
 
 // ---------------------------------------------------------------- SPF
 
 fn is_spf_record(text: &str) -> bool {
-    let text = text.trim_start();
+    // Bytes, not characters: records come from the sender's DNS, and slicing
+    // a string inside a character would panic.
+    let text = text.trim_start().as_bytes();
     text.len() >= 6
-        && text[..6].eq_ignore_ascii_case("v=spf1")
-        && text[6..].chars().next().is_none_or(|c| c == ' ')
+        && text[..6].eq_ignore_ascii_case(b"v=spf1")
+        && text.get(6).is_none_or(|&c| c == b' ')
 }
 
 async fn spf_records(dns: &impl Dns, domain: &str) -> Result<Vec<String>, ()> {
@@ -218,10 +231,10 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
         return json!({ "domain": null, "records": 0 });
     }
     let Ok(records) = spf_records(dns, domain).await else {
-        return json!({ "domain": domain, "error": "lookup failed" });
+        return json!({ "domain": cut(domain, MAX_URI_CHARS), "error": "lookup failed" });
     };
     let Some(first) = records.first() else {
-        return json!({ "domain": domain, "records": 0 });
+        return json!({ "domain": cut(domain, MAX_URI_CHARS), "records": 0 });
     };
 
     let top = spf_terms(first);
@@ -230,6 +243,9 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
     let mut lookups = top.lookups;
     let mut fetches = 1;
     let mut capped = false;
+    // Included domains without an SPF record: RFC 7208 makes that a
+    // permerror whenever the include is reached.
+    let mut missing: Vec<String> = Vec::new();
     // (domain, depth, reached only through redirects from the top record:
     // such a record's `all` is the one that applies).
     let mut pending: Vec<(String, usize, bool)> = top
@@ -251,6 +267,9 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
             continue;
         };
         let Some(record) = found.first() else {
+            if !via_redirect && missing.len() < MAX_REPORT_URIS {
+                missing.push(cut(&target, MAX_URI_CHARS));
+            }
             continue;
         };
         let terms = spf_terms(record);
@@ -264,13 +283,14 @@ async fn spf(dns: &impl Dns, domain: &str) -> Value {
     }
 
     json!({
-        "domain": domain,
+        "domain": cut(domain, MAX_URI_CHARS),
         "records": records.len(),
         "record": cut(first.trim(), MAX_RECORD_CHARS),
         "all": all.map(|q| format!("{q}all")),
         "redirect": top.redirect.is_some(),
         "lookups": lookups,
         "lookups_capped": capped,
+        "missing_includes": missing,
         "ptr": ptr,
     })
 }
@@ -375,20 +395,26 @@ async fn dkim_keys(dns: &impl Dns, signatures: &[(String, String, Algorithm)]) -
             "algorithm": algorithm(*signed_with),
         });
         let found = match dns.txt(&format!("{selector}._domainkey.{domain}")).await {
-            TxtAnswer::Records(records) => records
+            TxtAnswer::Records(records) => Ok(records
                 .into_iter()
-                .find(|record| tags(record).iter().any(|(name, _)| name == "p")),
-            _ => None,
+                .find(|record| tags(record).iter().any(|(name, _)| name == "p"))),
+            TxtAnswer::Missing => Ok(None),
+            // Not the same as no key: the key may well be there.
+            TxtAnswer::Failed => Err(()),
         };
         match found {
-            Some(record) => {
+            Ok(Some(record)) => {
                 if let (Value::Object(entry), Value::Object(facts)) =
                     (&mut entry, key_facts(&record))
                 {
                     entry.extend(facts);
                 }
             }
-            None => entry["key"] = Value::Null,
+            Ok(None) => entry["key"] = Value::Null,
+            Err(()) => {
+                entry["key"] = Value::Null;
+                entry["error"] = json!("lookup failed");
+            }
         }
         keys.push(entry);
     }
@@ -592,6 +618,11 @@ mod tests {
         assert!(is_spf_record("v=spf1"));
         assert!(!is_spf_record("v=spf10 -all"));
         assert!(!is_spf_record("google-site-verification=abc"));
+        // A sender's DNS may hold anything; slicing inside a character panicked.
+        assert!(!is_spf_record("v=\u{20ac}\u{20ac} hello"));
+        assert!(!is_spf_record("\u{20ac}"));
+        assert!(!is_spf_record("v=spf1\u{20ac}"));
+        assert!(is_spf_record("v=spf1 \u{20ac}"));
     }
 
     #[tokio::test]
@@ -616,6 +647,19 @@ mod tests {
         assert_eq!(found["redirect"], json!(true));
         assert_eq!(found["ptr"], json!(true));
         assert_eq!(found["lookups_capped"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn names_includes_without_a_record() {
+        let dns = StubDns::default()
+            .with(
+                "example.com",
+                &["v=spf1 include:gone.example include:ok.example -all"],
+            )
+            .with("ok.example", &["v=spf1 -all"]);
+        let found = spf(&dns, "example.com").await;
+        assert_eq!(found["missing_includes"], json!(["gone.example"]));
+        assert_eq!(found["lookups"], json!(2));
     }
 
     #[tokio::test]
@@ -729,6 +773,10 @@ mod tests {
                 &[&format!("v=DKIM1; k=ed25519; p={}", b64(vec![7; 32]))],
             )
             .with("old._domainkey.example.com", &["v=DKIM1; p="]);
+        let dns = StubDns {
+            failing: vec!["down._domainkey.example.com".into()],
+            ..dns
+        };
         let signatures = vec![
             (
                 "example.com".to_string(),
@@ -755,6 +803,11 @@ mod tests {
                 "gone".to_string(),
                 Algorithm::RsaSha256,
             ),
+            (
+                "example.com".to_string(),
+                "down".to_string(),
+                Algorithm::RsaSha256,
+            ),
         ];
         let keys = dkim_keys(&dns, &signatures).await;
         assert_eq!(
@@ -764,6 +817,7 @@ mod tests {
                 { "domain": "example.com", "selector": "ed", "algorithm": "ed25519-sha256", "key": "ed25519", "bits": 256 },
                 { "domain": "example.com", "selector": "old", "algorithm": "rsa-sha256", "key": "rsa", "bits": null, "revoked": true },
                 { "domain": "example.com", "selector": "gone", "algorithm": "rsa-sha256", "key": null },
+                { "domain": "example.com", "selector": "down", "algorithm": "rsa-sha256", "key": null, "error": "lookup failed" },
             ])
         );
     }

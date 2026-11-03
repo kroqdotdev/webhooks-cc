@@ -274,12 +274,12 @@ for (const style of ["classic", "clean"] as const) {
       await expect(shown(page.getByText("SUBJ_ALL_CAPS"))).toBeVisible();
       await expect(shown(page.getByText("+3.00"))).toBeVisible();
 
-      // The deliverability report: the 1024-bit key and the image-heavy
-      // HTML are worth improving, nothing is failing.
-      await expect(shown(page.getByText("2 to improve")).first()).toBeVisible();
+      // The deliverability report: the 1024-bit key is worth improving;
+      // the logo and tracking pixel above the code are ordinary mail.
+      await expect(shown(page.getByText("1 to improve")).first()).toBeVisible();
       await expect(shown(page.getByText("Deliverability", { exact: true }))).toBeVisible();
       await expect(shown(page.getByText("DKIM key is 1024 bits"))).toBeVisible();
-      await expect(shown(page.getByText("Mostly images"))).toBeVisible();
+      await expect(shown(page.getByText("1 image with text"))).toBeVisible();
       await expect(shown(page.getByText("SPF record ends in ~all"))).toBeVisible();
 
       await shown(page.getByRole("button", { name: /^Raw$/i })).click();

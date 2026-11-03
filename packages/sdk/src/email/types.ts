@@ -100,6 +100,8 @@ export interface EmailSpfRecord {
   lookupsCapped: boolean;
   /** The record (or one it includes) uses the deprecated `ptr` mechanism. */
   ptr: boolean;
+  /** Included domains that publish no SPF record (at most 3): a permerror when reached. */
+  missingIncludes: string[];
   /** Set when the record could not be looked up. */
   error: string | null;
 }
@@ -133,6 +135,8 @@ export interface EmailDkimKey {
   bits: number | null;
   /** The record publishes an empty key: the selector was retired. */
   revoked: boolean;
+  /** Set when the key could not be looked up ("lookup failed"). */
+  error: string | null;
 }
 
 /** What the sender's DNS said about its setup when the email arrived. */
