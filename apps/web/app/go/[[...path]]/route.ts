@@ -9,8 +9,7 @@ import type { NextRequest } from "next/server";
  * that for everyone else.
  *
  * Browsers get the docs. A plain /go without go-get never reaches this route:
- * next.config.ts still sends it to the home page, where the retired /go page's
- * links went.
+ * next.config.ts sends it to the same docs.
  */
 const MODULE_PATH = "webhooks.cc/go";
 const REPOSITORY = "https://github.com/kroqdotdev/webhooks-cc";

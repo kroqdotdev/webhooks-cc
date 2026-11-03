@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.59.1";
+export const APP_VERSION = "0.59.2";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.59.2",
+    date: "2026-11-03",
+    title: "webhooks.cc/go Opens the Go SDK Docs",
+    track: "web",
+    items: [
+      "Opening webhooks.cc/go, the Go SDK's import path, in a browser now shows the Go SDK docs instead of the home page. go get webhooks.cc/go works as before",
+    ],
+  },
   {
     version: "0.59.1",
     date: "2026-11-03",
