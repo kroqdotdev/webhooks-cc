@@ -8,17 +8,20 @@ of GoTrue's `/auth/v1/verify` endpoint. This file is the operator reference
 for reproducing that on any instance (dev or prod). No secrets here, only the
 keys and their shape.
 
-Verified against `supabase/gotrue:v2.186.0` started from the upstream
-`docker/docker-compose.yml` of the self-hosted Supabase repo.
+Verified against `supabase/gotrue:v2.197.0` started from the upstream
+`docker/docker-compose.yml` of the self-hosted Supabase repo (tag
+`self-hosted/v0.8.3`).
 
 ## 1. `.env` (the compose project's env file)
 
 The upstream compose maps these into the `auth` container; only the SMTP
-block needs changing from the stock values:
+block and phone sign-up need changing from the stock values:
 
 ```bash
 ENABLE_EMAIL_SIGNUP=true          # already true upstream
 ENABLE_EMAIL_AUTOCONFIRM=false    # already false upstream; verification required
+ENABLE_PHONE_SIGNUP=false         # upstream ships true; no SMS provider exists, and a phone sign-up
+ENABLE_PHONE_AUTOCONFIRM=false    # fails on users.email (NOT NULL) with a 500 that names the column
 SITE_URL=<app origin>             # e.g. https://webhooks.cc (used as {{ .SiteURL }} in templates)
 
 SMTP_ADMIN_EMAIL=noreply@webhooks.cc
