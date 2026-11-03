@@ -1,10 +1,10 @@
 {
   "name": "web",
-  "version": "0.58.2",
+  "version": "0.58.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/build-pagefind.mjs && cp -r public .next/standalone/apps/web/public && cp -r .next/static .next/standalone/apps/web/.next/static",
+    "build": "next build && node scripts/build-pagefind.mjs && rm -rf .next/standalone/apps/web/public .next/standalone/apps/web/.next/static && cp -r public .next/standalone/apps/web/public && cp -r .next/static .next/standalone/apps/web/.next/static",
     "start": "node .next/standalone/apps/web/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.unit.config.ts",

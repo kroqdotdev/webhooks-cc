@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.58.2";
+export const APP_VERSION = "0.58.3";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.58.3",
+    date: "2026-11-03",
+    title: "Docs Search Works Again",
+    track: "web",
+    items: [
+      "Searching the docs finds pages again instead of saying search is only available in production builds. The search index was built but left out of the files the server reads",
+    ],
+  },
   {
     version: "0.58.2",
     date: "2026-11-02",
