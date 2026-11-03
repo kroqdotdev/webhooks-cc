@@ -121,6 +121,7 @@ describe("plan_entitlements", () => {
         requestAddons: row.request_addons,
         pageAddons: row.page_addons,
         annualBilling: row.annual_billing,
+        perSeat: row.per_seat,
       }).toEqual(mirror);
     }
   });

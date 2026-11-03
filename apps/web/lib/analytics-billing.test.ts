@@ -9,6 +9,7 @@ describe("billingAnalyticsEvent", () => {
     vi.stubEnv("POLAR_PRO_PRODUCT_ID", "prod-pro");
     vi.stubEnv("POLAR_BUSINESS_ANNUAL_PRODUCT_ID", "prod-biz-year");
     vi.stubEnv("POLAR_TEAMS_PRODUCT_ID", "prod-seats");
+    vi.stubEnv("POLAR_TEAM_BUSINESS_ANNUAL_PRODUCT_ID", "prod-team-biz-year");
   });
 
   it("reports a paid order as revenue in cents, before tax", () => {
@@ -45,6 +46,10 @@ describe("billingAnalyticsEvent", () => {
       billingAnalyticsEvent("subscription.revoked", "team-1", { product_id: "prod-seats" })
         ?.properties
     ).toEqual({ product: "team_seats", account_kind: "team" });
+    expect(
+      billingAnalyticsEvent("subscription.active", "team-1", { product_id: "prod-team-biz-year" })
+        ?.properties
+    ).toEqual({ product: "team_business_year", account_kind: "team" });
     // A product we do not know is never counted as seats.
     expect(
       billingAnalyticsEvent("subscription.revoked", "team-1", { product_id: "prod-new" })

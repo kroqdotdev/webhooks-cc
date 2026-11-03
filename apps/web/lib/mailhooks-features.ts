@@ -44,7 +44,7 @@ const teamBusiness = ENTITLEMENTS.team_business;
 const count = (value: number) => value.toLocaleString("en-US");
 const domainPrice = `$${MONTHLY_DOMAIN_CENTS / 100} a month`;
 const maxDomains = business.customDomains + MAX_EXTRA_DOMAINS;
-const assists = `${count(free.aiAssists)} AI assists every 30 days on Free, ${count(pro.aiAssists)} on Pro and Teams, ${count(business.aiAssists)} on Business and Team Business`;
+const assists = `${count(free.aiAssists)} AI assists every 30 days on Free, ${count(pro.aiAssists)} on Pro and Teams, ${count(business.aiAssists)} on Business, and ${count(teamBusiness.aiAssists)} per seat on Team Business`;
 
 const UPDATED = "2026-10-31";
 /** The AI setup page: Business went from 500 assists to 250. */

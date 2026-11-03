@@ -67,12 +67,39 @@ describe("POST /api/teams/[teamId]/billing/checkout", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ url: "https://polar.sh/checkout/abc" });
-    expect(mocks.createTeamCheckout).toHaveBeenCalledWith("user_123", "team_123", 3);
+    expect(mocks.createTeamCheckout).toHaveBeenCalledWith(
+      "user_123",
+      "team_123",
+      3,
+      "team",
+      "month"
+    );
+  });
+
+  test("passes the plan and interval through, and refuses an unknown plan", async () => {
+    const { POST } = await import("./route");
+    const response = await POST(
+      checkoutRequest({ seats: 4, plan: "team_business", interval: "year" }),
+      params
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.createTeamCheckout).toHaveBeenCalledWith(
+      "user_123",
+      "team_123",
+      4,
+      "team_business",
+      "year"
+    );
+
+    mocks.createTeamCheckout.mockClear();
+    const refused = await POST(checkoutRequest({ seats: 4, plan: "enterprise" }), params);
+    expect(refused.status).toBe(400);
+    expect(mocks.createTeamCheckout).not.toHaveBeenCalled();
   });
 
   test("maps invalid_seats to 400 for a zero seat count", async () => {
     mocks.createTeamCheckout.mockRejectedValue(
-      new mocks.TeamBillingError("invalid_seats", "Seats must be between 1 and 1000")
+      new mocks.TeamBillingError("invalid_seats", "Seats must be between 2 and 1000")
     );
 
     const { POST } = await import("./route");
@@ -80,9 +107,15 @@ describe("POST /api/teams/[teamId]/billing/checkout", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Seats must be between 1 and 1000",
+      error: "Seats must be between 2 and 1000",
     });
-    expect(mocks.createTeamCheckout).toHaveBeenCalledWith("user_123", "team_123", 0);
+    expect(mocks.createTeamCheckout).toHaveBeenCalledWith(
+      "user_123",
+      "team_123",
+      0,
+      "team",
+      "month"
+    );
   });
 
   test("forwards a non-numeric seat count as NaN for the library to reject", async () => {
@@ -92,7 +125,13 @@ describe("POST /api/teams/[teamId]/billing/checkout", () => {
     const response = await POST(checkoutRequest({ seats: "3" }), params);
 
     expect(response.status).toBe(400);
-    expect(mocks.createTeamCheckout).toHaveBeenCalledWith("user_123", "team_123", NaN);
+    expect(mocks.createTeamCheckout).toHaveBeenCalledWith(
+      "user_123",
+      "team_123",
+      NaN,
+      "team",
+      "month"
+    );
   });
 
   test("maps not_owner to 403", async () => {

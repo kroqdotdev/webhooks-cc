@@ -1,6 +1,6 @@
 /**
  * HTTP status for each `TeamBillingError.code` thrown by `lib/supabase/team-billing`.
- * Shared by the four team billing routes so a code means the same thing everywhere.
+ * Shared by the team billing routes so a code means the same thing everywhere.
  * Unknown codes fall back to 400 at the call site.
  */
 export const ERROR_STATUS: Record<string, number> = {
@@ -13,4 +13,20 @@ export const ERROR_STATUS: Record<string, number> = {
   not_scheduled: 409,
   seats_below_members: 409,
   payment_failed: 402,
+  not_offered: 404,
+  unchanged: 409,
+  plan_ending: 409,
+  change_pending: 409,
+  seats_below_minimum: 409,
+  seat_reduction_lost: 409,
 };
+
+/** A team plan named in a request body or query. */
+export function isTeamPlan(value: unknown): value is "team" | "team_business" {
+  return value === "team" || value === "team_business";
+}
+
+/** A billing interval named in a request body or query. */
+export function isInterval(value: unknown): value is "month" | "year" {
+  return value === "month" || value === "year";
+}

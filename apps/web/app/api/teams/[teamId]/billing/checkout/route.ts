@@ -2,7 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { describePolarError, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { createTeamCheckout, TeamBillingError } from "@/lib/supabase/team-billing";
-import { ERROR_STATUS } from "../shared";
+import { ERROR_STATUS, isInterval, isTeamPlan } from "../shared";
 import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
@@ -12,22 +12,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   const { teamId } = await params;
 
   // A missing or non-numeric seat count becomes NaN, which createTeamCheckout
-  // rejects as invalid_seats — one place owns the seat range.
+  // rejects as invalid_seats: one place owns the seat range. The plan
+  // defaults to Teams, monthly, as before plans could be picked.
   let seats: number;
+  let plan: unknown;
+  let interval: unknown;
   try {
-    const body = (await request.json()) as { seats?: unknown };
+    const body = (await request.json()) as { seats?: unknown; plan?: unknown; interval?: unknown };
     seats = typeof body.seats === "number" ? body.seats : NaN;
+    plan = body.plan ?? "team";
+    interval = body.interval ?? "month";
   } catch {
     seats = NaN;
+    plan = "team";
+    interval = "month";
+  }
+  if (!isTeamPlan(plan) || !isInterval(interval)) {
+    return Response.json({ error: "Unknown plan" }, { status: 400 });
   }
 
   try {
-    const url = await createTeamCheckout(auth.userId, teamId, seats);
+    const url = await createTeamCheckout(auth.userId, teamId, seats, plan, interval);
     await auditUserAction(request, auth.userId, {
       action: "team.checkout_started",
       status: 200,
       teamId,
-      metadata: { seats },
+      metadata: { seats, plan, interval },
     });
     return Response.json({ url });
   } catch (error) {
@@ -38,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
         status,
         reason: error.message,
         teamId,
-        metadata: { code: error.code, seats },
+        metadata: { code: error.code, seats, plan, interval },
       });
       return Response.json({ error: error.message }, { status });
     }
@@ -47,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
       action: "team.checkout_started",
       status: 500,
       teamId,
-      metadata: { seats },
+      metadata: { seats, plan, interval },
     });
 
     if (error instanceof PolarConfigError) {

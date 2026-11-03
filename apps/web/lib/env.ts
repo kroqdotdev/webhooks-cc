@@ -108,8 +108,8 @@ const serverEnvSchema = z
     MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
     AGENT_SANDBOX_MAX_ENDPOINTS: z.coerce.number().int().min(1).default(200),
     EPHEMERAL_TTL_HOURS: z.coerce.number().min(0.1).default(12),
-    // Polar seat-based Teams product. Optional so deploys without Teams billing keep working;
-    // getPolarTeamsCheckoutConfig() throws at call time when it is missing.
+    // Polar seat-based Teams product. Optional so deploys without Teams billing keep
+    // working; without it Teams is not offered (teamPlanProductId()).
     POLAR_TEAMS_PRODUCT_ID: z.string().optional(),
     // Extra request capacity (lib/capacity.ts): one-time blocks, monthly blocks,
     // monthly blocks added mid-period, and metered overage. Offered only when all
@@ -118,11 +118,15 @@ const serverEnvSchema = z
     POLAR_MONTHLY_BLOCKS_PRODUCT_ID: z.string().optional(),
     POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID: z.string().optional(),
     POLAR_OVERAGE_PRODUCT_ID: z.string().optional(),
-    // Business (monthly and annual) and the Team Business add-on (migration
-    // 00070). Optional: without them Business is not offered.
+    // Business (monthly and annual), and Team Business, the seat-based plan
+    // product a team's subscription moves to from Teams (monthly and annual,
+    // migration 00083). Optional: without them they are not offered. The
+    // names differ from the retired $49 add-on's POLAR_TEAM_BUSINESS_PRODUCT_ID
+    // so a stale value can never be read as the seat product.
     POLAR_BUSINESS_PRODUCT_ID: z.string().optional(),
     POLAR_BUSINESS_ANNUAL_PRODUCT_ID: z.string().optional(),
-    POLAR_TEAM_BUSINESS_PRODUCT_ID: z.string().optional(),
+    POLAR_TEAM_BUSINESS_MONTHLY_PRODUCT_ID: z.string().optional(),
+    POLAR_TEAM_BUSINESS_ANNUAL_PRODUCT_ID: z.string().optional(),
     // Parsed-page add-ons, the same four kinds as extra requests; offered
     // only when all four are set (getPageProductIds()).
     POLAR_PAGE_BLOCKS_PRODUCT_ID: z.string().optional(),
@@ -316,7 +320,8 @@ export function serverEnv() {
       POLAR_OVERAGE_PRODUCT_ID: process.env.POLAR_OVERAGE_PRODUCT_ID,
       POLAR_BUSINESS_PRODUCT_ID: process.env.POLAR_BUSINESS_PRODUCT_ID,
       POLAR_BUSINESS_ANNUAL_PRODUCT_ID: process.env.POLAR_BUSINESS_ANNUAL_PRODUCT_ID,
-      POLAR_TEAM_BUSINESS_PRODUCT_ID: process.env.POLAR_TEAM_BUSINESS_PRODUCT_ID,
+      POLAR_TEAM_BUSINESS_MONTHLY_PRODUCT_ID: process.env.POLAR_TEAM_BUSINESS_MONTHLY_PRODUCT_ID,
+      POLAR_TEAM_BUSINESS_ANNUAL_PRODUCT_ID: process.env.POLAR_TEAM_BUSINESS_ANNUAL_PRODUCT_ID,
       POLAR_PAGE_BLOCKS_PRODUCT_ID: process.env.POLAR_PAGE_BLOCKS_PRODUCT_ID,
       POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID: process.env.POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID,
       POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID:

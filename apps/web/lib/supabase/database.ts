@@ -884,6 +884,14 @@ export interface Database {
           overage_reporting_to: number | null;
           overage_report_lease: string | null;
           business: boolean;
+          /** The subscription's interval; null while unsubscribed (migration 00083). */
+          billing_interval: "month" | "year" | null;
+          billing_period_end: string | null;
+          pending_plan: "team" | "team_business" | null;
+          pending_interval: "month" | "year" | null;
+          prorated_window: string | null;
+          prorated_seat_requests: number | null;
+          prorated_seat_pages: number | null;
           retention_floor_days: number | null;
           retention_floor_until: string | null;
           pages_used: number;
@@ -928,6 +936,13 @@ export interface Database {
           overage_reporting_to?: number | null;
           overage_report_lease?: string | null;
           business?: boolean;
+          billing_interval?: "month" | "year" | null;
+          billing_period_end?: string | null;
+          pending_plan?: "team" | "team_business" | null;
+          pending_interval?: "month" | "year" | null;
+          prorated_window?: string | null;
+          prorated_seat_requests?: number | null;
+          prorated_seat_pages?: number | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -972,6 +987,13 @@ export interface Database {
           overage_reporting_to?: number | null;
           overage_report_lease?: string | null;
           business?: boolean;
+          billing_interval?: "month" | "year" | null;
+          billing_period_end?: string | null;
+          pending_plan?: "team" | "team_business" | null;
+          pending_interval?: "month" | "year" | null;
+          prorated_window?: string | null;
+          prorated_seat_requests?: number | null;
+          prorated_seat_pages?: number | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -995,13 +1017,7 @@ export interface Database {
           id: string;
           user_id: string | null;
           team_id: string | null;
-          kind:
-            | "blocks"
-            | "overage"
-            | "page_blocks"
-            | "page_overage"
-            | "team_business"
-            | "domain_blocks";
+          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "domain_blocks";
           polar_subscription_id: string;
           status: "active" | "canceled" | "past_due" | null;
           units: number;
@@ -1017,13 +1033,7 @@ export interface Database {
           id?: string;
           user_id?: string | null;
           team_id?: string | null;
-          kind:
-            | "blocks"
-            | "overage"
-            | "page_blocks"
-            | "page_overage"
-            | "team_business"
-            | "domain_blocks";
+          kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "domain_blocks";
           polar_subscription_id: string;
           status?: "active" | "canceled" | "past_due" | null;
           units?: number;
@@ -1380,6 +1390,8 @@ export interface Database {
           request_addons: boolean;
           page_addons: boolean;
           annual_billing: boolean;
+          /** Team keys: parsed pages and AI assists are per seat too (migration 00083). */
+          per_seat: boolean;
         };
         Insert: Record<string, never>;
         Update: Record<string, never>;
@@ -2024,13 +2036,7 @@ export interface Database {
         Args: {
           p_user_id: string | null;
           p_team_id: string | null;
-          p_kind:
-            | "blocks"
-            | "overage"
-            | "page_blocks"
-            | "page_overage"
-            | "team_business"
-            | "domain_blocks";
+          p_kind: "blocks" | "overage" | "page_blocks" | "page_overage" | "domain_blocks";
           p_subscription_id: string;
           p_status: "active" | "canceled" | "past_due" | null;
           p_units: number;

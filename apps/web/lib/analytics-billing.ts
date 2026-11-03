@@ -3,7 +3,7 @@ import {
   serverAnalyticsEnabled,
   stableEventUuid,
 } from "@/lib/analytics-server";
-import { planForProduct } from "@/lib/polar";
+import { planForProduct, teamPlanForProduct } from "@/lib/polar";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveWebhookUserId } from "@/lib/supabase/billing";
 import { capacityProductKind, webhookProductId } from "@/lib/supabase/capacity-billing";
@@ -28,9 +28,11 @@ const SUBSCRIPTION_EVENTS: Record<string, string> = {
 export function analyticsProduct(productId: string | null): string {
   const plan = planForProduct(productId);
   if (plan) return `${plan.plan}_${plan.interval}`;
+  // Teams keeps the name it has had since before Team Business was a plan.
+  const team = teamPlanForProduct(productId);
+  if (team) return team.plan === "team" ? "team_seats" : `${team.plan}_${team.interval}`;
   const capacity = capacityProductKind(productId);
   if (capacity) return `${capacity.resource}_${capacity.kind}`;
-  if (productId && productId === process.env.POLAR_TEAMS_PRODUCT_ID) return "team_seats";
   return "unknown";
 }
 

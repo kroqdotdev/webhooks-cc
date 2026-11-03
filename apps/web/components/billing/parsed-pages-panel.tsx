@@ -178,7 +178,7 @@ export function ParsedPagesPanel({
       {manage && state.planEnding && (
         <Notice tone="warning" title={`Extra pages end on ${renewal}`}>
           {teamId
-            ? "Team Business is set to end, and monthly page blocks and overage end with it. Keep Team Business to change them."
+            ? "Team Business ends at the renewal, and monthly page blocks and overage end with it. Keep Team Business to change them."
             : "Your plan leaves Business then, and monthly page blocks and overage end with it. Keep Business to change them."}{" "}
           One-time pages stay.
         </Notice>

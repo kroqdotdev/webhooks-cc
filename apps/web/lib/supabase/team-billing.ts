@@ -1,13 +1,25 @@
 import {
   createPolarClient,
-  getPolarTeamsCheckoutConfig,
   loggablePolarError,
+  polarAppUrl,
   polarErrorCode,
+  teamPlanForProduct,
+  teamPlanProductId,
+  type BillingInterval,
+  type TeamPlan,
 } from "@/lib/polar";
 import { returnOrigin } from "@/lib/site-server";
 import { errors } from "@polar-sh/sdk/2026-10";
-import { creditBalanceFromOrders, quoteSeatChange, type SeatChangeQuote } from "@/lib/team-pricing";
+import { ENTITLEMENTS, teamRequestLimit } from "@/lib/entitlements";
+import {
+  creditBalanceFromOrders,
+  quotePlanChange,
+  quoteSeatChange,
+  type PlanChangeQuote,
+  type SeatChangeQuote,
+} from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
+import { addMonthUtc, remainingShare } from "./billing";
 import {
   asNonEmptyString,
   asRecord,
@@ -18,9 +30,15 @@ import type { Database } from "./database";
 import { removeMemberShares } from "./teams-endpoints";
 import { reportError } from "@/lib/observability";
 
-/** Pooled request allowance granted per seat, per 30-day period. */
-export const TEAM_SEAT_REQUEST_LIMIT = 100_000;
+/** Pooled request allowance granted per Teams seat, per period. */
+export const TEAM_SEAT_REQUEST_LIMIT = ENTITLEMENTS.team.requestLimit;
 
+/**
+ * Both team plans start at two seats: Polar's Team Business products refuse
+ * fewer, and Teams follows so an upgrade is always one product switch.
+ * Teams subscribed before the minimum may keep one seat until they change it.
+ */
+export const MIN_TEAM_SEATS = 2;
 const MAX_TEAM_SEATS = 1000;
 
 /** How long a cached Polar checkout session is reused instead of minting a new one. */
@@ -48,10 +66,14 @@ type BillingTeam = Pick<
   | "cancel_at_period_end"
   | "pending_checkout"
   | "pending_seats"
+  | "business"
+  | "billing_interval"
+  | "pending_plan"
+  | "pending_interval"
 >;
 
 const BILLING_TEAM_COLUMNS =
-  "id, name, created_by, polar_customer_id, polar_subscription_id, subscription_status, seats, cancel_at_period_end, pending_checkout, pending_seats";
+  "id, name, created_by, polar_customer_id, polar_subscription_id, subscription_status, seats, cancel_at_period_end, pending_checkout, pending_seats, business, billing_interval, pending_plan, pending_interval";
 
 class TeamBillingError extends Error {
   code: string;
@@ -177,45 +199,112 @@ export async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<stri
   return customer.id;
 }
 
-function assertValidSeatCount(seats: number): void {
-  if (!Number.isInteger(seats) || seats < 1 || seats > MAX_TEAM_SEATS) {
-    throw new TeamBillingError("invalid_seats", `Seats must be between 1 and ${MAX_TEAM_SEATS}`);
+/**
+ * A seat count the team may move to: 2 to 1,000, or the count it has (a team
+ * subscribed with one seat before the minimum keeps it, and asking for it
+ * cancels a scheduled reduction).
+ */
+function assertValidSeatCount(seats: number, currentSeats: number | null = null): void {
+  if (!Number.isInteger(seats) || seats > MAX_TEAM_SEATS || seats < 1) {
+    throw new TeamBillingError(
+      "invalid_seats",
+      `Seats must be between ${MIN_TEAM_SEATS} and ${MAX_TEAM_SEATS}`
+    );
   }
+  if (seats < MIN_TEAM_SEATS && seats !== currentSeats) {
+    throw new TeamBillingError("invalid_seats", `A team needs at least ${MIN_TEAM_SEATS} seats`);
+  }
+}
+
+/** The plan a team is on, from its stored state. */
+function storedTeamPlan(team: Pick<BillingTeam, "business" | "billing_interval">): {
+  plan: TeamPlan;
+  interval: BillingInterval;
+} {
+  return {
+    plan: team.business ? "team_business" : "team",
+    interval: team.billing_interval === "year" ? "year" : "month",
+  };
+}
+
+/** Plans by rank, and whether a change is an upgrade Polar charges for at once. */
+function isUpgrade(
+  from: { plan: TeamPlan; interval: BillingInterval },
+  to: { plan: TeamPlan; interval: BillingInterval }
+): boolean {
+  if (from.plan !== to.plan) return to.plan === "team_business";
+  return from.interval === "month" && to.interval === "year";
+}
+
+/** The product of a team plan, or the error the owner sees when it is not offered. */
+function requireTeamPlanProduct(plan: TeamPlan, interval: BillingInterval): string {
+  const productId = teamPlanProductId(plan, interval);
+  if (!productId) {
+    throw new TeamBillingError("not_offered", "That plan is not available");
+  }
+  return productId;
 }
 
 // ---------------------------------------------------------------------------
 // Subscription management (owner-initiated)
 // ---------------------------------------------------------------------------
 
+/** A team's open Polar checkout session, from the `pending_checkout` cache. */
+interface OpenCheckout {
+  id: string | null;
+  url: string;
+  seats: number | null;
+  product: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
 /**
- * The cached Polar session's URL when it is reusable for this seat count, else
- * null. Polar's own session expiry is authoritative when stored; the 30-minute
- * TTL on created_at is the fallback for caches without one. A "creating" lease
- * (no url yet) is never reusable.
+ * The cached Polar session while it can still be paid, else null. Polar's own
+ * session expiry is authoritative when stored; the 30-minute TTL on
+ * created_at is the fallback for caches without one. A "creating" lease (no
+ * url yet) is not a session.
  */
-function reusablePendingCheckoutUrl(pendingCheckout: unknown, seats: number): string | null {
+function openPendingCheckout(pendingCheckout: unknown): OpenCheckout | null {
   const pending = asRecord(pendingCheckout);
   const url = pending ? asNonEmptyString(pending.url) : null;
-  if (url === null || typeof pending?.seats !== "number" || pending.seats !== seats) {
-    return null;
-  }
+  const createdAtRaw = pending ? asNonEmptyString(pending.created_at) : null;
+  if (!pending || url === null || createdAtRaw === null) return null;
 
-  const createdAtRaw = asNonEmptyString(pending.created_at);
-  const createdAt = createdAtRaw ? Date.parse(createdAtRaw) : NaN;
+  const createdAt = Date.parse(createdAtRaw);
   const expiresAtRaw = asNonEmptyString(pending.expires_at);
   const expiresAt = expiresAtRaw ? Date.parse(expiresAtRaw) : NaN;
   const sessionStillOpen = Number.isFinite(expiresAt)
     ? Date.now() < expiresAt
     : Number.isFinite(createdAt) && Date.now() - createdAt < PENDING_CHECKOUT_TTL_MS;
+  if (!sessionStillOpen) return null;
 
-  return sessionStillOpen ? url : null;
+  return {
+    id: asNonEmptyString(pending.id),
+    url,
+    seats: typeof pending.seats === "number" ? pending.seats : null,
+    // Sessions cached before plans were stored are for Teams.
+    product: asNonEmptyString(pending.product) ?? teamPlanProductId("team", "month"),
+    createdAt: createdAtRaw,
+    expiresAt: expiresAtRaw,
+  };
+}
+
+/** Every team plan product that is offered, the chosen one first. */
+function checkoutProducts(productId: string): string[] {
+  const offered = [
+    teamPlanProductId("team", "month"),
+    teamPlanProductId("team_business", "month"),
+    teamPlanProductId("team_business", "year"),
+  ].filter((id): id is string => id !== null && id !== productId);
+  return [productId, ...offered];
 }
 
 /**
  * Atomically claims the right to mint a Polar checkout session for a team by
  * writing a "creating" lease into `pending_checkout`. The claim succeeds when
- * the slot is empty, holds an abandoned lease (older than the lease TTL), an
- * expired session, or a session for a different seat count — exactly the
+ * the slot is empty, holds an abandoned lease (older than the lease TTL), or
+ * an expired session: exactly the
  * states `createTeamCheckout` would mint over. Concurrent requests race this
  * single conditional UPDATE, so at most one of them mints while the lease
  * holds; the losers reuse the winner's session or report checkout_in_progress.
@@ -232,23 +321,29 @@ function reusablePendingCheckoutUrl(pendingCheckout: unknown, seats: number): st
  */
 export async function claimPendingCheckoutSlot(
   teamId: string,
-  seats: number
+  seats: number,
+  productId: string
 ): Promise<string | null> {
   const admin = createAdminClient();
   const now = Date.now();
   const leaseCutoff = new Date(now - CHECKOUT_LEASE_TTL_MS).toISOString();
+  const ttlCutoff = new Date(now - PENDING_CHECKOUT_TTL_MS).toISOString();
   const nowIso = new Date(now).toISOString();
 
   const { data, error } = await admin
     .from("teams")
-    .update({ pending_checkout: { status: "creating", seats, created_at: nowIso } })
+    .update({
+      pending_checkout: { status: "creating", seats, product: productId, created_at: nowIso },
+    })
     .eq("id", teamId)
     .or(
       [
         "pending_checkout.is.null",
-        `pending_checkout->>created_at.lt."${leaseCutoff}"`,
-        `pending_checkout->>seats.neq.${seats}`,
+        // An abandoned "creating" lease: no session was ever stored.
+        `and(pending_checkout->>url.is.null,pending_checkout->>created_at.lt."${leaseCutoff}")`,
         `pending_checkout->>expires_at.lt."${nowIso}"`,
+        // A session cached without Polar's expiry, past the fallback TTL.
+        `and(pending_checkout->>expires_at.is.null,pending_checkout->>created_at.lt."${ttlCutoff}")`,
       ].join(",")
     )
     .select("id")
@@ -296,34 +391,85 @@ export async function releasePendingCheckoutLease(
   await writePendingCheckoutIfLeaseHeld(teamId, leaseToken, null);
 }
 
+/**
+ * Moves the team's open checkout session to another plan or seat count and
+ * returns its URL. The cache is rewritten only while it still holds this
+ * session (fenced on its created_at). A session Polar no longer lets change
+ * (being paid, or opened before it held every plan) is not replaced by a
+ * second one: the owner finishes it or waits for it to expire.
+ */
+async function switchOpenCheckout(
+  teamId: string,
+  open: OpenCheckout,
+  seats: number,
+  productId: string
+): Promise<string> {
+  const stillOpen = new TeamBillingError(
+    "checkout_in_progress",
+    "A checkout for this team is still open. Finish it, or try again once it expires."
+  );
+  if (open.id === null) throw stillOpen;
+  try {
+    await createPolarClient().checkouts.update(open.id, { product_id: productId, seats });
+  } catch (error) {
+    // Expected while the session is being paid; only worth a line.
+    console.warn("[team-billing] could not move the open checkout to another plan", {
+      teamId,
+      error: loggablePolarError(error),
+    });
+    throw stillOpen;
+  }
+  try {
+    await writePendingCheckoutIfLeaseHeld(teamId, open.createdAt, {
+      id: open.id,
+      url: open.url,
+      seats,
+      product: productId,
+      created_at: open.createdAt,
+      expires_at: open.expiresAt,
+    });
+  } catch (cacheError) {
+    reportError("[team-billing] failed to cache pending checkout", cacheError, { teamId });
+  }
+  return open.url;
+}
+
 export async function createTeamCheckout(
   userId: string,
   teamId: string,
-  seats: number
+  seats: number,
+  plan: TeamPlan = "team",
+  interval: BillingInterval = "month"
 ): Promise<string> {
   assertValidSeatCount(seats);
+  const productId = requireTeamPlanProduct(plan, interval);
 
   const team = await getTeamForOwner(userId, teamId);
   if (team.subscription_status !== null) {
     throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
   }
 
-  // Reuse the open checkout session for the same seat count: a double-click
-  // or second tab must not create a second session that could ALSO be
-  // completed.
-  const cachedUrl = reusablePendingCheckoutUrl(team.pending_checkout, seats);
-  if (cachedUrl !== null) {
-    return cachedUrl;
+  // One open checkout session per team, whatever was asked for: a
+  // double-click, a second tab or a change of plan or seats must not leave a
+  // second session that could ALSO be completed (Polar has no way to expire
+  // one). The same request gets the same session; another plan or seat count
+  // updates it in place, which works because every team plan is in it.
+  const open = openPendingCheckout(team.pending_checkout);
+  if (open !== null) {
+    if (open.seats === seats && open.product === productId) {
+      return open.url;
+    }
+    return switchOpenCheckout(team.id, open, seats, productId);
   }
 
   // Serialize minting: exactly one concurrent request wins the lease and
   // creates the Polar session. The foreign-subscription guard in
   // applyTeamSubscriptionState remains the backstop for sessions minted
   // before this lease existed (or across a lease expiry).
-  const leaseToken = await claimPendingCheckoutSlot(teamId, seats);
+  const leaseToken = await claimPendingCheckoutSlot(teamId, seats, productId);
   if (leaseToken === null) {
     // Another request holds the slot. One re-read settles whether it already
-    // finished (reuse its session) or is still minting (tell the caller to
+    // finished (use its session) or is still minting (tell the caller to
     // retry in a moment rather than minting a double).
     const admin = createAdminClient();
     const { data: fresh, error } = await admin
@@ -334,24 +480,28 @@ export async function createTeamCheckout(
 
     if (error) throw error;
 
-    const freshUrl = reusablePendingCheckoutUrl(fresh?.pending_checkout ?? null, seats);
-    if (freshUrl !== null) {
-      return freshUrl;
+    const freshOpen = openPendingCheckout(fresh?.pending_checkout ?? null);
+    if (freshOpen !== null) {
+      return freshOpen.seats === seats && freshOpen.product === productId
+        ? freshOpen.url
+        : switchOpenCheckout(teamId, freshOpen, seats, productId);
     }
 
     throw new TeamBillingError(
       "checkout_in_progress",
-      "A checkout session is already being prepared for this team — try again in a moment"
+      "A checkout session is already being prepared for this team. Try again in a moment."
     );
   }
 
   try {
     const polar = createPolarClient();
-    const { appUrl, teamsProductId } = getPolarTeamsCheckoutConfig();
+    const appUrl = polarAppUrl();
     const customerId = await ensureTeamPolarCustomerId(team);
 
     const checkout = await polar.checkouts.create({
-      products: [teamsProductId],
+      // The chosen plan first (Polar selects it); the others so a later
+      // change of plan can update this session instead of opening another.
+      products: checkoutProducts(productId),
       seats,
       success_url: `${await returnOrigin(appUrl)}/teams/${teamId}?subscribed=true`,
       customer_id: customerId,
@@ -367,6 +517,7 @@ export async function createTeamCheckout(
         id: checkout.id,
         url: checkout.url,
         seats,
+        product: productId,
         created_at: new Date().toISOString(),
         expires_at: parseEventTimestamp(checkout.expires_at),
       });
@@ -420,9 +571,8 @@ export async function updateTeamSeats(
   teamId: string,
   seats: number
 ): Promise<void> {
-  assertValidSeatCount(seats);
-
   const team = await getTeamForOwner(userId, teamId);
+  assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
@@ -456,16 +606,8 @@ export async function updateTeamSeats(
       })) as unknown as Record<string, unknown>;
       increasedAt = new Date();
     } catch (error) {
-      // 402 covers a declined card (PaymentFailed) and a charge that needs the
-      // cardholder to authenticate (PaymentActionRequired); neither adds seats.
-      if (error instanceof errors.SubscriptionsUpdate402Error) {
-        throw new TeamBillingError(
-          "payment_failed",
-          error.error.error === "PaymentActionRequired"
-            ? "Your bank needs you to approve this payment, so no seats were added yet. Approve it from the link in your Polar receipt email, or update the card there, and try again."
-            : "Your payment method was declined, so no seats were added. Update the card from the link in your Polar receipt email and try again."
-        );
-      }
+      const declined = declinedCharge(error, "no seats were added");
+      if (declined) throw declined;
       throw error;
     }
 
@@ -491,10 +633,11 @@ export async function updateTeamSeats(
     }
 
     // Adding seats drops any pending reduction in Polar (update_team_seats
-    // already cleared the row); record Polar's state with the time it was
-    // confirmed, so an older read cannot bring the dropped schedule back.
+    // already cleared the row) but keeps a pending plan change; record
+    // Polar's state with the time it was confirmed, so an older read cannot
+    // bring the dropped schedule back.
     try {
-      await syncPendingSeats(teamId, team.polar_subscription_id, increased, increasedAt);
+      await syncPendingUpdate(teamId, team.polar_subscription_id, increased, increasedAt);
     } catch (syncError) {
       reportError("[team-billing] failed to record the seat schedule from Polar", syncError, {
         teamId,
@@ -576,7 +719,7 @@ export async function updateTeamSeats(
   // Record Polar's own view now rather than waiting for the webhook, stamped
   // with the time Polar confirmed it, so an older read is already outdated.
   try {
-    await syncPendingSeats(teamId, team.polar_subscription_id, updated, updatedAt);
+    await syncPendingUpdate(teamId, team.polar_subscription_id, updated, updatedAt);
   } catch (syncError) {
     reportError("[team-billing] failed to record the seat schedule from Polar", syncError, {
       teamId,
@@ -595,9 +738,8 @@ export async function quoteTeamSeatChange(
   teamId: string,
   seats: number
 ): Promise<SeatChangeQuote> {
-  assertValidSeatCount(seats);
-
   const team = await getTeamForOwner(userId, teamId);
+  assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
@@ -630,6 +772,295 @@ export async function quoteTeamSeatChange(
     periodStartMs: Date.parse(subscription.current_period_start),
     periodEndMs: Date.parse(subscription.current_period_end),
     creditBalanceCents: creditBalanceFromOrders(orders),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Plan changes (Teams and Team Business, monthly or annual)
+// ---------------------------------------------------------------------------
+
+/** The Polar error a declined charge maps to, or null for any other error. */
+function declinedCharge(error: unknown, what: string): TeamBillingError | null {
+  // 402 covers a declined card (PaymentFailed) and a charge that needs the
+  // cardholder to authenticate (PaymentActionRequired); neither changes the
+  // subscription.
+  if (!(error instanceof errors.SubscriptionsUpdate402Error)) return null;
+  return new TeamBillingError(
+    "payment_failed",
+    error.error.error === "PaymentActionRequired"
+      ? `Your bank needs you to approve this payment, so ${what} yet. Approve it from the link in your Polar receipt email, or update the card there, and try again.`
+      : `Your payment method was declined, so ${what}. Update the card from the link in your Polar receipt email and try again.`
+  );
+}
+
+/** A team on a live subscription that the owner may change, with its current plan. */
+async function teamForPlanChange(
+  userId: string,
+  teamId: string,
+  plan: TeamPlan,
+  interval: BillingInterval
+): Promise<{
+  team: BillingTeam & { polar_subscription_id: string };
+  current: { plan: TeamPlan; interval: BillingInterval };
+  target: { plan: TeamPlan; interval: BillingInterval };
+  productId: string;
+  applies: "now" | "renewal";
+}> {
+  if (plan === "team" && interval === "year") {
+    throw new TeamBillingError("not_offered", "Teams is billed monthly only");
+  }
+  const team = await getTeamForOwner(userId, teamId);
+  if (!team.polar_subscription_id || team.subscription_status === null) {
+    throw new TeamBillingError("no_subscription", "No active subscription");
+  }
+  if (team.cancel_at_period_end) {
+    throw new TeamBillingError(
+      "plan_ending",
+      "The subscription is set to end. Keep it first, then change the plan."
+    );
+  }
+  const productId = requireTeamPlanProduct(plan, interval);
+  const current = storedTeamPlan(team);
+  const target = { plan, interval };
+  if (current.plan === plan && current.interval === interval) {
+    throw new TeamBillingError("unchanged", "The team is on that plan already");
+  }
+  if (team.pending_plan) {
+    throw new TeamBillingError(
+      "change_pending",
+      "A plan change is already waiting for the renewal. Keep the current plan first."
+    );
+  }
+  if (plan === "team_business" && team.seats < MIN_TEAM_SEATS) {
+    throw new TeamBillingError(
+      "seats_below_minimum",
+      `Team Business starts at ${MIN_TEAM_SEATS} seats. Add a seat first, then upgrade.`
+    );
+  }
+  return {
+    team: team as BillingTeam & { polar_subscription_id: string },
+    current,
+    target,
+    productId,
+    applies: isUpgrade(current, target) ? "now" : "renewal",
+  };
+}
+
+/**
+ * Moves a team to another plan or interval. Up (Teams to Team Business, or
+ * monthly to annual) changes now: Polar charges the difference ("invoice";
+ * within the month it credits the unused share and charges the same share
+ * of the new price, and a move to annual starts a new year), and the
+ * subscription webhook grants the extra allowance in proportion. Down (Team
+ * Business to Teams, annual to monthly) waits for the renewal
+ * ("next_period"), shown as pending_plan until then and undone with
+ * keepTeamPlan(); page and domain add-ons that only Team Business allows are
+ * set to end with the period.
+ */
+export async function changeTeamPlan(
+  userId: string,
+  teamId: string,
+  plan: TeamPlan,
+  interval: BillingInterval
+): Promise<{ applied: "now" | "renewal"; seatReductionLost?: number }> {
+  const { team, productId, applies } = await teamForPlanChange(userId, teamId, plan, interval);
+  const polar = createPolarClient();
+
+  let updated: Record<string, unknown>;
+  let updatedAt: Date;
+  try {
+    updated = (await polar.subscriptions.update(team.polar_subscription_id, {
+      product_id: productId,
+      proration_behavior: applies === "now" ? "invoice" : "next_period",
+    })) as unknown as Record<string, unknown>;
+    updatedAt = new Date();
+  } catch (error) {
+    const declined = declinedCharge(error, "the plan was not changed");
+    if (declined) throw declined;
+    if (polarErrorCode(error) === "BelowMinimumSeats") {
+      throw new TeamBillingError(
+        "seats_below_minimum",
+        `Team Business starts at ${MIN_TEAM_SEATS} seats. Add a seat first, then upgrade.`
+      );
+    }
+    throw error;
+  }
+
+  // An immediate product switch clears Polar's pending update, a scheduled
+  // seat reduction included (checked in the sandbox), so it is scheduled
+  // again, as keepTeamPlan does. A failure is told to the owner, never
+  // thrown: the plan change itself has been made and charged.
+  let seatReductionLost: number | undefined;
+  if (applies === "now" && team.pending_seats !== null && team.pending_seats < team.seats) {
+    try {
+      updated = (await polar.subscriptions.update(team.polar_subscription_id, {
+        seats: team.pending_seats,
+        proration_behavior: "next_period",
+      })) as unknown as Record<string, unknown>;
+      updatedAt = new Date();
+    } catch (seatError) {
+      reportError(
+        "[team-billing] changed the plan but could not schedule the seat reduction again",
+        loggablePolarError(seatError),
+        { teamId }
+      );
+      seatReductionLost = team.pending_seats;
+    }
+  }
+
+  // Polar has made the change (and charged for an upgrade), so nothing below
+  // may fail the request: the webhooks write the same state, and an error
+  // here would only invite a second attempt.
+  try {
+    if (applies === "now") {
+      // The webhook applies it too; this shows the new plan before that arrives.
+      await applyTeamSubscriptionState("subscription.updated", teamId, updated);
+    } else {
+      await syncPendingUpdate(teamId, team.polar_subscription_id, updated, updatedAt);
+    }
+    // Page and domain add-ons need Team Business: leaving it, they end with the period.
+    const { reconcileAddonsWithPlan } = await import("./capacity-billing");
+    await reconcileAddonsWithPlan({ kind: "team", teamId });
+  } catch (followUpError) {
+    // The webhook for the same change got there first: nothing is missing.
+    if (followUpError instanceof TeamBillingError && followUpError.code === "concurrent_update") {
+      console.info("[team-billing] the plan change was already applied by its webhook", { teamId });
+    } else {
+      reportError(
+        "[team-billing] Polar changed the plan but the team row was not updated",
+        followUpError,
+        { teamId }
+      );
+    }
+  }
+  return seatReductionLost === undefined
+    ? { applied: applies }
+    : { applied: applies, seatReductionLost };
+}
+
+/**
+ * Drops a plan change waiting for the renewal, so the team renews on its
+ * plan, and add-ons the change set to end come back. Polar keeps seats and
+ * plan in one pending update and clears both together, so a seat reduction
+ * that was scheduled with it is scheduled again.
+ */
+export async function keepTeamPlan(userId: string, teamId: string): Promise<void> {
+  const team = await getTeamForOwner(userId, teamId);
+  if (!team.polar_subscription_id || team.subscription_status === null) {
+    throw new TeamBillingError("no_subscription", "No active subscription");
+  }
+  if (!team.pending_plan) {
+    throw new TeamBillingError("unchanged", "No plan change is waiting");
+  }
+
+  const polar = createPolarClient();
+  let updated = (await polar.subscriptions.update(team.polar_subscription_id, {
+    pending_update: null,
+  })) as unknown as Record<string, unknown>;
+  let seatsLost = false;
+  if (team.pending_seats !== null && team.pending_seats < team.seats) {
+    try {
+      updated = (await polar.subscriptions.update(team.polar_subscription_id, {
+        seats: team.pending_seats,
+        proration_behavior: "next_period",
+      })) as unknown as Record<string, unknown>;
+    } catch (seatError) {
+      // The plan is kept, but Polar cleared the seat reduction with it.
+      reportError(
+        "[team-billing] kept the plan but could not schedule the seat reduction again",
+        loggablePolarError(seatError),
+        { teamId }
+      );
+      seatsLost = true;
+    }
+  }
+  await syncPendingUpdate(teamId, team.polar_subscription_id, updated, new Date());
+
+  const { reconcileAddonsWithPlan } = await import("./capacity-billing");
+  await reconcileAddonsWithPlan({ kind: "team", teamId });
+
+  if (seatsLost) {
+    throw new TeamBillingError(
+      "seat_reduction_lost",
+      `The plan is kept, but the reduction to ${team.pending_seats} seats was dropped with the plan change. Set the seats again to remove them at the renewal.`
+    );
+  }
+}
+
+/** The price of a seat on a Polar product for `seats` seats, in cents. */
+function seatPriceFromProduct(product: unknown, seats: number): number | null {
+  const prices = asRecord(product)?.prices;
+  if (!Array.isArray(prices)) return null;
+  for (const price of prices) {
+    const record = asRecord(price);
+    if (!record || record.is_archived === true) continue;
+    const tiers = asRecord(record.seat_tiers)?.tiers;
+    if (!Array.isArray(tiers)) continue;
+    for (const tier of tiers) {
+      const t = asRecord(tier);
+      if (!t || typeof t.price_per_seat !== "number") continue;
+      const min = typeof t.min_seats === "number" ? t.min_seats : 1;
+      const max = typeof t.max_seats === "number" ? t.max_seats : Number.POSITIVE_INFINITY;
+      if (seats >= min && seats <= max) return t.price_per_seat;
+    }
+  }
+  return null;
+}
+
+/**
+ * Prices a plan change for the confirmation dialog from Polar's live
+ * subscription, the new product's seat price and the customer's unused
+ * credit.
+ */
+export async function quoteTeamPlanChange(
+  userId: string,
+  teamId: string,
+  plan: TeamPlan,
+  interval: BillingInterval
+): Promise<PlanChangeQuote> {
+  const { team, current, productId, applies } = await teamForPlanChange(
+    userId,
+    teamId,
+    plan,
+    interval
+  );
+  const polar = createPolarClient();
+  const [subscription, product] = await Promise.all([
+    polar.subscriptions.get(team.polar_subscription_id),
+    polar.products.get(productId),
+  ]);
+  const seats = subscription.seats ?? team.seats;
+  const pricePerSeat = seatPriceFromProduct(product, seats);
+  if (pricePerSeat === null) {
+    throw new TeamBillingError("not_offered", "Could not read the plan's price");
+  }
+
+  let creditBalanceCents = 0;
+  if (applies === "now") {
+    const orders: Array<{ totalAmount: number; appliedBalanceAmount: number }> = [];
+    for await (const order of polar.orders.iterList({
+      customer_id: subscription.customer_id,
+      limit: 100,
+    })) {
+      orders.push({
+        totalAmount: order.total_amount,
+        appliedBalanceAmount: order.applied_balance_amount,
+      });
+    }
+    creditBalanceCents = creditBalanceFromOrders(orders);
+  }
+
+  return quotePlanChange({
+    plan,
+    interval,
+    seats,
+    currentInterval: current.interval,
+    currentAmountCents: subscription.amount,
+    newPricePerSeatCents: pricePerSeat,
+    applies,
+    periodStartMs: Date.parse(subscription.current_period_start),
+    periodEndMs: Date.parse(subscription.current_period_end),
+    creditBalanceCents,
   });
 }
 
@@ -889,8 +1320,28 @@ function pendingSeatsFromEvent(data: Record<string, unknown>): number | null {
 }
 
 /**
- * Mirrors a Polar subscription's scheduled seat change into
- * `teams.pending_seats`, accepting only a newer observation than the one
+ * The plan in the subscription's pending update, or null when no other plan
+ * is scheduled. Scheduling the current product again leaves it in Polar's
+ * pending update, which changes nothing and reads as nothing here.
+ */
+function pendingPlanFromEvent(
+  data: Record<string, unknown>
+): { plan: TeamPlan; interval: BillingInterval } | null {
+  const pending = teamPlanForProduct(asNonEmptyString(asRecord(data.pending_update)?.product_id));
+  if (!pending) return null;
+  const current = teamPlanForProduct(
+    asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id)
+  );
+  if (current && current.plan === pending.plan && current.interval === pending.interval) {
+    return null;
+  }
+  return pending;
+}
+
+/**
+ * Mirrors a Polar subscription's scheduled change (seats and plan share one
+ * pending update in Polar) into `teams.pending_seats`, `pending_plan` and
+ * `pending_interval`, accepting only a newer observation than the one
  * already applied: an older read must not restore a schedule (and with it a
  * looser member cap) that Polar has since replaced.
  *
@@ -900,17 +1351,23 @@ function pendingSeatsFromEvent(data: Record<string, unknown>): number | null {
  * time at which the given state was already true in Polar: the arrival of an
  * update response (Polar commits before it answers), or the start of a read.
  */
-async function syncPendingSeats(
+async function syncPendingUpdate(
   teamId: string,
   subscriptionId: string,
   subscription: Record<string, unknown>,
   observedAt: Date
 ): Promise<void> {
   const asOf = observedAt.toISOString();
+  const pendingPlan = pendingPlanFromEvent(subscription);
   const admin = createAdminClient();
   const { error } = await admin
     .from("teams")
-    .update({ pending_seats: pendingSeatsFromEvent(subscription), pending_seats_as_of: asOf })
+    .update({
+      pending_seats: pendingSeatsFromEvent(subscription),
+      pending_plan: pendingPlan?.plan ?? null,
+      pending_interval: pendingPlan?.interval ?? null,
+      pending_seats_as_of: asOf,
+    })
     .eq("id", teamId)
     .eq("polar_subscription_id", subscriptionId)
     .or(`pending_seats_as_of.is.null,pending_seats_as_of.lt."${asOf}"`);
@@ -921,35 +1378,60 @@ async function syncPendingSeats(
 }
 
 /**
- * Re-reads the subscription from Polar and mirrors its current pending seat
- * change, for webhooks: their payloads cannot be ordered against each other
- * (see syncPendingSeats), but Polar's current state can. Stamped with the
- * time the read started, so it never overrides a seat change this app wrote
- * after Polar confirmed it.
- *
+ * The subscription as Polar has it now, over the event's own copy: webhook
+ * payloads cannot be ordered against each other (a late one would put back a
+ * product or seat count already changed), but Polar's current state can.
  * A failed read fails the webhook, like any other processing error, so Polar
  * redelivers it: a schedule changed in Polar itself may produce no other
- * event before the renewal, and pending_seats caps members until then. The
- * state write before this call is safe to repeat.
+ * event before the renewal, and pending_seats caps members until then.
  */
-async function refreshPendingSeats(teamId: string, subscriptionId: string): Promise<void> {
+async function currentTeamSubscription(
+  data: Record<string, unknown>
+): Promise<{ subscription: Record<string, unknown>; observedAt: Date }> {
   const observedAt = new Date();
-  const subscription = (await createPolarClient().subscriptions.get(
-    subscriptionId
-  )) as unknown as Record<string, unknown>;
+  const subscriptionId = asNonEmptyString(data.id);
+  if (!subscriptionId) return { subscription: data, observedAt };
+  const current = asRecord(await createPolarClient().subscriptions.get(subscriptionId));
+  return { subscription: { ...data, ...(current ?? {}) }, observedAt };
+}
 
-  await syncPendingSeats(teamId, subscriptionId, subscription, observedAt);
+/**
+ * The pro rata per-seat allowance for the rest of the quota period when a
+ * team moves up from Teams to Team Business inside it: Polar charged only the
+ * remaining share of the period ("invoice"), so the extra requests and pages
+ * come in the same share, and the trigger gives the full allowance back when
+ * the period moves on (migration 00083). The time it is applied stands in
+ * for the change's: Polar's modified_at does not move with a product change,
+ * so a retry grants a little less, never more.
+ */
+function upgradeProration(
+  seats: number,
+  window: { start: string; end: string },
+  nowMs: number
+): { prorated_seat_requests: number; prorated_seat_pages: number } {
+  const left = remainingShare(window.start, window.end, nowMs);
+  const before = ENTITLEMENTS.team;
+  const after = ENTITLEMENTS.team_business;
+  // Teams' pages are the team's, Team Business's are per seat.
+  const pagesBefore = before.parsedPages / Math.max(1, seats);
+  return {
+    prorated_seat_requests:
+      before.requestLimit + Math.round((after.requestLimit - before.requestLimit) * left),
+    prorated_seat_pages: Math.round(pagesBefore + (after.parsedPages - pagesBefore) * left),
+  };
 }
 
 async function applyTeamSubscriptionState(
   eventType: string,
   teamId: string,
-  data: Record<string, unknown>
+  event: Record<string, unknown>
 ): Promise<void> {
   const admin = createAdminClient();
   const { data: team, error } = await admin
     .from("teams")
-    .select("polar_subscription_id, subscription_status, seats, period_start")
+    .select(
+      "polar_subscription_id, subscription_status, seats, period_start, period_end, business, billing_interval, billing_period_end, prorated_window"
+    )
     .eq("id", teamId)
     .maybeSingle();
 
@@ -961,6 +1443,7 @@ async function applyTeamSubscriptionState(
     return;
   }
 
+  const { subscription: data, observedAt } = await currentTeamSubscription(event);
   const subscriptionId = asNonEmptyString(data.id);
   const customerId = asNonEmptyString(data.customer_id);
 
@@ -994,6 +1477,23 @@ async function applyTeamSubscriptionState(
   // unbilled reactivation. Mixed states (one of id/status set, the other not)
   // fall through: they only arise from manual intervention, and the full-state
   // upsert below is the correct repair.
+  // Nor may a subscription that has already ended, or that is still waiting
+  // for its first payment: it would open the team with nothing paid. Its
+  // next event says what it became.
+  const notLive =
+    asNonEmptyString(data.ended_at) !== null ||
+    data.status === "incomplete" ||
+    data.status === "incomplete_expired" ||
+    data.status === "unpaid";
+  if (team.subscription_status === null && notLive) {
+    console.warn("[team-billing] ignoring an ended or unpaid subscription for an inactive team", {
+      teamId,
+      eventType,
+      eventSubscriptionId: asNonEmptyString(data.id),
+    });
+    return;
+  }
+
   if (
     team.polar_subscription_id === null &&
     team.subscription_status === null &&
@@ -1015,6 +1515,33 @@ async function applyTeamSubscriptionState(
   // every request the team is paying for — floor the pool at one seat instead.
   const seats = payloadSeats ?? (team.seats > 0 ? team.seats : 1);
 
+  // The plan and interval come from the product. A product that is none of
+  // the configured team plans (a product id missing from this deployment's
+  // configuration) keeps the plan the team has, so a misconfiguration never
+  // takes Team Business away from a paying team; a team without one is on
+  // Teams, the original product.
+  const productId =
+    asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id);
+  let sold = teamPlanForProduct(productId);
+  if (sold === null) {
+    if (productId !== null) {
+      reportError(
+        "[team-billing] team subscription for a product that is not a team plan",
+        undefined,
+        {
+          teamId,
+          productId,
+        }
+      );
+    }
+    sold = {
+      plan: team.business ? "team_business" : "team",
+      interval: team.billing_interval === "year" ? "year" : "month",
+    };
+  }
+  const business = sold.plan === "team_business";
+  const annual = sold.interval === "year";
+
   // A different subscription id means a brand-new subscription (the team was
   // deactivated and re-subscribed) — that starts a fresh pooled quota. Repeat
   // events for the same subscription must never clear usage.
@@ -1022,6 +1549,7 @@ async function applyTeamSubscriptionState(
     subscriptionId !== null && subscriptionId !== team.polar_subscription_id;
 
   const incomingPeriodStart = parseEventTimestamp(data.current_period_start);
+  const incomingPeriodEnd = parseEventTimestamp(data.current_period_end);
   const incomingPeriodStartMs = incomingPeriodStart ? Date.parse(incomingPeriodStart) : null;
   const storedPeriodStartMs = team.period_start ? Date.parse(team.period_start) : null;
 
@@ -1045,26 +1573,93 @@ async function applyTeamSubscriptionState(
     storedPeriodStartMs !== null &&
     incomingPeriodStartMs < storedPeriodStartMs;
 
+  // Annual Team Business: the quota renews monthly (process_billing_period_resets)
+  // while Polar's period runs for the year, as for annual personal plans, so
+  // the quota period moves only when Polar's year starts (a new
+  // subscription, a yearly renewal, or a switch to annual, which restarts
+  // the billing period).
+  const incomingBillingEndMs = incomingPeriodEnd ? Date.parse(incomingPeriodEnd) : null;
+  const storedBillingEndMs = team.billing_period_end ? Date.parse(team.billing_period_end) : null;
+  const newYear =
+    annual &&
+    (isNewSubscription ||
+      team.billing_interval !== "year" ||
+      (incomingBillingEndMs !== null &&
+        (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
+  const period: TeamUpdate = annual
+    ? // A renewal applied after the monthly cron already moved the period on
+      // (more than a month late) keeps the newer period.
+      newYear && incomingPeriodStart && !isStalePeriod
+      ? { period_start: incomingPeriodStart, period_end: addMonthUtc(incomingPeriodStart) }
+      : {}
+    : {
+        period_start: isStalePeriod ? undefined : incomingPeriodStart,
+        period_end: isStalePeriod ? undefined : incomingPeriodEnd,
+      };
+  // A year that starts after the cron fallback already moved the quota
+  // period there keeps the usage counted since.
+  const resetsUsage = annual
+    ? isNewSubscription ||
+      (newYear &&
+        (storedPeriodStartMs === null ||
+          incomingPeriodStartMs === null ||
+          storedPeriodStartMs < incomingPeriodStartMs))
+    : isNewSubscription || isRenewal;
+
+  // Teams to Team Business inside the period: the extra allowance pro rata
+  // (see upgradeProration). Later events in the same window keep it; a new
+  // window drops it (the request-limit trigger).
+  const sameWindow = !resetsUsage && !isStalePeriod;
+  let proration: TeamUpdate = {};
+  if (
+    sameWindow &&
+    business &&
+    !team.business &&
+    team.subscription_status !== null &&
+    team.period_start &&
+    team.period_end
+  ) {
+    proration = {
+      prorated_window: team.period_start,
+      ...upgradeProration(
+        seats,
+        {
+          start: incomingPeriodStart ?? team.period_start,
+          end: incomingPeriodEnd ?? team.period_end,
+        },
+        Date.now()
+      ),
+    };
+  } else if (!(sameWindow && business && team.prorated_window === team.period_start)) {
+    proration = { prorated_window: null, prorated_seat_requests: null, prorated_seat_pages: null };
+  }
+
   // created/updated/active all describe a live subscription, and for teams a
   // null subscription_status IS the deactivation gate (capture_webhook stops
   // billing the pool, accept_team_invite refuses, the dashboard shows
   // suspended). An unrecognized status value must therefore never null the
   // gate: keep the stored status, or default to active for a first event.
+  // A payment that failed (past_due) keeps the team, and with it Team
+  // Business, live while Polar retries the card.
   const status =
     normalizeStoredSubscriptionStatus(data.status) ?? team.subscription_status ?? "active";
 
   // subscription_status, request_limit and both period bounds are written in a
   // single statement on purpose: a team with a status but no request_limit
   // hard-429s every request, and one with a status but no period_end never
-  // resets. They must never be observable apart.
+  // resets. They must never be observable apart. The request-limit trigger
+  // computes the same limit (with any pro rata allowance) from the row.
   const patch: TeamUpdate = {
     polar_customer_id: customerId ?? undefined,
     polar_subscription_id: subscriptionId ?? undefined,
     subscription_status: status,
     seats,
-    request_limit: seats * TEAM_SEAT_REQUEST_LIMIT,
-    period_start: isStalePeriod ? undefined : incomingPeriodStart,
-    period_end: isStalePeriod ? undefined : parseEventTimestamp(data.current_period_end),
+    business,
+    request_limit: teamRequestLimit(seats, business),
+    ...proration,
+    billing_interval: sold.interval,
+    billing_period_end: isStalePeriod && !annual ? undefined : incomingPeriodEnd,
+    ...period,
     cancel_at_period_end:
       typeof data.cancel_at_period_end === "boolean" ? data.cancel_at_period_end : false,
     // The checkout that produced this subscription is no longer pending.
@@ -1075,12 +1670,12 @@ async function applyTeamSubscriptionState(
   // two failure modes out: overlapping deliveries of the same renewal both
   // zeroing the pool (erasing captures billed between the writes), and an
   // updated/active event read before a concurrent revoke resurrecting the
-  // revoked subscription's state after it. The loser's write matches no rows;
-  // events carry full state and Polar redelivers, so a skipped write converges
-  // on the next delivery.
+  // revoked subscription's state after it. The loser's write matches no rows
+  // and throws, so Polar delivers the event again and it is applied to the
+  // state that won.
   let guarded = admin
     .from("teams")
-    .update(isNewSubscription || isRenewal ? { ...patch, requests_used: 0 } : patch)
+    .update(resetsUsage ? { ...patch, requests_used: 0 } : patch)
     .eq("id", teamId);
   guarded =
     team.polar_subscription_id === null
@@ -1090,15 +1685,31 @@ async function applyTeamSubscriptionState(
     team.period_start === null
       ? guarded.is("period_start", null)
       : guarded.eq("period_start", team.period_start);
+  // The plan read with the row too: a product switch inside the period keeps
+  // the subscription and its period, and a write from a read before it must
+  // not put the old plan (and its allowance) back.
+  guarded = guarded.eq("business", team.business);
+  guarded =
+    team.billing_interval === null
+      ? guarded.is("billing_interval", null)
+      : guarded.eq("billing_interval", team.billing_interval);
 
-  const { error: guardedError } = await guarded;
+  const { data: written, error: guardedError } = await guarded.select("id");
   if (guardedError) throw guardedError;
+  if (!written || written.length === 0) {
+    // Another write got there first: fail, so Polar delivers the event again
+    // and it is applied to Polar's state then.
+    throw new TeamBillingError(
+      "concurrent_update",
+      "The team changed while this subscription event was applied"
+    );
+  }
 
-  // Separately from the guarded write above: seat changes within one period
-  // share its subscription id and period start, so the pending schedule is
-  // read from Polar's current state rather than from this payload.
+  // Separately from the guarded write above: seat and plan changes within one
+  // period share its subscription id and period start, so the pending
+  // schedule is fenced on the time of the read instead.
   if (subscriptionId !== null) {
-    await refreshPendingSeats(teamId, subscriptionId);
+    await syncPendingUpdate(teamId, subscriptionId, data, observedAt);
   }
 }
 
@@ -1310,6 +1921,10 @@ export async function applyTeamPolarWebhookEvent(
         pending_checkout: null,
         pending_seats: null,
         pending_seats_as_of: null,
+        pending_plan: null,
+        pending_interval: null,
+        billing_interval: null,
+        billing_period_end: null,
         // Recurring blocks, overage and Team Business need an active team;
         // one-time blocks stay. Dropping Team Business keeps its retention
         // for 7 days (a trigger, migration 00067).

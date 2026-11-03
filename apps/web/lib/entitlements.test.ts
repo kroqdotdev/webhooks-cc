@@ -6,6 +6,7 @@ import {
   planEntitlements,
   planName,
   retentionDays,
+  teamAllowance,
   teamEntitlements,
   teamRequestLimit,
 } from "./entitlements";
@@ -29,6 +30,7 @@ describe("entitlements", () => {
       requestAddons: false,
       pageAddons: false,
       annualBilling: false,
+      perSeat: false,
     });
     expect(ENTITLEMENTS.pro).toEqual({
       key: "pro",
@@ -43,6 +45,7 @@ describe("entitlements", () => {
       requestAddons: true,
       pageAddons: false,
       annualBilling: false,
+      perSeat: false,
     });
     expect(ENTITLEMENTS.business).toEqual({
       key: "business",
@@ -57,8 +60,9 @@ describe("entitlements", () => {
       requestAddons: true,
       pageAddons: true,
       annualBilling: true,
+      perSeat: false,
     });
-    // A team without the Business add-on gets Pro's taste, per seat.
+    // A Teams team gets Pro's limits: requests per seat, the rest per team.
     expect(ENTITLEMENTS.team).toEqual({
       key: "team",
       ...common,
@@ -72,13 +76,14 @@ describe("entitlements", () => {
       requestAddons: true,
       pageAddons: false,
       annualBilling: false,
+      perSeat: false,
     });
-    // Team Business: Business's features, 150k pooled on top of the seats,
-    // billed monthly only.
+    // Team Business: Business per seat (requests, parsed pages, AI assists),
+    // its other limits per team, monthly or annual.
     expect(ENTITLEMENTS.team_business).toEqual({
       key: "team_business",
-      requestLimit: 100_000,
-      poolRequests: 150_000,
+      requestLimit: 250_000,
+      poolRequests: 0,
       quotaPeriod: "month",
       retentionDays: 90,
       parsedPages: 2_000,
@@ -88,7 +93,8 @@ describe("entitlements", () => {
       fileDrops: true,
       requestAddons: true,
       pageAddons: true,
-      annualBilling: false,
+      annualBilling: true,
+      perSeat: true,
     });
     expect(Object.keys(ENTITLEMENTS).sort()).toEqual([
       "business",
@@ -111,11 +117,20 @@ describe("entitlements", () => {
     expect(isUserPlan("team")).toBe(false);
   });
 
-  it("pools team requests by seat, plus the add-on's pool", () => {
+  it("pools team requests by seat, and Team Business pages and assists too", () => {
     expect(teamRequestLimit(3, false)).toBe(300_000);
-    expect(teamRequestLimit(3, true)).toBe(450_000);
-    expect(teamRequestLimit(0, true)).toBe(150_000);
+    expect(teamRequestLimit(3, true)).toBe(750_000);
+    expect(teamRequestLimit(0, true)).toBe(0);
     expect(teamEntitlements(true).key).toBe("team_business");
+    expect(teamAllowance(3, true)).toEqual({
+      requests: 750_000,
+      parsedPages: 6_000,
+      aiAssists: 750,
+    });
+    // Teams' pages and assists are the team's, whatever the seats.
+    expect(teamAllowance(3, false)).toEqual({ requests: 300_000, parsedPages: 100, aiAssists: 20 });
+    // The database counts at least one seat for pages and assists.
+    expect(teamAllowance(0, true).parsedPages).toBe(2_000);
   });
 
   it("names and classifies plans", () => {

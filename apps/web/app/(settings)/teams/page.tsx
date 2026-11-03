@@ -32,7 +32,7 @@ import {
   trackTeamInviteDeclined,
 } from "@/lib/analytics";
 import type { Team } from "@/lib/supabase/teams-types";
-import { TEAM_SEAT_PRICE_USD } from "@/lib/team-pricing";
+import { TEAM_BUSINESS_SEAT_PRICE_USD, TEAM_SEAT_PRICE_USD } from "@/lib/team-pricing";
 
 /** Shown when accepting fails for a reason the API could not name (500, network). */
 const GENERIC_ACCEPT_ERROR =
@@ -211,7 +211,7 @@ function TeamsContent() {
   const header = (
     <SettingsPageHeader
       title="Teams"
-      description={`Share endpoints with the people you work with. Each seat is $${TEAM_SEAT_PRICE_USD} a month and adds 100,000 requests to the team's shared pool.`}
+      description={`Share endpoints with the people you work with, from 2 seats. A Teams seat is $${TEAM_SEAT_PRICE_USD} a month and adds 100,000 requests to the team's shared pool; a Team Business seat is $${TEAM_BUSINESS_SEAT_PRICE_USD} a month with Business's limits per seat.`}
       actions={
         <NewTeamDialog
           onCreated={async (teamId) => {
@@ -314,7 +314,7 @@ function TeamsContent() {
           <Panel
             id="no-teams"
             title="You're not in a team yet"
-            description={`Create a team to share endpoints with teammates. Teams are $${TEAM_SEAT_PRICE_USD} a seat each month, and every seat adds 100,000 requests to the team's shared pool.`}
+            description={`Create a team to share endpoints with teammates, from 2 seats. Teams are $${TEAM_SEAT_PRICE_USD} a seat each month, and every seat adds 100,000 requests to the team's shared pool. Team Business is $${TEAM_BUSINESS_SEAT_PRICE_USD} a seat each month, with Business's limits per seat.`}
           />
         ) : (
           <Panel id="your-teams" title="Your teams" flush>

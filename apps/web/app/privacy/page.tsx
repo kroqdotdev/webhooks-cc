@@ -395,8 +395,8 @@ export default function PrivacyPage() {
             </p>
             <p>
               <span className="font-bold text-foreground">Team-shared endpoints:</span> Requests
-              billed to a team&apos;s subscription are retained for 31 days, or 90 days with the
-              Team Business add-on, regardless of the endpoint owner&apos;s plan.
+              billed to a team&apos;s subscription are retained for 31 days, or 90 days on Team
+              Business, regardless of the endpoint owner&apos;s plan.
             </p>
             <p>
               <span className="font-bold text-foreground">Guest endpoints:</span> Endpoints created

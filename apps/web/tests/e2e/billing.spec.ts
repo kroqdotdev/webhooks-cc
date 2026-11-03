@@ -8,9 +8,9 @@ import {
 } from "./helpers/auth";
 
 /**
- * The plan page and the Team Business panel for each billing state, from
- * the account rows alone. Changes that would reach Polar are answered by a
- * stubbed route, so nothing leaves the machine.
+ * The plan page and a team's plan for each billing state, from the account
+ * rows alone. Changes that would reach Polar are answered by a stubbed
+ * route, so nothing leaves the machine.
  */
 
 const DAY = 86_400_000;
@@ -112,43 +112,123 @@ test("a change waiting for the renewal shows, and keeping the plan drops it", as
   await expect(page.locator("#extra-pages").getByText(/Extra pages end on /)).toHaveCount(0);
 });
 
-test("the Team Business panel offers the action its state allows", async ({ page }) => {
-  const owner = await userWith({ plan: "free" });
+async function ownedTeam(owner: TestUser, fields: Record<string, unknown>): Promise<string> {
   const { data: team, error } = await admin
     .from("teams")
     .insert({
-      name: `e2e-business-${Date.now()}`,
+      name: `e2e-team-plan-${Date.now()}`,
       created_by: owner.id,
       seats: 2,
-      subscription_status: "active",
-      period_start: new Date(Date.now() - DAY).toISOString(),
-      period_end: new Date(Date.now() + 29 * DAY).toISOString(),
+      ...fields,
     })
     .select("id")
     .single();
   if (error) throw error;
   teams.push(team.id);
   await admin.from("team_members").upsert({ team_id: team.id, user_id: owner.id, role: "owner" });
-  const { error: addonError } = await admin.rpc("apply_capacity_subscription", {
-    p_user_id: null,
-    p_team_id: team.id,
-    p_kind: "team_business",
-    p_subscription_id: `sub_e2e_tb_${Date.now()}`,
-    p_status: "active",
-    p_units: 0,
-    p_pending_units: 0,
-    p_cancel_at_period_end: true,
-    p_period_start: new Date(Date.now() - DAY).toISOString(),
-    p_period_end: new Date(Date.now() + 29 * DAY).toISOString(),
-  });
-  if (addonError) throw addonError;
+  return team.id;
+}
 
-  await signInTestUser(page, owner, `/teams/${team.id}`);
-  const panel = page.locator("#team-business");
-  await expect(panel.getByText(/Team Business ends on /)).toBeVisible({ timeout: 15000 });
-  await expect(panel.getByRole("button", { name: "Keep Team Business" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "End at the renewal" })).toHaveCount(0);
+const SUBSCRIBED = () => ({
+  subscription_status: "active",
+  polar_subscription_id: `sub_e2e_team_${Date.now()}`,
+  billing_interval: "month",
+  period_start: new Date(Date.now() - DAY).toISOString(),
+  period_end: new Date(Date.now() + 29 * DAY).toISOString(),
+});
+
+test("an unsubscribed team picks its plan and seats at checkout", async ({ page }) => {
+  const owner = await userWith({ plan: "free" });
+  const teamId = await ownedTeam(owner, {});
+  let body: unknown = null;
+  await page.route("**/api/teams/*/billing/checkout", async (route) => {
+    body = route.request().postDataJSON();
+    await route.fulfill({ json: { url: `/teams/${teamId}?subscribed=true` } });
+  });
+  await signInTestUser(page, owner, `/teams/${teamId}`);
+
+  const panel = page.locator("#subscribe");
+  await panel.getByRole("radio", { name: "Team Business, annual" }).click({ timeout: 15000 });
+  await expect(panel.getByText("3 × $350/seat/yr = $1,050/yr")).toBeVisible();
+  // Both plans start at two seats.
+  await panel.getByRole("button", { name: "Decrease seats" }).click();
+  await expect(panel.getByRole("button", { name: "Decrease seats" })).toBeDisabled();
+  await panel.getByRole("button", { name: "Subscribe" }).click();
+  await expect.poll(() => body).toEqual({ seats: 2, plan: "team_business", interval: "year" });
+});
+
+test("a Teams team moves up to Team Business now, after a quote", async ({ page }) => {
+  const owner = await userWith({ plan: "free" });
+  const teamId = await ownedTeam(owner, SUBSCRIBED());
+  let body: unknown = null;
+  await page.route("**/api/teams/*/billing/plan**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        json: {
+          plan: "team_business",
+          interval: "month",
+          seats: 2,
+          applies: "now",
+          creditCents: 2320,
+          chargeCents: 6767,
+          creditAppliedCents: 0,
+          dueNowCents: 4447,
+          renewalCents: 7000,
+          periodEnd: new Date(Date.now() + 29 * DAY).toISOString(),
+        },
+      });
+      return;
+    }
+    body = route.request().postDataJSON();
+    await admin.from("teams").update({ business: true }).eq("id", teamId);
+    await route.fulfill({ json: { applied: "now" } });
+  });
+  await signInTestUser(page, owner, `/teams/${teamId}`);
+
+  const billing = page.locator("#billing");
+  await expect(billing.getByRole("button", { name: /Team Business yearly/ })).toBeVisible({
+    timeout: 15000,
+  });
+  await billing
+    .getByRole("button", { name: "Upgrade to Team Business, $35 a seat a month" })
+    .click();
+
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog.getByRole("heading", { name: "Start Team Business now?" })).toBeVisible();
+  await expect(dialog).toContainText("less $23.20 for the unused part of Teams");
+  await dialog.getByRole("button", { name: "Pay about $44.47 and change" }).click();
+
+  await expect(billing.getByText("Team Business starts now.")).toBeVisible();
+  expect(body).toEqual({ plan: "team_business", interval: "month" });
+});
+
+test("a move to Teams waiting for the renewal shows, and keeping Team Business drops it", async ({
+  page,
+}) => {
+  const owner = await userWith({ plan: "free" });
+  const teamId = await ownedTeam(owner, {
+    ...SUBSCRIBED(),
+    business: true,
+    pending_plan: "team",
+    pending_interval: "month",
+  });
+  await page.route("**/api/teams/*/billing/plan", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ action: "keep" });
+    await admin
+      .from("teams")
+      .update({ pending_plan: null, pending_interval: null })
+      .eq("id", teamId);
+    await route.fulfill({ status: 204 });
+  });
+  await signInTestUser(page, owner, `/teams/${teamId}`);
+
+  const billing = page.locator("#billing");
+  await expect(billing.getByText(/Changes to Teams on /)).toBeVisible({ timeout: 15000 });
   await expect(page.locator("#extra-pages").getByText(/Extra pages end on /)).toBeVisible();
+
+  await billing.getByRole("button", { name: "Keep Team Business" }).click();
+  await expect(billing.getByText("The team stays on Team Business.")).toBeVisible();
+  await expect(billing.getByRole("button", { name: /Team Business yearly/ })).toBeVisible();
 });
 
 test("after a move down, the plan page says when older requests go", async ({ page }) => {

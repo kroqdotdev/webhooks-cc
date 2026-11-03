@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,12 +28,17 @@ import {
   DEFAULT_TEAM_SEATS,
   MAX_TEAM_SEATS,
   MIN_TEAM_SEATS,
+  TEAM_PLAN_OPTIONS,
   clampSeats,
   formatCents,
   formatSeatPricing,
+  teamPlanLabel,
   type SeatChangeQuote,
+  type TeamInterval,
+  type TeamPlan,
 } from "@/lib/team-pricing";
 import { longDate } from "@/components/settings/format";
+import { TeamPlanChooser, currentTeamPlan } from "@/components/teams/team-plan-chooser";
 
 const SESSION_EXPIRED = "Your session expired. Please sign in again.";
 
@@ -47,12 +52,16 @@ function SeatStepper({
   disabled,
   label,
   id,
+  plan,
+  interval,
 }: {
   id?: string;
   seats: number;
   onChange: (seats: number) => void;
   disabled: boolean;
   label: string;
+  plan: TeamPlan;
+  interval: TeamInterval;
 }) {
   return (
     <div className="space-y-2">
@@ -89,7 +98,7 @@ function SeatStepper({
           <Plus className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground">{formatSeatPricing(seats)}</p>
+      <p className="text-sm text-muted-foreground">{formatSeatPricing(seats, plan, interval)}</p>
     </div>
   );
 }
@@ -111,25 +120,10 @@ export function TeamBillingPanel({
   /** The activation wait ran out; offer checkout again as an escape hatch. */
   activationTimedOut?: boolean;
 }) {
-  // Team Business set to end (shown by its own panel) is not part of the
-  // next renewal: the owner reads its state from the same route.
-  const [businessEnding, setBusinessEnding] = useState(false);
-  useEffect(() => {
-    if (!accessToken || !isOwner || !team.business) return;
-    let cancelled = false;
-    fetch(`/api/teams/${encodeURIComponent(team.id)}/billing/business`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((state: { ending?: boolean } | null) => {
-        if (!cancelled) setBusinessEnding(state?.ending === true);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, isOwner, team.business, team.id]);
   const [checkoutSeats, setCheckoutSeats] = useState(DEFAULT_TEAM_SEATS);
+  const [checkoutPlan, setCheckoutPlan] = useState<{ plan: TeamPlan; interval: TeamInterval }>(
+    TEAM_PLAN_OPTIONS[0]
+  );
   const [seatDraft, setSeatDraft] = useState(() => clampSeats(team.seats));
   // The parent refreshes the `team` prop in place (no remount), so a seat count
   // changed elsewhere (Polar webhook, another owner session, another tab) must
@@ -160,7 +154,13 @@ export function TeamBillingPanel({
     setError(null);
     trackTeamSubscribeClicked(checkoutSeats);
     try {
-      const url = await startTeamCheckout(accessToken, team.id, checkoutSeats);
+      const url = await startTeamCheckout(
+        accessToken,
+        team.id,
+        checkoutSeats,
+        checkoutPlan.plan,
+        checkoutPlan.interval
+      );
       // Reset if the redirect never happens (e.g. a popup blocker eats it).
       setTimeout(() => {
         setSubscribing(false);
@@ -210,7 +210,7 @@ export function TeamBillingPanel({
         // The seat count itself only changes at renewal, so put the stepper
         // back on the seats the team still has.
         setNotice(
-          `Seats drop to ${seatDraft} on ${formatDate(team.periodEnd)}. You keep ${team.seats} seats until then.`
+          `Seats drop to ${seatDraft} on ${formatDate(team.billingPeriodEnd)}. You keep ${team.seats} seats until then.`
         );
         setSeatDraft(team.seats);
       } else {
@@ -319,7 +319,7 @@ export function TeamBillingPanel({
       <Panel
         id="subscribe"
         title="No active subscription"
-        description="Subscribe to activate this team. Every seat adds 100,000 requests to the shared monthly pool, and members need a seat to reach shared endpoints."
+        description="Subscribe to activate this team, from 2 seats. Members need a seat to reach shared endpoints. On Teams every seat adds 100,000 requests a month to the shared pool; Team Business gives each seat Business's 250,000 requests, 2,000 parsed pages and 250 AI assists, with 90-day retention, up to 50 layouts per endpoint, a custom inbound domain and file drops for the team."
         footer={
           <>
             <Button onClick={() => void handleSubscribe()} disabled={subscribing || !accessToken}>
@@ -337,6 +337,28 @@ export function TeamBillingPanel({
             </Notice>
           </div>
         )}
+        <PanelRow label="Plan">
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Plan">
+            {TEAM_PLAN_OPTIONS.map((option) => {
+              const selected =
+                option.plan === checkoutPlan.plan && option.interval === checkoutPlan.interval;
+              return (
+                <Button
+                  key={`${option.plan}-${option.interval}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  variant={selected ? "default" : "outline"}
+                  size="sm"
+                  disabled={subscribing}
+                  onClick={() => setCheckoutPlan(option)}
+                >
+                  {teamPlanLabel(option.plan, option.interval)}
+                </Button>
+              );
+            })}
+          </div>
+        </PanelRow>
         <PanelRow label="Seats" htmlFor="checkout-seats">
           <SeatStepper
             seats={checkoutSeats}
@@ -344,6 +366,8 @@ export function TeamBillingPanel({
             disabled={subscribing}
             label="Seats to purchase"
             id="checkout-seats"
+            plan={checkoutPlan.plan}
+            interval={checkoutPlan.interval}
           />
         </PanelRow>
       </Panel>
@@ -357,7 +381,8 @@ export function TeamBillingPanel({
   // the `subscription.uncanceled` webhook lands. Keying on the flag alone keeps
   // a successful reactivation from still reading as "Cancels at period end".
   const isCanceling = team.cancelAtPeriodEnd;
-  const periodEndLabel = formatDate(team.periodEnd);
+  // When the subscription renews or ends: the year's end on annual billing.
+  const periodEndLabel = formatDate(team.billingPeriodEnd);
   const seatDelta = seatDraft - team.seats;
   const addingSeats = seatDelta > 0;
   const seatChangeCount = Math.abs(seatDelta);
@@ -365,11 +390,20 @@ export function TeamBillingPanel({
 
   const scheduledReduction =
     team.pendingSeats !== null && team.pendingSeats < team.seats ? team.pendingSeats : null;
+  const plan = currentTeamPlan(team);
+  // What the team renews at: a plan change waiting for the renewal, else its plan.
+  const renewalPlan =
+    team.pendingPlan !== null
+      ? {
+          plan: team.pendingPlan,
+          interval: (team.pendingInterval === "year" ? "year" : "month") as TeamInterval,
+        }
+      : plan;
 
   let seatQuoteText: string | null = null;
   if (seatQuote) {
     const renewsOn = formatDate(Date.parse(seatQuote.periodEnd));
-    const renewal = `From ${renewsOn} the subscription renews at ${formatSeatPricing(seatQuote.newSeats)}. VAT is included where it applies.`;
+    const renewal = `From ${renewsOn} the subscription renews at ${formatSeatPricing(seatQuote.newSeats, renewalPlan.plan, renewalPlan.interval)}. VAT is included where it applies.`;
     const amount = formatCents(seatQuote.prorationCents);
     const pending =
       seatQuote.pendingSeats !== null && seatQuote.pendingSeats < seatQuote.currentSeats
@@ -442,10 +476,30 @@ export function TeamBillingPanel({
                 Ends on {periodEndLabel}. Members lose access to shared endpoints after that.
               </p>
             )}
-            {!isCanceling && !isPastDue && team.periodEnd && (
+            {!isCanceling && !isPastDue && team.billingPeriodEnd && (
               <p className="text-muted-foreground">
-                Renews on {periodEndLabel} at {formatSeatPricing(scheduledReduction ?? team.seats)}
-                {team.business && !businessEnding ? ", plus Team Business at $49/mo" : ""}.
+                Renews on {periodEndLabel} at{" "}
+                {formatSeatPricing(
+                  scheduledReduction ?? team.seats,
+                  renewalPlan.plan,
+                  renewalPlan.interval
+                )}
+                .
+              </p>
+            )}
+          </div>
+        </PanelRow>
+
+        <PanelRow label="Plan">
+          <div className="space-y-2 py-1">
+            <p>{teamPlanLabel(plan.plan, plan.interval)}</p>
+            {isOwner && (
+              <TeamPlanChooser team={team} accessToken={accessToken} onChanged={onChanged} />
+            )}
+            {!isOwner && team.pendingPlan !== null && (
+              <p className="text-muted-foreground">
+                Changes to {teamPlanLabel(renewalPlan.plan, renewalPlan.interval)} on{" "}
+                {periodEndLabel}.
               </p>
             )}
           </div>
@@ -465,6 +519,8 @@ export function TeamBillingPanel({
                   disabled={savingSeats}
                   label="Seat count"
                   id="seat-count"
+                  plan={renewalPlan.plan}
+                  interval={renewalPlan.interval}
                 />
                 <Button
                   variant="outline"

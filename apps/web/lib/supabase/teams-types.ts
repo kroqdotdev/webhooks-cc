@@ -26,14 +26,24 @@ export interface Team {
   subscriptionStatus: "active" | "canceled" | "past_due" | null;
   seats: number;
   requestsUsed: number;
-  /** The pool's allowance this period: seats x 100,000 plus monthly blocks. */
+  /** The pool's allowance this period: seats x the plan's per-seat requests, plus monthly blocks. */
   requestLimit: number;
   /** Requests monthly blocks add to requestLimit this period (migration 00065). */
   blockRequests: number;
-  /** Team Business is on: Business features for shared endpoints, a larger pool (migration 00070). */
+  /**
+   * The team is on Team Business: Business's limits per seat and its features
+   * for shared endpoints (the team plan's own product since migration 00083).
+   */
   business: boolean;
-  /** End of the current billing period in millis; null when unsubscribed. */
+  /** The subscription's interval: annual billing is only for Team Business; null when unsubscribed. */
+  billingInterval: "month" | "year" | null;
+  /** A plan change waiting for the renewal (a downgrade), or null. */
+  pendingPlan: "team" | "team_business" | null;
+  pendingInterval: "month" | "year" | null;
+  /** End of the current quota period in millis (a month, also on annual billing); null when unsubscribed. */
   periodEnd: number | null;
+  /** When the subscription renews, in millis: the year's end on annual billing; null when unsubscribed. */
+  billingPeriodEnd: number | null;
   cancelAtPeriodEnd: boolean;
   /** Seat count a scheduled reduction applies at the next renewal; null when none. */
   pendingSeats: number | null;
