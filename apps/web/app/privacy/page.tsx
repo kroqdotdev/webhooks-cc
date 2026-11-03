@@ -28,7 +28,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: November 2, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 3, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -322,7 +322,10 @@ export default function PrivacyPage() {
               next. Do Not Track and Global Privacy Control count as a decline. webhooks.cc and
               mailhooks.cc each keep their own choice; when you move between them signed in, with
               the site switcher, your choice comes along, and a decline on one site also applies on
-              the other. You can change your choice at any time with{" "}
+              the other. Once you sign in, we also save your choice with your account and apply it
+              in other browsers where you sign in: a decline applies everywhere, so withdrawing on
+              one device withdraws on all of them, and an accept only answers a browser where you
+              have not chosen yet. You can change your choice at any time with{" "}
               <CookieSettingsLink className={linkClass} />.
             </p>
             <p>
