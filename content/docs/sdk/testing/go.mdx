@@ -1,0 +1,284 @@
+---
+title: "Go + go test"
+description: "Test webhooks and emails in Go with webhooks.cc/go: assert on the webhooks your service sends, test your handler with signed requests and httptest, check your retries, and read codes out of test emails."
+section: sdk
+order: 11
+lastUpdated: 2026-11-03
+schema: none
+keywords: ["go webhook testing", "golang test webhooks", "httptest webhook", "go test webhooks", "stripe webhook go test", "whktest"]
+seo:
+  ogTitle: "Webhook Testing in Go"
+  ogDescription: "testing.TB helpers for webhooks and email: capture what your service sends, test your handler with Stripe-signed requests through httptest, check retries, and read one-time codes."
+---
+
+This guide tests a Go service from both sides: the webhooks it sends out and the webhooks it receives. Everything uses the standard library's `testing` and `net/http/httptest`, so it works with any router. The [Go SDK reference](/docs/sdk/go) lists every method.
+
+## Install the module
+
+```bash
+go get webhooks.cc/go
+```
+
+The package is named `webhookscc`; its test helpers are in `webhooks.cc/go/whktest`. Create an API key on your [API keys page](/account/api-keys) and set it as `WHK_API_KEY`. `whktest.Client` skips the test when the variable is not set, so `go test ./...` still passes on a machine without a key.
+
+## Test the webhooks your service sends
+
+`whktest.Endpoint` creates an endpoint named after the test and deletes it in `t.Cleanup`, whether the test passed or failed. Point your code at its URL, then wait for the request:
+
+```go
+package shop
+
+import (
+	"testing"
+	"time"
+
+	webhookscc "webhooks.cc/go"
+	"webhooks.cc/go/whktest"
+)
+
+func TestSendsOrderPaid(t *testing.T) {
+	t.Parallel()
+	client := whktest.Client(t)
+	endpoint := whktest.Endpoint(t, client)
+
+	if err := SendOrderWebhook(endpoint.URL, Order{ID: "ord_1", Total: 4999}); err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := client.Requests.WaitFor(t.Context(), endpoint.Slug, webhookscc.WaitOptions{
+		Timeout: 30 * time.Second,
+		Match: webhookscc.MatchAll(
+			webhookscc.MatchMethod("POST"),
+			webhookscc.MatchHeader("X-Event", "order.paid"),
+		),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order Order
+	if err := request.JSON(&order); err != nil {
+		t.Fatal(err)
+	}
+	if order.ID != "ord_1" || order.Total != 4999 {
+		t.Errorf("order = %+v", order)
+	}
+	if got := request.Headers.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q", got)
+	}
+}
+```
+
+`WaitFor` polls until a matching request arrives. When the time runs out the error matches `webhookscc.ErrTimeout`, and when the test's context ends first you get the context's error. A webhook that arrived before the wait started still counts. Every test has its own endpoint, so `t.Parallel()` is safe. [Matchers](/docs/sdk/matchers) such as `MatchBodyPath("data.status", "paid")` pick one request out of several.
+
+## Test your webhook handler with httptest
+
+Your handler is the other half. `webhookscc.BuildRequest` builds a request the way Stripe, GitHub, Shopify or [31 other providers](/docs/sdk/signatures) send it, with a real signature. It is a plain function: no client, no API key and no network, so you can serve the request to your handler with `httptest`:
+
+```go
+// handler.go
+package shop
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+
+	"webhooks.cc/go/verify"
+)
+
+// StripeWebhook verifies Stripe's signature and passes paid checkouts to onPaid.
+func StripeWebhook(secret string, onPaid func(sessionID string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body) // the exact bytes, before any JSON parsing
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		valid, err := verify.Signature("stripe", body, r.Header, verify.Options{Secret: secret})
+		if err != nil || !valid {
+			http.Error(w, "invalid signature", http.StatusBadRequest)
+			return
+		}
+		var event struct {
+			Type string `json:"type"`
+			Data struct {
+				Object struct {
+					ID string `json:"id"`
+				} `json:"object"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &event); err != nil {
+			http.Error(w, "bad payload", http.StatusBadRequest)
+			return
+		}
+		if event.Type == "checkout.session.completed" {
+			onPaid(event.Data.Object.ID)
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+```
+
+```go
+// handler_test.go
+package shop
+
+import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	webhookscc "webhooks.cc/go"
+)
+
+const secret = "whsec_test_secret"
+
+const checkout = `{"id":"evt_test_1","type":"checkout.session.completed","data":{"object":{"id":"cs_test_123","amount_total":2000}}}`
+
+func deliver(handler http.Handler, built *webhookscc.BuiltRequest) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(built.Method, built.URL, bytes.NewReader(built.Body))
+	for name, value := range built.Headers {
+		req.Header.Set(name, value)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestStripeWebhook(t *testing.T) {
+	tests := []struct {
+		name     string
+		secret   string
+		tamper   func([]byte) []byte
+		wantCode int
+		wantPaid bool
+	}{
+		{name: "signed checkout", secret: secret, wantCode: http.StatusOK, wantPaid: true},
+		{name: "another secret", secret: "whsec_wrong", wantCode: http.StatusBadRequest},
+		{
+			name:   "tampered body",
+			secret: secret,
+			tamper: func(b []byte) []byte {
+				return bytes.Replace(b, []byte(`"amount_total":2000`), []byte(`"amount_total":1`), 1)
+			},
+			wantCode: http.StatusBadRequest,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			built, err := webhookscc.BuildRequest("http://shop.test/webhooks/stripe", webhookscc.SendOptions{
+				Provider: "stripe",
+				Secret:   tt.secret,
+				Body:     checkout,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.tamper != nil {
+				built.Body = tt.tamper(built.Body)
+			}
+			var paid []string
+			handler := StripeWebhook(secret, func(id string) { paid = append(paid, id) })
+
+			rec := deliver(handler, built)
+			if rec.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantCode)
+			}
+			if got := len(paid) == 1 && paid[0] == "cs_test_123"; got != tt.wantPaid {
+				t.Errorf("paid = %v", paid)
+			}
+		})
+	}
+}
+```
+
+This test never calls `whktest.Client`, so it runs without `WHK_API_KEY`. The signature is the real Stripe scheme: a handler that calls stripe-go's `webhook.ConstructEvent` instead of `verify.Signature` accepts these requests unchanged. A string, `[]byte` or `json.RawMessage` body is sent byte for byte; leave out `Body` and set `Template: "checkout.session.completed"` to send the provider's sample payload instead. To pin the signature for a golden file, set `Timestamp`.
+
+To exercise a server that is actually running, `httptest.NewServer(handler)` or one on localhost, `client.SendTo(ctx, server.URL+"/webhooks/stripe", opts)` sends the same request over HTTP and returns the response.
+
+## Test your retries
+
+An endpoint can answer with whatever you configure instead of a plain 200, so it can stand in for a receiver that is down. Pass the options to `whktest.Endpoint`:
+
+```go
+func TestRetriesAFailingReceiver(t *testing.T) {
+	t.Parallel()
+	client := whktest.Client(t)
+	endpoint := whktest.Endpoint(t, client, webhookscc.CreateEndpointOptions{
+		MockResponse: &webhookscc.MockResponse{Status: http.StatusServiceUnavailable},
+	})
+
+	_ = SendOrderWebhook(endpoint.URL, Order{ID: "ord_2"}) // retries, then gives up
+
+	attempts, err := client.Requests.WaitForAll(t.Context(), endpoint.Slug, 3, webhookscc.WaitOptions{
+		Timeout: 30 * time.Second,
+		Match:   webhookscc.MatchBodyPath("id", "ord_2"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gap := attempts[2].ReceivedAt.Sub(attempts[1].ReceivedAt); gap < time.Second {
+		t.Errorf("second retry came after %s, want a backoff of at least 1s", gap)
+	}
+}
+```
+
+`WaitForAll` returns the requests oldest first, and `ReceivedAt` is a `time.Time`, so a backoff is a subtraction. `MockResponse.Delay` holds the answer back, up to 30 seconds, to test your client's timeout. [Response rules](/docs/mock-responses#conditional-response-rules) answer differently depending on the request, for example 503 twice and then 200.
+
+## Test the emails your service sends
+
+Every endpoint also receives email at `{slug}@mailhooks.cc`. `CaptureEmailDuring` creates a temporary endpoint, passes its address to your code, waits for the email and deletes the endpoint:
+
+```go
+func TestSendsAConfirmationCode(t *testing.T) {
+	t.Parallel()
+	client := whktest.Client(t)
+
+	emails, err := client.CaptureEmailDuring(t.Context(), func(address string, _ *webhookscc.Endpoint) error {
+		return SignUp(address, "correct horse")
+	}, webhookscc.CaptureEmailOptions{
+		Query: webhookscc.EmailQuery{Subject: "Confirm your email", Timeout: time.Minute},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := webhookscc.ExtractCode(&emails[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(code) != 6 {
+		t.Errorf("code = %q", code)
+	}
+}
+```
+
+The codes and links are found on the server, the same ones the dashboard shows; `ExtractLink` returns the first link. Each email counts as one request on your plan. See [Test email](/docs/sdk/go#test-email-codes-and-links) for tags, which let one endpoint serve a whole suite.
+
+## Run the suite in CI
+
+Add the API key as a repository secret. A GitHub Actions job:
+
+```yaml
+# .github/workflows/test.yml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go test -race ./...
+```
+
+Pull requests from forks get no secrets, so their webhooks.cc tests are skipped while the handler tests still run. To keep the networked tests out of a quick local run, guard them with `if testing.Short() { t.Skip() }` and run `go test -short ./...`.
+
+## Tips
+
+- Keep handler tests on `BuildRequest`: they are fast, need no key, and catch signature and parsing bugs.
+- Give every test its own endpoint (`whktest.Endpoint` does) rather than sharing one, so a retry from one test cannot satisfy another.
+- The free plan's 50 requests a day cover a small suite; a [paid plan](/pricing) suits a suite that runs on every push.
+- Signing a webhook your service sends? `verify.Signature(provider, []byte(request.Body), request.Headers, verify.Options{Secret: ...})` checks a captured request.

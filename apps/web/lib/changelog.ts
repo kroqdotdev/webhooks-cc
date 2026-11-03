@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.59.2";
+export const APP_VERSION = "0.59.3";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.59.3",
+    date: "2026-11-03",
+    title: "Testing Guides for Python and Go",
+    track: "web",
+    items: [
+      "Two new testing guides in the SDK docs: Python + pytest and Go + go test. Each tests a service from both sides: the webhooks it sends, its webhook handler with Stripe-signed requests and no network or API key, its retries against an endpoint that answers 503, and the confirmation codes in the emails it sends, with a CI job to run it all",
+    ],
+  },
   {
     version: "0.59.2",
     date: "2026-11-03",

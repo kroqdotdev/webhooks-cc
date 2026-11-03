@@ -3,7 +3,7 @@ title: "Python SDK"
 description: "The webhooks-cc Python package captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes pytest fixtures."
 section: sdk
 order: 6
-lastUpdated: 2026-10-28
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["python webhook sdk", "pytest webhooks", "webhook testing python", "verify webhook signature python", "webhooks-cc"]
 seo:
@@ -103,7 +103,7 @@ def test_sends_a_receipt_webhook(webhooks_cc, webhooks_cc_endpoint):
     assert request.method == "POST"
 ```
 
-`webhooks_cc` is a client for the whole session. `webhooks_cc_endpoint` is a new endpoint for each test, named after it and deleted when it ends. Outside pytest, `temporary_endpoint(client)` does the same as a context manager, and `capture_during(client, action)` runs `action(endpoint)` and returns what it sent:
+`webhooks_cc` is a client for the whole session. `webhooks_cc_endpoint` is a new endpoint for each test, named after it and deleted when it ends. The [pytest guide](/docs/sdk/testing/pytest) walks through a whole suite: handler tests without a network, retries, emails and CI. Outside pytest, `temporary_endpoint(client)` does the same as a context manager, and `capture_during(client, action)` runs `action(endpoint)` and returns what it sent:
 
 ```python
 from webhooks_cc import capture_during

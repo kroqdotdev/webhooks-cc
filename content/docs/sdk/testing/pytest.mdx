@@ -1,0 +1,206 @@
+---
+title: "Python + pytest"
+description: "Test webhooks and emails in pytest with the webhooks-cc package: assert on the webhooks your app sends, test your handler with signed requests without a network, check your retries, and read codes out of test emails."
+section: sdk
+order: 10
+lastUpdated: 2026-11-03
+schema: none
+keywords: ["pytest webhooks", "test webhooks python", "pytest webhook testing", "fastapi webhook test", "django webhook test", "stripe webhook pytest"]
+seo:
+  ogTitle: "Webhook Testing with pytest"
+  ogDescription: "pytest fixtures for webhooks and email: capture what your app sends, test your handler with Stripe-signed requests in-process, check retries, and read one-time codes."
+---
+
+This guide tests a Python app from both sides: the webhooks it sends out and the webhooks it receives. The examples use FastAPI, but nothing in them depends on it: the same calls work with Django, Flask or a plain function. The [Python SDK reference](/docs/sdk/python) lists every method.
+
+## Install the package
+
+```bash
+pip install webhooks-cc pytest
+```
+
+Installing `webhooks-cc` registers its pytest plugin, so the `webhooks_cc` and `webhooks_cc_endpoint` fixtures are available in every test without an import. Create an API key on your [API keys page](/account/api-keys) and set it as `WHK_API_KEY`. Tests that use the fixtures are skipped when the variable is not set, so the suite still passes on a machine without a key.
+
+## Test the webhooks your app sends
+
+`webhooks_cc_endpoint` creates an endpoint named after the test and deletes it when the test ends, whether it passed or failed. Point your code at its URL, then wait for the request:
+
+```python
+from webhooks_cc import match_all, match_header, match_method
+
+from shop.notify import send_order_webhook
+
+
+def test_sends_order_paid(webhooks_cc, webhooks_cc_endpoint):
+    send_order_webhook(webhooks_cc_endpoint.url, {"id": "ord_1", "total": 4999})
+
+    request = webhooks_cc.requests.wait_for(
+        webhooks_cc_endpoint.slug,
+        timeout="30s",
+        match=match_all(match_method("POST"), match_header("x-event", "order.paid")),
+    )
+    assert request.json() == {"id": "ord_1", "total": 4999}
+    assert request.headers["content-type"] == "application/json"
+```
+
+`wait_for` polls until a matching request arrives and raises `webhooks_cc.TimeoutError` when the time runs out. A webhook that arrived before the wait started still counts. Write a timeout as a string such as `"30s"`: a bare number is milliseconds. [Matchers](/docs/sdk/matchers) such as `match_body_path("data.status", "paid")` pick one request out of several.
+
+## Test your webhook handler without a network
+
+Your handler is the other half. `build_template_request` builds a request the way Stripe, GitHub, Shopify or [31 other providers](/docs/sdk/signatures) send it, with a real signature. It needs no API key and makes no network call, so you can post the request to your app's test client:
+
+```python
+# shop/app.py
+import json
+import os
+
+from fastapi import FastAPI, HTTPException, Request
+from webhooks_cc import verify_signature
+
+app = FastAPI()
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+paid_sessions: list[str] = []
+
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    body = await request.body()  # the exact bytes, before any JSON parsing
+    if not verify_signature(
+        "stripe", body=body, headers=request.headers, secret=STRIPE_WEBHOOK_SECRET
+    ):
+        raise HTTPException(status_code=400, detail="invalid signature")
+
+    event = json.loads(body)
+    if event["type"] == "checkout.session.completed":
+        paid_sessions.append(event["data"]["object"]["id"])
+    return {"received": True}
+```
+
+```python
+# tests/test_stripe_handler.py
+import pytest
+from fastapi.testclient import TestClient
+from webhooks_cc import build_template_request
+
+from shop.app import STRIPE_WEBHOOK_SECRET, app, paid_sessions
+
+api = TestClient(app)
+URL = "http://testserver/webhooks/stripe"
+CHECKOUT = {
+    "id": "evt_test_1",
+    "type": "checkout.session.completed",
+    "data": {"object": {"id": "cs_test_123", "amount_total": 2000}},
+}
+
+
+def deliver(built):
+    return api.post("/webhooks/stripe", content=built.body, headers=built.headers)
+
+
+def test_records_a_paid_checkout():
+    built = build_template_request(
+        URL, provider="stripe", secret=STRIPE_WEBHOOK_SECRET, body=CHECKOUT
+    )
+    assert deliver(built).status_code == 200
+    assert "cs_test_123" in paid_sessions
+
+
+@pytest.mark.parametrize("secret", ["whsec_wrong", "whsec_test_secretx"])
+def test_refuses_another_secret(secret):
+    built = build_template_request(URL, provider="stripe", secret=secret, body=CHECKOUT)
+    assert deliver(built).status_code == 400
+
+
+def test_refuses_a_tampered_body():
+    built = build_template_request(
+        URL, provider="stripe", secret=STRIPE_WEBHOOK_SECRET, body=CHECKOUT
+    )
+    tampered = built.body.replace('"amount_total":2000', '"amount_total":1')
+    response = api.post("/webhooks/stripe", content=tampered, headers=built.headers)
+    assert response.status_code == 400
+```
+
+These tests use no fixtures, so they run without `WHK_API_KEY`. The signature is the real Stripe scheme: if your handler calls `stripe.Webhook.construct_event` instead of `verify_signature`, it accepts these requests unchanged. Leave out `body` and pass `template="checkout.session.completed"` to send the provider's sample payload instead. Django's `Client` and Flask's `test_client()` take the same body and headers.
+
+To exercise a server that is actually running, on localhost or in a container, `webhooks_cc.send_to(url, provider="stripe", secret=..., body=...)` sends the same request over HTTP and returns the response.
+
+## Test your retries
+
+An endpoint can answer with whatever you configure instead of a plain 200, so it can stand in for a receiver that is down. Make a fixture of your own with `temporary_endpoint`, which deletes the endpoint as `webhooks_cc_endpoint` does:
+
+```python
+import pytest
+from webhooks_cc import match_body_path, temporary_endpoint
+
+
+@pytest.fixture
+def failing_endpoint(webhooks_cc):
+    with temporary_endpoint(
+        webhooks_cc, "always 503", mock_response={"status": 503, "body": "", "headers": {}}
+    ) as endpoint:
+        yield endpoint
+
+
+def test_retries_a_failing_receiver(webhooks_cc, failing_endpoint):
+    send_order_webhook(failing_endpoint.url, {"id": "ord_2"}, attempts=3)
+
+    attempts = webhooks_cc.requests.wait_for_all(
+        failing_endpoint.slug, count=3, timeout="30s", match=match_body_path("id", "ord_2")
+    )
+    assert len(attempts) == 3
+```
+
+`wait_for_all` returns the requests oldest first, so you can also check the gaps between `received_at` values (milliseconds) to test a backoff. A `mock_response` also takes `delay` in milliseconds, up to 30 seconds, to test your client's timeout. [Response rules](/docs/mock-responses#conditional-response-rules) answer differently depending on the request, for example 503 twice and then 200.
+
+## Test the emails your app sends
+
+Every endpoint also receives email at `{slug}@mailhooks.cc`. `capture_email_during` creates a temporary endpoint, passes its address to your code, waits for the email and deletes the endpoint:
+
+```python
+from webhooks_cc import capture_email_during, extract_code, extract_link
+
+from shop.auth import sign_up
+
+
+def test_sends_a_confirmation_code(webhooks_cc):
+    [email] = capture_email_during(
+        webhooks_cc,
+        lambda address, endpoint: sign_up(email=address, password="correct horse"),
+        subject="Confirm your email",
+        timeout="60s",
+    )
+    assert email.email.from_[0].address == "no-reply@example.com"
+    assert len(extract_code(email)) == 6
+    assert "/confirm?token=" in extract_link(email)
+```
+
+The codes and links are found on the server, the same ones the dashboard shows. Each email counts as one request on your plan. See [Test email](/docs/sdk/python#test-email-codes-and-links) for tags, which let one endpoint serve a whole suite.
+
+## Run the suite in CI
+
+Add the API key as a repository secret. A GitHub Actions job:
+
+```yaml
+# .github/workflows/test.yml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e . webhooks-cc pytest
+      - run: pytest
+```
+
+Pull requests from forks get no secrets, so their webhooks.cc tests are skipped while the handler tests still run. With pytest-xdist (`pytest -n auto`), each worker gets its own client and every test its own endpoint, so parallel tests never see each other's requests.
+
+## Tips
+
+- Keep handler tests on `build_template_request`: they are fast, need no key, and catch signature and parsing bugs.
+- Give every test its own endpoint (`webhooks_cc_endpoint` does) rather than sharing one, so a retry from one test cannot satisfy another.
+- The free plan's 50 requests a day cover a small suite; a [paid plan](/pricing) suits a suite that runs on every push.
+- Asserting on a signature your app sends? `verify_signature(provider, body=request.body, headers=request.headers, secret=...)` checks a captured request.

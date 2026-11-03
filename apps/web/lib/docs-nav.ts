@@ -79,6 +79,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Shopify + Vitest", href: "/docs/sdk/testing/shopify-vitest", depth: 1 },
       { title: "Playwright E2E", href: "/docs/sdk/testing/playwright-e2e", depth: 1 },
       { title: "Polar + Playwright", href: "/docs/sdk/testing/polar-playwright", depth: 1 },
+      { title: "Python + pytest", href: "/docs/sdk/testing/pytest", depth: 1, isNew: true },
+      { title: "Go + go test", href: "/docs/sdk/testing/go", depth: 1, isNew: true },
     ],
   },
   {
