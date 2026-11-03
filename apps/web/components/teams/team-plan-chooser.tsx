@@ -75,7 +75,8 @@ export function TeamPlanChooser({
   const [notice, setNotice] = useState<string | null>(null);
 
   const current = currentTeamPlan(team);
-  const renewal = team.periodEnd;
+  // When a change waiting for the renewal applies: the year's end on annual billing.
+  const renewal = team.billingPeriodEnd;
   const pending: Option | null =
     team.pendingPlan !== null
       ? { plan: team.pendingPlan, interval: team.pendingInterval === "year" ? "year" : "month" }

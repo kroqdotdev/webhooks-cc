@@ -814,26 +814,26 @@ export async function changeTeamPlan(
     throw error;
   }
 
-  if (applies === "now") {
-    // The webhook applies it too; this shows the new plan before that arrives.
-    try {
+  // Polar has made the change (and charged for an upgrade), so nothing below
+  // may fail the request: the webhooks write the same state, and an error
+  // here would only invite a second attempt.
+  try {
+    if (applies === "now") {
+      // The webhook applies it too; this shows the new plan before that arrives.
       await applyTeamSubscriptionState("subscription.updated", teamId, updated);
-    } catch (applyError) {
-      reportError(
-        "[team-billing] Polar changed the plan but the team row was not updated",
-        applyError,
-        {
-          teamId,
-        }
-      );
+    } else {
+      await syncPendingUpdate(teamId, team.polar_subscription_id, updated, updatedAt);
     }
-  } else {
-    await syncPendingUpdate(teamId, team.polar_subscription_id, updated, updatedAt);
+    // Page and domain add-ons need Team Business: leaving it, they end with the period.
+    const { reconcileAddonsWithPlan } = await import("./capacity-billing");
+    await reconcileAddonsWithPlan({ kind: "team", teamId });
+  } catch (followUpError) {
+    reportError(
+      "[team-billing] Polar changed the plan but the team row was not updated",
+      followUpError,
+      { teamId }
+    );
   }
-
-  // Page and domain add-ons need Team Business: leaving it, they end with the period.
-  const { reconcileAddonsWithPlan } = await import("./capacity-billing");
-  await reconcileAddonsWithPlan({ kind: "team", teamId });
   return { applied: applies };
 }
 
@@ -856,16 +856,34 @@ export async function keepTeamPlan(userId: string, teamId: string): Promise<void
   let updated = (await polar.subscriptions.update(team.polar_subscription_id, {
     pending_update: null,
   })) as unknown as Record<string, unknown>;
+  let seatsLost = false;
   if (team.pending_seats !== null && team.pending_seats < team.seats) {
-    updated = (await polar.subscriptions.update(team.polar_subscription_id, {
-      seats: team.pending_seats,
-      proration_behavior: "next_period",
-    })) as unknown as Record<string, unknown>;
+    try {
+      updated = (await polar.subscriptions.update(team.polar_subscription_id, {
+        seats: team.pending_seats,
+        proration_behavior: "next_period",
+      })) as unknown as Record<string, unknown>;
+    } catch (seatError) {
+      // The plan is kept, but Polar cleared the seat reduction with it.
+      reportError(
+        "[team-billing] kept the plan but could not schedule the seat reduction again",
+        loggablePolarError(seatError),
+        { teamId }
+      );
+      seatsLost = true;
+    }
   }
   await syncPendingUpdate(teamId, team.polar_subscription_id, updated, new Date());
 
   const { reconcileAddonsWithPlan } = await import("./capacity-billing");
   await reconcileAddonsWithPlan({ kind: "team", teamId });
+
+  if (seatsLost) {
+    throw new TeamBillingError(
+      "seat_reduction_lost",
+      `The plan is kept, but the reduction to ${team.pending_seats} seats was dropped with the plan change. Set the seats again to remove them at the renewal.`
+    );
+  }
 }
 
 /** The price of a seat on a Polar product for `seats` seats, in cents. */
@@ -1515,9 +1533,9 @@ async function applyTeamSubscriptionState(
   // two failure modes out: overlapping deliveries of the same renewal both
   // zeroing the pool (erasing captures billed between the writes), and an
   // updated/active event read before a concurrent revoke resurrecting the
-  // revoked subscription's state after it. The loser's write matches no rows;
-  // events carry full state and Polar redelivers, so a skipped write converges
-  // on the next delivery.
+  // revoked subscription's state after it. The loser's write matches no rows
+  // and throws, so Polar delivers the event again and it is applied to the
+  // state that won.
   let guarded = admin
     .from("teams")
     .update(resetsUsage ? { ...patch, requests_used: 0 } : patch)
@@ -1530,9 +1548,25 @@ async function applyTeamSubscriptionState(
     team.period_start === null
       ? guarded.is("period_start", null)
       : guarded.eq("period_start", team.period_start);
+  // The plan read with the row too: a product switch inside the period keeps
+  // the subscription and its period, and a write from a read before it must
+  // not put the old plan (and its allowance) back.
+  guarded = guarded.eq("business", team.business);
+  guarded =
+    team.billing_interval === null
+      ? guarded.is("billing_interval", null)
+      : guarded.eq("billing_interval", team.billing_interval);
 
-  const { error: guardedError } = await guarded;
+  const { data: written, error: guardedError } = await guarded.select("id");
   if (guardedError) throw guardedError;
+  if (!written || written.length === 0) {
+    // Another write got there first: fail, so Polar delivers the event again
+    // and it is applied to Polar's state then.
+    throw new TeamBillingError(
+      "concurrent_update",
+      "The team changed while this subscription event was applied"
+    );
+  }
 
   // Separately from the guarded write above: seat and plan changes within one
   // period share its subscription id and period start, so the pending

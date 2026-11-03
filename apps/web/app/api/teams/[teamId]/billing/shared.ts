@@ -18,6 +18,7 @@ export const ERROR_STATUS: Record<string, number> = {
   plan_ending: 409,
   change_pending: 409,
   seats_below_minimum: 409,
+  seat_reduction_lost: 409,
 };
 
 /** A team plan named in a request body or query. */

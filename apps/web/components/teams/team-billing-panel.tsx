@@ -210,7 +210,7 @@ export function TeamBillingPanel({
         // The seat count itself only changes at renewal, so put the stepper
         // back on the seats the team still has.
         setNotice(
-          `Seats drop to ${seatDraft} on ${formatDate(team.periodEnd)}. You keep ${team.seats} seats until then.`
+          `Seats drop to ${seatDraft} on ${formatDate(team.billingPeriodEnd)}. You keep ${team.seats} seats until then.`
         );
         setSeatDraft(team.seats);
       } else {
@@ -381,7 +381,8 @@ export function TeamBillingPanel({
   // the `subscription.uncanceled` webhook lands. Keying on the flag alone keeps
   // a successful reactivation from still reading as "Cancels at period end".
   const isCanceling = team.cancelAtPeriodEnd;
-  const periodEndLabel = formatDate(team.periodEnd);
+  // When the subscription renews or ends: the year's end on annual billing.
+  const periodEndLabel = formatDate(team.billingPeriodEnd);
   const seatDelta = seatDraft - team.seats;
   const addingSeats = seatDelta > 0;
   const seatChangeCount = Math.abs(seatDelta);
@@ -475,7 +476,7 @@ export function TeamBillingPanel({
                 Ends on {periodEndLabel}. Members lose access to shared endpoints after that.
               </p>
             )}
-            {!isCanceling && !isPastDue && team.periodEnd && (
+            {!isCanceling && !isPastDue && team.billingPeriodEnd && (
               <p className="text-muted-foreground">
                 Renews on {periodEndLabel} at{" "}
                 {formatSeatPricing(

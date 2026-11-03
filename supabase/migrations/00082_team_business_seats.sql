@@ -467,6 +467,9 @@ begin
   -- in one pass, so a reset job that was down for more than one interval
   -- grants a single fresh quota window instead of one reset per missed
   -- interval on consecutive runs.
+  -- The billing period end moves with it, as for monthly plans, so a team
+  -- that cancels before the late renewal webhook arrives is not ended at
+  -- once by the deactivation step above.
   with renewed_teams as (
     update public.teams
     set
@@ -474,7 +477,13 @@ begin
       period_start = period_end + interval '30 days'
         * floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')),
       period_end = period_end + interval '30 days'
-        * (floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')) + 1)
+        * (floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')) + 1),
+      billing_period_end = case
+        when billing_period_end is not null and billing_period_end <= period_end
+          then period_end + interval '30 days'
+            * (floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')) + 1)
+        else billing_period_end
+      end
     where subscription_status is not null
       and billing_interval is distinct from 'year'
       and cancel_at_period_end = false

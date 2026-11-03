@@ -40,8 +40,10 @@ export interface Team {
   /** A plan change waiting for the renewal (a downgrade), or null. */
   pendingPlan: "team" | "team_business" | null;
   pendingInterval: "month" | "year" | null;
-  /** End of the current billing period in millis; null when unsubscribed. */
+  /** End of the current quota period in millis (a month, also on annual billing); null when unsubscribed. */
   periodEnd: number | null;
+  /** When the subscription renews, in millis: the year's end on annual billing; null when unsubscribed. */
+  billingPeriodEnd: number | null;
   cancelAtPeriodEnd: boolean;
   /** Seat count a scheduled reduction applies at the next renewal; null when none. */
   pendingSeats: number | null;
