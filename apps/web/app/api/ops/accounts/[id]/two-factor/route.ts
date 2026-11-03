@@ -1,7 +1,7 @@
 import { auditUserAction } from "@/lib/audit";
 import { notifyTwoFactorOff, removeTwoFactor } from "@/lib/mfa-recovery";
 import { reportError } from "@/lib/observability";
-import { authenticateStaffRequest, opsJson } from "@/lib/staff";
+import { authenticateStaffRequest, isStaff, opsJson } from "@/lib/staff";
 import { isUuid } from "@/lib/uuid";
 
 /**
@@ -14,13 +14,17 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (!auth.success) return auth.response;
   const { id } = await params;
   if (!isUuid(id)) return opsJson({ error: "Not found" }, { status: 404 });
-  if (id === auth.userId) {
-    return opsJson(
-      { error: "Turn off your own two-factor sign-in under Account, Security." },
-      { status: 409 }
-    );
-  }
   try {
+    // Never for a staff account, the caller's own included: staff accounts
+    // reach every customer's data, so one staff session cannot strip
+    // another's second factor. Staff manage their own under Account,
+    // Security; a lost staff authenticator is fixed in the database.
+    if (id === auth.userId || (await isStaff(id))) {
+      return opsJson(
+        { error: "Two-factor sign-in of a staff account cannot be turned off here." },
+        { status: 403 }
+      );
+    }
     const removed = await removeTwoFactor(id);
     await auditUserAction(request, auth.userId, {
       action: "ops.mfa_reset",
