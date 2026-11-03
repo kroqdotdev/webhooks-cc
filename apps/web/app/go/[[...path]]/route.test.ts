@@ -26,11 +26,11 @@ describe("GET /go (the Go SDK's import path)", () => {
     expect(response.headers.get("location")).toBe("/docs/sdk/go");
   });
 
-  it("keeps the retired /go page's redirect for browsers, but not for the go command", async () => {
+  it("sends browsers on the bare /go to the Go SDK docs, but not the go command", async () => {
     const redirects = (await nextConfig.redirects?.()) ?? [];
     const goRedirect = redirects.find((redirect) => redirect.source === "/go");
 
-    expect(goRedirect?.destination).toBe("/");
+    expect(goRedirect?.destination).toBe("/docs/sdk/go");
     expect(goRedirect?.missing).toEqual([{ type: "query", key: "go-get" }]);
   });
 });

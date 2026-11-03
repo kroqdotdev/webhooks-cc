@@ -155,13 +155,14 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
-        // /go is retired - the landing page now IS the guest dashboard.
-        // Permanent redirect preserves the page's search rankings and backlinks.
-        // The go command's ?go-get=1 lookups for webhooks.cc/go (the Go SDK's
-        // import path) skip it and reach app/go/[[...path]]/route.ts.
+        // webhooks.cc/go is the Go SDK's import path, so a browser opening it
+        // gets the Go SDK docs, as every path below it does
+        // (app/go/[[...path]]/route.ts). The go command's ?go-get=1 lookups
+        // skip this and reach that route. (/go was once the guest dashboard,
+        // retired when the landing page became it.)
         source: "/go",
         missing: [{ type: "query", key: "go-get" }],
-        destination: "/",
+        destination: "/docs/sdk/go",
         permanent: true,
       },
       {
