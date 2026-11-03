@@ -333,8 +333,10 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
 
 /**
  * Whether an annual plan ends before the window after `windowEnd` would:
- * the window ending then is its last (the monthly windows can drift a few
- * days from the yearly date, so the next window is what counts).
+ * the window ending then is its last. The plan's own windows end exactly
+ * with its year, but an add-on's period can sit a few days off them (one
+ * aligned before migration 00084, or before it caught up after a short
+ * month), so the next window is what counts.
  */
 function endsBeforeNextWindow(planEnd: string | null, windowEnd: string | null): boolean {
   if (!planEnd || !windowEnd) return true;
@@ -943,14 +945,39 @@ async function applySubscriptionState(
   return asNonEmptyString(asRecord(data)?.status) ?? "unknown";
 }
 
+/** The most a month's end can move between months (31st to 28th), and a minute. */
+const SHORT_MONTH_MS = 3 * 86_400_000 + 60_000;
+
+/**
+ * Whether an add-on that renews a little before the plan's window ends only
+ * because it was aligned with a window that ended in a short month: Polar
+ * takes an add-on's renewal day from the end it was given (Feb 28), while the
+ * plan keeps its own day (Mar 31), Polar's monthly period and an annual
+ * plan's windows (migration 00084) alike. Moving it later once,
+ * by at most the three days a month can lose, puts it back on the plan's day
+ * for good. Its period must still be running and end in the same month as
+ * the window, which no renewal of the plan the add-on has not caught up with
+ * yet can look like.
+ */
+function catchesUpShortMonth(addonEndMs: number, planEndMs: number): boolean {
+  const addonEnd = new Date(addonEndMs);
+  const planEnd = new Date(planEndMs);
+  return (
+    addonEndMs > Date.now() + 2 * 60_000 &&
+    planEndMs - addonEndMs <= SHORT_MONTH_MS &&
+    addonEnd.getUTCFullYear() === planEnd.getUTCFullYear() &&
+    addonEnd.getUTCMonth() === planEnd.getUTCMonth()
+  );
+}
+
 /**
  * Moves an add-on's renewal onto the plan's, so blocks and overage renew and
- * bill together with the plan. Only ever earlier: a later end would give the
- * add-on time nobody paid for, and when the plan has just renewed, the
- * add-on's own renewal may simply not have been processed yet. Bought
- * mid-period, an add-on's first period ends with the plan's (the customer
- * pays the full price for it, by choice). Best effort: the add-on's next
- * event tries again.
+ * bill together with the plan. Earlier, except by the days a short month
+ * took: a later end gives the add-on time nobody paid for, and when the plan
+ * has just renewed, the add-on's own renewal may simply not have been
+ * processed yet. Bought mid-period, an add-on's first period ends with the
+ * plan's (the customer pays the full price for it, by choice). Best effort:
+ * the add-on's next event tries again.
  */
 async function alignWithPlan(
   account: CapacityAccount,
@@ -962,14 +989,30 @@ async function alignWithPlan(
   const planEndMs = Date.parse(row.period_end);
   const addonEndMs = typeof addonPeriodEnd === "string" ? Date.parse(addonPeriodEnd) : NaN;
   if (!Number.isFinite(planEndMs) || !Number.isFinite(addonEndMs)) return;
-  if (planEndMs < Date.now() + 2 * 60_000 || addonEndMs - planEndMs < 60_000) return;
+  if (planEndMs < Date.now() + 2 * 60_000 || Math.abs(addonEndMs - planEndMs) < 60_000) return;
+  if (addonEndMs < planEndMs && !catchesUpShortMonth(addonEndMs, planEndMs)) return;
 
+  const planEnd = new Date(planEndMs).toISOString();
   try {
     await createPolarClient().subscriptions.update(subscriptionId, {
-      current_billing_period_end: new Date(planEndMs).toISOString(),
+      current_billing_period_end: planEnd,
     });
   } catch (error) {
     reportError("[capacity] failed to align an add-on with the plan", loggablePolarError(error), {
+      subscriptionId,
+    });
+    return;
+  }
+  // The stored end follows at once rather than with Polar's event: an end
+  // moved later and stored as the old one would read as overdue to the
+  // reset job's sweep (two days past the end) if that event were late.
+  // Best effort: the event writes the same end.
+  const { error: storeError } = await createAdminClient()
+    .from("capacity_subscriptions")
+    .update({ period_end: planEnd, updated_at: new Date().toISOString() })
+    .eq("polar_subscription_id", subscriptionId);
+  if (storeError) {
+    reportError("[capacity] could not store an aligned add-on's end", storeError.message, {
       subscriptionId,
     });
   }

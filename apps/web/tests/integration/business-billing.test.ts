@@ -35,6 +35,7 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 
 import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
 import { DELETE as keepPlanRoute } from "@/app/api/billing/change-plan/route";
+import { addMonthsUtc, annualQuotaWindow } from "@/lib/supabase/billing";
 import {
   applyCapacityWebhookEvent,
   changeMonthlyBlocks,
@@ -223,7 +224,8 @@ describe("the Business plan webhook", () => {
   it("sets an annual plan with a monthly quota period, and resets it only when the year turns", async () => {
     const userId = await createUser();
     const start = new Date(Date.now() - 1000);
-    const yearEnd = new Date(start.getTime() + 365 * DAY);
+    // Polar's year: the same day a year on.
+    const yearEnd = new Date(addMonthsUtc(start.toISOString(), 12));
     const subscription = {
       id: `sub_year_${ts}`,
       customer_id: `cus_year_${ts}`,
@@ -243,16 +245,11 @@ describe("the Business plan webhook", () => {
       subscription_status: "active",
     });
     expect(Date.parse(row.billing_period_end as string)).toBe(yearEnd.getTime());
-    // A month on as Postgres counts it, kept on the last day of a shorter
-    // month (Oct 31 gives Nov 30), so the test holds on any day it runs.
-    const monthEnd = new Date(start);
-    monthEnd.setUTCDate(1);
-    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
-    const lastDay = new Date(
-      Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 0)
-    ).getUTCDate();
-    monthEnd.setUTCDate(Math.min(start.getUTCDate(), lastDay));
-    expect(Date.parse(row.period_end as string)).toBe(monthEnd.getTime());
+    // The first window ends 11 months before the year does, as the reset
+    // job counts (Oct 31 gives Nov 30), so the test holds on any day it runs.
+    expect(Date.parse(row.period_end as string)).toBe(
+      Date.parse(addMonthsUtc(yearEnd.toISOString(), -11))
+    );
 
     // A month on, the reset job rolled the quota period; a mid-year update
     // from Polar leaves it and the usage alone.
@@ -311,6 +308,79 @@ describe("the Business plan webhook", () => {
     const row = await user(userId);
     expect(Date.parse(row.period_start as string)).toBe(movedStart.getTime());
     expect(Date.parse(row.period_end as string)).toBe(movedEnd.getTime());
+  });
+
+  it("counts annual quota windows in SQL as the web app does", async () => {
+    const cases: Array<[string, string, string]> = [
+      ["2028-01-31T10:00:00.000Z", "2027-01-31T10:00:00.000Z", "2027-01-31T10:00:00.000Z"],
+      ["2028-01-31T10:00:00.000Z", "2027-02-28T10:00:00.000Z", "2027-02-28T10:00:00.000Z"],
+      ["2028-01-31T10:00:00.000Z", "2027-03-31T10:00:00.000Z", "2027-06-10T00:00:00.000Z"],
+      ["2028-01-31T10:00:00.000Z", "2027-03-31T10:00:00.000Z", "2027-04-30T09:59:59.000Z"],
+      ["2028-01-31T10:00:00.000Z", "2027-11-28T10:00:00.000Z", "2027-11-28T10:01:00.000Z"],
+      ["2028-01-31T10:00:00.000Z", "2028-01-31T10:00:00.000Z", "2028-03-01T00:00:00.000Z"],
+      ["2029-02-28T00:00:00.000Z", "2028-02-29T00:00:00.000Z", "2028-02-29T00:00:00.000Z"],
+      ["2027-08-15T23:30:00.000Z", "2026-12-15T23:30:00.000Z", "2026-12-20T00:00:00.000Z"],
+    ];
+    for (const [anchor, from, at] of cases) {
+      const { data, error } = await admin.rpc("annual_quota_window", {
+        p_anchor: anchor,
+        p_from: from,
+        p_at: at,
+      });
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as {
+        window_start: string;
+        window_end: string;
+      };
+      const expected = annualQuotaWindow(anchor, from, at);
+      expect([Date.parse(row.window_start), Date.parse(row.window_end)]).toEqual([
+        Date.parse(expected.start),
+        Date.parse(expected.end),
+      ]);
+    }
+  });
+
+  it("puts a drifted annual window back on the year's day without a few-day allowance", async () => {
+    // The last window ended just now, two days before the year's boundary.
+    const oldEnd = new Date(Date.now() - 60 * 60_000).toISOString();
+    const yearEnd = addMonthsUtc(new Date(Date.now() + 2 * DAY).toISOString(), 11);
+    const fields = {
+      requests_used: 1234,
+      billing_interval: "year",
+      period_start: new Date(Date.parse(oldEnd) - 28 * DAY).toISOString(),
+      period_end: oldEnd,
+      billing_period_end: yearEnd,
+    };
+    const userId = await createUser({
+      ...fields,
+      plan: "business",
+      request_limit: 250_000,
+      subscription_status: "active",
+    });
+    const { teamId } = await createTeam("biz-drift");
+    const { error: teamError } = await admin
+      .from("teams")
+      .update({ ...fields, subscription_status: "active", business: true, seats: 2 })
+      .eq("id", teamId);
+    if (teamError) throw teamError;
+
+    const { error } = await admin.rpc("process_billing_period_resets");
+    if (error) throw error;
+
+    const expected = annualQuotaWindow(yearEnd, oldEnd, new Date().toISOString());
+    for (const row of [await user(userId), await teamRow(teamId)]) {
+      expect(row.requests_used).toBe(0);
+      const start = Date.parse(String(row.period_start));
+      const end = Date.parse(String(row.period_end));
+      expect(start).toBe(Date.parse(oldEnd));
+      expect(end).toBe(Date.parse(expected.end));
+      expect(end - start).toBeGreaterThanOrEqual(7 * DAY);
+      // On a boundary counted from the year's end.
+      const boundaries = Array.from({ length: 13 }, (_, k) =>
+        Date.parse(addMonthsUtc(yearEnd, -k))
+      );
+      expect(boundaries).toContain(end);
+    }
   });
 
   it("keeps the plan through the route: Polar's pending update is cleared", async () => {
@@ -1096,8 +1166,9 @@ describe("add-ons on an annual plan", () => {
   });
 
   it("ends an add-on whose next renewal would pass a plan end that drifted from its window", async () => {
-    // The monthly windows drifted: this one ends 3 days before the year does,
-    // and the next would end a month later, past it.
+    // The monthly windows drifted (counted before migration 00084): this one
+    // ends 3 days before the year does, and the next would end a month
+    // later, past it.
     const userId = await createUser({
       plan: "business",
       subscription_status: "active",

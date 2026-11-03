@@ -361,13 +361,58 @@ async function revokeSubscriptionQuietly(id: string): Promise<void> {
  * month as Postgres does (Jan 31 gives Feb 28, not Mar 3).
  */
 export function addMonthUtc(iso: string): string {
+  return addMonthsUtc(iso, 1);
+}
+
+/**
+ * `months` (any whole number, negative too) after an ISO time, in UTC, as
+ * Postgres adds `interval '1 month' * months` to a UTC timestamp: counted
+ * from `iso` in one step, so Jan 31 plus 2 months is Mar 31.
+ */
+export function addMonthsUtc(iso: string, months: number): string {
   const from = new Date(iso);
   const next = new Date(from);
   next.setUTCDate(1);
-  next.setUTCMonth(from.getUTCMonth() + 1);
+  next.setUTCMonth(from.getUTCMonth() + months);
   const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
   next.setUTCDate(Math.min(from.getUTCDate(), lastDay));
   return next.toISOString();
+}
+
+/**
+ * The shortest quota window an annual plan has. A window that would be
+ * shorter (what is left before the next anchored boundary when a window
+ * ended off it, as windows counted before migration 00084 could) joins the
+ * next one instead of starting a fresh allowance for a few days.
+ */
+export const MIN_ANNUAL_WINDOW_MS = 7 * 86_400_000;
+
+/**
+ * An annual plan's monthly quota window, as annual_quota_window() in SQL
+ * (migration 00084) computes it: its boundaries are whole months from
+ * `anchor` (the end of Polar's year), each counted from the anchor itself,
+ * so the windows keep the year's day (the 31st where a month has one) and
+ * the last one ends exactly when Polar renews. The window is the one holding
+ * the later of `from` (where the previous window ended, or the year's start)
+ * and `at`, starting no earlier than `from`.
+ */
+export function annualQuotaWindow(
+  anchor: string,
+  from: string,
+  at: string = from
+): { start: string; end: string } {
+  const anchorDate = new Date(anchor);
+  const fromMs = Date.parse(from);
+  const atMs = Math.max(fromMs, Date.parse(at));
+  const target = new Date(atMs);
+  let n =
+    (target.getUTCFullYear() - anchorDate.getUTCFullYear()) * 12 +
+    (target.getUTCMonth() - anchorDate.getUTCMonth());
+  if (Date.parse(addMonthsUtc(anchor, n)) > atMs) n -= 1;
+  const startMs = Math.max(Date.parse(addMonthsUtc(anchor, n)), fromMs);
+  let end = addMonthsUtc(anchor, n + 1);
+  if (Date.parse(end) - startMs < MIN_ANNUAL_WINDOW_MS) end = addMonthsUtc(anchor, n + 2);
+  return { start: new Date(startMs).toISOString(), end };
 }
 
 /** The share of the period [start, end) still to come at `now`, 0 to 1. */
@@ -476,26 +521,40 @@ async function applyPlanSubscription(
       stored.billing_interval !== "year" ||
       (incomingBillingEndMs !== null &&
         (storedBillingEndMs === null || incomingBillingEndMs > storedBillingEndMs)));
-  const firstMonthEnd = currentPeriodStart !== null ? addMonthUtc(currentPeriodStart) : null;
-  const period = annual
-    ? // A renewal applied after the monthly cron already moved the period on
-      // (more than a month late) keeps the newer period.
-      newYear && currentPeriodStart && !isStalePeriod
-      ? { period_start: currentPeriodStart, period_end: firstMonthEnd }
-      : {}
-    : {
-        period_start: isStalePeriod ? undefined : currentPeriodStart,
-        period_end: isStalePeriod ? undefined : currentPeriodEnd,
-      };
+  // The year's first window, on the boundaries the monthly reset counts.
+  const firstMonthEnd =
+    currentPeriodStart !== null
+      ? annualQuotaWindow(
+          currentPeriodEnd ?? addMonthsUtc(currentPeriodStart, 12),
+          currentPeriodStart
+        ).end
+      : null;
   // A year that starts after the cron fallback already moved the quota
-  // period there keeps the usage counted since.
+  // period there keeps the usage counted since. So does a yearly renewal
+  // whose window the cron opened just before (a window that ended off the
+  // anchored boundaries, joined with the rest of the year); a move to
+  // annual always starts a fresh allowance.
   const resetsUsage = annual
     ? isNewSubscription ||
       (newYear &&
         (storedPeriodStartMs === null ||
           incomingPeriodStartMs === null ||
-          storedPeriodStartMs < incomingPeriodStartMs))
+          storedPeriodStartMs <
+            incomingPeriodStartMs -
+              (stored.billing_interval === "year" ? MIN_ANNUAL_WINDOW_MS : 0)))
     : isNewSubscription || isRenewal;
+  const period = annual
+    ? // A renewal applied after the monthly cron already moved the period on
+      // (more than a month late) keeps the newer period.
+      // A window the cron opened just before keeps its start, which the
+      // parsed pages count from too.
+      newYear && currentPeriodStart && !isStalePeriod
+      ? { period_start: resetsUsage ? currentPeriodStart : undefined, period_end: firstMonthEnd }
+      : {}
+    : {
+        period_start: isStalePeriod ? undefined : currentPeriodStart,
+        period_end: isStalePeriod ? undefined : currentPeriodEnd,
+      };
 
   // The allowance. A tier up within the period (changePlanForUser's
   // "invoice" change) adds the new plan's extra requests and pages in
