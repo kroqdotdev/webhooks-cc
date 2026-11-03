@@ -7,7 +7,7 @@ export const dynamic = "force-static";
 /** When the sender pages last changed. */
 const SENDERS_UPDATED = "2026-10-29";
 /** The home and pricing pages: Business's domains, file drops and AI assists. */
-const PLANS_UPDATED = "2026-10-31";
+const PLANS_UPDATED = "2026-11-03";
 
 /** mailhooks.cc's sitemap (next.config.ts serves it at the mail host's /sitemap.xml). */
 export function GET() {
