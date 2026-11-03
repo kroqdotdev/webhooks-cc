@@ -1,4 +1,5 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateSessionRequest, extractBearerToken } from "@/lib/api-auth";
+import { passedSecondFactor } from "@/lib/mfa-session";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { parseJsonBody } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
       userId: auth.userId,
       expires: Date.now() + GRANT_LIFETIME_MS,
       consent: parseCarriedConsent(body.consent),
+      secondFactor: await passedSecondFactor({ id: auth.userId }, extractBearerToken(request)!),
     })
   );
   start.searchParams.set("next", next);

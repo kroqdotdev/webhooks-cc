@@ -13,6 +13,7 @@ import {
 import { otherSite, siteForHost, siteOrigin, twoSites } from "@/lib/site";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { passedSecondFactor } from "@/lib/mfa-session";
 
 /** Tickets per account per hour: far above any person's, well below a script's. */
 const SWITCHES_PER_HOUR = 30;
@@ -71,6 +72,14 @@ export async function GET(request: Request) {
     // address: nothing to carry over.
     if (data.user?.id !== user.id) throw new Error("generateLink answered for another account");
 
+    // The factor carries only when this browser's session here passed it too.
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const secondFactor =
+      grant.secondFactor === true &&
+      !!session &&
+      (await passedSecondFactor(user, session.access_token));
     const ticket = sealTicket({
       tokenHash,
       userId: user.id,
@@ -79,6 +88,7 @@ export async function GET(request: Request) {
       next,
       expires: Date.now() + TICKET_LIFETIME_MS,
       consent: grant.consent,
+      secondFactor,
     });
     await auditUserAction(request, user.id, {
       action: "account.site_switch",

@@ -22,13 +22,21 @@ export function useNeedsSecondFactor(userId: string | null, token: string | null
     let cancelled = false;
     void createClient()
       .auth.mfa.getAuthenticatorAssuranceLevel()
-      .then(({ data }) => {
-        if (!cancelled) {
-          setState({
-            userId,
-            needs: data?.nextLevel === "aal2" && data.currentLevel !== "aal2",
-          });
+      .then(async ({ data }) => {
+        let needs = data?.nextLevel === "aal2" && data.currentLevel !== "aal2";
+        // A session a site switch carried the factor to reads aal1 here;
+        // the server knows better (migration 00088).
+        if (needs) {
+          try {
+            const response = await fetch("/api/account/mfa/status", {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) needs = ((await response.json()) as { owesCode: boolean }).owesCode;
+          } catch {
+            // Ask for the code when the server cannot be reached.
+          }
         }
+        if (!cancelled) setState({ userId, needs });
       })
       .catch(() => {
         if (!cancelled) setState({ userId, needs: false });

@@ -15,6 +15,7 @@ import { siteForHost } from "@/lib/site";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rememberHomeSite } from "@/lib/supabase/home-site";
 import { createClient } from "@/lib/supabase/server";
+import { trustSession } from "@/lib/mfa-session";
 
 /**
  * Uses up the token of a ticket this browser may not have: a session made
@@ -79,6 +80,11 @@ export async function GET(request: Request) {
     token_hash: ticket.tokenHash,
   });
   if (error || !data?.user) return done(failed);
+  // The session this switch started from had passed the second factor, so
+  // this one counts as having passed it too (migration 00088).
+  if (ticket.secondFactor === true && data.session) {
+    await trustSession(data.session.access_token, data.user.id);
+  }
 
   await rememberHomeSite(data.user.id, here);
   await auditUserAction(request, data.user.id, {

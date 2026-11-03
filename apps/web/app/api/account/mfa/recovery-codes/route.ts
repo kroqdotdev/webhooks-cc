@@ -1,6 +1,7 @@
 import { authenticateSessionRequest, extractBearerToken } from "@/lib/api-auth";
 import { auditUserAction } from "@/lib/audit";
-import { hasVerifiedFactor, sessionAal } from "@/lib/mfa";
+import { hasVerifiedFactor } from "@/lib/mfa";
+import { passedSecondFactor } from "@/lib/mfa-session";
 import { remainingRecoveryCodes, replaceRecoveryCodes } from "@/lib/mfa-recovery";
 import { reportError } from "@/lib/observability";
 import { checkRateLimitByKey } from "@/lib/rate-limit";
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     const {
       data: { user },
     } = await createAdminClient().auth.getUser(token);
-    if (!user || !hasVerifiedFactor(user) || sessionAal(token) !== "aal2") {
+    if (!user || !hasVerifiedFactor(user) || !(await passedSecondFactor(user, token))) {
       return Response.json(
         { error: "Turn on two-factor sign-in first, then make recovery codes." },
         { status: 409 }

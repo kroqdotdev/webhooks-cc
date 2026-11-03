@@ -29,11 +29,12 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "0.62.1",
     date: "2026-11-03",
-    title: "Recovery Codes Show When Two-Factor Is Turned On",
+    title: "Two-Factor Fixes: Recovery Codes and Site Switching",
     track: "web",
     items: [
       "Turning on two-factor sign-in shows your ten recovery codes again. They were made but the page reloaded before showing them; make new ones under Account > Security if you never saw yours",
       'Signed-in pages no longer flash "Loading" and start over when your session renews in the background, about once an hour',
+      "Switching between webhooks.cc and mailhooks.cc no longer asks for your two-factor code again: a session that passed it carries that over to the other site",
     ],
   },
   {
