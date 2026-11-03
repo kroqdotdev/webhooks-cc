@@ -1,4 +1,5 @@
-//! SPF, DKIM, DMARC and reverse DNS.
+//! SPF, DKIM, DMARC, ARC and reverse DNS, and what the sender's DNS says
+//! about its setup (`sender_setup`).
 //!
 //! The results are recorded for the user to inspect (debugging a sender's
 //! authentication is a reason to use the service); they never decide whether
@@ -30,10 +31,23 @@ use mail_auth::{
 };
 use serde_json::{Value, json};
 
+use crate::sender_setup::{LiveDns, SetupInput, sender_setup};
+
 /// DKIM and DMARC are skipped above these; legitimate mail stays far below.
 const MAX_AUTH_HEADER_BYTES: usize = 128 * 1024;
 const MAX_DKIM_SIGNATURES: usize = 10;
 const MAX_SIGNED_HEADERS: usize = 64;
+/// ARC is skipped above this many seals or message signatures. Each hop
+/// that forwards a message adds one set; real chains have a few.
+const MAX_ARC_SETS: usize = 10;
+/// The receiver keeps no auth document over 16 KiB at all; past this the
+/// sender-setup facts and the ARC details go first.
+const MAX_AUTH_JSON_BYTES: usize = 14 * 1024;
+/// Longest domain name kept from a header.
+const MAX_DOMAIN_CHARS: usize = 253;
+/// What the sender-setup lookups leave for the deadline, so the results
+/// already in hand are kept when they run long.
+const SETUP_MARGIN: Duration = Duration::from_millis(250);
 
 /// The client's reverse DNS, looked up when the connection opens.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -131,15 +145,36 @@ impl AuthChecker {
         let hostname = self.hostname.clone();
         let runtime = tokio::runtime::Handle::current();
         let deadline = Instant::now() + self.budget;
-        let json = bounded(&self.slots, deadline, move || {
+        let mut json = bounded(&self.slots, deadline, move || {
             runtime.block_on(async {
-                tokio::time::timeout_at(deadline, run(&authenticator, &hostname, &request))
-                    .await
-                    .ok()
+                tokio::time::timeout_at(
+                    deadline,
+                    run(&authenticator, &hostname, &request, deadline),
+                )
+                .await
+                .ok()
             })
         })
         .await;
+        fit(&mut json);
         AuthOutcome { json }
+    }
+}
+
+/// Keeps the document under `MAX_AUTH_JSON_BYTES`: the sender-setup facts
+/// go first, then the ARC sealers. The verdicts themselves are small.
+fn fit(json: &mut Value) {
+    let size = |json: &Value| serde_json::to_string(json).map_or(usize::MAX, |s| s.len());
+    if size(json) <= MAX_AUTH_JSON_BYTES {
+        return;
+    }
+    if json.get("setup").is_some() {
+        json["setup"] = json!({ "error": "too large" });
+    }
+    if size(json) > MAX_AUTH_JSON_BYTES
+        && let Some(arc) = json.get_mut("arc").and_then(Value::as_object_mut)
+    {
+        arc.remove("sealers");
     }
 }
 
@@ -169,7 +204,11 @@ where
     }
 }
 
-async fn resolves_to(authenticator: &MessageAuthenticator, name: String, ip: IpAddr) -> bool {
+pub(crate) async fn resolves_to(
+    authenticator: &MessageAuthenticator,
+    name: String,
+    ip: IpAddr,
+) -> bool {
     match ip {
         IpAddr::V4(v4) => authenticator
             .ipv4_lookup(
@@ -211,7 +250,23 @@ where
     }
 }
 
-async fn run(authenticator: &MessageAuthenticator, hostname: &str, request: &AuthRequest) -> Value {
+/// The sender-setup facts by `deadline`, or why there are none.
+async fn setup_within(
+    authenticator: &MessageAuthenticator,
+    setup: &SetupInput<'_>,
+    deadline: Instant,
+) -> Value {
+    tokio::time::timeout_at(deadline, sender_setup(&LiveDns(authenticator), setup))
+        .await
+        .unwrap_or_else(|_| json!({ "error": "timeout" }))
+}
+
+async fn run(
+    authenticator: &MessageAuthenticator,
+    hostname: &str,
+    request: &AuthRequest,
+    deadline: Instant,
+) -> Value {
     let helo = request.helo.as_str();
     let mail_from = request.mail_from.as_str();
 
@@ -239,15 +294,29 @@ async fn run(authenticator: &MessageAuthenticator, hostname: &str, request: &Aut
             "ptr": request.reverse_dns.name,
         },
     });
+    let mut setup = SetupInput {
+        ip: request.ip,
+        helo,
+        reverse_dns: &request.reverse_dns,
+        spf_domain: spf.domain(),
+        from_domain: None,
+        dkim: Vec::new(),
+        dmarc: None,
+    };
+    let setup_deadline = deadline.checked_sub(SETUP_MARGIN).unwrap_or(deadline);
 
     if let Some(reason) = dkim_skip_reason(&request.raw) {
         json["dkim"] = json!([]);
         json["dmarc"] = json!({ "result": "skipped", "reason": reason });
+        json["arc"] = json!({ "result": "skipped", "reason": reason });
+        json["setup"] = setup_within(authenticator, &setup, setup_deadline).await;
         return json;
     }
     let Some(message) = AuthenticatedMessage::parse(&request.raw) else {
         json["dkim"] = json!([]);
         json["dmarc"] = json!({ "result": "none" });
+        json["arc"] = json!({ "result": "none", "sets": 0 });
+        json["setup"] = setup_within(authenticator, &setup, setup_deadline).await;
         return json;
     };
     let dkim = authenticator.verify_dkim(&message).await;
@@ -259,6 +328,25 @@ async fn run(authenticator: &MessageAuthenticator, hostname: &str, request: &Aut
             &spf,
         ))
         .await;
+    let arc = match arc_skip_reason(&request.raw) {
+        Some(reason) => {
+            json["arc"] = json!({ "result": "skipped", "reason": reason });
+            None
+        }
+        None => {
+            let arc = authenticator.verify_arc(&message).await;
+            json["arc"] = json!({
+                "result": dkim_result(arc.result()),
+                "sets": arc.sets().len(),
+                "sealers": arc
+                    .sets()
+                    .iter()
+                    .map(|set| set.seal.header.d.chars().take(MAX_DOMAIN_CHARS).collect::<String>())
+                    .collect::<Vec<_>>(),
+            });
+            Some(arc)
+        }
+    };
 
     json["dkim"] = Value::Array(
         dkim.iter()
@@ -294,11 +382,23 @@ async fn run(authenticator: &MessageAuthenticator, hostname: &str, request: &Aut
         "dkim": dmarc_result(dmarc.dkim_result()),
     });
 
-    let results = AuthenticationResults::new(hostname)
+    let mut results = AuthenticationResults::new(hostname)
         .with_dkim_results(&dkim, message.from())
-        .with_spf_mailfrom_result(&spf, request.ip, mail_from, helo)
-        .with_dmarc_result(&dmarc);
+        .with_spf_mailfrom_result(&spf, request.ip, mail_from, helo);
+    if let Some(arc) = &arc {
+        results = results.with_arc_result(arc, request.ip);
+    }
+    results = results.with_dmarc_result(&dmarc);
     json["authentication_results"] = Value::String(results.to_string());
+
+    setup.from_domain = (!dmarc.domain().is_empty()).then(|| dmarc.domain());
+    setup.dkim = dkim
+        .iter()
+        .filter_map(|output| output.signature())
+        .map(|s| (s.d.clone(), s.s.clone(), s.a))
+        .collect();
+    setup.dmarc = dmarc.dmarc_record();
+    json["setup"] = setup_within(authenticator, &setup, setup_deadline).await;
     json
 }
 
@@ -312,11 +412,12 @@ pub fn header_section_end(raw: &[u8]) -> Option<usize> {
     }
 }
 
-/// Why DKIM and DMARC must not run on this message, if they must not.
-fn dkim_skip_reason(raw: &[u8]) -> Option<&'static str> {
+/// The header section's fields, unfolded; `Err` when it is too large to
+/// verify anything in.
+fn header_fields(raw: &[u8]) -> Result<Vec<String>, &'static str> {
     let end = header_section_end(raw).unwrap_or(raw.len());
     if end > MAX_AUTH_HEADER_BYTES {
-        return Some("header section too large");
+        return Err("header section too large");
     }
     let headers = String::from_utf8_lossy(&raw[..end]);
     // Unfold: a line starting with whitespace continues the previous field.
@@ -328,26 +429,63 @@ fn dkim_skip_reason(raw: &[u8]) -> Option<&'static str> {
             _ => fields.push(line.to_string()),
         }
     }
+    Ok(fields)
+}
+
+/// The values of the fields named `name`.
+fn values<'a>(fields: &'a [String], name: &'a str) -> impl Iterator<Item = &'a str> {
+    fields.iter().filter_map(move |field| {
+        let (field_name, value) = field.split_once(':')?;
+        field_name
+            .trim()
+            .eq_ignore_ascii_case(name)
+            .then_some(value)
+    })
+}
+
+/// A signature whose `h=` list names more headers than anyone signs.
+fn signs_too_many_headers(value: &str) -> bool {
+    value.split(';').any(|tag| {
+        tag.split_once('=').is_some_and(|(tag_name, list)| {
+            tag_name.trim().eq_ignore_ascii_case("h")
+                && list.split(':').count() > MAX_SIGNED_HEADERS
+        })
+    })
+}
+
+/// Why DKIM and DMARC must not run on this message, if they must not.
+fn dkim_skip_reason(raw: &[u8]) -> Option<&'static str> {
+    let fields = match header_fields(raw) {
+        Ok(fields) => fields,
+        Err(reason) => return Some(reason),
+    };
     let mut signatures = 0;
-    for field in &fields {
-        let Some((name, value)) = field.split_once(':') else {
-            continue;
-        };
-        if !name.trim().eq_ignore_ascii_case("dkim-signature") {
-            continue;
-        }
+    for value in values(&fields, "dkim-signature") {
         signatures += 1;
         if signatures > MAX_DKIM_SIGNATURES {
             return Some("too many DKIM signatures");
         }
-        for tag in value.split(';') {
-            if let Some((tag_name, list)) = tag.split_once('=')
-                && tag_name.trim().eq_ignore_ascii_case("h")
-                && list.split(':').count() > MAX_SIGNED_HEADERS
-            {
-                return Some("too many signed headers");
-            }
+        if signs_too_many_headers(value) {
+            return Some("too many signed headers");
         }
+    }
+    None
+}
+
+/// Why ARC must not run on this message, if it must not. Checked after
+/// `dkim_skip_reason`, so the header section is within bounds.
+fn arc_skip_reason(raw: &[u8]) -> Option<&'static str> {
+    let fields = match header_fields(raw) {
+        Ok(fields) => fields,
+        Err(reason) => return Some(reason),
+    };
+    if values(&fields, "arc-seal").count() > MAX_ARC_SETS
+        || values(&fields, "arc-message-signature").count() > MAX_ARC_SETS
+    {
+        return Some("too many ARC sets");
+    }
+    if values(&fields, "arc-message-signature").any(signs_too_many_headers) {
+        return Some("too many signed headers");
     }
     None
 }
@@ -514,6 +652,45 @@ mod tests {
         assert_eq!(
             dkim_skip_reason(raw.as_bytes()),
             Some("header section too large")
+        );
+    }
+
+    #[test]
+    fn drops_setup_facts_before_the_document_gets_too_large() {
+        let mut small = json!({ "spf": { "result": "pass" }, "setup": { "helo": {} } });
+        let before = small.clone();
+        fit(&mut small);
+        assert_eq!(small, before);
+        let mut large = json!({
+            "spf": { "result": "pass" },
+            "arc": { "result": "pass", "sealers": ["x".repeat(15 * 1024)] },
+            "setup": { "spf": { "record": "y".repeat(10 * 1024) } },
+        });
+        fit(&mut large);
+        assert_eq!(large["setup"], json!({ "error": "too large" }));
+        assert_eq!(large["arc"], json!({ "result": "pass" }));
+        assert_eq!(large["spf"], json!({ "result": "pass" }));
+    }
+
+    #[test]
+    fn skips_arc_for_abusive_chains_only() {
+        let set = "ARC-Seal: i=1; a=rsa-sha256; d=example.net; s=a; cv=none; b=x\r\nARC-Message-Signature: i=1; d=example.net; s=a; h=from:to; bh=y; b=z\r\n";
+        let ordinary = format!("{set}From: a@example.com\r\n\r\nbody\r\n");
+        assert_eq!(arc_skip_reason(ordinary.as_bytes()), None);
+        let long = format!(
+            "{}From: a@example.com\r\n\r\nbody\r\n",
+            set.repeat(MAX_ARC_SETS + 1)
+        );
+        assert_eq!(arc_skip_reason(long.as_bytes()), Some("too many ARC sets"));
+        let many_h = (0..=MAX_SIGNED_HEADERS)
+            .map(|i| format!("x{i}"))
+            .collect::<Vec<_>>()
+            .join(":");
+        let wide =
+            format!("ARC-Message-Signature: i=1; d=example.net; h={many_h}; b=z\r\n\r\nbody\r\n");
+        assert_eq!(
+            arc_skip_reason(wide.as_bytes()),
+            Some("too many signed headers")
         );
     }
 

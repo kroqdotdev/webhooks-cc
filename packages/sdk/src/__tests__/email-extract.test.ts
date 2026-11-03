@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractFromEmail, htmlToText } from "../email/extract";
+import { emailAnchors, extractFromEmail, htmlToText } from "../email/extract";
 
 const confirmHtml = `<div style="font-family:Arial"><img src="https://tidewater.app/logo.png" alt="Tidewater">
 <h1>Confirm your email</h1><p>Hi Ines,</p><p>Your confirmation code is</p>
@@ -224,5 +224,28 @@ describe("tag handling edge cases", () => {
       html: null,
     });
     expect(links[0]?.url).toBe("https://x.io/confirm?t=9");
+  });
+});
+
+describe("emailAnchors", () => {
+  it("keeps every http link with its text, footers included", () => {
+    expect(emailAnchors(confirmHtml)).toEqual([
+      { url: "https://app.tidewater.app/confirm?token=Zk3q9v&src=email", text: "Confirm email" },
+      { url: "https://tidewater.app/unsubscribe?u=8f3a", text: "Unsubscribe" },
+      { url: "https://twitter.com/tidewater", text: "Twitter" },
+    ]);
+  });
+
+  it("drops other schemes and links inside style or script", () => {
+    const html = `<a href="mailto:a@x.io">mail</a><style>a{}</style><script><a href="https://x.io/s">s</a></script><a href='http://x.io/p'><b>Plain</b></a>`;
+    expect(emailAnchors(html)).toEqual([{ url: "http://x.io/p", text: "Plain" }]);
+  });
+
+  it("stops at 500 links and stays fast on hostile input", () => {
+    const many = '<a href="https://x.io/a">a</a>'.repeat(2_000);
+    expect(emailAnchors(many)).toHaveLength(500);
+    const started = Date.now();
+    emailAnchors("<a href=x>".repeat(20_000) + "<a".repeat(50_000));
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 });

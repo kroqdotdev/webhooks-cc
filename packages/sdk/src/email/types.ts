@@ -46,12 +46,121 @@ export interface EmailCheck {
 export interface EmailAuth {
   spf: EmailCheck | null;
   dkim: (EmailCheck & { selector: string | null })[];
-  dmarc: (EmailCheck & { policy: string | null; reason: string | null }) | null;
+  dmarc:
+    | (EmailCheck & {
+        policy: string | null;
+        reason: string | null;
+        /** Whether SPF passed for a domain aligned with the From domain ("pass", "fail", "none" ...). */
+        spf?: string | null;
+        /** Whether a DKIM signature passed for a domain aligned with the From domain. */
+        dkim?: string | null;
+      })
+    | null;
   /** Reverse DNS of the sending server, checked name by name. */
   iprev: { result: string; ptr: string | null } | null;
   /** The Authentication-Results header the mail server wrote. */
   authenticationResults: string | null;
+  /** The ARC chain of a forwarded email; null for mail captured before ARC was checked. */
+  arc?: EmailArc | null;
+  /** What the sender's DNS said about its setup when the email arrived; null for older mail. */
+  setup?: EmailSenderSetup | null;
   /** Set when the checks could not run ("unavailable", "timeout", "busy", "failed"). */
+  error: string | null;
+}
+
+/**
+ * The ARC chain (RFC 8617): each server that forwarded the email (a mailing
+ * list, a forwarding rule) may seal what it saw, so a receiver can trust
+ * SPF and DKIM results the forwarding broke.
+ */
+export interface EmailArc {
+  /** "pass", "fail", "neutral", "none" (no chain) or "skipped" ... */
+  result: string;
+  /** How many servers sealed the chain. */
+  sets: number;
+  /** The domains that sealed it, first hop first. */
+  sealers: string[];
+  /** Why the chain was not checked, when `result` is "skipped". */
+  reason: string | null;
+}
+
+/** The sender domain's SPF record as published. */
+export interface EmailSpfRecord {
+  domain: string | null;
+  /** SPF records found; more than one makes SPF fail. */
+  records: number;
+  /** The first record's text, cut at 512 characters. */
+  record: string | null;
+  /** The `all` that applies ("-all", "~all", "?all", "+all"), following a redirect; null for none. */
+  all: string | null;
+  redirect: boolean;
+  /** DNS lookups the record takes, includes followed; more than 10 make SPF fail. */
+  lookups: number | null;
+  /** The count stopped before the end: there are at least `lookups`. */
+  lookupsCapped: boolean;
+  /** The record (or one it includes) uses the deprecated `ptr` mechanism. */
+  ptr: boolean;
+  /** Set when the record could not be looked up. */
+  error: string | null;
+}
+
+/** The DMARC record that applied to the From domain. */
+export interface EmailDmarcRecord {
+  /** "none", "quarantine" or "reject"; null when the record has no policy. */
+  p: string | null;
+  /** The policy for subdomains, when it is set. */
+  sp: string | null;
+  /** "relaxed" or "strict". */
+  adkim: string;
+  aspf: string;
+  /** Where aggregate reports go (at most 3). */
+  rua: string[];
+  /** How many addresses get failure reports. */
+  ruf: number;
+  /** The record is in testing mode (`t=y`). */
+  testing: boolean;
+}
+
+/** A DKIM signature's key as published. */
+export interface EmailDkimKey {
+  domain: string;
+  selector: string;
+  /** How the email was signed: "rsa-sha256", "rsa-sha1" or "ed25519-sha256". */
+  algorithm: string;
+  /** "rsa" or "ed25519"; null when no key was found. */
+  key: string | null;
+  /** The key's size in bits, when it could be read. */
+  bits: number | null;
+  /** The record publishes an empty key: the selector was retired. */
+  revoked: boolean;
+}
+
+/** What the sender's DNS said about its setup when the email arrived. */
+export interface EmailSenderSetup {
+  spf: EmailSpfRecord | null;
+  dmarc: EmailDmarcRecord | null;
+  dkim: EmailDkimKey[];
+  /** A BIMI record (brand logo) for the From domain; null when the From domain was unknown. */
+  bimi: {
+    found: boolean;
+    domain: string | null;
+    logo: boolean;
+    /** It names a mark certificate, which Gmail needs to show the logo. */
+    authority: boolean;
+    error: string | null;
+  } | null;
+  /** The name the sending server introduced itself with. */
+  helo: {
+    name: string;
+    /** An address literal such as [192.0.2.1] instead of a name. */
+    ipLiteral: boolean;
+    fqdn: boolean;
+    /** The name resolves to the sending server's address. */
+    resolves: boolean;
+    /** The name is the server's forward-confirmed reverse DNS name. */
+    matchesPtr: boolean;
+  } | null;
+  /** Set when the lookups could not finish ("timeout", "too large"). */
   error: string | null;
 }
 

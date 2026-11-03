@@ -1,11 +1,16 @@
 import type {
   EmailAddress,
+  EmailArc,
   EmailAttachment,
   EmailAuth,
   EmailCapture,
   EmailCheck,
+  EmailDkimKey,
+  EmailDmarcRecord,
+  EmailSenderSetup,
   EmailSmtp,
   EmailSpam,
+  EmailSpfRecord,
 } from "@webhooks-cc/sdk/email";
 import type { Json } from "@/lib/supabase/database";
 
@@ -116,11 +121,114 @@ function asAuth(value: Json | undefined): EmailAuth | null {
       : [],
     dmarc:
       dmarc && dmarcCheck
-        ? { ...dmarcCheck, policy: asString(dmarc.policy), reason: asString(dmarc.reason) }
+        ? {
+            ...dmarcCheck,
+            policy: asString(dmarc.policy),
+            reason: asString(dmarc.reason),
+            spf: asString(dmarc.spf),
+            dkim: asString(dmarc.dkim),
+          }
         : null,
     iprev: iprev && iprevResult !== null ? { result: iprevResult, ptr: asString(iprev.ptr) } : null,
     authenticationResults: asString(auth.authentication_results),
+    arc: asArc(auth.arc),
+    setup: asSetup(auth.setup),
     error: asString(auth.error),
+  };
+}
+
+function asArc(value: Json | undefined): EmailArc | null {
+  const arc = asObject(value);
+  const result = arc ? asString(arc.result) : null;
+  if (!arc || result === null) return null;
+  return {
+    result,
+    sets: asNumber(arc.sets) ?? 0,
+    sealers: asStrings(arc.sealers),
+    reason: asString(arc.reason),
+  };
+}
+
+function asSpfRecord(value: Json | undefined): EmailSpfRecord | null {
+  const spf = asObject(value);
+  if (!spf) return null;
+  return {
+    domain: asString(spf.domain),
+    records: asNumber(spf.records) ?? 0,
+    record: asString(spf.record),
+    all: asString(spf.all),
+    redirect: spf.redirect === true,
+    lookups: asNumber(spf.lookups),
+    lookupsCapped: spf.lookups_capped === true,
+    ptr: spf.ptr === true,
+    error: asString(spf.error),
+  };
+}
+
+function asDmarcRecord(value: Json | undefined): EmailDmarcRecord | null {
+  const dmarc = asObject(value);
+  if (!dmarc) return null;
+  return {
+    p: asString(dmarc.p),
+    sp: asString(dmarc.sp),
+    adkim: asString(dmarc.adkim) ?? "relaxed",
+    aspf: asString(dmarc.aspf) ?? "relaxed",
+    rua: asStrings(dmarc.rua),
+    ruf: asNumber(dmarc.ruf) ?? 0,
+    testing: dmarc.testing === true,
+  };
+}
+
+function asDkimKeys(value: Json | undefined): EmailDkimKey[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const key = asObject(item);
+    const domain = key ? asString(key.domain) : null;
+    const selector = key ? asString(key.selector) : null;
+    if (!key || domain === null || selector === null) return [];
+    return [
+      {
+        domain,
+        selector,
+        algorithm: asString(key.algorithm) ?? "rsa-sha256",
+        key: asString(key.key),
+        bits: asNumber(key.bits),
+        revoked: key.revoked === true,
+      },
+    ];
+  });
+}
+
+function asSetup(value: Json | undefined): EmailSenderSetup | null {
+  const setup = asObject(value);
+  if (!setup) return null;
+  const bimi = asObject(setup.bimi);
+  const helo = asObject(setup.helo);
+  const heloName = helo ? asString(helo.name) : null;
+  return {
+    spf: asSpfRecord(setup.spf),
+    dmarc: asDmarcRecord(setup.dmarc),
+    dkim: asDkimKeys(setup.dkim),
+    bimi: bimi
+      ? {
+          found: bimi.found === true,
+          domain: asString(bimi.domain),
+          logo: bimi.logo === true,
+          authority: bimi.authority === true,
+          error: asString(bimi.error),
+        }
+      : null,
+    helo:
+      helo && heloName !== null
+        ? {
+            name: heloName,
+            ipLiteral: helo.ip_literal === true,
+            fqdn: helo.fqdn === true,
+            resolves: helo.resolves === true,
+            matchesPtr: helo.matches_ptr === true,
+          }
+        : null,
+    error: asString(setup.error),
   };
 }
 

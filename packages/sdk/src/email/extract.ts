@@ -268,6 +268,25 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
   return ranked.slice(0, MAX_LINKS);
 }
 
+/** Links `emailAnchors()` returns at most. */
+const MAX_ANCHORS = 500;
+
+/**
+ * Every http and https link in an email's HTML with its text, in order of
+ * appearance and at most 500. Unlike `extractFromEmail()`, footers,
+ * unsubscribe and social links are kept, for checks that look at all of an
+ * email's links.
+ */
+export function emailAnchors(html: string): { url: string; text: string }[] {
+  const anchors: { url: string; text: string }[] = [];
+  for (const anchor of findAnchors(dropSkippedElements(html))) {
+    if (anchors.length >= MAX_ANCHORS) break;
+    const url = cleanUrl(anchor.href);
+    if (url) anchors.push({ url, text: htmlToText(anchor.label).trim() });
+  }
+  return anchors;
+}
+
 /** The parts of an email the extractor reads. */
 export type EmailContent = Pick<EmailCapture, "subject" | "text" | "html">;
 

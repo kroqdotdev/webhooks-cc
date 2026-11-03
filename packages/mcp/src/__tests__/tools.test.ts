@@ -1665,6 +1665,56 @@ describe("email and forwarding tools", () => {
     expect(detail.spam).toEqual({ score: 16.2, required: 15, action: "reject" });
   });
 
+  it("drops the sender's DNS setup before the verdicts when an email has to shrink", async () => {
+    const auth = {
+      spf: { result: "pass", domain: "tidewater.app" },
+      dkim: [{ result: "pass", domain: "tidewater.app", selector: "s1" }],
+      dmarc: null,
+      iprev: null,
+      authenticationResults: "mx.mailhooks.cc; spf=pass",
+      arc: { result: "none", sets: 0, sealers: [], reason: null },
+      setup: {
+        spf: null,
+        dmarc: null,
+        dkim: [],
+        bimi: null,
+        helo: {
+          name: "h".repeat(200),
+          ipLiteral: false,
+          fqdn: true,
+          resolves: true,
+          matchesPtr: true,
+        },
+        error: null,
+      },
+      error: null,
+    };
+    const small = makeEmail("e1", { auth });
+    // Only cutting the address list makes it fit, and that comes after.
+    const to = Array.from({ length: 100 }, (_, i) => ({
+      name: "n".repeat(300),
+      address: `r${i}@mailhooks.cc`,
+    }));
+    const big = makeEmail("e2", { auth, to });
+    const get = vi.fn(async (id: string) => (id === "e1" ? small : big));
+    const tools = getRegisteredTools(
+      emailClient({ requests: { get } as unknown as WebhooksCC["requests"] })
+    );
+    const fits = JSON.parse((await tools.get_request.handler({ requestId: "e1" })).content[0].text);
+    expect(fits.email.auth.setup.helo.matchesPtr).toBe(true);
+    const shrunk = JSON.parse(
+      (await tools.get_request.handler({ requestId: "e2" })).content[0].text
+    );
+    expect(shrunk.email.auth).toEqual({
+      spf: auth.spf,
+      dkim: auth.dkim,
+      dmarc: null,
+      iprev: null,
+      arc: auth.arc,
+      error: null,
+    });
+  });
+
   it("stays valid JSON when the headers and links alone are too big", async () => {
     const headers = Object.fromEntries(
       Array.from({ length: 60 }, (_, i) => [`x-ms-exchange-header-${i}`, "h".repeat(250)])
