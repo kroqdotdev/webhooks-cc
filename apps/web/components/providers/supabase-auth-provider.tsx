@@ -3,6 +3,7 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { clearPendingUser, reportAuthenticatedUser } from "@/lib/analytics";
+import { endAccountConsentSession } from "@/lib/analytics-account-consent";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextValue {
@@ -27,6 +28,10 @@ const storeListeners = new Set<() => void>();
 let authListenerStarted = false;
 
 function setAuthSession(session: Session | null) {
+  // A signed-in session that ended, or became another account's: the
+  // analytics choice synced or given in this tab was the former account's.
+  const previousUserId = authState.user?.id;
+  if (previousUserId && previousUserId !== session?.user?.id) endAccountConsentSession();
   authState = {
     session,
     user: session?.user ?? null,

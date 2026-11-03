@@ -646,6 +646,8 @@ export interface Database {
           pending_plan: string | null;
           pending_interval: string | null;
           home_site: "webhooks" | "mailhooks";
+          analytics_consent: "granted" | "denied" | null;
+          analytics_consent_at: string | null;
           retention_floor_days: number | null;
           retention_floor_until: string | null;
           pages_used: number;
@@ -698,6 +700,8 @@ export interface Database {
           pending_plan?: string | null;
           pending_interval?: string | null;
           home_site?: "webhooks" | "mailhooks";
+          analytics_consent?: "granted" | "denied" | null;
+          analytics_consent_at?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -750,6 +754,8 @@ export interface Database {
           pending_plan?: string | null;
           pending_interval?: string | null;
           home_site?: "webhooks" | "mailhooks";
+          analytics_consent?: "granted" | "denied" | null;
+          analytics_consent_at?: string | null;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;

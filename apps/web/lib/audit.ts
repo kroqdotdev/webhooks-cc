@@ -19,6 +19,7 @@ import { captureAuditEvent } from "@/lib/analytics-server";
 // "account.password_changed" by a trigger on auth.users (migration 00061),
 // never from here.
 export type AuditAction =
+  | "account.analytics_consent_updated"
   | "account.deleted"
   | "account.name_updated"
   | "account.site_switch"
