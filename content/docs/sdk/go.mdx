@@ -3,7 +3,7 @@ title: "Go SDK"
 description: "The webhooks.cc Go module captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes testing.TB helpers."
 section: sdk
 order: 7
-lastUpdated: 2026-10-28
+lastUpdated: 2026-11-03
 schema: none
 keywords: ["go webhook sdk", "golang webhooks", "webhook testing go", "verify webhook signature go", "webhooks.cc/go"]
 seo:
@@ -60,7 +60,7 @@ func TestCheckoutSendsAWebhook(t *testing.T) {
 
 `WaitFor` looks back five minutes, so a webhook that arrived just before you started waiting still counts. `WaitForAll(ctx, slug, 3, opts)` collects several, oldest first. When time runs out the error matches `webhookscc.ErrTimeout`; when your context ends first, you get the context's error. Times such as `ReceivedAt` are `time.Time`.
 
-Outside tests, create a client with `webhookscc.New()`, and use `client.WithTemporaryEndpoint(ctx, opts, fn)` for an endpoint that is deleted when `fn` returns.
+Outside tests, create a client with `webhookscc.New()`, and use `client.WithTemporaryEndpoint(ctx, opts, fn)` for an endpoint that is deleted when `fn` returns. The [Go testing guide](/docs/sdk/testing/go) walks through a whole suite: handler tests with `httptest`, retries, emails and CI.
 
 ## Matchers
 
