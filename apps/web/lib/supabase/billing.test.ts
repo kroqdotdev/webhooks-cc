@@ -14,6 +14,7 @@ vi.mock("@/lib/polar", async (importOriginal) => ({
   planProductId: (await importOriginal<typeof import("@/lib/polar")>()).planProductId,
   createPolarClient: mockFns.createPolarClient,
   getPolarCheckoutConfig: mockFns.getPolarCheckoutConfig,
+  polarAppUrl: () => "https://webhooks.cc",
   unwrapPolarResult: <T>(result: T) => result,
 }));
 
@@ -31,6 +32,7 @@ import {
   addMonthUtc,
   applyPolarWebhookEvent,
   changePlanForUser,
+  createCustomerPortalForUser,
   keepCurrentPlanForUser,
   remainingShare,
 } from "./billing";
@@ -450,6 +452,33 @@ describe("plan changes within a period", () => {
     );
 
     expect(userUpdatePayload()).toMatchObject({ pending_plan: null, pending_interval: null });
+  });
+});
+
+describe("createCustomerPortalForUser", () => {
+  test("opens the portal for the account's own Polar customer, back to the plan page", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [{ data: { id: "user_1", polar_customer_id: "cus_1" } }] })
+    );
+    const create = vi.fn().mockResolvedValue({ customer_portal_url: "https://polar.test/portal" });
+    mockFns.createPolarClient.mockReturnValue({ customerSessions: { create } });
+
+    await expect(createCustomerPortalForUser("user_1")).resolves.toBe("https://polar.test/portal");
+    expect(create).toHaveBeenCalledWith({
+      customer_id: "cus_1",
+      return_url: "https://webhooks.cc/account/plan",
+    });
+  });
+
+  test("refuses an account that never had a Polar customer", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [{ data: { id: "user_1", polar_customer_id: null } }] })
+    );
+
+    await expect(createCustomerPortalForUser("user_1")).rejects.toMatchObject({
+      code: "no_customer",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
   });
 });
 

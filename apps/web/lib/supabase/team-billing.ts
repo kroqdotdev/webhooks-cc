@@ -200,6 +200,36 @@ export async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<stri
 }
 
 /**
+ * A link into Polar's customer portal for the team's Polar customer, for its
+ * owner: invoices, receipts and the payment method. A team customer's
+ * session is for one of its members, and the team owner is the customer's
+ * owner member (ensureTeamPolarCustomerId), looked up rather than assumed so
+ * a customer made before the owner carried our id works too. Plan and seat
+ * changes stay on the team page.
+ */
+export async function createTeamCustomerPortal(userId: string, teamId: string): Promise<string> {
+  const team = await getTeamForOwner(userId, teamId);
+  if (!team.polar_customer_id) {
+    throw new TeamBillingError("no_customer", "This team has no invoices yet");
+  }
+  const polar = createPolarClient();
+  const owners = await polar.customers.members.list(team.polar_customer_id, {
+    role: "owner",
+    limit: 1,
+  });
+  const member = owners.items[0];
+  if (!member) {
+    throw new TeamBillingError("no_customer", "This team's billing contact is missing");
+  }
+  const session = await polar.customerSessions.create({
+    customer_id: team.polar_customer_id,
+    member_id: member.id,
+    return_url: `${await returnOrigin(polarAppUrl())}/teams/${teamId}`,
+  });
+  return session.customer_portal_url;
+}
+
+/**
  * A seat count the team may move to: 2 to 1,000, or the count it has (a team
  * subscribed with one seat before the minimum keeps it, and asking for it
  * cancels a scheduled reduction).
@@ -788,8 +818,8 @@ function declinedCharge(error: unknown, what: string): TeamBillingError | null {
   return new TeamBillingError(
     "payment_failed",
     error.error.error === "PaymentActionRequired"
-      ? `Your bank needs you to approve this payment, so ${what} yet. Approve it from the link in your Polar receipt email, or update the card there, and try again.`
-      : `Your payment method was declined, so ${what}. Update the card from the link in your Polar receipt email and try again.`
+      ? `Your bank needs you to approve this payment, so ${what} yet. Approve it from the link in your Polar receipt email, or update the payment method under Invoices and payment method, and try again.`
+      : `Your payment method was declined, so ${what}. Update the payment method under Invoices and payment method and try again.`
   );
 }
 

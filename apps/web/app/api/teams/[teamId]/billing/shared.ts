@@ -10,6 +10,7 @@ export const ERROR_STATUS: Record<string, number> = {
   checkout_in_progress: 409,
   invalid_seats: 400,
   no_subscription: 409,
+  no_customer: 409,
   not_scheduled: 409,
   seats_below_members: 409,
   payment_failed: 402,

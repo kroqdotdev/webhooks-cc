@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { InlineMessage, Notice, Panel, PanelRow, StatusTag } from "@/components/settings/panel";
+import { BillingPortalButton, BillingPortalLink } from "@/components/billing/billing-portal";
 import type { Team } from "@/lib/supabase/teams-types";
 import { trackTeamSubscribeClicked } from "@/lib/analytics";
 import {
@@ -456,6 +457,7 @@ export function TeamBillingPanel({
                   {canceling ? "Cancelling..." : "Cancel subscription"}
                 </Button>
               )}
+              <BillingPortalButton accessToken={accessToken} teamId={team.id} />
               {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
               {error && <InlineMessage tone="error">{error}</InlineMessage>}
             </>
@@ -467,8 +469,17 @@ export function TeamBillingPanel({
             {status}
             {isPastDue && (
               <p className="text-muted-foreground">
-                The last payment failed. Update the payment method from the Polar receipt email to
-                keep this team active.
+                The last payment failed.{" "}
+                {isOwner ? (
+                  <>
+                    <BillingPortalLink accessToken={accessToken} teamId={team.id}>
+                      Update the payment method
+                    </BillingPortalLink>{" "}
+                    to keep this team active.
+                  </>
+                ) : (
+                  "The team owner can update the payment method to keep this team active."
+                )}
               </p>
             )}
             {isCanceling && !isPastDue && (

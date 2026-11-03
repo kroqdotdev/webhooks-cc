@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.59.3";
+export const APP_VERSION = "0.59.5";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.59.5",
+    date: "2026-11-03",
+    title: "Invoices and Payment Method",
+    track: "web",
+    items: [
+      "Invoices and payment method, on the plan page, opens your Polar customer portal: download invoices and receipts and change the card on file. Team owners find it under Billing on the team page",
+      "After a failed payment, the notices on the plan, team and domains pages now open the portal to update the payment method, instead of pointing to a Polar receipt email",
+    ],
+  },
   {
     version: "0.59.3",
     date: "2026-11-03",

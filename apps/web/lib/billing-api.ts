@@ -96,6 +96,24 @@ export async function resubscribeBillingSubscription(accessToken: string): Promi
   await readJson<{ success: true }>(response);
 }
 
+/**
+ * A link into Polar's customer portal (invoices, receipts, payment method)
+ * for the account, or for a team its owner manages. It signs the browser in
+ * as that customer for an hour, so it is followed at once, never kept.
+ */
+export async function createBillingPortalLink(
+  accessToken: string,
+  teamId?: string
+): Promise<string> {
+  const response = await fetch(
+    teamId ? `/api/teams/${teamId}/billing/portal` : "/api/billing/portal",
+    withAuthHeaders(accessToken, { method: "POST" })
+  );
+  const data = await readJson<{ url?: unknown }>(response);
+  if (typeof data.url !== "string") throw new Error("Billing did not return a link");
+  return data.url;
+}
+
 export async function deleteAccount(accessToken: string): Promise<void> {
   const response = await fetch("/api/account", withAuthHeaders(accessToken, { method: "DELETE" }));
   await readJson<{ success: true }>(response);
