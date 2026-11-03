@@ -500,6 +500,11 @@ begin
     -- A bare close writes no message; anything else does, even without text
     -- (screenshots only).
     if char_length(coalesce(p_body, '')) > 0 or not coalesce(p_close, false) then
+      -- Answering a closed ticket opens it again, and the timeline says so.
+      if v_ticket.status = 'closed' then
+        insert into public.support_messages (ticket_id, author, author_id, kind, event)
+        values (p_ticket_id, 'staff', p_author_id, 'event', 'reopened');
+      end if;
       insert into public.support_messages (ticket_id, author, author_id, kind, body)
       values (p_ticket_id, 'staff', p_author_id, 'message', coalesce(p_body, ''))
       returning id into v_message;
@@ -591,15 +596,15 @@ begin
   values (p_ticket_id, 'user', p_user_id, 'event',
           case when p_granted then 'access_granted' else 'access_withdrawn' end);
   if not p_granted then
-    -- A withdrawal ends every open view of the account at once.
-    update public.support_view_sessions s
-       set ended_at = now()
-     where s.user_id = p_user_id and s.ended_at is null and s.expires_at > now()
-       and not exists (
-         select 1 from public.support_tickets t
-          where t.user_id = p_user_id and t.id <> p_ticket_id
-            and public.support_grant_active(t)
-       );
+    -- A withdrawal ends the open views this ticket allowed, and logs it.
+    with ended as (
+      update public.support_view_sessions s
+         set ended_at = now()
+       where s.ticket_id = p_ticket_id and s.ended_at is null and s.expires_at > now()
+      returning s.user_id, s.ticket_id, s.staff_id
+    )
+    insert into public.support_access_log (user_id, ticket_id, staff_id, action)
+    select e.user_id, e.ticket_id, e.staff_id, 'view_ended' from ended e;
   end if;
   return true;
 end;

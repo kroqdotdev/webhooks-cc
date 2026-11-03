@@ -14,6 +14,11 @@ const row = {
 };
 
 describe("auditAnalyticsEvent", () => {
+  it("leaves staff work in the operations center out", () => {
+    expect(auditAnalyticsEvent({ ...row, action: "ops.account_viewed" })).toBeNull();
+    expect(auditAnalyticsEvent({ ...row, action: "ops.ticket_replied" })).toBeNull();
+  });
+
   it("sends the action as the event, with the client that made it", () => {
     expect(auditAnalyticsEvent(row)).toEqual({
       distinctId: "user-1",

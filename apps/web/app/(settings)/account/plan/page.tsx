@@ -19,6 +19,7 @@ import {
 import { QuotaMeter } from "@/components/settings/quota-meter";
 import { useSettingsData } from "@/components/settings/settings-data";
 import { useAccountProfile } from "@/components/settings/use-account-profile";
+import { useStaff } from "@/components/ops/use-staff";
 import { Button } from "@/components/ui/button";
 import { trackUpgradeCompleted } from "@/lib/analytics";
 import { planEntitlements } from "@/lib/entitlements";
@@ -162,6 +163,13 @@ export default function PlanPage() {
     live: true,
   });
   const { teams } = useSettingsData();
+  // A paid plan without a subscription may be a staff account's (migration
+  // 00087); ask only then, so other accounts never make the request.
+  const staff = useStaff(
+    profile?.id ?? null,
+    accessToken,
+    !!profile && profile.plan !== "free" && !profile.polar_subscription_id
+  );
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -195,7 +203,7 @@ export default function PlanPage() {
   const billingEnd = profile.billing_period_end ?? profile.period_end;
   // A paid plan without a subscription is a staff account's (migration 00087):
   // nothing to buy, change or cancel.
-  const comped = !isFree && !profile.polar_subscription_id;
+  const comped = staff?.staff === true && !isFree && !profile.polar_subscription_id;
 
   const caption = profile.period_end ? (
     isFree ? (

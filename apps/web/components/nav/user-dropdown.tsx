@@ -68,7 +68,9 @@ export function UserDropdown() {
   const { user: authUser, session } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const staff = useStaff(authUser?.id ?? null, session?.access_token ?? null);
+  // Asked when the menu first opens, not on every page load.
+  const [menuOpened, setMenuOpened] = useState(false);
+  const staff = useStaff(authUser?.id ?? null, session?.access_token ?? null, menuOpened);
 
   useEffect(() => {
     if (!authUser) {
@@ -100,7 +102,7 @@ export function UserDropdown() {
   const displayName = profile.name || profile.email.split("@")[0];
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && setMenuOpened(true)}>
       {/* The name and initials stay out of autocapture. */}
       <DropdownMenuTrigger className="ph-no-capture flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer outline-none">
         <UserAvatar profile={profile} />

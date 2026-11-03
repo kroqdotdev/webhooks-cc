@@ -19,11 +19,16 @@ const CACHE_KEY = "whk-staff";
  * remembered for the tab: most people are not, and the answer is the same
  * 404 every ops route gives them.
  */
-export function useStaff(userId: string | null, token: string | null): StaffStatus | null {
+export function useStaff(
+  userId: string | null,
+  token: string | null,
+  /** False until the answer is needed, so most pages never ask. */
+  enabled = true
+): StaffStatus | null {
   const [status, setStatus] = useState<{ userId: string; value: StaffStatus } | null>(null);
 
   useEffect(() => {
-    if (!userId || !token) return;
+    if (!userId || !token || !enabled) return;
     let cancelled = false;
     try {
       const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) ?? "null") as {
@@ -57,7 +62,7 @@ export function useStaff(userId: string | null, token: string | null): StaffStat
     return () => {
       cancelled = true;
     };
-  }, [userId, token]);
+  }, [userId, token, enabled]);
 
   if (!userId) return null;
   return status?.userId === userId ? status.value : null;

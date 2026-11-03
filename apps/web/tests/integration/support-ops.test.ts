@@ -247,6 +247,70 @@ describe("support tickets", () => {
   });
 });
 
+describe("follow-ups", () => {
+  it("a staff answer on a closed ticket reopens it and says so", async () => {
+    const created = await newTicket(customerId);
+    await admin.rpc("support_close_ticket", {
+      p_ticket_id: created.ticket_id,
+      p_by: "user",
+      p_actor_id: customerId,
+    });
+    await admin.rpc("support_post_message", {
+      p_ticket_id: created.ticket_id,
+      p_author: "staff",
+      p_author_id: staffId,
+      p_kind: "message",
+      p_body: "One more thing.",
+    });
+    const row = await ticket(created.ticket_id);
+    expect(row.status).toBe("open");
+    const { data: events } = await admin
+      .from("support_messages")
+      .select("event")
+      .eq("ticket_id", created.ticket_id)
+      .eq("kind", "event");
+    expect(events!.map((event) => event.event)).toContain("reopened");
+  });
+
+  it("withdrawing on one ticket ends that ticket's views and logs it, not another's", async () => {
+    const first = await newTicket(customerId, true);
+    const second = await newTicket(customerId, true);
+    const expires = new Date(Date.now() + 30 * 60_000).toISOString();
+    const { data: sessions } = await admin
+      .from("support_view_sessions")
+      .insert([
+        { staff_id: staffId, user_id: customerId, ticket_id: first.ticket_id, expires_at: expires },
+        {
+          staff_id: staffId,
+          user_id: customerId,
+          ticket_id: second.ticket_id,
+          expires_at: expires,
+        },
+      ])
+      .select("id, ticket_id");
+    await admin.rpc("support_set_access", {
+      p_ticket_id: first.ticket_id,
+      p_user_id: customerId,
+      p_granted: false,
+    });
+    const { data: after } = await admin
+      .from("support_view_sessions")
+      .select("ticket_id, ended_at")
+      .in(
+        "id",
+        sessions!.map((session) => session.id)
+      );
+    const byTicket = new Map(after!.map((session) => [session.ticket_id, session.ended_at]));
+    expect(byTicket.get(first.ticket_id)).not.toBeNull();
+    expect(byTicket.get(second.ticket_id)).toBeNull();
+    const { data: log } = await admin
+      .from("support_access_log")
+      .select("action")
+      .eq("ticket_id", first.ticket_id);
+    expect(log!.map((entry) => entry.action)).toContain("view_ended");
+  });
+});
+
 describe("deleting", () => {
   it("deletes an account whose ticket has screenshots and queues their objects", async () => {
     const owner = await createUser("with-screenshot");

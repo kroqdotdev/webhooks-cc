@@ -44,7 +44,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ nu
       if (until !== null && (typeof until !== "string" || Number.isNaN(Date.parse(until)))) {
         return opsJson({ error: "Snooze needs a time." }, { status: 400 });
       }
-      await updateTicket(row.id, { snoozed_until: until as string | null });
+      await updateTicket(row.id, {
+        snoozed_until: until === null ? null : new Date(until as string).toISOString(),
+      });
       changes.snoozeUntil = until;
     }
     if (typeof body.spam === "boolean") {

@@ -89,10 +89,10 @@ export async function listUserTickets(userId: string): Promise<SupportTicketSumm
   return rows.map((row) => summary(row, counts.get(row.id) ?? 0));
 }
 
-function firstName(name: string | null, email: string | null): string {
+/** A staff member's first name, or "Support": never their email address. */
+function firstName(name: string | null): string {
   const trimmed = name?.trim();
-  if (trimmed) return trimmed.split(/\s+/)[0];
-  return email?.split("@")[0] ?? "Support";
+  return trimmed ? trimmed.split(/\s+/)[0] : "Support";
 }
 
 /** Messages with attachments and author names. Notes only for staff. */
@@ -140,7 +140,7 @@ async function loadMessages(
     const person = row.author_id ? names.get(row.author_id) : undefined;
     const authorName =
       row.author === "staff"
-        ? firstName(person?.name ?? null, person?.email ?? null)
+        ? firstName(person?.name ?? null)
         : row.author === "user"
           ? person?.name?.trim() || person?.email || null
           : null;

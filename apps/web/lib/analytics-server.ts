@@ -194,6 +194,8 @@ export function captureAuditEvent(row: AuditRowForAnalytics): void {
 /** The analytics event for an audit row, or null for rows that are not product use. */
 export function auditAnalyticsEvent(row: AuditRowForAnalytics): ServerEvent | null {
   if (row.actor_type === "polar" || row.actor_type === "system") return null;
+  // Staff work in the operations center is not product use.
+  if (row.action.startsWith("ops.")) return null;
   const userId = row.actor_user_id;
   if (row.actor_type === "user" && !userId) return null;
   // Refusals of anonymous agents (rate limits, bad proofs of work) are abuse,
