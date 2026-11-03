@@ -1,5 +1,6 @@
 import { extractBearerToken } from "@/lib/api-auth";
-import { hasVerifiedFactor, sessionAal } from "@/lib/mfa";
+import { hasVerifiedFactor } from "@/lib/mfa";
+import { passedSecondFactor } from "@/lib/mfa-session";
 import { checkRateLimitByKey } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
@@ -51,7 +52,7 @@ export async function staffSession(request: Request): Promise<StaffSession | nul
   }
   return {
     userId: user.id,
-    aal2: sessionAal(token) === "aal2",
+    aal2: await passedSecondFactor(user, token),
     hasFactor: hasVerifiedFactor(user),
   };
 }

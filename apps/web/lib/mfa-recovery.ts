@@ -79,6 +79,8 @@ export async function removeTwoFactor(userId: string): Promise<number> {
     .delete()
     .eq("user_id", userId);
   if (codesError) throw codesError;
+  // Also done by a trigger on auth.mfa_factors (migration 00088).
+  await admin.from("mfa_trusted_sessions").delete().eq("user_id", userId);
   return removed;
 }
 

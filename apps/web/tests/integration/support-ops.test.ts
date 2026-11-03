@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createHmac } from "node:crypto";
 import { redeemRecoveryCode, replaceRecoveryCodes } from "@/lib/mfa-recovery";
+import { owesSecondFactor, trustSession } from "@/lib/mfa-session";
 
 /**
  * Migration 00087: staff on Business without a subscription, the ticket
@@ -424,5 +425,65 @@ describe("recovery codes", () => {
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId);
     expect(count).toBe(0);
+  });
+});
+
+describe("second factor carried by a site switch", () => {
+  it("counts a trusted aal1 session as having passed it, until it signs out", async () => {
+    const email = `test-support-switch-${ts}@webhooks-test.local`;
+    const password = "TestPassword123!";
+    const { data: created } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    const userId = created.user!.id;
+    userIds.push(userId);
+    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const fresh = () =>
+      createClient(process.env.SUPABASE_URL!, anon, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+
+    // An authenticator on the account.
+    const setup = fresh();
+    await setup.auth.signInWithPassword({ email, password });
+    const { data: factor } = await setup.auth.mfa.enroll({ factorType: "totp" });
+    await setup.auth.mfa.challengeAndVerify({
+      factorId: factor!.id,
+      code: totp(factor!.totp.secret),
+    });
+
+    // A new password-only session, as a switch's magic link makes.
+    const other = fresh();
+    const { data: signedIn } = await other.auth.signInWithPassword({ email, password });
+    const token = signedIn.session!.access_token;
+    const { data: user } = await admin.auth.getUser(token);
+    const ownRow = async () => (await other.from("users").select("id").eq("id", userId)).data ?? [];
+
+    expect(await owesSecondFactor(user.user!, token)).toBe(true);
+    expect(await ownRow()).toHaveLength(0);
+
+    await trustSession(token, userId);
+    expect(await owesSecondFactor(user.user!, token)).toBe(false);
+    expect(await ownRow()).toHaveLength(1);
+
+    const trusted = async () =>
+      (
+        await admin
+          .from("mfa_trusted_sessions")
+          .select("session_id", { count: "exact", head: true })
+          .eq("user_id", userId)
+      ).count;
+
+    // Removing the authenticator takes the carried trust with it.
+    await admin.auth.admin.mfa.deleteFactor({ id: factor!.id, userId });
+    expect(await trusted()).toBe(0);
+
+    // Signing out ends the session and its trust with it.
+    await trustSession(token, userId);
+    expect(await trusted()).toBe(1);
+    await other.auth.signOut();
+    expect(await trusted()).toBe(0);
   });
 });

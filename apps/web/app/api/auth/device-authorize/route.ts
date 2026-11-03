@@ -3,7 +3,7 @@ import { parseJsonBody } from "@/lib/request-validation";
 import { createClient } from "@/lib/supabase/server";
 import { authorizeDeviceCodeForUser } from "@/lib/supabase/device-auth";
 import { reportError } from "@/lib/observability";
-import { needsSecondFactor } from "@/lib/mfa";
+import { owesSecondFactor } from "@/lib/mfa-session";
 
 export async function POST(request: Request) {
   const rateLimited = await checkRateLimit(request, "device-authorize", 10);
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    if (!session || needsSecondFactor(user, session.access_token)) {
+    if (!session || (await owesSecondFactor(user, session.access_token))) {
       return Response.json({ error: "Enter your two-factor code first." }, { status: 401 });
     }
 

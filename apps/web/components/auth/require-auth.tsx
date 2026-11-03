@@ -18,8 +18,13 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   // An account with an authenticator app finishes signing in here; the API
   // refuses its session until it has (lib/mfa.ts).
-  const needsSecondFactor = useNeedsSecondFactor(session?.access_token ?? null);
-  const [verified, setVerified] = useState(false);
+  const needsSecondFactor = useNeedsSecondFactor(
+    session?.user.id ?? null,
+    session?.access_token ?? null
+  );
+  // Who passed the code here: another account signed in from another tab
+  // must pass its own.
+  const [verifiedUserId, setVerifiedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -39,8 +44,8 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (needsSecondFactor && !verified) {
-    return <MfaChallenge onVerified={() => setVerified(true)} />;
+  if (needsSecondFactor && verifiedUserId !== (session?.user.id ?? null)) {
+    return <MfaChallenge onVerified={() => setVerifiedUserId(session?.user.id ?? null)} />;
   }
 
   return <>{children}</>;

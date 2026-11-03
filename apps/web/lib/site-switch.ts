@@ -108,6 +108,8 @@ export interface SwitchGrant {
   userId: string;
   expires: number;
   consent?: CarriedConsent;
+  /** The asking session had passed the second factor (migration 00088). */
+  secondFactor?: boolean;
 }
 
 export interface SwitchTicket {
@@ -123,6 +125,8 @@ export interface SwitchTicket {
   next: string;
   expires: number;
   consent?: CarriedConsent;
+  /** Both sessions it came from had passed the second factor: the new one counts as having passed it. */
+  secondFactor?: boolean;
 }
 
 const CONSENT_COOKIE_NAME = "whk_consent_carry";
