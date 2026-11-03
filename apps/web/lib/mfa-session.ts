@@ -35,9 +35,17 @@ export async function isTrustedSession(token: string, userId: string): Promise<b
   return data !== null;
 }
 
-/** The session passed the second factor, here or before a site switch. */
-export async function passedSecondFactor(user: { id: string }, token: string): Promise<boolean> {
+/**
+ * The session passed the second factor, here or before a site switch. A
+ * carried session counts only while the account still has an authenticator
+ * (the database drops the rows when factors change; this is the second lock).
+ */
+export async function passedSecondFactor(
+  user: { id: string; factors?: { status?: string }[] | null },
+  token: string
+): Promise<boolean> {
   if (sessionAal(token) === "aal2") return true;
+  if (!hasVerifiedFactor(user)) return false;
   return isTrustedSession(token, user.id);
 }
 
@@ -56,6 +64,10 @@ export async function trustSession(token: string, userId: string): Promise<void>
   if (!sessionId) return;
   const { error } = await createAdminClient()
     .from("mfa_trusted_sessions")
-    .upsert({ session_id: sessionId, user_id: userId }, { onConflict: "session_id" });
+    // ON CONFLICT DO NOTHING: needs only the INSERT grant.
+    .upsert(
+      { session_id: sessionId, user_id: userId },
+      { onConflict: "session_id", ignoreDuplicates: true }
+    );
   if (error) reportError("[mfa] carrying the second factor across a switch failed", error.message);
 }

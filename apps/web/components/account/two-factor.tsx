@@ -37,6 +37,8 @@ export function TwoFactor() {
   const [message, setMessage] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
+  const [stepUp, setStepUp] = useState(false);
+  const [stepUpCode, setStepUpCode] = useState("");
   const { session } = useAuth();
   const token = session?.access_token ?? null;
 
@@ -142,7 +144,32 @@ export function TwoFactor() {
     if (!verified) return;
     setBusy(true);
     setError(null);
-    const { error: unenrollError } = await createClient().auth.mfa.unenroll({
+    const supabase = createClient();
+    // GoTrue lets only a session that passed the code remove a factor. A
+    // session carried over from the other site (migration 00088) has not
+    // in GoTrue's eyes, so it asks for the code once here first.
+    const { data: level } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (level?.currentLevel !== "aal2") {
+      const digits = stepUpCode.replace(/\s+/g, "");
+      if (!/^\d{6}$/.test(digits)) {
+        setBusy(false);
+        setStepUp(true);
+        if (stepUp) setError("Enter the 6-digit code from your authenticator app.");
+        return;
+      }
+      const { error: stepError } = await supabase.auth.mfa.challengeAndVerify({
+        factorId: verified.id,
+        code: digits,
+      });
+      if (stepError) {
+        setBusy(false);
+        setError("That code did not work. Try the current one.");
+        return;
+      }
+      setStepUp(false);
+      setStepUpCode("");
+    }
+    const { error: unenrollError } = await supabase.auth.mfa.unenroll({
       factorId: verified.id,
     });
     setBusy(false);
@@ -249,7 +276,27 @@ export function TwoFactor() {
                 Turn off two-factor sign-in
               </Button>
             </div>
-          ) : (
+          ) : null}
+          {verified && stepUp ? (
+            <div className="flex max-w-sm flex-wrap items-center gap-2">
+              <label htmlFor="step-up-code" className="w-full text-sm text-muted-foreground">
+                Enter the code from your authenticator app to turn it off.
+              </label>
+              <Input
+                id="step-up-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={7}
+                value={stepUpCode}
+                onChange={(event) => setStepUpCode(event.target.value)}
+                className="w-32 font-mono tracking-widest"
+              />
+              <Button variant="outline" disabled={busy} onClick={() => void turnOff()}>
+                Confirm
+              </Button>
+            </div>
+          ) : null}
+          {verified ? null : (
             <Button disabled={busy} onClick={() => void start()}>
               Set up two-factor sign-in
             </Button>

@@ -1,5 +1,6 @@
 import { authenticateSessionRequest, extractBearerToken } from "@/lib/api-auth";
 import { passedSecondFactor } from "@/lib/mfa-session";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { parseJsonBody } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
@@ -10,6 +11,14 @@ import {
   switchKeyConfigured,
 } from "@/lib/site-switch";
 import { SITE_HEADER, otherSite, parseSite, siteOrigin, twoSites } from "@/lib/site";
+
+/** Whether the asking session passed the second factor (its account's factors included). */
+async function switchingSessionPassed(token: string): Promise<boolean> {
+  const {
+    data: { user },
+  } = await createAdminClient().auth.getUser(token);
+  return !!user && (await passedSecondFactor(user, token));
+}
 
 /** Grants per account per minute: a person clicks a few; a script would ask for many. */
 const GRANTS_PER_MINUTE = 10;
@@ -48,7 +57,7 @@ export async function POST(request: Request) {
       userId: auth.userId,
       expires: Date.now() + GRANT_LIFETIME_MS,
       consent: parseCarriedConsent(body.consent),
-      secondFactor: await passedSecondFactor({ id: auth.userId }, extractBearerToken(request)!),
+      secondFactor: await switchingSessionPassed(extractBearerToken(request)!),
     })
   );
   start.searchParams.set("next", next);

@@ -468,12 +468,22 @@ describe("second factor carried by a site switch", () => {
     expect(await owesSecondFactor(user.user!, token)).toBe(false);
     expect(await ownRow()).toHaveLength(1);
 
+    const trusted = async () =>
+      (
+        await admin
+          .from("mfa_trusted_sessions")
+          .select("session_id", { count: "exact", head: true })
+          .eq("user_id", userId)
+      ).count;
+
+    // Removing the authenticator takes the carried trust with it.
+    await admin.auth.admin.mfa.deleteFactor({ id: factor!.id, userId });
+    expect(await trusted()).toBe(0);
+
     // Signing out ends the session and its trust with it.
+    await trustSession(token, userId);
+    expect(await trusted()).toBe(1);
     await other.auth.signOut();
-    const { count } = await admin
-      .from("mfa_trusted_sessions")
-      .select("session_id", { count: "exact", head: true })
-      .eq("user_id", userId);
-    expect(count).toBe(0);
+    expect(await trusted()).toBe(0);
   });
 });
