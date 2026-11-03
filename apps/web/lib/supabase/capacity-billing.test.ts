@@ -672,6 +672,49 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     });
   });
 
+  it("records the refund again when the order for unapplied domains is delivered again", async () => {
+    // The first delivery recorded the purchase, then failed to record the refund.
+    mockFns.rpc.mockResolvedValueOnce({
+      data: { status: "duplicate", kind: "domain_increase", subscription_id: null, synced: false },
+      error: null,
+    });
+
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "domains", kind: "monthly_add" },
+      { id: "order_domains", units: 1, total_amount: 300 }
+    );
+
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { order: "order_domains" },
+      reason: "addon_not_applied",
+      userId: "user_1",
+      teamId: null,
+    });
+  });
+
+  it("records nothing for a deleted account's add-on Polar has ended since its first read", async () => {
+    mockFns.rpc.mockResolvedValue({ data: { status: "no_account" }, error: null });
+    mockFns.subscriptionsGet
+      .mockResolvedValueOnce({ id: "sub_race", status: "active" })
+      .mockResolvedValueOnce({
+        id: "sub_race",
+        status: "canceled",
+        ended_at: "2026-11-03T10:00:00Z",
+      });
+
+    await applyCapacityWebhookEvent(
+      "subscription.updated",
+      USER,
+      { resource: "requests", kind: "monthly" },
+      { id: "sub_race" }
+    );
+
+    expect(mockFns.recordRefund).not.toHaveBeenCalled();
+    expect(mockFns.subscriptionsRevoke).not.toHaveBeenCalled();
+  });
+
   it("records a refund for paid domains with no subscription left to add them to", async () => {
     mockFns.rpc.mockResolvedValueOnce({
       data: { status: "ok", kind: "domain_increase", unapplied: true, synced: true },

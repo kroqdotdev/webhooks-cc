@@ -477,7 +477,18 @@ async function applyPlanSubscription(
     // changes nothing. A live one would charge every month for nobody: it
     // ends, and what it charged goes back (lib/billing/refunds.ts).
     const orphanId = asNonEmptyString(data.id);
-    if (orphanId && LIVE_STATUSES.has(String(data.status)) && !asNonEmptyString(data.ended_at)) {
+    // Read again before acting: the copy the event was applied from may
+    // predate the deletion's own revoke.
+    const now =
+      orphanId && LIVE_STATUSES.has(String(data.status)) && !asNonEmptyString(data.ended_at)
+        ? asRecord(await createPolarClient().subscriptions.get(orphanId))
+        : null;
+    if (
+      orphanId &&
+      now &&
+      LIVE_STATUSES.has(String(now.status)) &&
+      !asNonEmptyString(now.ended_at)
+    ) {
       // Recorded first: once revoked, a redelivery reads it as ended and
       // would never record it.
       await recordRefund({

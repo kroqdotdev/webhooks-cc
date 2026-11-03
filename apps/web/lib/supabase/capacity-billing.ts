@@ -1074,6 +1074,9 @@ async function applySubscriptionEvent(
     // and what it charged goes back, recorded before the revoke so a
     // failure is retried with the webhook.
     if (ended || asNonEmptyString(subscription.ended_at)) return;
+    // Read again: the copy above may predate the deletion's own revoke.
+    const now = asRecord(await createPolarClient().subscriptions.get(subscriptionId));
+    if (!now || addonStatus(now) === null || asNonEmptyString(now.ended_at)) return;
     await refundFor(account, { subscription: subscriptionId }, "deleted_account");
     await revokeQuietly(subscriptionId);
     console.warn("[capacity] ended an add-on subscription for a deleted account");
@@ -1205,7 +1208,14 @@ async function applyPaidOrder(
   }
   if (granted?.kind !== spec.increase || granted.synced === true) return;
   const subscriptionId = asNonEmptyString(granted.subscription_id);
-  if (!subscriptionId) return;
+  if (!subscriptionId) {
+    // A redelivery of the order above whose refund was not recorded (the
+    // purchase was, so it reads as a duplicate): record it now.
+    if (granted.status === "duplicate" && granted.kind === "domain_increase") {
+      await refundFor(account, { order: orderId }, "addon_not_applied");
+    }
+    return;
+  }
   await syncIncreaseToPolar(account, orderId, subscriptionId);
   // The plan may have been set to end since the checkout was opened.
   await reconcileAddonsWithPlan(account);
@@ -1264,6 +1274,11 @@ async function syncIncreaseToPolar(
         await markSubscription(row.id, { cancel_at_period_end: true });
       }
     }
+  } else {
+    // Ended before this increase could ride on it (a redelivery after the
+    // end's own event, or no row at all): what the order added is settled
+    // as above, once.
+    await settleEndedIncrease(account, orderId);
   }
 
   const { error: syncError } = await admin

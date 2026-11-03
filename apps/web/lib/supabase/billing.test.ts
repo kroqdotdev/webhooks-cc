@@ -344,6 +344,28 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
     );
   });
 
+  test("records nothing when Polar ended the subscription since the event was read", async () => {
+    // The account deletion's own revoke landed between the two reads.
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [{ data: null }] })
+    );
+    let reads = 0;
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: {
+        get: async () =>
+          ++reads === 1
+            ? subscriptionEvent()
+            : subscriptionEvent({ status: "canceled", ended_at: "2026-08-02T00:00:00Z" }),
+        revoke: polarRevoke,
+      },
+    });
+
+    await apply("subscription.updated", subscriptionEvent());
+
+    expect(polarRevoke).not.toHaveBeenCalled();
+    expect(mockFns.recordRefund).not.toHaveBeenCalled();
+  });
+
   test("leaves alone a late event for the subscription the account deletion ended", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "users:select": [{ data: null }] })

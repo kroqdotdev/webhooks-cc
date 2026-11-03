@@ -212,8 +212,21 @@ async function hold(
   });
 }
 
-async function fail(row: RefundRow, code: string, error?: unknown): Promise<void> {
-  await updateRow(row, { status: "failed", last_error: code });
+async function fail(
+  row: RefundRow,
+  code: string,
+  error?: unknown,
+  progress?: { refundIds: string[]; refundedCents: number }
+): Promise<void> {
+  // What this pass already refunded is kept, so the row never reads as
+  // nothing returned when some of it was.
+  await updateRow(row, {
+    status: "failed",
+    last_error: code,
+    ...(progress && progress.refundIds.length > 0
+      ? { refund_ids: progress.refundIds, refunded_cents: progress.refundedCents }
+      : {}),
+  });
   reportError(
     "[refunds] refund failed",
     error === undefined ? undefined : loggablePolarError(error),
@@ -316,7 +329,13 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   }
 
   if (!row.approved_at && lines.length > 0) {
-    const { maxCents } = refundSettings();
+    const { auto, maxCents } = refundSettings();
+    // Turned off since the row was recorded: nothing more goes out without
+    // a person.
+    if (!auto) {
+      await hold(row, "manual", lines, plannedCents);
+      return "held";
+    }
     if (plannedCents > maxCents) {
       await hold(row, "over_cap", lines, plannedCents);
       return "held";
@@ -354,8 +373,10 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
       for (const refund of succeeded) refundedCents += refund.amount;
       if (pending.length > 0) pendingAtPolar = true;
       if (succeeded.length > 0 || pending.length > 0) continue;
-      if (made.length > 0) {
-        await fail(row, "refund_failed_at_polar");
+      // Failed at Polar (a closed card, say): a person decides, and once
+      // they approve the row again it is tried once more.
+      if (made.length > 0 && !row.approved_at) {
+        await fail(row, "refund_failed_at_polar", undefined, { refundIds, refundedCents });
         return "failed";
       }
       if (!isRefundable(order)) continue;
@@ -400,11 +421,17 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
         if (isTransientPolarError(checkError)) {
           return retryLater(row, "polar_unavailable", "retry", checkError);
         }
-        await fail(row, polarErrorCode(error) ?? "refund_refused", error);
+        await fail(row, polarErrorCode(error) ?? "refund_refused", error, {
+          refundIds,
+          refundedCents,
+        });
         return "failed";
       }
       if (now.refundable_amount === 0) continue;
-      await fail(row, polarErrorCode(error) ?? "refund_refused", error);
+      await fail(row, polarErrorCode(error) ?? "refund_refused", error, {
+        refundIds,
+        refundedCents,
+      });
       return "failed";
     }
   }

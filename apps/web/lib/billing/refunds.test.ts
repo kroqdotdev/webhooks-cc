@@ -445,6 +445,72 @@ describe("processRefund", () => {
     expect(lastUpdate()).not.toHaveProperty("status");
   });
 
+  it("holds a queued refund once automatic refunds are turned off", async () => {
+    mocks.settings.POLAR_AUTO_REFUNDS = false;
+
+    await expect(processRefund(row())).resolves.toBe("held");
+
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+    expect(lastUpdate()).toMatchObject({
+      status: "held",
+      hold_reason: "manual",
+      planned_cents: 2900,
+    });
+  });
+
+  it("still refunds a row a person approved while automatic refunds are off", async () => {
+    mocks.settings.POLAR_AUTO_REFUNDS = false;
+
+    await expect(
+      processRefund(
+        row({ approved_at: "2026-11-03T11:59:00Z", orders: [{ order_id: "ord_1", net: 2900 }] })
+      )
+    ).resolves.toBe("refunded");
+    expect(mocks.refundsCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps what a pass refunded when a later order fails", async () => {
+    mocks.orders = { a: order("a"), b: order("b", { refundable_amount: 400 }) };
+    mocks.refundsCreate.mockImplementationOnce(async (body: Record<string, unknown>) => {
+      const refund = {
+        id: "ref_a",
+        status: "succeeded",
+        amount: body.amount,
+        tax_amount: 725,
+        order_id: body.order_id,
+        metadata: body.metadata,
+      };
+      mocks.refunds.push(refund);
+      return refund;
+    });
+    mocks.refundsCreate.mockRejectedValueOnce({ statusCode: 400, code: "RefundDisputedPayment" });
+
+    await expect(processRefund(row({ target: "subscription:sub_2" }))).resolves.toBe("failed");
+    expect(lastUpdate()).toMatchObject({
+      status: "failed",
+      last_error: "RefundDisputedPayment",
+      refund_ids: ["ref_a"],
+      refunded_cents: 2900,
+    });
+  });
+
+  it("tries a refund that failed at Polar again once a person approved the row again", async () => {
+    mocks.refunds.push({
+      id: "ref_failed",
+      status: "failed",
+      amount: 2900,
+      order_id: "ord_1",
+      metadata: { [REFUND_METADATA_KEY]: "row_1" },
+    });
+
+    await expect(
+      processRefund(
+        row({ approved_at: "2026-11-03T11:59:00Z", orders: [{ order_id: "ord_1", net: 2900 }] })
+      )
+    ).resolves.toBe("refunded");
+    expect(mocks.refundsCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("tries again later when Polar is unavailable", async () => {
     mocks.refundsCreate.mockRejectedValueOnce({ statusCode: 503 });
 

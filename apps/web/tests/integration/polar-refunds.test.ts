@@ -32,6 +32,7 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 });
 
 import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
+import { applyCapacityWebhookEvent } from "@/lib/supabase/capacity-billing";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -243,6 +244,41 @@ describe("the refund queue", () => {
     expect(await refundRow(String(toDismiss.target))).toMatchObject({ status: "dismissed" });
   });
 
+  it("sends a failed row without orders back to be prepared, and lets a queued row be dismissed", async () => {
+    // Its orders could not be read (a token without orders:read, say).
+    const failed = await insertRow({
+      target: `order:approve_failed_${ts}`,
+      reason: "deleted_account",
+      status: "failed",
+      last_error: "order_lookup_refused",
+      attempts: 5,
+    });
+    const { data: requeued } = await admin.rpc("approve_polar_refund", { p_id: failed.id });
+    expect(requeued).toBe(true);
+    const back = await refundRow(String(failed.target));
+    expect(back).toMatchObject({ status: "held", attempts: 0, orders: null, last_error: null });
+    expect(back?.approved_at).toBeNull();
+
+    // Automatic refunds turned off with a row still queued, not leased.
+    const queued = await insertRow({
+      target: `order:dismiss_pending_${ts}`,
+      reason: "deleted_account",
+      status: "pending",
+    });
+    const { data: dismissed } = await admin.rpc("dismiss_polar_refund", { p_id: queued.id });
+    expect(dismissed).toBe(true);
+
+    // One a worker holds right now is not.
+    const leased = await insertRow({
+      target: `order:dismiss_leased_${ts}`,
+      reason: "deleted_account",
+      status: "pending",
+      lease_until: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const { data: refused } = await admin.rpc("dismiss_polar_refund", { p_id: leased.id });
+    expect(refused).toBe(false);
+  });
+
   it("keeps one row per target", async () => {
     await insertRow({ target: `order:unique_${ts}`, reason: "deleted_account", status: "held" });
     const { error } = await admin
@@ -371,6 +407,52 @@ describe("webhooks that record a refund", () => {
 
     expect(polarMocks.revoke).not.toHaveBeenCalled();
     expect(await refundRow(`subscription:${addon.id}`)).toBeNull();
+  });
+
+  it("a redelivered domain increase whose add-on ended before it was applied is held for review", async () => {
+    // The first delivery recorded the purchase and then failed; the add-on's
+    // end landed before the redelivery.
+    const userId = await createUser({ plan: "business", subscription_status: "active" });
+    const subscriptionId = `sub_domains_ended_${ts}`;
+    const orderId = `order_domains_ended_${ts}`;
+    targets.push(`order:${orderId}`);
+    const { error: subError } = await admin.from("capacity_subscriptions").insert({
+      user_id: userId,
+      kind: "domain_blocks",
+      polar_subscription_id: subscriptionId,
+      status: null,
+      units: 2,
+    });
+    if (subError) throw subError;
+    const { error: purchaseError } = await admin.from("capacity_purchases").insert({
+      polar_order_id: orderId,
+      user_id: userId,
+      kind: "domain_increase",
+      units: 1,
+      requests: 1,
+      polar_subscription_id: subscriptionId,
+      target_units: 2,
+    });
+    if (purchaseError) throw purchaseError;
+
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      { kind: "user", userId },
+      { resource: "domains", kind: "monthly_add" },
+      { id: orderId, units: 1, total_amount: 300, status: "paid" }
+    );
+
+    expect(await refundRow(`order:${orderId}`)).toMatchObject({
+      reason: "addon_ended",
+      user_id: userId,
+      status: "held",
+    });
+    const { data: purchase } = await admin
+      .from("capacity_purchases")
+      .select("synced_at")
+      .eq("polar_order_id", orderId)
+      .single();
+    expect(purchase?.synced_at).not.toBeNull();
   });
 
   it("an add-on order paid for a deleted team is held for review", async () => {

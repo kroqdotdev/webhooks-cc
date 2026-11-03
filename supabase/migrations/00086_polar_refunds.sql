@@ -108,7 +108,10 @@ $$;
 -- A person's decision on a held (or failed) row. Approving queues it for
 -- the worker with a fresh count of attempts, only once the worker noted
 -- which orders it would refund (orders), since an approval refunds exactly
--- those; dismissing closes it.
+-- those. A failed row without that list (its orders could not be read) goes
+-- back to held, for the worker to prepare it again. Dismissing closes a
+-- held or failed row, or a pending one no worker holds (automatic refunds
+-- turned off with rows still queued).
 create or replace function public.approve_polar_refund(p_id uuid)
 returns boolean
 language sql
@@ -116,16 +119,15 @@ security definer set search_path = ''
 as $$
   with approved as (
     update public.polar_refunds
-       set status = 'pending',
-           approved_at = now(),
+       set status = case when orders is null then 'held' else 'pending' end,
+           approved_at = case when orders is null then null else now() end,
            attempts = 0,
            next_attempt_at = now(),
            lease_until = null,
            last_error = null,
            updated_at = now()
      where id = p_id
-       and status in ('held', 'failed')
-       and orders is not null
+       and (status = 'failed' or (status = 'held' and orders is not null))
     returning 1
   )
   select exists (select 1 from approved);
@@ -143,7 +145,10 @@ as $$
            updated_at = now(),
            finished_at = now()
      where id = p_id
-       and status in ('held', 'failed')
+       and (
+         status in ('held', 'failed')
+         or (status = 'pending' and (lease_until is null or lease_until < now()))
+       )
     returning 1
   )
   select exists (select 1 from dismissed);
