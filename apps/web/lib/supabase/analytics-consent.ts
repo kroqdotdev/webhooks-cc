@@ -22,19 +22,26 @@ export async function getAccountAnalyticsConsent(
 }
 
 /**
- * Saves the choice on the account. Returns whether it changed, so an answer
+ * Saves the choice on the account. The time always moves, a repeat included:
+ * it is when the account was last told, which a browser compares its own
+ * unsent choice with. Returns whether the choice itself changed, so an answer
  * repeated from another browser leaves no audit row.
  */
 export async function setAccountAnalyticsConsent(
   userId: string,
   consent: AccountAnalyticsConsent
 ): Promise<boolean> {
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data: before, error: readError } = await admin
+    .from("users")
+    .select("analytics_consent")
+    .eq("id", userId)
+    .maybeSingle();
+  if (readError) throw readError;
+  const { error } = await admin
     .from("users")
     .update({ analytics_consent: consent, analytics_consent_at: new Date().toISOString() })
-    .eq("id", userId)
-    .or(`analytics_consent.is.null,analytics_consent.neq.${consent}`)
-    .select("id");
+    .eq("id", userId);
   if (error) throw error;
-  return (data?.length ?? 0) > 0;
+  return before?.analytics_consent !== consent;
 }

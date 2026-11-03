@@ -19,10 +19,11 @@ import {
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
 
-async function currentAccessToken(): Promise<string | null> {
+/** The session's token, only while it is still the given account's. */
+async function currentAccessToken(userId: string): Promise<string | null> {
   try {
     const { data } = await createClient().auth.getSession();
-    return data.session?.access_token ?? null;
+    return data.session?.user.id === userId ? data.session.access_token : null;
   } catch {
     return null;
   }
@@ -59,7 +60,7 @@ export function CookieConsent() {
       applyCarriedConsent();
       void (async () => {
         if (userId) {
-          const token = await currentAccessToken();
+          const token = await currentAccessToken(userId);
           if (token) await syncAccountConsent(userId, token);
         }
         if (cancelled) return;
@@ -135,10 +136,11 @@ export function CookieConsent() {
     openedByHand.current = false;
     setOpen(false);
     if (userId) {
-      const at = Date.now();
-      void currentAccessToken().then((token) => {
-        if (token) void saveAccountConsent(userId, token, accept ? "granted" : "denied", at);
-      });
+      void saveAccountConsent(
+        userId,
+        () => currentAccessToken(userId),
+        accept ? "granted" : "denied"
+      );
     }
   };
 

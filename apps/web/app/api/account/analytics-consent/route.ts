@@ -32,7 +32,11 @@ export async function GET(request: Request) {
   try {
     const { consent, savedAt } = await getAccountAnalyticsConsent(auth.userId);
     return applyRateLimitHeaders(
-      Response.json({ consent, savedAt }, { headers: { "Cache-Control": "no-store" } }),
+      // `now` lets the browser compare its own clock with ours.
+      Response.json(
+        { consent, savedAt, now: new Date().toISOString() },
+        { headers: { "Cache-Control": "no-store" } }
+      ),
       rateLimit
     );
   } catch (error) {

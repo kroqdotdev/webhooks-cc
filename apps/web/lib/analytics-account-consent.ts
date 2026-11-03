@@ -126,7 +126,6 @@ function clearUnsaved(value: Unsaved) {
 }
 
 async function put(accessToken: string, value: Unsaved): Promise<boolean> {
-  writeUnsaved(value);
   try {
     const response = await fetch(ROUTE, {
       method: "PUT",
@@ -144,33 +143,50 @@ async function put(accessToken: string, value: Unsaved): Promise<boolean> {
 
 /**
  * Saves a choice on the account, after any save still on its way, so a
- * later click always lands last. Resolves to whether the account has it; one
- * that did not arrive is kept and sent again on the next signed-in page load.
+ * later click always lands last. The choice is kept in this browser at once,
+ * before the token is fetched or the request leaves, and only cleared once the
+ * account has it: one that never arrives (offline, no token, the page closed)
+ * is sent again on the next signed-in page load. Resolves to whether the
+ * account has it.
  */
 export function saveAccountConsent(
   userId: string,
-  accessToken: string,
+  accessToken: string | (() => Promise<string | null>),
   consent: Consent,
   at: number = Date.now()
 ): Promise<boolean> {
-  const run = saveQueue.then(() => put(accessToken, { userId, consent, at }));
-  saveQueue = run;
+  const value: Unsaved = { userId, consent, at };
+  writeUnsaved(value);
+  const run = saveQueue.then(async () => {
+    const token = typeof accessToken === "string" ? accessToken : await accessToken();
+    return token ? put(token, value) : false;
+  });
+  saveQueue = run.catch(() => false);
   return run;
 }
 
-async function readAccountConsent(
-  accessToken: string
-): Promise<{ consent: Consent | null; savedAt: number | null }> {
+async function readAccountConsent(accessToken: string): Promise<{
+  consent: Consent | null;
+  savedAt: number | null;
+  /** Our clock minus this browser's, to compare a time noted here with savedAt. */
+  offset: number;
+}> {
   const response = await fetch(ROUTE, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`analytics consent read: ${response.status}`);
-  const body = (await response.json()) as { consent?: unknown; savedAt?: unknown };
+  const receivedAt = Date.now();
+  const body = (await response.json()) as { consent?: unknown; savedAt?: unknown; now?: unknown };
   const consent = body.consent === "granted" || body.consent === "denied" ? body.consent : null;
   const savedAt = typeof body.savedAt === "string" ? Date.parse(body.savedAt) : NaN;
-  return { consent, savedAt: Number.isNaN(savedAt) ? null : savedAt };
+  const now = typeof body.now === "string" ? Date.parse(body.now) : NaN;
+  return {
+    consent,
+    savedAt: Number.isNaN(savedAt) ? null : savedAt,
+    offset: Number.isNaN(now) ? 0 : now - receivedAt,
+  };
 }
 
 async function sync(userId: string, accessToken: string, started: number): Promise<void> {
@@ -183,7 +199,7 @@ async function sync(userId: string, accessToken: string, started: number): Promi
   // account has been given a newer one since.
   const unsaved = readUnsaved(userId);
   if (unsaved) {
-    if (account.savedAt === null || account.savedAt < unsaved.at) {
+    if (account.savedAt === null || account.savedAt < unsaved.at + account.offset) {
       await saveAccountConsent(userId, accessToken, unsaved.consent, unsaved.at);
       return;
     }

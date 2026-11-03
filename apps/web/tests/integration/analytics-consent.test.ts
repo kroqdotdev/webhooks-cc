@@ -6,9 +6,9 @@ import {
 } from "@/lib/supabase/analytics-consent";
 
 /**
- * The analytics choice on the account (migration 00082): a save changes the
- * row only when the choice changes, so a repeat from another browser neither
- * moves the timestamp nor reaches the audit trail, and the CHECK refuses
+ * The analytics choice on the account (migration 00082): every save moves
+ * the time (a browser's unsent choice is compared with it), only a change
+ * reports as one (a repeat leaves no audit row), and the CHECK refuses
  * anything but granted or denied.
  */
 
@@ -37,7 +37,7 @@ async function account(): Promise<string> {
 }
 
 describe("account analytics consent", () => {
-  it("saves a change, ignores a repeat and refuses other values", async () => {
+  it("saves a change, times a repeat without reporting it, refuses other values", async () => {
     const userId = await account();
     await expect(getAccountAnalyticsConsent(userId)).resolves.toEqual({
       consent: null,
@@ -49,8 +49,11 @@ describe("account analytics consent", () => {
     expect(first.consent).toBe("granted");
     expect(first.savedAt).not.toBeNull();
 
+    await new Promise((resolve) => setTimeout(resolve, 5));
     expect(await setAccountAnalyticsConsent(userId, "granted")).toBe(false);
-    expect((await getAccountAnalyticsConsent(userId)).savedAt).toBe(first.savedAt);
+    const repeat = await getAccountAnalyticsConsent(userId);
+    expect(repeat.consent).toBe("granted");
+    expect(Date.parse(repeat.savedAt!)).toBeGreaterThan(Date.parse(first.savedAt!));
 
     expect(await setAccountAnalyticsConsent(userId, "denied")).toBe(true);
     expect((await getAccountAnalyticsConsent(userId)).consent).toBe("denied");

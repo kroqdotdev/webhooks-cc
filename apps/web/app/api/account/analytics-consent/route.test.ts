@@ -59,6 +59,7 @@ describe("/api/account/analytics-consent", () => {
     await expect(response.json()).resolves.toEqual({
       consent: "denied",
       savedAt: "2026-11-03T09:00:00.000Z",
+      now: expect.any(String),
     });
     expect(mocks.getAccountAnalyticsConsent).toHaveBeenCalledWith("user_1");
   });
@@ -69,6 +70,7 @@ describe("/api/account/analytics-consent", () => {
     await expect((await GET(new Request(URL))).json()).resolves.toEqual({
       consent: null,
       savedAt: null,
+      now: expect.any(String),
     });
   });
 

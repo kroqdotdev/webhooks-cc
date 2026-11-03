@@ -38,17 +38,26 @@ let saved: "granted" | "denied" | null = null;
 let savedAt: string | null = null;
 let readStatus = 200;
 let putStatus = 200;
+/** Our server's clock minus this browser's. */
+let serverOffset = 0;
+/** When set, a PUT waits for it. */
+let putGate: Promise<void> | null = null;
 /** When set, the account read waits for it. */
 let readGate: Promise<void> | null = null;
 const puts: unknown[] = [];
 const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
   if (init?.method === "PUT") {
     puts.push(JSON.parse(String(init.body)));
+    if (putGate) await putGate;
     return new Response("{}", { status: putStatus });
   }
   if (readGate) await readGate;
   if (readStatus !== 200) return new Response("{}", { status: readStatus });
-  return Response.json({ consent: saved, savedAt });
+  return Response.json({
+    consent: saved,
+    savedAt,
+    now: new Date(Date.now() + serverOffset).toISOString(),
+  });
 });
 vi.stubGlobal("fetch", fetchMock);
 
@@ -79,6 +88,8 @@ describe("syncAccountConsent", () => {
     readStatus = 200;
     putStatus = 200;
     readGate = null;
+    putGate = null;
+    serverOffset = 0;
     puts.length = 0;
     session.map.clear();
     local.map.clear();
@@ -237,5 +248,51 @@ describe("syncAccountConsent", () => {
     const second = saveAccountConsent("user-1", "token", "denied");
     await Promise.all([first, second]);
     expect(puts).toEqual([{ consent: "granted" }, { consent: "denied" }]);
+  });
+
+  it("keeps a choice made without a token and sends it on the next page load", async () => {
+    expect(await saveAccountConsent("user-1", async () => null, "denied")).toBe(false);
+    expect(puts).toEqual([]);
+    consent = "denied";
+
+    resetAccountConsentSync();
+    await syncAccountConsent("user-1", "token");
+    expect(puts).toEqual([{ consent: "denied" }]);
+    expect(local.map.size).toBe(0);
+  });
+
+  it("keeps the latest click even when the page closes behind a save in flight", async () => {
+    let open = () => {};
+    putGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    void saveAccountConsent("user-1", "token", "denied", 1_000);
+    void saveAccountConsent("user-1", "token", "granted", 2_000);
+    // Only the first request has left; the page could close here.
+    expect(JSON.parse(local.map.get("whk_consent_unsaved")!)).toMatchObject({
+      consent: "granted",
+      at: 2_000,
+    });
+    open();
+  });
+
+  it("compares an unsent choice with the account on the server's clock", async () => {
+    const now = Date.now();
+    // This browser's clock runs ten minutes fast.
+    serverOffset = -10 * 60_000;
+    putStatus = 500;
+    // Declined five minutes ago, noted on this browser's clock.
+    await saveAccountConsent("user-1", "token", "denied", now - 5 * 60_000);
+    consent = "denied";
+
+    resetAccountConsentSync();
+    putStatus = 200;
+    // Another browser accepted three minutes ago, noted on ours: the newer
+    // choice, though its raw timestamp is the smaller one.
+    saved = "granted";
+    savedAt = new Date(now + serverOffset - 3 * 60_000).toISOString();
+    await syncAccountConsent("user-1", "token");
+    expect(puts).toEqual([{ consent: "denied" }]);
+    expect(local.map.size).toBe(0);
   });
 });
