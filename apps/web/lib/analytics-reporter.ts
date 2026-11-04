@@ -8,6 +8,7 @@ import {
 } from "@/lib/analytics-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
+import { flushApiReads } from "@/lib/analytics-reads";
 
 /**
  * Server-side analytics reports (migration 00080): the accounts created in
@@ -198,6 +199,8 @@ export function dailyAccountEvents(day: string, row: DailyAccountRow): ServerEve
 
 async function sendDailyUsage(dayStart: Date): Promise<number> {
   const day = dayStart.toISOString().slice(0, 10);
+  // This process's read counts go in first, so the day is read with them.
+  await flushApiReads();
   const admin = createAdminClient();
   let sent = 0;
   for (let from = 0; ; from += PAGE_SIZE) {

@@ -14,7 +14,11 @@ import type { Json } from "@/lib/supabase/database";
  * handful of upserts a minute however busy the API is, and several processes
  * add up. A process that stops loses at most its last minute of counts, which
  * a count for analytics can afford. Nothing reaches PostHog from here: the
- * daily report (lib/analytics-reporter.ts) sends the day's totals.
+ * daily report (lib/analytics-reporter.ts) sends the day's totals, and flushes
+ * its own process's counts first. Counts that only reach the database after
+ * their day was reported (the database failing for longer than the report's
+ * settling time, or another process still holding them) are kept there but
+ * never sent: a day is reported once, under ids PostHog will not take twice.
  */
 
 const FLUSH_MS = 60_000;
@@ -24,11 +28,17 @@ const MAX_KEYS = 20_000;
 type Via = "api_key" | "agent_token";
 
 const globalForReads = globalThis as unknown as {
-  __apiReads?: { counts: Map<string, number>; timer: NodeJS.Timeout | null; flushing: boolean };
+  __apiReads?: {
+    counts: Map<string, number>;
+    /** Keys taken by a flush still running; they come back if it fails. */
+    inFlight: number;
+    timer: NodeJS.Timeout | null;
+    flushing: boolean;
+  };
 };
 
 function state() {
-  globalForReads.__apiReads ??= { counts: new Map(), timer: null, flushing: false };
+  globalForReads.__apiReads ??= { counts: new Map(), inFlight: 0, timer: null, flushing: false };
   return globalForReads.__apiReads;
 }
 
@@ -54,7 +64,8 @@ export function countApiRead(input: {
   const key = `${input.userId}\t${day}\t${requestClient(input.via, input.userAgent)}`;
   const s = state();
   const current = s.counts.get(key);
-  if (current === undefined && s.counts.size >= MAX_KEYS) return;
+  // Keys a running flush holds count too, so a failed write can put them all back.
+  if (current === undefined && s.counts.size + s.inFlight >= MAX_KEYS) return;
   s.counts.set(key, (current ?? 0) + 1);
   if (!s.timer) {
     s.timer = setInterval(() => void flushApiReads(), FLUSH_MS);
@@ -81,14 +92,15 @@ export function takeApiReads(): ApiReadRow[] {
   return rows;
 }
 
-/** Puts counts back after a failed write, so the next flush tries them again. */
+/**
+ * Puts counts back after a failed write, so the next flush tries them again.
+ * No limit here: new keys were held back while these were in flight.
+ */
 function restore(rows: ApiReadRow[]): void {
   const s = state();
   for (const row of rows) {
     const key = `${row.user_id}\t${row.day}\t${row.client}`;
-    const current = s.counts.get(key);
-    if (current === undefined && s.counts.size >= MAX_KEYS) continue;
-    s.counts.set(key, (current ?? 0) + row.reads);
+    s.counts.set(key, (s.counts.get(key) ?? 0) + row.reads);
   }
 }
 
@@ -98,6 +110,7 @@ export async function flushApiReads(): Promise<void> {
   if (s.flushing || s.counts.size === 0) return;
   s.flushing = true;
   const rows = takeApiReads();
+  s.inFlight = rows.length;
   try {
     const { error } = await createAdminClient().rpc("analytics_add_api_reads", {
       p_rows: rows as unknown as Json,
@@ -107,6 +120,7 @@ export async function flushApiReads(): Promise<void> {
     restore(rows);
     reportError("[analytics] could not store API read counts", error);
   } finally {
+    s.inFlight = 0;
     s.flushing = false;
   }
 }

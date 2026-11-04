@@ -67,6 +67,21 @@ describe("flushApiReads", () => {
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 
+  it("holds back new keys while a flush is out, and puts every taken count back", async () => {
+    let fail!: (value: { error: { message: string } }) => void;
+    rpc.mockReturnValueOnce(new Promise((resolve) => (fail = resolve)));
+    const read = { method: "GET", via: "api_key" as const, userAgent: "node", now };
+    for (let i = 0; i < 20_000; i++) countApiRead({ ...read, userId: `user-${i}` });
+    const flushing = flushApiReads();
+    // The counter is empty, but its keys are still spoken for.
+    countApiRead({ ...read, userId: "late" });
+    fail({ error: { message: "down" } });
+    await flushing;
+    const rows = takeApiReads();
+    expect(rows).toHaveLength(20_000);
+    expect(rows.some((row) => row.user_id === "late")).toBe(false);
+  });
+
   it("keeps the counts for the next flush when the write fails", async () => {
     rpc.mockResolvedValueOnce({ error: { message: "down" } });
     countApiRead({ method: "GET", userId: "user-1", via: "api_key", userAgent: "node", now });

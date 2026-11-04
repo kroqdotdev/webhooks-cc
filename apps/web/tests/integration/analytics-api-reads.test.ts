@@ -16,8 +16,9 @@ const admin = createClient(process.env.SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// A day no other suite writes to, far enough back that no account was created on it.
-const DAY = "2001-02-03";
+// A day no other suite writes to, no account was created on, and the nightly
+// cleanup (rows older than 35 days) never reaches.
+const DAY = "2099-02-03";
 const now = new Date(`${DAY}T12:00:00Z`);
 let userId: string;
 
