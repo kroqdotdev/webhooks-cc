@@ -35,8 +35,8 @@ function client(): PostHog | null {
         host: HOST,
         flushAt: 50,
         flushInterval: 5_000,
-        // The daily report queues a page of accounts at a time.
-        maxQueueSize: 5_000,
+        // The daily report queues a page of accounts at a time, a few events each.
+        maxQueueSize: 10_000,
         // The server's address says nothing about where the person is.
         disableGeoip: true,
       })
@@ -135,8 +135,12 @@ export function clientFromUserAgent(userAgent: string | null | undefined): strin
 /** Clients that name themselves; an agent token used through one is counted as that client. */
 const OWN_CLIENTS = new Set(["mcp_remote", "mcp", "cli", "python_sdk", "go_sdk", "typescript_sdk"]);
 
-/** The client of an audit row: the one its user agent names, else `agent` for agent tokens. */
-function auditClient(via: AuditRowForAnalytics["via"], userAgent: string | null): string {
+/**
+ * The client behind a request or audit row: the one its user agent names, else
+ * `agent` for agent tokens. Audit events and the daily read counts
+ * (lib/analytics-reads.ts) both name clients with it.
+ */
+export function requestClient(via: AuditRowForAnalytics["via"], userAgent: string | null): string {
   const client = clientFromUserAgent(userAgent);
   if (via === "agent_token" && !OWN_CLIENTS.has(client)) return "agent";
   return client;
@@ -205,7 +209,7 @@ export function auditAnalyticsEvent(row: AuditRowForAnalytics): ServerEvent | nu
   const properties: Record<string, unknown> = {
     outcome: row.outcome,
     via: row.via ?? "agent",
-    client: auditClient(row.via, row.user_agent),
+    client: requestClient(row.via, row.user_agent),
   };
   if (row.team_id) properties.team_id = row.team_id;
   for (const [key, value] of Object.entries(row.metadata)) {

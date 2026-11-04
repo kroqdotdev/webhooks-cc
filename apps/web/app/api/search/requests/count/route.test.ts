@@ -8,6 +8,7 @@ const mockFns = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api-auth", () => ({
+  countBearerRead: vi.fn(),
   extractBearerToken: mockFns.extractBearerToken,
   validateBearerTokenWithPlan: mockFns.validateBearerTokenWithPlan,
 }));

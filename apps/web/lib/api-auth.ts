@@ -9,6 +9,7 @@ import { validateApiKeyWithMetadata } from "./supabase/api-keys";
 import { markAgentTokenRequest } from "./agent/token-requests";
 import { reportError } from "@/lib/observability";
 import { owesSecondFactor } from "@/lib/mfa-session";
+import { countApiRead } from "@/lib/analytics-reads";
 
 export type { UserPlan } from "./entitlements";
 import type { UserPlan } from "./entitlements";
@@ -89,6 +90,20 @@ export function extractBearerToken(request: Request): string | null {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
   return authHeader.slice(7);
+}
+
+/**
+ * Counts a read made with an API key or agent token for the daily analytics
+ * report (lib/analytics-reads.ts); browser sessions are not counted.
+ */
+export function countBearerRead(request: Request, token: string, result: ApiKeyValidation): void {
+  if (!token.startsWith("whcc_")) return;
+  countApiRead({
+    method: request.method,
+    userAgent: request.headers.get("user-agent"),
+    userId: result.userId,
+    via: result.isAgentIssued ? "agent_token" : "api_key",
+  });
 }
 
 /** Validate an API key. Returns userId or null. */
@@ -174,6 +189,7 @@ export async function authenticateRequest(request: Request): Promise<AuthResult>
   }
 
   if (result.agentRegistrationId) markAgentTokenRequest(request);
+  countBearerRead(request, token, result);
   return {
     success: true,
     userId: result.userId,

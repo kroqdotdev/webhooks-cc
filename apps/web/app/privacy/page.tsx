@@ -352,11 +352,12 @@ export default function PrivacyPage() {
               SDKs, the MCP server or an agent: for example that you created an endpoint or a
               destination, changed plans, or invited a teammate, whether it worked, and which kind
               of client made the request. Once a day we also record each active account&apos;s usage
-              counts (how many requests and emails it captured) and what it has set up (how many
-              endpoints, destinations, domains, API keys and teams). These records are linked to
-              your account by its id, with your plan, never by your name or email address. They
-              never include the contents of your webhooks or emails, URLs, or secrets. They do not
-              depend on the choice in your browser, because nothing is stored there for them.
+              counts (how many requests and emails it captured, and how often each kind of client
+              read data through the API) and what it has set up (how many endpoints, destinations,
+              domains, API keys and teams). These records are linked to your account by its id, with
+              your plan, never by your name or email address. They never include the contents of
+              your webhooks or emails, URLs, or secrets. They do not depend on the choice in your
+              browser, because nothing is stored there for them.
             </p>
             <p>
               <span className="font-bold text-foreground">Legal basis.</span> Keeping an identifier
