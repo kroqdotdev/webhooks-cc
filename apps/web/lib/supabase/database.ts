@@ -1496,6 +1496,18 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      // API reads per account, UTC day and client (migration 00089).
+      analytics_api_reads: {
+        Row: {
+          user_id: string;
+          day: string;
+          client: string;
+          reads: number;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
       storage_deletions: {
         Row: {
           id: number;
@@ -2156,6 +2168,11 @@ export interface Database {
       analytics_daily_accounts: {
         Args: { p_day: string };
         Returns: Json;
+      };
+      // Adds counted API reads per account, day and client (migration 00089).
+      analytics_add_api_reads: {
+        Args: { p_rows: Json };
+        Returns: undefined;
       };
       append_endpoint_layout: {
         Args: { p_endpoint_id: string; p_layout: Json; p_expected_count: number };

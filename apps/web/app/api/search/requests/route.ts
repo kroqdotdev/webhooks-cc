@@ -1,4 +1,4 @@
-import { extractBearerToken, validateBearerTokenWithPlan } from "@/lib/api-auth";
+import { countBearerRead, extractBearerToken, validateBearerTokenWithPlan } from "@/lib/api-auth";
 import {
   checkRateLimitByKeyWithInfo,
   checkRateLimitWithInfo,
@@ -37,6 +37,7 @@ export async function GET(request: Request) {
     if (!validated) {
       return Response.json({ error: "Invalid token" }, { status: 401 });
     }
+    countBearerRead(request, token, validated);
     // Unowned, agent-issued keys (auth.md anonymous flow) have no user to scope
     // the search to. Rate-limit by IP BEFORE rejecting — the per-user limiter
     // below never runs for them, so without this an unclaimed key could hammer

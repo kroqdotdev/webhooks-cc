@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mockFns = vi.hoisted(() => ({
+  countBearerRead: vi.fn(),
   extractBearerToken: vi.fn(),
   validateBearerTokenWithPlan: vi.fn(),
   checkRateLimitByKeyWithInfo: vi.fn(),
@@ -8,6 +9,7 @@ const mockFns = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api-auth", () => ({
+  countBearerRead: mockFns.countBearerRead,
   extractBearerToken: mockFns.extractBearerToken,
   validateBearerTokenWithPlan: mockFns.validateBearerTokenWithPlan,
 }));
@@ -49,6 +51,10 @@ describe("GET /api/search/requests/count", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ count: 42 });
+    expect(mockFns.countBearerRead).toHaveBeenCalledWith(expect.any(Request), expect.any(String), {
+      userId: "user_123",
+      plan: "pro",
+    });
     expect(mockFns.countSearchRequestsForUser).toHaveBeenCalledWith({
       userId: "user_123",
       plan: "pro",
@@ -69,6 +75,7 @@ describe("GET /api/search/requests/count", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Invalid token" });
+    expect(mockFns.countBearerRead).not.toHaveBeenCalled();
   });
 
   test("returns 400 for invalid numeric params", async () => {

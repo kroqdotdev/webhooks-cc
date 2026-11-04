@@ -8,13 +8,15 @@ import {
 } from "@/lib/analytics-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
+import { flushApiReads } from "@/lib/analytics-reads";
 
 /**
  * Server-side analytics reports (migration 00080): the accounts created in
  * each hour (`account_signed_up`) and, for each UTC day, a usage snapshot per
  * account (`usage_daily`, plus `first_request_captured` on an account's first
- * day with captures) that also brings its person properties up to date.
- * Webhook traffic reaches PostHog only as these daily counts.
+ * day with captures, and `api_reads_daily` for each client it read through,
+ * from lib/analytics-reads.ts) that also brings its person properties up to
+ * date. Webhook traffic and API calls reach PostHog only as these daily counts.
  *
  * Each period is claimed in analytics_report_runs before it is sent, so
  * several processes never send it twice, and released again when reading it
@@ -116,6 +118,9 @@ export interface DailyAccountRow {
   endpoints_with_traffic: number;
   first_capture: boolean;
   audited_actions: number;
+  api_reads: number;
+  /** Reads per client name, from analytics_api_reads. */
+  api_reads_by_client: Record<string, number> | null;
   endpoints_count: number;
   email_endpoints_count: number;
   layout_endpoints_count: number;
@@ -126,7 +131,10 @@ export interface DailyAccountRow {
   teams_count: number;
 }
 
-/** The events for one account's day: its usage, and its first capture when it was that day. */
+/**
+ * The events for one account's day: its usage, its reads per client, and its
+ * first capture when it was that day.
+ */
 export function dailyAccountEvents(day: string, row: DailyAccountRow): ServerEvent[] {
   const timestamp = new Date(`${day}T23:59:59.000Z`);
   const counts = (value: number | string) => Number(value);
@@ -142,6 +150,7 @@ export function dailyAccountEvents(day: string, row: DailyAccountRow): ServerEve
       bytes: counts(row.bytes),
       endpoints_with_traffic: counts(row.endpoints_with_traffic),
       audited_actions: counts(row.audited_actions),
+      api_reads: counts(row.api_reads ?? 0),
     },
     set: {
       plan: row.plan,
@@ -162,22 +171,36 @@ export function dailyAccountEvents(day: string, row: DailyAccountRow): ServerEve
     },
     setOnce: { signed_up_at: row.signed_up_at },
   };
-  if (!row.first_capture) return [usage];
-  return [
-    usage,
-    {
+  const events = [usage];
+  // One event per client, so a chart can sum reads broken down by client
+  // next to the audit events, which carry the same client names.
+  for (const [client, reads] of Object.entries(row.api_reads_by_client ?? {}).sort()) {
+    if (!(counts(reads) > 0)) continue;
+    events.push({
+      distinctId: row.user_id,
+      event: "api_reads_daily",
+      timestamp,
+      uuid: stableEventUuid(`api-reads:${row.user_id}:${day}:${client}`),
+      properties: { day, client, reads: counts(reads) },
+    });
+  }
+  if (row.first_capture) {
+    events.push({
       distinctId: row.user_id,
       event: "first_request_captured",
       timestamp,
       uuid: stableEventUuid(`first-capture:${row.user_id}`),
       properties: { day },
       setOnce: { first_capture_day: day },
-    },
-  ];
+    });
+  }
+  return events;
 }
 
 async function sendDailyUsage(dayStart: Date): Promise<number> {
   const day = dayStart.toISOString().slice(0, 10);
+  // This process's read counts go in first, so the day is read with them.
+  await flushApiReads();
   const admin = createAdminClient();
   let sent = 0;
   for (let from = 0; ; from += PAGE_SIZE) {

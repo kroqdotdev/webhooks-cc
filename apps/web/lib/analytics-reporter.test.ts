@@ -40,6 +40,8 @@ describe("dailyAccountEvents", () => {
     endpoints_with_traffic: 2,
     first_capture: false,
     audited_actions: 3,
+    api_reads: 0,
+    api_reads_by_client: {},
     endpoints_count: 4,
     email_endpoints_count: 1,
     layout_endpoints_count: 0,
@@ -63,6 +65,26 @@ describe("dailyAccountEvents", () => {
     const events = dailyAccountEvents("2026-11-01", { ...row, first_capture: true });
     expect(events.map((e) => e.event)).toEqual(["usage_daily", "first_request_captured"]);
     expect(events[1].uuid).not.toBe(events[0].uuid);
+  });
+
+  it("sends the day's reads in total and one event per client", () => {
+    const events = dailyAccountEvents("2026-11-01", {
+      ...row,
+      api_reads: 7,
+      api_reads_by_client: { python_sdk: 5, cli: "2" as unknown as number, mcp: 0 },
+      first_capture: true,
+    });
+    expect(events.map((e) => e.event)).toEqual([
+      "usage_daily",
+      "api_reads_daily",
+      "api_reads_daily",
+      "first_request_captured",
+    ]);
+    expect(events[0].properties?.api_reads).toBe(7);
+    expect(events[1].properties).toEqual({ day: "2026-11-01", client: "cli", reads: 2 });
+    expect(events[2].properties).toEqual({ day: "2026-11-01", client: "python_sdk", reads: 5 });
+    expect(events[1].timestamp?.toISOString()).toBe("2026-11-01T23:59:59.000Z");
+    expect(new Set(events.map((e) => e.uuid)).size).toBe(4);
   });
 
   it("reads bigint counts that arrive as strings", () => {

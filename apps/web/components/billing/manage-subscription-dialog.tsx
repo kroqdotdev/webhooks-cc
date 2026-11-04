@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { trackSubscriptionCancelled, trackSubscriptionReactivated } from "@/lib/analytics";
+import { trackSubscriptionCanceled, trackSubscriptionReactivated } from "@/lib/analytics";
 
 export function ManageSubscriptionDialog({
   accessToken,
@@ -66,7 +66,7 @@ export function ManageSubscriptionDialog({
     setError(null);
     try {
       await cancelBillingSubscription(accessToken);
-      trackSubscriptionCancelled();
+      trackSubscriptionCanceled();
       await onUpdated?.();
       setConfirmCancelOpen(false);
       setOpen(false);

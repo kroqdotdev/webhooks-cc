@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.1";
+export const APP_VERSION = "0.62.2";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.62.2",
+    date: "2026-11-04",
+    title: "API Read Counts in Usage Analytics",
+    track: "web",
+    items: [
+      "The daily usage counts now include how often each kind of client (CLI, SDKs, MCP servers) read data through the API, counted per day and never per call. The privacy policy says so",
+    ],
+  },
   {
     version: "0.62.1",
     date: "2026-11-03",

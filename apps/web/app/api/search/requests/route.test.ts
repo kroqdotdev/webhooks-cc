@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mockFns = vi.hoisted(() => ({
+  countBearerRead: vi.fn(),
   extractBearerToken: vi.fn(),
   validateBearerTokenWithPlan: vi.fn(),
   checkRateLimitByKeyWithInfo: vi.fn(),
@@ -8,6 +9,7 @@ const mockFns = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api-auth", () => ({
+  countBearerRead: mockFns.countBearerRead,
   extractBearerToken: mockFns.extractBearerToken,
   validateBearerTokenWithPlan: mockFns.validateBearerTokenWithPlan,
 }));
@@ -80,6 +82,10 @@ describe("GET /api/search/requests", () => {
       },
     ]);
 
+    expect(mockFns.countBearerRead).toHaveBeenCalledWith(expect.any(Request), expect.any(String), {
+      userId: "user_123",
+      plan: "free",
+    });
     expect(mockFns.searchRequestsForUser).toHaveBeenCalledWith({
       userId: "user_123",
       plan: "free",
@@ -104,6 +110,7 @@ describe("GET /api/search/requests", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Invalid token" });
     expect(mockFns.searchRequestsForUser).not.toHaveBeenCalled();
+    expect(mockFns.countBearerRead).not.toHaveBeenCalled();
   });
 
   test("returns 401 when the header is missing", async () => {

@@ -13,7 +13,7 @@ export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
 // Privacy policy, terms, and the subprocessor list usually change together.
 const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
 // The privacy policy alone: retention on Business and Team Business.
-const PRIVACY_UPDATED = new Date("2026-11-03T00:00:00.000Z");
+const PRIVACY_UPDATED = new Date("2026-11-04T00:00:00.000Z");
 
 // The staleness pass over the marketing pages: Python and Go SDKs, destinations,
 // stored attachments, mailhooks.cc links, Devin Desktop in the MCP setup.

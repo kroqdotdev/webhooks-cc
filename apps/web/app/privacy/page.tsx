@@ -28,7 +28,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: November 3, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 4, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -352,11 +352,12 @@ export default function PrivacyPage() {
               SDKs, the MCP server or an agent: for example that you created an endpoint or a
               destination, changed plans, or invited a teammate, whether it worked, and which kind
               of client made the request. Once a day we also record each active account&apos;s usage
-              counts (how many requests and emails it captured) and what it has set up (how many
-              endpoints, destinations, domains, API keys and teams). These records are linked to
-              your account by its id, with your plan, never by your name or email address. They
-              never include the contents of your webhooks or emails, URLs, or secrets. They do not
-              depend on the choice in your browser, because nothing is stored there for them.
+              counts (how many requests and emails it captured, and how often each kind of client
+              read data through the API) and what it has set up (how many endpoints, destinations,
+              domains, API keys and teams). These records are linked to your account by its id, with
+              your plan, never by your name or email address. They never include the contents of
+              your webhooks or emails, URLs, or secrets. They do not depend on the choice in your
+              browser, because nothing is stored there for them.
             </p>
             <p>
               <span className="font-bold text-foreground">Legal basis.</span> Keeping an identifier

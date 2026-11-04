@@ -45,8 +45,8 @@ export function trackUpgradeCompleted() {
   capture("upgrade_completed");
 }
 
-export function trackSubscriptionCancelled() {
-  capture("subscription_cancelled");
+export function trackSubscriptionCanceled() {
+  capture("subscription_canceled");
 }
 
 export function trackSubscriptionReactivated() {
