@@ -39,7 +39,6 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Captured email with large attachments is parsed faster",
     ],
   },
-
   {
     version: "0.62.4",
     date: "2026-11-05",

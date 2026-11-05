@@ -17,8 +17,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use mail_parser::{
-    AddressList, Message, MessageParser, MessagePart, MessageRef, PartKind, PartRole, TextList,
-    html_to_text,
+    AddressList, Message, MessageParser, MessagePart, MessageRef, PartId, PartKind, PartRole,
+    TextList, html_to_text,
 };
 use serde_json::{Map, Value, json};
 
@@ -133,14 +133,15 @@ pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
     doc.insert("text_truncated".into(), Value::Bool(text_truncated));
     doc.insert("text_from_html".into(), Value::Bool(text_from_html));
 
-    let (html, html_truncated) = html_body(root);
+    let named_html = named_alternative_html(root);
+    let (html, html_truncated) = html_body(root, &named_html);
     doc.insert("html".into(), json!(html));
     doc.insert("html_truncated".into(), Value::Bool(html_truncated));
 
     let mut attachments = Vec::new();
     let mut attachment_contents = Vec::new();
     let mut attachment_count = 0usize;
-    for part in attachment_parts(root) {
+    for part in attachment_parts(root).filter(|part| !named_html.contains(&part.id())) {
         attachment_count += 1;
         if attachment_count > MAX_ATTACHMENTS {
             break;
@@ -354,13 +355,19 @@ fn text_body(message: MessageRef<'_>) -> (String, bool, bool) {
 }
 
 /// Real HTML parts only; plain-text mail has no HTML (the text parts 1.0
-/// copies into the HTML body as stand-ins are skipped).
-fn html_body(message: MessageRef<'_>) -> (Option<String>, bool) {
+/// copies into the HTML body as stand-ins are skipped). `named` are the parts
+/// from `named_alternative_html`, read as the HTML body.
+fn html_body(message: MessageRef<'_>, named: &[PartId]) -> (Option<String>, bool) {
     let mut joined = String::new();
-    for part in message.html_body() {
-        if !matches!(part.kind(), PartKind::Html) {
-            continue;
-        }
+    let parts = message
+        .html_body()
+        .filter(|part| matches!(part.kind(), PartKind::Html))
+        .chain(
+            named
+                .iter()
+                .filter_map(|id| message.parts().find(|p| p.id() == *id)),
+        );
+    for part in parts {
         let Some(html) = part.text() else {
             continue;
         };
@@ -377,6 +384,35 @@ fn html_body(message: MessageRef<'_>) -> (Option<String>, bool) {
     }
     let (html, cut) = truncate_bytes(&clean(&joined), MAX_PART_BYTES);
     (Some(html), cut)
+}
+
+/// HTML versions of a `multipart/alternative` that RFC 8621 turns into
+/// attachments because they carry a file name, when the HTML body has no
+/// HTML otherwise. Mail clients still show such a part as the message and
+/// 0.11 read it as the HTML body, so it stays the HTML body (and is not
+/// listed as an attachment). `Content-Disposition: attachment` still means
+/// an attachment.
+fn named_alternative_html(message: MessageRef<'_>) -> Vec<PartId> {
+    if message
+        .html_body()
+        .any(|part| matches!(part.kind(), PartKind::Html))
+    {
+        return Vec::new();
+    }
+    message
+        .parts()
+        .filter(|part| {
+            matches!(part.kind(), PartKind::Html)
+                && part.is_attachment()
+                && part
+                    .parent()
+                    .is_some_and(|parent| parent.is_content_type("multipart", "alternative"))
+                && !part
+                    .content_disposition()
+                    .is_some_and(|d| d.is_attachment())
+        })
+        .map(|part| part.id())
+        .collect()
 }
 
 /// The parts listed as attachments, in document order: RFC 8621's
@@ -807,6 +843,25 @@ footer\r\n\
         let parsed = parse_message_with(raw.as_bytes(), true);
         assert_eq!(parsed.doc["attachments"][0]["content_type"], "text/plain");
         assert_eq!(parsed.attachment_contents, vec![b"footer".to_vec()]);
+    }
+
+    #[test]
+    fn a_named_html_alternative_is_still_the_html_body() {
+        let raw = "Content-Type: multipart/alternative; boundary=a\r\n\
+\r\n\
+--a\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+plain\r\n\
+--a\r\n\
+Content-Type: text/html; name=page.html\r\n\
+\r\n\
+<p>html</p>\r\n\
+--a--\r\n";
+        let parsed = parse_message(raw.as_bytes());
+        assert_eq!(parsed.doc["html"], "<p>html</p>");
+        assert_eq!(parsed.doc["text"], "plain");
+        assert_eq!(parsed.doc["attachments"], json!([]));
     }
 
     #[test]
