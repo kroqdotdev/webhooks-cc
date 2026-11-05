@@ -32,7 +32,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Steadier Not Found Page",
     track: "web",
     items: [
-      "The page for a missing address that begins like a real one (such as /login or /dashboard followed by more letters) no longer reports a rendering error in the browser",
+      "The page for a missing address that begins like a real one (such as /login/anything) no longer reports a rendering error in the browser",
     ],
   },
   {
