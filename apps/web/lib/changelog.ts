@@ -36,6 +36,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "An email that forwards several messages as attachments lists each one, not one merged attachment",
       "A header whose name only looks like From or Subject (with a space or control character inside it) is no longer read as the real one",
       "The last characters of base64 attachments without padding, and of UTF-7 and UTF-16 text, are no longer dropped",
+      "A text or HTML part marked as an attachment, or a text part with a file name of its own, is listed with the attachments instead of being added to the message text",
       "Captured email with large attachments is parsed faster",
     ],
   },

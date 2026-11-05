@@ -17,8 +17,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use mail_parser::{
-    AddressList, Message, MessageParser, MessagePart, MessageRef, PartId, PartKind, PartRole,
-    TextList, html_to_text,
+    AddressList, Message, MessageParser, MessagePart, MessageRef, PartKind, PartRole, TextList,
+    html_to_text,
 };
 use serde_json::{Map, Value, json};
 
@@ -128,12 +128,12 @@ pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
     );
     doc.insert("in_reply_to".into(), references(root.in_reply_to()));
 
-    let (text, text_truncated, text_from_html) = text_body(root);
+    let named_html = named_alternative_html(root);
+    let (text, text_truncated, text_from_html) = text_body(root, &named_html);
     doc.insert("text".into(), Value::String(text));
     doc.insert("text_truncated".into(), Value::Bool(text_truncated));
     doc.insert("text_from_html".into(), Value::Bool(text_from_html));
 
-    let named_html = named_alternative_html(root);
     let (html, html_truncated) = html_body(root, &named_html);
     doc.insert("html".into(), json!(html));
     doc.insert("html_truncated".into(), Value::Bool(html_truncated));
@@ -141,7 +141,12 @@ pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
     let mut attachments = Vec::new();
     let mut attachment_contents = Vec::new();
     let mut attachment_count = 0usize;
-    for part in attachment_parts(root).filter(|part| !named_html.contains(&part.id())) {
+    // `named_html` is in document order, so a lookup is a binary search.
+    for part in attachment_parts(root).filter(|part| {
+        named_html
+            .binary_search_by_key(&part.id(), |p| p.id())
+            .is_err()
+    }) {
         attachment_count += 1;
         if attachment_count > MAX_ATTACHMENTS {
             break;
@@ -326,11 +331,16 @@ fn unfold(value: &str) -> String {
 /// All text parts in order (a multipart/mixed message can have several),
 /// joined by a blank line. For HTML-only mail this is mail-parser's HTML to
 /// text conversion, flagged with `text_from_html`. Images and other media in
-/// the text body are skipped.
-fn text_body(message: MessageRef<'_>) -> (String, bool, bool) {
+/// the text body are skipped. When the text body yields no text, the parts
+/// from `named_alternative_html` are converted instead, as for HTML-only mail.
+fn text_body(message: MessageRef<'_>, named: &[MessagePart<'_>]) -> (String, bool, bool) {
     let mut joined = String::new();
     let mut from_html = false;
-    for part in message.text_body() {
+    let mut parts: Vec<MessagePart<'_>> = message.text_body().collect();
+    if !parts.iter().any(|part| part.is_text()) {
+        parts.extend_from_slice(named);
+    }
+    for part in parts {
         let text = match part.kind() {
             PartKind::Text => part.text(),
             PartKind::Html => {
@@ -357,16 +367,12 @@ fn text_body(message: MessageRef<'_>) -> (String, bool, bool) {
 /// Real HTML parts only; plain-text mail has no HTML (the text parts 1.0
 /// copies into the HTML body as stand-ins are skipped). `named` are the parts
 /// from `named_alternative_html`, read as the HTML body.
-fn html_body(message: MessageRef<'_>, named: &[PartId]) -> (Option<String>, bool) {
+fn html_body(message: MessageRef<'_>, named: &[MessagePart<'_>]) -> (Option<String>, bool) {
     let mut joined = String::new();
     let parts = message
         .html_body()
         .filter(|part| matches!(part.kind(), PartKind::Html))
-        .chain(
-            named
-                .iter()
-                .filter_map(|id| message.parts().find(|p| p.id() == *id)),
-        );
+        .chain(named.iter().copied());
     for part in parts {
         let Some(html) = part.text() else {
             continue;
@@ -391,8 +397,8 @@ fn html_body(message: MessageRef<'_>, named: &[PartId]) -> (Option<String>, bool
 /// HTML otherwise. Mail clients still show such a part as the message and
 /// 0.11 read it as the HTML body, so it stays the HTML body (and is not
 /// listed as an attachment). `Content-Disposition: attachment` still means
-/// an attachment.
-fn named_alternative_html(message: MessageRef<'_>) -> Vec<PartId> {
+/// an attachment. In document order.
+fn named_alternative_html<'m>(message: MessageRef<'m>) -> Vec<MessagePart<'m>> {
     if message
         .html_body()
         .any(|part| matches!(part.kind(), PartKind::Html))
@@ -411,7 +417,6 @@ fn named_alternative_html(message: MessageRef<'_>) -> Vec<PartId> {
                     .content_disposition()
                     .is_some_and(|d| d.is_attachment())
         })
-        .map(|part| part.id())
         .collect()
 }
 
@@ -861,6 +866,42 @@ Content-Type: text/html; name=page.html\r\n\
         let parsed = parse_message(raw.as_bytes());
         assert_eq!(parsed.doc["html"], "<p>html</p>");
         assert_eq!(parsed.doc["text"], "plain");
+        assert_eq!(parsed.doc["attachments"], json!([]));
+
+        // With no text version, the text comes from that HTML.
+        let raw = "Content-Type: multipart/alternative; boundary=a\r\n\
+\r\n\
+--a\r\n\
+Content-Type: text/calendar\r\n\
+\r\n\
+BEGIN:VCALENDAR\r\n\
+--a\r\n\
+Content-Type: text/html; name=page.html\r\n\
+\r\n\
+<p>html</p>\r\n\
+--a--\r\n";
+        let parsed = parse_message(raw.as_bytes());
+        assert_eq!(parsed.doc["html"], "<p>html</p>");
+        assert_eq!(parsed.doc["text_from_html"], true);
+        assert!(parsed.doc["text"].as_str().unwrap().contains("html"));
+        assert_eq!(
+            parsed.doc["attachments"][0]["content_type"],
+            "text/calendar"
+        );
+        assert_eq!(parsed.doc["attachments"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn many_named_html_alternatives_are_all_the_html_body() {
+        let mut raw = String::from(
+            "Content-Type: multipart/alternative; boundary=a\r\n\r\n--a\r\nContent-Type: text/plain\r\n\r\nplain\r\n",
+        );
+        for _ in 0..9_000 {
+            raw.push_str("--a\r\nContent-Type: text/html; name=x\r\n\r\n<p>x</p>\r\n");
+        }
+        raw.push_str("--a--\r\n");
+        let parsed = parse_message_with(raw.as_bytes(), true);
+        assert!(parsed.doc["html"].as_str().unwrap().starts_with("<p>x</p>"));
         assert_eq!(parsed.doc["attachments"], json!([]));
     }
 
