@@ -16,7 +16,10 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
+use mail_parser::{
+    AddressList, Message, MessageParser, MessagePart, MessageRef, PartKind, PartRole, TextList,
+    html_to_text,
+};
 use serde_json::{Map, Value, json};
 
 use crate::handlers::webhook::{classify_body, strip_nul};
@@ -84,16 +87,22 @@ pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
         };
     };
 
+    let root = message.root();
     let headers = header_map(&message);
-    let subject = message.subject().map(|s| short(s, MAX_SUBJECT));
+    // 1.0 reads a blank Subject as `Some("")`; the document keeps null for
+    // it, as before, so forwarded JSON does not change shape.
+    let subject = root
+        .subject()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| short(s, MAX_SUBJECT));
 
     let mut addresses_truncated = false;
     for (key, value) in [
-        ("from", message.from()),
-        ("sender", message.sender()),
-        ("to", message.to()),
-        ("cc", message.cc()),
-        ("reply_to", message.reply_to()),
+        ("from", root.from()),
+        ("sender", root.sender()),
+        ("to", root.to()),
+        ("cc", root.cc()),
+        ("reply_to", root.reply_to()),
     ] {
         let (list, cut) = addresses(value);
         addresses_truncated |= cut;
@@ -107,34 +116,45 @@ pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
     doc.insert("subject".into(), json!(subject));
     doc.insert(
         "date".into(),
-        json!(
-            message
-                .date()
-                .filter(|d| d.is_valid())
-                .map(|d| d.to_rfc3339())
-        ),
+        json!(root.date().filter(|d| d.is_valid()).map(|d| d.to_rfc3339())),
     );
     doc.insert(
         "message_id".into(),
-        json!(message.message_id().map(|s| short(s, MAX_SHORT))),
+        json!(
+            root.message_id()
+                .filter(|s| !s.is_empty())
+                .map(|s| short(s, MAX_SHORT))
+        ),
     );
-    doc.insert("in_reply_to".into(), references(message.in_reply_to()));
+    doc.insert("in_reply_to".into(), references(root.in_reply_to()));
 
-    let (text, text_truncated, text_from_html) = text_body(&message);
-    doc.insert("text".into(), Value::String(text.clone()));
+    let (text, text_truncated, text_from_html) = text_body(root);
+    doc.insert("text".into(), Value::String(text));
     doc.insert("text_truncated".into(), Value::Bool(text_truncated));
     doc.insert("text_from_html".into(), Value::Bool(text_from_html));
 
-    let (html, html_truncated) = html_body(&message);
+    let (html, html_truncated) = html_body(root);
     doc.insert("html".into(), json!(html));
     doc.insert("html_truncated".into(), Value::Bool(html_truncated));
 
     let mut attachments = Vec::new();
     let mut attachment_contents = Vec::new();
-    for part in message.attachments().take(MAX_ATTACHMENTS) {
-        if keep_contents {
-            attachment_contents.push(part.contents().to_vec());
+    let mut attachment_count = 0usize;
+    for part in attachment_parts(root) {
+        attachment_count += 1;
+        if attachment_count > MAX_ATTACHMENTS {
+            break;
         }
+        // Bodies are decoded on access in 1.0: decode once when the bytes
+        // are kept, else measure without decoding.
+        let size = if keep_contents {
+            let contents = attachment_bytes(part);
+            let size = contents.len();
+            attachment_contents.push(contents);
+            size
+        } else {
+            attachment_len(part)
+        };
         let content_type = part.content_type().map(|ct| {
             let full = match ct.subtype() {
                 Some(sub) => format!("{}/{}", ct.ctype(), sub),
@@ -145,7 +165,7 @@ pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
         attachments.push(json!({
             "filename": part.attachment_name().map(|s| short(s, MAX_SHORT)),
             "content_type": content_type,
-            "size": part.contents().len(),
+            "size": size,
             "content_id": part.content_id().map(|s| short(s, MAX_SHORT)),
             "inline": part.content_disposition().is_some_and(|d| d.is_inline()),
         }));
@@ -153,7 +173,7 @@ pub fn parse_message_with(raw: &[u8], keep_contents: bool) -> ParsedEmail {
     doc.insert("attachments".into(), Value::Array(attachments));
     doc.insert(
         "attachments_truncated".into(),
-        Value::Bool(message.attachment_count() > MAX_ATTACHMENTS),
+        Value::Bool(attachment_count > MAX_ATTACHMENTS),
     );
 
     ParsedEmail {
@@ -255,25 +275,16 @@ fn header_block_end(raw: &[u8]) -> Option<usize> {
 /// decoded lossily, so a header with 8-bit garbage is kept rather than lost.
 fn header_map(message: &Message<'_>) -> HashMap<String, String> {
     let mut map: HashMap<String, String> = HashMap::new();
-    let Some(root) = message.parts.first() else {
-        return map;
-    };
-    let raw = message.raw_message();
     let mut total = 0usize;
-    for header in &root.headers {
-        let name = clean(header.name.as_str()).trim().to_ascii_lowercase();
+    for header in message.headers() {
+        let name = clean(header.raw_name()).trim().to_ascii_lowercase();
         if name.is_empty() || name.len() > MAX_HEADER_NAME {
             continue;
         }
         if !map.contains_key(&name) && map.len() >= MAX_HEADER_NAMES {
             continue;
         }
-        let start = header.offset_start as usize;
-        let end = (header.offset_end as usize).min(raw.len());
-        if start > end {
-            continue;
-        }
-        let value = clean(&unfold(&String::from_utf8_lossy(&raw[start..end])));
+        let value = clean(&unfold(&String::from_utf8_lossy(header.raw_value())));
         let existing = map.get(&name).map_or(0, String::len);
         let separator = usize::from(existing > 0);
         let room = MAX_HEADER_VALUE
@@ -313,24 +324,22 @@ fn unfold(value: &str) -> String {
 
 /// All text parts in order (a multipart/mixed message can have several),
 /// joined by a blank line. For HTML-only mail this is mail-parser's HTML to
-/// text conversion, flagged with `text_from_html`.
-fn text_body(message: &Message<'_>) -> (String, bool, bool) {
+/// text conversion, flagged with `text_from_html`. Images and other media in
+/// the text body are skipped.
+fn text_body(message: MessageRef<'_>) -> (String, bool, bool) {
     let mut joined = String::new();
     let mut from_html = false;
-    for i in 0..message.text_body_count() {
-        let Some(part) = message.text_part(i as u32) else {
-            continue;
-        };
-        let text = match &part.body {
-            PartType::Text(text) => Cow::Borrowed(text.as_ref()),
-            PartType::Html(_) => {
+    for part in message.text_body() {
+        let text = match part.kind() {
+            PartKind::Text => part.text(),
+            PartKind::Html => {
                 from_html = true;
-                match message.body_text(i) {
-                    Some(text) => text,
-                    None => continue,
-                }
+                part.text().map(|html| Cow::Owned(html_to_text(&html)))
             }
-            _ => continue,
+            _ => None,
+        };
+        let Some(text) = text else {
+            continue;
         };
         if !joined.is_empty() {
             joined.push_str("\n\n");
@@ -344,20 +353,23 @@ fn text_body(message: &Message<'_>) -> (String, bool, bool) {
     (text, cut, from_html)
 }
 
-/// Real HTML parts only; plain-text mail has no HTML.
-fn html_body(message: &Message<'_>) -> (Option<String>, bool) {
+/// Real HTML parts only; plain-text mail has no HTML (the text parts 1.0
+/// copies into the HTML body as stand-ins are skipped).
+fn html_body(message: MessageRef<'_>) -> (Option<String>, bool) {
     let mut joined = String::new();
-    for i in 0..message.html_body_count() {
-        if let Some(part) = message.html_part(i as u32)
-            && let PartType::Html(html) = &part.body
-        {
-            if !joined.is_empty() {
-                joined.push('\n');
-            }
-            joined.push_str(html);
-            if joined.len() > MAX_PART_BYTES {
-                break;
-            }
+    for part in message.html_body() {
+        if !matches!(part.kind(), PartKind::Html) {
+            continue;
+        }
+        let Some(html) = part.text() else {
+            continue;
+        };
+        if !joined.is_empty() {
+            joined.push('\n');
+        }
+        joined.push_str(&html);
+        if joined.len() > MAX_PART_BYTES {
+            break;
         }
     }
     if joined.is_empty() {
@@ -367,38 +379,72 @@ fn html_body(message: &Message<'_>) -> (Option<String>, bool) {
     (Some(html), cut)
 }
 
+/// The parts listed as attachments, in document order: RFC 8621's
+/// attachments, plus every other leaf that is not text shown in a body. 1.0
+/// follows RFC 8621, which leaves out an image, audio or video part shown in
+/// both bodies (a photo pasted into an Apple Mail message, say) and a text
+/// part of an alternative it discards; 0.11 listed both, and the user still
+/// wants to download the photo and see the text, so they stay listed.
+fn attachment_parts<'m>(message: MessageRef<'m>) -> impl Iterator<Item = MessagePart<'m>> {
+    message.parts().filter(|part| {
+        !part.is_multipart()
+            && (part.is_attachment() || !part.is_text() || part.role() == PartRole::Dropped)
+    })
+}
+
+/// An attachment's contents: the transfer-decoded bytes, except that a text
+/// or HTML part is converted to UTF-8 from its charset (as 0.11 stored them,
+/// and what the attachment parser expects), and a nested message is its raw
+/// message.
+fn attachment_bytes(part: MessagePart<'_>) -> Vec<u8> {
+    if let PartKind::Message(nested) = part.kind() {
+        return nested.raw().to_vec();
+    }
+    match part.text() {
+        Some(text) => text.into_owned().into_bytes(),
+        None => part.decoded().into_owned(),
+    }
+}
+
+/// `attachment_bytes(part).len()`, without decoding binary parts.
+fn attachment_len(part: MessagePart<'_>) -> usize {
+    if let PartKind::Message(nested) = part.kind() {
+        return nested.raw().len();
+    }
+    match part.text() {
+        Some(text) => text.len(),
+        None => part.decoded_len(),
+    }
+}
+
 /// At most `MAX_ADDRESSES` entries, each field capped. The flag says whether
-/// any entries were dropped.
-fn addresses(value: Option<&Address<'_>>) -> (Value, bool) {
-    let Some(address) = value else {
+/// any entries were dropped. Groups are flattened into their mailboxes.
+fn addresses(value: Option<AddressList<'_>>) -> (Value, bool) {
+    let Some(list) = value else {
         return (Value::Array(Vec::new()), false);
     };
-    let mut list = Vec::new();
+    let mut out = Vec::new();
     let mut truncated = false;
-    for (i, a) in address.iter().enumerate() {
+    for (i, mailbox) in list.mailboxes().enumerate() {
         if i == MAX_ADDRESSES {
             truncated = true;
             break;
         }
-        list.push(json!({
-            "name": a.name.as_deref().map(|s| short(s, MAX_SHORT)),
-            "address": a.address.as_deref().map(|s| short(s, MAX_SHORT)),
+        out.push(json!({
+            "name": mailbox.name().map(|s| short(s, MAX_SHORT)),
+            "address": mailbox.address().map(|s| short(s, MAX_SHORT)),
         }));
     }
-    (Value::Array(list), truncated)
+    (Value::Array(out), truncated)
 }
 
-fn references(value: &HeaderValue<'_>) -> Value {
-    let items: Vec<Value> = if let Some(list) = value.as_text_list() {
+fn references(value: Option<TextList<'_>>) -> Value {
+    let items = value.map_or_else(Vec::new, |list| {
         list.iter()
             .take(MAX_REFERENCES)
             .map(|s| Value::String(short(s, MAX_SHORT)))
             .collect()
-    } else if let Some(text) = value.as_text() {
-        vec![Value::String(short(text, MAX_SHORT))]
-    } else {
-        Vec::new()
-    };
+    });
     Value::Array(items)
 }
 
@@ -691,6 +737,155 @@ Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
         let text = parsed.doc["text"].as_str().unwrap();
         assert!(text.len() <= MAX_PART_BYTES);
         assert_eq!(parsed.doc["text_truncated"], true);
+    }
+
+    #[test]
+    fn keeps_a_blank_subject_null() {
+        let parsed = parse_message(b"Subject:   \r\nMessage-ID:\r\n\r\nhi\r\n");
+        assert_eq!(parsed.doc["subject"], Value::Null);
+        assert_eq!(parsed.doc["message_id"], Value::Null);
+    }
+
+    #[test]
+    fn lists_an_image_shown_inline_in_both_bodies() {
+        // Apple Mail's pasted photo: RFC 8621 keeps it out of the
+        // attachments, but it must stay downloadable.
+        let raw = "Subject: photo\r\n\
+Content-Type: multipart/mixed; boundary=\"A\"\r\n\
+\r\n\
+--A\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+Look:\r\n\
+--A\r\n\
+Content-Type: image/png; name=\"IMG_1.png\"\r\n\
+Content-Disposition: inline; filename=\"IMG_1.png\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+iVBORw0KGgo=\r\n\
+--A\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+Nice?\r\n\
+--A--\r\n";
+        let parsed = parse_message_with(raw.as_bytes(), true);
+        let attachments = parsed.doc["attachments"].as_array().unwrap();
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0]["filename"], "IMG_1.png");
+        assert_eq!(attachments[0]["inline"], true);
+        assert_eq!(attachments[0]["size"], 8);
+        assert_eq!(
+            parsed.attachment_contents,
+            vec![b"\x89PNG\r\n\x1a\n".to_vec()]
+        );
+        let text = parsed.doc["text"].as_str().unwrap();
+        assert!(text.contains("Look:") && text.contains("Nice?"));
+    }
+
+    #[test]
+    fn lists_a_text_part_no_body_shows() {
+        // The footer belongs to an alternative version that RFC 8621 drops.
+        let raw = "Content-Type: multipart/alternative; boundary=a\r\n\
+\r\n\
+--a\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+plain\r\n\
+--a\r\n\
+Content-Type: multipart/mixed; boundary=m\r\n\
+\r\n\
+--m\r\n\
+Content-Type: text/html\r\n\
+\r\n\
+<p>html</p>\r\n\
+--m\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+footer\r\n\
+--m--\r\n\
+--a--\r\n";
+        let parsed = parse_message_with(raw.as_bytes(), true);
+        assert_eq!(parsed.doc["attachments"][0]["content_type"], "text/plain");
+        assert_eq!(parsed.attachment_contents, vec![b"footer".to_vec()]);
+    }
+
+    #[test]
+    fn stores_attachments_decoded_and_text_ones_as_utf8() {
+        let raw = b"Subject: files\r\n\
+Content-Type: multipart/mixed; boundary=\"M\"\r\n\
+\r\n\
+--M\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+see files\r\n\
+--M\r\n\
+Content-Type: message/rfc822\r\n\
+Content-Disposition: attachment; filename=\"fwd.eml\"\r\n\
+\r\n\
+From: b@example.com\r\n\
+Subject: inner\r\n\
+\r\n\
+inner body\r\n\
+--M\r\n\
+Content-Type: text/csv; charset=iso-8859-1; name=\"a.csv\"\r\n\
+Content-Disposition: attachment; filename=\"a.csv\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+SvhyZ2VuO8VyaHVz\r\n\
+--M\r\n\
+Content-Type: application/octet-stream\r\n\
+Content-Disposition: attachment;\r\n filename=\r\n \"x.bin\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+YWJjZA\r\n\
+--M--\r\n";
+        let kept = parse_message_with(raw, true);
+        assert_eq!(
+            kept.attachment_contents,
+            vec![
+                b"From: b@example.com\r\nSubject: inner\r\n\r\ninner body".to_vec(),
+                "Jørgen;Århus".as_bytes().to_vec(),
+                // Unpadded base64: the last quantum is kept.
+                b"abcd".to_vec(),
+            ]
+        );
+        let attachments = kept.doc["attachments"].as_array().unwrap();
+        assert_eq!(attachments[0]["filename"], "fwd.eml");
+        assert_eq!(attachments[0]["content_type"], "message/rfc822");
+        assert_eq!(attachments[1]["filename"], "a.csv");
+        // A filename folded onto the line after `=`.
+        assert_eq!(attachments[2]["filename"], "x.bin");
+        for (listed, contents) in attachments.iter().zip(&kept.attachment_contents) {
+            assert_eq!(listed["size"], contents.len());
+        }
+        // Measuring without keeping the bytes gives the same document.
+        assert_eq!(parse_message(raw).doc, kept.doc);
+    }
+
+    #[test]
+    fn a_boundary_inside_a_line_does_not_end_the_part() {
+        let raw = "Content-Type: multipart/mixed; boundary=BND\r\n\
+\r\n\
+--BND\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+visit --BND for details\r\n\
+the rest\r\n\
+--BND--\r\n";
+        let parsed = parse_message(raw.as_bytes());
+        assert_eq!(parsed.doc["text"], "visit --BND for details\r\nthe rest");
+    }
+
+    #[test]
+    fn a_misspelled_header_name_is_not_read_as_the_real_one() {
+        let raw = "From: good@example.com\r\nFr om: evil@example.com\r\n\r\nhi\r\n";
+        let parsed = parse_message(raw.as_bytes());
+        assert_eq!(
+            parsed.doc["from"],
+            json!([{"name": null, "address": "good@example.com"}])
+        );
+        assert_eq!(parsed.headers["from"], "good@example.com");
+        assert_eq!(parsed.headers["fr om"], "evil@example.com");
     }
 
     #[test]
