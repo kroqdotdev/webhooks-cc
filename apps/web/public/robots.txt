@@ -13,6 +13,8 @@ Disallow: /api/
 Auth: https://webhooks.cc/auth.md
 
 Sitemap: https://webhooks.cc/sitemap.xml
+Sitemap: https://webhooks.cc/sitemap.txt
+Sitemap: https://webhooks.cc/sitemap.rss
 
 # Google has never downloaded a sitemap hosted on a .cc domain for us, while it
 # reads the same file from sauerdev.com (same owner) within seconds. That copy is

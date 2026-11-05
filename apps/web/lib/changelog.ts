@@ -33,6 +33,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "web",
     items: [
       "robots.txt on webhooks.cc and mailhooks.cc also lists a copy of each sitemap that Google reads, so new pages are found sooner",
+      "Each site's sitemap is also served as plain text (/sitemap.txt) and as an RSS feed (/sitemap.rss), two more formats search engines accept",
     ],
   },
   {
