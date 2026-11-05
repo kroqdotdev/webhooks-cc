@@ -59,7 +59,12 @@ const mailhooksRewrites = mailhooksHost
         (source) => ({ source, has: onMailhooks, destination: `/mailhooks${source}` })
       ),
       { source: "/robots.txt", has: onMailhooks, destination: "/mailhooks/robots.txt" },
-      { source: "/sitemap.xml", has: onMailhooks, destination: "/mailhooks/sitemap.xml" },
+      // The same sitemap as XML, plain text and RSS (lib/sitemap.ts).
+      ...["/sitemap.xml", "/sitemap.txt", "/sitemap.rss"].map((source) => ({
+        source,
+        has: onMailhooks,
+        destination: `/mailhooks${source}`,
+      })),
     ]
   : [];
 
