@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.2";
+export const APP_VERSION = "0.62.3";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.62.3",
+    date: "2026-11-05",
+    title: "Sitemaps Search Engines Can Read",
+    track: "web",
+    items: [
+      "robots.txt on webhooks.cc and mailhooks.cc also lists a copy of each sitemap that Google reads, so new pages are found sooner",
+    ],
+  },
   {
     version: "0.62.2",
     date: "2026-11-04",

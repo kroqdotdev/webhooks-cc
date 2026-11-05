@@ -15,6 +15,9 @@ export function GET() {
     "Disallow: /login",
     "",
     `Sitemap: ${mailhooksUrl("/sitemap.xml")}`,
+    // Google never downloads sitemaps hosted on our .cc domains but reads a copy on
+    // sauerdev.com (same owner); listing it here grants the cross-site permission.
+    "Sitemap: https://sauerdev.com/sitemaps/mailhooks.cc.xml",
     "",
   ].join("\n");
   return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
