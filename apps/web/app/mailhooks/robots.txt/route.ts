@@ -22,5 +22,13 @@ export function GET() {
     "Sitemap: https://sauerdev.com/sitemaps/mailhooks.cc.xml",
     "",
   ].join("\n");
-  return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      // Without its own header a static route gets s-maxage=31536000, and Cloudflare
+      // kept an old copy of this file for days (the proxy, which sets headers on
+      // other routes, skips robots.txt). Four hours, like webhooks.cc's robots.txt.
+      "Cache-Control": "public, max-age=14400",
+    },
+  });
 }
