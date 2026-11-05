@@ -41,6 +41,12 @@ interface SiteHeaderProps {
    * since a sticky offset counts from the frame, not the viewport.
    */
   top?: string;
+  /**
+   * The 404 page. It is prerendered once for every missing URL, so the header
+   * must not read the URL there: the browser's path would differ from the
+   * prerendered one and fail hydration.
+   */
+  notFound?: boolean;
 }
 
 function isActive(pathname: string, href: string): boolean {
@@ -49,9 +55,8 @@ function isActive(pathname: string, href: string): boolean {
 
 /**
  * Where the header is, for the sign-in and dashboard links. Whole path
- * segments only: the 404 page is prerendered, so a missing URL that merely
- * starts with "/login" or "/dashboard" would change the links in the browser
- * but not in the HTML, and fail hydration.
+ * segments only, so a page that merely starts with "/login" or "/dashboard"
+ * is not taken for one.
  */
 export function headerPlace(pathname: string): { onAuthPage: boolean; inApp: boolean } {
   return {
@@ -66,7 +71,7 @@ export function headerPlace(pathname: string): { onAuthPage: boolean; inApp: boo
  * context, the site links, and either a sign-in link or the account menu. It
  * sits below the fixed maintenance and announcement banners when they show.
  */
-export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) {
+export function SiteHeader({ children, compact = false, top, notFound = false }: SiteHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthenticated = useIsAuthenticated();
@@ -78,7 +83,9 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
 
   const siteLinks = site.key === "mailhooks" ? MAILHOOKS_LINKS : NAV_LINKS;
   const links = compact ? siteLinks.filter((link) => link.href !== "/blog") : siteLinks;
-  const { onAuthPage, inApp } = headerPlace(pathname);
+  // The path the links are chosen by: none on the 404 page (see notFound).
+  const navPath = notFound ? "" : pathname;
+  const { onAuthPage, inApp } = headerPlace(navPath);
 
   const handleSignOut = async () => {
     setOpen(false);
@@ -137,10 +144,10 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
             <Link
               key={link.href}
               href={link.href}
-              aria-current={isActive(pathname, link.href) ? "page" : undefined}
+              aria-current={isActive(navPath, link.href) ? "page" : undefined}
               className={cn(
                 "text-sm font-medium transition-colors hover:text-foreground",
-                isActive(pathname, link.href) ? "text-foreground" : "text-muted-foreground"
+                isActive(navPath, link.href) ? "text-foreground" : "text-muted-foreground"
               )}
             >
               {link.label}
