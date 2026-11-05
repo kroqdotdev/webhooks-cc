@@ -17,6 +17,7 @@ describe("headerPlace", () => {
   it("does not match a page that only starts with the same letters", () => {
     expect(headerPlace("/loginlog-in")).toEqual({ onAuthPage: false, inApp: false });
     expect(headerPlace("/auth.md")).toEqual({ onAuthPage: false, inApp: false });
+    expect(headerPlace("/auth")).toEqual({ onAuthPage: false, inApp: false });
     expect(headerPlace("/dashboards")).toEqual({ onAuthPage: false, inApp: false });
     expect(headerPlace("/accounts")).toEqual({ onAuthPage: false, inApp: false });
     expect(headerPlace("/")).toEqual({ onAuthPage: false, inApp: false });

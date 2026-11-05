@@ -55,7 +55,8 @@ function isActive(pathname: string, href: string): boolean {
  */
 export function headerPlace(pathname: string): { onAuthPage: boolean; inApp: boolean } {
   return {
-    onAuthPage: isActive(pathname, "/login") || isActive(pathname, "/auth"),
+    // "/auth" itself is not a page (so a 404), only the routes under it.
+    onAuthPage: isActive(pathname, "/login") || pathname.startsWith("/auth/"),
     inApp: ["/dashboard", "/account", "/teams"].some((prefix) => isActive(pathname, prefix)),
   };
 }
