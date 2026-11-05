@@ -48,6 +48,19 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 /**
+ * Where the header is, for the sign-in and dashboard links. Whole path
+ * segments only: the 404 page is prerendered, so a missing URL that merely
+ * starts with "/login" or "/dashboard" would change the links in the browser
+ * but not in the HTML, and fail hydration.
+ */
+export function headerPlace(pathname: string): { onAuthPage: boolean; inApp: boolean } {
+  return {
+    onAuthPage: isActive(pathname, "/login") || isActive(pathname, "/auth"),
+    inApp: ["/dashboard", "/account", "/teams"].some((prefix) => isActive(pathname, prefix)),
+  };
+}
+
+/**
  * The one header, anchored at the top of every page: wordmark, the page's own
  * context, the site links, and either a sign-in link or the account menu. It
  * sits below the fixed maintenance and announcement banners when they show.
@@ -64,8 +77,7 @@ export function SiteHeader({ children, compact = false, top }: SiteHeaderProps) 
 
   const siteLinks = site.key === "mailhooks" ? MAILHOOKS_LINKS : NAV_LINKS;
   const links = compact ? siteLinks.filter((link) => link.href !== "/blog") : siteLinks;
-  const onAuthPage = pathname.startsWith("/login") || pathname.startsWith("/auth/");
-  const inApp = ["/dashboard", "/account", "/teams"].some((prefix) => pathname.startsWith(prefix));
+  const { onAuthPage, inApp } = headerPlace(pathname);
 
   const handleSignOut = async () => {
     setOpen(false);

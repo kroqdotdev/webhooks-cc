@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.5";
+export const APP_VERSION = "0.62.6";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.62.6",
+    date: "2026-11-05",
+    title: "Steadier Not Found Page",
+    track: "web",
+    items: [
+      "The page for a missing address that begins like a real one (such as /login or /dashboard followed by more letters) no longer reports a rendering error in the browser",
+    ],
+  },
   {
     version: "0.62.5",
     date: "2026-11-05",
