@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function NotFound() {
   return (
     <div className="min-h-screen">
-      <SiteHeader />
+      <SiteHeader notFound />
       <main className="pt-24 pb-20 px-4">
         <div className="max-w-2xl mx-auto text-center">
           <h1 className="text-6xl font-bold mb-4">404</h1>
