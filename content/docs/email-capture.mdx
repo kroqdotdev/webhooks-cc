@@ -156,7 +156,7 @@ The badge in the email header sums it up (**2 to fix**, **3 to improve**, or **D
 
 Emails are also scored by [rspamd](https://rspamd.com), the spam filter many mail servers run, as they arrive. The **Authentication** tab shows the score, the score at which rspamd would reject the message, what it would suggest doing (nothing, marking it as spam, or rejecting it), and the rules that weighed most, such as `SUBJ_ALL_CAPS` or `MISSING_DATE`. The badge in the email header reads **Not spam**, **Looks spammy** or **Spam** with the score.
 
-The score is only information. Every email that reaches an address is captured, however it scores, because test mail often looks like spam, and seeing why is the point. Scores come from the message's content, headers, links and authentication; no third-party blocklists are queried. An email has no score when rspamd could not be reached or took too long as it arrived (the tab says why), when it was captured before spam scoring was added, or when it is the dashboard's **Send test email**. A self-hosted copy scores email only when its mail server is given an rspamd to ask (`MX_RSPAMD_URL`).
+The score is only information. Every email that reaches an address is captured, however it scores, because test mail often looks like spam, and seeing why is the point. Scores come from the message's content, headers, links and authentication; no third-party blocklists are queried. An email has no score when rspamd could not be reached or took too long as it arrived (the tab says why), when it was captured before spam scoring was added, or when it is the dashboard's **Send test email**.
 
 ## What is stored
 
@@ -169,7 +169,7 @@ The score is only information. Every email that reaches an address is captured, 
 | The original message       | Yes, the exact bytes, up to the 10 MB message limit                  |
 | Sender check results, TLS  | Yes                                                                 |
 
-The original message and the attachments are kept in object storage in the EU (Denmark), apart from the request itself, and deleted with it. **Download .eml** and the **Raw** tab show the exact message whatever its size; each attachment has a **Download** button. A self-hosted copy without object storage keeps attachment names only, and the original message only when it is 1 MB or smaller.
+The original message and the attachments are kept in object storage in the EU (Denmark), apart from the request itself, and deleted with it. **Download .eml** and the **Raw** tab show the exact message whatever its size; each attachment has a **Download** button.
 
 Emails follow the same [retention](/docs/plans-limits#data-retention) as HTTP requests on your plan, or an endpoint's own shorter one (see [Retention](/docs/endpoints#retention)).
 

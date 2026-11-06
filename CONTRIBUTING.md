@@ -1,159 +1,49 @@
 # Contributing to webhooks.cc
 
-Thank you for your interest in contributing! This document provides guidelines and instructions for contributing to the project.
+webhooks.cc is open source so that anyone can inspect the code behind a service that holds their webhooks and email. It is built and run by one developer, and most changes are made in-house. This page explains how to take part anyway.
 
-## Prerequisites
+## Reporting a bug
 
-Before you begin, install the following:
+Open an issue with the [bug report form](https://github.com/kroqdotdev/webhooks-cc/issues/new?template=bug_report.yml). Say which part is affected (dashboard, capture, email, CLI, an SDK, the MCP server), what you did, what you expected and what happened instead. Version numbers help for the CLI, the SDKs and the MCP server.
 
-- **Node.js** 20+ (with npm)
-- **pnpm** 10+ (`npm install -g pnpm`)
-- **Rust** 1.85+ (edition 2024) — install via [rustup](https://rustup.rs)
-- **Make**
+The repository is public. Never paste API keys, signing secrets, captured request bodies, email contents, or endpoint URLs and slugs into an issue. Describe them, or replace them with made-up values.
 
-## Development Setup
+## Asking for a feature
 
-1. **Clone the repository**
+Open an issue with the [feature request form](https://github.com/kroqdotdev/webhooks-cc/issues/new?template=feature_request.yml). Describe the problem you run into before the solution you have in mind: the problem is what gets weighed.
 
-   ```bash
-   git clone https://github.com/kroqdotdev/webhooks-cc.git
-   cd webhooks-cc
-   ```
+## Account, billing and data questions
 
-2. **Install dependencies**
+These go to [webhooks.cc/support](https://webhooks.cc/support) (signed in) or support@webhooks.cc, never to a public issue. They need details about your account that do not belong in a public repository.
 
-   ```bash
-   pnpm install
-   ```
+## Security vulnerabilities
 
-3. **Set up environment variables**
+Report them privately, as described in [SECURITY.md](SECURITY.md). Do not open a public issue.
 
-   ```bash
-   cp .env.example .env.local
-   ```
+## Pull requests
 
-   Fill in the shared Supabase and app settings in `.env.local`, including `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_URL`, `SUPABASE_DB_URL`, `DATABASE_URL`, `NEXT_PUBLIC_WEBHOOK_URL`, `NEXT_PUBLIC_APP_URL`, and `CAPTURE_SHARED_SECRET`.
+Pull requests are accepted only from people who have signed the [Contributor License Agreement](CLA.md). The CLA lets the project keep its licensing options open (including offering the code under other terms) while you keep the copyright in your work. When you open a pull request, the CLA check asks you to sign by posting a comment; you sign once for all future contributions.
 
-4. **Start the Next.js web app**
+Before you write code, open an issue and wait for an answer. Changes that were not discussed are usually closed, and an accepted idea may be implemented in-house rather than merged as submitted. Small, obviously correct fixes (a typo, a broken link) can skip the issue.
 
-   ```bash
-   pnpm dev:web
-   ```
+A pull request should:
 
-5. **Start the Rust receiver** (in a separate terminal)
+- do one thing, with a clear description of what and why,
+- pass CI (lint, typecheck, build, the unit suites and the Rust jobs),
+- come with tests where behaviour changes,
+- follow the conventions in [AGENTS.md](AGENTS.md), which also lists the commands to build and test every part.
 
-   The receiver reads `DATABASE_URL` and `CAPTURE_SHARED_SECRET` from `.env.local`.
+Commit messages follow the conventional commit format (`feat(sdk): ...`, `fix(receiver): ...`, `docs: ...`). Pull requests are squash merged.
 
-   ```bash
-   make dev-receiver
-   ```
+## Building from source
 
-## Code Style
-
-### TypeScript/JavaScript
-
-- Run type checking before submitting: `pnpm typecheck`
-- Format code with Prettier if configured
-- Follow existing patterns in the codebase
-
-### Rust
-
-- Run `cargo fmt` before submitting
-- Run `cargo clippy` and fix all warnings
-- Follow existing patterns in `apps/receiver-rs/`
-
-## Making Changes
-
-1. **Create a feature branch**
-
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes**
-   - Write clear, focused commits
-   - Include tests where appropriate
-   - Update documentation if needed
-
-3. **Test your changes**
-
-   ```bash
-   pnpm typecheck                        # TypeScript type checking
-   make test                             # Run all tests (TS + Rust)
-   make build                            # Build everything including binaries
-   cd apps/receiver-rs && cargo clippy   # Lint Rust code
-   cd apps/cli-rs && cargo clippy        # Lint Rust CLI
-   ```
-
-4. **Submit a pull request**
-   - Use a clear, descriptive title
-   - Describe what changes you made and why
-   - Reference any related issues
-
-## Commit Messages
-
-Follow conventional commit format:
-
-```
-type(scope): description
-
-[optional body]
-
-[optional footer]
-```
-
-Types:
-
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation only
-- `style`: Code style changes (formatting, etc.)
-- `refactor`: Code changes that neither fix bugs nor add features
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
-
-Examples:
-
-```
-feat(endpoints): add custom response headers
-fix(receiver): handle empty request bodies
-docs(readme): update installation instructions
-```
-
-## Pull Request Process
-
-1. Ensure your PR passes all checks (typecheck, tests, build)
-2. Update documentation if you're changing behavior
-3. Request review from maintainers
-4. Address feedback and update your PR as needed
-5. Once approved, a maintainer will merge your PR
-
-## Project Structure
-
-```
-webhooks-cc/
-├── apps/
-│   ├── web/          # Next.js dashboard
-│   ├── receiver-rs/  # Rust webhook receiver (Axum + Tokio + Postgres)
-│   ├── cli-rs/       # Rust CLI with interactive TUI
-├── packages/
-│   ├── sdk/          # TypeScript SDK (@webhooks-cc/sdk)
-│   └── mcp/          # MCP server for AI agents (@webhooks-cc/mcp)
-├── supabase/         # Postgres schema, functions, and policies
-└── .github/          # CI/CD workflows
-```
-
-## Getting Help
-
-- Open an issue for bugs or feature requests
-- Check existing issues before creating new ones
-- Be respectful and constructive in discussions
+[AGENTS.md](AGENTS.md) describes the layout, the commands for each component and the local stack (a self-hosted Supabase instance, the Rust receiver and the web app). `.env.example` lists the required environment variables.
 
 ## License
 
-This project uses a split license. By contributing, you agree that your contributions will be licensed under the license that applies to the component you modify:
+By contributing you agree to the terms of the [CLA](CLA.md). Your contribution is published under the license of the component you change:
 
-- **AGPL-3.0** for `apps/web/`, `apps/receiver-rs/`, and `supabase/`
-- **MIT** for `apps/cli-rs/`, `packages/sdk/`, and `packages/mcp/`
+- **AGPL-3.0** for `apps/web/`, `apps/receiver-rs/`, `apps/mx-rs/`, `apps/parser-rs/` and `supabase/`
+- **MIT** for `apps/cli-rs/`, `packages/sdk/`, `packages/sdk-python/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/` and `plugins/`
 
-See the root [LICENSE](LICENSE) and each component's `LICENSE` file for details.
+See the root [LICENSE](LICENSE) and each component's `LICENSE` file.

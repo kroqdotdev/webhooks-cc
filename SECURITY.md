@@ -1,36 +1,40 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-If you find a security vulnerability in webhooks.cc, please report it privately. Do not open a public issue.
+If you find a security vulnerability in webhooks.cc, report it privately. Do not open a public issue.
 
-**Preferred:** Use [GitHub's security advisory reporting](https://github.com/kroqdotdev/webhooks-cc/security/advisories/new) to submit your report directly through GitHub. This keeps the conversation private and lets us coordinate a fix before public disclosure.
+**Preferred:** use [GitHub's private vulnerability reporting](https://github.com/kroqdotdev/webhooks-cc/security/advisories/new). It keeps the conversation private while a fix is prepared.
 
-**Alternatively:** Email support@webhooks.cc with the subject line "Security Report."
+**Alternatively:** email support@webhooks.cc with the subject line "Security Report".
 
 Include:
 
-- A description of the vulnerability
-- Steps to reproduce it
-- The affected component (web app, receiver, CLI, SDK, or MCP server)
-- Any potential impact you've identified
+- a description of the vulnerability,
+- steps to reproduce it,
+- the affected component (see Scope),
+- the impact you have identified.
 
-We will acknowledge your report within 48 hours and aim to release a fix within 7 days for critical issues.
+webhooks.cc is run by one developer. You will get an acknowledgement within 48 hours; critical issues are fixed as fast as possible, usually within 7 days.
 
 ## Scope
 
 This policy covers:
 
-- The hosted service at webhooks.cc and go.webhooks.cc
-- The open source code in this repository
-- The CLI (`whk`), SDK (`@webhooks-cc/sdk`), and MCP server (`@webhooks-cc/mcp`) published to npm and GitHub Releases
+- the hosted service: `webhooks.cc`, `go.webhooks.cc`, `mailhooks.cc` and its mail host `mx.mailhooks.cc`, and the remote MCP server at `webhooks.cc/mcp`,
+- the code in this repository,
+- what is published from it: the CLI (`whk`, GitHub Releases and the install script), the TypeScript SDK (`@webhooks-cc/sdk`), the Python SDK (`webhooks-cc` on PyPI), the Go SDK (`webhooks.cc/go`), the MCP server (`@webhooks-cc/mcp`), the Zapier and Make apps, and the Claude Code plugin.
 
-## Out of Scope
+## Out of scope
 
-- Denial-of-service attacks against the hosted service
-- Social engineering of maintainers or users
-- Vulnerabilities in third-party dependencies (report these upstream, but let us know if they affect webhooks.cc)
+- Denial-of-service or volume attacks against the hosted service
+- Spam or unsolicited mail sent to capture addresses
+- Social engineering of the maintainer or of users
+- Findings from automated scanners without a demonstrated impact
+- Vulnerabilities in third-party dependencies (report them upstream, but tell us if they affect webhooks.cc)
+
+Test only against your own account and endpoints, and never access other users' data.
 
 ## Disclosure
 
-We follow coordinated disclosure. Once a fix ships, we will credit you in the release notes unless you prefer otherwise.
+We follow coordinated disclosure. Once a fix ships, you are credited in the release notes unless you prefer otherwise.

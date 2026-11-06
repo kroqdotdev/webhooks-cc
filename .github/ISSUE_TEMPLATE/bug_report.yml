@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in webhooks.cc, the CLI, an SDK or the MCP server does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public. Do not paste API keys, signing secrets, captured request bodies, email contents, or endpoint URLs and slugs. Describe them or use made-up values. Questions about your account or billing go to [webhooks.cc/support](https://webhooks.cc/support).
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Dashboard or website
+        - Webhook capture (go.webhooks.cc)
+        - Email capture (mailhooks.cc)
+        - Forwarding and destinations
+        - CLI (whk)
+        - TypeScript SDK
+        - Python SDK
+        - Go SDK
+        - MCP server (local or remote)
+        - Zapier or Make app
+        - Claude Code plugin
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: For the CLI (`whk --version`), an SDK or the MCP server. Leave empty for the website.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, browser, Node.js, Python or Go version, MCP client, as relevant.
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Error messages, logs (with secrets and contents removed), screenshots.
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Privacy
+      options:
+        - label: This issue contains no API keys, secrets, captured contents or endpoint slugs.
+          required: true

@@ -35,11 +35,6 @@ const FAQ_ITEMS = [
       "Not as code. webhooks.cc does not run your code or chain steps. Each endpoint can send what arrives to up to 10 destinations, each with its own filter: your server (as received, as signed JSON or as your own JSON template), Slack or Discord, Google Sheets, file drops to SFTP, FTP or S3 on Business, and Zapier or Make for everything else. Response rules choose the answer the sender gets, and layouts read fields, line items and attachments out of email. For multi-step logic, hand off to Zapier, Make or your own handler.",
   },
   {
-    question: "Can I self-host webhooks.cc like the original RequestBin?",
-    answer:
-      "webhooks.cc is open source (AGPL-3.0 for the web app and receiver, MIT for the CLI, SDKs, and MCP server). You can self-host the full stack. The original RequestBin was also open source, but the Pipedream version is not self-hostable.",
-  },
-  {
     question: "Which RequestBin alternatives support longer retention and team access?",
     answer:
       "On webhooks.cc, Pro keeps requests for 31 days and Business for 90, and Teams shares endpoints with signed-in members only, at $12 per seat per month with 31-day retention for team-billed requests (Team Business: $35 per seat, 90 days). Guest URLs on any tool, webhooks.cc's included, can be read by anyone who has the address, so capture on account endpoints when the payloads matter.",
@@ -68,7 +63,7 @@ const ROWS = [
   ["Request replay", "Yes, to any URL", "No (re-trigger workflow)"],
   ["Workflow automation", "No code steps", "Yes, core feature"],
   ["Third-party integrations", "Slack, Discord, Google Sheets, Zapier, Make", "Yes, 3,000+ apps"],
-  ["Self-hostable", "Yes (open source)", "No"],
+  ["Open source", "Yes (AGPL + MIT)", "No"],
   ["Team collaboration", "From $12/seat/mo, pooled quota", "All plans, free unlimited members"],
   ["Free tier features", "Every Pro feature", "Development only, daily credit cap"],
 ] as const;
@@ -85,7 +80,6 @@ export const metadata = createPageMetadata({
     "pipedream requestbin alternative",
     "webhooks.cc vs requestbin",
     "requestbin replacement",
-    "requestbin self-hosted alternative",
     "webhook capture tool",
     "webhook testing tool",
   ],
@@ -179,11 +173,12 @@ export default function CompareRequestBinPage() {
           </div>
 
           <div className="ui-card ui-card-static">
-            <h3 className="text-lg font-bold mb-2">Open source and self-hosting</h3>
+            <h3 className="text-lg font-bold mb-2">Open source</h3>
             <p className="text-muted-foreground">
-              webhooks.cc is fully open source. You can self-host the web app, receiver, CLI, SDK,
-              and MCP server. The original RequestBin was also open source, but the Pipedream
-              version is a hosted platform without a self-host option.
+              webhooks.cc is open source: the web app and receiver under AGPL-3.0, the CLI, SDKs and
+              MCP server under MIT, so you can read exactly how your requests are handled. The
+              original RequestBin was open source too; the Pipedream version is a closed, hosted
+              platform.
             </p>
           </div>
         </div>
@@ -197,7 +192,7 @@ export default function CompareRequestBinPage() {
               <li>Request replay for re-triggering handlers</li>
               <li>SDK assertions in CI test suites</li>
               <li>CLI tunnel for local webhook development</li>
-              <li>Self-hosted, open-source deployment</li>
+              <li>Open-source code you can inspect</li>
               <li>A home for RequestBin traffic before Pipedream Workflows closes</li>
             </ul>
           </div>

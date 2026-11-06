@@ -1,26 +1,24 @@
+<!--
+Pull requests from outside contributors need a signed CLA (CLA.md); the CLA check
+asks you to sign on your first one. Please open an issue first: changes that
+were not discussed are usually closed. See CONTRIBUTING.md.
+-->
+
 ## Summary
 
-What does this PR do?
+What does this change, and why?
 
-## Related Issue
+## Related issue
 
-Fixes #
-
-## Type
-
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation
-
-## Checklist
-
-- [ ] Read [CONTRIBUTING.md](CONTRIBUTING.md)
-- [ ] Code follows project style
-- [ ] Tests pass (`make test`)
-- [ ] Types check (`pnpm typecheck`)
-- [ ] Documentation updated
+Closes #
 
 ## Testing
 
-How to test this change.
+How you tested it, and which suites you ran (see the commands in AGENTS.md).
+
+## Checklist
+
+- [ ] There is an issue for this change, or it is a small, obvious fix
+- [ ] CI passes (lint, typecheck, build, unit tests, Rust jobs)
+- [ ] Tests cover the changed behaviour
+- [ ] Docs updated if behaviour changed
