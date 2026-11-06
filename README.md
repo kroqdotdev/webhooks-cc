@@ -1,8 +1,8 @@
 # webhooks.cc
 
-Inspect and debug webhooks without deploying to production.
+Inspect and debug webhooks and email without deploying to production.
 
-Get a unique URL, point your webhook there, and see every request in real-time. No signup required.
+Get a unique URL, point your webhook there, and see every request in real time. No signup required. Every endpoint also has an email address at `mailhooks.cc` that captures mail the same way.
 
 **[Try it now →](https://webhooks.cc)**
 
@@ -15,31 +15,35 @@ Get a unique URL, point your webhook there, and see every request in real-time. 
 
 ## Features
 
-- **Capture requests** — Store incoming webhooks with headers, body, query params, and metadata
-- **Inspect in real-time** — See requests the moment they arrive via WebSocket
-- **Configure responses** — Return custom status codes, headers, and body for testing error paths
-- **Forward to localhost** — Tunnel webhooks to your local server during development
-- **CLI with interactive TUI** — Manage endpoints, tunnel, and stream requests from your terminal
-- **TypeScript SDK** — Access webhook data programmatically for automation and testing
-- **MCP server** — Connect AI coding agents (Claude Code, Cursor, VS Code, Codex) to your webhooks
+- **Capture requests**: store incoming webhooks with headers, body, query parameters and metadata
+- **Capture email**: every endpoint receives mail at `{slug}@mailhooks.cc`, with parsed fields, attachments and authentication results
+- **Inspect in real time**: see requests the moment they arrive
+- **Configure responses**: return custom status codes, headers and bodies, chosen by rules, to test error paths
+- **Verify signatures**: check provider signatures (Stripe, GitHub, Shopify and more) on captured requests
+- **Forward**: tunnel webhooks to localhost during development, or forward them to other URLs, chat and file drops
+- **CLI with interactive TUI**: manage endpoints, tunnel and stream requests from your terminal
+- **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI
+- **MCP server**: connect AI coding agents (Claude Code, Cursor, VS Code, Codex) to your webhooks
 
 ## Use Cases
 
-**Testing payment integrations** — Point Stripe's test webhooks at your endpoint. Inspect the payload structure before writing handlers.
+**Testing payment integrations**: point Stripe's test webhooks at your endpoint. Inspect the payload structure before writing handlers.
 
-**Debugging CI/CD hooks** — See exactly what GitHub sends when a push, PR, or deployment occurs.
+**Debugging CI/CD hooks**: see exactly what GitHub sends when a push, PR, or deployment occurs.
 
-**Developing locally** — Forward production-like webhooks to localhost without exposing your machine to the internet.
+**Developing locally**: forward production-like webhooks to localhost without exposing your machine to the internet.
 
-**Mocking failure scenarios** — Configure your endpoint to return 500 errors and test your retry logic.
+**Mocking failure scenarios**: configure your endpoint to return 500 errors and test your retry logic.
 
 ## Pricing
 
-**Free** — 50 requests/day, 7-day data retention. Enough for development and testing.
+**Free**: 50 requests a day, 7-day retention. Enough for development and testing.
 
-**Pro ($8/month)** — 100,000 requests/month, 30-day retention. For production monitoring and high-volume testing.
+**Pro ($8/month)**: 100,000 requests a month, 31-day retention.
 
-See [webhooks.cc](https://webhooks.cc) for details.
+**Business ($29/month)**: 250,000 requests a month, 90-day retention, attachment parsing, custom inbound domains and file drops.
+
+Teams share endpoints under a per-seat subscription. See [plans and limits](https://webhooks.cc/docs/plans-limits) for details.
 
 ## Install
 
@@ -142,22 +146,29 @@ You: "Send a test checkout.session.completed event"
 Agent: Sent POST to stripe-test
 
 You: "Replay that to my local server"
-Agent: Replayed to http://localhost:3000/webhooks — 200 OK
+Agent: Replayed to http://localhost:3000/webhooks: 200 OK
 ```
 
 See [`packages/mcp/README.md`](packages/mcp/README.md) for full setup and tool reference.
 
-## Open Source
+## Why the code is public
 
-The source is available for transparency and community contributions, not as a deployment guide. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+webhooks.cc holds other people's webhooks and email, so the code that handles them should be open to inspection. You can read exactly how a request is captured, stored, forwarded and deleted, and check that the service does what it says. The repository is also where security scanning, dependency updates and bug reports happen in the open.
 
-For compliance or air-gapped environments, the code is here. For most use cases, the hosted service at [webhooks.cc](https://webhooks.cc) is the easier path.
+webhooks.cc is built and run by one developer. The hosted service at [webhooks.cc](https://webhooks.cc) is the product; the repository is not a community project.
+
+## Issues and contributions
+
+- **Bugs and feature requests** are welcome as [issues](https://github.com/kroqdotdev/webhooks-cc/issues/new/choose).
+- **Questions about your account, billing or data** go to [webhooks.cc/support](https://webhooks.cc/support), never to a public issue.
+- **Security vulnerabilities** are reported privately, see [SECURITY.md](SECURITY.md).
+- **Pull requests** are accepted only from people who have signed the [Contributor License Agreement](CLA.md). Open an issue first: most changes are made in-house, and a pull request may be closed or reimplemented. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
 This project uses a split license:
 
-- **AGPL-3.0**: the web app, receiver, email-capture SMTP host, and Supabase backend (`apps/web/`, `apps/receiver-rs/`, `apps/mx-rs/`, `supabase/`). See [LICENSE](LICENSE).
-- **MIT**: the CLI, SDK, and MCP server (`apps/cli-rs/`, `packages/sdk/`, `packages/mcp/`). See their respective `LICENSE` files.
+- **AGPL-3.0**: the web app, receiver, email-capture SMTP host, attachment parser and database schema (`apps/web/`, `apps/receiver-rs/`, `apps/mx-rs/`, `apps/parser-rs/`, `supabase/`). See [LICENSE](LICENSE).
+- **MIT**: the CLI, the TypeScript, Python and Go SDKs, the MCP server, the Zapier and Make apps, and the Claude Code plugin (`apps/cli-rs/`, `packages/sdk/`, `packages/sdk-python/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/`, `plugins/`). See the `LICENSE` file in each directory.
 
-If you use the CLI, SDK, or MCP server in your own projects, MIT applies. If you fork and host the service, AGPL-3.0 applies.
+The CLI, SDKs and MCP server are MIT so you can use them freely in your own projects, open or closed.

@@ -226,7 +226,7 @@ export default function CompareWebhookSitePage() {
               <li>Inbound email forwarded to your server as signed JSON, on the free plan</li>
               <li>Fields and attachments parsed out of email, on your own domain if you like</li>
               <li>Every Pro feature on the free plan, plus teams from $12/seat/mo</li>
-              <li>Open-source codebase you can inspect and self-host</li>
+              <li>Open-source codebase you can inspect</li>
             </ul>
           </div>
           <div className="ui-card ui-card-static">

@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest something webhooks.cc should do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the solution: the problem is what gets weighed. Pull requests need a signed [CLA](https://github.com/kroqdotdev/webhooks-cc/blob/main/CLA.md) and are best preceded by this issue.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Dashboard or website
+        - Webhook capture
+        - Email capture
+        - Forwarding and destinations
+        - CLI (whk)
+        - SDKs
+        - MCP server
+        - Zapier or Make app
+        - Billing and plans
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you would like to happen. Be as specific as you can.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or other approaches you considered.

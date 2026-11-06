@@ -1,7 +1,8 @@
 {
   "name": "web",
-  "version": "0.62.6",
+  "version": "0.62.7",
   "private": true,
+  "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "next dev",
     "build": "next build && node scripts/build-pagefind.mjs && rm -rf .next/standalone/apps/web/public .next/standalone/apps/web/.next/static && cp -r public .next/standalone/apps/web/public && cp -r .next/static .next/standalone/apps/web/.next/static",

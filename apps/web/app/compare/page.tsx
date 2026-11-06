@@ -237,7 +237,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "What should I compare when choosing a paid webhook testing tool?",
     answer:
-      "How long requests are kept, who can read them (anyone with the URL, or signed-in members only), how team seats are priced, replay to any URL, search across bodies and headers, a CLI tunnel to localhost, assertions in CI, signature verification for your providers, email capture if your app sends mail, and whether you can self-host.",
+      "How long requests are kept, who can read them (anyone with the URL, or signed-in members only), how team seats are priced, replay to any URL, search across bodies and headers, a CLI tunnel to localhost, assertions in CI, signature verification for your providers, and email capture if your app sends mail.",
   },
   {
     question: "Which webhook service has searchable logs and one-click replay?",

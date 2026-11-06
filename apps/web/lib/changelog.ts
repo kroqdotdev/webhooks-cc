@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.6";
+export const APP_VERSION = "0.62.7";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.62.7",
+    date: "2026-11-06",
+    title: "Clearer Open Source Notes",
+    track: "web",
+    items: [
+      "The comparison pages and docs describe webhooks.cc's open source code without suggesting a self-hosted setup",
+    ],
+  },
   {
     version: "0.62.6",
     date: "2026-11-05",

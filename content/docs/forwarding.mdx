@@ -557,7 +557,7 @@ Alerts are checked about once a minute. You get one notice when an alert opens a
 
 ## Limits
 
-- The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. On webhooks.cc, deliveries come from Cloudflare's network, not from a fixed address (a self-hosted copy without the notify proxy sends from its own server), so do not allowlist IPs; check the signature instead.
+- The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. On webhooks.cc, deliveries come from Cloudflare's network, not from a fixed address, so do not allowlist IPs; check the signature instead.
 - An endpoint has at most 10 destinations, and none of them can be a webhooks.cc capture URL (`go.webhooks.cc`): each delivery would be captured and forwarded again.
 - Forwarding does not use your request quota: each request already counted once when it arrived.
 - A request or email whose delivery would be larger than 10 MB is not forwarded. Email text and HTML are kept up to 256 KB each, so real mail stays far below that.
