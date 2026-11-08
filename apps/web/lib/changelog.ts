@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.7";
+export const APP_VERSION = "0.62.8";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.62.8",
+    date: "2026-11-08",
+    title: "Not Found Page Checks",
+    track: "web",
+    items: [
+      "The not found page is now tested at many kinds of missing address, so the rendering error fixed in 0.62.6 cannot come back unnoticed",
+    ],
+  },
   {
     version: "0.62.7",
     date: "2026-11-06",

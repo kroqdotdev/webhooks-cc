@@ -9,6 +9,7 @@ export default defineConfig({
       "lib/**/*.test.ts",
       "lib/**/*.test.tsx",
       "app/**/*.test.ts",
+      "app/**/*.test.tsx",
       "components/**/*.test.tsx",
     ],
     testTimeout: 30_000,
