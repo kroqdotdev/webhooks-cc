@@ -106,7 +106,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
     <div className="container mx-auto px-4 py-6 lg:py-10">
       <nav
         aria-label="Settings"
-        className="lg:hidden -mx-4 mb-6 overflow-x-auto border-b-strong border-line px-4 pb-3"
+        className="lg:hidden -mx-4 mb-6 overflow-x-auto border-b-strong border-line px-4 pb-3 [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)]"
       >
         <ul className="flex gap-1">
           {[...ACCOUNT_ITEMS, ...teamItems].map((item) => (

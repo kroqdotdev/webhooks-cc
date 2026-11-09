@@ -742,7 +742,7 @@ export function EndpointSettingsPanel({
     <div className="flex-1 flex flex-col md:flex-row min-h-0">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 flex md:flex-col gap-1 p-2 md:p-3 overflow-x-auto [scrollbar-width:none]"
+        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 flex md:flex-col gap-1 p-2 md:p-3 overflow-x-auto [scrollbar-width:none] max-md:[mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)]"
       >
         {sections.map((section) => (
           <button
@@ -755,8 +755,11 @@ export function EndpointSettingsPanel({
               section.nested && "md:pl-6",
               active === section.id
                 ? "bg-selected text-selected-foreground font-semibold"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                : section.id === "delete"
+                  ? "text-destructive-ink hover:bg-destructive/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
+            aria-current={active === section.id ? "true" : undefined}
           >
             {section.label}
           </button>

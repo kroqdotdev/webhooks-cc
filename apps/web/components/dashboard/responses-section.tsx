@@ -615,7 +615,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
             marker={rules.length > 0 ? "Otherwise" : "Always"}
             summary={
               isPlainOk(fallback) ? (
-                <span className="text-muted-foreground">200 OK with an empty body</span>
+                <span className="text-muted-foreground">200 OK with the body &quot;OK&quot;</span>
               ) : (
                 <span className="font-mono text-[13px] text-muted-foreground">
                   {fallback.body.trim().slice(0, 120) || "(empty body)"}

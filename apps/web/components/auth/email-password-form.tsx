@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { isAuthError } from "@supabase/supabase-js";
 import { DEFAULT_EMAIL_DOMAIN } from "@webhooks-cc/sdk/email";
 import { createClient } from "@/lib/supabase/client";
@@ -42,6 +42,12 @@ export function EmailPasswordForm({
   const [notice, setNotice] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
+  // The submit button was disabled while the request ran, so focus would fall to the
+  // page: it goes to the error instead, where a screen reader reads it.
+  const alertRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) alertRef.current?.focus();
+  }, [error]);
 
   // Sign-up confirmation happens out of band (email link, possibly another
   // browser), so the login page's ?redirect= travels with it: GoTrue renders
@@ -184,6 +190,8 @@ export function EmailPasswordForm({
 
       {error ? (
         <div
+          ref={alertRef}
+          tabIndex={-1}
           className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3"
           role="alert"
         >

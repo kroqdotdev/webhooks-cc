@@ -13,6 +13,7 @@ import {
 } from "@webhooks-cc/sdk/email";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
+import { LAYOUT_TEMPLATES } from "@/lib/layout-templates";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   fetchAiAssists,
@@ -104,7 +105,7 @@ export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
   return (
     <div className="space-y-3 text-sm">
       <p>
-        Layout <span className="font-semibold">{parsed.layout?.name}</span>
+        Read by <span className="font-semibold">{parsed.layout?.name}</span>
         {parsed.pages > 0 && (
           <span className="text-muted-foreground">
             {" "}
@@ -623,6 +624,30 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <Plus className="h-3 w-3" />
           Add layout
         </button>
+        {/* The ready-made layouts from the gallery, added as a draft to adjust and save. */}
+        {layouts.length < MAX_LAYOUTS && (
+          <select
+            aria-label="Start from a sender"
+            value=""
+            onChange={(event) => {
+              const template = LAYOUT_TEMPLATES.find((entry) => entry.id === event.target.value);
+              if (!template) return;
+              const id = newLayout(layouts).id;
+              setLayouts([...layouts, { ...structuredClone(template.layout), id }]);
+              setOpen(layouts.length);
+            }}
+            className="ui-input py-1! px-2! text-xs w-auto cursor-pointer"
+          >
+            <option value="" disabled>
+              Start from a sender...
+            </option>
+            {LAYOUT_TEMPLATES.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.sender}: {template.kind}
+              </option>
+            ))}
+          </select>
+        )}
         {aiOffered && layouts.length < draftCap && assist?.kind !== "layout" && (
           <button
             type="button"
@@ -634,8 +659,9 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           </button>
         )}
         {layouts.length === 0 && (
-          <span className="text-xs text-muted-foreground">
-            Without layouts, emails are delivered as they arrive, with your fields.
+          <span className="text-sm text-muted-foreground basis-full">
+            Start from a sender you already get mail from, or add a blank layout. Without layouts,
+            emails are delivered as they arrive, with your fields.
           </span>
         )}
       </div>

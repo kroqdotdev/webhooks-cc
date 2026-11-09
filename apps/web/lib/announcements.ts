@@ -19,7 +19,8 @@ export const ANNOUNCEMENTS: Announcement[] = [
     id: "teams-launch",
     text: "Team collaboration: invite members and share endpoints.",
     cta: { label: "Try Teams", href: "/for-teams" },
-    dashboard: true,
+    // Signed-in accounts already reach Teams from the account menu and Team sharing.
+    dashboard: false,
   },
 ];
 

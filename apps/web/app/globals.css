@@ -247,7 +247,9 @@ body {
     --destructive-foreground: 0 0% 100%;
     --destructive-ink: 2 70% 42%;
     --border: 216 16% 88%;
-    --input: 216 14% 82%;
+    /* Control boundaries (inputs, selects, segmented controls) need 3:1 on the page;
+       --border stays a lighter hairline for cards and dividers. */
+    --input: 216 12% 57%;
     --ring: 164 76% 30%;
     --radius: 0.5rem;
     --shadow-color: 218 30% 10%;
@@ -318,7 +320,7 @@ body {
     --destructive-foreground: 0 0% 100%;
     --destructive-ink: 2 80% 68%;
     --border: 222 12% 18%;
-    --input: 222 12% 24%;
+    --input: 222 12% 44%;
     --ring: 160 60% 52%;
     --shadow-color: 0 0% 0%;
 
@@ -377,6 +379,10 @@ body {
   }
   /* Every focusable element gets the same 2px ring, never the browser's thin outline
      (components that draw their own ring with outline-none keep theirs). */
+  /* Segmented options sit in a clipped group, so their ring is drawn inside them. */
+  [role="radiogroup"] > [role="radio"]:focus-visible {
+    outline-offset: -3px;
+  }
   :is(a, button, select, summary, [role="radio"], [role="tab"]):focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
@@ -566,6 +572,11 @@ body {
 
   [data-style="clean"] .ui-code {
     box-shadow: none;
+  }
+
+  /* Form controls take the darker --input boundary in clean; cards keep the hairline. */
+  [data-style="clean"] :is(.ui-input, select, textarea, [role="radiogroup"]) {
+    border-color: hsl(var(--input));
   }
 
   [data-style="clean"] .ui-input {

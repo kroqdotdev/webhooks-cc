@@ -47,6 +47,8 @@ export function TeamsVideo() {
       playsInline
       controls={reducedMotion}
       preload="none"
+      // A still from the video, shown until it plays and kept under reduced motion.
+      poster="/video/TeamsFeature-poster.jpg"
       src={visible ? "/video/TeamsFeature.mp4" : undefined}
       className="w-full aspect-video block bg-muted"
       aria-label="Demo of team collaboration features: creating a team, inviting members, and sharing endpoints"

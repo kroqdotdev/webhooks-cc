@@ -243,7 +243,13 @@ export default async function Home() {
       />
       <JsonLd data={videoObjectSchema()} />
 
-      <SiteHeader>
+      <SiteHeader
+        mobileLinks={[
+          { href: "/webhooks", label: "Providers" },
+          { href: "/compare", label: "Compare" },
+          { href: "/#pricing", label: "Pricing" },
+        ]}
+      >
         <nav
           aria-label="Sections"
           className="hidden lg:flex items-center gap-4 text-sm font-medium"
@@ -271,8 +277,8 @@ export default async function Home() {
             </span>
           </h1>
           <p className="hidden md:block text-sm text-muted-foreground mt-0.5">
-            Your free webhook URL is live below. Point any service at it. No signup, no credit card.
-            One click with GitHub or Google, or an email signup,{" "}
+            Your free webhook URL is one click away below. Point any service at it. No signup, no
+            credit card. One click with GitHub or Google, or an email signup,{" "}
             <Link href="/login" className="font-bold text-foreground hover:text-primary-ink">
               keeps it, free
             </Link>
@@ -392,7 +398,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "You already have one: it went live the moment you opened this page. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
+                  "One click on this page gives you one, no account needed. GitHub or Google makes it permanent, or sign up with an email and password.",
               },
               {
                 step: "2",
@@ -712,24 +718,23 @@ export default async function Home() {
 
             {/* Pro Plan */}
             <div className="ui-card border-primary relative flex flex-col">
-              <div className="absolute -top-3 -right-3 bg-secondary text-secondary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
+              <div className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
                 Popular
               </div>
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Pro</h3>
                 <p className="text-5xl font-bold">
                   $8
-                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
+                  <span className="text-lg font-normal text-muted-foreground">/month</span>
                 </p>
               </div>
+              <p className="text-sm font-semibold mb-3">Everything in Free, plus:</p>
               <ul className="space-y-3 mb-8">
                 {[
                   "100,000 requests/month",
                   "31-day data retention",
-                  "Unlimited endpoints",
                   "100 parsed attachment pages/month",
                   "Extra requests in 25,000 blocks",
-                  "CLI, SDK & MCP access",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
@@ -752,10 +757,11 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Business</h3>
                 <p className="text-5xl font-bold">
                   $29
-                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
+                  <span className="text-lg font-normal text-muted-foreground">/month</span>
                 </p>
-                <p className="text-sm text-muted-foreground mt-2">or $290 a year</p>
+                <p className="text-sm text-muted-foreground mt-2">or $290/year</p>
               </div>
+              <p className="text-sm font-semibold mb-3">Everything in Pro, plus:</p>
               <ul className="space-y-3 mb-8">
                 {[
                   "250,000 requests/month",
@@ -817,7 +823,7 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Teams</h3>
                 <p className="text-5xl font-bold">
                   $12
-                  <span className="text-lg font-normal text-muted-foreground">/seat/mo</span>
+                  <span className="text-lg font-normal text-muted-foreground">/seat/month</span>
                 </p>
               </div>
               <ul className="space-y-3 mb-8">
@@ -846,7 +852,7 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Team Business</h3>
                 <p className="text-5xl font-bold">
                   $35
-                  <span className="text-lg font-normal text-muted-foreground">/seat/mo</span>
+                  <span className="text-lg font-normal text-muted-foreground">/seat/month</span>
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">or $350/seat/year</p>
               </div>

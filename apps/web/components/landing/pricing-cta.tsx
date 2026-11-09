@@ -45,19 +45,19 @@ function PricingCTAInner({ inverted = false, primary = false }: PricingCTAProps)
         layout="horizontal"
         verb="Sign up with"
         buttonClassName={cn(
-          "text-sm px-4 ui-btn-outline cursor-pointer flex-1 whitespace-nowrap",
+          "text-sm px-4 ui-btn-outline cursor-pointer flex-1 whitespace-nowrap normal-case tracking-normal",
           inverted && "text-foreground"
         )}
         firstButtonClassName={
           primary
-            ? "text-sm px-4 ui-btn-primary cursor-pointer flex-1 whitespace-nowrap"
+            ? "text-sm px-4 ui-btn-primary cursor-pointer flex-1 whitespace-nowrap normal-case tracking-normal"
             : undefined
         }
       />
       <Link
         href="/login?mode=sign-up"
         className={cn(
-          "block text-center text-xs underline",
+          "block text-center text-sm underline underline-offset-4 py-2",
           inverted
             ? "text-background/85 hover:text-background"
             : "text-muted-foreground hover:text-foreground"

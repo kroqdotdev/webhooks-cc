@@ -354,7 +354,7 @@ export function RequestDetail({
                       aria-pressed={bodyView === view}
                       onClick={() => setBodyView(view)}
                       className={cn(
-                        "px-2 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors",
+                        "px-2 py-0.5 max-md:py-1.5 text-[11px] font-bold caps cursor-pointer transition-colors",
                         i > 0 && "border-l-strong border-line",
                         bodyView === view
                           ? "bg-selected text-selected-foreground"

@@ -29,7 +29,8 @@ export function ProviderStrip() {
               >
                 {icon && (
                   <span
-                    className="w-5 h-5 flex items-center justify-center shrink-0"
+                    // A light chip in dark mode, so dark brand marks (GitHub, Vercel) stay visible.
+                    className="w-5 h-5 flex items-center justify-center shrink-0 rounded-sm dark:bg-white"
                     style={{ color: icon.background }}
                   >
                     <ProviderIcon glyph={icon.glyph} fallbackText={icon.text} className="h-4 w-4" />

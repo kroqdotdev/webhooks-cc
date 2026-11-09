@@ -30,7 +30,7 @@ import { getNote, setNote, getAllNotes } from "@/lib/request-notes";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Check, Send, Download, ChevronDown, Mail } from "lucide-react";
+import { Copy, Check, Send, Download, ChevronDown, Mail, Inbox } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
@@ -45,6 +45,7 @@ import {
   defaultDashboardEndpoint,
   createDashboardEndpoint,
   emitDashboardEndpointsChanged,
+  updateDashboardEndpoint,
   claimGuestEndpointForUser,
   type DashboardEndpoint,
   sendTestEmail,
@@ -1166,6 +1167,9 @@ export default function DashboardPage() {
       <NoEndpointsHere
         accessToken={accessToken}
         elsewhere={allEndpoints.length}
+        ownedElsewhere={allEndpoints
+          .filter((endpoint) => ownedSlugs.has(endpoint.slug))
+          .map((endpoint) => endpoint.slug)}
         onCreated={loadEndpoints}
       />
     );
@@ -1229,6 +1233,10 @@ export default function DashboardPage() {
         tab={endpointTab}
         onTabChange={handleTabChange}
         hasRequests={hasRequests}
+        mailSetup={{
+          layout: (currentEndpoint.layouts?.length ?? 0) > 0,
+          destination: (currentEndpoint.destinationCount ?? 0) > 0,
+        }}
         exportMenu={
           hasRequests ? (
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
@@ -1419,6 +1427,10 @@ export default function DashboardPage() {
         <WaitingForRequests
           slug={currentEndpoint.slug}
           emailAddress={currentEndpoint.emailAddress ?? null}
+          onOpenLayouts={() => {
+            setSettingsFocus("layouts");
+            setEndpointTab("settings");
+          }}
         />
       )}
     </ErrorBoundary>
@@ -1559,7 +1571,15 @@ function CopyLabel({ done }: { done: boolean }) {
   );
 }
 
-function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress: string | null }) {
+function WaitingForRequests({
+  slug,
+  emailAddress,
+  onOpenLayouts,
+}: {
+  slug: string;
+  emailAddress: string | null;
+  onOpenLayouts: () => void;
+}) {
   // mailhooks.cc leads with the address.
   const mailFirst = useSite().key === "mailhooks" && !!emailAddress;
   const internalTestHeader = "X-Webhooks-CC-Test-Send";
@@ -1732,9 +1752,13 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
               <Link href="/parse" className="ui-btn-outline py-1.5! px-3! text-xs">
                 Start from a ready-made layout
               </Link>
-              <span className="text-xs text-muted-foreground">
-                or write your own under Settings &gt; Layouts
-              </span>
+              <button
+                type="button"
+                onClick={onOpenLayouts}
+                className="text-xs text-muted-foreground underline hover:text-foreground cursor-pointer"
+              >
+                or write your own layout
+              </button>
             </div>
           </div>
         ) : (
@@ -1820,15 +1844,19 @@ function AutoCreateEndpoint({
 function NoEndpointsHere({
   accessToken,
   elsewhere,
+  ownedElsewhere,
   onCreated,
 }: {
   accessToken: string | null;
   elsewhere: number;
+  /** The account's own endpoints listed on the other site; only the owner can list them here. */
+  ownedElsewhere: string[];
   onCreated: () => Promise<void>;
 }) {
   const site = useSite();
   const other = SITES[otherSite(site.key)];
   const [creating, setCreating] = useState(false);
+  const [listing, setListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const create = () => {
@@ -1846,11 +1874,32 @@ function NoEndpointsHere({
       });
   };
 
+  const listHereToo = () => {
+    if (!accessToken || ownedElsewhere.length === 0) return;
+    setListing(true);
+    setError(null);
+    Promise.all(
+      ownedElsewhere.map((slug) => updateDashboardEndpoint(accessToken, slug, { site: "both" }))
+    )
+      .then(() => {
+        emitDashboardEndpointsChanged();
+        return onCreated();
+      })
+      .catch(() => {
+        setError("Could not list them here. Try again.");
+        setListing(false);
+      });
+  };
+
   return (
     <div className="flex-1 overflow-y-auto flex p-8">
       <div className="m-auto text-center space-y-4 max-w-md">
         <div className="w-16 h-16 rounded-md border-strong border-line bg-muted flex items-center justify-center mx-auto mb-2">
-          <Send className="h-8 w-8 text-muted-foreground" />
+          {site.key === "mailhooks" ? (
+            <Inbox className="h-8 w-8 text-muted-foreground" />
+          ) : (
+            <Send className="h-8 w-8 text-muted-foreground" />
+          )}
         </div>
         <h2 className="text-xl font-bold caps">
           {site.key === "mailhooks"
@@ -1862,7 +1911,7 @@ function NoEndpointsHere({
             ? "Give each sender its own address and get every email as JSON. "
             : "Get a URL that captures every request sent to it. "}
           You also have {elsewhere === 1 ? "an endpoint" : `${elsewhere} endpoints`} on {other.name}
-          ; list {elsewhere === 1 ? "it" : "them"} here too under Settings &gt; Receiving.
+          .
         </p>
         {error && <p className="text-sm text-destructive-ink">{error}</p>}
         <div className="flex flex-wrap items-center justify-center gap-3">
@@ -1880,6 +1929,18 @@ function NoEndpointsHere({
           >
             Open {other.name}
           </button>
+          {ownedElsewhere.length > 0 && (
+            <button
+              type="button"
+              onClick={listHereToo}
+              disabled={listing || creating}
+              className="ui-btn-outline"
+            >
+              {listing
+                ? "Listing..."
+                : `Show ${ownedElsewhere.length === 1 ? "it" : "them"} here too`}
+            </button>
+          )}
         </div>
       </div>
     </div>

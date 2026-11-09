@@ -30,11 +30,13 @@ import {
 import { SendWebhookDialog } from "./send-webhook-dialog";
 import { DashboardGuideDialog } from "./dashboard-guide-dialog";
 import { Segmented } from "./settings-primitives";
-import { useGettingStarted } from "./getting-started";
+import { useGettingStarted, type MailSetupState } from "./getting-started";
 
 export type EndpointTab = "requests" | "settings";
 
 interface EndpointBarProps {
+  /** What the endpoint has, for mailhooks.cc's Setup checklist. */
+  mailSetup?: MailSetupState;
   name: string;
   slug: string;
   /** null for endpoints that cannot receive email (no owner). */
@@ -104,13 +106,16 @@ function SetupMenu({
   hasRequests,
   onOpenGuide,
   slug,
+  mailSetup,
 }: {
   hasRequests: boolean;
   onOpenGuide: () => void;
   slug: string;
+  mailSetup?: MailSetupState;
 }) {
-  const setup = useGettingStarted(hasRequests);
-  const label = setup.open ? `Setup ${setup.progress}/${setup.total}` : "Guide";
+  const setup = useGettingStarted(hasRequests, mailSetup);
+  // One stable name; the progress rides along while the checklist is open.
+  const label = setup.open ? `Setup ${setup.progress}/${setup.total}` : "Setup";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -302,6 +307,7 @@ export function EndpointBar({
   onTabChange,
   hasRequests,
   exportMenu,
+  mailSetup,
 }: EndpointBarProps) {
   const [guideOpen, setGuideOpen] = useState(false);
   const mailFirst = useSite().key === "mailhooks";
@@ -358,7 +364,12 @@ export function EndpointBar({
           )}
         </div>
         <div className="relative order-2 md:order-3 ml-auto flex items-center gap-2">
-          <SetupMenu hasRequests={hasRequests} onOpenGuide={() => setGuideOpen(true)} slug={slug} />
+          <SetupMenu
+            hasRequests={hasRequests}
+            onOpenGuide={() => setGuideOpen(true)}
+            slug={slug}
+            mailSetup={mailFirst && emailAddress ? mailSetup : undefined}
+          />
           <SendMenu slug={slug} canEmail={!!emailAddress} />
           {exportMenu}
         </div>

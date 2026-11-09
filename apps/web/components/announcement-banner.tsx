@@ -74,7 +74,7 @@ export function AnnouncementBanner() {
             </span>
             <button
               onClick={dismiss}
-              className="ml-2 p-0.5 hover:opacity-70 transition-opacity flex-shrink-0"
+              className="ml-2 p-2 -m-1.5 hover:opacity-70 transition-opacity flex-shrink-0"
               aria-label="Dismiss announcement"
             >
               <X className="h-4 w-4" />

@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes, formatFullTimestamp } from "@/types/request";
+import { useSite } from "@/components/providers/site-provider";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
 import {
   buildEmailJson,
@@ -945,8 +946,13 @@ export function EmailDetail({
 }: EmailDetailProps) {
   const email = request.email ?? null;
   const requestId = "id" in request ? request.id : request._id;
-  // JSON first: it is what forwarding sends and what a handler is written against.
-  const [tab, setTab] = useState<EmailTab>(initialTab ?? (request.parsed ? "parsed" : "json"));
+  // webhooks.cc leads with JSON: it is what forwarding sends and what a handler is
+  // written against. mailhooks.cc leads with the email as people read it.
+  const mailFirst = useSite().key === "mailhooks";
+  const [tab, setTab] = useState<EmailTab>(
+    initialTab ??
+      (request.parsed ? "parsed" : mailFirst ? (email?.html ? "preview" : "text") : "json")
+  );
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
   const raw = useMemo(() => rawMessage(request), [request]);
@@ -1113,9 +1119,10 @@ export function EmailDetail({
   const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
     ...(request.parsed ? [{ id: "parsed" as const, label: "Parsed" }] : []),
-    { id: "json", label: "JSON" },
+    ...(mailFirst ? [] : [{ id: "json" as const, label: "JSON" }]),
     ...(email.html ? [{ id: "preview" as const, label: "Preview" }] : []),
     { id: "text", label: "Text" },
+    ...(mailFirst ? [{ id: "json" as const, label: "JSON" }] : []),
     { id: "headers", label: "Headers", count: headerCount },
     ...(attachments.length > 0
       ? [{ id: "attachments" as const, label: "Attachments", count: attachments.length }]

@@ -103,7 +103,8 @@ export function ProviderIcon({
   }
 
   return (
-    <span className="font-mono text-[7px] font-black leading-none tracking-tighter">
+    // Decorative beside the provider's name; too small to carry meaning on its own.
+    <span aria-hidden className="font-mono text-[7px] font-black leading-none tracking-tighter">
       {fallbackText}
     </span>
   );

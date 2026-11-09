@@ -1,5 +1,6 @@
 "use client";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -489,15 +490,38 @@ function LandingDashboardInner() {
     if (!isCreating && humanSignal !== "human") {
       return (
         <DashboardFrame>
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-            <p className="text-sm text-muted-foreground max-w-sm">
-              {humanSignal === "automated"
-                ? "Your guest URL is one click away: no account, 12 hours of captures."
-                : "Your free guest URL is created the moment you interact with the page, or right now:"}
-            </p>
-            <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
-              Get your webhook URL
-            </button>
+          <div className="relative flex-1 flex">
+            {/* A faint picture of the dashboard this button opens, so the first screen
+                is not an empty frame. Decorative only. */}
+            <div
+              aria-hidden
+              className="absolute inset-0 flex opacity-40 pointer-events-none select-none"
+            >
+              <div className="w-full md:w-96 shrink-0 md:border-r-strong md:border-line p-3 space-y-2">
+                {[0, 1, 2, 3, 4].map((row) => (
+                  <div key={row} className="flex items-center gap-2">
+                    <Skeleton className="h-5 w-12" />
+                    <Skeleton className="h-4 flex-1" />
+                    <Skeleton className="h-4 w-14" />
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block flex-1 p-4 space-y-3">
+                <Skeleton className="h-5 w-1/2" />
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-40 w-full" />
+              </div>
+            </div>
+            <div className="relative m-auto ui-card ui-card-static max-w-sm p-6! text-center space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {humanSignal === "automated"
+                  ? "Your guest URL is one click away: no account, 12 hours of captures."
+                  : "Your free guest URL is created the moment you interact with the page, or right now:"}
+              </p>
+              <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
+                Get your webhook URL
+              </button>
+            </div>
           </div>
         </DashboardFrame>
       );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Terminal, Code, Bot, Send } from "lucide-react";
+import { Terminal, Code, Bot, Send, Mail, LayoutList, Forward } from "lucide-react";
 
 const STORAGE_KEY = "getting_started_dismissed";
 const VISITED_KEY = "getting_started_visited";
@@ -28,8 +28,26 @@ const ITEMS: ChecklistItem[] = [
   { id: "mcp", label: "Set up MCP", href: "/docs/mcp", icon: Bot },
 ];
 
+/**
+ * mailhooks.cc's checklist: the steps that make mail useful. The first three
+ * are ticked from the endpoint itself, never from a click.
+ */
+const MAIL_ITEMS: ChecklistItem[] = [
+  { id: "webhook", label: "Receive your first email", icon: Mail },
+  { id: "layout", label: "Add a layout", icon: LayoutList },
+  { id: "destination", label: "Send it somewhere", icon: Send },
+  { id: "forward", label: "Forward a mailbox here", href: "/docs/email-capture", icon: Forward },
+];
+
+/** What the endpoint already has, for mailhooks.cc's checklist. */
+export interface MailSetupState {
+  layout: boolean;
+  destination: boolean;
+}
+
 /** The setup checklist behind the endpoint bar's Setup menu. */
-export function useGettingStarted(hasReceivedWebhook: boolean) {
+export function useGettingStarted(hasReceivedWebhook: boolean, mail?: MailSetupState) {
+  const items = mail ? MAIL_ITEMS : ITEMS;
   const [dismissed, setDismissed] = useState(true); // default hidden to avoid flash
   const [visited, setVisited] = useState<Set<string>>(new Set());
 
@@ -45,9 +63,13 @@ export function useGettingStarted(hasReceivedWebhook: boolean) {
     }
   }, []);
 
-  const isDone = (id: string) => (id === "webhook" && hasReceivedWebhook) || visited.has(id);
-  const progress = ITEMS.filter((item) => isDone(item.id)).length;
-  const total = ITEMS.length;
+  const isDone = (id: string) =>
+    (id === "webhook" && hasReceivedWebhook) ||
+    (id === "layout" && !!mail?.layout) ||
+    (id === "destination" && !!mail?.destination) ||
+    visited.has(id);
+  const progress = items.filter((item) => isDone(item.id)).length;
+  const total = items.length;
 
   const dismiss = () => {
     setDismissed(true);
@@ -62,7 +84,7 @@ export function useGettingStarted(hasReceivedWebhook: boolean) {
   };
 
   return {
-    items: ITEMS,
+    items,
     isDone,
     progress,
     total,

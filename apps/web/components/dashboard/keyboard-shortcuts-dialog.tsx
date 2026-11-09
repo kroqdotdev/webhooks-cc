@@ -52,7 +52,7 @@ export function KeyboardShortcutsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="caps">Keyboard Shortcuts</DialogTitle>
+          <DialogTitle className="caps">Keyboard shortcuts</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           {SHORTCUT_GROUPS.map((group) => (
@@ -62,7 +62,8 @@ export function KeyboardShortcutsDialog({
                 {group.shortcuts.map((s) => (
                   <div key={s.key} className="flex items-center justify-between py-1">
                     <span className="text-sm">{s.label}</span>
-                    <kbd className="px-2 py-0.5 text-xs font-mono font-bold border-strong border-line rounded-sm bg-muted">
+                    {/* Sans, where "l" cannot be mistaken for "1". */}
+                    <kbd className="px-2 py-0.5 text-xs font-sans font-bold border-strong border-line rounded-sm bg-muted">
                       {s.key}
                     </kbd>
                   </div>

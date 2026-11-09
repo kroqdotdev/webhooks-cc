@@ -10,7 +10,7 @@ export function MailhooksFooter() {
     {
       title: "Product",
       links: [
-        { href: "/parse", label: "Senders" },
+        { href: "/parse", label: "Layouts" },
         { href: "/pricing", label: "Pricing" },
         { href: "/login", label: "Sign in" },
       ],
@@ -31,6 +31,7 @@ export function MailhooksFooter() {
     {
       title: "Company",
       links: [
+        { href: "/support", label: "Support" },
         { href: webhooks, label: "webhooks.cc" },
         { href: `${webhooks}/privacy`, label: "Privacy" },
         { href: `${webhooks}/terms`, label: "Terms" },

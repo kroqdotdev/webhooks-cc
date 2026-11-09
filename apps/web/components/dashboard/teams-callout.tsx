@@ -49,7 +49,7 @@ export function DashboardAnnouncement() {
         </p>
         <button
           onClick={dismiss}
-          className="p-0.5 hover:opacity-70 transition-opacity flex-shrink-0"
+          className="p-2 -m-1.5 hover:opacity-70 transition-opacity flex-shrink-0"
           aria-label="Dismiss announcement"
         >
           <X className="h-4 w-4 text-muted-foreground" />

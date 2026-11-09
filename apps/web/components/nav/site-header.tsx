@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { ArrowUpRight, Menu, X } from "lucide-react";
 import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
 import { UserDropdown } from "@/components/nav/user-dropdown";
@@ -14,25 +14,34 @@ import { createClient } from "@/lib/supabase/client";
 import { webhooksOrigin } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
-const NAV_LINKS = [
+interface NavLink {
+  href: string;
+  label: string;
+  /** On the other site: marked with an arrow and named for screen readers. */
+  external?: boolean;
+}
+
+const NAV_LINKS: NavLink[] = [
   { href: "/docs", label: "Docs" },
   { href: "/installation", label: "Install" },
   { href: "/blog", label: "Blog" },
 ];
 
 // mailhooks.cc keeps its docs on webhooks.cc (one copy, one canonical URL).
-const MAILHOOKS_LINKS = [
+const MAILHOOKS_LINKS: NavLink[] = [
   // One name for the catalogue everywhere: the dashboard section is Layouts too.
   { href: "/parse", label: "Layouts" },
   { href: "/integrations", label: "Integrations" },
   { href: "/pricing", label: "Pricing" },
-  // The arrow says the link leaves for webhooks.cc, where the email docs live.
-  { href: `${webhooksOrigin()}/docs/email-capture`, label: "Email docs ↗" },
+  // The email docs live on webhooks.cc; the link says so, to eyes and screen readers.
+  { href: `${webhooksOrigin()}/docs/email-capture`, label: "Email docs", external: true },
 ];
 
 interface SiteHeaderProps {
   /** Page context beside the wordmark: the endpoint switcher, a back link, section links. */
   children?: React.ReactNode;
+  /** Section links the page shows in its children on wide screens, repeated in the phone menu. */
+  mobileLinks?: NavLink[];
   /**
    * The dashboard is short on room: it drops the blog link, and on phones its
    * controls get a row of their own below the wordmark.
@@ -74,7 +83,13 @@ export function headerPlace(pathname: string): { onAuthPage: boolean; inApp: boo
  * context, the site links, and either a sign-in link or the account menu. It
  * sits below the fixed maintenance and announcement banners when they show.
  */
-export function SiteHeader({ children, compact = false, top, notFound = false }: SiteHeaderProps) {
+export function SiteHeader({
+  children,
+  compact = false,
+  top,
+  notFound = false,
+  mobileLinks = [],
+}: SiteHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthenticated = useIsAuthenticated();
@@ -176,6 +191,12 @@ export function SiteHeader({ children, compact = false, top, notFound = false }:
               )}
             >
               {link.label}
+              {link.external && (
+                <>
+                  <ArrowUpRight aria-hidden className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5" />
+                  <span className="sr-only"> (on webhooks.cc)</span>
+                </>
+              )}
             </Link>
           ))}
           {authAction}
@@ -204,7 +225,7 @@ export function SiteHeader({ children, compact = false, top, notFound = false }:
         >
           <div className="px-4 py-4 flex flex-col gap-3">
             <SiteSwitchRow onNavigate={() => setOpen(false)} />
-            {links.map((link) => (
+            {[...mobileLinks, ...links].map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -212,6 +233,12 @@ export function SiteHeader({ children, compact = false, top, notFound = false }:
                 onClick={() => setOpen(false)}
               >
                 {link.label}
+                {link.external && (
+                  <>
+                    <ArrowUpRight aria-hidden className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5" />
+                    <span className="sr-only"> (on webhooks.cc)</span>
+                  </>
+                )}
               </Link>
             ))}
             {isAuthenticated ? (

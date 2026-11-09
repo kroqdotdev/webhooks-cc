@@ -272,7 +272,7 @@ export default function MailhooksHome() {
                 </ul>
               </div>
             ))}
-            <div className="md:col-span-3 flex flex-wrap items-center gap-4">
+            <div className="md:col-span-3 flex flex-wrap items-start gap-4">
               <div className="w-full sm:w-auto sm:min-w-80">
                 <PricingCTA />
               </div>

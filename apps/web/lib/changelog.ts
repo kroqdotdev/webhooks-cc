@@ -43,6 +43,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Red warning text and buttons, and sign-in errors, meet AA contrast in every style",
       "The request list's small text is larger, its phone controls are easier to tap, and the timeline spreads out requests that arrive together",
       "mailhooks.cc: the New endpoint dialog and Send menu lead with email, the empty dashboard has a forwarding card, the hero has one primary sign-up button, and /layouts opens the layout gallery",
+      "Form fields, selects, switches and segmented controls have clearly visible edges in the clean style, and segmented options show their focus ring",
+      "The landing page's first screen previews the dashboard and says plainly that the URL is one click away; the phone menu lists Providers, Compare and Pricing",
+      "Pricing cards say what each paid plan adds, and the Teams video shows a still until it plays",
+      "mailhooks.cc: a Setup checklist for mail (first email, a layout, a destination, forwarding), ready-made layouts from inside Settings, emails that open on their preview, and a way to list endpoints from webhooks.cc on the empty dashboard",
     ],
   },
   {

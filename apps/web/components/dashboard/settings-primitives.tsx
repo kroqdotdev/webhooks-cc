@@ -187,13 +187,16 @@ export function Switch({
         "relative inline-flex h-6 w-11 shrink-0 items-center border-strong border-line rounded-lg cursor-pointer transition-colors motion-reduce:transition-none",
         "disabled:cursor-not-allowed disabled:opacity-60",
         "clean:rounded-full",
-        checked ? "bg-primary" : "bg-muted"
+        // Off, clean's track takes the control boundary colour so it reads at 3:1.
+        checked ? "bg-primary" : "bg-muted clean:border-input"
       )}
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 bg-card border-strong border-line rounded-sm clean:rounded-full transition-transform motion-reduce:transition-none",
-          checked ? "translate-x-5.5" : "translate-x-0.5"
+          "inline-block h-4 w-4 border-strong border-line rounded-sm clean:rounded-full transition-transform motion-reduce:transition-none",
+          checked
+            ? "translate-x-5.5 bg-card"
+            : "translate-x-0.5 bg-card clean:bg-muted-foreground/70"
         )}
       />
     </button>

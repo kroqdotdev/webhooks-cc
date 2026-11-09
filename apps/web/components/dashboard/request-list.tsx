@@ -253,7 +253,24 @@ export function RequestList({
                 type="button"
                 role="radio"
                 aria-checked={kindFilter === kind.id}
+                // One tab stop for the group; arrow keys move the choice, as in a radio group.
+                tabIndex={kindFilter === kind.id ? 0 : -1}
                 onClick={() => onKindFilterChange(kind.id)}
+                onKeyDown={(event) => {
+                  const step =
+                    event.key === "ArrowRight" || event.key === "ArrowDown"
+                      ? 1
+                      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                        ? -1
+                        : 0;
+                  if (!step) return;
+                  event.preventDefault();
+                  const next = KINDS[(index + step + KINDS.length) % KINDS.length];
+                  onKindFilterChange(next.id);
+                  event.currentTarget.parentElement
+                    ?.querySelectorAll<HTMLButtonElement>("[role=radio]")
+                    [(index + step + KINDS.length) % KINDS.length]?.focus();
+                }}
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold caps cursor-pointer transition-colors whitespace-nowrap",
                   index > 0 && "border-l-strong border-line",
@@ -297,6 +314,11 @@ export function RequestList({
             onClick={onToggleSort}
             className="p-1.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
             title={sortNewest ? "Showing newest first" : "Showing oldest first"}
+            aria-label={
+              sortNewest
+                ? "Newest first. Switch to oldest first"
+                : "Oldest first. Switch to newest first"
+            }
           >
             <ArrowUpDown className="h-3.5 w-3.5" />
           </button>
@@ -364,6 +386,10 @@ export function RequestList({
       </div>
 
       {/* New requests banner */}
+      {/* Screen readers hear the count change as requests arrive. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {displayCount} {displayCount === 1 ? itemNoun.slice(0, -1) : itemNoun}
+      </p>
       {!liveMode && (newCount ?? 0) > 0 && onJumpToNew && (
         <button
           onClick={onJumpToNew}
