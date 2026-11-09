@@ -11,6 +11,13 @@ import {
   WEB_PROVIDER_CATALOG,
 } from "@/lib/provider-catalog";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { DisplayableRequest } from "./request-detail";
 
 /**
@@ -218,7 +225,7 @@ function ServerSideResult({
   );
 }
 
-/** Client-side verification UI — paste secret, verify in browser. */
+/** Client-side verification UI: paste a secret, verify in the browser. */
 function ClientSideVerification({
   request,
   onOpenSettings,
@@ -341,22 +348,24 @@ function ClientSideVerification({
           <label htmlFor="sig-provider" className="font-bold caps text-xs">
             Provider
           </label>
-          <select
-            id="sig-provider"
+          <Select
             value={provider}
-            onChange={(e) => {
-              setProvider(e.target.value);
+            onValueChange={(value) => {
+              setProvider(value);
               setResult(null);
             }}
-            className="ui-input w-full text-sm"
           >
-            <option value="">Select provider...</option>
-            {Object.entries(WEB_PROVIDER_CATALOG).map(([key, info]) => (
-              <option key={key} value={key}>
-                {info.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="sig-provider" className="ui-input w-full text-sm h-auto">
+              <SelectValue placeholder="Select provider..." />
+            </SelectTrigger>
+            <SelectContent className="max-h-80">
+              {Object.entries(WEB_PROVIDER_CATALOG).map(([key, info]) => (
+                <SelectItem key={key} value={key}>
+                  {info.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
@@ -447,7 +456,7 @@ function ClientSideVerification({
               Want automatic verification on every request?
             </p>
             <button onClick={onOpenSettings} className="ui-btn-outline py-1.5! px-3! text-xs">
-              Save to endpoint settings
+              Set up in endpoint settings
             </button>
           </div>
         </>

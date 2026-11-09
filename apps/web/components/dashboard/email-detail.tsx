@@ -101,6 +101,32 @@ type ParseWatch =
   /** `layout`: the name of the layout that read it, null when none did (or no answer came). */
   | { id: string; state: "done"; mode: "new" | "again"; layout: string | null };
 
+/**
+ * Whether a horizontally scrolling element has more content past its right
+ * edge: the tab strip fades there only then, at any width.
+ */
+function useMoreToRight<T extends HTMLElement>() {
+  const [more, setMore] = useState(false);
+  const cleanup = useRef<(() => void) | null>(null);
+  const ref = useCallback((element: T | null) => {
+    cleanup.current?.();
+    cleanup.current = null;
+    if (!element) return;
+    const update = () =>
+      setMore(element.scrollWidth - element.clientWidth - element.scrollLeft > 1);
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    element.addEventListener("scroll", update, { passive: true });
+    update();
+    cleanup.current = () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", update);
+    };
+  }, []);
+  return [ref, more] as const;
+}
+
 function useCopy() {
   const [copied, setCopied] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -744,10 +770,13 @@ function AuthenticationPane({
   email,
   ip,
   report,
+  isTest,
 }: {
   email: EmailCapture;
   ip: string;
   report: DeliverabilityReport | null;
+  /** A test email sent from the dashboard, which no sender checks apply to. */
+  isTest: boolean;
 }) {
   const auth = email.auth;
   const arc = auth?.arc;
@@ -764,7 +793,12 @@ function AuthenticationPane({
     <div className="grid gap-4 max-w-[860px]">
       <section className="ui-card ui-card-static p-4!">
         <h3 className="text-sm font-bold caps mb-1">Sender checks</h3>
-        {!auth || auth.error ? (
+        {isTest ? (
+          <p className="text-sm text-muted-foreground py-2">
+            This is a test email sent from the dashboard, so SPF, DKIM and DMARC do not apply. Mail
+            from a real sender shows its results here.
+          </p>
+        ) : !auth || auth.error ? (
           <p className="text-sm text-muted-foreground py-2">
             The checks could not run for this email{auth?.error ? ` (${auth.error})` : ""}.
           </p>
@@ -851,7 +885,8 @@ function AuthenticationPane({
       {email.spam && <SpamSection spam={email.spam} />}
       <section className="ui-card ui-card-static p-4!">
         <h3 className="text-sm font-bold caps mb-1">Delivery</h3>
-        <dl className="grid grid-cols-[minmax(120px,200px)_1fr] text-sm">
+        {/* Two columns from sm up; on a phone each value goes under its label. */}
+        <dl className="grid grid-cols-1 sm:grid-cols-[minmax(120px,200px)_1fr] text-sm">
           {[
             [
               "Sending server",
@@ -881,7 +916,7 @@ function AuthenticationPane({
               <div key={label as string} className="contents">
                 <dt
                   className={cn(
-                    "py-2 pr-3 text-muted-foreground",
+                    "pt-2 sm:py-2 pr-3 text-muted-foreground",
                     index > 0 && "border-t border-line/15"
                   )}
                 >
@@ -889,8 +924,8 @@ function AuthenticationPane({
                 </dt>
                 <dd
                   className={cn(
-                    "py-2 break-all",
-                    index > 0 && "border-t border-line/15",
+                    "pb-2 sm:py-2 [overflow-wrap:anywhere]",
+                    index > 0 && "sm:border-t sm:border-line/15",
                     mono && "font-mono text-[13px]"
                   )}
                 >
@@ -1023,6 +1058,7 @@ export function EmailDetail({
   const mailFirst = useSite().key === "mailhooks";
   // The page can show this view twice (desktop and phone), so ids are per instance.
   const tabIds = useId();
+  const [tabStripRef, tabStripMore] = useMoreToRight<HTMLDivElement>();
   const hasLayouts = (endpoint.layouts?.length ?? 0) > 0;
   // A tab the person picked stays: a parse that finishes later does not move them.
   const tabPicked = useRef(initialTab !== undefined);
@@ -1351,19 +1387,19 @@ export function EmailDetail({
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Envelope */}
-      <div className="border-b-strong border-line px-4 md:px-5 pt-4 pb-3.5 shrink-0 bg-card">
-        {/* On a phone the buttons go under the subject, which keeps the full width. */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
+      <div className="@container border-b-strong border-line px-4 pt-4 pb-3.5 shrink-0 bg-card">
+        {/* In a narrow pane the buttons go under the subject, which keeps the full width. */}
+        <div className="flex flex-col gap-2 @xl:flex-row @xl:items-start @xl:gap-3">
           <h2
             className={cn(
-              "sm:flex-1 min-w-0 text-lg md:text-[21px] font-bold clean:font-semibold leading-tight break-words",
+              "@xl:flex-1 min-w-0 text-lg md:text-[21px] font-bold clean:font-semibold leading-tight break-words",
               !email.subject && "text-muted-foreground"
             )}
           >
             {email.subject || "(no subject)"}
           </h2>
           {(canReadAgain || rawAvailable) && (
-            <div className="flex flex-wrap gap-2 sm:justify-end sm:shrink-0">
+            <div className="flex flex-wrap gap-2 @xl:justify-end @xl:shrink-0">
               {canReadAgain && (
                 <button
                   type="button"
@@ -1455,7 +1491,14 @@ export function EmailDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs: the same bar as the HTTP view */}
-      <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none] max-md:[mask-image:linear-gradient(to_right,#000_85%,transparent)]">
+      {/* The strip scrolls when the tabs do not fit; a fade on the right says there is more. */}
+      <div
+        ref={tabStripRef}
+        className={cn(
+          "border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]",
+          tabStripMore && "[mask-image:linear-gradient(to_right,#000_calc(100%-3rem),transparent)]"
+        )}
+      >
         <div role="tablist" aria-label="Email sections" className="flex shrink-0">
           {tabs.map((entry, index) => (
             <button
@@ -1490,65 +1533,6 @@ export function EmailDetail({
             </button>
           ))}
         </div>
-        {activeTab === "text" && reply && (
-          <div className="flex ml-auto items-center pr-3 pl-3">
-            <div
-              className="flex overflow-hidden rounded-sm border-strong border-line"
-              role="group"
-              aria-label="Text to show"
-            >
-              {(
-                [
-                  ["whole", "Whole text"],
-                  ["reply", "Reply only"],
-                ] as const
-              ).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setTextView(mode)}
-                  aria-pressed={textView === mode}
-                  className={cn(
-                    "px-2.5 py-0.5 text-[11px] font-bold caps clean:capitalize cursor-pointer transition-colors whitespace-nowrap",
-                    mode === "reply" && "border-l-strong border-line",
-                    textView === mode
-                      ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
-                      : "bg-background hover:bg-muted"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {activeTab === "preview" && (
-          <div className="hidden md:flex ml-auto items-center pr-3 pl-3">
-            <div
-              role="group"
-              aria-label="Preview width"
-              className="flex overflow-hidden rounded-sm border-strong border-line"
-            >
-              {(["desktop", "mobile"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={width === mode}
-                  onClick={() => setWidth(mode)}
-                  className={cn(
-                    "px-2.5 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors capitalize",
-                    mode === "mobile" && "border-l-strong border-line",
-                    width === mode
-                      ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
-                      : "bg-background hover:bg-muted"
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       <div
@@ -1656,6 +1640,32 @@ export function EmailDetail({
 
         {activeTab === "preview" && email.html && (
           <>
+            {/* The width toggle; a phone shows the mobile width anyway. */}
+            <div className="hidden md:flex items-center justify-end gap-2 mb-3">
+              <div
+                role="group"
+                aria-label="Preview width"
+                className="flex overflow-hidden rounded-sm border-strong border-line"
+              >
+                {(["desktop", "mobile"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={width === mode}
+                    onClick={() => setWidth(mode)}
+                    className={cn(
+                      "px-2.5 py-1 text-[11px] font-bold caps cursor-pointer transition-colors capitalize",
+                      mode === "mobile" && "border-l-strong border-line",
+                      width === mode
+                        ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                        : "bg-background hover:bg-muted"
+                    )}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
             {email.truncated.html && (
               <p className="text-xs text-muted-foreground mb-3">
                 The HTML was too large to keep in full; the end is cut off.
@@ -1670,14 +1680,46 @@ export function EmailDetail({
         )}
 
         {activeTab === "text" && (
-          <div className="max-w-[760px]">
+          <div>
+            {reply && (
+              <div className="flex items-center justify-end gap-2 mb-3">
+                <div
+                  className="flex overflow-hidden rounded-sm border-strong border-line"
+                  role="group"
+                  aria-label="Text to show"
+                >
+                  {(
+                    [
+                      ["whole", "Whole text"],
+                      ["reply", "Reply only"],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setTextView(mode)}
+                      aria-pressed={textView === mode}
+                      className={cn(
+                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold caps clean:capitalize cursor-pointer transition-colors whitespace-nowrap",
+                        mode === "reply" && "border-l-strong border-line",
+                        textView === mode
+                          ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                          : "bg-background hover:bg-muted"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {email.textFromHtml && (
-              <p className="text-xs text-muted-foreground mb-3">
+              <p className="text-xs text-muted-foreground mb-3 max-w-[760px]">
                 This email has no text part; the text below was taken from its HTML.
               </p>
             )}
             {reply && textView === "reply" && (
-              <p className="text-xs text-muted-foreground mb-3">
+              <p className="text-xs text-muted-foreground mb-3 max-w-[760px]">
                 What the sender wrote above the quoted message, without the signature: the{" "}
                 <code className="font-mono">replyText</code> field of the JSON.
               </p>
@@ -1694,7 +1736,9 @@ export function EmailDetail({
                 >
                   {copied === "text" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </button>
-                {reply && textView === "reply" ? reply : email.text}
+                <div className="max-w-[760px]">
+                  {reply && textView === "reply" ? reply : email.text}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">This email has no text.</p>
@@ -1777,7 +1821,7 @@ export function EmailDetail({
         )}
 
         {activeTab === "authentication" && (
-          <AuthenticationPane email={email} ip={request.ip} report={report} />
+          <AuthenticationPane email={email} ip={request.ip} report={report} isTest={isTest} />
         )}
 
         {activeTab === "raw" &&

@@ -20,6 +20,13 @@ import {
   Clock,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSite } from "@/components/providers/site-provider";
 import { SignatureVerificationBadge } from "./signature-tab";
 import { ProviderBadge } from "./provider-badge";
@@ -139,8 +146,13 @@ export function RequestList({
   parseNow,
 }: RequestListProps) {
   // The mail site, or a list filtered to email, talks about emails.
-  const talksEmail = useSite().key === "mailhooks" || kindFilter === "email";
+  const site = useSite();
+  const talksEmail = site.key === "mailhooks" || kindFilter === "email";
   const itemNoun = talksEmail ? "emails" : "requests";
+  // A list of only emails (the Email filter, or a mail inbox holding nothing else)
+  // drops the per-row EMAIL badge and the indent made for it.
+  const onlyEmail =
+    kindFilter === "email" || (site.key === "mailhooks" && requests.every(isEmailItem));
   const displayCount = totalCount ?? requests.length;
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
@@ -393,7 +405,7 @@ export function RequestList({
           {onViewModeChange && (
             <button
               onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
-              className="p-1.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
+              className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
               title={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-label={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-pressed={viewMode === "timeline"}
@@ -407,7 +419,7 @@ export function RequestList({
           )}
           <button
             onClick={onToggleSort}
-            className="p-1.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
+            className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
             title={sortNewest ? "Showing newest first" : "Showing oldest first"}
             aria-label={
               sortNewest
@@ -444,18 +456,21 @@ export function RequestList({
       {/* Filter bar */}
       <div className="border-b-strong border-line px-3 py-2 flex items-center gap-2 shrink-0">
         {kindFilter !== "email" && (
-          <select
-            aria-label="Method"
-            value={methodFilter}
-            onChange={(e) => onMethodFilterChange(e.target.value)}
-            className="text-xs font-bold rounded-md border-strong border-line bg-background px-2 py-1 max-md:py-2 cursor-pointer"
-          >
-            {METHODS.map((m) => (
-              <option key={m} value={m}>
-                {METHOD_LABELS[m]}
-              </option>
-            ))}
-          </select>
+          <Select value={methodFilter} onValueChange={onMethodFilterChange}>
+            <SelectTrigger
+              aria-label="Method"
+              className="h-auto w-auto shrink-0 gap-1.5 text-xs font-bold rounded-md border-strong border-line bg-background px-2 py-1 max-md:py-2 cursor-pointer focus:ring-offset-0"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {METHODS.map((m) => (
+                <SelectItem key={m} value={m} className="text-xs font-bold">
+                  {METHOD_LABELS[m]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
         <div className="ui-control flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -532,7 +547,10 @@ export function RequestList({
                 ? "Search unavailable"
                 : hasMore
                   ? `None in the newest ${itemNoun}`
-                  : `No matching ${itemNoun}`}
+                  : searchQuery
+                    ? // The detail pane explains an empty search and offers to clear it.
+                      "0 results"
+                    : `No matching ${itemNoun}`}
             </div>
             {/* A filter can match nothing loaded so far and still match older pages. */}
             {loadMore}
@@ -712,14 +730,17 @@ export function RequestList({
     return (
       <div key={id} {...rowProps(id, isComparing)}>
         <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-14 text-center",
-              getMethodColor("EMAIL")
-            )}
-          >
-            EMAIL
-          </span>
+          {/* A list of only emails needs no badge saying so on every row. */}
+          {!onlyEmail && (
+            <span
+              className={cn(
+                "px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-14 text-center",
+                getMethodColor("EMAIL")
+              )}
+            >
+              EMAIL
+            </span>
+          )}
           <span
             className={cn(
               "text-[13px] truncate flex-1",
@@ -734,8 +755,12 @@ export function RequestList({
             {renderTimestamp(request.receivedAt)}
           </span>
         </div>
-        <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)] min-w-0">
-          <span className="text-xs text-muted-foreground font-mono shrink-0">#{id.slice(-6)}</span>
+        <div
+          className={cn(
+            "flex items-center gap-2 mt-0.5 min-w-0",
+            !onlyEmail && "ml-[calc(3.5rem+0.5rem)]"
+          )}
+        >
           {sender && <span className="text-xs text-muted-foreground truncate">{sender}</span>}
           {email?.tag && (
             <span className="text-xs font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
@@ -753,6 +778,7 @@ export function RequestList({
               {formatBytes(request.size)}
             </span>
           )}
+          <span className="text-xs text-muted-foreground font-mono shrink-0">#{id.slice(-6)}</span>
           {parse && (
             <span
               className={cn(

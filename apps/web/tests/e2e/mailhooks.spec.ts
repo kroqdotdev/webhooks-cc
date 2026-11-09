@@ -105,7 +105,8 @@ test("the dashboard on mailhooks.cc is under its name and opens on emails", asyn
   await captureEmail("Order 1 confirmed");
   // The dashboard's live connection keeps the network busy: no networkidle here.
   await page.goto(`${MAIL}/dashboard?endpoint=${endpointSlug}`);
-  await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
+  // Titled after the open endpoint (or "Dashboard" before there is one), then the site.
+  await expect(page).toHaveTitle(/ \| mailhooks\.cc$/);
   await expect(page.getByRole("banner").getByRole("link", { name: "mailhooks.cc" })).toBeVisible();
   await expect(page.getByRole("radio", { name: /^Email/ })).toHaveAttribute(
     "aria-checked",
@@ -184,7 +185,8 @@ test("an email link asked for on mailhooks.cc signs in there, even opened on web
     `${baseURL}/auth/confirm?token_hash=${encodeURIComponent(hash)}&type=email&redirect_to=${encodeURIComponent(redirectTo)}`
   );
   await expect(page).toHaveURL(redirectTo, { timeout: 15000 });
-  await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
+  // Titled after the open endpoint (or "Dashboard" before there is one), then the site.
+  await expect(page).toHaveTitle(/ \| mailhooks\.cc$/);
 
   // Emails sent later (quota, alerts) link to the site it signed in on.
   const { data } = await admin.from("users").select("home_site").eq("id", user.id).single();
@@ -226,5 +228,6 @@ test("signs in with a password on mailhooks.cc and stays there", async ({ page }
       timeout: 20000,
     }
   );
-  await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
+  // Titled after the open endpoint (or "Dashboard" before there is one), then the site.
+  await expect(page).toHaveTitle(/ \| mailhooks\.cc$/);
 });

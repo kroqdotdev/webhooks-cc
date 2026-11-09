@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSite } from "@/components/providers/site-provider";
 import { useSettingsData } from "./settings-data";
 
 const NEW_TEAM_HREF = "/teams?new=1";
@@ -40,6 +41,25 @@ const ACCOUNT_ITEMS: NavItem[] = [
   { href: "/account/security", label: "Security" },
   { href: "/account/support-access", label: "Support access" },
 ];
+
+/**
+ * Keeps the section's own <title> in front of the layout's metadata one
+ * ("Account"): React puts a newly mounted title first, and each navigation
+ * mounts the metadata title again, so this one moves back in front whenever
+ * the head changes (as the dashboard's does).
+ */
+function keepTitleFirst(own: HTMLTitleElement | null) {
+  if (!own) return;
+  const head = own.ownerDocument.head;
+  const moveFirst = () => {
+    const first = head.querySelector("title");
+    if (first && first !== own && own.parentNode === head) head.insertBefore(own, first);
+  };
+  moveFirst();
+  const observer = new MutationObserver(moveFirst);
+  observer.observe(head, { childList: true });
+  return () => observer.disconnect();
+}
 
 function isActive(pathname: string, item: NavItem): boolean {
   if (item.exact) return pathname === item.href;
@@ -106,14 +126,24 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const teamItems = useTeamItems();
-  // The page shown, for the narrow screens' list: the most specific match.
-  const activeHref =
-    [...ACCOUNT_ITEMS, ...teamItems]
-      .filter((item) => isActive(pathname, item))
-      .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? "";
+  const site = useSite();
+  // The page shown, for the narrow screens' list and the title: the most specific match.
+  const activeItem = [...ACCOUNT_ITEMS, ...teamItems]
+    .filter((item) => isActive(pathname, item))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+  const activeHref = activeItem?.href ?? "";
+  const onAccount = !!activeItem && ACCOUNT_ITEMS.includes(activeItem);
+  // A team's name is its owner's own words and stays out of the title, which analytics read.
+  const titleLabel = onAccount || activeItem?.href === "/teams" ? activeItem?.label : "Team";
 
   return (
     <div className="container mx-auto px-4 py-6 lg:py-10">
+      {/* Each section names itself in the tab, so open account tabs can be told apart. */}
+      {activeItem && (
+        <title
+          ref={keepTitleFirst}
+        >{`${titleLabel} | ${onAccount ? "Account" : "Teams"} | ${site.name}`}</title>
+      )}
       {/* Nine account pages and the teams do not fit a phone's width, so
           narrow screens pick the page from a list. */}
       <nav aria-label="Settings" className="lg:hidden mb-6">

@@ -519,7 +519,7 @@ function LandingDashboardInner() {
                 <div className="bg-muted rounded-sm h-40 w-full" />
               </div>
             </div>
-            <div className="relative m-auto ui-card ui-card-static max-w-sm p-6! text-center space-y-4">
+            <div className="relative my-auto mx-4 sm:mx-auto ui-card ui-card-static max-w-sm p-6! text-center space-y-4">
               <p className="text-sm text-muted-foreground">
                 {humanSignal === "automated"
                   ? "Your guest URL is one click away: no account, 12 hours of captures."

@@ -13,6 +13,13 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   createDestination,
   deleteDestination,
   fetchDashboardRequests,
@@ -61,6 +68,9 @@ export type DestinationPreset = "server" | "chat" | "template" | "inbound" | "sh
 
 /** "provider" stands for the four inbound shapes, chosen below it. */
 type FormatChoice = Exclude<DestinationFormatSetting, InboundEmailFormat> | "provider";
+
+/** The preview choice that means the newest request (Radix items need a value). */
+const NEWEST_REQUEST = "__newest__";
 
 const FORMAT_OPTIONS: { value: FormatChoice; label: string }[] = [
   { value: "auto", label: "Pick from the URL" },
@@ -353,23 +363,30 @@ function DeliveryPreview({
         <label htmlFor={`preview-${destinationId ?? "new"}`} className="text-sm font-semibold">
           Preview with
         </label>
-        <select
-          id={`preview-${destinationId ?? "new"}`}
-          value={requestId}
-          onChange={(e) => setRequestId(e.target.value)}
-          className="ui-input text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[30rem]"
+        {/* Radix items cannot carry an empty value, so the newest has its own. */}
+        <Select
+          value={requestId || NEWEST_REQUEST}
+          onValueChange={(value) => setRequestId(value === NEWEST_REQUEST ? "" : value)}
         >
-          <option value="">
-            {options.length === 0 && requests !== null
-              ? "A sample (nothing captured yet)"
-              : "The newest it would get"}
-          </option>
-          {options.map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id={`preview-${destinationId ?? "new"}`}
+            className="ui-input h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[30rem]"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value={NEWEST_REQUEST} className="text-[13px] font-mono">
+              {options.length === 0 && requests !== null
+                ? "A sample (nothing captured yet)"
+                : "The newest it would get"}
+            </SelectItem>
+            {options.map((row) => (
+              <SelectItem key={row.id} value={row.id} className="text-[13px] font-mono">
+                {row.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div role="status" aria-live="polite" className="space-y-2 text-sm">
         {blocked ? (
@@ -490,6 +507,9 @@ function GenericDestinationEditor({
   >(null);
   const templateRef = useRef<HTMLTextAreaElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
+  // The URL field can sit far above the save button: focusing it scrolls it into view.
+  const focusUrl = () => requestAnimationFrame(() => urlRef.current?.focus());
   const idPrefix = `destination-${destination?.id ?? "new"}`;
 
   useEffect(() => {
@@ -584,6 +604,7 @@ function GenericDestinationEditor({
           ? "Fix the field marked above."
           : `Fix the ${problemCount} fields marked above.`
       );
+      if (urlError) focusUrl();
       return;
     }
     const value = inputOf(draft, headersChanged);
@@ -608,6 +629,7 @@ function GenericDestinationEditor({
         setRefusedUrl({ url: draft.url, message: fieldMessage });
         setSubmitted(true);
         setError("Fix the field marked above.");
+        focusUrl();
       } else {
         setError(message);
       }
@@ -694,6 +716,7 @@ function GenericDestinationEditor({
           errorId={`${idPrefix}-url-error`}
         >
           <input
+            ref={urlRef}
             id={`${idPrefix}-url`}
             type="url"
             value={draft.url}
@@ -795,18 +818,24 @@ function GenericDestinationEditor({
               <label htmlFor={`${idPrefix}-provider`} className="text-xs text-muted-foreground">
                 Shaped like
               </label>
-              <select
-                id={`${idPrefix}-provider`}
+              <Select
                 value={provider}
-                onChange={(e) => set({ format: e.target.value as InboundEmailFormat })}
-                className="ui-input text-[13px] py-1.5! px-2! w-56"
+                onValueChange={(value) => set({ format: value as InboundEmailFormat })}
               >
-                {INBOUND_EMAIL_FORMATS.map((format) => (
-                  <option key={format} value={format}>
-                    {INBOUND_EMAIL_FORMAT_NAMES[format]}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  id={`${idPrefix}-provider`}
+                  className="ui-input h-auto text-[13px] py-1.5! px-2! w-56"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INBOUND_EMAIL_FORMATS.map((format) => (
+                    <SelectItem key={format} value={format} className="text-[13px]">
+                      {INBOUND_EMAIL_FORMAT_NAMES[format]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
           <div className="text-xs text-muted-foreground space-y-1">

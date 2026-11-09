@@ -55,6 +55,9 @@ import { stableStringify } from "@/lib/stable-json";
 
 export type { SettingsSection } from "./settings-primitives";
 
+/** The verification provider choice that means none (Radix items need a value). */
+const NO_PROVIDER = "__none__";
+
 interface EndpointSettingsPanelProps {
   endpoint: DashboardEndpoint & {
     mockResponse?: { delay?: number } & DashboardEndpoint["mockResponse"];
@@ -506,11 +509,11 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         label="Provider"
         help="SendGrid uses IP allowlisting. Plaid verification needs Plaid API credentials, so it is template-only for now."
       >
-        <select
-          id="settings-signing-provider"
-          value={provider}
-          onChange={(e) => {
-            const next = e.target.value;
+        {/* Radix items cannot carry an empty value, so None has its own. */}
+        <Select
+          value={provider || NO_PROVIDER}
+          onValueChange={(value) => {
+            const next = value === NO_PROVIDER ? "" : value;
             setProvider(next);
             setSecret("");
             setHasSecret(next === initialProvider && initialHasSecret);
@@ -518,15 +521,22 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
               next === "generic-hmac" && initialProvider === "generic-hmac" ? initialHeader : ""
             );
           }}
-          className="ui-input w-full text-sm py-2!"
         >
-          <option value="">None</option>
-          {WEB_VERIFICATION_PROVIDER_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id="settings-signing-provider"
+            className="ui-input w-full text-sm h-auto py-2!"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value={NO_PROVIDER}>None</SelectItem>
+            {WEB_VERIFICATION_PROVIDER_OPTIONS.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </Field>
       {provider && (
         <Field
@@ -881,7 +891,7 @@ export function EndpointSettingsPanel({
     <div className="flex-1 flex flex-col md:flex-row min-h-0">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 p-2 md:p-3"
+        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 px-4 py-2 md:p-3"
       >
         {/* Ten sections do not fit a phone's width, and wrapped they take four
             rows, so phones pick the section from a list instead. */}
@@ -913,7 +923,9 @@ export function EndpointSettingsPanel({
                 section.id === "delete" && "mt-3",
                 section.nested && "pl-6",
                 active === section.id
-                  ? "bg-selected text-selected-foreground font-semibold"
+                  ? section.id === "delete"
+                    ? "bg-destructive/10 text-destructive-ink font-semibold"
+                    : "bg-selected text-selected-foreground font-semibold"
                   : section.id === "delete"
                     ? "text-destructive-ink hover:bg-destructive/10"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"

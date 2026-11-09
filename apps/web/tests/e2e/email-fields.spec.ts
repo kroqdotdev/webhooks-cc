@@ -173,7 +173,7 @@ test("an inbound email handler destination posts emails as Postmark does", async
   const forwarding = await openSettings(page, "Forwarding");
   await forwarding.getByRole("button", { name: /^Inbound email handler/ }).click();
   await forwarding.getByLabel("Send to").fill(hookUrl);
-  await expect(forwarding.getByLabel("Shaped like")).toHaveValue("postmark");
+  await expect(forwarding.getByLabel("Shaped like")).toHaveText("Postmark inbound");
   await forwarding.getByRole("button", { name: "Add destination" }).click();
   await expect
     .poll(

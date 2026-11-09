@@ -232,7 +232,8 @@ export default function MailhooksHome() {
               ))}
             </div>
             <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Five cards in three columns: the last spans two, so no slot is left empty. */}
+            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:[&>li:last-child]:col-span-2">
               {MAILHOOKS_FEATURES.map((feature) => (
                 <li key={feature.path}>
                   <Link href={feature.path} className="ui-card block h-full">

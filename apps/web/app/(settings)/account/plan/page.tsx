@@ -8,7 +8,14 @@ import { BillingPortalButton } from "@/components/billing/billing-portal";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
 import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
-import { PlanChooser } from "@/components/billing/plan-chooser";
+import {
+  PlanActions,
+  PlanChooserStatus,
+  usePlanChooser,
+  type PlanChooserState,
+} from "@/components/billing/plan-chooser";
+import { Segmented } from "@/components/dashboard/settings-primitives";
+import type { AccountProfile } from "@/lib/account-profile";
 import { planName } from "@/lib/billing-api";
 import {
   Notice,
@@ -125,20 +132,21 @@ const MAIL_ROW_LABELS: Record<string, string> = {
   "Requests kept for": "Kept for",
 };
 
-function PlanTable({ current }: { current: PlanKey }) {
+const PLANS: PlanKey[] = ["free", "pro", "business"];
+
+function PlanTable({ current, chooser }: { current: PlanKey; chooser: PlanChooserState | null }) {
   const mailFirst = useSite().key === "mailhooks";
   const column = (plan: PlanKey) =>
-    cn("px-4 py-3 text-left", current === plan && "bg-muted/60 font-medium");
-  const plans: PlanKey[] = ["free", "pro", "business"];
+    cn("px-4 py-3 text-left align-top", current === plan && "bg-muted/60 font-medium");
   return (
-    <table className="w-full min-w-[520px] text-sm">
+    <table className="w-full text-sm">
       <caption className="sr-only">Free, Pro and Business plans compared</caption>
       <thead>
         <tr className="border-b-strong border-line">
           <th scope="col" className="px-5 py-3 text-left font-medium text-muted-foreground">
             <span className="sr-only">Feature</span>
           </th>
-          {plans.map((plan) => (
+          {PLANS.map((plan) => (
             <th key={plan} scope="col" className={column(plan)}>
               {planName(plan)}
               {current === plan && (
@@ -150,19 +158,132 @@ function PlanTable({ current }: { current: PlanKey }) {
       </thead>
       <tbody>
         {PLAN_ROWS.map((row) => (
-          <tr key={row.label} className="border-b border-line/60 last:border-b-0">
+          <tr key={row.label} className="border-b border-line/60">
             <th scope="row" className="px-5 py-3 text-left font-normal text-muted-foreground">
               {(mailFirst && MAIL_ROW_LABELS[row.label]) || row.label}
             </th>
-            {plans.map((plan) => (
+            {PLANS.map((plan) => (
               <td key={plan} className={column(plan)}>
                 {row[plan]}
               </td>
             ))}
           </tr>
         ))}
+        {/* Each plan's change sits under its own column. */}
+        <tr>
+          <th scope="row" className="px-5 py-3 text-left font-normal">
+            <span className="sr-only">Change plan</span>
+          </th>
+          {PLANS.map((plan) => (
+            <td key={plan} className={column(plan)}>
+              <PlanActions chooser={chooser} plan={plan} current={current} />
+            </td>
+          ))}
+        </tr>
       </tbody>
     </table>
+  );
+}
+
+/** Phones: one plan at a time, picked above, instead of a table that scrolls sideways. */
+function PlanList({ current, chooser }: { current: PlanKey; chooser: PlanChooserState | null }) {
+  const mailFirst = useSite().key === "mailhooks";
+  const [shown, setShown] = useState<PlanKey>(current);
+  return (
+    <div className="space-y-4 px-5 py-4">
+      <Segmented
+        name="Plan"
+        value={shown}
+        onChange={setShown}
+        options={PLANS.map((plan) => ({
+          value: plan,
+          label: planName(plan),
+        }))}
+      />
+      <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 text-sm">
+        {PLAN_ROWS.map((row) => (
+          <div
+            key={row.label}
+            className="col-span-2 grid grid-cols-subgrid border-b border-line/60 py-2"
+          >
+            <dt className="text-muted-foreground">
+              {(mailFirst && MAIL_ROW_LABELS[row.label]) || row.label}
+            </dt>
+            <dd>{row[shown]}</dd>
+          </div>
+        ))}
+      </dl>
+      <PlanActions chooser={chooser} plan={shown} current={current} />
+    </div>
+  );
+}
+
+/** The plans side by side, with each change under the plan it leads to. */
+function YourPlanPanel({
+  profile,
+  accessToken,
+  refresh,
+  comped,
+  currentPlan,
+  billingEnd,
+}: {
+  profile: AccountProfile;
+  accessToken: string | null;
+  refresh: () => Promise<void> | void;
+  comped: boolean;
+  currentPlan: PlanKey;
+  billingEnd: string | null;
+}) {
+  const chooser = usePlanChooser({ accessToken, profile, onChanged: refresh });
+  const isFree = profile.plan === "free";
+  // A free account's choice leaves for the checkout at once: only a failure needs a line here.
+  const showStatus = !isFree || !!chooser.error;
+  return (
+    <Panel
+      id="plan"
+      title="Your plan"
+      flush
+      footer={
+        comped || !showStatus ? undefined : (
+          <div className="w-full space-y-3">
+            <PlanChooserStatus chooser={chooser} />
+            {!isFree && (
+              <div className="flex flex-wrap items-center gap-3">
+                <ManageSubscriptionDialog
+                  accessToken={accessToken}
+                  profile={profile}
+                  onUpdated={refresh}
+                />
+                <BillingPortalButton accessToken={accessToken} />
+                {billingEnd && !profile.cancel_at_period_end && (
+                  <p className="text-sm text-muted-foreground">
+                    Next payment on {longDate(billingEnd)}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      }
+    >
+      {!isFree && profile.cancel_at_period_end && billingEnd && (
+        <div className="px-5 pt-4">
+          <Notice
+            tone="warning"
+            title={`${planName(profile.plan)} ends on ${longDate(billingEnd)}`}
+          >
+            After that your account moves to the free plan. Keep your subscription from Manage
+            subscription.
+          </Notice>
+        </div>
+      )}
+      <div className="max-md:hidden overflow-x-auto">
+        <PlanTable current={currentPlan} chooser={comped ? null : chooser} />
+      </div>
+      <div className="md:hidden">
+        <PlanList current={currentPlan} chooser={comped ? null : chooser} />
+      </div>
+    </Panel>
   );
 }
 
@@ -300,52 +421,14 @@ export default function PlanPage() {
           />
         )}
 
-        <Panel
-          id="plan"
-          title="Your plan"
-          flush
-          footer={
-            comped ? undefined : (
-              <div className="w-full space-y-3">
-                <PlanChooser accessToken={accessToken} profile={profile} onChanged={refresh} />
-                {!isFree && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <ManageSubscriptionDialog
-                      accessToken={accessToken}
-                      profile={profile}
-                      onUpdated={refresh}
-                    />
-                    <BillingPortalButton accessToken={accessToken} />
-                    {billingEnd && !profile.cancel_at_period_end && (
-                      <p className="text-sm text-muted-foreground">
-                        Next payment on {longDate(billingEnd)}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          }
-        >
-          {!isFree && profile.cancel_at_period_end && billingEnd && (
-            <div className="px-5 pt-4">
-              <Notice
-                tone="warning"
-                title={`${planName(profile.plan)} ends on ${longDate(billingEnd)}`}
-              >
-                After that your account moves to the free plan. Keep your subscription from Manage
-                subscription.
-              </Notice>
-            </div>
-          )}
-          {/* On phones the table scrolls sideways; the fade and the caption say so. */}
-          <div className="overflow-x-auto max-md:[mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)]">
-            <PlanTable current={currentPlan} />
-          </div>
-          <p className="md:hidden px-5 pb-3 text-xs text-muted-foreground">
-            Swipe the table to compare Business.
-          </p>
-        </Panel>
+        <YourPlanPanel
+          profile={profile}
+          accessToken={accessToken}
+          refresh={refresh}
+          comped={comped}
+          currentPlan={currentPlan}
+          billingEnd={billingEnd}
+        />
 
         <ParsedPagesPanel
           accessToken={accessToken}

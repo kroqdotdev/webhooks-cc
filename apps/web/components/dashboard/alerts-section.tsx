@@ -361,7 +361,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         <>
           <SwitchRow
             id="alerts-enabled"
-            label="Alerts"
+            label="Email me when something needs attention"
             help="Checked about once a minute. You get one notice when an alert opens and one when it resolves."
             checked={draft.enabled}
             onChange={(enabled) => setDraft({ ...draft, enabled })}

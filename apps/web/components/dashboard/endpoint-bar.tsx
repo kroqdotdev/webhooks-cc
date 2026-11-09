@@ -454,7 +454,7 @@ function ActionsMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 max-md:min-h-9"
         >
           <Ellipsis className="h-3.5 w-3.5" />
           Actions
@@ -625,6 +625,19 @@ export function EndpointBar({
   // Export folds into Actions on a phone when the page hands over the exports
   // themselves; otherwise its own menu sits beside Actions.
   const phoneExport = hasRequests ? onExport : undefined;
+  // A phone's address row goes once requests arrive; one line under the tabs
+  // keeps the site's own address in sight and copies it on a tap.
+  const phoneAddress =
+    mailFirst && emailAddress
+      ? { shown: emailAddress, copy: emailAddress, what: "Email address" }
+      : { shown: url.replace(/^https?:\/\//, ""), copy: url, what: "Webhook URL" };
+  const copyPhoneAddress = async () => {
+    send.show(
+      (await copyToClipboard(phoneAddress.copy))
+        ? { kind: "ok", text: `${phoneAddress.what} copied` }
+        : { kind: "error", text: `The ${phoneAddress.what.toLowerCase()} could not be copied` }
+    );
+  };
 
   return (
     <div className="border-b-strong border-line bg-card px-4 pt-3 max-md:pt-2 shrink-0">
@@ -710,6 +723,18 @@ export function EndpointBar({
           />
         </div>
       </nav>
+      {hasRequests && !detailOpen && (
+        <button
+          type="button"
+          onClick={() => void copyPhoneAddress()}
+          aria-label={`Copy ${phoneAddress.shown}`}
+          title="Copy"
+          className="md:hidden flex w-full min-w-0 items-center gap-1.5 -mt-1 py-1.5 text-left text-xs font-mono text-muted-foreground hover:text-foreground cursor-pointer [font-variant-ligatures:none]"
+        >
+          <span className="truncate">{phoneAddress.shown}</span>
+          <Copy className="h-3 w-3 shrink-0" aria-hidden />
+        </button>
+      )}
       <SendWebhookDialog slug={slug} open={send.requestOpen} onOpenChange={send.setRequestOpen} />
       <DashboardGuideDialog open={guideOpen} onOpenChange={setGuideOpen} />
     </div>

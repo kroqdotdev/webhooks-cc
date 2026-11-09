@@ -225,10 +225,13 @@ test("the preview marks the rule that answers a captured request", async ({ page
   });
 
   // Pick the matching request: Rule 1 answers, with its placeholders filled in.
-  const options = await preview.locator("option").allTextContents();
-  const billing = options.find((text) => text.includes("/billing"));
-  expect(billing).toBeTruthy();
-  await preview.selectOption({ label: billing! });
+  await preview.click();
+  await page
+    .locator('[role="listbox"][data-state="open"]')
+    .getByRole("option")
+    .filter({ hasText: "/billing" })
+    .first()
+    .click();
   await expect(section.getByText("Rule 1, Persist Test, answers")).toBeVisible({ timeout: 10000 });
   await expect(section.getByText('{"received": "invoice.paid", "path": "/billing"}')).toBeVisible();
 });

@@ -11,6 +11,13 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { previewEmailFields, type EmailFieldsPreview } from "@/lib/dashboard-api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * Named fields an endpoint picks out of every email: a name, the part of the
@@ -29,7 +36,8 @@ const SOURCES: { value: EmailFieldSource; label: string }[] = [
   { value: "header", label: "A header" },
 ];
 
-const selectClass = "ui-input text-[13px] py-1.5! px-2! min-w-0";
+const selectClass =
+  "h-auto w-32 min-w-0 gap-1.5 text-[13px] rounded-md border-strong border-line bg-background px-2 py-1.5 text-left cursor-pointer focus:ring-offset-0";
 // No ligatures: a pattern's "<=" must not read as "≤".
 const inputClass =
   "ui-input text-[13px] font-mono [font-variant-ligatures:none] py-1.5! px-2! min-w-0";
@@ -178,26 +186,27 @@ export function EmailFieldsEditor({
                     className={cn(inputClass, "w-32 font-semibold")}
                   />
                   <span className="text-xs text-muted-foreground">from</span>
-                  <select
-                    aria-label={`Field ${n}: what it reads`}
+                  <Select
                     value={field.from}
-                    onChange={(e) =>
+                    onValueChange={(value) =>
                       update(index, {
-                        from: e.target.value as EmailFieldSource,
-                        ...(e.target.value === "header" && !field.header
-                          ? { header: "X-Mailer" }
-                          : {}),
+                        from: value as EmailFieldSource,
+                        ...(value === "header" && !field.header ? { header: "X-Mailer" } : {}),
                       })
                     }
                     disabled={disabled}
-                    className={cn(selectClass, "w-32")}
                   >
-                    {SOURCES.map((source) => (
-                      <option key={source.value} value={source.value}>
-                        {source.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger aria-label={`Field ${n}: what it reads`} className={selectClass}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-strong border-line shadow-raised">
+                      {SOURCES.map((source) => (
+                        <SelectItem key={source.value} value={source.value} className="text-[13px]">
+                          {source.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {field.from === "header" && (
                     <input
                       aria-label={`Field ${n}: header name`}

@@ -67,7 +67,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "mailhooks.cc: an email shows Reading with your layouts while it is parsed and updates when it is done, the inbox shows which layout read each email, fields keep the layout's order, and a ready-made layout is added as a short summary you can expand",
       "On phones, settings and account pages use a section picker instead of a clipped strip, the email header gives the subject the full width, and the address row steps aside once requests arrive",
       "The unsaved-changes bar can save directly, Replay explains a server it cannot reach, expired share links say so, the Send dialog groups its templates, and the timeline has a legend and keyboard access",
-      "Pricing cards hug their content, prices read the same on both sites, and the New endpoint dialog opens with the name field ready",
+      "Pricing cards line up their buttons, prices read the same on both sites, and the New endpoint dialog opens with the name field ready",
+      "Request and email details adapt to the width of their pane, the list pane is capped and its divider works with keyboard and touch, and each endpoint and account page has its own title",
+      "One dropdown style everywhere, parsed results that are easy to read and copy, an Edit layout button, sign-in tab order fixed, and plan upgrades shown under each plan",
+      "Phones: larger touch targets, the address stays one tap away, and the authentication details no longer break words",
     ],
   },
   {

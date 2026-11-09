@@ -48,9 +48,7 @@ test("a free account can start Pro, Business monthly or Business yearly", async 
   await expect(
     plan.getByRole("button", { name: "Upgrade to Business, $29 a month" })
   ).toBeVisible();
-  await expect(
-    plan.getByRole("button", { name: "Business yearly, $290 (2 months free)" })
-  ).toBeVisible();
+  await expect(plan.getByRole("button", { name: "or $290 a year" })).toBeVisible();
   await expect(plan.getByRole("columnheader", { name: /Business/ })).toBeVisible();
 });
 
@@ -70,9 +68,9 @@ test("Pro moves to Business now, pro rata, after saying so", async ({ page }) =>
   await signInTestUser(page, user, "/account/plan");
 
   const plan = page.locator("#plan");
-  await expect(
-    plan.getByRole("button", { name: "Business, $290 a year, from the renewal" })
-  ).toBeVisible({ timeout: 15000 });
+  await expect(plan.getByRole("button", { name: "or $290 a year, from the renewal" })).toBeVisible({
+    timeout: 15000,
+  });
   await plan.getByRole("button", { name: "Switch to Business, $29 a month" }).click();
 
   const dialog = page.getByRole("alertdialog");

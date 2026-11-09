@@ -119,8 +119,9 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
   const timeLabels = useMemo(() => {
     const range = timeRange.max - timeRange.min;
     const usableWidth = width - PADDING_X * 2;
-    const labelCount = Math.max(2, Math.min(6, Math.floor(usableWidth / 80)));
-    const labels: { x: number; label: string }[] = [];
+    // A label is about 55px wide at 11px; keep a gap between neighbours.
+    const labelCount = Math.max(2, Math.min(6, Math.floor(usableWidth / 96)));
+    const labels: { x: number; label: string; anchor: "start" | "middle" | "end" }[] = [];
 
     for (let i = 0; i < labelCount; i++) {
       const t = timeRange.min + (range * i) / (labelCount - 1);
@@ -134,9 +135,12 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
       });
       // Never the same label twice in a row.
       if (labels.at(-1)?.label === label) continue;
+      // The first and last labels sit inside the axis ends, so they stay
+      // within the pane's padding instead of hanging over the edge.
       labels.push({
         x,
         label,
+        anchor: i === 0 ? "start" : i === labelCount - 1 ? "end" : "middle",
       });
     }
     return labels;
@@ -170,8 +174,8 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
             key={i}
             x={label.x}
             y={height + 16}
-            textAnchor="middle"
-            className="fill-muted-foreground text-[9px] font-mono"
+            textAnchor={label.anchor}
+            className="fill-muted-foreground text-[11px] font-mono"
           >
             {label.label}
           </text>

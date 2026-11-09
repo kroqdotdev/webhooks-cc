@@ -60,11 +60,11 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
 
 export function ProviderIcon({
   glyph,
-  fallbackText,
   className,
 }: {
   glyph: WebProviderIconGlyph;
-  fallbackText: string;
+  /** Kept for callers; providers without a logo now show the generic mark. */
+  fallbackText?: string;
   className?: string;
 }) {
   const simpleIcon = SIMPLE_PROVIDER_ICONS[glyph];
@@ -103,10 +103,9 @@ export function ProviderIcon({
   }
 
   return (
-    // Decorative beside the provider's name; too small to carry meaning on its own.
-    <span aria-hidden className="font-mono text-[7px] font-black leading-none tracking-tighter">
-      {fallbackText}
-    </span>
+    // No logo for this provider: the generic signature mark instead of tiny
+    // letters, which read as rendering dirt beside the provider's name.
+    <GenericHmacGlyph className={className} />
   );
 }
 

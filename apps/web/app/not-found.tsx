@@ -3,7 +3,8 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
 
 export const metadata: Metadata = {
-  title: "Page Not Found",
+  // Absolute: this page serves both sites, so no site name is appended.
+  title: { absolute: "Page not found" },
   alternates: {},
 };
 

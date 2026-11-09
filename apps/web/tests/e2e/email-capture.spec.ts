@@ -425,7 +425,11 @@ test("the email switch reaches emails older than the newest page", async ({ page
 
   await openDashboard(page);
   // A method picked for HTTP must not hide every email once Email is chosen.
-  await shown(page.getByRole("combobox", { name: "Method" })).selectOption("POST");
+  await shown(page.getByRole("combobox", { name: "Method" })).click();
+  await page
+    .locator('[role="listbox"][data-state="open"]')
+    .getByRole("option", { name: "POST", exact: true })
+    .click();
   const show = shown(page.getByRole("radiogroup", { name: "Show" }));
   await show.getByRole("radio", { name: /^Email/ }).click();
 

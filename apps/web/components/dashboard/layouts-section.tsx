@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronDown,
+  Copy,
   Plus,
   RotateCcw,
   Sparkles,
@@ -23,6 +25,8 @@ import {
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
 import { LAYOUT_TEMPLATES, layoutTemplate, type LayoutTemplate } from "@/lib/layout-templates";
+import { groupedTemplates } from "@/lib/layout-template-groups";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +36,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
 import {
@@ -108,42 +119,6 @@ function domainOf(address: string | null | undefined): string | null {
   return domain || null;
 }
 
-/**
- * The Add layout menu's sender groups, by template id. A template not listed
- * here still shows, under "Other senders".
- */
-const TEMPLATE_GROUPS: { name: string; ids: string[] }[] = [
-  {
-    name: "Commerce",
-    ids: [
-      "shopify-orders",
-      "woocommerce-orders",
-      "etsy-sales",
-      "amazon-seller-orders",
-      "ebay-sales",
-    ],
-  },
-  { name: "Payments", ids: ["stripe-receipts", "paypal-payments"] },
-  {
-    name: "Bookings and travel",
-    ids: ["booking-com-reservations", "airbnb-reservations", "calendly-bookings"],
-  },
-  { name: "Forms, reports and files", ids: ["form-responses", "csv-reports", "pdf-invoices"] },
-];
-
-function groupedTemplates(): { name: string; templates: LayoutTemplate[] }[] {
-  const listed = new Set(TEMPLATE_GROUPS.flatMap((group) => group.ids));
-  const groups = TEMPLATE_GROUPS.map((group) => ({
-    name: group.name,
-    templates: group.ids
-      .map((id) => layoutTemplate(id))
-      .filter((template): template is LayoutTemplate => template !== null),
-  }));
-  const other = LAYOUT_TEMPLATES.filter((template) => !listed.has(template.id));
-  if (other.length > 0) groups.push({ name: "Other senders", templates: other });
-  return groups.filter((group) => group.templates.length > 0);
-}
-
 const TEMPLATE_GROUPS_SHOWN = groupedTemplates();
 /** Past this many templates, the sender list gets a filter. */
 const FILTER_FROM = 10;
@@ -158,13 +133,20 @@ function templateOf(layout: Layout, addedFrom: Record<string, string>): LayoutTe
 }
 
 type SampleSend =
-  { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string } | null;
+  | { kind: "saving" }
+  | { kind: "sending" }
+  | { kind: "sent" }
+  | { kind: "error"; message: string }
+  | null;
 
 type ReplayState =
   | { kind: "sending" }
   | { kind: "done"; requests: number; queued: number }
   | { kind: "error"; message: string }
   | null;
+
+/** The Tried on picker's value for the newest email (a select item cannot be empty). */
+const NEWEST_SAMPLE = "newest";
 
 /** How far back "Read the last 7 days of email again" reaches. */
 const REPLAY_DAYS = 7;
@@ -187,22 +169,28 @@ function SampleEmailButton({
   state,
   onSend,
   status = true,
+  saveFirst = false,
 }: {
   template: LayoutTemplate;
   state: SampleSend;
   onSend: (template: LayoutTemplate) => void;
   /** Show how the send went beside the button; off where another copy already says it. */
   status?: boolean;
+  /**
+   * The layouts have unsaved changes: the sample is read by the saved layouts
+   * when it arrives, so the button saves them first.
+   */
+  saveFirst?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
       <button
         type="button"
         onClick={() => onSend(template)}
-        disabled={state?.kind === "sending"}
+        disabled={state?.kind === "sending" || state?.kind === "saving"}
         className="ui-btn-outline py-1! px-2.5! text-xs"
       >
-        Send the {template.sender} sample email
+        {saveFirst ? "Save, then send" : "Send"} the {template.sender} sample email
       </button>
       {status && <SampleSendStatus state={state} />}
     </div>
@@ -220,13 +208,15 @@ function SampleSendStatus({ state }: { state: SampleSend }) {
         state?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
       )}
     >
-      {state?.kind === "sending"
-        ? "Sending..."
-        : state?.kind === "sent"
-          ? `Sent. It shows up in ${list} and here in a moment.`
-          : state?.kind === "error"
-            ? state.message
-            : null}
+      {state?.kind === "saving"
+        ? "Saving the layouts..."
+        : state?.kind === "sending"
+          ? "Sending..."
+          : state?.kind === "sent"
+            ? `Sent. It shows up in ${list} and here in a moment.`
+            : state?.kind === "error"
+              ? state.message
+              : null}
     </span>
   );
 }
@@ -296,6 +286,12 @@ function lineItemColumns(parsed: ParsedEmail): string[] {
     : [...new Set(parsed.lineItems.flatMap((row) => Object.keys(row)))];
 }
 
+/** A column of numbers (quantities, prices): every value it has looks like one. */
+function isNumericColumn(rows: Record<string, string | null>[], column: string): boolean {
+  const values = rows.map((row) => row[column]?.trim() ?? "").filter((value) => value !== "");
+  return values.length > 0 && values.every((value) => /^-?[\d.,]+$/.test(value));
+}
+
 function LineItemsTable({
   rows,
   columns,
@@ -309,23 +305,41 @@ function LineItemsTable({
   more: (count: number) => string;
   label?: string;
 }) {
+  const shown = rows.slice(0, limit);
+  const numeric = new Set(columns.filter((column) => isNumericColumn(shown, column)));
   return (
-    <div className="overflow-x-auto border-strong border-line rounded-md">
+    // As wide as its columns need (at least the width on a phone, 60% wider up),
+    // so a few narrow columns do not spread across the panel.
+    <div className="overflow-x-auto w-fit max-w-full min-w-full sm:min-w-[60%] border-strong border-line rounded-md">
       <table className="w-full text-xs" aria-label={label}>
         <thead>
           <tr className="bg-muted">
             {columns.map((column) => (
-              <th key={column} className="text-left font-mono font-medium px-2 py-1">
+              <th
+                key={column}
+                className={cn(
+                  "font-mono font-medium px-2.5 py-1.5",
+                  numeric.has(column) ? "text-right tabular-nums" : "text-left"
+                )}
+              >
                 {column}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0, limit).map((row, index) => (
+          {shown.map((row, index) => (
             <tr key={index} className="border-t border-line/20">
               {columns.map((column) => (
-                <td key={column} className="font-mono px-2 py-1 break-all">
+                <td
+                  key={column}
+                  className={cn(
+                    "font-mono text-[13px] px-2.5 py-1.5 [font-variant-ligatures:none]",
+                    numeric.has(column)
+                      ? "text-right tabular-nums whitespace-nowrap"
+                      : "break-words [overflow-wrap:anywhere]"
+                  )}
+                >
                   {row[column] ?? ""}
                 </td>
               ))}
@@ -365,14 +379,44 @@ export function orderedFieldNames(parsed: ParsedEmail, layouts?: readonly unknow
   return [...new Set(ordered), ...names.filter((name) => !placed.has(name))];
 }
 
+/** Copies one parsed value; the icon turns to a check for a moment. */
+function CopyValueButton({ name, value }: { name: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${name}`}
+      title="Copy"
+      onClick={async () => {
+        if (!(await copyToClipboard(value))) return;
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1500);
+      }}
+      className="shrink-0 -my-0.5 p-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-primary-ink" aria-hidden />
+      ) : (
+        <Copy className="h-3.5 w-3.5" aria-hidden />
+      )}
+    </button>
+  );
+}
+
 /** A parsed result: the layout, fields, line items and attachments. Shared with the email view. */
 export function ParsedResult({
   parsed,
   layouts,
+  onOpenLayouts,
 }: {
   parsed: ParsedEmail;
   /** The endpoint's layouts (or the draft), so the fields show in their layout's order. */
   layouts?: readonly unknown[];
+  /** Opens Settings at Layouts; given, the layout's name is a button that does it. */
+  onOpenLayouts?: () => void;
 }) {
   if (parsed.status !== "matched") {
     // Expected for mail no layout is written for yet: not an error.
@@ -383,7 +427,19 @@ export function ParsedResult({
   return (
     <div className="space-y-3 text-sm">
       <p>
-        Read by <span className="font-semibold">{parsed.layout?.name}</span>
+        Read by{" "}
+        {onOpenLayouts ? (
+          <button
+            type="button"
+            onClick={onOpenLayouts}
+            title="Open in Settings, Layouts"
+            className="font-semibold underline decoration-line/40 underline-offset-2 hover:decoration-current cursor-pointer"
+          >
+            {parsed.layout?.name}
+          </button>
+        ) : (
+          <span className="font-semibold">{parsed.layout?.name}</span>
+        )}
         {parsed.pages > 0 && (
           <span className="text-muted-foreground">
             {" "}
@@ -392,15 +448,29 @@ export function ParsedResult({
         )}
       </p>
       {fieldNames.length > 0 && (
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
-          {fieldNames.map((name) => (
-            <div key={name} className="contents">
-              <dt className="font-mono text-xs text-muted-foreground pt-0.5">{name}</dt>
-              <dd className="font-mono text-xs break-all">
-                {parsed.fields[name] ?? <span className="text-destructive-ink">not found</span>}
-              </dd>
-            </div>
-          ))}
+        <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-5 gap-y-1.5">
+          {fieldNames.map((name) => {
+            const value = parsed.fields[name];
+            return (
+              <div key={name} className="contents">
+                <dt className="font-mono text-[13px] text-foreground/75 pt-px break-words [overflow-wrap:anywhere] [font-variant-ligatures:none]">
+                  {name}
+                </dt>
+                <dd className="flex items-start gap-1.5 min-w-0">
+                  {value != null ? (
+                    <>
+                      <span className="font-mono text-sm font-medium [overflow-wrap:anywhere] [font-variant-ligatures:none]">
+                        {value}
+                      </span>
+                      <CopyValueButton name={name} value={value} />
+                    </>
+                  ) : (
+                    <span className="text-[13px] text-destructive-ink">not found</span>
+                  )}
+                </dd>
+              </div>
+            );
+          })}
         </dl>
       )}
       {parsed.lineItems.length > 0 && (
@@ -810,9 +880,29 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       return next;
     });
   };
+  const saveLayouts = () => {
+    setTriedSave(true);
+    setReplay(null);
+    return save({ layouts }, () => {
+      const [problem] = layoutIssues(layouts);
+      if (problem) throw new Error(`Check the layouts: ${problem}.`);
+    });
+  };
   const sendSample = async (template: LayoutTemplate) => {
-    if (!accessToken || sampleSend?.kind === "sending") return;
+    if (!accessToken || sampleSend?.kind === "sending" || sampleSend?.kind === "saving") return;
     if (sentTimer.current) clearTimeout(sentTimer.current);
+    // The saved layouts read the sample when it arrives: unsaved edits would
+    // show as a match here and never be used on it.
+    if (dirty) {
+      setSampleSend({ kind: "saving" });
+      if (!(await saveLayouts())) {
+        setSampleSend({
+          kind: "error",
+          message: "The layouts were not saved, so the sample was not sent.",
+        });
+        return;
+      }
+    }
     setSampleSend({ kind: "sending" });
     try {
       const { requestId } = await sendTestEmail(accessToken, endpoint.slug, template.id);
@@ -939,14 +1029,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
               setError(null);
               setSaved(false);
             }}
-            onSave={() => {
-              setTriedSave(true);
-              setReplay(null);
-              void save({ layouts }, () => {
-                const [problem] = layoutIssues(layouts);
-                if (problem) throw new Error(`Check the layouts: ${problem}.`);
-              });
-            }}
+            onSave={() => void saveLayouts()}
           />
           {offerReplay && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 basis-full">
@@ -1074,6 +1157,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                           template={summaryTemplate}
                           state={sampleSend}
                           onSend={sendSample}
+                          saveFirst={dirty}
                         />
                       )}
                       <button
@@ -1082,9 +1166,9 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         onClick={() => openEditor(index, layout.id)}
                         aria-expanded={false}
                         aria-label={`Edit layout ${n}`}
-                        className="ml-auto inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                        className="ml-auto ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1"
                       >
-                        Edit
+                        Edit layout
                         <ChevronDown className="h-3 w-3" aria-hidden />
                       </button>
                     </div>
@@ -1102,6 +1186,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                             template={openTemplate}
                             state={sampleSend}
                             onSend={sendSample}
+                            saveFirst={dirty}
                           />
                         )}
                       </div>
@@ -1116,6 +1201,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                           template={openTemplate}
                           state={sampleSend}
                           onSend={sendSample}
+                          saveFirst={dirty}
                         />
                       </div>
                     )}
@@ -1240,9 +1326,12 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <DropdownMenuContent
             ref={menuRef}
             align="start"
+            // Always below the button: flipped up, it would cover the endpoint bar.
+            side="bottom"
+            avoidCollisions={false}
             // Focus goes to the added layout's name, not back to the trigger below it.
             onCloseAutoFocus={(e) => e.preventDefault()}
-            className="w-72 max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border-strong border-line shadow-raised"
+            className="w-72 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border-strong border-line shadow-raised"
             onKeyDown={(e) => {
               // Typing anywhere in the menu filters the senders (instead of
               // the menu's own jump to the item starting with that letter).
@@ -1367,28 +1456,41 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           {preview.request ? (
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold">Tried on</h3>
-              <select
-                aria-label="Email to try the layouts on"
-                value={sampleId}
-                onChange={(e) => setSampleId(e.target.value)}
-                className="ui-input text-[13px] py-1! px-2! max-w-full"
+              <Select
+                value={sampleId || NEWEST_SAMPLE}
+                onValueChange={(value) => setSampleId(value === NEWEST_SAMPLE ? "" : value)}
               >
-                <option value="">
-                  The newest email
-                  {sampleId ? "" : `, "${preview.request.subject || "(no subject)"}"`}
-                </option>
-                {samples.map((sample) => (
-                  <option key={sample.id} value={sample.id}>
-                    {sample.subject}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  aria-label="Email to try the layouts on"
+                  className="h-auto w-auto min-w-0 max-w-full gap-1.5 text-[13px] rounded-md border-strong border-line bg-background px-2 py-1 max-md:py-1.5 text-left cursor-pointer focus:ring-offset-0"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))] border-strong border-line shadow-raised">
+                  <SelectItem value={NEWEST_SAMPLE} className="text-[13px]">
+                    The newest email
+                    {sampleId ? "" : `, "${preview.request.subject || "(no subject)"}"`}
+                  </SelectItem>
+                  {/* An email sent from here is tried before the list has read it again. */}
+                  {sampleId && !samples.some((sample) => sample.id === sampleId) && (
+                    <SelectItem value={sampleId} className="text-[13px]">
+                      The email just sent
+                    </SelectItem>
+                  )}
+                  {samples.map((sample) => (
+                    <SelectItem key={sample.id} value={sample.id} className="text-[13px]">
+                      {sample.subject}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {/* An open layout's notice offers its own, so the button shows once. */}
               {idleTemplate && (
                 <SampleEmailButton
                   template={idleTemplate}
                   state={sampleSend}
                   onSend={sendSample}
+                  saveFirst={dirty}
                   status={false}
                 />
               )}
@@ -1416,6 +1518,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   template={firstTemplate}
                   state={sampleSend}
                   onSend={sendSample}
+                  saveFirst={dirty}
                 />
               )}
             </>

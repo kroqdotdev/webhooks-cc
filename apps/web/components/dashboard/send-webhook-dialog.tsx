@@ -13,6 +13,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Send } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
@@ -28,6 +37,9 @@ import {
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type SendMode = "manual" | TemplateProvider;
+
+/** The heading of each group of modes in the Mode dropdown. */
+const GROUP_LABEL = "pl-2 text-xs font-semibold caps text-muted-foreground";
 
 interface SendWebhookDialogProps {
   slug: string;
@@ -263,48 +275,54 @@ export function SendWebhookDialog({
               <label htmlFor="send-mode" className="block text-xs font-bold caps mb-2">
                 Mode
               </label>
-              <select
-                id="send-mode"
-                value={mode}
-                onChange={(e) => handleModeChange(e.target.value as SendMode)}
-                className="ui-input text-sm w-full"
-              >
-                <optgroup label="Write your own">
-                  <option value="manual">Manual request</option>
-                </optgroup>
-                <optgroup label="Signed provider templates">
-                  {SIGNED_TEMPLATE_OPTIONS.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Unsigned templates">
-                  {UNSIGNED_TEMPLATE_OPTIONS.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.label}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
+              <Select value={mode} onValueChange={(value) => handleModeChange(value as SendMode)}>
+                <SelectTrigger id="send-mode" className="ui-input text-sm w-full h-auto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-80">
+                  <SelectGroup>
+                    <SelectLabel className={GROUP_LABEL}>Write your own</SelectLabel>
+                    <SelectItem value="manual">Manual request</SelectItem>
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className={GROUP_LABEL}>Signed provider templates</SelectLabel>
+                    {SIGNED_TEMPLATE_OPTIONS.map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className={GROUP_LABEL}>Unsigned templates</SelectLabel>
+                    {UNSIGNED_TEMPLATE_OPTIONS.map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
             {isTemplateMode && (
               <div>
                 <label htmlFor="send-template" className="block text-xs font-bold caps mb-2">
                   Template preset
                 </label>
-                <select
-                  id="send-template"
+                <Select
                   value={selectedTemplateId}
-                  onChange={(e) => handleTemplateChange(mode, e.target.value)}
-                  className="ui-input text-sm w-full"
+                  onValueChange={(value) => handleTemplateChange(mode, value)}
                 >
-                  {providerPresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="send-template" className="ui-input text-sm w-full h-auto">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providerPresets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>
@@ -370,19 +388,22 @@ export function SendWebhookDialog({
               <label htmlFor="send-method" className="block text-xs font-bold caps mb-2">
                 Method
               </label>
-              <select
-                id="send-method"
+              <Select
                 value={method}
-                onChange={(e) => setMethod(e.target.value as HttpMethod)}
-                className="ui-input text-sm w-full"
+                onValueChange={(value) => setMethod(value as HttpMethod)}
                 disabled={isTemplateMode}
               >
-                <option value="GET">GET</option>
-                <option value="POST">POST</option>
-                <option value="PUT">PUT</option>
-                <option value="PATCH">PATCH</option>
-                <option value="DELETE">DELETE</option>
-              </select>
+                <SelectTrigger id="send-method" className="ui-input text-sm w-full h-auto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["GET", "POST", "PUT", "PATCH", "DELETE"] as const).map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="md:col-span-2">
               <label htmlFor="send-path" className="block text-xs font-bold caps mb-2">

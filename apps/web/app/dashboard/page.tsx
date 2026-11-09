@@ -80,6 +80,42 @@ import { toEmailSummary } from "@/lib/email-capture";
 const CLICKHOUSE_PAGE_SIZE = 50;
 const PANE_MIN = 240;
 const PANE_DEFAULT = 384;
+/** The list pane takes at most this share of the window, so the detail pane keeps room. */
+const PANE_MAX_SHARE = 0.42;
+/** How far an arrow key moves the divider. */
+const PANE_STEP = 24;
+
+/**
+ * Keeps the dashboard's own <title> in front of the layout's "Dashboard" one.
+ * React puts a newly mounted title first, and each navigation (a request
+ * picked, Settings opened) mounts the layout's metadata title again, so the
+ * page's title is moved back in front whenever the head changes.
+ */
+function keepTitleFirst(own: HTMLTitleElement | null) {
+  if (!own) return;
+  const head = own.ownerDocument.head;
+  const moveFirst = () => {
+    const first = head.querySelector("title");
+    if (first && first !== own && own.parentNode === head) head.insertBefore(own, first);
+  };
+  moveFirst();
+  const observer = new MutationObserver(moveFirst);
+  observer.observe(head, { childList: true });
+  return () => observer.disconnect();
+}
+
+/** The widest the list pane may be at the current window width. */
+function paneMaxWidth(): number {
+  return Math.round(window.innerWidth * PANE_MAX_SHARE);
+}
+
+function savePaneWidth(width: number) {
+  try {
+    localStorage.setItem("dashboard_pane_width", width === 0 ? "collapsed" : String(width));
+  } catch {
+    /* noop */
+  }
+}
 // Realtime refreshes: a short settle window lets a request insert and its
 // signature update share one fetch, and bursts refresh at most once a second.
 const REALTIME_SETTLE_MS = 150;
@@ -314,7 +350,7 @@ export default function DashboardPage() {
       if (stored === "collapsed") return 0;
       const val = stored ? parseInt(stored, 10) : PANE_DEFAULT;
       if (!Number.isFinite(val)) return PANE_DEFAULT;
-      const maxWidth = Math.floor(window.innerWidth * 0.5);
+      const maxWidth = paneMaxWidth();
       return maxWidth >= PANE_MIN ? Math.max(PANE_MIN, Math.min(maxWidth, val)) : PANE_DEFAULT;
     } catch {
       return PANE_DEFAULT;
@@ -326,54 +362,84 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/refs
   paneWidthRef.current = paneWidth;
 
-  const handleDragStart = useCallback((e: React.MouseEvent) => {
-    if (paneWidthRef.current === 0) return;
+  const handleDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (paneWidthRef.current === 0 || e.button !== 0) return;
     e.preventDefault();
     isDragging.current = true;
+    const handle = e.currentTarget;
+    const pointerId = e.pointerId;
     const startX = e.clientX;
     const startWidth = paneWidthRef.current;
+    // Pointer capture keeps the drag going over iframes (the email preview) and works for touch.
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      /* noop */
+    }
 
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!isDragging.current) return;
-      const maxWidth = Math.floor(window.innerWidth * 0.5);
-      const newWidth = Math.max(PANE_MIN, Math.min(maxWidth, startWidth + (ev.clientX - startX)));
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!isDragging.current || ev.pointerId !== pointerId) return;
+      const newWidth = Math.max(
+        PANE_MIN,
+        Math.min(paneMaxWidth(), startWidth + (ev.clientX - startX))
+      );
       setPaneWidth(newWidth);
     };
 
-    const onMouseUp = () => {
+    const onPointerUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       isDragging.current = false;
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
+      handle.removeEventListener("pointermove", onPointerMove);
+      handle.removeEventListener("pointerup", onPointerUp);
+      handle.removeEventListener("pointercancel", onPointerUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       // Persist after drag ends
-      setPaneWidth((w) => {
-        try {
-          localStorage.setItem("dashboard_pane_width", String(w));
-        } catch {
-          /* noop */
-        }
-        return w;
-      });
+      savePaneWidth(paneWidthRef.current);
     };
 
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
+    handle.addEventListener("pointermove", onPointerMove);
+    handle.addEventListener("pointerup", onPointerUp);
+    handle.addEventListener("pointercancel", onPointerUp);
   }, []);
 
   const toggleCollapse = useCallback(() => {
     setPaneWidth((prev) => {
-      const next = prev === 0 ? PANE_DEFAULT : 0;
-      try {
-        localStorage.setItem("dashboard_pane_width", next === 0 ? "collapsed" : String(next));
-      } catch {
-        /* noop */
-      }
+      const next = prev === 0 ? Math.min(PANE_DEFAULT, Math.max(PANE_MIN, paneMaxWidth())) : 0;
+      savePaneWidth(next);
       return next;
     });
   }, []);
+
+  // The divider's largest value, for assistive tech; it follows the window.
+  const [paneMaxWidthNow, setPaneMaxWidthNow] = useState(() =>
+    typeof window === "undefined" ? PANE_DEFAULT : paneMaxWidth()
+  );
+  useEffect(() => {
+    const update = () => setPaneMaxWidthNow(paneMaxWidth());
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  // The divider as a keyboard control: arrows resize, Enter collapses or expands.
+  const handleDividerKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        toggleCollapse();
+        return;
+      }
+      const step = e.key === "ArrowRight" ? PANE_STEP : e.key === "ArrowLeft" ? -PANE_STEP : 0;
+      if (!step || paneWidthRef.current === 0) return;
+      e.preventDefault();
+      const next = Math.max(PANE_MIN, Math.min(paneMaxWidth(), paneWidthRef.current + step));
+      setPaneWidth(next);
+      savePaneWidth(next);
+    },
+    [toggleCollapse]
+  );
 
   // Keyboard shortcuts dialog
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -1434,8 +1500,12 @@ export default function DashboardPage() {
     initialCanLoadMore,
   });
 
+  const pageTitle = `${currentEndpoint.name || currentEndpoint.slug}${endpointTab === "settings" ? " settings" : ""} | ${site.name}`;
+
   return (
     <ErrorBoundary resetKey={currentEndpoint.id}>
+      {/* Each endpoint and view gets its own document title (React hoists it into the head). */}
+      <title ref={keepTitleFirst}>{pageTitle}</title>
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       {templateParam && (
         <TemplateImportDialog
@@ -1559,7 +1629,10 @@ export default function DashboardPage() {
           {/* Desktop: side-by-side with resizable pane */}
           <div className="hidden md:flex flex-1 overflow-hidden">
             {!paneCollapsed && (
-              <div className="shrink-0 overflow-hidden" style={{ width: paneWidth }}>
+              <div
+                className="shrink-0 overflow-hidden"
+                style={{ width: paneWidth, maxWidth: `${PANE_MAX_SHARE * 100}%` }}
+              >
                 <RequestList
                   requests={displayedItems}
                   selectedId={selectedId}
@@ -1608,12 +1681,25 @@ export default function DashboardPage() {
             )}
             {/* Drag handle / divider */}
             <div
-              className="shrink-0 border-r-strong border-line relative group cursor-col-resize select-none"
-              onMouseDown={handleDragStart}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize request list"
+              aria-valuemin={0}
+              aria-valuemax={paneMaxWidthNow}
+              aria-valuenow={Math.min(paneWidth, paneMaxWidthNow)}
+              aria-valuetext={paneCollapsed ? "Collapsed" : `${paneWidth} pixels`}
+              tabIndex={0}
+              className="shrink-0 border-r-strong border-line relative group cursor-col-resize select-none touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              onPointerDown={handleDragStart}
               onDoubleClick={toggleCollapse}
-              title={paneCollapsed ? "Expand sidebar" : "Drag to resize, double-click to collapse"}
+              onKeyDown={handleDividerKeyDown}
+              title={
+                paneCollapsed
+                  ? "Expand sidebar (Enter)"
+                  : "Drag or use the arrow keys to resize, double-click or Enter to collapse"
+              }
             >
-              <div className="w-1.5 h-full group-hover:bg-primary/20 transition-colors" />
+              <div className="w-1.5 h-full group-hover:bg-primary/20 group-focus-visible:bg-primary/20 transition-colors" />
             </div>
             <div className="flex-1 overflow-hidden">
               <ErrorBoundary resetKey={selectedId ?? undefined}>
@@ -1894,7 +1980,7 @@ function NoMatchingRequest({
       <div className="text-center space-y-3 max-w-sm">
         <p className="text-sm text-muted-foreground">
           {listEmpty
-            ? `No ${noun} matches this search. Clear it to see all ${noun}s.`
+            ? `No ${noun} matches this search. Clear the search to see all ${noun}s.`
             : `The ${noun} that was open does not match this search. Pick one from the list, or clear the search to see all ${noun}s.`}
         </p>
         <button type="button" onClick={onClear} className="ui-btn-outline py-1.5! px-3! text-xs">

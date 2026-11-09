@@ -183,6 +183,10 @@ export function RequestDetail({
     }
   }, []);
 
+  const tabCounts = {
+    headers: Object.keys(request.headers).length,
+    query: Object.keys(request.queryParams).length,
+  };
   const curlCommand = useMemo(() => generateCurlCommand(request), [request]);
   const fullTime = formatFullTimestamp(request.receivedAt);
   const bodyFormat = detectFormat(request.contentType, request.body);
@@ -243,10 +247,11 @@ export function RequestDetail({
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Summary bar */}
-      <div className="border-b-strong border-line px-4 py-3 shrink-0">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      {/* Sized by the pane, not the window: beside the list the pane can be narrow. */}
+      <div className="@container border-b-strong border-line px-4 py-3 shrink-0">
+        <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-4">
           <div className="min-w-0">
-            <div className="font-mono font-bold text-sm break-all sm:truncate">
+            <div className="font-mono font-bold text-sm break-all @xl:truncate">
               {request.method} {request.path}
             </div>
             <div className="text-xs text-muted-foreground font-mono mt-0.5 flex items-center gap-3 flex-wrap">
@@ -267,7 +272,8 @@ export function RequestDetail({
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          {/* On phones every action is at least 36px tall (Share and Replay render their own buttons). */}
+          <div className="flex items-center gap-2 shrink-0 max-md:[&_button]:min-h-9">
             <button
               ref={curlBtnRef}
               onClick={() => handleCopy(curlCommand, "curl")}
@@ -349,6 +355,13 @@ export function RequestDetail({
               )}
             >
               {t}
+              {(t === "headers" || t === "query") && (
+                <span
+                  className={cn("ml-1.5 font-mono opacity-70", tabCounts[t] === 0 && "opacity-40")}
+                >
+                  {tabCounts[t]}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -376,7 +389,7 @@ export function RequestDetail({
                       aria-pressed={bodyView === view}
                       onClick={() => setBodyView(view)}
                       className={cn(
-                        "px-2 py-0.5 max-md:py-1.5 text-[11px] font-bold caps cursor-pointer transition-colors",
+                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold caps cursor-pointer transition-colors",
                         i > 0 && "border-l-strong border-line",
                         bodyView === view
                           ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
@@ -429,7 +442,7 @@ export function RequestDetail({
               <tbody>
                 {Object.entries(request.headers).map(([key, value]) => (
                   <tr key={key} className="border-b border-foreground/20 last:border-0">
-                    <td className="pr-4 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
+                    <td className="w-px pr-6 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
                       {key}
                     </td>
                     <td className="py-1.5 break-all">{value}</td>
@@ -441,22 +454,24 @@ export function RequestDetail({
         )}
 
         {tab === "query" && (
-          <div className="ui-code overflow-x-auto">
+          <div>
             {Object.keys(request.queryParams).length > 0 ? (
-              <table className="text-sm font-mono w-full">
-                <tbody>
-                  {Object.entries(request.queryParams).map(([key, value]) => (
-                    <tr key={key} className="border-b border-foreground/20 last:border-0">
-                      <td className="pr-4 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
-                        {key}
-                      </td>
-                      <td className="py-1.5 break-all">{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="ui-code overflow-x-auto">
+                <table className="text-sm font-mono w-full">
+                  <tbody>
+                    {Object.entries(request.queryParams).map(([key, value]) => (
+                      <tr key={key} className="border-b border-foreground/20 last:border-0">
+                        <td className="w-px pr-6 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
+                          {key}
+                        </td>
+                        <td className="py-1.5 break-all">{value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
-              <span className="text-muted-foreground">(no query params)</span>
+              <p className="text-sm text-muted-foreground">This request had no query string.</p>
             )}
           </div>
         )}
@@ -471,7 +486,7 @@ export function RequestDetail({
                 <button
                   type="button"
                   onClick={() => handleCopy(request.body ?? "", "raw")}
-                  className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
+                  className="ui-btn-outline py-1! max-md:min-h-9 px-2.5! text-xs flex items-center gap-1.5"
                 >
                   {copied === "raw" ? (
                     <Check className="h-3.5 w-3.5" />
@@ -610,7 +625,7 @@ function BodyCopyDropdown({
     <div className="absolute top-0 right-0" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1"
+        className="ui-btn-outline py-1! max-md:min-h-9 px-2! text-xs flex items-center gap-1"
       >
         {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         {isCopied ? "Copied!" : "Copy"}
@@ -672,7 +687,7 @@ export function NoteBar({
     return (
       <button
         onClick={() => setEditing(true)}
-        className="border-b-strong border-line px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
+        className="border-b-strong border-line px-4 py-1.5 max-md:py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
       >
         <StickyNote className="h-3 w-3" />
         Add note...
@@ -682,7 +697,7 @@ export function NoteBar({
 
   if (editing) {
     return (
-      <div className="border-b-strong border-line px-4 py-1.5 flex items-center gap-2 shrink-0">
+      <div className="border-b-strong border-line px-4 py-1.5 max-md:min-h-9 flex items-center gap-2 shrink-0">
         <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
         <input
           ref={inputRef}
@@ -708,11 +723,11 @@ export function NoteBar({
   }
 
   return (
-    <div className="border-b-strong border-line px-4 py-1.5 flex items-center gap-2 shrink-0 group">
+    <div className="border-b-strong border-line px-4 py-1.5 max-md:py-0 flex items-center gap-2 shrink-0 group">
       <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
       <button
         type="button"
-        className="flex-1 text-xs font-mono truncate cursor-pointer text-left bg-transparent border-0 p-0"
+        className="flex-1 text-xs font-mono truncate cursor-pointer text-left bg-transparent border-0 p-0 max-md:min-h-9"
         onClick={() => setEditing(true)}
         aria-label="Edit request note"
       >
@@ -722,7 +737,7 @@ export function NoteBar({
         type="button"
         onClick={() => onChange("")}
         aria-label="Delete request note"
-        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 max-md:size-9 max-md:-mr-2 max-md:inline-flex max-md:items-center max-md:justify-center text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
       >
         <X className="h-3 w-3" />
       </button>

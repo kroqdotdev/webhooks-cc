@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
-import { LAYOUT_TEMPLATES } from "@/lib/layout-templates";
+import { groupedTemplates } from "@/lib/layout-template-groups";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 
 export const metadata = mailhooksMetadata({
@@ -24,23 +24,35 @@ export default function SendersIndex() {
             Each one reads a common kind of email into fields and line items. Add it to an endpoint
             and adjust it on one of your own emails in the preview.
           </p>
-          <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {LAYOUT_TEMPLATES.map((template) => (
-              <li key={template.id}>
-                <Link href={`/parse/${template.id}`} className="ui-card block h-full">
-                  <p className="text-xs font-bold caps text-muted-foreground mb-2">
-                    {template.sender}
-                  </p>
-                  <h2 className="font-bold text-lg mb-2">{template.title}</h2>
-                  <p className="text-sm text-muted-foreground">{template.description}</p>
-                  <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary-ink">
-                    See the layout
-                    <ArrowRight className="h-4 w-4" aria-hidden />
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-14">
+            {groupedTemplates().map((group) => {
+              const id = `gallery-${group.name.toLowerCase().replace(/[^a-z]+/g, "-")}`;
+              return (
+                <section key={group.name} aria-labelledby={id}>
+                  <h2 id={id} className="text-2xl font-bold mb-6">
+                    {group.name}
+                  </h2>
+                  <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {group.templates.map((template) => (
+                      <li key={template.id}>
+                        <Link href={`/parse/${template.id}`} className="ui-card block h-full">
+                          <p className="text-xs font-bold caps text-muted-foreground mb-2">
+                            {template.sender}
+                          </p>
+                          <h3 className="font-bold text-lg mb-2">{template.title}</h3>
+                          <p className="text-sm text-muted-foreground">{template.description}</p>
+                          <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary-ink">
+                            See the layout
+                            <ArrowRight className="h-4 w-4" aria-hidden />
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
         </div>
       </main>
       <MailhooksFooter />

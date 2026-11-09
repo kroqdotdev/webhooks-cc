@@ -67,7 +67,7 @@ export function SiteSwitcher() {
       <DropdownMenuTrigger
         aria-label="Switch site"
         title="Switch site"
-        className="-ml-2 p-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="-ml-2 p-1 max-md:-ml-3 max-md:-my-2 max-md:p-2.5 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronsUpDown className="h-4 w-4" />
       </DropdownMenuTrigger>

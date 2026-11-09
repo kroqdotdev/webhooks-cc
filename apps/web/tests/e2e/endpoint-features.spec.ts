@@ -238,7 +238,7 @@ test("alerts are set up, and an open alert replays its emails", async ({ page })
       await expect(control).toHaveAttribute("aria-checked", "true", { timeout: 1000 });
     }).toPass({ timeout: 15000 });
   };
-  await turnOn("Alerts");
+  await turnOn("Email me when something needs attention");
   await alerts.getByLabel("Quiet for (hours)").fill("12");
   await turnOn("Failed deliveries");
   await alerts.getByRole("button", { name: "Save changes" }).click();

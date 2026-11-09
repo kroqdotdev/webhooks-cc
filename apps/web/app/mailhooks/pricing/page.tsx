@@ -112,7 +112,8 @@ export default function MailhooksPricing() {
             parsed pages, more layouts, custom domains, file drops and longer retention.
           </p>
 
-          <div className="grid md:grid-cols-3 gap-6 items-start">
+          {/* Equal-height cards: the buttons line up along the bottom. */}
+          <div className="grid md:grid-cols-3 gap-6">
             {PLANS.map((plan) => (
               <div
                 key={plan.name}
@@ -128,7 +129,7 @@ export default function MailhooksPricing() {
                   {plan.price}
                   <span className="text-lg font-normal text-muted-foreground"> {plan.note}</span>
                 </p>
-                <ul className="space-y-3 my-8">
+                <ul className="space-y-3 my-8 flex-1">
                   {plan.lines.map((line) => (
                     <li key={line} className="flex items-start gap-3">
                       <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
@@ -138,13 +139,15 @@ export default function MailhooksPricing() {
                 </ul>
                 {/* Sign-up buttons once, on Free; the paid plans start free and upgrade later. */}
                 {plan.name === "Free" ? (
-                  <PricingCTA />
+                  <div className="mt-auto">
+                    <PricingCTA />
+                  </div>
                 ) : (
                   <Link
                     href="/login?mode=sign-up&redirect=/account/plan"
-                    className={`${plan.name === "Business" ? "ui-btn-primary" : "ui-btn-outline"} block text-center`}
+                    className={`${plan.name === "Business" ? "ui-btn-primary" : "ui-btn-outline"} mt-auto block text-center`}
                   >
-                    Start free, upgrade anytime
+                    Start free, then go {plan.name}
                   </Link>
                 )}
               </div>

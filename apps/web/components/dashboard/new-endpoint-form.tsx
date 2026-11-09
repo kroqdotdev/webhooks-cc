@@ -45,8 +45,11 @@ export function NewEndpointForm({
   const [name, setName] = useState("");
   // Listed on the site it is made on unless chosen otherwise.
   const [listedOn, setListedOn] = useState<EndpointSite>(site.key);
-  // Where it is listed is rarely changed, so it waits behind "More options".
+  // Where it is listed and the mock response wait behind "More options".
   const [moreOpen, setMoreOpen] = useState(false);
+  const showSites = twoSites();
+  // A mail-first endpoint rarely answers HTTP; the same setting stays under Settings.
+  const showMock = !mailFirst;
   const moreId = useId();
   const [mockStatus, setMockStatus] = useState("200");
   const [mockBody, setMockBody] = useState("");
@@ -101,7 +104,9 @@ export function NewEndpointForm({
         />
       </div>
 
-      {twoSites() && (
+      {/* Where it is listed and the mock response are rarely set at creation, so the
+          form opens as a name and Create. Collapsing keeps whatever was entered. */}
+      {(showSites || showMock) && (
         <div className="space-y-3">
           <button
             type="button"
@@ -116,46 +121,44 @@ export function NewEndpointForm({
               aria-hidden
             />
           </button>
-          <div id={moreId} hidden={!moreOpen}>
-            <EndpointSiteField value={listedOn} onChange={setListedOn} />
-          </div>
-        </div>
-      )}
+          <div id={moreId} hidden={!moreOpen} className="space-y-4">
+            {showSites && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
+            {showMock && (
+              <div className="border-strong border-line rounded-lg p-4 space-y-4">
+                <div>
+                  <p className="font-bold caps text-xs mb-1">Mock response (optional)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Configure what this endpoint returns when it receives a request.
+                  </p>
+                </div>
 
-      {/* A mail-first endpoint rarely answers HTTP; the same setting stays under Settings. */}
-      {!mailFirst && (
-        <div className="border-strong border-line rounded-lg p-4 space-y-4">
-          <div>
-            <p className="font-bold caps text-xs mb-1">Mock response (optional)</p>
-            <p className="text-xs text-muted-foreground">
-              Configure what this endpoint returns when it receives a request.
-            </p>
-          </div>
+                <StatusCodePicker id="ep-status" value={mockStatus} onChange={setMockStatus} />
 
-          <StatusCodePicker id="ep-status" value={mockStatus} onChange={setMockStatus} />
-
-          <div className="space-y-2">
-            <Label htmlFor="ep-body" className="font-bold caps text-xs">
-              Response body
-            </Label>
-            <Textarea
-              id="ep-body"
-              value={mockBody}
-              onChange={(e) => setMockBody(e.target.value)}
-              placeholder='{"success": true}'
-              rows={3}
-              aria-describedby="ep-body-hint"
-              className="border-strong border-line text-sm font-mono"
-            />
-            <p id="ep-body-hint" className="text-xs text-muted-foreground">
-              {looksLikeBrokenJson(mockBody) ? (
-                <span className="text-destructive-ink">
-                  This does not parse as JSON; it will be sent as plain text.
-                </span>
-              ) : (
-                "Sent as written. Headers can be set later under Settings, Responses."
-              )}
-            </p>
+                <div className="space-y-2">
+                  <Label htmlFor="ep-body" className="font-bold caps text-xs">
+                    Response body
+                  </Label>
+                  <Textarea
+                    id="ep-body"
+                    value={mockBody}
+                    onChange={(e) => setMockBody(e.target.value)}
+                    placeholder='{"success": true}'
+                    rows={3}
+                    aria-describedby="ep-body-hint"
+                    className="border-strong border-line text-sm font-mono"
+                  />
+                  <p id="ep-body-hint" className="text-xs text-muted-foreground">
+                    {looksLikeBrokenJson(mockBody) ? (
+                      <span className="text-destructive-ink">
+                        This does not parse as JSON; it will be sent as plain text.
+                      </span>
+                    ) : (
+                      "Sent as written. Headers can be set later under Settings, Responses."
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

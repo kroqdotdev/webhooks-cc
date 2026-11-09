@@ -159,8 +159,13 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
               value={targetUrl}
               onChange={(e) => setTargetUrl(e.target.value)}
               placeholder="http://localhost:3000/webhook"
+              aria-describedby="replay-url-hint"
               className="ui-input w-full text-sm"
             />
+            <p id="replay-url-hint" className="mt-1.5 text-xs text-muted-foreground">
+              The URL to send this request to, for example your local server. It is sent from your
+              browser.
+            </p>
           </div>
 
           <div className="text-xs font-mono text-muted-foreground">

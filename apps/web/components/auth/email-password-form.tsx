@@ -240,20 +240,14 @@ export function EmailPasswordForm({
       </div>
 
       {mode !== "forgot" ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="auth-password">Password</Label>
-            {mode === "sign-in" ? (
-              <button
-                type="button"
-                onClick={() => switchMode("forgot")}
-                className="text-xs underline text-muted-foreground hover:text-foreground"
-              >
-                Forgot password?
-              </button>
-            ) : null}
-          </div>
+        // "Forgot password?" follows the input in the DOM, so Tab goes from the email to the
+        // password; the grid still shows it on the label's row.
+        <div className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2">
+          <Label htmlFor="auth-password" className="col-start-1 row-start-1">
+            Password
+          </Label>
           <Input
+            className="col-span-2"
             id="auth-password"
             name="password"
             type="password"
@@ -280,13 +274,22 @@ export function EmailPasswordForm({
             }}
             disabled={busy}
           />
+          {mode === "sign-in" ? (
+            <button
+              type="button"
+              onClick={() => switchMode("forgot")}
+              className="col-start-2 row-start-1 justify-self-end text-xs underline text-muted-foreground hover:text-foreground"
+            >
+              Forgot password?
+            </button>
+          ) : null}
           {fieldError?.field === "password" ? (
-            <p id="auth-password-error" className="text-xs text-destructive-ink">
+            <p id="auth-password-error" className="col-span-2 text-xs text-destructive-ink">
               {fieldError.message}
             </p>
           ) : null}
           {mode === "sign-up" && fieldError?.field !== "password" ? (
-            <p id="auth-password-hint" className="text-xs text-muted-foreground">
+            <p id="auth-password-hint" className="col-span-2 text-xs text-muted-foreground">
               At least {PASSWORD_MIN_LENGTH} characters.
             </p>
           ) : null}

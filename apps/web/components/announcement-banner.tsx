@@ -60,8 +60,9 @@ export function AnnouncementBanner() {
   return (
     <>
       <div
-        role="status"
-        aria-live="polite"
+        // A landmark, not a live region: it should not be announced on every page.
+        role="region"
+        aria-label="Announcement"
         className="fixed left-0 right-0 z-[55]"
         style={{ top: maintenanceActive ? BANNER_HEIGHT : 0 }}
       >

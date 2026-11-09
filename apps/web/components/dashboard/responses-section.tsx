@@ -26,6 +26,13 @@ import {
 import { SaveFooter, Section, Switch, useSave } from "./settings-primitives";
 import { statusLine } from "./status-code-picker";
 import { stableStringify } from "@/lib/stable-json";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * What senders get back. The rules and the default response are one list
@@ -37,6 +44,8 @@ import { stableStringify } from "@/lib/stable-json";
  */
 
 const MAX_RULES = 50;
+/** The "Preview with" choice that means the newest request (Radix items need a value). */
+const NEWEST_REQUEST = "__newest__";
 
 interface RuleDraft {
   key: string;
@@ -263,23 +272,30 @@ function PreviewPanel({
         <label htmlFor={`responses-preview-${slug}`} className="text-sm font-semibold">
           Preview with
         </label>
-        <select
-          id={`responses-preview-${slug}`}
-          value={requestId}
-          onChange={(e) => setRequestId(e.target.value)}
-          className="ui-input text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[28rem]"
+        {/* Radix items cannot carry an empty value, so the newest request has its own. */}
+        <Select
+          value={requestId || NEWEST_REQUEST}
+          onValueChange={(value) => setRequestId(value === NEWEST_REQUEST ? "" : value)}
         >
-          <option value="">
-            {requests && requests.length === 0
-              ? "A sample request (none captured yet)"
-              : "The newest request"}
-          </option>
-          {(requests ?? []).map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.method} {row.path} at {time(row.receivedAt)}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id={`responses-preview-${slug}`}
+            className="ui-input h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[28rem]"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value={NEWEST_REQUEST} className="text-[13px] font-mono">
+              {requests && requests.length === 0
+                ? "A sample request (none captured yet)"
+                : "The newest request"}
+            </SelectItem>
+            {(requests ?? []).map((row) => (
+              <SelectItem key={row.id} value={row.id} className="text-[13px] font-mono">
+                {row.method} {row.path} at {time(row.receivedAt)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div
         role="status"

@@ -653,16 +653,18 @@ export default async function Home() {
       {/* Pricing */}
       <section id="pricing" className="py-20 px-4 scroll-mt-20">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
+          <div className="mb-12 max-w-2xl">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
             <p className="text-xl text-muted-foreground">
-              Free has every Pro feature; Business adds attachment parsing, more layouts, custom
-              domains, file drops and longer retention. Add Teams when you need to work together.
+              Every plan has the full toolset. Pro raises the limits; Business adds attachment
+              parsing, more layouts, custom domains, file drops and longer retention. Add Teams when
+              you need to work together.
             </p>
           </div>
 
           {/* Personal plans */}
-          <div className="grid md:grid-cols-3 gap-6 items-start">
+          {/* Equal-height cards: the buttons line up along the bottom. */}
+          <div className="grid md:grid-cols-3 gap-6">
             {/* Free Plan */}
             <div className="ui-card flex flex-col">
               <div className="mb-6">
@@ -672,7 +674,7 @@ export default async function Home() {
                   <span className="text-lg font-normal text-muted-foreground"> forever</span>
                 </p>
               </div>
-              <ul className="space-y-3 mb-8">
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
                   "50 requests/day",
                   "7-day data retention",
@@ -682,13 +684,13 @@ export default async function Home() {
                   "CLI, SDK & MCP access",
                   "Mock responses & replay",
                 ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                     <span>{feature}</span>
                   </li>
                 ))}
               </ul>
-              <div>
+              <div className="mt-auto">
                 <PricingCTA />
               </div>
             </div>
@@ -706,15 +708,15 @@ export default async function Home() {
                 </p>
               </div>
               <p className="text-sm font-semibold mb-3">Everything in Free, plus:</p>
-              <ul className="space-y-3 mb-8">
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
                   "100,000 requests/month",
                   "31-day data retention",
                   "100 parsed attachment pages/month",
                   "Extra requests in 25,000 blocks",
                 ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -722,9 +724,9 @@ export default async function Home() {
               {/* One action per paid plan: everyone starts free and upgrades under Account. */}
               <Link
                 href="/login?mode=sign-up&redirect=/account/plan"
-                className="ui-btn-primary block text-center"
+                className="ui-btn-primary mt-auto block text-center"
               >
-                Start free, upgrade anytime
+                Start free, then go Pro
               </Link>
             </div>
 
@@ -739,7 +741,7 @@ export default async function Home() {
                 <p className="text-sm text-muted-foreground mt-2">or $290 a year</p>
               </div>
               <p className="text-sm font-semibold mb-3">Everything in Pro, plus:</p>
-              <ul className="space-y-3 mb-8">
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
                   "250,000 requests/month",
                   "90-day data retention",
@@ -748,8 +750,8 @@ export default async function Home() {
                   "1 custom inbound domain, extra ones $3/mo",
                   "File drops to SFTP, FTP/FTPS & S3",
                 ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -757,9 +759,9 @@ export default async function Home() {
               {/* One action per paid plan: everyone starts free and upgrades under Account. */}
               <Link
                 href="/login?mode=sign-up&redirect=/account/plan"
-                className="ui-btn-outline block text-center"
+                className="ui-btn-outline mt-auto block text-center"
               >
-                Start free, upgrade anytime
+                Start free, then go Business
               </Link>
             </div>
           </div>
