@@ -16,6 +16,8 @@ interface PricingCTAProps {
   primary?: boolean;
   /** Where the email link sits: centred under both buttons, or under the first. */
   emailAlign?: "center" | "start";
+  /** In a pricing card beside an Upgrade button, the signed-in Dashboard link steps back. */
+  quietWhenSignedIn?: boolean;
 }
 
 export function PricingCTA(props: PricingCTAProps) {
@@ -30,6 +32,7 @@ function PricingCTAInner({
   inverted = false,
   primary = false,
   emailAlign = "center",
+  quietWhenSignedIn = false,
 }: PricingCTAProps) {
   const isAuthenticated = useIsAuthenticated();
 
@@ -37,7 +40,13 @@ function PricingCTAInner({
   // HTML; authenticated visitors see it swap to the dashboard link.
   if (isAuthenticated) {
     return (
-      <Link href="/dashboard" className="ui-btn-primary w-full text-center block">
+      <Link
+        href="/dashboard"
+        className={cn(
+          quietWhenSignedIn ? "ui-btn-outline" : "ui-btn-primary",
+          "w-full text-center block"
+        )}
+      >
         Go to Dashboard
         <ArrowRight className="inline-block ml-2 h-5 w-5" />
       </Link>

@@ -8,7 +8,7 @@ export default function SecurityPage() {
     <>
       <SettingsPageHeader
         title="Security"
-        description="How you sign in. Passwords and sign-in links are managed from the sign-in page."
+        description="Two-factor sign-in for this account. Change your password under Profile."
       />
       <TwoFactor />
     </>

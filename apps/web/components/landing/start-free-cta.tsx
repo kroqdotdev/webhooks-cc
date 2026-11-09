@@ -66,6 +66,12 @@ function StartFreeCTAInner({
           layout="horizontal"
           buttonClassName={buttonClass}
         />
+        <Link
+          href="/login?mode=sign-up"
+          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          or sign up with email
+        </Link>
       </div>
       {goCta ? (
         <p className="text-sm text-muted-foreground">

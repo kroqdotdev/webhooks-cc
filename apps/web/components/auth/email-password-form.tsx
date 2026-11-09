@@ -92,6 +92,14 @@ export function EmailPasswordForm({
       setFieldError({ field: "email", message: "Enter your email address" });
       return;
     }
+    // A malformed address is reported before anything about the password.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setFieldError({
+        field: "email",
+        message: "Enter a full email address, like you@example.com",
+      });
+      return;
+    }
     // GoTrue refuses these too (migration 00052), but its answer carries no
     // error code, so the form would only show the generic message.
     if (mode === "sign-up" && isCaptureDomainAddress(trimmedEmail, DEFAULT_EMAIL_DOMAIN)) {
@@ -278,7 +286,7 @@ export function EmailPasswordForm({
             <button
               type="button"
               onClick={() => switchMode("forgot")}
-              className="col-start-2 row-start-1 justify-self-end text-xs underline text-muted-foreground hover:text-foreground"
+              className="col-start-2 row-start-1 justify-self-end py-1.5 -my-1.5 text-xs underline text-muted-foreground hover:text-foreground"
             >
               Forgot password?
             </button>

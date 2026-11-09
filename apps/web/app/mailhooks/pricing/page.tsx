@@ -140,7 +140,7 @@ export default function MailhooksPricing() {
                 {/* Sign-up buttons once, on Free; the paid plans start free and upgrade later. */}
                 {plan.name === "Free" ? (
                   <div className="mt-auto">
-                    <PricingCTA />
+                    <PricingCTA quietWhenSignedIn />
                   </div>
                 ) : (
                   <PaidPlanCTA

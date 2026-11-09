@@ -1,3 +1,5 @@
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SupportHome } from "@/components/support/support-home";
 import { createPageMetadata } from "@/lib/seo";
@@ -12,8 +14,16 @@ export const metadata = createPageMetadata({
 export default function SupportPage() {
   return (
     <div className="min-h-screen">
-      {/* The short header the account pages use, so support reads as part of the app. */}
-      <SiteHeader compact />
+      {/* The same header as the account pages (and their way back), so support reads as part of the app. */}
+      <SiteHeader>
+        <Link
+          href="/dashboard"
+          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Dashboard
+        </Link>
+      </SiteHeader>
       <SupportHome />
     </div>
   );

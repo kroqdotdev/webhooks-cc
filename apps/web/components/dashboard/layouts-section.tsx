@@ -395,7 +395,7 @@ function CopyValueButton({ name, value }: { name: string; value: string }) {
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => setCopied(false), 1500);
       }}
-      className="shrink-0 -my-0.5 p-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+      className="shrink-0 -my-0.5 h-6 w-6 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-primary-ink" aria-hidden />

@@ -38,6 +38,12 @@ import { getNote, setNote, getAllNotes } from "@/lib/request-notes";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Copy, Check, Send, Download, ChevronDown, Mail, Inbox, X } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -131,6 +137,10 @@ const COUNT_RESYNC_INTERVAL_MS = 60_000;
 // minutes on an endpoint with layouts has no result, the list is read again.
 const PARSE_FRESH_MS = 2 * 60 * 1000;
 const PARSE_REFRESH_MS = 4000;
+// Email that arrived before the layouts were saved was never queued for them.
+// The save time is this browser's and the arrival the server's, so allow for
+// a clock a little ahead.
+const LAYOUTS_SAVED_SLACK_MS = 3_000;
 
 export default function DashboardPage() {
   const { session, isLoading: authLoading } = useAuth();
@@ -979,7 +989,43 @@ export default function DashboardPage() {
     }
     return map;
   }, [recentRequests, olderRequests, searchResults]);
+  // Each HTTP request's query string, for its row (the summary rows carry none),
+  // so /health?check=deep reads apart from /health.
+  const queryById = useMemo(() => {
+    const map = new Map<string, string>();
+    const add = (id: string, params: Record<string, string> | undefined) => {
+      const query = params ? new URLSearchParams(params).toString() : "";
+      if (query) map.set(id, `?${query}`);
+    };
+    for (const r of [...olderRequests, ...searchResults]) {
+      if (r.kind !== "email") add(r.id, r.queryParams);
+    }
+    for (const r of recentRequests) {
+      if (r.kind !== "email") add(r._id, r.queryParams);
+    }
+    return map;
+  }, [recentRequests, olderRequests, searchResults]);
   const layoutsActive = (currentEndpoint?.layouts?.length ?? 0) > 0;
+  // The endpoint carries no time its layouts were saved, so a save made on this
+  // page (seen as its layouts changing) is timed here: email from before it was
+  // never queued for a layout and is not "reading...". Without one (layouts
+  // saved before the page loaded) any fresh email without a result may be.
+  const layoutsJson = useMemo(
+    () => JSON.stringify(currentEndpoint?.layouts ?? []),
+    [currentEndpoint?.layouts]
+  );
+  const layoutsSeen = useRef<{ endpointId: string; layouts: string } | null>(null);
+  const [layoutsSavedAt, setLayoutsSavedAt] = useState<Map<string, number>>(() => new Map());
+  useEffect(() => {
+    if (!currentEndpointId) return;
+    const seen = layoutsSeen.current;
+    layoutsSeen.current = { endpointId: currentEndpointId, layouts: layoutsJson };
+    if (seen?.endpointId !== currentEndpointId || seen.layouts === layoutsJson) return;
+    const at = Date.now();
+    setLayoutsSavedAt((current) => new Map(current).set(currentEndpointId, at));
+  }, [currentEndpointId, layoutsJson]);
+  const savedAt = currentEndpointId ? layoutsSavedAt.get(currentEndpointId) : undefined;
+  const parseSince = savedAt === undefined ? null : savedAt - LAYOUTS_SAVED_SLACK_MS;
   const [parseClock, setParseClock] = useState(() => Date.now());
   const parsePending =
     layoutsActive &&
@@ -987,7 +1033,8 @@ export default function DashboardPage() {
       (request) =>
         request.kind === "email" &&
         !request.parsed &&
-        parseClock - request.receivedAt < PARSE_FRESH_MS
+        parseClock - request.receivedAt < PARSE_FRESH_MS &&
+        (parseSince === null || request.receivedAt >= parseSince)
     );
   useEffect(() => {
     if (!parsePending) return;
@@ -1667,8 +1714,10 @@ export default function DashboardPage() {
                   }
                   emailAddress={currentEndpoint.emailAddress}
                   parsedById={parsedById}
+                  queryById={queryById}
                   layoutsActive={layoutsActive}
                   parseNow={parseClock}
+                  parseSince={parseSince}
                   timelineSlot={
                     <RequestTimeline
                       requests={displayedItems}
@@ -1726,6 +1775,7 @@ export default function DashboardPage() {
                     onNoteChange={handleNoteChange}
                     initialTab={activeTab === "deliveries" ? "deliveries" : undefined}
                     onParsed={handleParsed}
+                    parseSince={parseSince}
                   />
                 ) : displayRequest ? (
                   <RequestDetail
@@ -1775,6 +1825,7 @@ export default function DashboardPage() {
                         onNoteChange={handleNoteChange}
                         initialTab={activeTab === "deliveries" ? "deliveries" : undefined}
                         onParsed={handleParsed}
+                        parseSince={parseSince}
                       />
                     ) : (
                       <RequestDetail
@@ -1824,8 +1875,10 @@ export default function DashboardPage() {
                 }
                 emailAddress={currentEndpoint.emailAddress}
                 parsedById={parsedById}
+                queryById={queryById}
                 layoutsActive={layoutsActive}
                 parseNow={parseClock}
+                parseSince={parseSince}
               />
             )}
           </div>
@@ -1850,65 +1903,31 @@ function ExportDropdown({
   onExportJson: () => void;
   onExportCsv: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [open]);
-
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        aria-label="Export"
-        aria-expanded={open}
-        className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
-      >
-        <Download className="h-3.5 w-3.5" />
-        {/* Icon only on phones, where the endpoint bar is narrow. */}
-        <span className="hidden sm:inline">Export</span>
-        <ChevronDown className="h-3 w-3 hidden sm:block" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised z-50 min-w-[140px]">
-          <button
-            onClick={() => {
-              onExportJson();
-              setOpen(false);
-            }}
-            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line"
-          >
-            Export JSON
-          </button>
-          <button
-            onClick={() => {
-              onExportCsv();
-              setOpen(false);
-            }}
-            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors"
-          >
-            Export CSV
-          </button>
-        </div>
-      )}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Export"
+          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
+        >
+          <Download className="h-3.5 w-3.5" />
+          {/* Icon only on phones, where the endpoint bar is narrow. */}
+          <span className="hidden sm:inline">Export</span>
+          <ChevronDown className="h-3 w-3 hidden sm:block" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="border-strong border-line shadow-raised">
+        <DropdownMenuItem onSelect={onExportJson}>
+          <Download className="h-3.5 w-3.5" />
+          Export JSON
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onExportCsv}>
+          <Download className="h-3.5 w-3.5" />
+          Export CSV
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

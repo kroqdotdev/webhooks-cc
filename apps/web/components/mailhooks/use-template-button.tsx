@@ -12,7 +12,10 @@ import { useIsAuthenticated } from "@/components/providers/supabase-auth-provide
 export function UseTemplateButton({ templateId }: { templateId: string }) {
   const isAuthenticated = useIsAuthenticated();
   const target = `/dashboard?template=${encodeURIComponent(templateId)}`;
-  const href = isAuthenticated ? target : `/login?redirect=${encodeURIComponent(target)}`;
+  // Gallery pages are where new visitors arrive, so signed out it opens sign-up.
+  const href = isAuthenticated
+    ? target
+    : `/login?mode=sign-up&redirect=${encodeURIComponent(target)}`;
   return (
     <Link href={href} className="ui-btn-primary inline-flex items-center gap-2">
       Use this layout

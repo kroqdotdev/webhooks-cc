@@ -84,10 +84,17 @@ interface RequestListProps {
   emailAddress?: string | null;
   /** What the layouts made of each email, by id (the rows carry no parse). */
   parsedById?: Map<string, ParsedEmail | null>;
+  /** Each HTTP request's query string ("?a=b"), by id, when it has one (the rows carry none). */
+  queryById?: Map<string, string>;
   /** The endpoint has layouts: an email without a result says so. */
   layoutsActive?: boolean;
   /** The time the page last looked at parses, for "reading..." (see PARSE_FRESH_MS). */
   parseNow?: number;
+  /**
+   * When this page saw the layouts saved, if it did: email from before that
+   * was never queued for a layout, so it is not "reading...".
+   */
+  parseSince?: number | null;
 }
 
 /** An email that arrived this recently with no result may still be read by a layout. */
@@ -144,8 +151,10 @@ export function RequestList({
   onKindFilterChange,
   emailAddress,
   parsedById,
+  queryById,
   layoutsActive = false,
   parseNow,
+  parseSince = null,
 }: RequestListProps) {
   // The mail site, or a list filtered to email, talks about emails.
   const site = useSite();
@@ -682,7 +691,12 @@ export function RequestList({
               signingProvider={request.signingProvider}
             />
           )}
-          <span className="text-xs font-mono truncate flex-1">{request.path}</span>
+          <span className="text-xs font-mono flex-1 min-w-0 flex">
+            <span className="truncate shrink-0 max-w-full">{request.path}</span>
+            {queryById?.get(id) && (
+              <span className="truncate min-w-0 text-muted-foreground">{queryById.get(id)}</span>
+            )}
+          </span>
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
           <span className="text-xs text-muted-foreground font-mono shrink-0">
@@ -811,7 +825,12 @@ export function RequestList({
     if (parsed?.status === "matched")
       return { kind: "read", layout: parsed.layout?.name ?? "layout" };
     if (!layoutsActive || parsed === undefined) return null;
-    if (parsed === null && parseNow !== undefined && parseNow - receivedAt < PARSE_FRESH_MS) {
+    if (
+      parsed === null &&
+      parseNow !== undefined &&
+      parseNow - receivedAt < PARSE_FRESH_MS &&
+      (parseSince === null || receivedAt >= parseSince)
+    ) {
       return { kind: "pending" };
     }
     return { kind: "none" };

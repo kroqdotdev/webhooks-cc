@@ -370,8 +370,10 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
 
   const [fallback, setFallback] = useState<ResponseDraft>(initial.fallback);
   const [rules, setRules] = useState<RuleDraft[]>(initial.rules);
+  // On mailhooks.cc the HTTP answer is secondary, and its header row already
+  // summarises it, so the editor starts collapsed there.
   const [open, setOpen] = useState<Set<string>>(() =>
-    initial.rules.length === 0 ? new Set(["fallback"]) : new Set()
+    initial.rules.length === 0 && !mailFirst ? new Set(["fallback"]) : new Set()
   );
   const [submitted, setSubmitted] = useState(false);
   const [answering, setAnswering] = useState<number | "fallback" | null>(null);

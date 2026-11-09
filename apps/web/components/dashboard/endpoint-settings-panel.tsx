@@ -719,10 +719,10 @@ const WEB_SECTION_ORDER: SettingsSection[] = [
   "responses",
   "forwarding",
   "deliveries",
-  "alerts",
   "verification",
   "retention",
   "layouts",
+  "alerts",
   "sharing",
   "delete",
 ];
@@ -793,9 +793,14 @@ export function EndpointSettingsPanel({
   // A jump scrolls smoothly past other sections; the spy stays quiet until it
   // settles so the clicked section keeps its highlight.
   const jumpedAt = useRef(0);
+  // The section jumped to stays named while it is in view, until the person
+  // scrolls themselves: a short one near the end (Alerts) cannot reach the
+  // top, and the end of the scroll area would otherwise name the last one.
+  const jumpTarget = useRef<SettingsSection | null>(null);
   const jump = useCallback(
     (id: SettingsSection) => {
       jumpedAt.current = Date.now();
+      jumpTarget.current = id;
       setActive(id);
       scrollToSection(id);
       onSectionJump?.(id);
@@ -820,6 +825,7 @@ export function EndpointSettingsPanel({
       const target = document.getElementById(`settings-${focusSection}`);
       if (!target) return;
       jumpedAt.current = Date.now();
+      jumpTarget.current = focusSection;
       setActive(focusSection);
       target.scrollIntoView({ block: "start" });
       if (!focused) {
@@ -843,12 +849,15 @@ export function EndpointSettingsPanel({
     };
   }, [focusSection]);
 
-  // Scroll spy: the active section is the last one whose top has passed 40%
-  // of the way down the view, so a tall section (an open editor) stays active
-  // all the way through. The jump lock keeps a clicked section highlighted
-  // while the smooth scroll passes others. Scrolled to the very end, the last
-  // sections may never reach that line, so the bottom of the scroll area
-  // makes the last one active.
+  // Scroll spy: the active section is the first one still showing below a line
+  // a little under the top of the view, so a short section (Alerts) is named
+  // once it reaches the top and a tall one (an open editor) stays active all
+  // the way through. The jump lock keeps a clicked section highlighted while
+  // the smooth scroll passes others, and it stays named while in view until
+  // the person scrolls. Scrolled to the very end, the last sections may never
+  // reach that line, so the bottom of the scroll area makes the last one
+  // active. Sections grow and shrink as editors open and
+  // data loads, which moves them without a scroll, so a resize updates too.
   useEffect(() => {
     const root = scroller.current;
     if (!root) return;
@@ -858,26 +867,41 @@ export function EndpointSettingsPanel({
       if (Date.now() - jumpedAt.current < 800) return;
       const all = Array.from(root.querySelectorAll<HTMLElement>("[data-settings-section]"));
       if (all.length === 0) return;
-      const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
-      let current = all[0];
-      if (atBottom) current = all[all.length - 1];
-      else {
-        const line = root.getBoundingClientRect().top + root.clientHeight * 0.4;
-        for (const section of all) {
-          if (section.getBoundingClientRect().top <= line) current = section;
-          else break;
-        }
+      const rootBox = root.getBoundingClientRect();
+      const target = all.find(
+        (section) => section.getAttribute("data-settings-section") === jumpTarget.current
+      );
+      if (target) {
+        const box = target.getBoundingClientRect();
+        if (box.bottom > rootBox.top && box.top < rootBox.bottom) return;
       }
+      const last = all[all.length - 1];
+      const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
+      const line = rootBox.top + 96;
+      const current = atBottom
+        ? last
+        : (all.find((section) => section.getBoundingClientRect().bottom > line) ?? last);
       const id = current.getAttribute("data-settings-section") as SettingsSection | null;
       if (id) setActive(id);
     };
-    const onScroll = () => {
+    const schedule = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
-    root.addEventListener("scroll", onScroll, { passive: true });
+    // Scrolling by hand lets go of the section jumped to.
+    const release = () => {
+      jumpTarget.current = null;
+    };
+    const input = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    input.forEach((name) => root.addEventListener(name, release, { passive: true }));
+    root.addEventListener("scroll", schedule, { passive: true });
+    const resize = new ResizeObserver(schedule);
+    const content = root.firstElementChild;
+    if (content) resize.observe(content);
     return () => {
       if (frame) cancelAnimationFrame(frame);
-      root.removeEventListener("scroll", onScroll);
+      input.forEach((name) => root.removeEventListener(name, release));
+      root.removeEventListener("scroll", schedule);
+      resize.disconnect();
     };
   }, [sections]);
 

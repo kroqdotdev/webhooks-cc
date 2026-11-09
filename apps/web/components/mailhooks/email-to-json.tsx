@@ -42,7 +42,12 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
         <figcaption className="px-5 py-3 border-b-strong border-line text-xs font-bold caps text-muted-foreground">
           What your endpoint delivers
         </figcaption>
-        <pre className="px-5 py-4 text-xs font-mono overflow-x-auto leading-relaxed">
+        {/* On phones the JSON scrolls in a shorter box, so the page reaches "How it works" sooner. */}
+        <pre
+          tabIndex={0}
+          aria-label="The JSON your endpoint delivers"
+          className="px-5 py-4 text-xs font-mono overflow-x-auto leading-relaxed max-md:max-h-72 max-md:overflow-y-auto"
+        >
           {JSON.stringify(json, null, 2)}
         </pre>
         {sample.attachment && (

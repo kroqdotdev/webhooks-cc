@@ -24,6 +24,12 @@ function wasDismissed(id: string): boolean {
 /** The signed-in app's pages, where the announcement never shows. */
 export const IN_APP_PATH = /^\/(dashboard|account|teams|support)(\/|$)/;
 
+/** Pages without the banner: the signed-in app, and signing in, where it only distracts. */
+const NO_BANNER_PATH = /^\/(dashboard|account|teams|support|login|auth)(\/|$)/;
+
+/** Phones skip it: two pinned lines of promotion cost too much of a small screen. */
+const PHONE_QUERY = "(max-width: 639px)";
+
 export function AnnouncementBanner() {
   const announcement = ANNOUNCEMENTS[0];
   const announcementId = announcement?.id;
@@ -31,14 +37,16 @@ export function AnnouncementBanner() {
   const [visible, setVisible] = useState(false);
 
   // Signed-in app pages carry no marketing banner (see lib/announcements.ts).
-  const isDashboard = IN_APP_PATH.test(pathname);
+  const isDashboard = NO_BANNER_PATH.test(pathname);
 
   useEffect(() => {
     // Client navigation into the dashboard keeps this component mounted, so
     // hide the banner there as well as dropping its offset.
     // The announcements are webhooks.cc's news.
     const onMailhooks = siteForHost(window.location.host) === "mailhooks";
-    const show = !!announcementId && !isDashboard && !onMailhooks && !wasDismissed(announcementId);
+    const onPhone = window.matchMedia(PHONE_QUERY).matches;
+    const show =
+      !!announcementId && !isDashboard && !onMailhooks && !onPhone && !wasDismissed(announcementId);
     setVisible(show);
     setAnnOffset(show ? BANNER_HEIGHT : "0px");
   }, [announcementId, isDashboard]);

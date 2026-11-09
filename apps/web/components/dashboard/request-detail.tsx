@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
   Copy,
@@ -256,6 +256,8 @@ export function RequestDetail({
 
   // On a phone the tab strip scrolls; keep the active tab in view (clear of the
   // fade) without moving the page itself, which scrollIntoView could do.
+  // The desktop and phone panes can both render this view, so ids are per instance.
+  const tabIds = useId();
   const tablistRef = useRef<HTMLDivElement>(null);
   const [tabStripMoreRef, tabStripMore] = useMoreToRight<HTMLDivElement>();
   const tabStripRef = useCallback(
@@ -267,7 +269,7 @@ export function RequestDetail({
   );
   useEffect(() => {
     const list = tablistRef.current;
-    const active = list?.querySelector<HTMLElement>(`#request-tab-${tab}`);
+    const active = list?.querySelector<HTMLElement>(`[role="tab"][data-tab="${tab}"]`);
     if (!list || !active || list.scrollWidth <= list.clientWidth) return;
     const listBox = list.getBoundingClientRect();
     const box = active.getBoundingClientRect();
@@ -362,9 +364,10 @@ export function RequestDetail({
                 key={t}
                 type="button"
                 role="tab"
-                id={`request-tab-${t}`}
+                id={`${tabIds}-tab-${t}`}
+                data-tab={t}
                 aria-selected={tab === t}
-                aria-controls="request-tabpanel"
+                aria-controls={`${tabIds}-panel`}
                 tabIndex={tab === t ? 0 : -1}
                 onClick={() => {
                   if (tab === t) return;
@@ -380,7 +383,7 @@ export function RequestDetail({
                   setTab(next);
                   trackRequestDetailTabChanged(next);
                   event.currentTarget.parentElement
-                    ?.querySelector<HTMLButtonElement>(`#request-tab-${next}`)
+                    ?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)
                     ?.focus();
                 }}
                 className={cn(
@@ -407,14 +410,14 @@ export function RequestDetail({
       {/* Tab content */}
       <div
         role="tabpanel"
-        id="request-tabpanel"
-        aria-labelledby={`request-tab-${tab}`}
+        id={`${tabIds}-panel`}
+        aria-labelledby={`${tabIds}-tab-${tab}`}
         className="flex-1 overflow-auto p-4"
       >
         {tab === "body" && (
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2 py-0.5 text-[11px] font-bold caps rounded-sm border-strong border-line bg-muted">
+              <span className="text-[11px] font-mono font-bold caps text-muted-foreground">
                 {getFormatLabel(bodyFormat)}
               </span>
               {bodyViews.length > 1 && (

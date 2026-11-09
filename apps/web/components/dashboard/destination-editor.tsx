@@ -424,12 +424,30 @@ function DeliveryPreview({
 type EditorProps = Parameters<typeof GenericDestinationEditor>[0];
 
 const FULL_URL_MESSAGE = "Enter a full URL, such as https://api.example.com/hooks.";
-const PUBLIC_HOST_MESSAGE =
-  "Use an https URL on a public host. Localhost, private networks and IP addresses cannot be reached from here.";
+/** Why a local or private target cannot work, and what reaches one instead. */
+function publicHostMessage(slug: string): string {
+  return `Forwarding runs on our servers, so it cannot reach localhost, private networks or IP addresses. To send captures to your machine, run whk tunnel ${slug || "<slug>"} or use Replay on a request.`;
+}
+
+/**
+ * The host a typed URL names, also when it was typed without a scheme
+ * ("localhost:4000/hook" parses with "localhost:" as its scheme).
+ */
+function typedHost(url: string): string | null {
+  for (const candidate of [url, `http://${url}`]) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") return parsed.hostname;
+    } catch {
+      // Try the next reading.
+    }
+  }
+  return null;
+}
 
 /**
  * Whether a host is localhost or an IP address, which production refuses
- * (lib/forwarding/target.ts). Development can allow them, so this only runs
+ * (lib/forwarding/target.ts). Development can allow them, so this only blocks
  * in a production build and the server has the last word everywhere else.
  */
 function isLocalOrIpHost(hostname: string): boolean {
@@ -440,11 +458,40 @@ function isLocalOrIpHost(hostname: string): boolean {
 }
 
 /**
+ * Whether a host is this machine or a private network: what someone types to
+ * reach a server on their own computer. Checked in every build, so outside
+ * production (which may allow such targets) it still says how to reach one.
+ */
+function isLocalNetworkHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".home.arpa")) {
+    return true;
+  }
+  if (host.startsWith("[")) {
+    const v6 = host.slice(1, -1);
+    return v6 === "::1" || v6 === "::" || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6);
+  }
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+  if (!ipv4) return false;
+  const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
+
+/**
  * The server's reasons for refusing a destination URL (checkForwardUrl), so
  * one is shown under the field it is about rather than only in the footer.
  */
-function urlFieldMessage(serverMessage: string): string | null {
-  if (serverMessage.startsWith("Use a public host name")) return PUBLIC_HOST_MESSAGE;
+function urlFieldMessage(serverMessage: string, slug: string): string | null {
+  if (serverMessage.startsWith("Use a public host name")) return publicHostMessage(slug);
   if (serverMessage.startsWith("Enter a full URL")) return FULL_URL_MESSAGE;
   const urlReasons = [
     "Enter the URL to send to",
@@ -544,8 +591,16 @@ function GenericDestinationEditor({
     headersChanged;
 
   // Problems that keep it from saving.
+  // A server on this machine or a private network: production refuses it, and
+  // everywhere the field says what reaches one instead.
+  const host = url ? typedHost(url) : null;
+  const localTarget = host !== null && isLocalNetworkHost(host);
+  const production = process.env.NODE_ENV === "production";
   const urlError = (() => {
     if (!url) return "Enter the URL to send to.";
+    if (production && host !== null && (localTarget || isLocalOrIpHost(host))) {
+      return publicHostMessage(slug);
+    }
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -554,9 +609,6 @@ function GenericDestinationEditor({
     }
     // "localhost:3000" parses with "localhost:" as its scheme: not a full URL either.
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return FULL_URL_MESSAGE;
-    if (process.env.NODE_ENV === "production" && isLocalOrIpHost(parsed.hostname)) {
-      return PUBLIC_HOST_MESSAGE;
-    }
     if (refusedUrl && refusedUrl.url === draft.url) return refusedUrl.message;
     return null;
   })();
@@ -629,7 +681,7 @@ function GenericDestinationEditor({
       onSaved(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "The destination could not be saved.";
-      const fieldMessage = urlFieldMessage(message);
+      const fieldMessage = urlFieldMessage(message, slug);
       if (fieldMessage) {
         // The reason shows under Send to; the footer only points there.
         setRefusedUrl({ url: draft.url, message: fieldMessage });
@@ -717,7 +769,12 @@ function GenericDestinationEditor({
         <Field
           id={`${idPrefix}-url`}
           label="Send to"
-          help="An https URL on a public host, or a Slack or Discord incoming webhook."
+          help={
+            // Outside production a local target may save, so the reach note is a hint.
+            localTarget && urlError !== publicHostMessage(slug)
+              ? publicHostMessage(slug)
+              : "An https URL on a public host, or a Slack or Discord incoming webhook."
+          }
           error={showUrlError ? urlError : null}
           errorId={`${idPrefix}-url-error`}
         >

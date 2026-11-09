@@ -4,7 +4,7 @@ import { DashboardLinkIfSignedIn } from "@/components/nav/dashboard-link-if-sign
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 
-export const metadata: Metadata = { title: "Page not found" };
+export const metadata: Metadata = { title: { absolute: "Page not found | mailhooks.cc" } };
 
 export default function MailhooksNotFound() {
   return (

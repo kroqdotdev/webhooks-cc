@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { SiteHeader } from "@/components/nav/site-header";
 import { EmailToJson } from "@/components/mailhooks/email-to-json";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
@@ -106,8 +106,14 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                   </tbody>
                 </table>
               </div>
-              <details className="ui-card ui-card-static">
-                <summary className="cursor-pointer font-semibold">The layout as JSON</summary>
+              <details className="group ui-card ui-card-static">
+                <summary className="cursor-pointer font-semibold list-none [&::-webkit-details-marker]:hidden flex items-center gap-2">
+                  <ChevronRight
+                    aria-hidden
+                    className="h-4 w-4 transition-transform group-open:rotate-90"
+                  />
+                  The layout as JSON
+                </summary>
                 <pre className="mt-3 text-xs font-mono overflow-x-auto leading-relaxed">
                   {JSON.stringify(template.layout, null, 2)}
                 </pre>

@@ -327,7 +327,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     <Section
       id="alerts"
       title="Alerts"
-      description="Hear about it when this endpoint's email fields stop matching, when mail stops arriving or when a delivery fails for good."
+      description="Hear about it when a delivery fails for good, when email stops arriving or when its fields stop matching."
       footer={
         <SaveFooter
           dirty={dirty}

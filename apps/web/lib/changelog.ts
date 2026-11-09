@@ -75,6 +75,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Plan buttons say Upgrade to someone already signed in, signed-in visitors get a compact landing band, and every 404 offers the Dashboard when signed in",
       "mailhooks.cc: layout pages explain what a layout reads in a table, the email header starts higher, settings say Inbox, and the landing ends with a sign-up",
       "One select style in condition rows and the support form, larger helper text, and settings that highlight the section you are reading",
+      "The Export menu works with the keyboard, request details no longer repeat ids, and the settings list stays on the section you jumped to",
+      "Forwarding explains how to reach localhost with whk tunnel or Replay, list rows show the query string, and Alerts sit with the email settings on webhooks.cc",
+      "mailhooks.cc: every email offers a way to add a layout, gallery visitors land on sign-up, HTTP responses start collapsed, and inbox rows say reading only while a layout can still read them",
+      "Signed-in visitors no longer see guest sign-up copy, the announcement stays off sign-in pages and phones, sign-up checks the email format first, and the phone landing page is shorter",
     ],
   },
   {

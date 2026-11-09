@@ -226,7 +226,7 @@ export function SiteHeader({
           <button
             ref={toggleRef}
             type="button"
-            aria-controls="site-menu"
+            aria-controls={open ? "site-menu" : undefined}
             onClick={() => setOpen((prev) => !prev)}
             className="md:hidden p-2 rounded-md border-strong border-line hover:bg-muted transition-colors cursor-pointer"
             aria-label={open ? "Close menu" : "Open menu"}

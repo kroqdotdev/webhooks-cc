@@ -245,7 +245,7 @@ function PrimitiveValue({ value }: { value: unknown }) {
   if (typeof value === "number") return <span className="syntax-number">{String(value)}</span>;
   if (typeof value === "string") {
     const truncated = value.length > 120 ? `${value.slice(0, 120)}...` : value;
-    return <span className="syntax-string break-all">&quot;{truncated}&quot;</span>;
+    return <span className="syntax-string [overflow-wrap:anywhere]">&quot;{truncated}&quot;</span>;
   }
   return <span className="text-muted-foreground">{String(value)}</span>;
 }

@@ -15,6 +15,7 @@ import {
   Send,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes, formatFullTimestamp } from "@/types/request";
@@ -85,6 +86,8 @@ interface EmailDetailProps {
   initialTab?: EmailTab;
   /** A parse finished while the email was open (the list only has what it loaded). */
   onParsed?: (requestId: string, parsed: ParsedEmail) => void;
+  /** When the page saw the layouts saved, if it did: email from before was never queued for them. */
+  parseSince?: number | null;
 }
 
 /**
@@ -1016,6 +1019,7 @@ export function EmailDetail({
   onNoteChange,
   initialTab,
   onParsed,
+  parseSince = null,
 }: EmailDetailProps) {
   const email = request.email ?? null;
   const requestId = "id" in request ? request.id : request._id;
@@ -1095,7 +1099,11 @@ export function EmailDetail({
   }, [accessToken, isEmail, requestId, fieldsKnownEmpty, partialParse]);
   // A new email the layouts may still be reading.
   const [watch, setWatch] = useState<ParseWatch | null>(() =>
-    email && hasLayouts && !request.parsed && Date.now() - request.receivedAt < PARSE_FRESH_MS
+    email &&
+    hasLayouts &&
+    !request.parsed &&
+    Date.now() - request.receivedAt < PARSE_FRESH_MS &&
+    (parseSince === null || request.receivedAt >= parseSince)
       ? { id: requestId, state: "reading", mode: "new", until: Date.now() + PARSE_WATCH_MS }
       : null
   );
@@ -1325,8 +1333,11 @@ export function EmailDetail({
   const attachments = email.attachments;
   const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
-    // Also without a result while the endpoint has layouts, to say why and offer a fix.
-    ...(request.parsed || parsed || hasLayouts ? [{ id: "parsed" as const, label: "Parsed" }] : []),
+    // Also without a result while the endpoint has layouts, to say why and offer a fix,
+    // and always on mailhooks.cc, where reading mail into values is the point.
+    ...(request.parsed || parsed || hasLayouts || mailFirst
+      ? [{ id: "parsed" as const, label: "Parsed" }]
+      : []),
     ...(mailFirst ? [] : [{ id: "json" as const, label: "JSON" }]),
     ...(email.html ? [{ id: "preview" as const, label: "Preview" }] : []),
     { id: "text", label: "Text" },
@@ -1480,6 +1491,7 @@ export function EmailDetail({
               type="button"
               role="tab"
               id={`${tabIds}-tab-${entry.id}`}
+              data-tab={entry.id}
               aria-selected={activeTab === entry.id}
               aria-controls={`${tabIds}-panel`}
               tabIndex={activeTab === entry.id ? 0 : -1}
@@ -1491,7 +1503,9 @@ export function EmailDetail({
                 event.preventDefault();
                 const next = tabs[(index + step + tabs.length) % tabs.length];
                 openTab(next.id);
-                document.getElementById(`${tabIds}-tab-${next.id}`)?.focus();
+                event.currentTarget.parentElement
+                  ?.querySelector<HTMLButtonElement>(`[data-tab="${next.id}"]`)
+                  ?.focus();
               }}
               className={cn(
                 "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
@@ -1549,6 +1563,27 @@ export function EmailDetail({
             </>
           ) : !parsed && listParsed ? (
             <p className="text-sm text-muted-foreground">Loading the parsed result...</p>
+          ) : !hasLayouts ? (
+            <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
+              <h3 className="text-sm font-semibold">No layout reads this sender yet.</h3>
+              <p className="text-sm text-muted-foreground">
+                A layout picks out the values you need and sends them on as JSON.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {onOpenLayouts && (
+                  <button
+                    type="button"
+                    onClick={onOpenLayouts}
+                    className="ui-btn-primary py-1.5! px-3! text-xs"
+                  >
+                    Add a layout
+                  </button>
+                )}
+                <Link href="/parse" className="ui-btn-outline py-1.5! px-3! text-xs">
+                  Browse ready-made layouts
+                </Link>
+              </div>
+            </section>
           ) : (
             <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
               <h3 className="text-sm font-semibold">No layout applied to this email.</h3>

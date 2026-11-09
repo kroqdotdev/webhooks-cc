@@ -222,7 +222,8 @@ export default async function Home() {
   const [stars, stats] = await Promise.all([getStarCount(), getSiteStats()]);
 
   return (
-    <main className="min-h-screen">
+    // group/landing: sections that only make sense to a guest hide once the signed-in band shows.
+    <main className="group/landing min-h-screen">
       <JsonLd data={softwareApplicationSchema()} />
       <JsonLd data={faqSchema(LANDING_FAQ)} />
       <JsonLd
@@ -278,7 +279,7 @@ export default async function Home() {
               test webhooks
             </span>
           </h1>
-          <p className="hidden md:block text-base text-muted-foreground mt-2">
+          <p className="hidden md:block group-has-[[data-landing-signed-in]]/landing:hidden! text-base text-muted-foreground mt-2">
             Get a free webhook URL below and point any service at it. No signup, no credit card.{" "}
             <Link
               href="/login?mode=sign-up"
@@ -296,8 +297,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* One-click free upgrade: first thing below the app screen */}
-      <section className="py-16 px-4">
+      {/* One-click free upgrade: first thing below the app screen (guests only) */}
+      <section className="py-16 px-4 group-has-[[data-landing-signed-in]]/landing:hidden">
         <div className="max-w-6xl mx-auto flex flex-col items-center gap-8">
           <div className="text-center max-w-2xl">
             <h2 className="text-3xl md:text-4xl font-bold mb-3">One click keeps your endpoint</h2>
@@ -441,7 +442,8 @@ export default async function Home() {
             Use the dashboard, the CLI, the SDK, or your AI agent. Same webhooks, your workflow.
           </p>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          {/* Phones show the titles only, two to a row, to keep the page short. */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 max-md:[&_.ui-card>p]:hidden max-md:[&_h3]:text-base max-md:[&_h3]:mb-0">
             <div className="ui-card">
               <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
                 <Eye className="h-6 w-6 text-primary-foreground clean:text-foreground" />
@@ -692,7 +694,7 @@ export default async function Home() {
                 ))}
               </ul>
               <div className="mt-auto">
-                <PricingCTA />
+                <PricingCTA quietWhenSignedIn />
               </div>
             </div>
 
@@ -798,7 +800,8 @@ export default async function Home() {
             Honest, developer-focused comparisons against popular alternatives.
           </p>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          {/* Phones show three comparisons and a link to the rest. */}
+          <div className="grid md:grid-cols-3 gap-6 max-md:[&>*:nth-child(n+4)]:hidden">
             {[
               {
                 href: "/compare/webhook-site",
@@ -845,6 +848,13 @@ export default async function Home() {
               </Link>
             ))}
           </div>
+          <Link
+            href="/compare"
+            className="md:hidden mt-6 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+          >
+            All comparisons
+            <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
       </section>
 

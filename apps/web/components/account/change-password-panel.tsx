@@ -157,7 +157,7 @@ export function ChangePasswordPanel({ email }: { email: string }) {
                 type="button"
                 onClick={() => void sendResetLink()}
                 disabled={busy}
-                className={`${settingsLink} disabled:opacity-50`}
+                className={`${settingsLink} py-1.5 -my-1.5 disabled:opacity-50`}
               >
                 Email me a reset link
               </button>
