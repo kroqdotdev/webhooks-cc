@@ -6,6 +6,7 @@ import {
   Copy,
   Check,
   ChevronDown,
+  Download,
   Send,
   Settings,
   Link as LinkIcon,
@@ -15,6 +16,7 @@ import {
 import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes, formatFullTimestamp } from "@/types/request";
+import { hexDump, requestBodyBytes } from "@/lib/body-bytes";
 import type { Request, ClickHouseRequest } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
@@ -184,6 +186,12 @@ export function RequestDetail({
   const curlCommand = useMemo(() => generateCurlCommand(request), [request]);
   const fullTime = formatFullTimestamp(request.receivedAt);
   const bodyFormat = detectFormat(request.contentType, request.body);
+  // The exact bytes when the body was not UTF-8 (body_raw); shown as hex and replayed as is.
+  const isBinary = bodyFormat === "binary" || !!request.bodyRaw;
+  const bodyBytes = useMemo(
+    () => (isBinary ? requestBodyBytes(request) : null),
+    [isBinary, request]
+  );
   const formattedBody = useMemo(
     () => (request.body ? formatBody(request.body, bodyFormat) : "(empty body)"),
     [request.body, bodyFormat]
@@ -269,7 +277,12 @@ export function RequestDetail({
                 accessToken={share.accessToken}
               />
             )}
-            <ReplayDialog method={request.method} headers={request.headers} body={request.body} />
+            <ReplayDialog
+              method={request.method}
+              headers={request.headers}
+              body={request.body}
+              bodyBytes={bodyBytes ?? undefined}
+            />
           </div>
         </div>
       </div>
@@ -278,14 +291,36 @@ export function RequestDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs */}
-      <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]">
-        {tabs.map((t) => (
+      <div
+        role="tablist"
+        aria-label="Request sections"
+        className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]"
+      >
+        {tabs.map((t, index) => (
           <button
             key={t}
+            type="button"
+            role="tab"
+            id={`request-tab-${t}`}
+            aria-selected={tab === t}
+            aria-controls="request-tabpanel"
+            tabIndex={tab === t ? 0 : -1}
             onClick={() => {
               if (tab === t) return;
               setTab(t);
               trackRequestDetailTabChanged(t);
+            }}
+            onKeyDown={(event) => {
+              // Arrow keys move between tabs, as in any tab list.
+              const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              if (!step) return;
+              event.preventDefault();
+              const next = tabs[(index + step + tabs.length) % tabs.length];
+              setTab(next);
+              trackRequestDetailTabChanged(next);
+              event.currentTarget.parentElement
+                ?.querySelector<HTMLButtonElement>(`#request-tab-${next}`)
+                ?.focus();
             }}
             className={cn(
               "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line last:border-r-0 cursor-pointer transition-colors",
@@ -298,11 +333,16 @@ export function RequestDetail({
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div
+        role="tabpanel"
+        id="request-tabpanel"
+        aria-labelledby={`request-tab-${tab}`}
+        className="flex-1 overflow-auto p-4"
+      >
         {tab === "body" && (
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2 py-0.5 text-[10px] font-bold caps rounded-sm border-strong border-line bg-muted">
+              <span className="px-2 py-0.5 text-[11px] font-bold caps rounded-sm border-strong border-line bg-muted">
                 {getFormatLabel(bodyFormat)}
               </span>
               {bodyViews.length > 1 && (
@@ -310,9 +350,11 @@ export function RequestDetail({
                   {bodyViews.map((view, i) => (
                     <button
                       key={view}
+                      type="button"
+                      aria-pressed={bodyView === view}
                       onClick={() => setBodyView(view)}
                       className={cn(
-                        "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
+                        "px-2 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors",
                         i > 0 && "border-l-strong border-line",
                         bodyView === view
                           ? "bg-selected text-selected-foreground"
@@ -325,7 +367,7 @@ export function RequestDetail({
                 </div>
               )}
             </div>
-            {request.body && bodyView !== "schema" && (
+            {request.body && bodyView !== "schema" && !bodyBytes && (
               <BodyCopyDropdown
                 body={request.body}
                 formattedBody={formattedBody}
@@ -334,7 +376,9 @@ export function RequestDetail({
                 copied={copied}
               />
             )}
-            {bodyView === "schema" ? (
+            {bodyBytes ? (
+              <BinaryBody bytes={bodyBytes} id={requestId} />
+            ) : bodyView === "schema" ? (
               <PayloadSchemaView
                 request={request}
                 candidates={schemaCandidates}
@@ -718,6 +762,41 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
           for keyboard shortcuts
         </p>
       </div>
+    </div>
+  );
+}
+
+const HEX_PREVIEW_BYTES = 512;
+
+/** A binary body: a hex preview of its first bytes and a download of all of them. */
+function BinaryBody({ bytes, id }: { bytes: Uint8Array<ArrayBuffer>; id: string }) {
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `body-${id.slice(0, 8)}.bin`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>
+          Binary body, {formatBytes(bytes.length)}.
+          {bytes.length > HEX_PREVIEW_BYTES ? ` Showing the first ${HEX_PREVIEW_BYTES} bytes.` : ""}
+        </span>
+        <button
+          type="button"
+          onClick={download}
+          className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Download body
+        </button>
+      </div>
+      <pre className="ui-code overflow-x-auto text-xs leading-relaxed">
+        {hexDump(bytes, HEX_PREVIEW_BYTES)}
+      </pre>
     </div>
   );
 }

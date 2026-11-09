@@ -354,7 +354,7 @@ export function NewTicketForm() {
         </div>
 
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-ink">
             {error}
           </p>
         )}

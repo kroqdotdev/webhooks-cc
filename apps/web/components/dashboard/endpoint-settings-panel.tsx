@@ -130,7 +130,7 @@ function ReceivingSection({
     <Section
       id="receiving"
       title="Receiving"
-      description="Anything sent to either address lands in Requests and counts toward your monthly limit."
+      description="Anything sent to either address lands in Requests and counts toward your plan's limit."
       footer={
         <SaveFooter
           dirty={dirty}
@@ -359,7 +359,7 @@ function SharingSection({ endpointId }: { endpointId: string }) {
       title="Team sharing"
       description="Share this endpoint with your teams. Changes apply at once."
     >
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       <ul className="divide-y divide-line/20">
         {teams.map((team) => {
           const isShared = shared.has(team.id);
@@ -598,7 +598,7 @@ function DeleteSection({
           <p
             role="status"
             aria-live="polite"
-            className="text-xs flex-1 min-w-[180px] text-destructive"
+            className="text-xs flex-1 min-w-[180px] text-destructive-ink"
           >
             {error ?? (confirm ? "This cannot be undone." : "")}
           </p>
@@ -619,7 +619,7 @@ function DeleteSection({
               "ui-btn-outline py-1.5! px-3! text-xs",
               confirm
                 ? "bg-destructive! text-destructive-foreground! border-destructive!"
-                : "text-destructive"
+                : "text-destructive-ink"
             )}
           >
             {deleting ? "Deleting..." : confirm ? "Delete for good" : "Delete endpoint"}

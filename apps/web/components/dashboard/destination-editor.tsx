@@ -335,7 +335,7 @@ function DeliveryPreview({
         </p>
       );
     } else if (result.error) {
-      verdict = <p className="text-destructive">Not sent: {result.error}</p>;
+      verdict = <p className="text-destructive-ink">Not sent: {result.error}</p>;
     } else {
       verdict = (
         <p>
@@ -375,7 +375,7 @@ function DeliveryPreview({
         {blocked ? (
           <p className="text-muted-foreground">{blocked}</p>
         ) : error ? (
-          <p className="text-destructive">{error}</p>
+          <p className="text-destructive-ink">{error}</p>
         ) : result ? (
           <>
             {verdict}
@@ -689,7 +689,7 @@ function GenericDestinationEditor({
             />
             Emails
           </label>
-          {kindsError && <span className="text-xs text-destructive">{kindsError}</span>}
+          {kindsError && <span className="text-xs text-destructive-ink">{kindsError}</span>}
         </div>
         <ConditionList
           conditions={draft.conditions}
@@ -755,7 +755,7 @@ function GenericDestinationEditor({
                 : ""}
               {formatDescription}
             </p>
-            {formatWarning && <p className="text-destructive">{formatWarning}</p>}
+            {formatWarning && <p className="text-destructive-ink">{formatWarning}</p>}
           </div>
         </div>
 
@@ -802,7 +802,7 @@ function GenericDestinationEditor({
               className="border-strong border-line text-[13px] font-mono"
             />
             {templateError ? (
-              <p className="text-xs text-destructive">{templateError}</p>
+              <p className="text-xs text-destructive-ink">{templateError}</p>
             ) : (
               <p className="text-xs text-muted-foreground max-w-[62ch]">
                 {
@@ -1049,7 +1049,7 @@ function GenericDestinationEditor({
                 )}
               </>
             ) : test ? (
-              <p className="text-destructive">{test.error}</p>
+              <p className="text-destructive-ink">{test.error}</p>
             ) : null}
           </div>
         </div>
@@ -1073,7 +1073,7 @@ function GenericDestinationEditor({
           aria-live="polite"
           className={cn(
             "text-xs flex-1 min-w-[160px]",
-            error ? "text-destructive" : "text-muted-foreground"
+            error ? "text-destructive-ink" : "text-muted-foreground"
           )}
         >
           {error ?? (saved && !dirty ? "Saved." : dirty ? "Not saved yet." : "")}
@@ -1084,7 +1084,7 @@ function GenericDestinationEditor({
               <button
                 type="button"
                 onClick={() => void remove()}
-                className="ui-btn-outline py-1.5! px-3! text-xs text-destructive"
+                className="ui-btn-outline py-1.5! px-3! text-xs text-destructive-ink"
               >
                 Remove destination
               </button>

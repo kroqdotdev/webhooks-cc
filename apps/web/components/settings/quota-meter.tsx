@@ -89,7 +89,7 @@ export function QuotaMeter({
             <span
               className={cn(
                 "text-2xl font-bold clean:font-semibold tabular-nums",
-                nearLimit && "text-destructive"
+                nearLimit && "text-destructive-ink"
               )}
             >
               {used.toLocaleString()}

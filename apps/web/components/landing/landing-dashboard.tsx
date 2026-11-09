@@ -492,7 +492,7 @@ function LandingDashboardInner() {
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
             <p className="text-sm text-muted-foreground max-w-sm">
               {humanSignal === "automated"
-                ? "Guest endpoints are created on demand in automated sessions."
+                ? "Your guest URL is one click away: no account, 12 hours of captures."
                 : "Your free guest URL is created the moment you interact with the page, or right now:"}
             </p>
             <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
@@ -545,7 +545,7 @@ function LandingDashboardInner() {
               <span
                 className={cn(
                   "font-mono font-bold",
-                  remainingRequests <= 10 ? "text-destructive" : "text-foreground"
+                  remainingRequests <= 10 ? "text-destructive-ink" : "text-foreground"
                 )}
               >
                 {remainingRequests}
@@ -859,7 +859,9 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
                 )}
               </button>
             </div>
-            <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
+            <pre className="ui-code text-sm whitespace-pre overflow-x-auto text-left">
+              {curlCmd}
+            </pre>
           </div>
 
           <p className="text-xs text-muted-foreground">

@@ -39,7 +39,7 @@ export function UpgradeButton({ accessToken }: { accessToken: string | null }) {
         {loading ? "Redirecting..." : "Upgrade to Pro"}
       </Button>
       {error && (
-        <p className="text-sm text-destructive mt-2" role="alert" aria-live="polite">
+        <p className="text-sm text-destructive-ink mt-2" role="alert" aria-live="polite">
           {error}
         </p>
       )}

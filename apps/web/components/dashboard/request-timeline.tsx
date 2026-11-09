@@ -60,10 +60,13 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
       if (r.receivedAt < min) min = r.receivedAt;
       if (r.receivedAt > max) max = r.receivedAt;
     }
-    // Ensure at least 1 second range
-    if (max - min < 1000) {
-      min -= 500;
-      max += 500;
+    // At least a minute across, centred on the requests, so a burst within a
+    // few seconds reads as a burst rather than one point with repeated labels.
+    const MIN_RANGE = 60_000;
+    if (max - min < MIN_RANGE) {
+      const pad = (MIN_RANGE - (max - min)) / 2;
+      min -= pad;
+      max += pad;
     }
 
     const usableWidth = width - PADDING_X * 2;
@@ -108,14 +111,17 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
       const t = timeRange.min + (range * i) / (labelCount - 1);
       const x = PADDING_X + (usableWidth * i) / (labelCount - 1);
       const d = new Date(t);
+      const label = d.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+      // Never the same label twice in a row.
+      if (labels.at(-1)?.label === label) continue;
       labels.push({
         x,
-        label: d.toLocaleTimeString(undefined, {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }),
+        label,
       });
     }
     return labels;

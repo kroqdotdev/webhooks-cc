@@ -94,7 +94,7 @@ export function attachmentNote(attachment: ParsedAttachment): string {
 /** A parsed result: the layout, fields, line items and attachments. Shared with the email view. */
 export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
   if (parsed.status !== "matched") {
-    return <p className="text-sm text-destructive">No layout matched this email.</p>;
+    return <p className="text-sm text-destructive-ink">No layout matched this email.</p>;
   }
   const fieldNames = Object.keys(parsed.fields);
   const columns =
@@ -118,7 +118,7 @@ export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
             <div key={name} className="contents">
               <dt className="font-mono text-xs text-muted-foreground pt-0.5">{name}</dt>
               <dd className="font-mono text-xs break-all">
-                {parsed.fields[name] ?? <span className="text-destructive">not found</span>}
+                {parsed.fields[name] ?? <span className="text-destructive-ink">not found</span>}
               </dd>
             </div>
           ))}
@@ -165,7 +165,7 @@ export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
               <span
                 className={cn(
                   attachment.error && attachment.error !== "not_parsed"
-                    ? "text-destructive"
+                    ? "text-destructive-ink"
                     : "text-muted-foreground"
                 )}
               >
@@ -471,7 +471,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                     <span className="text-xs text-muted-foreground">off</span>
                   )}
                   {unused && (
-                    <span className="text-xs text-destructive">
+                    <span className="text-xs text-destructive-ink">
                       past your plan&apos;s {cap}: not used
                     </span>
                   )}
@@ -506,14 +506,14 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         setLayouts(layouts.filter((_, i) => i !== index));
                         setOpen(null);
                       }}
-                      className="p-1.5 text-muted-foreground hover:text-destructive cursor-pointer"
+                      className="p-1.5 text-muted-foreground hover:text-destructive-ink cursor-pointer"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
                 {layoutProblems.length > 0 && (triedSave || expanded) && (
-                  <p className="text-xs text-destructive px-2.5 pb-2" aria-live="polite">
+                  <p className="text-xs text-destructive-ink px-2.5 pb-2" aria-live="polite">
                     {layoutProblems[0]}
                   </p>
                 )}
@@ -606,7 +606,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         </ol>
       )}
       {listProblems.length > 0 && (
-        <p className="text-xs text-destructive" aria-live="polite">
+        <p className="text-xs text-destructive-ink" aria-live="polite">
           {listProblems[0]}
         </p>
       )}

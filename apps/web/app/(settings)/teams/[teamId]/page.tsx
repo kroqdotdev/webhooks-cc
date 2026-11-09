@@ -684,7 +684,7 @@ function TeamDetailContent() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  className="text-destructive-ink hover:bg-destructive/10 hover:text-destructive-ink"
                                   disabled={removingId === member.userId}
                                   aria-label={`Remove ${label}`}
                                 >

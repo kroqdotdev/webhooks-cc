@@ -76,6 +76,7 @@ body {
 
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-ink: hsl(var(--destructive-ink));
 
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
@@ -124,8 +125,10 @@ body {
     --muted-foreground: 0 0% 35%;
     --accent: 280 100% 65%;
     --accent-foreground: 0 0% 0%;
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
+    /* Red as text on the page; the fill above carries white text. */
+    --destructive-ink: 0 72% 42%;
     --border: 0 0% 0%;
     --input: 0 0% 0%;
     --ring: 162 100% 28%;
@@ -195,8 +198,9 @@ body {
     --muted-foreground: 60 5% 70%;
     --accent: 280 100% 70%;
     --accent-foreground: 0 0% 0%;
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 0 85% 68%;
     --border: 60 9% 80%;
     --input: 60 9% 80%;
     --ring: 162 100% 45%;
@@ -241,6 +245,7 @@ body {
     --accent-foreground: 218 18% 11%;
     --destructive: 2 70% 46%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 2 70% 42%;
     --border: 216 16% 88%;
     --input: 216 14% 82%;
     --ring: 164 76% 30%;
@@ -309,8 +314,9 @@ body {
     --muted-foreground: 218 10% 64%;
     --accent: 222 12% 16%;
     --accent-foreground: 216 16% 92%;
-    --destructive: 2 70% 58%;
+    --destructive: 2 70% 48%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 2 80% 68%;
     --border: 222 12% 18%;
     --input: 222 12% 24%;
     --ring: 160 60% 52%;
@@ -369,8 +375,9 @@ body {
   ::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
   }
-  /* Links get the same 2px ring as buttons and inputs, not the browser's thin outline. */
-  a:focus-visible {
+  /* Every focusable element gets the same 2px ring, never the browser's thin outline
+     (components that draw their own ring with outline-none keep theirs). */
+  :is(a, button, select, summary, [role="radio"], [role="tab"]):focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
     border-radius: var(--radius-sm);

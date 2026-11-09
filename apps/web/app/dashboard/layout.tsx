@@ -41,7 +41,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </SiteHeader>
           <QuotaBanner />
           <DashboardAnnouncement />
-          {children}
+          <main aria-label="Dashboard" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {children}
+          </main>
         </div>
       </RequireAuth>
     </SiteProvider>

@@ -266,12 +266,12 @@ export function HeaderRowsEditor({
                   )}
                 </div>
                 {nameShown && (
-                  <p id={nameErrorId} className="col-span-full text-xs text-destructive">
+                  <p id={nameErrorId} className="col-span-full text-xs text-destructive-ink">
                     {issue?.name}
                   </p>
                 )}
                 {valueShown && (
-                  <p id={valueErrorId} className="col-span-full text-xs text-destructive">
+                  <p id={valueErrorId} className="col-span-full text-xs text-destructive-ink">
                     {issue?.value}
                   </p>
                 )}
@@ -295,7 +295,9 @@ export function HeaderRowsEditor({
           Add header
         </button>
         {(liveRows.length >= MAX_OWNER_HEADERS || tooMany) && (
-          <span className={cn("text-xs", tooMany ? "text-destructive" : "text-muted-foreground")}>
+          <span
+            className={cn("text-xs", tooMany ? "text-destructive-ink" : "text-muted-foreground")}
+          >
             Headers are limited to {MAX_OWNER_HEADERS}.
           </span>
         )}
@@ -430,7 +432,7 @@ export function SecretField({
                   (value) => value && setConfirmRotate(false)
                 )
               }
-              className="ui-btn-outline py-1! px-2.5! text-xs text-destructive"
+              className="ui-btn-outline py-1! px-2.5! text-xs text-destructive-ink"
             >
               Replace secret
             </button>
@@ -480,7 +482,7 @@ export function SecretField({
           </>
         )}
       </p>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-xs text-destructive-ink">{error}</p>}
     </div>
   );
 }
@@ -569,7 +571,7 @@ export function TestResult({ test }: { test: ForwardTestResult }) {
   }
   return (
     <>
-      <p className="text-destructive">
+      <p className="text-destructive-ink">
         <span className="font-semibold">Not delivered.</span>{" "}
         {answered ? (
           <>

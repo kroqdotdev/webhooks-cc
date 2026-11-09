@@ -284,7 +284,7 @@ export function DestinationsSection({
       title="Forwarding"
       description="Send what this endpoint captures to your servers and chat channels. Each destination chooses what it gets and how it is sent; every delivery is queued, retried if it is not accepted, and logged."
     >
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {destinations === null && !error && (
         <p className="text-sm text-muted-foreground">Loading destinations...</p>
       )}

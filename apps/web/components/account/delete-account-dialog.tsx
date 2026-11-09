@@ -82,7 +82,7 @@ export function DeleteAccountDialog({ accessToken }: { accessToken: string | nul
         </AlertDialogContent>
       </AlertDialog>
       {error && (
-        <p className="text-sm text-destructive" role="alert" aria-live="polite">
+        <p className="text-sm text-destructive-ink" role="alert" aria-live="polite">
           {error}
         </p>
       )}

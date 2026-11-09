@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
@@ -24,9 +24,10 @@ const NAV_LINKS = [
 const MAILHOOKS_LINKS = [
   // One name for the catalogue everywhere: the dashboard section is Layouts too.
   { href: "/parse", label: "Layouts" },
+  { href: "/integrations", label: "Integrations" },
   { href: "/pricing", label: "Pricing" },
-  // The arrow says the link leaves for webhooks.cc.
-  { href: `${webhooksOrigin()}/docs/layouts`, label: "Docs ↗" },
+  // The arrow says the link leaves for webhooks.cc, where the email docs live.
+  { href: `${webhooksOrigin()}/docs/email-capture`, label: "Email docs ↗" },
 ];
 
 interface SiteHeaderProps {
@@ -79,12 +80,30 @@ export function SiteHeader({ children, compact = false, top, notFound = false }:
   const isAuthenticated = useIsAuthenticated();
   const site = useSite();
   const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // Escape closes the phone menu and hands focus back to its button.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
 
   // Close the phone menu on navigation, including browser back.
   useEffect(() => setOpen(false), [pathname]);
 
   const siteLinks = site.key === "mailhooks" ? MAILHOOKS_LINKS : NAV_LINKS;
-  const links = compact ? siteLinks.filter((link) => link.href !== "/blog") : siteLinks;
+  // The app is short on room, and there "Layouts" would read as the endpoint's own
+  // Layouts settings, so the public catalogue is named for what it is.
+  const links = compact
+    ? siteLinks
+        .filter((link) => link.href !== "/blog" && link.href !== "/integrations")
+        .map((link) => (link.href === "/parse" ? { ...link, label: "Layout gallery" } : link))
+    : siteLinks;
   // The path the links are chosen by: none on the 404 page (see notFound).
   const navPath = notFound ? "" : pathname;
   const { onAuthPage, inApp } = headerPlace(navPath);
@@ -165,7 +184,9 @@ export function SiteHeader({ children, compact = false, top, notFound = false }:
 
         {/* Phone */}
         <button
+          ref={toggleRef}
           type="button"
+          aria-controls="site-menu"
           onClick={() => setOpen((prev) => !prev)}
           className="md:hidden p-2 rounded-md border-strong border-line hover:bg-muted transition-colors cursor-pointer"
           aria-label={open ? "Close menu" : "Open menu"}
@@ -177,6 +198,7 @@ export function SiteHeader({ children, compact = false, top, notFound = false }:
 
       {open && (
         <nav
+          id="site-menu"
           aria-label="Site"
           className="md:hidden absolute top-full left-0 right-0 border-t-strong border-line bg-background clean:bg-card shadow-raised"
         >

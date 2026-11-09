@@ -212,7 +212,7 @@ export function OpsInbox({ number }: { number: string | null }) {
                     <span className="mt-0.5 flex justify-between gap-2 text-xs text-muted-foreground">
                       <span className="truncate">
                         {item.categoryLabel}, {planLabel(item.user.plan)}
-                        {item.blocking && <span className="text-destructive">, blocking</span>}
+                        {item.blocking && <span className="text-destructive-ink">, blocking</span>}
                       </span>
                       <span className="shrink-0 tabular-nums">
                         {view === "closed"
@@ -240,7 +240,7 @@ export function OpsInbox({ number }: { number: string | null }) {
       </section>
 
       <div className="min-w-0">
-        {error && <p className="px-6 pt-4 text-sm text-destructive">{error}</p>}
+        {error && <p className="px-6 pt-4 text-sm text-destructive-ink">{error}</p>}
         {!number ? (
           <div className="hidden p-8 text-sm text-muted-foreground lg:block">
             Pick a ticket. <kbd className="font-mono">j</kbd> and <kbd className="font-mono">k</kbd>{" "}
@@ -395,7 +395,7 @@ function TicketPane({
           <p className="text-xs text-muted-foreground">
             <span className="font-mono">#{ticket.number}</span>, opened on{" "}
             {ticket.site === "mailhooks" ? "mailhooks.cc" : "webhooks.cc"}, {ticket.categoryLabel}
-            {ticket.blocking && <span className="text-destructive">, blocking</span>}
+            {ticket.blocking && <span className="text-destructive-ink">, blocking</span>}
           </p>
           <h1 className="ph-no-capture mt-1 text-xl font-semibold">{ticket.subject}</h1>
         </div>
@@ -548,7 +548,7 @@ function TicketPane({
           </div>
         </div>
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-ink">
             {error}
           </p>
         )}

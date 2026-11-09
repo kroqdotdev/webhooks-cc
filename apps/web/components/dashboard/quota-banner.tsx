@@ -130,7 +130,7 @@ export function QuotaBanner() {
   return (
     <div className="bg-card border-b-strong border-destructive px-4 py-3" role="status">
       <div className="flex flex-wrap items-center gap-3">
-        <OctagonAlert className="h-5 w-5 text-destructive flex-shrink-0" />
+        <OctagonAlert className="h-5 w-5 text-destructive-ink flex-shrink-0" />
         <div className="flex-1 min-w-64 space-y-1">
           <p className="text-sm font-medium">
             <span className="font-bold">Request limit reached.</span> You have used all{" "}

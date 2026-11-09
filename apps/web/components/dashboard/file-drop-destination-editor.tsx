@@ -490,7 +490,7 @@ export function FileDropDestinationEditor({
                     type="button"
                     aria-label={`Remove column ${index + 1}`}
                     onClick={() => setColumns(columns.filter((_, i) => i !== index))}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground hover:text-destructive-ink"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -633,7 +633,7 @@ export function FileDropDestinationEditor({
               <button
                 type="button"
                 onClick={() => void remove()}
-                className="text-sm text-destructive"
+                className="text-sm text-destructive-ink"
               >
                 Remove destination
               </button>
@@ -649,7 +649,7 @@ export function FileDropDestinationEditor({
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="text-sm text-destructive ml-auto"
+              className="text-sm text-destructive-ink ml-auto"
             >
               Remove
             </button>
@@ -661,7 +661,7 @@ export function FileDropDestinationEditor({
         )}
         {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}
         {tested && <span className="text-xs text-muted-foreground">{tested}</span>}
-        {error && <p className="w-full text-sm text-destructive">{error}</p>}
+        {error && <p className="w-full text-sm text-destructive-ink">{error}</p>}
       </div>
     </div>
   );

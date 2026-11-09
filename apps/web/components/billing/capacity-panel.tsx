@@ -348,7 +348,7 @@ export function CapacityPanel({
           </Notice>
         )}
         {actionError && (
-          <p className="text-sm text-destructive" role="alert" aria-live="polite">
+          <p className="text-sm text-destructive-ink" role="alert" aria-live="polite">
             {actionError}
           </p>
         )}
@@ -378,7 +378,7 @@ export function CapacityPanel({
                 </p>
               )}
               {blocks?.pastDue && (
-                <p className="text-destructive">
+                <p className="text-destructive-ink">
                   The last payment failed.{" "}
                   <CardUpdate accessToken={accessToken} teamId={teamId} canManage={canManage} />
                 </p>
@@ -463,7 +463,7 @@ export function CapacityPanel({
                   <p className="text-muted-foreground">Off</p>
                 )}
                 {overage.pastDue && (
-                  <p className="text-destructive">
+                  <p className="text-destructive-ink">
                     The last overage payment failed, so overage is paused.{" "}
                     <CardUpdate accessToken={accessToken} teamId={teamId} canManage={canManage} />
                   </p>

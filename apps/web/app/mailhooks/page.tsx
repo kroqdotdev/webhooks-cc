@@ -141,11 +141,14 @@ export default function MailhooksHome() {
                 booking, receipt or report arrives as JSON at your webhook, as rows in Google
                 Sheets, or as a message in Slack or Discord.
               </p>
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-start gap-4">
                 <div className="w-full sm:w-auto sm:min-w-80">
-                  <PricingCTA />
+                  <PricingCTA primary />
                 </div>
-                <Link href="/parse" className="ui-btn-outline inline-flex items-center gap-2">
+                <Link
+                  href="/parse"
+                  className="inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+                >
                   See ready-made layouts
                   <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -218,7 +221,7 @@ export default function MailhooksHome() {
               ))}
             </div>
             <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {MAILHOOKS_FEATURES.map((feature) => (
                 <li key={feature.path}>
                   <Link href={feature.path} className="ui-card block h-full">

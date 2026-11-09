@@ -1630,8 +1630,10 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
   };
 
   return (
-    <div className="flex-1 overflow-y-auto flex items-center justify-center p-6 md:p-8">
-      <div className={cn("w-full space-y-6", emailAddress ? "max-w-4xl" : "max-w-lg")}>
+    // m-auto centres the content while it fits and lets it scroll from the top when it
+    // does not (centring with the flex container's own alignment cuts off the top).
+    <div className="flex-1 overflow-y-auto flex p-6 md:p-8">
+      <div className={cn("m-auto w-full space-y-6", emailAddress ? "max-w-4xl" : "max-w-lg")}>
         <div className="flex items-center justify-center gap-3">
           <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
@@ -1653,7 +1655,7 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
                 <CopyLabel done={copied === "curl"} />
               </button>
             </div>
-            <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left shadow-none!">
+            <pre className="ui-code text-sm whitespace-pre overflow-x-auto text-left shadow-none!">
               {curlCmd}
             </pre>
             <button
@@ -1682,7 +1684,7 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
                   <CopyLabel done={copied === "email"} />
                 </button>
               </div>
-              <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left shadow-none!">
+              <pre className="ui-code text-sm whitespace-pre-wrap break-words text-left shadow-none!">
                 {emailAddress}
               </pre>
               <p className="text-xs text-muted-foreground">
@@ -1701,24 +1703,32 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
                 <Mail className="h-4 w-4" />
                 {sending === "email" ? "Sending..." : sent === "email" ? "Sent" : "Send test email"}
               </button>
-              {emailError && <p className="text-xs text-destructive">{emailError}</p>}
+              {emailError && <p className="text-xs text-destructive-ink">{emailError}</p>}
             </div>
           )}
         </div>
 
         {mailFirst ? (
-          <div className="space-y-4 text-center">
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p>
-                <span className="font-bold text-foreground">Gmail:</span> Settings, Forwarding and
-                POP/IMAP, Add a forwarding address. Gmail&apos;s confirmation code lands here.
-              </p>
-              <p>
-                <span className="font-bold text-foreground">Outlook:</span> Settings, Mail, Rules,
-                Add new rule, Forward to this address.
-              </p>
+          <div className="ui-card ui-card-static p-5! space-y-3">
+            <p className="font-bold">Forward a mailbox here</p>
+            <div className="grid gap-3 sm:grid-cols-2 text-sm">
+              <div>
+                <p className="font-semibold">Gmail</p>
+                <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
+                  <li>Settings, See all settings, Forwarding and POP/IMAP.</li>
+                  <li>Add a forwarding address: this endpoint&apos;s address.</li>
+                  <li>Gmail&apos;s confirmation code lands here; enter it there.</li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-semibold">Outlook</p>
+                <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
+                  <li>Settings, Mail, Rules, Add new rule.</li>
+                  <li>Pick the sender, then Forward to this address.</li>
+                </ol>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <Link href="/parse" className="ui-btn-outline py-1.5! px-3! text-xs">
                 Start from a ready-made layout
               </Link>
@@ -1837,8 +1847,8 @@ function NoEndpointsHere({
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="text-center space-y-4 max-w-md">
+    <div className="flex-1 overflow-y-auto flex p-8">
+      <div className="m-auto text-center space-y-4 max-w-md">
         <div className="w-16 h-16 rounded-md border-strong border-line bg-muted flex items-center justify-center mx-auto mb-2">
           <Send className="h-8 w-8 text-muted-foreground" />
         </div>
@@ -1848,11 +1858,13 @@ function NoEndpointsHere({
             : `Start capturing on ${site.name}`}
         </h2>
         <p className="text-muted-foreground">
-          Your {elsewhere === 1 ? "endpoint is" : `${elsewhere} endpoints are`} on {other.name}.
-          Create one here, or open {other.name}. You can list any endpoint on both sites under
-          Settings &gt; Receiving.
+          {site.key === "mailhooks"
+            ? "Give each sender its own address and get every email as JSON. "
+            : "Get a URL that captures every request sent to it. "}
+          You also have {elsewhere === 1 ? "an endpoint" : `${elsewhere} endpoints`} on {other.name}
+          ; list {elsewhere === 1 ? "it" : "them"} here too under Settings &gt; Receiving.
         </p>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-sm text-destructive-ink">{error}</p>}
         <div className="flex flex-wrap items-center justify-center gap-3">
           <button onClick={create} disabled={creating} className="ui-btn-primary">
             {creating

@@ -272,7 +272,7 @@ export function ResponseEditor({
       </div>
 
       {issues.length > 0 && (
-        <ul className="text-xs text-destructive space-y-0.5">
+        <ul className="text-xs text-destructive-ink space-y-0.5">
           {issues.map((issue) => (
             <li key={issue}>{issue}</li>
           ))}

@@ -105,7 +105,9 @@ export function RetentionSection({ endpoint }: { endpoint: DashboardEndpoint }) 
           copy or has given up. An endpoint without destinations keeps nothing past that minute, so
           add one first.
           {(endpoint.destinationCount ?? 0) === 0 && (
-            <span className="block mt-1 text-destructive">This endpoint has no destinations.</span>
+            <span className="block mt-1 text-destructive-ink">
+              This endpoint has no destinations.
+            </span>
           )}
         </p>
       )}

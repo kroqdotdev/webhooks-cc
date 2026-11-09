@@ -14,12 +14,15 @@ export function OAuthSignInButtons({
   buttonClassName = "w-full h-12 text-base",
   layout = "vertical",
   verb,
+  firstButtonClassName,
 }: {
   redirectTo?: string;
   buttonClassName?: string;
   layout?: "vertical" | "horizontal";
   /** Words before the provider in the horizontal layout, e.g. "Sign up with". */
   verb?: string;
+  /** Classes for the first (GitHub) button instead of buttonClassName; it becomes a filled, primary button. */
+  firstButtonClassName?: string;
 }) {
   const label = (name: string) =>
     layout === "horizontal" ? (verb ? `${verb} ${name}` : name) : `Continue with ${name}`;
@@ -63,15 +66,15 @@ export function OAuthSignInButtons({
   return (
     <div>
       {error ? (
-        <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded mb-4">
+        <div className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3 mb-4">
           {error}
         </div>
       ) : null}
 
       <div className={layout === "horizontal" ? "flex flex-wrap items-center gap-2" : "space-y-3"}>
         <Button
-          variant="outline"
-          className={buttonClassName}
+          variant={firstButtonClassName ? "default" : "outline"}
+          className={firstButtonClassName ?? buttonClassName}
           onClick={() => handleSignIn("github")}
           disabled={signingIn !== null}
         >

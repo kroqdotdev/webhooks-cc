@@ -41,7 +41,7 @@ export function DocsBreadcrumbs() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: breadcrumbJson }} />
       <nav
         aria-label="Breadcrumb"
-        className="mb-6 flex items-center justify-between pl-12 md:pl-0"
+        className="mb-6 flex items-center justify-between pl-28 md:pl-0"
       >
         <ol className="flex items-center gap-1.5 text-sm text-muted-foreground">
           {crumbs.map((crumb, i) => {

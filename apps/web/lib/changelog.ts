@@ -38,6 +38,11 @@ export const CHANGELOG: ChangelogEntry[] = [
       "webhooks.cc/pricing opens the pricing section, sign-up links open the sign-up form, and sign-up buttons say what they do",
       "mailhooks.cc lists mail settings first, names its test email and empty states for mail, explains forwarding from Gmail and Outlook, and calls its catalogue Layouts",
       "Consistent sentence case and one timestamp format across the dashboard, and no more em dashes in the interface",
+      "Binary request bodies show as a hex preview with a download, and Replay sends the exact captured bytes",
+      "Request detail tabs work as a proper tab list for keyboards and screen readers, the dashboard has a main landmark and heading, and the phone menu closes with Escape",
+      "Red warning text and buttons, and sign-in errors, meet AA contrast in every style",
+      "The request list's small text is larger, its phone controls are easier to tap, and the timeline spreads out requests that arrive together",
+      "mailhooks.cc: the New endpoint dialog and Send menu lead with email, the empty dashboard has a forwarding card, the hero has one primary sign-up button, and /layouts opens the layout gallery",
     ],
   },
   {

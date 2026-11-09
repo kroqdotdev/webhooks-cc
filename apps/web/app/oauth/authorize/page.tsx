@@ -237,7 +237,7 @@ function RequestPanel(props: {
 
       {atCap ? (
         <div
-          className="text-sm text-destructive bg-destructive/10 p-3 rounded-md mb-4"
+          className="text-sm text-destructive-ink bg-destructive/10 p-3 rounded-md mb-4"
           role="alert"
         >
           You have {view.connectedAgents} connected agents, the most an account can have.{" "}
@@ -254,7 +254,7 @@ function RequestPanel(props: {
 
       {props.problem && (
         <div
-          className="text-sm text-destructive bg-destructive/10 p-3 rounded-md mb-4"
+          className="text-sm text-destructive-ink bg-destructive/10 p-3 rounded-md mb-4"
           role="alert"
         >
           {props.problem}

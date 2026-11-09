@@ -102,8 +102,7 @@ const METHOD_COLORS_MAP: Record<HttpMethod, string> = {
   POST: "bg-secondary text-secondary-foreground clean:bg-method-post/15 clean:text-method-post",
   PUT: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
   DELETE:
-    // Black on the classic red, like the other classic badges: white on it fails AA.
-    "bg-destructive text-black clean:bg-method-delete/15 clean:text-method-delete",
+    "bg-destructive text-destructive-foreground clean:bg-method-delete/15 clean:text-method-delete",
   PATCH: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
   HEAD: "bg-muted text-muted-foreground",
   OPTIONS: "bg-muted text-muted-foreground",

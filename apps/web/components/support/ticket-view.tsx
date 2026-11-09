@@ -226,7 +226,7 @@ export function TicketView({ number }: { number: string }) {
     return (
       <main className="mx-auto max-w-3xl px-6 pb-16 pt-10 md:px-10">
         {error ? (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-destructive-ink">{error}</p>
         ) : (
           <div role="status" aria-label="Loading the ticket" className="space-y-3">
             <Skeleton className="h-8 w-2/3 rounded-md" />
@@ -302,7 +302,7 @@ export function TicketView({ number }: { number: string }) {
           )}
 
           {error && (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-sm text-destructive-ink">
               {error}
             </p>
           )}

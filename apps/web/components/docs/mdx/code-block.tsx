@@ -33,7 +33,7 @@ export function CodeBlock({
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </button>
-      <pre ref={preRef} className="overflow-x-auto p-4 text-sm font-mono bg-muted" {...props}>
+      <pre ref={preRef} className="overflow-x-auto p-4 pr-12 text-sm font-mono bg-muted" {...props}>
         {children}
       </pre>
     </div>

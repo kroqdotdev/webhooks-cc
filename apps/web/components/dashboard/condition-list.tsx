@@ -192,7 +192,7 @@ function ConditionRow({
         )}
       </div>
       {issue ? (
-        <p id={`${idPrefix}-condition-${index}-issue`} className="text-xs text-destructive">
+        <p id={`${idPrefix}-condition-${index}-issue`} className="text-xs text-destructive-ink">
           {issue.charAt(0).toUpperCase() + issue.slice(1)}.
         </p>
       ) : hint ? (

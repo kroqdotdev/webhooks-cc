@@ -191,7 +191,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
           className="text-center font-mono text-lg tracking-[0.3em] uppercase"
         />
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-ink">
             {error}
           </p>
         )}

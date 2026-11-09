@@ -258,7 +258,7 @@ export function AiAssistPanel({
         </>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
 
       {result && (
         <div className="space-y-2" aria-live="polite">

@@ -17,6 +17,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useSite } from "@/components/providers/site-provider";
 import { SignatureVerificationBadge } from "./signature-tab";
 import { ProviderBadge } from "./provider-badge";
 import {
@@ -77,6 +78,14 @@ const KINDS: { id: KindFilter; label: string }[] = [
 ];
 
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+const METHOD_LABELS: Record<(typeof METHODS)[number], string> = {
+  ALL: "All methods",
+  GET: "GET",
+  POST: "POST",
+  PUT: "PUT",
+  PATCH: "PATCH",
+  DELETE: "DELETE",
+};
 
 export function RequestList({
   requests,
@@ -110,6 +119,8 @@ export function RequestList({
   kindFilter = "all",
   onKindFilterChange,
 }: RequestListProps) {
+  // The mail site, or a list filtered to email, talks about emails.
+  const itemNoun = useSite().key === "mailhooks" || kindFilter === "email" ? "emails" : "requests";
   const displayCount = totalCount ?? requests.length;
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
@@ -244,7 +255,7 @@ export function RequestList({
                 aria-checked={kindFilter === kind.id}
                 onClick={() => onKindFilterChange(kind.id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold caps cursor-pointer transition-colors whitespace-nowrap",
+                  "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold caps cursor-pointer transition-colors whitespace-nowrap",
                   index > 0 && "border-l-strong border-line",
                   kindFilter === kind.id
                     ? "bg-selected text-selected-foreground"
@@ -291,8 +302,9 @@ export function RequestList({
           </button>
           <button
             onClick={onToggleLiveMode}
+            aria-pressed={liveMode}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 text-xs font-bold caps rounded-md border-strong border-line cursor-pointer transition-colors",
+              "flex items-center gap-1.5 px-2 py-1 max-md:py-2 text-xs font-bold caps rounded-md border-strong border-line cursor-pointer transition-colors",
               liveMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
             )}
             title={
@@ -319,11 +331,11 @@ export function RequestList({
             aria-label="Method"
             value={methodFilter}
             onChange={(e) => onMethodFilterChange(e.target.value)}
-            className="text-xs font-bold caps rounded-md border-strong border-line bg-background px-2 py-1 cursor-pointer"
+            className="text-xs font-bold rounded-md border-strong border-line bg-background px-2 py-1 max-md:py-2 cursor-pointer"
           >
             {METHODS.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {METHOD_LABELS[m]}
               </option>
             ))}
           </select>
@@ -387,8 +399,8 @@ export function RequestList({
               {searchError
                 ? "Search unavailable"
                 : hasMore
-                  ? "None in the newest requests"
-                  : "No matching requests"}
+                  ? `None in the newest ${itemNoun}`
+                  : `No matching ${itemNoun}`}
             </div>
             {/* A filter can match nothing loaded so far and still match older pages. */}
             {loadMore}
@@ -398,13 +410,13 @@ export function RequestList({
             {/* Pinned section */}
             {pinned.length > 0 && (
               <>
-                <div className="px-3 py-1 text-[10px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1">
+                <div className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1">
                   <Star className="h-2.5 w-2.5 fill-current" />
                   Pinned
                 </div>
                 {pinned.map((request) => renderRow(request))}
                 {unpinned.length > 0 && (
-                  <div className="px-3 py-1 text-[10px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10">
+                  <div className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10">
                     All requests
                   </div>
                 )}
@@ -489,7 +501,7 @@ export function RequestList({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "px-1.5 py-0.5 text-[10px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 w-14 text-center",
+              "px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-14 text-center",
               getMethodColor(request.method)
             )}
           >
@@ -507,7 +519,7 @@ export function RequestList({
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
           <span
-            className="text-[10px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
+            className="text-[11px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               toggleTimestampMode();
@@ -519,25 +531,25 @@ export function RequestList({
         </div>
         {/* Bottom line: ID + content type + size */}
         <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)]">
-          <span className="text-[10px] text-muted-foreground font-mono">#{id.slice(-6)}</span>
+          <span className="text-[11px] text-muted-foreground font-mono">#{id.slice(-6)}</span>
           {ctLabel && (
             <>
-              <span className="text-[10px] text-muted-foreground">&middot;</span>
-              <span className="text-[10px] text-muted-foreground font-mono">{ctLabel}</span>
+              <span className="text-[11px] text-muted-foreground">&middot;</span>
+              <span className="text-[11px] text-muted-foreground font-mono">{ctLabel}</span>
             </>
           )}
           {request.detectedEvent && (
             <>
-              <span className="text-[10px] text-muted-foreground">&middot;</span>
-              <span className="text-[10px] text-muted-foreground font-mono truncate">
+              <span className="text-[11px] text-muted-foreground">&middot;</span>
+              <span className="text-[11px] text-muted-foreground font-mono truncate">
                 {request.detectedEvent}
               </span>
             </>
           )}
           {request.size > 0 && (
             <>
-              <span className="text-[10px] text-muted-foreground">&middot;</span>
-              <span className="text-[10px] text-muted-foreground font-mono shrink-0 whitespace-nowrap">
+              <span className="text-[11px] text-muted-foreground">&middot;</span>
+              <span className="text-[11px] text-muted-foreground font-mono shrink-0 whitespace-nowrap">
                 {formatBytes(request.size)}
               </span>
             </>
@@ -574,7 +586,7 @@ export function RequestList({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "px-1.5 py-0.5 text-[10px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 w-14 text-center",
+              "px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-14 text-center",
               getMethodColor("EMAIL")
             )}
           >
@@ -591,7 +603,7 @@ export function RequestList({
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
           <span
-            className="text-[10px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
+            className="text-[11px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               toggleTimestampMode();
@@ -602,23 +614,23 @@ export function RequestList({
           </span>
         </div>
         <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)] min-w-0">
-          <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+          <span className="text-[11px] text-muted-foreground font-mono shrink-0">
             #{id.slice(-6)}
           </span>
           {sender && <span className="text-[11px] text-muted-foreground truncate">{sender}</span>}
           {email?.tag && (
-            <span className="text-[10px] font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
+            <span className="text-[11px] font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
               +{email.tag}
             </span>
           )}
           {(email?.attachmentCount ?? 0) > 0 && (
-            <span className="text-[10px] text-muted-foreground font-mono flex items-center gap-0.5 shrink-0">
+            <span className="text-[11px] text-muted-foreground font-mono flex items-center gap-0.5 shrink-0">
               <Paperclip className="h-2.5 w-2.5" />
               {email!.attachmentCount}
             </span>
           )}
           {request.size > 0 && (
-            <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+            <span className="text-[11px] text-muted-foreground font-mono shrink-0">
               {formatBytes(request.size)}
             </span>
           )}

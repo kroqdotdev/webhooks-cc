@@ -270,7 +270,7 @@ export default async function Home() {
               test webhooks
             </span>
           </h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
+          <p className="hidden md:block text-sm text-muted-foreground mt-0.5">
             Your free webhook URL is live below. Point any service at it. No signup, no credit card.
             One click with GitHub or Google, or an email signup,{" "}
             <Link href="/login" className="font-bold text-foreground hover:text-primary-ink">
@@ -719,7 +719,7 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Pro</h3>
                 <p className="text-5xl font-bold">
                   $8
-                  <span className="text-lg font-normal text-muted-foreground">/month</span>
+                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
                 </p>
               </div>
               <ul className="space-y-3 mb-8">
@@ -737,10 +737,13 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center mt-auto">
-                Start free, upgrade later
-              </p>
-              <PricingCTA />
+              {/* One action per paid plan: everyone starts free and upgrades under Account. */}
+              <Link
+                href="/login?mode=sign-up&redirect=/account/plan"
+                className="ui-btn-outline mt-auto block text-center"
+              >
+                Start free, upgrade anytime
+              </Link>
             </div>
 
             {/* Business Plan */}
@@ -749,9 +752,9 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Business</h3>
                 <p className="text-5xl font-bold">
                   $29
-                  <span className="text-lg font-normal text-muted-foreground">/month</span>
+                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
                 </p>
-                <p className="text-sm text-muted-foreground mt-2">or $290/year</p>
+                <p className="text-sm text-muted-foreground mt-2">or $290 a year</p>
               </div>
               <ul className="space-y-3 mb-8">
                 {[
@@ -768,10 +771,13 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center mt-auto">
-                Start free, upgrade later
-              </p>
-              <PricingCTA />
+              {/* One action per paid plan: everyone starts free and upgrades under Account. */}
+              <Link
+                href="/login?mode=sign-up&redirect=/account/plan"
+                className="ui-btn-outline mt-auto block text-center"
+              >
+                Start free, upgrade anytime
+              </Link>
             </div>
           </div>
 
@@ -947,8 +953,8 @@ export default async function Home() {
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
               Create an endpoint, point your service at it, and see what arrives. Free forever.
             </p>
-            <div className="flex justify-center text-foreground">
-              <PricingCTA />
+            <div className="flex justify-center">
+              <PricingCTA inverted />
             </div>
             <p className="text-sm opacity-80 mt-6">
               No credit card &middot; or scroll up: your guest URL is already live

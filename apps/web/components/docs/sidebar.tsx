@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Menu, X, ChevronDown, Search } from "lucide-react";
+import { BookOpen, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS, type NavSection } from "@/lib/docs-nav";
 import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
 
@@ -161,11 +161,14 @@ export function DocsSidebar() {
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="md:hidden fixed left-4 z-40 p-2 rounded-md border-strong border-line bg-background shadow-raised-sm cursor-pointer"
+        className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border-strong border-line bg-background shadow-raised-sm cursor-pointer"
         style={{ top: s.toggle }}
-        aria-label="Toggle docs navigation"
+        aria-expanded={mobileOpen}
+        aria-label={mobileOpen ? "Close docs contents" : "Open docs contents"}
       >
-        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        {/* A word, not a second hamburger under the site menu's. */}
+        {mobileOpen ? <X className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+        Contents
       </button>
 
       {/* Mobile overlay */}

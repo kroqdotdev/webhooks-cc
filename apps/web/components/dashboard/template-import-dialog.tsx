@@ -107,7 +107,7 @@ export function TemplateImportDialog({
           </div>
         )}
         {error && (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-sm text-destructive-ink" role="alert">
             {error}
           </p>
         )}

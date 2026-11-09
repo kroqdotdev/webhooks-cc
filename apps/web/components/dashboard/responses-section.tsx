@@ -289,7 +289,7 @@ function PreviewPanel({
         {blocked ? (
           <p className="text-muted-foreground">{blocked}</p>
         ) : error ? (
-          <p className="text-destructive">{error}</p>
+          <p className="text-destructive-ink">{error}</p>
         ) : result ? (
           <>
             <p>
@@ -566,7 +566,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                       idPrefix={panelId}
                     />
                   </div>
-                  {showProblems && <p className="text-xs text-destructive">{problems[0]}</p>}
+                  {showProblems && <p className="text-xs text-destructive-ink">{problems[0]}</p>}
                   <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-line/20">
                     {rules.length > 1 && (
                       <>
@@ -591,7 +591,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                     <button
                       type="button"
                       onClick={() => setRules((prev) => prev.filter((r) => r.key !== rule.key))}
-                      className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive"
+                      className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive-ink"
                     >
                       <Trash2 className="h-3 w-3" /> Delete rule
                     </button>

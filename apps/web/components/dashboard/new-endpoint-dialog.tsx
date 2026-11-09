@@ -28,6 +28,7 @@ export function NewEndpointDialog() {
   const { session } = useAuth();
   const router = useRouter();
   const site = useSite();
+  const mailFirst = site.key === "mailhooks";
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -100,7 +101,11 @@ export function NewEndpointDialog() {
       <DialogContent className="border-strong border-line shadow-raised">
         <DialogHeader>
           <DialogTitle className="font-bold caps">Create endpoint</DialogTitle>
-          <DialogDescription>Create a new webhook endpoint to capture requests.</DialogDescription>
+          <DialogDescription>
+            {mailFirst
+              ? "It gets its own email address, and an HTTP URL too."
+              : "It gets a URL that captures every request, and an email address too."}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -112,40 +117,43 @@ export function NewEndpointDialog() {
               id="ep-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Webhook"
+              placeholder={mailFirst ? "Acme orders" : "My webhook"}
               className="ui-input w-full text-sm"
             />
           </div>
 
           {twoSites() && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
 
-          <div className="border-strong border-line rounded-lg p-4 space-y-4">
-            <div>
-              <p className="font-bold caps text-xs mb-1">Mock Response (optional)</p>
-              <p className="text-xs text-muted-foreground">
-                Configure what this endpoint returns when it receives a request.
-              </p>
-            </div>
+          {/* A mail-first endpoint rarely answers HTTP; the same setting stays under Settings. */}
+          {!mailFirst && (
+            <div className="border-strong border-line rounded-lg p-4 space-y-4">
+              <div>
+                <p className="font-bold caps text-xs mb-1">Mock response (optional)</p>
+                <p className="text-xs text-muted-foreground">
+                  Configure what this endpoint returns when it receives a request.
+                </p>
+              </div>
 
-            <StatusCodePicker id="ep-status" value={mockStatus} onChange={setMockStatus} />
+              <StatusCodePicker id="ep-status" value={mockStatus} onChange={setMockStatus} />
 
-            <div className="space-y-2">
-              <Label htmlFor="ep-body" className="font-bold caps text-xs">
-                Response body
-              </Label>
-              <Textarea
-                id="ep-body"
-                value={mockBody}
-                onChange={(e) => setMockBody(e.target.value)}
-                placeholder='{"success": true}'
-                rows={3}
-                className="border-strong border-line text-sm font-mono"
-              />
+              <div className="space-y-2">
+                <Label htmlFor="ep-body" className="font-bold caps text-xs">
+                  Response body
+                </Label>
+                <Textarea
+                  id="ep-body"
+                  value={mockBody}
+                  onChange={(e) => setMockBody(e.target.value)}
+                  placeholder='{"success": true}'
+                  rows={3}
+                  className="border-strong border-line text-sm font-mono"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {error && (
-            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
               {error}
             </div>
           )}

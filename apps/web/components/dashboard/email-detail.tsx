@@ -650,7 +650,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
                     <td
                       className={cn(
                         "py-1.5 pr-3 font-mono text-xs text-right whitespace-nowrap",
-                        symbol.score > 0 && "text-destructive",
+                        symbol.score > 0 && "text-destructive-ink",
                         symbol.score < 0 && "text-primary-ink"
                       )}
                     >
@@ -1441,7 +1441,9 @@ export function EmailDetail({
                 </li>
               ))}
             </ul>
-            {attachmentError && <p className="text-xs text-destructive mt-3">{attachmentError}</p>}
+            {attachmentError && (
+              <p className="text-xs text-destructive-ink mt-3">{attachmentError}</p>
+            )}
             <p className="text-xs text-muted-foreground mt-3">
               {stored
                 ? "Attachments are kept with the email and deleted with it."
@@ -1460,7 +1462,7 @@ export function EmailDetail({
             storedRawHere === null ? (
               <p className="text-sm text-muted-foreground">Loading the message...</p>
             ) : "error" in storedRawHere ? (
-              <p className="text-sm text-destructive">{storedRawHere.error}</p>
+              <p className="text-sm text-destructive-ink">{storedRawHere.error}</p>
             ) : (
               <>
                 {storedRawHere.bytes.length > RAW_DISPLAY_BYTES && (

@@ -327,13 +327,13 @@ export function DeliveriesSection({
         <p
           role="status"
           aria-live="polite"
-          className={cn("text-[13px]", result.error ? "text-destructive" : "text-foreground")}
+          className={cn("text-[13px]", result.error ? "text-destructive-ink" : "text-foreground")}
         >
           {result.text}
         </p>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {rows === null && !error && <p className="text-sm text-muted-foreground">Loading...</p>}
       {rows?.length === 0 && <p className="text-sm text-muted-foreground max-w-[62ch]">{empty}</p>}
 
@@ -447,7 +447,7 @@ export function DeliveriesSection({
                       )}
                       {showSentColumn && (
                         <td
-                          className={cn(num, behind && "text-destructive")}
+                          className={cn(num, behind && "text-destructive-ink")}
                           title={
                             behind
                               ? "The sender's clock is ahead of ours."
@@ -460,11 +460,13 @@ export function DeliveriesSection({
                       <td
                         className={cn(
                           num,
-                          answer.kind !== "status" && answer.kind !== "none" && "text-destructive",
+                          answer.kind !== "status" &&
+                            answer.kind !== "none" &&
+                            "text-destructive-ink",
                           answer.kind === "status" &&
                             row.lastStatus !== null &&
                             (row.lastStatus < 200 || row.lastStatus >= 300) &&
-                            "text-destructive"
+                            "text-destructive-ink"
                         )}
                       >
                         {answer.label}

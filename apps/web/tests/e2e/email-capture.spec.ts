@@ -424,7 +424,7 @@ test("the email switch reaches emails older than the newest page", async ({ page
   const show = shown(page.getByRole("radiogroup", { name: "Show" }));
   await show.getByRole("radio", { name: /^Email/ }).click();
 
-  await expect(shown(page.getByText("None in the newest requests"))).toBeVisible();
+  await expect(shown(page.getByText("None in the newest emails"))).toBeVisible();
   // The timeline pages too.
   await shown(page.getByRole("button", { name: "Switch to timeline view" })).click();
   await expect(shown(page.getByRole("button", { name: "Load More" }))).toBeVisible();

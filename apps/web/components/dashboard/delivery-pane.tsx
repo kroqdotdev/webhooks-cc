@@ -70,7 +70,7 @@ const CHIP: Record<ChipStatus, { label: string; className: string }> = {
   },
   failed: {
     label: "Failed",
-    className: "bg-destructive text-white clean:bg-destructive/12 clean:text-destructive",
+    className: "bg-destructive text-white clean:bg-destructive/12 clean:text-destructive-ink",
   },
   queued: {
     label: "Queued",
@@ -124,7 +124,7 @@ export function useUtcPreference(): [boolean, (next: boolean) => void] {
 
 function Code({ bad, children }: { bad?: boolean; children: React.ReactNode }) {
   return (
-    <span className={cn("font-mono", bad ? "text-destructive" : "text-foreground")}>
+    <span className={cn("font-mono", bad ? "text-destructive-ink" : "text-foreground")}>
       {children}
     </span>
   );
@@ -205,7 +205,7 @@ function journeyFor(
       tone: "hollow",
       segment: {
         label: behind ? (
-          <span className="text-destructive">{lag}</span>
+          <span className="text-destructive-ink">{lag}</span>
         ) : (
           <b className="font-semibold text-foreground">{lag}</b>
         ),
@@ -280,7 +280,7 @@ function journeyFor(
             {duration ? ` in ${duration}` : ""}
           </>
         ) : (
-          <span className="text-destructive">{answer.label}</span>
+          <span className="text-destructive-ink">{answer.label}</span>
         ),
     });
     const what =
@@ -364,7 +364,7 @@ function journeyFor(
               <Code bad>{answer.label}</Code> in {formatDuration(latest.durationMs)}
             </>
           ) : (
-            <span className="text-destructive">{answer.label}</span>
+            <span className="text-destructive-ink">{answer.label}</span>
           ),
         segment: {
           label: next ? `next try ${formatIn(next, now)}` : "next try soon",
@@ -434,14 +434,14 @@ function TriesList({
               <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                 {formatClock(attempt.attemptedAt - attempt.durationMs, { utc, now })}
               </span>
-              <span className={cn("font-mono whitespace-nowrap", bad && "text-destructive")}>
+              <span className={cn("font-mono whitespace-nowrap", bad && "text-destructive-ink")}>
                 {answer.label}
               </span>
               <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                 {formatDuration(attempt.durationMs)}
               </span>
               {attempt.error ? (
-                <span className="basis-full md:basis-auto md:flex-1 min-w-0 text-xs text-destructive">
+                <span className="basis-full md:basis-auto md:flex-1 min-w-0 text-xs text-destructive-ink">
                   {attempt.error}
                 </span>
               ) : attempt.responseExcerpt ? (
@@ -709,12 +709,12 @@ export function DeliveriesPane({
         <p
           role="status"
           aria-live="polite"
-          className={cn("text-[13px]", status.error ? "text-destructive" : "text-foreground")}
+          className={cn("text-[13px]", status.error ? "text-destructive-ink" : "text-foreground")}
         >
           {status.text}
         </p>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {deliveries === null && !error && <p className="text-sm text-muted-foreground">Loading...</p>}
       {groups.map((group) => {
         const settings = group.destination

@@ -195,7 +195,10 @@ export function EmailFieldsEditor({
                   className={cn(inputClass, "w-full")}
                 />
                 <p
-                  className={cn("text-xs", problem ? "text-destructive" : "text-muted-foreground")}
+                  className={cn(
+                    "text-xs",
+                    problem ? "text-destructive-ink" : "text-muted-foreground"
+                  )}
                   aria-live="polite"
                 >
                   {problem ? (

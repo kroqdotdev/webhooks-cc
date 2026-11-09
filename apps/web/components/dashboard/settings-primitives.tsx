@@ -99,7 +99,7 @@ export function Field({
       </Label>
       {children}
       {error && (
-        <p id={errorId} className="text-xs text-destructive">
+        <p id={errorId} className="text-xs text-destructive-ink">
           {error}
         </p>
       )}
@@ -133,7 +133,7 @@ export function SaveFooter({
         aria-live="polite"
         className={cn(
           "text-xs flex-1 min-w-[180px]",
-          error ? "text-destructive" : "text-muted-foreground"
+          error ? "text-destructive-ink" : "text-muted-foreground"
         )}
       >
         {error ?? (dirty ? hint : saved ? "Saved." : "")}

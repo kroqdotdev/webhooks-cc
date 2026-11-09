@@ -52,7 +52,7 @@ export function AccountSearch() {
         placeholder="Email, account id or endpoint slug"
         autoFocus
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {results === null ? (
         <Skeleton className="h-24 w-full rounded-md" />
       ) : results.length === 0 ? (
@@ -138,7 +138,7 @@ export function AccountInspector({ id }: { id: string }) {
     return (
       <div className="p-6 lg:p-8">
         {error ? (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-destructive-ink">{error}</p>
         ) : (
           <Skeleton className="h-40 w-full rounded-md" />
         )}
@@ -241,7 +241,7 @@ export function AccountInspector({ id }: { id: string }) {
                           <td
                             className={cn(
                               "px-3 py-2 text-right",
-                              endpoint.rejected7d > 0 && "text-destructive"
+                              endpoint.rejected7d > 0 && "text-destructive-ink"
                             )}
                           >
                             {count.format(endpoint.rejected7d)}
@@ -249,7 +249,7 @@ export function AccountInspector({ id }: { id: string }) {
                           <td
                             className={cn(
                               "px-3 py-2 text-right",
-                              endpoint.failedDeliveries7d > 0 && "text-destructive"
+                              endpoint.failedDeliveries7d > 0 && "text-destructive-ink"
                             )}
                           >
                             {count.format(endpoint.failedDeliveries7d)}
@@ -315,7 +315,7 @@ export function AccountInspector({ id }: { id: string }) {
                     <span className="font-mono text-xs">
                       {entry.action}
                       {entry.outcome !== "ok" && (
-                        <span className="ml-2 text-destructive">{entry.outcome}</span>
+                        <span className="ml-2 text-destructive-ink">{entry.outcome}</span>
                       )}
                     </span>
                     <span className="text-xs text-muted-foreground">
@@ -423,7 +423,7 @@ export function AccountInspector({ id }: { id: string }) {
               {account.internal ? "Count it again" : "Mark internal"}
             </Button>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive-ink">{error}</p>}
         </aside>
       </div>
     </div>

@@ -140,7 +140,7 @@ export function ManageSubscriptionDialog({
         )}
 
         {error && (
-          <p className="text-sm text-destructive mb-4" role="alert" aria-live="polite">
+          <p className="text-sm text-destructive-ink mb-4" role="alert" aria-live="polite">
             {error}
           </p>
         )}

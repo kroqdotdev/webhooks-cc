@@ -170,6 +170,17 @@ const nextConfig: NextConfig = {
         destination: "/docs/sdk/go",
         permanent: true,
       },
+      ...(onMailhooks.length
+        ? [
+            {
+              // The catalogue is called Layouts, so people try /layouts for it.
+              source: "/layouts",
+              has: onMailhooks,
+              destination: "/parse",
+              permanent: false,
+            },
+          ]
+        : []),
       {
         // mailhooks.cc has a pricing page; webhooks.cc's pricing is a section
         // of its landing page, and people guess /pricing there too.

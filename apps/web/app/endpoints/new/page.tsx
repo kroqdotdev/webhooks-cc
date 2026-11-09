@@ -118,7 +118,7 @@ function NewEndpointForm() {
           </div>
 
           {error && (
-            <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded">
+            <div className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3">
               {error}
             </div>
           )}

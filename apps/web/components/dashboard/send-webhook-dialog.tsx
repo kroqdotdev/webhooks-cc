@@ -238,8 +238,11 @@ export function SendWebhookDialog({
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <div>
-              <p className="text-xs font-bold caps mb-2">Mode</p>
+              <label htmlFor="send-mode" className="block text-xs font-bold caps mb-2">
+                Mode
+              </label>
               <select
+                id="send-mode"
                 value={mode}
                 onChange={(e) => handleModeChange(e.target.value as SendMode)}
                 className="ui-input text-sm w-full"
@@ -254,8 +257,11 @@ export function SendWebhookDialog({
             </div>
             {isTemplateMode && (
               <div>
-                <p className="text-xs font-bold caps mb-2">Template preset</p>
+                <label htmlFor="send-template" className="block text-xs font-bold caps mb-2">
+                  Template preset
+                </label>
                 <select
+                  id="send-template"
                   value={selectedTemplateId}
                   onChange={(e) => handleTemplateChange(mode, e.target.value)}
                   className="ui-input text-sm w-full"
@@ -373,7 +379,7 @@ export function SendWebhookDialog({
             <div
               className={
                 status === "error"
-                  ? "border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+                  ? "border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink"
                   : "ui-code p-3! text-sm"
               }
             >

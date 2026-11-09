@@ -540,7 +540,7 @@ function ExtraDomains({
             </Button>
           </div>
           {blocks?.pastDue && (
-            <p className="text-xs text-destructive mt-1">
+            <p className="text-xs text-destructive-ink mt-1">
               The last payment failed.{" "}
               <BillingPortalLink accessToken={accessToken} teamId={teamId}>
                 Update your payment method

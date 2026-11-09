@@ -177,8 +177,8 @@ function ServerSideResult({
     <div className="border-strong border-line border-l-4 border-l-destructive rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4 text-destructive" />
-          <span className="font-bold caps text-xs text-destructive">
+          <ShieldAlert className="h-4 w-4 text-destructive-ink" />
+          <span className="font-bold caps text-xs text-destructive-ink">
             {errorData?.code === "mismatch" ? "Signature Mismatch" : "Signature Invalid"}
           </span>
         </div>
@@ -537,7 +537,7 @@ export function SignatureVerificationBadge({
   ) : isSkipped ? (
     <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
   ) : (
-    <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+    <ShieldAlert className="h-3.5 w-3.5 text-destructive-ink" />
   );
 
   if (onClick) {

@@ -178,6 +178,7 @@ function SetupMenu({
 }
 
 function SendMenu({ slug, canEmail }: { slug: string; canEmail: boolean }) {
+  const mailFirst = useSite().key === "mailhooks";
   const { session } = useAuth();
   const [requestOpen, setRequestOpen] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
@@ -218,7 +219,7 @@ function SendMenu({ slug, canEmail }: { slug: string; canEmail: boolean }) {
           !status
             ? "sr-only"
             : "absolute right-0 top-full z-20 mt-2 w-max max-w-[min(280px,calc(100vw-2rem))] rounded-md border-strong border-line bg-card px-2.5 py-1.5 text-xs shadow-raised-sm lg:static lg:mt-0 lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
-          status?.kind === "error" ? "text-destructive" : "text-muted-foreground"
+          status?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
         )}
         title={status?.text}
       >
@@ -238,24 +239,50 @@ function SendMenu({ slug, canEmail }: { slug: string; canEmail: boolean }) {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72 border-strong border-line shadow-raised">
-            <DropdownMenuItem onSelect={() => setRequestOpen(true)} className="items-start">
-              <Globe className="h-4 w-4 mt-0.5" />
-              <span>
-                <span className="block">Send test request</span>
-                <span className="block text-xs text-muted-foreground">
-                  A POST with a JSON body, or a signed provider template
-                </span>
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={sendEmail} className="items-start">
-              <Mail className="h-4 w-4 mt-0.5" />
-              <span>
-                <span className="block">Send test email</span>
-                <span className="block text-xs text-muted-foreground">
-                  A sample email delivered straight to this endpoint
-                </span>
-              </span>
-            </DropdownMenuItem>
+            {/* mailhooks.cc lists the email first, as its bar and empty state do. */}
+            {mailFirst ? (
+              <>
+                <DropdownMenuItem onSelect={sendEmail} className="items-start">
+                  <Mail className="h-4 w-4 mt-0.5" />
+                  <span>
+                    <span className="block">Send test email</span>
+                    <span className="block text-xs text-muted-foreground">
+                      A sample email delivered straight to this endpoint
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setRequestOpen(true)} className="items-start">
+                  <Globe className="h-4 w-4 mt-0.5" />
+                  <span>
+                    <span className="block">Send test request</span>
+                    <span className="block text-xs text-muted-foreground">
+                      A POST with a JSON body, or a signed provider template
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              </>
+            ) : (
+              <>
+                <DropdownMenuItem onSelect={() => setRequestOpen(true)} className="items-start">
+                  <Globe className="h-4 w-4 mt-0.5" />
+                  <span>
+                    <span className="block">Send test request</span>
+                    <span className="block text-xs text-muted-foreground">
+                      A POST with a JSON body, or a signed provider template
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={sendEmail} className="items-start">
+                  <Mail className="h-4 w-4 mt-0.5" />
+                  <span>
+                    <span className="block">Send test email</span>
+                    <span className="block text-xs text-muted-foreground">
+                      A sample email delivered straight to this endpoint
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
@@ -286,7 +313,7 @@ export function EndpointBar({
   return (
     <div className="border-b-strong border-line bg-card px-4 pt-3 shrink-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="font-bold text-sm caps shrink-0 order-1">{name}</span>
+        <h1 className="font-bold text-sm tracking-normal shrink-0 order-1">{name}</h1>
         <div className="order-3 md:order-2 w-full md:w-auto md:flex-1 min-w-0 flex items-center gap-2">
           <AddressPill
             label="HTTP"

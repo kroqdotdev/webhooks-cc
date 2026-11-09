@@ -459,7 +459,7 @@ export function SheetsDestinationEditor({
                 type="button"
                 aria-label={`Remove column ${index + 1}`}
                 onClick={() => setColumns(columns.filter((_, i) => i !== index))}
-                className="text-muted-foreground hover:text-destructive"
+                className="text-muted-foreground hover:text-destructive-ink"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -554,13 +554,13 @@ export function SheetsDestinationEditor({
           <button
             type="button"
             onClick={() => void remove()}
-            className="text-sm text-destructive ml-auto"
+            className="text-sm text-destructive-ink ml-auto"
           >
             Remove
           </button>
         )}
         {saved && <span className="text-xs text-muted-foreground">Saved.</span>}
-        {error && <p className="w-full text-sm text-destructive">{error}</p>}
+        {error && <p className="w-full text-sm text-destructive-ink">{error}</p>}
       </div>
     </div>
   );

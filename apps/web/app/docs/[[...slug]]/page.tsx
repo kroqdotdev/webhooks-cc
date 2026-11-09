@@ -19,6 +19,9 @@ interface PageProps {
   params: Promise<{ slug?: string[] }>;
 }
 
+// Every doc is known at build time; anything else is the static 404 page.
+export const dynamicParams = false;
+
 export async function generateStaticParams() {
   const slugs = await getAllDocSlugs();
   return slugs.map((slug) => ({

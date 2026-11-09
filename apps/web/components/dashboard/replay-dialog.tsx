@@ -22,6 +22,8 @@ interface ReplayDialogProps {
   headers: Record<string, string>;
   /** Request body, if present. */
   body?: string;
+  /** The exact body bytes for a body that is not text; sent instead of `body`. */
+  bodyBytes?: Uint8Array<ArrayBuffer>;
 }
 
 /**
@@ -50,7 +52,8 @@ function isValidTargetUrl(url: string): { valid: boolean; error?: string } {
   }
 }
 
-export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
+export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogProps) {
+  const bodySize = bodyBytes ? bodyBytes.length : body ? new TextEncoder().encode(body).length : 0;
   const [targetUrl, setTargetUrl] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [response, setResponse] = useState<{
@@ -84,7 +87,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
       const res = await fetch(targetUrl, {
         method,
         headers: filteredHeaders,
-        body: method !== "GET" && method !== "HEAD" ? body : undefined,
+        body: method !== "GET" && method !== "HEAD" ? (bodyBytes ?? body) : undefined,
       });
       setResponse({ status: res.status, statusText: res.statusText });
       setStatus("done");
@@ -141,7 +144,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
 
           <div className="text-xs font-mono text-muted-foreground">
             {method} with {Object.keys(headers).length} headers
-            {body ? `, ${body.length} byte body` : ", no body"}
+            {bodySize ? `, ${bodySize} byte body` : ", no body"}
           </div>
 
           {status === "done" && response && (
@@ -151,7 +154,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
           )}
 
           {status === "error" && (
-            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
               {errorMsg}
             </div>
           )}

@@ -83,7 +83,7 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
       {agents === null ? (
         error ? (
           <div className="flex flex-wrap items-center justify-between gap-3 p-5">
-            <p className="text-sm text-destructive">{error}</p>
+            <p className="text-sm text-destructive-ink">{error}</p>
             <Button variant="outline" size="sm" onClick={() => void refresh()}>
               Try again
             </Button>
@@ -141,7 +141,7 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
                       title="Disconnect agent"
                       aria-label={`Disconnect agent ${name}`}
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <Trash2 className="h-4 w-4 text-destructive-ink" />
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
