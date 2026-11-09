@@ -153,6 +153,78 @@ const MAILHOOKS_PREFIXES = [
   "/_next",
 ];
 
+/**
+ * The first path segments webhooks.cc answers: its routes under app/ (the
+ * (settings) group's account and teams included), public/ files and the
+ * redirects in next.config.ts. A mailhooks.cc path outside its own list goes
+ * to webhooks.cc only when it is one of these; anything else is a mailhooks.cc
+ * 404, so a mistyped address stays on the site it was typed for. A unit test
+ * keeps the list in step with app/ and public/.
+ */
+export const WEBHOOKS_TOP_LEVEL = [
+  ".well-known",
+  "account",
+  "agent",
+  "android",
+  "api",
+  "api-explorer",
+  "apple-touch-icon.png",
+  "auth",
+  "auth.md",
+  "blog",
+  "changelog",
+  "cli",
+  "compare",
+  "dashboard",
+  "docs",
+  "docs.md",
+  "email-templates",
+  "email-testing",
+  "email-to-webhook",
+  "endpoints",
+  "favicon.ico",
+  "feed.xml",
+  "for-teams",
+  "go",
+  "index.md",
+  "install.sh",
+  "installation",
+  "ios",
+  "llms-full.txt",
+  "llms.txt",
+  "login",
+  "mcp",
+  "oauth",
+  "og-image.jpg",
+  "openapi.yaml",
+  "ops",
+  "privacy",
+  "robots.txt",
+  "s",
+  "signup",
+  "sitemap-index.xml",
+  "sitemap.rss",
+  "sitemap.txt",
+  "sitemap.xml",
+  "sitemaps",
+  "subprocessors",
+  "support",
+  "teams",
+  "terms",
+  "video",
+  "webhooks",
+] as const;
+
+const WEBHOOKS_TOP_LEVEL_SET: ReadonlySet<string> = new Set(WEBHOOKS_TOP_LEVEL);
+
+/** Whether webhooks.cc has something at this path's first segment (see WEBHOOKS_TOP_LEVEL). */
+export function existsOnWebhooks(pathname: string): boolean {
+  const first = pathname.split("/")[1] ?? "";
+  // Root-level verification and icon files in public/ (e.g. a search engine's key file).
+  if (/^[^/]+\.(?:txt|svg|png|ico|jpg|jpeg|webp|webmanifest)$/i.test(first)) return true;
+  return WEBHOOKS_TOP_LEVEL_SET.has(first);
+}
+
 export function servedOnMailhooks(pathname: string): boolean {
   if (pathname === "/") return true;
   // Static files from public/ (icons, images).

@@ -328,6 +328,10 @@ export function RequestList({
                 type="button"
                 role="radio"
                 aria-checked={kindFilter === kind.id}
+                // The count is read as part of the name, not run into it ("Email1").
+                aria-label={
+                  kindFilter === kind.id ? `${kind.label}, ${displayCount} shown` : kind.label
+                }
                 // One tab stop for the group; arrow keys move the choice, as in a radio group.
                 tabIndex={kindFilter === kind.id ? 0 : -1}
                 onClick={() => onKindFilterChange(kind.id)}
@@ -357,7 +361,10 @@ export function RequestList({
                 {kind.label}
                 {/* The count of what is shown, from the server, so only the picked kind has one. */}
                 {kindFilter === kind.id && (
-                  <span className="hidden @[300px]:inline font-mono font-normal opacity-90">
+                  <span
+                    aria-hidden
+                    className="hidden @[300px]:inline font-mono font-normal opacity-90"
+                  >
                     {displayCount}
                   </span>
                 )}
@@ -644,31 +651,31 @@ export function RequestList({
           <span className="text-xs font-mono truncate flex-1">{request.path}</span>
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
-          <span className="text-[11px] text-muted-foreground font-mono shrink-0">
+          <span className="text-xs text-muted-foreground font-mono shrink-0">
             {renderTimestamp(request.receivedAt)}
           </span>
         </div>
         {/* Bottom line: ID + content type + size */}
         <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)]">
-          <span className="text-[11px] text-muted-foreground font-mono">#{id.slice(-6)}</span>
+          <span className="text-xs text-muted-foreground font-mono">#{id.slice(-6)}</span>
           {ctLabel && (
             <>
-              <span className="text-[11px] text-muted-foreground">&middot;</span>
-              <span className="text-[11px] text-muted-foreground font-mono">{ctLabel}</span>
+              <span className="text-xs text-muted-foreground">&middot;</span>
+              <span className="text-xs text-muted-foreground font-mono">{ctLabel}</span>
             </>
           )}
           {request.detectedEvent && (
             <>
-              <span className="text-[11px] text-muted-foreground">&middot;</span>
-              <span className="text-[11px] text-muted-foreground font-mono truncate">
+              <span className="text-xs text-muted-foreground">&middot;</span>
+              <span className="text-xs text-muted-foreground font-mono truncate">
                 {request.detectedEvent}
               </span>
             </>
           )}
           {request.size > 0 && (
             <>
-              <span className="text-[11px] text-muted-foreground">&middot;</span>
-              <span className="text-[11px] text-muted-foreground font-mono shrink-0 whitespace-nowrap">
+              <span className="text-xs text-muted-foreground">&middot;</span>
+              <span className="text-xs text-muted-foreground font-mono shrink-0 whitespace-nowrap">
                 {formatBytes(request.size)}
               </span>
             </>
@@ -709,28 +716,26 @@ export function RequestList({
           </span>
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
-          <span className="text-[11px] text-muted-foreground font-mono shrink-0">
+          <span className="text-xs text-muted-foreground font-mono shrink-0">
             {renderTimestamp(request.receivedAt)}
           </span>
         </div>
         <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)] min-w-0">
-          <span className="text-[11px] text-muted-foreground font-mono shrink-0">
-            #{id.slice(-6)}
-          </span>
-          {sender && <span className="text-[11px] text-muted-foreground truncate">{sender}</span>}
+          <span className="text-xs text-muted-foreground font-mono shrink-0">#{id.slice(-6)}</span>
+          {sender && <span className="text-xs text-muted-foreground truncate">{sender}</span>}
           {email?.tag && (
-            <span className="text-[11px] font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
+            <span className="text-xs font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
               +{email.tag}
             </span>
           )}
           {(email?.attachmentCount ?? 0) > 0 && (
-            <span className="text-[11px] text-muted-foreground font-mono flex items-center gap-0.5 shrink-0">
+            <span className="text-xs text-muted-foreground font-mono flex items-center gap-0.5 shrink-0">
               <Paperclip className="h-2.5 w-2.5" />
               {email!.attachmentCount}
             </span>
           )}
           {request.size > 0 && (
-            <span className="text-[11px] text-muted-foreground font-mono shrink-0">
+            <span className="text-xs text-muted-foreground font-mono shrink-0">
               {formatBytes(request.size)}
             </span>
           )}

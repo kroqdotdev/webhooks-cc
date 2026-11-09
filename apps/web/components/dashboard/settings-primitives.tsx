@@ -78,7 +78,8 @@ export function Section({
           {children}
         </div>
         {footer && (
-          <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40">
+          // A save footer with nothing to say marks itself idle and the bar folds away.
+          <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40 has-[[data-save-idle]]:hidden">
             {footer}
           </div>
         )}
@@ -126,7 +127,12 @@ export function Field({
   );
 }
 
-/** One save per section: disabled until something in it changes. */
+/**
+ * One save per section. It shows only while there is something to say: unsaved
+ * edits (Cancel and Save), a save running, "Saved." after one, or an error.
+ * Otherwise the footer bar folds away, so a page of untouched sections does
+ * not read as a column of disabled buttons.
+ */
 export function SaveFooter({
   dirty,
   saving,
@@ -145,8 +151,12 @@ export function SaveFooter({
   onReset: () => void;
 }) {
   useReportDirty(dirty);
+  const idle = !dirty && !saving && !saved && !error;
+  // A failed save leaves the edits, so Save stays for a retry.
+  const showSave = dirty || saving;
   return (
     <>
+      {idle && <span data-save-idle hidden />}
       <p
         role="status"
         aria-live="polite"
@@ -162,17 +172,19 @@ export function SaveFooter({
           Cancel
         </button>
       )}
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={!dirty || saving}
-        className={cn(
-          "ui-btn-primary py-1.5! px-3! text-xs",
-          (!dirty || saving) && "opacity-50 cursor-not-allowed"
-        )}
-      >
-        {saving ? "Saving..." : "Save changes"}
-      </button>
+      {showSave && (
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!dirty || saving}
+          className={cn(
+            "ui-btn-primary py-1.5! px-3! text-xs",
+            (!dirty || saving) && "opacity-50 cursor-not-allowed"
+          )}
+        >
+          {saving ? "Saving..." : "Save changes"}
+        </button>
+      )}
     </>
   );
 }

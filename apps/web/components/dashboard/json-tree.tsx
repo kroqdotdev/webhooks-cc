@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { ChevronRight, ChevronDown, Check, ChevronsUpDown } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 
-/** Valid JS identifier — hoisted to avoid recreation in render loops (js-hoist-regexp) */
+/** Valid JS identifier, hoisted to avoid recreation in render loops (js-hoist-regexp) */
 const JS_IDENT = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
 
 interface JsonTreeProps {
@@ -115,7 +115,7 @@ function JsonNode({
   const defaultOpen = depth < defaultExpandDepth;
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
-  // Sync to expand/collapse all — only fires when version bumps (not on mount)
+  // Sync to expand/collapse all; only fires when version bumps (not on mount)
   const prevVersion = useRef(expandVersion);
   useEffect(() => {
     if (expandVersion !== prevVersion.current) {
@@ -257,7 +257,5 @@ function TypeAnnotation({ value }: { value: unknown }) {
   else if (typeof value === "object") label = `object(${Object.keys(value as object).length})`;
   else label = typeof value;
 
-  return (
-    <span className="text-[11px] text-muted-foreground ml-2 shrink-0 select-none">{label}</span>
-  );
+  return <span className="text-xs text-muted-foreground ml-2 shrink-0 select-none">{label}</span>;
 }

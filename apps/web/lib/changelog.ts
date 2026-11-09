@@ -56,6 +56,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Small JSON bodies open fully, and sign-up form errors appear on the field they concern",
       "mailhooks.cc: send a ready-made layout's sample email to see it parse at once, a Guides page, line-item fields with visible labels, and a grouped, filterable Add layout menu",
       "One New endpoint form for the dialog and its page, pages that no longer scroll sideways on phones, and a shorter landing page",
+      "Ready-made layouts can be proven on the spot even when other mail is already there, and a layout that does not apply to an email is no longer shown as an error",
+      "On phones the dashboard folds its actions into one menu, so requests start higher, and the site menu dims the page and closes when focus leaves it",
+      "Settings show save controls only for sections with changes, adding a destination confirms where captures go, the Raw tab can be copied, and the Send dialog labels every field",
+      "Outline buttons have visible edges in the clean style, focus rings on tabs are no longer cut off, and mailhooks.cc has its own 404 page and a Docs link",
     ],
   },
   {

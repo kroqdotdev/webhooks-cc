@@ -152,10 +152,13 @@ function SampleEmailButton({
   template,
   state,
   onSend,
+  status = true,
 }: {
   template: LayoutTemplate;
   state: SampleSend;
   onSend: (template: LayoutTemplate) => void;
+  /** Show how the send went beside the button; off where another copy already says it. */
+  status?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -167,7 +170,7 @@ function SampleEmailButton({
       >
         Send the {template.sender} sample email
       </button>
-      <SampleSendStatus state={state} />
+      {status && <SampleSendStatus state={state} />}
     </div>
   );
 }
@@ -284,7 +287,8 @@ function LineItemsTable({
 /** A parsed result: the layout, fields, line items and attachments. Shared with the email view. */
 export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
   if (parsed.status !== "matched") {
-    return <p className="text-sm text-destructive-ink">No layout matched this email.</p>;
+    // Expected for mail no layout is written for yet: not an error.
+    return <p className="text-sm text-muted-foreground">No layout applies to this email yet.</p>;
   }
   const fieldNames = Object.keys(parsed.fields);
   const columns = lineItemColumns(parsed);
@@ -601,6 +605,19 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     // A field is found for one layout, by id: moving layouts must not move it.
     { kind: "layout" } | { kind: "field"; layoutId: string } | null
   >(null);
+  // A layout just added, by id: its header is brought into view and its name focused
+  // once it has rendered and the Add layout menu has closed.
+  const revealId = useRef<string | null>(null);
+  useEffect(() => {
+    const id = revealId.current;
+    if (!id || menuOpen) return;
+    revealId.current = null;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`layout-${id}-header`)?.scrollIntoView({ block: "start" });
+      document.getElementById(`layout-${id}-name`)?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [layouts, open, menuOpen]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -673,6 +690,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const addLayout = (layout: Layout) => {
     setLayouts([...layouts, layout]);
     setOpen(layouts.length);
+    revealId.current = layout.id;
   };
   const addBlank = () => {
     addLayout(newLayout(layouts, domainOf(samples[0]?.from)));
@@ -689,10 +707,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     if (sentTimer.current) clearTimeout(sentTimer.current);
     setSampleSend({ kind: "sending" });
     try {
-      await sendTestEmail(accessToken, endpoint.slug, template.id);
+      const { requestId } = await sendTestEmail(accessToken, endpoint.slug, template.id);
       setSampleSend({ kind: "sent" });
-      // The preview reads the newest email, which is now the sample.
-      setSampleId("");
+      // The preview tries the sample, which is now captured (else the newest email, the sample too).
+      setSampleId(requestId ?? "");
       setReloadKey((key) => key + 1);
       sentTimer.current = setTimeout(() => setSampleSend(null), 8000);
     } catch (sendError) {
@@ -733,6 +751,16 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       ? { kind: "rows", rows: parsed.lineItems, columns: lineItemColumns(parsed) }
       : { kind: "none" };
   };
+  // The open layout came from a sender's template, and the email tried is not that
+  // sender's: its sample is the quickest proof the layout works.
+  const openLayout = open !== null ? layouts[open] : undefined;
+  const offerSample =
+    openTemplate !== null &&
+    openLayout !== undefined &&
+    open !== null &&
+    open < cap &&
+    openLayout.enabled !== false &&
+    rowsFound(openLayout)?.kind === "unmatched";
 
   const move = (index: number, by: -1 | 1) => {
     const next = [...layouts];
@@ -780,7 +808,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             const matched = preview?.parsed?.layout?.id === layout.id;
             return (
               <li key={layout.id} className="border-strong border-line rounded-md bg-card">
-                <div className="flex flex-wrap items-center gap-2 p-2.5">
+                <div
+                  id={`layout-${layout.id}-header`}
+                  className="flex flex-wrap items-center gap-2 p-2.5 scroll-mt-4"
+                >
                   <span className="text-xs text-muted-foreground w-5">{n}.</span>
                   <button
                     type="button"
@@ -856,8 +887,22 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         )}
                       </div>
                     )}
+                    {offerSample && openTemplate && (
+                      <div className="space-y-1.5">
+                        <p className="text-sm text-muted-foreground">
+                          The email tried is not from {openTemplate.sender}. Send the{" "}
+                          {openTemplate.sender} sample email, or pick another email under Tried on.
+                        </p>
+                        <SampleEmailButton
+                          template={openTemplate}
+                          state={sampleSend}
+                          onSend={sendSample}
+                        />
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-3">
                       <input
+                        id={`layout-${layout.id}-name`}
                         aria-label={`Layout ${n}: name`}
                         value={layout.name}
                         onChange={(e) => update(index, { name: e.target.value })}
@@ -894,6 +939,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         emailAddress={endpoint.emailAddress ?? ""}
                         requestId={sampleId || undefined}
                         refreshKey={reloadKey}
+                        layoutUnmatched={rowsFound(layout)?.kind === "unmatched"}
                       />
                       {aiOffered &&
                         (assist?.kind === "field" && assist.layoutId === layout.id ? (
@@ -975,6 +1021,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <DropdownMenuContent
             ref={menuRef}
             align="start"
+            // Focus goes to the added layout's name, not back to the trigger below it.
+            onCloseAutoFocus={(e) => e.preventDefault()}
             className="w-72 max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border-strong border-line shadow-raised"
             onKeyDown={(e) => {
               // Typing anywhere in the menu filters the senders (instead of
@@ -1085,16 +1133,12 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             // Without a condition it would read every email (the panel offers none such).
             if (!drafted.match) return;
             const base = newLayout(layouts);
-            setLayouts([
-              ...layouts,
-              {
-                ...base,
-                name: drafted.name ?? base.name,
-                match: { logic: "and", conditions: [drafted.match] },
-                fields: drafted.fields,
-              },
-            ]);
-            setOpen(layouts.length);
+            addLayout({
+              ...base,
+              name: drafted.name ?? base.name,
+              match: { logic: "and", conditions: [drafted.match] },
+              fields: drafted.fields,
+            });
           }}
           onClose={() => setAssist(null)}
         />
@@ -1120,6 +1164,15 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   </option>
                 ))}
               </select>
+              {/* The layout notice above says the same with the send status. */}
+              {offerSample && openTemplate && (
+                <SampleEmailButton
+                  template={openTemplate}
+                  state={sampleSend}
+                  onSend={sendSample}
+                  status={false}
+                />
+              )}
             </div>
           ) : (
             <h3 className="text-sm font-semibold">No email yet</h3>

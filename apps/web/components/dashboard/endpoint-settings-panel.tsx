@@ -759,28 +759,21 @@ export function EndpointSettingsPanel({
     if (focusSection) scrollToSection(focusSection, { smooth: false });
   }, [focusSection]);
 
-  // Scroll spy: the topmost section in view is the active one. The observer
-  // only reports sections whose visibility changed, so every section in view
-  // is kept here and the topmost of all of them wins.
+  // Scroll spy: a thin line a quarter of the way down the view; the section
+  // crossing it is the active one. In the gap between two sections nothing
+  // crosses it and the highlight stays where it was. The jump lock keeps a
+  // clicked section highlighted while the smooth scroll passes others.
   useEffect(() => {
     const root = scroller.current;
     if (!root) return;
-    const inView = new Map<Element, number>();
     const observer = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) inView.set(entry.target, entry.boundingClientRect.top);
-          else inView.delete(entry.target);
-        }
         if (Date.now() - jumpedAt.current < 800) return;
-        let top: Element | null = null;
-        for (const el of inView.keys()) {
-          if (!top || el.getBoundingClientRect().top < top.getBoundingClientRect().top) top = el;
-        }
-        const id = top?.getAttribute("data-settings-section") as SettingsSection | null;
+        const crossing = entries.find((entry) => entry.isIntersecting);
+        const id = crossing?.target.getAttribute("data-settings-section") as SettingsSection | null;
         if (id) setActive(id);
       },
-      { root, rootMargin: "0px 0px -60% 0px", threshold: 0 }
+      { root, rootMargin: "-25% 0px -74% 0px", threshold: 0 }
     );
     root.querySelectorAll("[data-settings-section]").forEach((el) => observer.observe(el));
     return () => observer.disconnect();
@@ -870,6 +863,7 @@ export function EndpointSettingsPanel({
               <button
                 type="button"
                 onClick={() => jump(dirty[0].id as SettingsSection)}
+                aria-label="Review unsaved changes"
                 className="ui-btn-outline py-1.5! px-3! text-xs"
               >
                 Review

@@ -440,9 +440,30 @@ export function RequestDetail({
         )}
 
         {tab === "raw" && (
-          <pre className="ui-code overflow-x-auto text-sm whitespace-pre-wrap break-all">
-            {request.body || "(empty body)"}
-          </pre>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-muted-foreground">
+                Raw body, {formatBytes(request.size)}
+              </span>
+              {request.body && (
+                <button
+                  type="button"
+                  onClick={() => handleCopy(request.body ?? "", "raw")}
+                  className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
+                >
+                  {copied === "raw" ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  {copied === "raw" ? "Copied" : "Copy"}
+                </button>
+              )}
+            </div>
+            <pre className="ui-code overflow-x-auto text-sm whitespace-pre-wrap break-all">
+              {request.body || "(empty body)"}
+            </pre>
+          </div>
         )}
 
         {tab === "signature" && (

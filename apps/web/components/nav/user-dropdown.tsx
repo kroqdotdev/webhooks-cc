@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   ChevronDown,
+  CreditCard,
   Gauge,
   LayoutDashboard,
   LifeBuoy,
@@ -120,6 +121,10 @@ export function UserDropdown() {
         <DropdownMenuItem onClick={() => router.push("/account")} className="cursor-pointer">
           <Settings className="h-4 w-4 mr-2" />
           Account
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push("/account/plan")} className="cursor-pointer">
+          <CreditCard className="h-4 w-4 mr-2" />
+          Plan and usage
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => router.push("/account/appearance")}

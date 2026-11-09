@@ -104,7 +104,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "keyboard",
-    title: "Keyboard Shortcuts",
+    title: "Keyboard shortcuts",
     icon: <Keyboard className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-2">
@@ -129,7 +129,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "context-menu",
-    title: "Context Menu",
+    title: "Context menu",
     icon: <MousePointer className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -159,7 +159,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "pinning",
-    title: "Pinning Requests",
+    title: "Pinning requests",
     icon: <Star className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -178,7 +178,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "notes",
-    title: "Request Notes",
+    title: "Request notes",
     icon: <StickyNote className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -202,7 +202,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "compare",
-    title: "Comparing Requests",
+    title: "Comparing requests",
     icon: <GitCompareArrows className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -228,7 +228,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "timeline",
-    title: "Timeline View",
+    title: "Timeline view",
     icon: <BarChart3 className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -250,7 +250,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "resizable",
-    title: "Resizable Pane",
+    title: "Resizable pane",
     icon: <GripVertical className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -272,7 +272,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "copy",
-    title: "Copy & Export",
+    title: "Copy and export",
     icon: <Copy className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -298,7 +298,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "replay",
-    title: "Replay & Send",
+    title: "Replay and send",
     icon: <Play className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -320,7 +320,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "settings",
-    title: "Endpoint Settings",
+    title: "Endpoint settings",
     icon: <Settings className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -351,7 +351,7 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             <strong>Signature verification</strong>: pick a provider and signing secret to verify
-            every incoming webhook (see Signature Verification)
+            every incoming webhook (see Signature verification)
           </li>
           <li>Changes take effect immediately</li>
         </ul>
@@ -360,7 +360,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "signature-verification",
-    title: "Signature Verification",
+    title: "Signature verification",
     icon: <ShieldCheck className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -395,7 +395,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "response-rules",
-    title: "Response Rules",
+    title: "Response rules",
     icon: <ListOrdered className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -544,7 +544,7 @@ export function DashboardGuideDialog({
           {/* Sidebar */}
           <nav className="w-52 shrink-0 border-r-strong border-line overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
-              <DialogTitle className="text-sm caps">Dashboard Guide</DialogTitle>
+              <DialogTitle className="text-sm caps">Dashboard guide</DialogTitle>
             </DialogHeader>
             <div className="space-y-0.5">
               {SECTIONS.map((section) => (

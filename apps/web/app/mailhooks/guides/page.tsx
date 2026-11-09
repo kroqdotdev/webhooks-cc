@@ -66,9 +66,8 @@ export default function MailhooksGuides() {
                   <p className="font-bold text-lg mb-2">{guide.title}</p>
                   <p className="text-muted-foreground mb-4">{guide.summary}</p>
                   <span className="inline-flex items-center gap-1 text-sm font-bold text-primary-ink">
-                    Read the guide
+                    Read on webhooks.cc
                     <ArrowUpRight aria-hidden className="h-4 w-4" />
-                    <span className="sr-only"> (on webhooks.cc)</span>
                   </span>
                 </a>
               </li>

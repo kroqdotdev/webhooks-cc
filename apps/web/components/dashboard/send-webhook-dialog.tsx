@@ -229,9 +229,9 @@ export function SendWebhookDialog({
       )}
       <DialogContent className="border-strong border-line shadow-raised max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Send Webhook</DialogTitle>
+          <DialogTitle className="font-bold caps">Send a test request</DialogTitle>
           <DialogDescription className="sr-only">
-            Send a test webhook to this endpoint
+            Send a test request to this endpoint
           </DialogDescription>
         </DialogHeader>
 
@@ -280,16 +280,18 @@ export function SendWebhookDialog({
             <>
               {isSecretRequired(mode) && (
                 <div>
-                  <p className="text-xs font-bold caps mb-2">
+                  <label htmlFor="send-secret" className="block text-xs font-bold caps mb-2">
                     {mode === "gitlab" ? "Mock webhook token" : "Mock webhook secret"}
-                  </p>
+                  </label>
                   <Input
+                    id="send-secret"
+                    aria-describedby="send-secret-help"
                     value={mockWebhookSecret}
                     onChange={(e) => setMockWebhookSecret(e.target.value)}
                     className="ui-input text-sm"
                     placeholder={mode === "gitlab" ? "gl_token_..." : "whsec_..."}
                   />
-                  <p className="mt-2 text-xs text-muted-foreground">
+                  <p id="send-secret-help" className="mt-2 text-xs text-muted-foreground">
                     {mode === "gitlab"
                       ? "The token your app checks in the x-gitlab-token header."
                       : "The signing secret your app uses to verify webhook signatures."}
@@ -298,8 +300,11 @@ export function SendWebhookDialog({
               )}
 
               <div>
-                <p className="text-xs font-bold caps mb-2">Event/topic override (optional)</p>
+                <label htmlFor="send-event" className="block text-xs font-bold caps mb-2">
+                  Event/topic override (optional)
+                </label>
                 <Input
+                  id="send-event"
                   value={templateEventOverride}
                   onChange={(e) => setTemplateEventOverride(e.target.value)}
                   className="ui-input text-sm"
@@ -328,20 +333,30 @@ export function SendWebhookDialog({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value as HttpMethod)}
-              className="ui-input text-sm"
-              disabled={isTemplateMode}
-            >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="DELETE">DELETE</option>
-            </select>
+            <div>
+              <label htmlFor="send-method" className="block text-xs font-bold caps mb-2">
+                Method
+              </label>
+              <select
+                id="send-method"
+                value={method}
+                onChange={(e) => setMethod(e.target.value as HttpMethod)}
+                className="ui-input text-sm w-full"
+                disabled={isTemplateMode}
+              >
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+            </div>
             <div className="md:col-span-2">
+              <label htmlFor="send-path" className="block text-xs font-bold caps mb-2">
+                Path
+              </label>
               <Input
+                id="send-path"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="/"
@@ -356,8 +371,11 @@ export function SendWebhookDialog({
           </div>
 
           <div>
-            <p className="text-xs font-bold caps mb-2">Headers (one per line: Key: Value)</p>
+            <label htmlFor="send-headers" className="block text-xs font-bold caps mb-2">
+              Headers (one per line: Key: Value)
+            </label>
             <Textarea
+              id="send-headers"
               value={headersInput}
               onChange={(e) => setHeadersInput(e.target.value)}
               className="ui-input min-h-24 font-mono text-sm"
@@ -365,8 +383,11 @@ export function SendWebhookDialog({
           </div>
 
           <div>
-            <p className="text-xs font-bold caps mb-2">Body</p>
+            <label htmlFor="send-body" className="block text-xs font-bold caps mb-2">
+              Body
+            </label>
             <Textarea
+              id="send-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               className="ui-input min-h-28 font-mono text-sm"
@@ -392,7 +413,7 @@ export function SendWebhookDialog({
             disabled={status === "sending"}
             className="w-full ui-btn-primary"
           >
-            {status === "sending" ? "Sending..." : "Send webhook"}
+            {status === "sending" ? "Sending..." : "Send request"}
           </Button>
         </div>
       </DialogContent>

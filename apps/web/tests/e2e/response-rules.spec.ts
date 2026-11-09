@@ -7,7 +7,7 @@ import {
   type TestUser,
 } from "./helpers/auth";
 
-// Tests must run serially — they share an endpoint with rules
+// Tests must run serially: they share an endpoint with rules
 test.describe.configure({ mode: "serial" });
 
 let testUser: TestUser;
@@ -152,19 +152,19 @@ test("can switch off, reorder and delete rules", async ({ page }) => {
   await expect(section.getByRole("button", { name: /^Rule 2/ })).toHaveCount(0);
 });
 
-test("save stays disabled until the responses change", async ({ page }) => {
+test("save shows only once the responses change", async ({ page }) => {
   await openSettings(page);
 
   const section = responsesSection(page);
   const save = section.getByRole("button", { name: "Save changes" });
-  await expect(save).toBeDisabled();
+  await expect(save).toHaveCount(0);
 
   await section.getByRole("button", { name: "Add rule" }).click();
   await expect(save).toBeEnabled();
   await expect(section.getByText("Rules changed.")).toBeVisible();
 
   await section.getByRole("button", { name: "Cancel" }).click();
-  await expect(save).toBeDisabled();
+  await expect(save).toHaveCount(0);
   await expect(section.getByRole("button", { name: /^Rule 1/ })).toHaveCount(0);
 });
 

@@ -205,6 +205,10 @@ test("an endpoint made on mailhooks.cc is listed there, not on webhooks.cc", asy
   await page.goto(`${MAIL}/dashboard?endpoint=${slugs.mailhooks}`);
   await page.getByRole("button", { name: "New Endpoint" }).click();
   const dialog = page.getByRole("dialog");
+  // Where it is listed waits behind More options, closed by default.
+  const more = dialog.getByRole("button", { name: "More options" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
   await expect(dialog.getByRole("radio", { name: "mailhooks.cc" })).toHaveAttribute(
     "aria-checked",
     "true"

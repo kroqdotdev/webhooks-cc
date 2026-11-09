@@ -249,7 +249,7 @@ body {
     --border: 216 16% 88%;
     /* Control boundaries (inputs, selects, segmented controls) need 3:1 on the page;
        --border stays a lighter hairline for cards and dividers. */
-    --input: 216 12% 57%;
+    --input: 216 12% 52%;
     --ring: 164 76% 30%;
     --radius: 0.5rem;
     --shadow-color: 218 30% 10%;
@@ -379,8 +379,9 @@ body {
   }
   /* Every focusable element gets the same 2px ring, never the browser's thin outline
      (components that draw their own ring with outline-none keep theirs). */
-  /* Segmented options sit in a clipped group, so their ring is drawn inside them. */
-  [role="radiogroup"] > [role="radio"]:focus-visible {
+  /* Segmented options and tabs sit in clipped (scrolling) groups, so their ring is drawn inside them. */
+  [role="radiogroup"] > [role="radio"]:focus-visible,
+  [role="tablist"] > [role="tab"]:focus-visible {
     outline-offset: -3px;
   }
   :is(a, button, select, summary, [role="radio"], [role="tab"]):focus-visible {
@@ -609,7 +610,8 @@ body {
       input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="range"]),
       [role="radiogroup"],
       [role="combobox"],
-      .ui-control
+      .ui-control,
+      .ui-btn-outline
     ) {
     border-color: hsl(var(--input));
   }

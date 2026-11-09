@@ -70,6 +70,7 @@ export function EmailFieldsEditor({
   emailAddress,
   requestId,
   refreshKey,
+  layoutUnmatched,
 }: {
   slug: string;
   fields: EmailField[];
@@ -82,6 +83,11 @@ export function EmailFieldsEditor({
   requestId?: string;
   /** Changed when an email arrived that the preview should read (one sent from the page). */
   refreshKey?: number;
+  /**
+   * The layout these fields belong to does not apply to the email tried, so a
+   * field finding nothing there is expected: rows show no value and no miss.
+   */
+  layoutUnmatched?: boolean;
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
@@ -152,7 +158,8 @@ export function EmailFieldsEditor({
             const n = index + 1;
             const problem = problems.get(index);
             const value = preview?.values?.[field.name];
-            const missing = Boolean(preview?.request) && value !== undefined && !value;
+            const missing =
+              !layoutUnmatched && Boolean(preview?.request) && value !== undefined && !value;
             // Open by default where there is something to do with the pattern.
             const open =
               patternOpen[index] ?? (!field.pattern.trim() || Boolean(problem) || missing);
@@ -203,8 +210,12 @@ export function EmailFieldsEditor({
                     />
                   )}
                   <span className="flex-1 min-w-40 text-[13px] break-all" aria-live="polite">
-                    {/* Without an email, the one line under the rows says so, not every row. */}
-                    {problem || !preview?.request ? null : value === undefined ? null : value ? (
+                    {/* Without an email, the one line under the rows says so, not every row;
+                        for a layout that does not apply to the email, a miss is expected. */}
+                    {problem ||
+                    !preview?.request ||
+                    layoutUnmatched ||
+                    value === undefined ? null : value ? (
                       <code className="font-mono text-foreground [font-variant-ligatures:none]">
                         {value}
                       </code>

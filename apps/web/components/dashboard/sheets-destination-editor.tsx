@@ -287,10 +287,18 @@ export function SheetsDestinationEditor({
   };
 
   if (google && !google.available) {
+    // The picker no longer offers Sheets then; this is for a destination made before.
     return (
-      <p className="text-sm text-muted-foreground">
-        Google Sheets is not set up on this server yet.
-      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm text-muted-foreground">
+          Google Sheets is not set up on this server yet.
+        </p>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="ui-btn-outline py-1.5! px-3! text-xs">
+            Cancel
+          </button>
+        )}
+      </div>
     );
   }
 

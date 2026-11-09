@@ -12,6 +12,7 @@ import { siteHeaderTop } from "@/lib/announcements";
 import { resetUser, trackSignOut } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { webhooksOrigin } from "@/lib/site";
 
 interface NavLink {
   href: string;
@@ -34,8 +35,10 @@ const MAILHOOKS_LINKS: NavLink[] = [
   { href: "/parse", label: "Layout gallery" },
   { href: "/integrations", label: "Integrations" },
   { href: "/pricing", label: "Pricing" },
-  // The guides page stays on this site and points into the docs on webhooks.cc.
+  // The guides page stays on this site and points into the docs on webhooks.cc;
+  // Docs goes straight there and says so.
   { href: "/guides", label: "Guides" },
+  { href: `${webhooksOrigin()}/docs/email-capture`, label: "Docs", external: true },
 ];
 
 interface SiteHeaderProps {
@@ -222,9 +225,25 @@ export function SiteHeader({
         </div>
 
         {open && (
+          // Behind the header's own background (its stacking context is above the
+          // page), so it dims and blocks the page but never the menu button.
+          <div
+            aria-hidden
+            className="md:hidden fixed inset-0 -z-10 bg-foreground/20"
+            onClick={() => setOpen(false)}
+          />
+        )}
+        {open && (
           <nav
             id="site-menu"
             aria-label="Site"
+            // Tabbing out of the menu closes it, so focus never lands on the page hidden under it.
+            onBlur={(event) => {
+              const next = event.relatedTarget as Node | null;
+              if (next && !event.currentTarget.contains(next) && next !== toggleRef.current) {
+                setOpen(false);
+              }
+            }}
             className="md:hidden absolute top-full left-0 right-0 border-t-strong border-line bg-background clean:bg-card shadow-raised"
           >
             <div className="px-4 py-4 flex flex-col gap-3">
@@ -233,6 +252,7 @@ export function SiteHeader({
                 <Link
                   key={link.href}
                   href={link.href}
+                  aria-current={isActive(navPath, link.href) ? "page" : undefined}
                   className="text-foreground font-medium text-lg"
                   onClick={() => setOpen(false)}
                 >
@@ -240,7 +260,10 @@ export function SiteHeader({
                   {link.external && (
                     <>
                       <ArrowUpRight aria-hidden className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5" />
-                      <span className="sr-only"> (on webhooks.cc)</span>
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {" "}
+                        on webhooks.cc
+                      </span>
                     </>
                   )}
                 </Link>

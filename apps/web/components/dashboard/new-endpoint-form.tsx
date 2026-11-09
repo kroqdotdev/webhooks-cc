@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -11,6 +12,7 @@ import { trackEndpointCreated } from "@/lib/analytics";
 import { createDashboardEndpoint, emitDashboardEndpointsChanged } from "@/lib/dashboard-api";
 import { useSite } from "@/components/providers/site-provider";
 import { twoSites, type EndpointSite } from "@/lib/site";
+import { cn } from "@/lib/utils";
 import { EndpointSiteField } from "./endpoint-site-field";
 
 /** The line under "Create endpoint", in the dialog and on /endpoints/new alike. */
@@ -40,6 +42,9 @@ export function NewEndpointForm({
   const [name, setName] = useState("");
   // Listed on the site it is made on unless chosen otherwise.
   const [listedOn, setListedOn] = useState<EndpointSite>(site.key);
+  // Where it is listed is rarely changed, so it waits behind "More options".
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreId = useId();
   const [mockStatus, setMockStatus] = useState("200");
   const [mockBody, setMockBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,7 +97,26 @@ export function NewEndpointForm({
         />
       </div>
 
-      {twoSites() && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
+      {twoSites() && (
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setMoreOpen((current) => !current)}
+            aria-expanded={moreOpen}
+            aria-controls={moreId}
+            className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            More options
+            <ChevronDown
+              className={cn("h-3.5 w-3.5 transition-transform", moreOpen && "rotate-180")}
+              aria-hidden
+            />
+          </button>
+          <div id={moreId} hidden={!moreOpen}>
+            <EndpointSiteField value={listedOn} onChange={setListedOn} />
+          </div>
+        </div>
+      )}
 
       {/* A mail-first endpoint rarely answers HTTP; the same setting stays under Settings. */}
       {!mailFirst && (

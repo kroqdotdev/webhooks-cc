@@ -1479,6 +1479,11 @@ export default function DashboardPage() {
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
           ) : undefined
         }
+        onExport={
+          hasRequests
+            ? (format) => (format === "json" ? handleExportJson() : handleExportCsv())
+            : undefined
+        }
       />
 
       {/* Settings, the split pane, or the empty state */}
@@ -1824,7 +1829,7 @@ function WaitingForRequests({
   const mailFirst = useSite().key === "mailhooks" && !!emailAddress;
   const internalTestHeader = "X-Webhooks-CC-Test-Send";
   const { session } = useAuth();
-  const [copied, setCopied] = useState<"curl" | "email" | null>(null);
+  const [copied, setCopied] = useState<"curl" | "email" | "url" | null>(null);
   const [sending, setSending] = useState<"http" | "email" | null>(null);
   const [sent, setSent] = useState<"http" | "email" | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -1843,7 +1848,7 @@ function WaitingForRequests({
   -H "Content-Type: application/json" \\
   -d '{"test": true}'`;
 
-  const handleCopy = async (text: string, key: "curl" | "email") => {
+  const handleCopy = async (text: string, key: "curl" | "email" | "url") => {
     if (!(await copyToClipboard(text))) return;
     setCopied(key);
     if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
@@ -1889,6 +1894,108 @@ function WaitingForRequests({
     }
   };
 
+  const emailButton = (primary: boolean) => (
+    <button
+      onClick={() => void handleSendEmail()}
+      disabled={sending === "email"}
+      className={cn(
+        primary ? "ui-btn-primary" : "ui-btn-outline",
+        "self-start flex items-center gap-2 py-2! px-4! text-sm"
+      )}
+    >
+      <Mail className="h-4 w-4" />
+      {sending === "email" ? "Sending..." : sent === "email" ? "Sent" : "Send test email"}
+    </button>
+  );
+
+  // mailhooks.cc: the address is the one card; HTTP and layouts are a line each below it.
+  if (mailFirst && emailAddress) {
+    return (
+      <div className="flex-1 overflow-y-auto flex p-6 md:p-8">
+        <div className="m-auto w-full max-w-2xl space-y-4">
+          <div className="flex items-center justify-center gap-3 pb-2">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
+            </span>
+            <p className="font-bold caps">Waiting for the first email</p>
+          </div>
+
+          <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
+            <div className="flex items-center justify-between">
+              <p className="font-bold">Send an email</p>
+              <button
+                onClick={() => void handleCopy(emailAddress, "email")}
+                aria-label={copied === "email" ? "Copied the address" : "Copy the address"}
+                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
+              >
+                <CopyLabel done={copied === "email"} />
+              </button>
+            </div>
+            <pre className="ui-code text-sm whitespace-pre-wrap break-words text-left shadow-none!">
+              {emailAddress}
+            </pre>
+            <p className="text-xs text-muted-foreground">
+              Forward a sender&apos;s emails here with a rule in your mailbox, or give this address
+              to the sender.
+            </p>
+            {emailButton(true)}
+            {emailError && <p className="text-xs text-destructive-ink">{emailError}</p>}
+
+            <div className="border-t border-line/20 pt-3 space-y-2">
+              <p className="text-sm font-semibold">Forward a mailbox here</p>
+              <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                <div>
+                  <p className="font-medium">Gmail</p>
+                  <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
+                    <li>Settings, See all settings, Forwarding and POP/IMAP.</li>
+                    <li>Add a forwarding address: this endpoint&apos;s address.</li>
+                    <li>Gmail&apos;s confirmation code lands here; enter it there.</li>
+                  </ol>
+                </div>
+                <div>
+                  <p className="font-medium">Outlook</p>
+                  <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
+                    <li>Settings, Mail, Rules, Add new rule.</li>
+                    <li>Pick the sender, then Forward to this address.</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground text-center">
+            <span className="min-w-0 break-all">
+              Also accepts HTTP at <span className="font-mono text-foreground">{url}</span>
+            </span>
+            <button
+              onClick={() => void handleCopy(url, "url")}
+              aria-label={copied === "url" ? "Copied the HTTP URL" : "Copy the HTTP URL"}
+              className="hover:text-foreground cursor-pointer inline-flex items-center gap-1 transition-colors"
+            >
+              <CopyLabel done={copied === "url"} />
+            </button>
+          </p>
+          <p className="text-xs text-muted-foreground text-center">
+            Then read the emails:{" "}
+            <Link href="/parse" className="underline font-medium text-foreground">
+              start from a ready-made layout
+            </Link>
+            , or{" "}
+            <button
+              type="button"
+              onClick={onOpenLayouts}
+              className="underline font-medium text-foreground cursor-pointer"
+            >
+              write your own
+            </button>
+            .
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     // m-auto centres the content while it fits and lets it scroll from the top when it
     // does not (centring with the flex container's own alignment cuts off the top).
@@ -1899,9 +2006,7 @@ function WaitingForRequests({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
           </span>
-          <p className="font-bold caps">
-            {mailFirst ? "Waiting for the first email" : "Waiting for the first request"}
-          </p>
+          <p className="font-bold caps">Waiting for the first request</p>
         </div>
 
         {/* minmax(0, 1fr): a long curl line scrolls inside its card instead of widening the page. */}
@@ -1927,11 +2032,7 @@ function WaitingForRequests({
             <button
               onClick={() => void handleSendTest()}
               disabled={sending === "http"}
-              // On mailhooks.cc the email card holds the one primary action.
-              className={cn(
-                mailFirst ? "ui-btn-outline" : "ui-btn-primary",
-                "self-start flex items-center gap-2 py-2! px-4! text-sm"
-              )}
+              className="ui-btn-primary self-start flex items-center gap-2 py-2! px-4! text-sm"
             >
               <Send className="h-4 w-4" />
               {sending === "http" ? "Sending..." : sent === "http" ? "Sent" : "Send test request"}
@@ -1939,12 +2040,7 @@ function WaitingForRequests({
           </div>
 
           {emailAddress && (
-            <div
-              className={cn(
-                "ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0",
-                mailFirst && "order-first"
-              )}
-            >
+            <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
               <div className="flex items-center justify-between">
                 <p className="font-bold">Send an email</p>
                 <button
@@ -1958,72 +2054,25 @@ function WaitingForRequests({
                 {emailAddress}
               </pre>
               <p className="text-xs text-muted-foreground">
-                {mailFirst
-                  ? "Forward a sender's emails here with a rule in your mailbox, or give this address to the sender."
-                  : "Put this address in your app's signup form, or send to it from any mail client."}
+                Put this address in your app&apos;s signup form, or send to it from any mail client.
               </p>
-              <button
-                onClick={() => void handleSendEmail()}
-                disabled={sending === "email"}
-                className={cn(
-                  mailFirst ? "ui-btn-primary" : "ui-btn-outline",
-                  "self-start flex items-center gap-2 py-2! px-4! text-sm"
-                )}
-              >
-                <Mail className="h-4 w-4" />
-                {sending === "email" ? "Sending..." : sent === "email" ? "Sent" : "Send test email"}
-              </button>
+              {emailButton(false)}
               {emailError && <p className="text-xs text-destructive-ink">{emailError}</p>}
             </div>
           )}
         </div>
 
-        {mailFirst ? (
-          <div className="ui-card ui-card-static p-5! space-y-3">
-            <p className="font-bold">Forward a mailbox here</p>
-            <div className="grid gap-3 sm:grid-cols-2 text-sm">
-              <div>
-                <p className="font-semibold">Gmail</p>
-                <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
-                  <li>Settings, See all settings, Forwarding and POP/IMAP.</li>
-                  <li>Add a forwarding address: this endpoint&apos;s address.</li>
-                  <li>Gmail&apos;s confirmation code lands here; enter it there.</li>
-                </ol>
-              </div>
-              <div>
-                <p className="font-semibold">Outlook</p>
-                <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
-                  <li>Settings, Mail, Rules, Add new rule.</li>
-                  <li>Pick the sender, then Forward to this address.</li>
-                </ol>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Link href="/parse" className="ui-btn-outline py-1.5! px-3! text-xs">
-                Start from a ready-made layout
-              </Link>
-              <button
-                type="button"
-                onClick={onOpenLayouts}
-                className="text-xs text-muted-foreground underline hover:text-foreground cursor-pointer"
-              >
-                or write your own layout
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground text-center">
-            Need signed provider templates? Use{" "}
-            <span className="font-bold text-foreground">Send</span> above, or read the{" "}
-            <Link
-              href="/docs/endpoints/test-webhooks"
-              className="underline font-bold text-foreground"
-            >
-              test webhook docs
-            </Link>
-            .
-          </p>
-        )}
+        <p className="text-xs text-muted-foreground text-center">
+          Need signed provider templates? Use{" "}
+          <span className="font-bold text-foreground">Send</span> above, or read the{" "}
+          <Link
+            href="/docs/endpoints/test-webhooks"
+            className="underline font-bold text-foreground"
+          >
+            test webhook docs
+          </Link>
+          .
+        </p>
       </div>
     </div>
   );

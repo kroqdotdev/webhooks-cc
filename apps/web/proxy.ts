@@ -8,6 +8,7 @@ import {
 } from "@/lib/markdown-negotiation";
 import {
   SITE_HEADER,
+  existsOnWebhooks,
   mailhooksOrigin,
   servedOnMailhooks,
   siteForHost,
@@ -127,8 +128,14 @@ export async function proxy(request: NextRequest) {
   // The header is ours to set, like the markdown marker below.
   request.headers.delete(SITE_HEADER);
   const site = siteForHost(request.headers.get("host") ?? request.nextUrl.host);
+  // A path mailhooks.cc does not serve goes to webhooks.cc only when webhooks.cc
+  // has it; anything else is mailhooks.cc's own 404 (app/mailhooks/not-found.tsx).
+  let missingOnMailhooks = false;
   if (site === "mailhooks" && !servedOnMailhooks(pathname)) {
-    return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 307);
+    if (existsOnWebhooks(pathname)) {
+      return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 307);
+    }
+    missingOnMailhooks = true;
   }
   if (site === "webhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
     const mail = mailhooksOrigin();
@@ -157,7 +164,11 @@ export async function proxy(request: NextRequest) {
 
   let response: NextResponse;
   const isRead = request.method === "GET" || request.method === "HEAD";
-  if (isRead && negotiatesMarkdown(pathname, request.headers.get("accept"))) {
+  if (missingOnMailhooks) {
+    response = NextResponse.rewrite(new URL("/mailhooks/missing", request.url), {
+      request: { headers: request.headers },
+    });
+  } else if (isRead && negotiatesMarkdown(pathname, request.headers.get("accept"))) {
     const headers = new Headers(request.headers);
     headers.set(MARKDOWN_TWIN_HEADER, "1");
     response = NextResponse.next({ request: { headers } });

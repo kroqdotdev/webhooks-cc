@@ -281,7 +281,11 @@ export default function MailhooksHome() {
               <div className="w-full sm:w-auto sm:min-w-80">
                 <PricingCTA emailAlign="start" />
               </div>
-              <Link href="/pricing" className="ui-btn-primary inline-flex items-center gap-2">
+              {/* A text link, so the sign-up button stays the one filled action here. */}
+              <Link
+                href="/pricing"
+                className="sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+              >
                 Compare plans
                 <ArrowRight className="h-4 w-4" />
               </Link>

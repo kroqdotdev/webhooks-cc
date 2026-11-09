@@ -385,14 +385,14 @@ function Pick({
     >
       <span
         className={cn(
-          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[140px]",
+          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[140px] max-sm:max-w-[72px] max-sm:px-2",
           exactLabel ? "font-mono" : "caps"
         )}
         title={label}
       >
         <span className="truncate">{label}</span>
       </span>
-      <span className="flex items-center px-2.5 min-w-0">{children}</span>
+      <span className="flex items-center px-2.5 max-sm:px-2 min-w-0">{children}</span>
       {actions}
     </span>
   );
@@ -432,6 +432,25 @@ function PickButton({
   );
 }
 
+/**
+ * A link as a chip shows it: its host and the start of its path
+ * ("acme.example/confirm/abc..."), since the rest is a token nobody reads.
+ */
+function shortLink(url: string): string {
+  let host: string;
+  let rest: string;
+  try {
+    const parsed = new URL(url);
+    host = parsed.host;
+    rest = `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url.replace(/^https?:\/\//, "");
+  }
+  if (rest === "/") rest = "";
+  const keep = 16;
+  return rest.length > keep ? `${host}${rest.slice(0, keep)}...` : `${host}${rest}`;
+}
+
 function FoundInEmail({
   code,
   link,
@@ -448,68 +467,73 @@ function FoundInEmail({
 }) {
   if (!code && !link && fields.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-line/20 text-sm">
-      <span className="text-muted-foreground mr-1">Found in this email</span>
-      {fields.map(([name, value]) => (
-        <Pick
-          key={name}
-          label={name}
-          exactLabel
-          actions={
-            <PickButton label={`Copy ${name}`} onClick={() => onCopy(value, `field:${name}`)}>
-              {copied === `field:${name}` ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </PickButton>
-          }
-        >
-          <span className="font-mono text-[13px] truncate max-w-[260px]" title={value}>
-            {value}
-          </span>
-        </Pick>
-      ))}
-      {code && (
-        <Pick
-          label="Code"
-          actions={
-            <PickButton label="Copy code" onClick={() => onCopy(code, "code")}>
-              {copied === "code" ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </PickButton>
-          }
-        >
-          <span className="font-mono text-base font-semibold tracking-[0.12em]">{code}</span>
-        </Pick>
-      )}
-      {link && (
-        <Pick
-          wide
-          label={link.label ?? "Link"}
-          actions={
-            <>
-              <PickButton label="Copy link" onClick={() => onCopy(link.url, "link")}>
-                {copied === "link" ? (
+    // At phone width: the label in one column, the chips stacked in the other.
+    <div className="mt-3 pt-3 border-t border-line/20 text-sm max-sm:grid max-sm:grid-cols-[auto_minmax(0,1fr)] max-sm:gap-x-3 max-sm:items-start sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+      <span className="text-muted-foreground mr-1 max-sm:mr-0 max-sm:w-16 max-sm:text-xs max-sm:leading-snug max-sm:pt-1">
+        Found in this email
+      </span>
+      <div className="flex flex-col items-start gap-2 min-w-0 sm:contents">
+        {fields.map(([name, value]) => (
+          <Pick
+            key={name}
+            label={name}
+            exactLabel
+            actions={
+              <PickButton label={`Copy ${name}`} onClick={() => onCopy(value, `field:${name}`)}>
+                {copied === `field:${name}` ? (
                   <Check className="h-3.5 w-3.5" />
                 ) : (
                   <Copy className="h-3.5 w-3.5" />
                 )}
               </PickButton>
-              <PickButton label="Open link in a new tab" href={link.url}>
-                <ExternalLink className="h-3.5 w-3.5" />
+            }
+          >
+            <span className="font-mono text-[13px] truncate max-w-[260px]" title={value}>
+              {value}
+            </span>
+          </Pick>
+        ))}
+        {code && (
+          <Pick
+            label="Code"
+            actions={
+              <PickButton label="Copy code" onClick={() => onCopy(code, "code")}>
+                {copied === "code" ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
               </PickButton>
-            </>
-          }
-        >
-          <span className="font-mono text-[13px] truncate">
-            {link.url.replace(/^https?:\/\//, "")}
-          </span>
-        </Pick>
-      )}
+            }
+          >
+            <span className="font-mono text-base font-semibold tracking-[0.12em]">{code}</span>
+          </Pick>
+        )}
+        {link && (
+          <Pick
+            wide
+            label={link.label ?? "Link"}
+            actions={
+              <>
+                <PickButton label="Copy link" onClick={() => onCopy(link.url, "link")}>
+                  {copied === "link" ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </PickButton>
+                <PickButton label="Open link in a new tab" href={link.url}>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </PickButton>
+              </>
+            }
+          >
+            <span className="font-mono text-[13px] truncate" title={link.url}>
+              {shortLink(link.url)}
+            </span>
+          </Pick>
+        )}
+      </div>
     </div>
   );
 }
