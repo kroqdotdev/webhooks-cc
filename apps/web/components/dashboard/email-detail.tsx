@@ -10,6 +10,7 @@ import {
   ImageOff,
   Info,
   Paperclip,
+  RotateCcw,
   Send,
   X,
 } from "lucide-react";
@@ -26,7 +27,12 @@ import {
   type ParsedEmail,
 } from "@webhooks-cc/sdk/email";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { fetchAttachment, fetchEmailDetails, fetchRawEmail } from "@/lib/dashboard-api";
+import {
+  fetchAttachment,
+  fetchEmailDetails,
+  fetchRawEmail,
+  replayRequest,
+} from "@/lib/dashboard-api";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { highlightBody } from "@/lib/highlight";
 import {
@@ -58,10 +64,20 @@ interface EmailDetailProps {
   /** The endpoint's "Show codes and links found in emails" setting. */
   showExtracts: boolean;
   /** For the JSON (it names the endpoint), the forwarding line above it and the Deliveries tab. */
-  endpoint: DeliveryEndpoint & { name?: string | null; emailFields?: unknown[] };
-  /** The owner can redeliver and is pointed at the Forwarding settings. */
+  endpoint: DeliveryEndpoint & {
+    name?: string | null;
+    emailFields?: unknown[];
+    layouts?: unknown[];
+    destinationCount?: number;
+  };
+  /**
+   * The owner can redeliver, read the email again (replay) and is pointed at
+   * the Forwarding settings.
+   */
   canManageForwarding: boolean;
   onOpenForwarding?: () => void;
+  /** Opens Settings at Layouts (the owner's). */
+  onOpenLayouts?: () => void;
   note?: string | null;
   onNoteChange?: (note: string) => void;
   /** The tab to open with, for a delivery opened from the log. */
@@ -964,6 +980,7 @@ export function EmailDetail({
   endpoint,
   canManageForwarding,
   onOpenForwarding,
+  onOpenLayouts,
   note,
   onNoteChange,
   initialTab,
@@ -977,7 +994,14 @@ export function EmailDetail({
   const tabIds = useId();
   const [tab, setTab] = useState<EmailTab>(
     initialTab ??
-      (request.parsed ? "parsed" : mailFirst ? (email?.html ? "preview" : "text") : "json")
+      // Opens on Parsed when a layout read it; mail no layout reads opens as usual.
+      (request.parsed?.status === "matched"
+        ? "parsed"
+        : mailFirst
+          ? email?.html
+            ? "preview"
+            : "text"
+          : "json")
   );
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
@@ -1099,6 +1123,61 @@ export function EmailDetail({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [raw, requestId, stored, storedRawHere, loadStoredRaw]);
 
+  // Read again: the email is parsed with the current layouts (when there are
+  // any) and sent to its destinations again (lib/replay). Its status shows
+  // beside the button that asked for it.
+  const hasLayouts = (endpoint.layouts?.length ?? 0) > 0;
+  const hasDestinations = endpoint.forwardEnabled === true || (endpoint.destinationCount ?? 0) > 0;
+  const [replay, setReplay] = useState<{
+    id: string;
+    from: "header" | "parsed";
+    state:
+      { kind: "sending" } | { kind: "done"; queued: boolean } | { kind: "error"; message: string };
+  } | null>(null);
+  const replayHere = replay?.id === requestId ? replay : null;
+  const readAgain = useCallback(
+    async (from: "header" | "parsed") => {
+      if (replayHere?.state.kind === "sending") return;
+      if (!accessToken) {
+        setReplay({
+          id: requestId,
+          from,
+          state: { kind: "error", message: "Sign in again to read it again." },
+        });
+        return;
+      }
+      setReplay({ id: requestId, from, state: { kind: "sending" } });
+      try {
+        const queued = await replayRequest(accessToken, requestId);
+        setReplay({ id: requestId, from, state: { kind: "done", queued } });
+      } catch (error) {
+        setReplay({
+          id: requestId,
+          from,
+          state: {
+            kind: "error",
+            message: error instanceof Error ? error.message : "It could not be queued.",
+          },
+        });
+      }
+    },
+    [accessToken, requestId, replayHere?.state.kind]
+  );
+  const replayMessage = (from: "header" | "parsed") => {
+    if (replayHere?.from !== from) return null;
+    const { state } = replayHere;
+    if (state.kind === "sending") return "Queueing...";
+    if (state.kind === "error") return state.message;
+    if (!state.queued) return "Nothing was queued: no layout or destination takes this email.";
+    if (!hasLayouts) return "Queued. It is sent to destinations again.";
+    return hasDestinations
+      ? "Queued. It is read with the current layouts and sent to destinations again."
+      : "Queued. It is read with the current layouts.";
+  };
+  const replayFailed = replayHere?.state.kind === "error";
+  // Offered when reading it again would do something: a layout or a destination.
+  const canReadAgain = canManageForwarding && (hasLayouts || hasDestinations);
+
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const downloadAttachment = useCallback(
     async (index: number) => {
@@ -1144,7 +1223,8 @@ export function EmailDetail({
   const attachments = email.attachments;
   const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
-    ...(request.parsed ? [{ id: "parsed" as const, label: "Parsed" }] : []),
+    // Also without a result while the endpoint has layouts, to say why and offer a fix.
+    ...(request.parsed || parsed || hasLayouts ? [{ id: "parsed" as const, label: "Parsed" }] : []),
     ...(mailFirst ? [] : [{ id: "json" as const, label: "JSON" }]),
     ...(email.html ? [{ id: "preview" as const, label: "Preview" }] : []),
     { id: "text", label: "Text" },
@@ -1181,17 +1261,44 @@ export function EmailDetail({
           >
             {email.subject || "(no subject)"}
           </h2>
-          {rawAvailable && (
-            <button
-              type="button"
-              onClick={downloadEml}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
-            >
-              <FileDown className="h-3 w-3" />
-              Download .eml
-            </button>
+          {(canReadAgain || rawAvailable) && (
+            <div className="flex flex-wrap justify-end gap-2 shrink-0">
+              {canReadAgain && (
+                <button
+                  type="button"
+                  onClick={() => void readAgain("header")}
+                  disabled={replayHere?.state.kind === "sending"}
+                  className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+                >
+                  <RotateCcw className="h-3 w-3" aria-hidden />
+                  Read again
+                </button>
+              )}
+              {rawAvailable && (
+                <button
+                  type="button"
+                  onClick={downloadEml}
+                  className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+                >
+                  <FileDown className="h-3 w-3" aria-hidden />
+                  Download .eml
+                </button>
+              )}
+            </div>
           )}
         </div>
+        {canReadAgain && (
+          <p
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "text-xs empty:hidden mt-1.5",
+              replayFailed ? "text-destructive-ink" : "text-muted-foreground"
+            )}
+          >
+            {replayMessage("header")}
+          </p>
+        )}
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
           <dt className="text-muted-foreground">From</dt>
           <dd className="min-w-0">
@@ -1350,7 +1457,7 @@ export function EmailDetail({
         className="flex-1 overflow-auto p-4 md:p-5"
       >
         {activeTab === "parsed" &&
-          (parsed ? (
+          (parsed && (parsed.status === "matched" || !hasLayouts) ? (
             <>
               {parsed.partial && (
                 <p className="text-xs text-muted-foreground mb-2">
@@ -1359,8 +1466,51 @@ export function EmailDetail({
               )}
               <ParsedResult parsed={parsed} />
             </>
-          ) : (
+          ) : !parsed && request.parsed ? (
             <p className="text-sm text-muted-foreground">Loading the parsed result...</p>
+          ) : (
+            <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
+              <h3 className="text-sm font-semibold">Not read by a layout yet</h3>
+              <p className="text-sm text-muted-foreground">
+                {canManageForwarding
+                  ? "This email arrived before the current layouts, or none of them applies to it. Read it again to try the current layouts, or open Layouts to adjust one."
+                  : "This email arrived before the current layouts, or none of them applies to it."}
+              </p>
+              {canManageForwarding && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void readAgain("parsed")}
+                    disabled={replayHere?.state.kind === "sending"}
+                    className="ui-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="h-3 w-3" aria-hidden />
+                    Read again
+                  </button>
+                  {onOpenLayouts && (
+                    <button
+                      type="button"
+                      onClick={onOpenLayouts}
+                      className="ui-btn-outline py-1.5! px-3! text-xs"
+                    >
+                      Open Layouts
+                    </button>
+                  )}
+                </div>
+              )}
+              {canManageForwarding && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={cn(
+                    "text-xs empty:hidden",
+                    replayFailed ? "text-destructive-ink" : "text-muted-foreground"
+                  )}
+                >
+                  {replayMessage("parsed")}
+                </p>
+              )}
+            </section>
           ))}
 
         {activeTab === "json" && json && (

@@ -48,11 +48,19 @@ function teamStatus(team: Team): { tone: "warning" | "danger"; label: string } |
   return null;
 }
 
-function NewTeamDialog({ onCreated }: { onCreated: (teamId: string | null) => Promise<void> }) {
+function NewTeamDialog({
+  onCreated,
+  open,
+  setOpen,
+}: {
+  onCreated: (teamId: string | null) => Promise<void>;
+  /** Held by the page, so the empty state's button opens the same dialog. */
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
   const { session } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +71,7 @@ function NewTeamDialog({ onCreated }: { onCreated: (teamId: string | null) => Pr
       setOpen(true);
       router.replace("/teams", { scroll: false });
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, setOpen]);
 
   const handleCreate = async () => {
     const trimmed = name.trim();
@@ -208,12 +216,15 @@ function TeamsContent() {
     }
   };
 
+  const [creatingTeam, setCreatingTeam] = useState(false);
   const header = (
     <SettingsPageHeader
       title="Teams"
       description={`Share endpoints with the people you work with, from 2 seats. A Teams seat is $${TEAM_SEAT_PRICE_USD} a month and adds 100,000 requests to the team's shared pool; a Team Business seat is $${TEAM_BUSINESS_SEAT_PRICE_USD} a month with Business's limits per seat.`}
       actions={
         <NewTeamDialog
+          open={creatingTeam}
+          setOpen={setCreatingTeam}
           onCreated={async (teamId) => {
             await refresh();
             if (teamId) router.push(`/teams/${teamId}`);
@@ -314,8 +325,10 @@ function TeamsContent() {
           <Panel
             id="no-teams"
             title="You're not in a team yet"
-            description={`Create a team to share endpoints with teammates, from 2 seats. Teams are $${TEAM_SEAT_PRICE_USD} a seat each month, and every seat adds 100,000 requests to the team's shared pool. Team Business is $${TEAM_BUSINESS_SEAT_PRICE_USD} a seat each month, with Business's limits per seat.`}
-          />
+            description="Teams share endpoints and a pooled quota. Start one and invite people by email."
+          >
+            <Button onClick={() => setCreatingTeam(true)}>Create a team</Button>
+          </Panel>
         ) : (
           <Panel id="your-teams" title="Your teams" flush>
             <ul>

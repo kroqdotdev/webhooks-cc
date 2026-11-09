@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Plus, Sparkles, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { layoutIssues } from "@webhooks-cc/sdk";
 import {
   MAX_LAYOUTS,
@@ -24,10 +33,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { useSite } from "@/components/providers/site-provider";
 import {
   fetchAiAssists,
   fetchDashboardRequests,
   previewLayouts,
+  replayEndpoint,
   sendTestEmail,
   type DashboardEndpoint,
   type LayoutsPreview,
@@ -36,6 +47,7 @@ import { AiAssistPanel } from "./ai-assist-panel";
 import { ConditionList } from "./condition-list";
 import { EmailFieldsEditor } from "./email-fields-editor";
 import { SaveFooter, Section, Segmented, SwitchRow, useSave } from "./settings-primitives";
+import { stableStringify } from "@/lib/stable-json";
 
 /**
  * Layouts: how this endpoint reads the emails of each sender or kind. The
@@ -147,6 +159,27 @@ function templateOf(layout: Layout, addedFrom: Record<string, string>): LayoutTe
 type SampleSend =
   { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string } | null;
 
+type ReplayState =
+  | { kind: "sending" }
+  | { kind: "done"; requests: number; queued: number }
+  | { kind: "error"; message: string }
+  | null;
+
+/** How far back "Read the last 7 days of email again" reaches. */
+const REPLAY_DAYS = 7;
+const REPLAY_LIMIT = 500;
+
+function replayStatus(state: ReplayState): string | null {
+  if (!state || state.kind === "sending") return state ? "Queueing..." : null;
+  if (state.kind === "error") return state.message;
+  if (state.requests === 0) return `No email from the last ${REPLAY_DAYS} days to read again.`;
+  const queued = `${state.queued} email${state.queued === 1 ? "" : "s"} queued to be read again.`;
+  // The route takes the oldest emails in the range first, up to its limit.
+  return state.requests >= REPLAY_LIMIT
+    ? `${queued} That is the oldest ${REPLAY_LIMIT}, the most one go takes.`
+    : queued;
+}
+
 /** "Send the Shopify sample email": the template's sample, delivered to this endpoint. */
 function SampleEmailButton({
   template,
@@ -176,6 +209,7 @@ function SampleEmailButton({
 }
 
 function SampleSendStatus({ state }: { state: SampleSend }) {
+  const list = useSite().key === "mailhooks" ? "Inbox" : "Requests";
   return (
     <span
       role="status"
@@ -188,7 +222,7 @@ function SampleSendStatus({ state }: { state: SampleSend }) {
       {state?.kind === "sending"
         ? "Sending..."
         : state?.kind === "sent"
-          ? "Sent. It shows up in Requests and here in a moment."
+          ? `Sent. It shows up in ${list} and here in a moment.`
           : state?.kind === "error"
             ? state.message
             : null}
@@ -575,7 +609,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const cap = endpoint.layoutsCap ?? 2;
-  const initialKey = JSON.stringify(endpoint.layouts ?? []);
+  const initialKey = stableStringify(endpoint.layouts ?? []);
   const [layouts, setLayouts] = useState<Layout[]>(() => JSON.parse(initialKey) as Layout[]);
   const [open, setOpen] = useState<number | null>(null);
   const [triedSave, setTriedSave] = useState(false);
@@ -590,6 +624,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   // The template each layout added here came from, by layout id (this session only).
   const [addedFrom, setAddedFrom] = useState<Record<string, string>>({});
   const [sampleSend, setSampleSend] = useState<SampleSend>(null);
+  // After a save: the endpoint's recent emails, read again with the saved layouts.
+  const [replay, setReplay] = useState<ReplayState>(null);
   // Bumped when an email was sent from here, so the email list and the previews read again.
   const [reloadKey, setReloadKey] = useState(0);
   const sentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -637,7 +673,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     );
   }, [initialKey]);
 
-  const draftKey = JSON.stringify(layouts);
+  const draftKey = stableStringify(layouts);
   // An assist is spent on a draft only while the plan would use another layout.
   const draftCap = Math.min(cap, MAX_LAYOUTS);
   const dirty = draftKey !== initialKey;
@@ -762,6 +798,46 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     openLayout.enabled !== false &&
     rowsFound(openLayout)?.kind === "unmatched";
 
+  // The Tried on row offers a sample only while no layout is open (an open
+  // layout's notice offers its own): the first used layout from a sender's
+  // template that does not read the email tried.
+  const idleTemplate =
+    open === null
+      ? (layouts
+          .map((layout, index) => ({ layout, index }))
+          .filter(
+            ({ layout, index }) =>
+              index < cap && layout.enabled !== false && rowsFound(layout)?.kind === "unmatched"
+          )
+          .map(({ layout }) => templateFor(layout))
+          .find((template): template is LayoutTemplate => template !== null) ?? null)
+      : null;
+
+  const readRecentAgain = async () => {
+    if (replay?.kind === "sending") return;
+    if (!accessToken) {
+      setReplay({ kind: "error", message: "Sign in again to read the emails again." });
+      return;
+    }
+    setReplay({ kind: "sending" });
+    try {
+      const result = await replayEndpoint(accessToken, endpoint.slug, {
+        since: Date.now() - REPLAY_DAYS * 24 * 60 * 60 * 1000,
+        kind: "email",
+      });
+      setReplay({ kind: "done", requests: result.requests, queued: result.queued });
+    } catch (replayError) {
+      setReplay({
+        kind: "error",
+        message:
+          replayError instanceof Error ? replayError.message : "The emails could not be queued.",
+      });
+    }
+  };
+  // Offered once saved layouts are in place, until the next edit.
+  const offerReplay = saved && !dirty && layouts.length > 0;
+  const replayNoteId = `layouts-replay-note-${endpoint.slug}`;
+
   const move = (index: number, by: -1 | 1) => {
     const next = [...layouts];
     const [item] = next.splice(index, 1);
@@ -776,26 +852,62 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       title="Layouts"
       description={`How this endpoint reads each sender's emails. The first layout whose conditions hold picks the fields, the line items and whether attachments are parsed. Your plan uses ${cap} layout${cap === 1 ? "" : "s"} per endpoint.`}
       footer={
-        <SaveFooter
-          dirty={dirty}
-          saving={saving}
-          error={error}
-          saved={saved}
-          hint="Layouts changed. Replay earlier emails to read them again."
-          onReset={() => {
-            setLayouts(JSON.parse(initialKey) as Layout[]);
-            setTriedSave(false);
-            setError(null);
-            setSaved(false);
-          }}
-          onSave={() => {
-            setTriedSave(true);
-            void save({ layouts }, () => {
-              const [problem] = layoutIssues(layouts);
-              if (problem) throw new Error(`Check the layouts: ${problem}.`);
-            });
-          }}
-        />
+        <>
+          <SaveFooter
+            dirty={dirty}
+            saving={saving}
+            error={error}
+            saved={saved}
+            hint="Layouts changed. Once saved, earlier emails can be read again with them."
+            onReset={() => {
+              setLayouts(JSON.parse(initialKey) as Layout[]);
+              setTriedSave(false);
+              setError(null);
+              setSaved(false);
+            }}
+            onSave={() => {
+              setTriedSave(true);
+              setReplay(null);
+              void save({ layouts }, () => {
+                const [problem] = layoutIssues(layouts);
+                if (problem) throw new Error(`Check the layouts: ${problem}.`);
+              });
+            }}
+          />
+          {offerReplay && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 basis-full">
+              {replay?.kind !== "done" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void readRecentAgain()}
+                    disabled={replay?.kind === "sending"}
+                    aria-describedby={replayNoteId}
+                    className="ui-btn-outline py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="h-3 w-3" aria-hidden />
+                    Read the last {REPLAY_DAYS} days of email again
+                  </button>
+                  <span id={replayNoteId} className="text-xs text-muted-foreground">
+                    {(endpoint.destinationCount ?? 0) > 0
+                      ? "They are parsed with the saved layouts and sent to your destinations again."
+                      : "They are parsed with the saved layouts."}
+                  </span>
+                </>
+              )}
+              <span
+                role="status"
+                aria-live="polite"
+                className={cn(
+                  "text-xs empty:hidden",
+                  replay?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
+                )}
+              >
+                {replayStatus(replay)}
+              </span>
+            </div>
+          )}
+        </>
       }
     >
       {layouts.length > 0 && (
@@ -1164,10 +1276,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   </option>
                 ))}
               </select>
-              {/* The layout notice above says the same with the send status. */}
-              {offerSample && openTemplate && (
+              {/* An open layout's notice offers its own, so the button shows once. */}
+              {idleTemplate && (
                 <SampleEmailButton
-                  template={openTemplate}
+                  template={idleTemplate}
                   state={sampleSend}
                   onSend={sendSample}
                   status={false}
@@ -1179,7 +1291,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           )}
           {preview.request ? (
             <>
-              {sampleSend?.kind === "sent" && <SampleSendStatus state={sampleSend} />}
+              {/* The status of a send from the Tried on row; an open layout's notice has its own. */}
+              {(sampleSend?.kind === "sent" || (open === null && sampleSend)) && (
+                <SampleSendStatus state={sampleSend} />
+              )}
               {preview.parsed ? <ParsedResult parsed={preview.parsed} /> : null}
             </>
           ) : (

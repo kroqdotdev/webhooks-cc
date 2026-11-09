@@ -25,6 +25,7 @@ import { trackUpgradeCompleted } from "@/lib/analytics";
 import { planEntitlements } from "@/lib/entitlements";
 import { cn } from "@/lib/utils";
 import { longDate } from "@/components/settings/format";
+import { useSite } from "@/components/providers/site-provider";
 
 function ResetCountdown({ periodEnd }: { periodEnd: string }) {
   const [text, setText] = useState("");
@@ -163,6 +164,9 @@ export default function PlanPage() {
     live: true,
   });
   const { teams } = useSettingsData();
+  // mailhooks.cc counts the same quota in the words of mail first.
+  const mailFirst = useSite().key === "mailhooks";
+  const counted = mailFirst ? "emails and webhooks" : "requests";
   // A paid plan without a subscription may be a staff account's (migration
   // 00087); ask only then, so other accounts never make the request.
   const staff = useStaff(
@@ -235,10 +239,28 @@ export default function PlanPage() {
 
         <Panel
           id="usage"
-          title={isFree ? "Requests today" : "Requests this period"}
-          description="HTTP requests and emails both count. Requests to endpoints shared with an active team count against that team instead."
+          title={
+            mailFirst
+              ? isFree
+                ? "Emails and webhooks today"
+                : "Emails and webhooks this period"
+              : isFree
+                ? "Requests today"
+                : "Requests this period"
+          }
+          description={
+            mailFirst
+              ? "Emails and HTTP requests both count. Those to endpoints shared with an active team count against that team instead."
+              : "HTTP requests and emails both count. Requests to endpoints shared with an active team count against that team instead."
+          }
         >
-          <QuotaMeter used={used} limit={allowance} emails={emails} caption={caption} />
+          <QuotaMeter
+            used={used}
+            limit={allowance}
+            emails={emails}
+            caption={caption}
+            label={counted}
+          />
           {profile.block_requests > 0 && (
             <p className="mt-2 text-xs text-muted-foreground">
               Includes {profile.block_requests.toLocaleString()} from monthly blocks.
@@ -360,7 +382,7 @@ export default function PlanPage() {
                     />
                     <p className="text-xs text-muted-foreground tabular-nums">
                       {team.requestsUsed.toLocaleString()} of {team.requestLimit.toLocaleString()}{" "}
-                      requests
+                      {counted}
                     </p>
                   </div>
                 </li>

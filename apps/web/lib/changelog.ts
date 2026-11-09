@@ -60,6 +60,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "On phones the dashboard folds its actions into one menu, so requests start higher, and the site menu dims the page and closes when focus leaves it",
       "Settings show save controls only for sections with changes, adding a destination confirms where captures go, the Raw tab can be copied, and the Send dialog labels every field",
       "Outline buttons have visible edges in the clean style, focus rings on tabs are no longer cut off, and mailhooks.cc has its own 404 page and a Docs link",
+      "Saved layouts, fields, alerts and responses no longer look unsaved after a save",
+      "mailhooks.cc: read earlier emails again after changing layouts, a Read again button on each email, a Parsed tab that explains an unread email, Inbox wording, and Email first in the keyboard order",
+      "The selected option in toggles and tabs is marked with a visible underline, wide toggles stack on phones, tablets show one full address with a toggle, and a Sign up free button is in every header",
+      "Clearer destination URL errors with focus kept on the form, sign-in errors next to the password field, a wider settings column whose links land on the right section, and a Create a team button",
     ],
   },
   {

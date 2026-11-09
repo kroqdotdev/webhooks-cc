@@ -490,41 +490,35 @@ function LandingDashboardInner() {
       return (
         <DashboardFrame>
           <div className="relative flex-1 flex">
-            {/* Shown to people who have not interacted yet; an automated browser
-                (webdriver) gets the card alone. */}
-            {humanSignal !== "automated" && (
-              <>
-                {/* A faint picture of the dashboard this button opens, so the first screen
+            {/* A faint picture of the dashboard this button opens, so the first screen
                 is not an empty frame. Decorative only. */}
-                <div
-                  aria-hidden
-                  className="absolute inset-0 flex opacity-40 pointer-events-none select-none"
-                >
-                  <div className="w-full md:w-96 shrink-0 md:border-r-strong md:border-line p-3 space-y-2">
-                    {/* One readable example row says what the frame will hold. */}
-                    <div className="flex items-center gap-2 font-mono text-xs">
-                      <span className="px-1.5 py-0.5 font-bold rounded-sm bg-method-post/15 text-method-post">
-                        POST
-                      </span>
-                      <span className="flex-1 truncate">/webhooks/stripe</span>
-                      <span className="text-muted-foreground">JSON · 1.2 KB</span>
-                    </div>
-                    {[0, 1, 2, 3].map((row) => (
-                      <div key={row} className="flex items-center gap-2">
-                        <div className="bg-muted rounded-sm h-5 w-12" />
-                        <div className="bg-muted rounded-sm h-4 flex-1" />
-                        <div className="bg-muted rounded-sm h-4 w-14" />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="hidden md:block flex-1 p-4 space-y-3">
-                    <div className="bg-muted rounded-sm h-5 w-1/2" />
-                    <div className="bg-muted rounded-sm h-4 w-1/3" />
-                    <div className="bg-muted rounded-sm h-40 w-full" />
-                  </div>
+            <div
+              aria-hidden
+              className="absolute inset-0 flex opacity-40 pointer-events-none select-none"
+            >
+              <div className="w-full md:w-96 shrink-0 md:border-r-strong md:border-line p-3 space-y-2">
+                {/* One readable example row says what the frame will hold. */}
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <span className="px-1.5 py-0.5 font-bold rounded-sm bg-method-post/15 text-method-post">
+                    POST
+                  </span>
+                  <span className="flex-1 truncate">/webhooks/stripe</span>
+                  <span className="text-muted-foreground">JSON · 1.2 KB</span>
                 </div>
-              </>
-            )}
+                {[0, 1, 2, 3].map((row) => (
+                  <div key={row} className="flex items-center gap-2">
+                    <div className="bg-muted rounded-sm h-5 w-12" />
+                    <div className="bg-muted rounded-sm h-4 flex-1" />
+                    <div className="bg-muted rounded-sm h-4 w-14" />
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block flex-1 p-4 space-y-3">
+                <div className="bg-muted rounded-sm h-5 w-1/2" />
+                <div className="bg-muted rounded-sm h-4 w-1/3" />
+                <div className="bg-muted rounded-sm h-40 w-full" />
+              </div>
+            </div>
             <div className="relative m-auto ui-card ui-card-static max-w-sm p-6! text-center space-y-4">
               <p className="text-sm text-muted-foreground">
                 {humanSignal === "automated"

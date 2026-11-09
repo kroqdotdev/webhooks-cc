@@ -219,6 +219,7 @@ function PresetPicker({
             type="button"
             onClick={() => onPick(preset.id)}
             disabled={unavailable}
+            data-destination-preset=""
             className={cn(
               "text-left border-strong border-line rounded-md p-3 bg-card transition-colors motion-reduce:transition-none space-y-1",
               unavailable ? "opacity-60 cursor-not-allowed" : "hover:bg-muted/60 cursor-pointer"
@@ -261,6 +262,28 @@ export function DestinationsSection({
   const [notice, setNotice] = useState<{ id: string; text: string; added: boolean } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (noticeTimer.current && clearTimeout(noticeTimer.current)), []);
+
+  // Picking a preset (or opening the picker) unmounts the button that had
+  // focus. Focus moves on to what replaced it rather than falling to the page:
+  // the new editor's first field ("Send to" for most), or the first preset.
+  const addingRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!adding) return;
+    const box = addingRef.current;
+    if (!box) return;
+    const field = box.querySelector<HTMLElement>(
+      "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])"
+    );
+    const target = field ?? box.querySelector<HTMLElement>("[data-new-destination-title]");
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: "nearest" });
+  }, [adding]);
+  useEffect(() => {
+    if (!picking) return;
+    sectionRef.current
+      ?.querySelector<HTMLButtonElement>("[data-destination-preset]:not([disabled])")
+      ?.focus({ preventScroll: true });
+  }, [picking]);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -512,8 +535,12 @@ export function DestinationsSection({
       )}
 
       {adding && (
-        <div className="border-strong border-line rounded-md p-3 bg-card space-y-3">
-          <p className="text-sm font-semibold">
+        <div ref={addingRef} className="border-strong border-line rounded-md p-3 bg-card space-y-3">
+          <p
+            data-new-destination-title
+            tabIndex={-1}
+            className="text-sm font-semibold outline-none"
+          >
             New destination: {PRESETS.find((p) => p.id === adding)?.label}
           </p>
           <DestinationEditor

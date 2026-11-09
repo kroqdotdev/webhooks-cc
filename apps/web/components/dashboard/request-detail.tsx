@@ -224,6 +224,22 @@ export function RequestDetail({
   );
   const bodyView = bodyViews.includes(bodyViewChoice) ? bodyViewChoice : "formatted";
 
+  // On a phone the tab strip scrolls; keep the active tab in view (clear of the
+  // fade) without moving the page itself, which scrollIntoView could do.
+  const tablistRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = tablistRef.current;
+    const active = list?.querySelector<HTMLElement>(`#request-tab-${tab}`);
+    if (!list || !active || list.scrollWidth <= list.clientWidth) return;
+    const listBox = list.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    const fade = 32;
+    if (box.left < listBox.left) list.scrollLeft += box.left - listBox.left;
+    else if (box.right > listBox.right - fade) {
+      list.scrollLeft += Math.min(box.right - listBox.right + fade, box.left - listBox.left);
+    }
+  }, [tab]);
+
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Summary bar */}
@@ -290,46 +306,52 @@ export function RequestDetail({
       {/* Note bar */}
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
-      {/* Tabs */}
-      <div
-        role="tablist"
-        aria-label="Request sections"
-        className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]"
-      >
-        {tabs.map((t, index) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            id={`request-tab-${t}`}
-            aria-selected={tab === t}
-            aria-controls="request-tabpanel"
-            tabIndex={tab === t ? 0 : -1}
-            onClick={() => {
-              if (tab === t) return;
-              setTab(t);
-              trackRequestDetailTabChanged(t);
-            }}
-            onKeyDown={(event) => {
-              // Arrow keys move between tabs, as in any tab list.
-              const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-              if (!step) return;
-              event.preventDefault();
-              const next = tabs[(index + step + tabs.length) % tabs.length];
-              setTab(next);
-              trackRequestDetailTabChanged(next);
-              event.currentTarget.parentElement
-                ?.querySelector<HTMLButtonElement>(`#request-tab-${next}`)
-                ?.focus();
-            }}
-            className={cn(
-              "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line last:border-r-0 cursor-pointer transition-colors",
-              tab === t ? "bg-selected text-selected-foreground" : "bg-background hover:bg-muted"
-            )}
-          >
-            {t}
-          </button>
-        ))}
+      {/* Tabs. On phones the strip scrolls, and a fade on the right says there is more. */}
+      <div className="relative shrink-0 border-b-strong border-line after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-8 after:bg-linear-to-l after:from-background after:to-transparent md:after:hidden">
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label="Request sections"
+          className="flex overflow-x-auto [scrollbar-width:none]"
+        >
+          {tabs.map((t, index) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              id={`request-tab-${t}`}
+              aria-selected={tab === t}
+              aria-controls="request-tabpanel"
+              tabIndex={tab === t ? 0 : -1}
+              onClick={() => {
+                if (tab === t) return;
+                setTab(t);
+                trackRequestDetailTabChanged(t);
+              }}
+              onKeyDown={(event) => {
+                // Arrow keys move between tabs, as in any tab list.
+                const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                if (!step) return;
+                event.preventDefault();
+                const next = tabs[(index + step + tabs.length) % tabs.length];
+                setTab(next);
+                trackRequestDetailTabChanged(next);
+                event.currentTarget.parentElement
+                  ?.querySelector<HTMLButtonElement>(`#request-tab-${next}`)
+                  ?.focus();
+              }}
+              className={cn(
+                "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line last:border-r-0 cursor-pointer transition-colors",
+                // Clean's tint alone is too faint, so the active tab also gets a primary underline.
+                tab === t
+                  ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                  : "bg-background hover:bg-muted"
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tab content */}
@@ -357,7 +379,7 @@ export function RequestDetail({
                         "px-2 py-0.5 max-md:py-1.5 text-[11px] font-bold caps cursor-pointer transition-colors",
                         i > 0 && "border-l-strong border-line",
                         bodyView === view
-                          ? "bg-selected text-selected-foreground"
+                          ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                           : "hover:bg-muted"
                       )}
                     >

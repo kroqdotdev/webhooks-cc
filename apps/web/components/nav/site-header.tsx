@@ -19,6 +19,8 @@ interface NavLink {
   label: string;
   /** On the other site: marked with an arrow and named for screen readers. */
   external?: boolean;
+  /** Left out of the desktop nav below lg, where the row runs out of room (the footer keeps it). */
+  wideOnly?: boolean;
 }
 
 const NAV_LINKS: NavLink[] = [
@@ -33,7 +35,7 @@ const NAV_LINKS: NavLink[] = [
 const MAILHOOKS_LINKS: NavLink[] = [
   // One name for the catalogue everywhere: the dashboard section is Layouts too.
   { href: "/parse", label: "Layout gallery" },
-  { href: "/integrations", label: "Integrations" },
+  { href: "/integrations", label: "Integrations", wideOnly: true },
   { href: "/pricing", label: "Pricing" },
   // The guides page stays on this site and points into the docs on webhooks.cc;
   // Docs goes straight there and says so.
@@ -145,9 +147,15 @@ export function SiteHeader({
         </Link>
       )
     : !onAuthPage && (
-        <Link href="/login" className="ui-btn-outline py-1.5! px-3.5! text-sm">
-          Sign in
-        </Link>
+        // Sign-up is the goal, so it is always one click away, not only in the hero.
+        <span className="flex items-center gap-2">
+          <Link href="/login" className="ui-btn-outline py-1.5! px-3.5! text-sm">
+            Sign in
+          </Link>
+          <Link href="/login?mode=sign-up" className="ui-btn-primary py-1.5! px-3.5! text-sm">
+            Sign up free
+          </Link>
+        </span>
       );
 
   return (
@@ -185,7 +193,10 @@ export function SiteHeader({
           </div>
 
           {/* Desktop */}
-          <nav aria-label="Site" className="hidden md:flex items-center gap-5">
+          <nav
+            aria-label="Site"
+            className="hidden md:flex items-center gap-4 lg:gap-5 whitespace-nowrap shrink-0"
+          >
             {links.map((link) => (
               <Link
                 key={link.href}
@@ -194,6 +205,7 @@ export function SiteHeader({
                 className={cn(
                   // py-1 -my-1: a 24px hit area without moving the layout.
                   "text-sm font-medium py-1 -my-1 transition-colors hover:text-foreground",
+                  link.wideOnly && "max-lg:hidden",
                   isActive(navPath, link.href) ? "text-foreground" : "text-muted-foreground"
                 )}
               >
@@ -317,6 +329,13 @@ export function SiteHeader({
                       onClick={() => setOpen(false)}
                     >
                       Sign in
+                    </Link>
+                    <Link
+                      href="/login?mode=sign-up"
+                      className="ui-btn-primary inline-block text-sm ml-2"
+                      onClick={() => setOpen(false)}
+                    >
+                      Sign up free
                     </Link>
                   </div>
                 )

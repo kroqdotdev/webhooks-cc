@@ -79,7 +79,11 @@ export function Section({
         </div>
         {footer && (
           // A save footer with nothing to say marks itself idle and the bar folds away.
-          <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40 has-[[data-save-idle]]:hidden">
+          // data-section-footer lets the panel tell when this save is in view.
+          <div
+            data-section-footer={id}
+            className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40 has-[[data-save-idle]]:hidden"
+          >
             {footer}
           </div>
         )}
@@ -317,12 +321,16 @@ export function Segmented<T extends string>({
     const group = event.currentTarget.parentElement;
     group?.querySelectorAll<HTMLButtonElement>("[role=radio]")[next]?.focus();
   };
+  // More than three choices do not fit a phone's width side by side, and a
+  // scrolling strip hides some of them, so they stack there instead.
+  const stack = options.length > 3;
   return (
     <div
       role="radiogroup"
       aria-label={name}
       className={cn(
         "inline-flex max-w-full overflow-x-auto [scrollbar-width:none] rounded-sm border-strong border-line bg-background",
+        stack && "max-sm:flex max-sm:flex-col max-sm:w-full",
         className
       )}
     >
@@ -341,7 +349,16 @@ export function Segmented<T extends string>({
               "font-bold caps whitespace-nowrap cursor-pointer transition-colors motion-reduce:transition-none",
               size === "sm" ? "px-3 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]",
               index > 0 && "border-l-strong border-line",
-              checked ? "bg-selected text-selected-foreground" : "hover:bg-muted"
+              stack && "max-sm:text-left",
+              stack && index > 0 && "max-sm:border-l-0 max-sm:border-t-strong",
+              // Clean's selected tint alone is too faint (WCAG 1.4.11), so the
+              // choice also gets a primary underline, or a side bar when stacked.
+              checked
+                ? cn(
+                    "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]",
+                    stack && "max-sm:clean:shadow-[inset_3px_0_0_hsl(var(--primary))]"
+                  )
+                : "hover:bg-muted"
             )}
           >
             {option.label}

@@ -150,7 +150,7 @@ export default function MailhooksHome() {
                   href="/parse"
                   className="sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
                 >
-                  See ready-made layouts
+                  See the layout gallery
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>

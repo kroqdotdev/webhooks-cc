@@ -18,7 +18,7 @@ export default function SendersIndex() {
       <SiteHeader />
       <main className="py-16 px-4">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">Ready-made layouts</h1>
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">Layout gallery</h1>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl">
             Each one reads a common kind of email into fields and line items. Add it to an endpoint
             and adjust it on one of your own emails in the preview.

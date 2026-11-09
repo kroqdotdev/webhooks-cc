@@ -406,6 +406,39 @@ function DeliveryPreview({
 
 type EditorProps = Parameters<typeof GenericDestinationEditor>[0];
 
+const FULL_URL_MESSAGE = "Enter a full URL, such as https://api.example.com/hooks.";
+const PUBLIC_HOST_MESSAGE =
+  "Use an https URL on a public host. Localhost, private networks and IP addresses cannot be reached from here.";
+
+/**
+ * Whether a host is localhost or an IP address, which production refuses
+ * (lib/forwarding/target.ts). Development can allow them, so this only runs
+ * in a production build and the server has the last word everywhere else.
+ */
+function isLocalOrIpHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host.startsWith("[")) return true;
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+}
+
+/**
+ * The server's reasons for refusing a destination URL (checkForwardUrl), so
+ * one is shown under the field it is about rather than only in the footer.
+ */
+function urlFieldMessage(serverMessage: string): string | null {
+  if (serverMessage.startsWith("Use a public host name")) return PUBLIC_HOST_MESSAGE;
+  if (serverMessage.startsWith("Enter a full URL")) return FULL_URL_MESSAGE;
+  const urlReasons = [
+    "Enter the URL to send to",
+    "Put credentials in",
+    "The URL must use https",
+    "Port ",
+    "That is a webhooks.cc capture URL",
+  ];
+  return urlReasons.some((reason) => serverMessage.startsWith(reason)) ? serverMessage : null;
+}
+
 /** The editor for a destination: Google Sheets and file drops have their own, every other kind shares one. */
 export function DestinationEditor(props: EditorProps) {
   if (props.preset === "sheets" || props.destination?.format === "sheets") {
@@ -448,6 +481,8 @@ function GenericDestinationEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // A URL the server refused, with its reason, shown under the field until the URL changes.
+  const [refusedUrl, setRefusedUrl] = useState<{ url: string; message: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<
@@ -485,13 +520,19 @@ function GenericDestinationEditor({
   // Problems that keep it from saving.
   const urlError = (() => {
     if (!url) return "Enter the URL to send to.";
+    let parsed: URL;
     try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("scheme");
-      return null;
+      parsed = new URL(url);
     } catch {
-      return "Use an https URL on a public host. localhost, private networks and IP addresses cannot be reached from here.";
+      return FULL_URL_MESSAGE;
     }
+    // "localhost:3000" parses with "localhost:" as its scheme: not a full URL either.
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return FULL_URL_MESSAGE;
+    if (process.env.NODE_ENV === "production" && isLocalOrIpHost(parsed.hostname)) {
+      return PUBLIC_HOST_MESSAGE;
+    }
+    if (refusedUrl && refusedUrl.url === draft.url) return refusedUrl.message;
+    return null;
   })();
   const kindsError = !draft.http && !draft.email ? "Pick at least one." : null;
   const filterIssue = draft.conditions
@@ -560,7 +601,16 @@ function GenericDestinationEditor({
       setSubmitted(false);
       onSaved(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The destination could not be saved.");
+      const message = err instanceof Error ? err.message : "The destination could not be saved.";
+      const fieldMessage = urlFieldMessage(message);
+      if (fieldMessage) {
+        // The reason shows under Send to; the footer only points there.
+        setRefusedUrl({ url: draft.url, message: fieldMessage });
+        setSubmitted(true);
+        setError("Fix the field marked above.");
+      } else {
+        setError(message);
+      }
     } finally {
       setSaving(false);
     }
@@ -630,6 +680,7 @@ function GenericDestinationEditor({
     ...(draft.sentField.trim() ? [`sent time from ${draft.sentField.trim()}`] : []),
   ];
   const placeholders = forwardingPlaceholders(draft.http, draft.email, emailFieldNames);
+  const showUrlError = submitted || !!draft.url;
 
   return (
     <div className="space-y-5">
@@ -639,13 +690,23 @@ function GenericDestinationEditor({
           id={`${idPrefix}-url`}
           label="Send to"
           help="An https URL on a public host, or a Slack or Discord incoming webhook."
-          error={submitted || draft.url ? urlError : null}
+          error={showUrlError ? urlError : null}
+          errorId={`${idPrefix}-url-error`}
         >
           <input
             id={`${idPrefix}-url`}
             type="url"
             value={draft.url}
-            onChange={(e) => set({ url: e.target.value })}
+            aria-invalid={showUrlError && urlError ? true : undefined}
+            aria-describedby={showUrlError && urlError ? `${idPrefix}-url-error` : undefined}
+            onChange={(e) => {
+              set({ url: e.target.value });
+              // The footer's pointer to a refused URL goes with the URL it was about.
+              if (refusedUrl) {
+                setRefusedUrl(null);
+                setError(null);
+              }
+            }}
             placeholder="https://api.example.com/hooks/inbound"
             spellCheck={false}
             className="ui-input w-full text-sm font-mono py-2!"

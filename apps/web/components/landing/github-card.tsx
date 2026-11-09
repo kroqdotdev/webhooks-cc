@@ -14,6 +14,9 @@ interface GitHubCardProps {
   stars: number | null;
 }
 
+/** Below this the star count is left out: it would undersell an open repository. */
+const STARS_FLOOR = 100;
+
 export function GitHubCard({ stars }: GitHubCardProps) {
   return (
     <div className="ui-card ui-card-static shrink-0 lg:mt-12 flex flex-col items-center text-center w-full lg:w-auto">
@@ -21,14 +24,14 @@ export function GitHubCard({ stars }: GitHubCardProps) {
         <GitHubIcon className="h-7 w-7 text-background" />
       </div>
       <p className="text-xs font-bold caps text-muted-foreground mb-1">Open Source</p>
-      {stars !== null && (
+      {stars !== null && stars >= STARS_FLOOR && (
         <p className="text-2xl font-bold mb-1 flex items-center gap-1.5">
           <Star className="h-5 w-5 text-secondary fill-secondary clean:text-amber-500 clean:fill-amber-500" />
           {formatCount(stars)}
         </p>
       )}
       <p className="text-xs text-muted-foreground mb-4">
-        {stars !== null ? "stars on GitHub" : "\u00A0"}
+        {stars !== null && stars >= STARS_FLOOR ? "stars on GitHub" : "Read the code on GitHub"}
       </p>
       <div className="flex flex-col gap-3 w-full">
         <a

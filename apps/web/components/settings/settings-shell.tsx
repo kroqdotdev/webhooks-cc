@@ -149,11 +149,11 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
                 </li>
               </ul>
             </div>
-            <div className="space-y-1 px-3 text-xs text-muted-foreground">
-              <Link href="/support" className="block hover:text-foreground">
+            <div className="px-3 text-xs text-muted-foreground">
+              <Link href="/support" className="block py-1 hover:text-foreground">
                 Get support
               </Link>
-              <Link href="/changelog" className="block hover:text-foreground">
+              <Link href="/changelog" className="block py-1 hover:text-foreground">
                 Version {APP_VERSION}
               </Link>
             </div>

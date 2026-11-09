@@ -40,7 +40,8 @@ export function EmailPasswordForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A check the form makes itself names the field it is about: the message sits
-  // under that field and focus goes there. Server answers use the banner.
+  // under that field and focus goes there. Server answers use the alert under
+  // the fields.
   const [fieldError, setFieldError] = useState<{
     field: "email" | "password";
     message: string;
@@ -203,27 +204,6 @@ export function EmailPasswordForm({
       {/* Sign-up needs no heading of its own: the page's says "Create your ... account". */}
       {mode === "forgot" ? <h2 className="text-base font-semibold">Reset your password</h2> : null}
 
-      {error ? (
-        <div
-          ref={alertRef}
-          tabIndex={-1}
-          className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3"
-          role="alert"
-        >
-          <p>{error}</p>
-          {canResend ? (
-            <button
-              type="button"
-              onClick={() => void handleResend()}
-              disabled={busy}
-              className="mt-2 underline font-medium disabled:opacity-50"
-            >
-              Resend confirmation email
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
       {notice ? (
         <div
           className="text-sm rounded-lg border-strong border-line bg-background p-3"
@@ -245,7 +225,11 @@ export function EmailPasswordForm({
           aria-invalid={fieldError?.field === "email" || undefined}
           aria-describedby={fieldError?.field === "email" ? "auth-email-error" : undefined}
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            setError(null);
+            if (fieldError?.field === "email") setFieldError(null);
+          }}
           disabled={busy}
         />
         {fieldError?.field === "email" ? (
@@ -281,13 +265,19 @@ export function EmailPasswordForm({
             aria-describedby={
               [
                 fieldError?.field === "password" ? "auth-password-error" : null,
-                mode === "sign-up" ? "auth-password-hint" : null,
+                mode === "sign-up" && fieldError?.field !== "password"
+                  ? "auth-password-hint"
+                  : null,
               ]
                 .filter(Boolean)
                 .join(" ") || undefined
             }
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(null);
+              if (fieldError?.field === "password") setFieldError(null);
+            }}
             disabled={busy}
           />
           {fieldError?.field === "password" ? (
@@ -295,10 +285,32 @@ export function EmailPasswordForm({
               {fieldError.message}
             </p>
           ) : null}
-          {mode === "sign-up" ? (
+          {mode === "sign-up" && fieldError?.field !== "password" ? (
             <p id="auth-password-hint" className="text-xs text-muted-foreground">
               At least {PASSWORD_MIN_LENGTH} characters.
             </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Under the fields, next to what it is about, and gone once either changes. */}
+      {error ? (
+        <div
+          ref={alertRef}
+          tabIndex={-1}
+          className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3"
+          role="alert"
+        >
+          <p>{error}</p>
+          {canResend ? (
+            <button
+              type="button"
+              onClick={() => void handleResend()}
+              disabled={busy}
+              className="mt-2 underline font-medium disabled:opacity-50"
+            >
+              Resend confirmation email
+            </button>
           ) : null}
         </div>
       ) : null}

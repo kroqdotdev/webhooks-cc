@@ -12,7 +12,8 @@ export const metadata = createPageMetadata({
 export default function SupportPage() {
   return (
     <div className="min-h-screen">
-      <SiteHeader />
+      {/* The short header the account pages use, so support reads as part of the app. */}
+      <SiteHeader compact />
       <SupportHome />
     </div>
   );

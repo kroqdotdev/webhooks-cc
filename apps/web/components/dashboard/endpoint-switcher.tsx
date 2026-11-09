@@ -181,7 +181,10 @@ export function EndpointSwitcher() {
   return (
     <div className="ph-no-capture flex min-w-0 flex-1 items-center gap-1 md:flex-initial">
       <Select value={defaultSlug} onValueChange={handleChange}>
-        <SelectTrigger className="min-w-0 flex-1 md:w-[260px] md:flex-initial">
+        <SelectTrigger
+          aria-label="Endpoint"
+          className="min-w-0 flex-1 md:w-[260px] md:flex-initial"
+        >
           <SelectValue placeholder="Select endpoint" />
         </SelectTrigger>
         {/* Rendered in a portal, so it needs its own: endpoint names stay out of autocapture. */}

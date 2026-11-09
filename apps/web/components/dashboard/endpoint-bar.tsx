@@ -71,15 +71,18 @@ export function AddressPill({
   value,
   copyValue,
   className,
-  hideLabelOnPhone = false,
+  hideLabelBelowXl = false,
 }: {
   label: string;
   icon: React.ElementType;
   value: string;
   copyValue?: string;
   className?: string;
-  /** Drop the label on small phones, where something next to the pill already names it. */
-  hideLabelOnPhone?: boolean;
+  /**
+   * Drop the label below xl, where one pill shows at a time and the HTTP/Email
+   * toggle next to it already names it.
+   */
+  hideLabelBelowXl?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,7 +104,7 @@ export function AddressPill({
       <span
         className={cn(
           "flex items-center gap-1.5 px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold caps border-r-strong border-line shrink-0",
-          hideLabelOnPhone && "max-sm:hidden"
+          hideLabelBelowXl && "max-xl:hidden"
         )}
       >
         <Icon className="h-3 w-3 hidden sm:block" />
@@ -376,9 +379,9 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
       className={cn(
         !status
           ? "sr-only"
-          : // A toast at the foot of a phone's screen, a bubble under Send on a
-            // tablet, inline text next to it on wide screens.
-            "fixed inset-x-4 bottom-4 z-50 rounded-md border-strong border-line bg-card px-2.5 py-1.5 text-xs shadow-raised-sm md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-full md:z-20 md:mt-2 md:w-max md:max-w-[280px] lg:static lg:mt-0 lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+          : // A toast at the foot of the screen where Send sits in Actions
+            // (phones and tablets), inline text next to Send on wide screens.
+            "fixed inset-x-4 bottom-4 z-50 rounded-md border-strong border-line bg-card px-2.5 py-1.5 text-xs shadow-raised-sm md:inset-x-auto md:right-4 md:max-w-[320px] lg:static lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
         status?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
       )}
       title={status?.text}
@@ -389,8 +392,8 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
 }
 
 /**
- * A phone's one menu for what the bar's Setup, Send and Export buttons do on
- * wider screens, so the bar keeps to the address row and the tabs.
+ * A phone's and a tablet's one menu for what the bar's Setup, Send and Export
+ * buttons do on wider screens, so the bar keeps to the address row and the tabs.
  */
 function ActionsMenu({
   setup,
@@ -477,13 +480,36 @@ export function EndpointBar({
   const setup = useGettingStarted(hasRequests, setupState, mailFirst && canEmail);
   const send = useSendActions(slug);
   const openGuide = () => setGuideOpen(true);
-  // Phones show one address at a time, the site's own first; a toggle swaps it.
+  // Below xl one address shows at a time, the site's own first; a toggle swaps
+  // it. Two pills beside the actions would squeeze both until the values vanish.
   const [phoneAddress, setPhoneAddress] = useState<"http" | "email">(mailFirst ? "email" : "http");
+  // mailhooks.cc names its request list for what it mostly holds.
+  const inboxLabel = mailFirst && canEmail ? "Inbox" : "Requests";
   const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
   const shownUrl = url.replace(/^https?:\/\//, "");
   // Export folds into Actions on a phone when the page hands over the exports
   // themselves; otherwise its own menu sits beside Actions.
   const phoneExport = hasRequests ? onExport : undefined;
+  const pillClass = "min-w-0 flex-1 xl:flex-none xl:w-auto xl:max-w-[calc(50%-0.25rem)]";
+  const httpPill = (
+    <AddressPill
+      label="HTTP"
+      icon={Globe}
+      value={shownUrl}
+      copyValue={url}
+      hideLabelBelowXl
+      className={cn(pillClass, phoneAddress !== "http" && "max-xl:hidden")}
+    />
+  );
+  const emailPill = emailAddress ? (
+    <AddressPill
+      label="Email"
+      icon={Mail}
+      value={emailAddress}
+      hideLabelBelowXl
+      className={cn(pillClass, phoneAddress !== "email" && "max-xl:hidden")}
+    />
+  ) : null;
 
   return (
     <div className="border-b-strong border-line bg-card px-4 pt-3 max-md:pt-2 shrink-0">
@@ -498,56 +524,63 @@ export function EndpointBar({
             detailOpen && "max-md:hidden"
           )}
         >
-          <AddressPill
-            label="HTTP"
-            icon={Globe}
-            value={shownUrl}
-            copyValue={url}
-            hideLabelOnPhone={canEmail}
-            className={cn(
-              "min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]",
-              canEmail && phoneAddress !== "http" && "max-md:hidden"
-            )}
-          />
           {emailAddress ? (
             <>
-              <AddressPill
-                label="Email"
-                icon={Mail}
-                value={emailAddress}
-                hideLabelOnPhone
-                // mailhooks.cc leads with the address.
-                className={cn(
-                  "min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]",
-                  mailFirst && "order-first",
-                  phoneAddress !== "email" && "max-md:hidden"
-                )}
-              />
+              {/* In the DOM in the order they show, so Tab meets the site's own first. */}
+              {mailFirst ? (
+                <>
+                  {emailPill}
+                  {httpPill}
+                </>
+              ) : (
+                <>
+                  {httpPill}
+                  {emailPill}
+                </>
+              )}
               <Segmented
                 name="Address shown"
                 value={phoneAddress}
                 onChange={setPhoneAddress}
                 size="xs"
-                className="md:hidden shrink-0 order-last"
-                options={[
-                  { value: "http", label: "HTTP" },
-                  { value: "email", label: "Email" },
-                ]}
+                className="xl:hidden shrink-0"
+                // In the order the pills come in on wide screens, the site's own first.
+                options={
+                  mailFirst
+                    ? [
+                        { value: "email", label: "Email" },
+                        { value: "http", label: "HTTP" },
+                      ]
+                    : [
+                        { value: "http", label: "HTTP" },
+                        { value: "email", label: "Email" },
+                      ]
+                }
               />
             </>
           ) : (
-            <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">
-              <Lock className="h-3 w-3" />
-              Endpoints on an account also receive email
-            </span>
+            <>
+              <AddressPill
+                label="HTTP"
+                icon={Globe}
+                value={shownUrl}
+                copyValue={url}
+                className="min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]"
+              />
+              <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">
+                <Lock className="h-3 w-3" />
+                Endpoints on an account also receive email
+              </span>
+            </>
           )}
         </div>
-        {/* On a phone the group's box goes (its buttons move to Actions) and only
-            the send status stays, as a toast. */}
+        {/* Below lg the group's box goes (its buttons move to Actions, which
+            leaves a tablet's address its room) and only the send status stays, as
+            a toast. */}
         <div
           className={cn(
-            "relative order-2 md:order-3 ml-auto flex items-center gap-2",
-            detailOpen ? "max-md:hidden" : "max-md:contents"
+            "order-2 md:order-3 ml-auto flex items-center gap-2",
+            detailOpen ? "max-md:hidden" : "max-lg:contents"
           )}
         >
           <SendStatus status={send.status} />
@@ -556,15 +589,15 @@ export function EndpointBar({
             slug={slug}
             onOpenGuide={openGuide}
             onOpenSettings={onOpenSettings}
-            className="max-md:hidden"
+            className="max-lg:hidden"
           />
           <SendMenu
             send={send}
             canEmail={canEmail}
             mailFirst={mailFirst}
-            className="max-md:hidden"
+            className="max-lg:hidden"
           />
-          {exportMenu && <div className="max-md:hidden">{exportMenu}</div>}
+          {exportMenu && <div className="max-lg:hidden">{exportMenu}</div>}
         </div>
       </div>
       <nav className="flex items-center gap-1 mt-2 max-md:mt-1" aria-label="Endpoint">
@@ -579,7 +612,7 @@ export function EndpointBar({
               tab === entry ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {entry === "requests" ? "Requests" : "Settings"}
+            {entry === "requests" ? inboxLabel : "Settings"}
             {tab === entry && (
               // Classic's bottom line is already foreground, so the marker sits on top of it;
               // clean's line is light, so the marker covers it.
@@ -590,21 +623,22 @@ export function EndpointBar({
             )}
           </button>
         ))}
-        {!detailOpen && (
-          <div className="md:hidden ml-auto flex items-center gap-2">
-            {exportMenu && !phoneExport && exportMenu}
-            <ActionsMenu
-              setup={setup}
-              send={send}
-              slug={slug}
-              canEmail={canEmail}
-              mailFirst={mailFirst}
-              onOpenGuide={openGuide}
-              onOpenSettings={onOpenSettings}
-              onExport={phoneExport}
-            />
-          </div>
-        )}
+        {/* A phone with a request open keeps to the tabs; a tablet keeps its Actions. */}
+        <div
+          className={cn("lg:hidden ml-auto flex items-center gap-2", detailOpen && "max-md:hidden")}
+        >
+          {exportMenu && !phoneExport && exportMenu}
+          <ActionsMenu
+            setup={setup}
+            send={send}
+            slug={slug}
+            canEmail={canEmail}
+            mailFirst={mailFirst}
+            onOpenGuide={openGuide}
+            onOpenSettings={onOpenSettings}
+            onExport={phoneExport}
+          />
+        </div>
       </nav>
       <SendWebhookDialog slug={slug} open={send.requestOpen} onOpenChange={send.setRequestOpen} />
       <DashboardGuideDialog open={guideOpen} onOpenChange={setGuideOpen} />

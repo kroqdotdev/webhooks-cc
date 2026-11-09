@@ -25,6 +25,7 @@ import {
 } from "./response-editor";
 import { SaveFooter, Section, Switch, useSave } from "./settings-primitives";
 import { statusLine } from "./status-code-picker";
+import { stableStringify } from "@/lib/stable-json";
 
 /**
  * What senders get back. The rules and the default response are one list
@@ -334,7 +335,7 @@ function PreviewPanel({
 export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   // Keyed on values, not object identity: every endpoints refetch (another
   // section saving) hands back new objects, which must not discard edits here.
-  const savedJson = JSON.stringify({
+  const savedJson = stableStringify({
     mock: endpoint.mockResponse ?? null,
     rules: endpoint.responseRules ?? [],
   });
@@ -345,7 +346,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
     };
     const fallback = toDraft(saved.mock ?? null);
     const rules = saved.rules.map(toRuleDraft);
-    return { fallback, rules, settings: JSON.stringify(settingsOf(fallback, rules)) };
+    return { fallback, rules, settings: stableStringify(settingsOf(fallback, rules)) };
   }, [savedJson]);
 
   const [fallback, setFallback] = useState<ResponseDraft>(initial.fallback);
@@ -366,7 +367,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
   useEffect(reset, [reset]);
 
   const settings = settingsOf(fallback, rules);
-  const dirty = JSON.stringify(settings) !== initial.settings;
+  const dirty = stableStringify(settings) !== initial.settings;
 
   // Problems, per row, that keep the list from saving (and the preview from running).
   const ruleProblems = rules.map((rule) => [
@@ -446,9 +447,9 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
   const hint = (() => {
     const before = JSON.parse(initial.settings) as ReturnType<typeof settingsOf>;
     const rulesChanged =
-      JSON.stringify(before.responseRules) !== JSON.stringify(settings.responseRules);
+      stableStringify(before.responseRules) !== stableStringify(settings.responseRules);
     const fallbackChanged =
-      JSON.stringify(before.mockResponse) !== JSON.stringify(settings.mockResponse);
+      stableStringify(before.mockResponse) !== stableStringify(settings.mockResponse);
     if (rulesChanged && fallbackChanged) return "Rules and the default response changed.";
     if (rulesChanged) return "Rules changed.";
     return "Default response changed.";

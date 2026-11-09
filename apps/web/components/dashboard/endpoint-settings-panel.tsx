@@ -44,6 +44,7 @@ import {
   getWebProviderLabel,
   WEB_VERIFICATION_PROVIDER_OPTIONS,
 } from "@/lib/provider-catalog";
+import { stableStringify } from "@/lib/stable-json";
 
 export type { SettingsSection } from "./settings-primitives";
 
@@ -83,7 +84,7 @@ function ReceivingSection({
   const initialName = endpoint.name ?? "";
   const initialSite: EndpointSite = endpoint.site ?? "both";
   const initialExtracts = endpoint.showEmailExtracts !== false;
-  const initialFieldsKey = JSON.stringify(endpoint.emailFields ?? []);
+  const initialFieldsKey = stableStringify(endpoint.emailFields ?? []);
   const [name, setName] = useState(initialName);
   const [listedOn, setListedOn] = useState<EndpointSite>(initialSite);
   const [extracts, setExtracts] = useState(initialExtracts);
@@ -121,7 +122,7 @@ function ReceivingSection({
     );
   }, [initialName, initialSite, initialExtracts, initialFieldsKey]);
 
-  const fieldsChanged = JSON.stringify(fields) !== initialFieldsKey;
+  const fieldsChanged = stableStringify(fields) !== initialFieldsKey;
   const emailChanged = extracts !== initialExtracts || fieldsChanged;
   const siteChanged = listedOn !== initialSite;
   const dirty = name !== initialName || siteChanged || emailChanged;
@@ -755,29 +756,107 @@ export function EndpointSettingsPanel({
   );
   const dirty = useDirtySections();
 
+  // Opening at a section (?section=). Sections that load their data render
+  // later, and the ones above grow as they load, so the target is placed once
+  // it exists and kept at the top while the page settles, until the person
+  // scrolls themselves. The spy stays quiet meanwhile so the highlight holds.
   useEffect(() => {
-    if (focusSection) scrollToSection(focusSection, { smooth: false });
+    if (!focusSection) return;
+    const root = scroller.current;
+    const content = root?.firstElementChild;
+    if (!root || !content) return;
+    let focused = false;
+    let settled = false;
+    const place = () => {
+      if (settled) return;
+      const target = document.getElementById(`settings-${focusSection}`);
+      if (!target) return;
+      jumpedAt.current = Date.now();
+      setActive(focusSection);
+      target.scrollIntoView({ block: "start" });
+      if (!focused) {
+        focused = true;
+        document.getElementById(`settings-${focusSection}-title`)?.focus({ preventScroll: true });
+      }
+    };
+    const settle = () => {
+      settled = true;
+    };
+    place();
+    const resize = new ResizeObserver(place);
+    resize.observe(content);
+    const timer = setTimeout(settle, 3000);
+    const events = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    events.forEach((name) => root.addEventListener(name, settle, { passive: true }));
+    return () => {
+      clearTimeout(timer);
+      resize.disconnect();
+      events.forEach((name) => root.removeEventListener(name, settle));
+    };
   }, [focusSection]);
 
   // Scroll spy: a thin line a quarter of the way down the view; the section
   // crossing it is the active one. In the gap between two sections nothing
   // crosses it and the highlight stays where it was. The jump lock keeps a
   // clicked section highlighted while the smooth scroll passes others.
+  // Scrolled to the very end, the last sections may never reach that line,
+  // so the bottom of the scroll area makes the last one active.
   useEffect(() => {
     const root = scroller.current;
     if (!root) return;
+    const atBottom = () => root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
+    const lastSection = () => {
+      const all = root.querySelectorAll("[data-settings-section]");
+      return all[all.length - 1]?.getAttribute("data-settings-section") as SettingsSection | null;
+    };
     const observer = new IntersectionObserver(
       (entries) => {
         if (Date.now() - jumpedAt.current < 800) return;
         const crossing = entries.find((entry) => entry.isIntersecting);
-        const id = crossing?.target.getAttribute("data-settings-section") as SettingsSection | null;
+        const id = atBottom()
+          ? lastSection()
+          : (crossing?.target.getAttribute("data-settings-section") as SettingsSection | null);
         if (id) setActive(id);
       },
       { root, rootMargin: "-25% 0px -74% 0px", threshold: 0 }
     );
     root.querySelectorAll("[data-settings-section]").forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+    const onScroll = () => {
+      if (Date.now() - jumpedAt.current < 800 || !atBottom()) return;
+      const id = lastSection();
+      if (id) setActive(id);
+    };
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      root.removeEventListener("scroll", onScroll);
+    };
   }, [sections]);
+
+  // The sticky bar is for unsaved edits whose own Save is out of sight. While
+  // a dirty section's save footer is in view, the bar would only repeat it.
+  const [footersInView, setFootersInView] = useState<ReadonlySet<string>>(() => new Set());
+  const dirtyKey = dirty.map((section) => section.id).join(",");
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root || !dirtyKey) return;
+    const inView = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = entry.target.getAttribute("data-section-footer");
+          if (!id) continue;
+          if (entry.isIntersecting) inView.add(id);
+          else inView.delete(id);
+        }
+        setFootersInView(new Set(inView));
+      },
+      { root, threshold: 0.5 }
+    );
+    root.querySelectorAll("[data-section-footer]").forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [sections, dirtyKey]);
+  const showUnsavedBar = dirty.some((section) => !footersInView.has(section.id));
 
   return (
     <div className="flex-1 flex flex-col md:flex-row min-h-0">
@@ -807,7 +886,8 @@ export function EndpointSettingsPanel({
         ))}
       </nav>
       <div ref={scroller} className="flex-1 overflow-y-auto flex flex-col">
-        <div className="max-w-[780px] w-full p-4 md:p-6 space-y-6 flex-1">
+        {/* The room at the bottom lets the last sections scroll up to the spy line. */}
+        <div className="max-w-[920px] w-full p-4 md:p-6 pb-[45vh] md:pb-[45vh] space-y-6 flex-1">
           {/* The sections render in the nav's order, which the list above decides. */}
           {sections.map(({ id }) => {
             switch (id) {
@@ -848,13 +928,20 @@ export function EndpointSettingsPanel({
             }
           })}
         </div>
-        {dirty.length > 0 && (
-          // Sticks to the bottom of the scroll area while edits are unsaved.
-          <div
-            role="status"
-            className="sticky bottom-0 z-10 border-t-strong border-line bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
-          >
-            <div className="max-w-[780px] px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+        {/* Sticks to the bottom of the scroll area while edits are unsaved and
+            their Save is out of view. The live region stays mounted so the
+            bar's arrival is announced. */}
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            "sticky bottom-0 z-10",
+            showUnsavedBar &&
+              "border-t-strong border-line bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+          )}
+        >
+          {showUnsavedBar && (
+            <div className="max-w-[920px] px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
               <p className="text-sm flex-1 min-w-[180px]">
                 {dirty.length === 1
                   ? `Unsaved changes in ${dirty[0].title}`
@@ -869,8 +956,8 @@ export function EndpointSettingsPanel({
                 Review
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1145,6 +1145,7 @@ export default function DashboardPage() {
   }, []);
   const handleOpenSettings = useCallback(() => openSettingsAt("verification"), [openSettingsAt]);
   const handleOpenForwarding = useCallback(() => openSettingsAt("forwarding"), [openSettingsAt]);
+  const handleOpenLayouts = useCallback(() => openSettingsAt("layouts"), [openSettingsAt]);
   // From the delivery log: the request, with its Deliveries tab open. A request
   // the list has not loaded (older than a page) is fetched on its own.
   const handleOpenRequestDeliveries = useCallback(
@@ -1569,6 +1570,9 @@ export default function DashboardPage() {
                     endpoint={currentEndpoint}
                     canManageForwarding={currentEndpoint.forwardUrl !== undefined}
                     onOpenForwarding={handleOpenForwarding}
+                    onOpenLayouts={
+                      currentEndpoint.forwardUrl !== undefined ? handleOpenLayouts : undefined
+                    }
                     note={currentNote}
                     onNoteChange={handleNoteChange}
                     initialTab={activeTab === "deliveries" ? "deliveries" : undefined}
@@ -1614,6 +1618,9 @@ export default function DashboardPage() {
                         endpoint={currentEndpoint}
                         canManageForwarding={currentEndpoint.forwardUrl !== undefined}
                         onOpenForwarding={handleOpenForwarding}
+                        onOpenLayouts={
+                          currentEndpoint.forwardUrl !== undefined ? handleOpenLayouts : undefined
+                        }
                         note={currentNote}
                         onNoteChange={handleNoteChange}
                         initialTab={activeTab === "deliveries" ? "deliveries" : undefined}

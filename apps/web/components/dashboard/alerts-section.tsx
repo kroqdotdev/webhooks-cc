@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { AiAssistPanel } from "./ai-assist-panel";
 import { Field, SaveFooter, Section, SwitchRow } from "./settings-primitives";
+import { stableStringify } from "@/lib/stable-json";
 
 /** A field to repair and where it is defined: the endpoint's own fields (null), or a layout. */
 type FieldAt = { field: EmailField; layoutId: string | null };
@@ -256,7 +257,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     notifyEmail: draft.notifyEmail,
     notifyDestinationIds: draft.notifyDestinationIds,
   };
-  const dirty = loaded !== null && JSON.stringify(next) !== JSON.stringify(loaded);
+  const dirty = loaded !== null && stableStringify(next) !== stableStringify(loaded);
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);

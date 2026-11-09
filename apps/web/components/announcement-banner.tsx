@@ -21,13 +21,17 @@ function wasDismissed(id: string): boolean {
   }
 }
 
+/** The signed-in app's pages, where the announcement never shows. */
+export const IN_APP_PATH = /^\/(dashboard|account|teams|support)(\/|$)/;
+
 export function AnnouncementBanner() {
   const announcement = ANNOUNCEMENTS[0];
   const announcementId = announcement?.id;
   const pathname = usePathname();
   const [visible, setVisible] = useState(false);
 
-  const isDashboard = pathname.startsWith("/dashboard");
+  // Signed-in app pages carry no marketing banner (see lib/announcements.ts).
+  const isDashboard = IN_APP_PATH.test(pathname);
 
   useEffect(() => {
     // Client navigation into the dashboard keeps this component mounted, so

@@ -210,6 +210,13 @@ const FOOTER_PROVIDERS = [
   { href: "/webhooks", label: "All providers" },
 ];
 
+/**
+ * Counts shown under the hero only once they help: a small number reads as a
+ * weakness next to "the fastest way to test webhooks". Webhooks captured is
+ * large from early on, so it has no floor.
+ */
+const SOCIAL_PROOF_FLOOR = { users: 1000, endpoints: 1000 };
+
 export default async function Home() {
   const [stars, stats] = await Promise.all([getStarCount(), getSiteStats()]);
 
@@ -346,13 +353,13 @@ export default async function Home() {
 
           <StartFreeCTA size="lg" align="center" goCta={null} />
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-            {stats && stats.total_users > 0 ? (
+            {stats && stats.total_users >= SOCIAL_PROOF_FLOOR.users ? (
               <span className="font-semibold">
                 <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
                 developers
               </span>
             ) : null}
-            {stats && stats.total_endpoints > 0 ? (
+            {stats && stats.total_endpoints >= SOCIAL_PROOF_FLOOR.endpoints ? (
               <span className="font-semibold">
                 <span className="text-foreground">{stats.total_endpoints.toLocaleString()}</span>{" "}
                 endpoints created
