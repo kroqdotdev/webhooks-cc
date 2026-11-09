@@ -1637,7 +1637,9 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
           </span>
-          <p className="font-bold caps">Waiting for the first request</p>
+          <p className="font-bold caps">
+            {mailFirst ? "Waiting for the first email" : "Waiting for the first request"}
+          </p>
         </div>
 
         <div className={cn("grid gap-4", emailAddress && "md:grid-cols-2")}>
@@ -1705,13 +1707,26 @@ function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress
         </div>
 
         {mailFirst ? (
-          <p className="text-xs text-muted-foreground text-center">
-            Then teach the endpoint to read them under Settings &gt; Layouts, or start from a{" "}
-            <Link href="/parse" className="underline font-bold text-foreground">
-              ready-made layout
-            </Link>
-            .
-          </p>
+          <div className="space-y-4 text-center">
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>
+                <span className="font-bold text-foreground">Gmail:</span> Settings, Forwarding and
+                POP/IMAP, Add a forwarding address. Gmail&apos;s confirmation code lands here.
+              </p>
+              <p>
+                <span className="font-bold text-foreground">Outlook:</span> Settings, Mail, Rules,
+                Add new rule, Forward to this address.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Link href="/parse" className="ui-btn-outline py-1.5! px-3! text-xs">
+                Start from a ready-made layout
+              </Link>
+              <span className="text-xs text-muted-foreground">
+                or write your own under Settings &gt; Layouts
+              </span>
+            </div>
+          </div>
         ) : (
           <p className="text-xs text-muted-foreground text-center">
             Need signed provider templates? Use{" "}
@@ -1827,16 +1842,24 @@ function NoEndpointsHere({
         <div className="w-16 h-16 rounded-md border-strong border-line bg-muted flex items-center justify-center mx-auto mb-2">
           <Send className="h-8 w-8 text-muted-foreground" />
         </div>
-        <h2 className="text-xl font-bold caps">No endpoints on {site.name} yet</h2>
+        <h2 className="text-xl font-bold caps">
+          {site.key === "mailhooks"
+            ? "Start receiving email here"
+            : `Start capturing on ${site.name}`}
+        </h2>
         <p className="text-muted-foreground">
-          Your {elsewhere === 1 ? "endpoint is" : `${elsewhere} endpoints are`} listed on{" "}
-          {other.name}. An endpoint made here is listed here; change where one is listed under
-          Settings, Receiving.
+          Your {elsewhere === 1 ? "endpoint is" : `${elsewhere} endpoints are`} on {other.name}.
+          Create one here, or open {other.name}. You can list any endpoint on both sites under
+          Settings &gt; Receiving.
         </p>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex flex-wrap items-center justify-center gap-3">
           <button onClick={create} disabled={creating} className="ui-btn-primary">
-            {creating ? "Creating..." : `Create an endpoint on ${site.name}`}
+            {creating
+              ? "Creating..."
+              : site.key === "mailhooks"
+                ? "Create an email endpoint"
+                : `Create an endpoint on ${site.name}`}
           </button>
           <button
             type="button"

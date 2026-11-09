@@ -22,9 +22,11 @@ const NAV_LINKS = [
 
 // mailhooks.cc keeps its docs on webhooks.cc (one copy, one canonical URL).
 const MAILHOOKS_LINKS = [
-  { href: "/parse", label: "Senders" },
+  // One name for the catalogue everywhere: the dashboard section is Layouts too.
+  { href: "/parse", label: "Layouts" },
   { href: "/pricing", label: "Pricing" },
-  { href: `${webhooksOrigin()}/docs/layouts`, label: "Docs" },
+  // The arrow says the link leaves for webhooks.cc.
+  { href: `${webhooksOrigin()}/docs/layouts`, label: "Docs ↗" },
 ];
 
 interface SiteHeaderProps {
@@ -116,8 +118,12 @@ export function SiteHeader({ children, compact = false, top, notFound = false }:
     >
       <div
         className={cn(
-          "container mx-auto px-4 flex items-center justify-between gap-4",
-          compact ? "min-h-14 flex-wrap gap-y-2 py-2 md:h-14 md:flex-nowrap md:py-0" : "h-14"
+          // The app pages under a compact header run full width, so the header
+          // does too, keeping the wordmark on the same left edge as the app.
+          "px-4 flex items-center justify-between gap-4",
+          compact
+            ? "min-h-14 flex-wrap gap-y-2 py-2 md:h-14 md:flex-nowrap md:py-0"
+            : "container mx-auto h-14"
         )}
       >
         {/* In compact mode on phones this group dissolves (display: contents), so

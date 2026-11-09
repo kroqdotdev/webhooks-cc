@@ -208,26 +208,26 @@ export default function CompareBeeceptorPage() {
           See also:{" "}
           <Link
             href="/compare/webhook-site"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs Webhook.site
           </Link>
           {" · "}
           <Link
             href="/compare/requestbin"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs RequestBin
           </Link>
           {" · "}
           <Link
             href="/compare/ngrok"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs ngrok
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
             All comparisons
           </Link>
         </p>

@@ -36,6 +36,18 @@ describe("buildTestEmail", () => {
     expect(email.raw).toContain("https://webhooks.cc/docs/email-capture");
   });
 
+  it("names the site whose dashboard sent it", () => {
+    const fromMail = buildTestEmail({
+      to: "abc123@mailhooks.cc",
+      appUrl: "https://webhooks.cc/",
+      now,
+      siteName: "mailhooks.cc",
+    });
+    expect(fromMail.raw).toContain("From: mailhooks.cc <test@webhooks.cc>\r\n");
+    expect(fromMail.raw).toContain("Subject: Test email from mailhooks.cc\r\n");
+    expect(fromMail.raw).toContain("This is a test email from your mailhooks.cc dashboard.");
+  });
+
   it("is something the extraction finds a code and a link in", () => {
     const text = email.raw
       .split("Content-Type: text/plain; charset=utf-8\r\n\r\n")[1]

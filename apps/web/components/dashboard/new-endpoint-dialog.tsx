@@ -94,12 +94,12 @@ export function NewEndpointDialog() {
           className="ui-btn-primary py-1.5! px-3! text-xs flex shrink-0 items-center gap-1.5 whitespace-nowrap"
         >
           <Plus className="h-3.5 w-3.5" />
-          New Endpoint
+          New endpoint
         </button>
       </DialogTrigger>
       <DialogContent className="border-strong border-line shadow-raised">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Create Endpoint</DialogTitle>
+          <DialogTitle className="font-bold caps">Create endpoint</DialogTitle>
           <DialogDescription>Create a new webhook endpoint to capture requests.</DialogDescription>
         </DialogHeader>
 
@@ -131,7 +131,7 @@ export function NewEndpointDialog() {
 
             <div className="space-y-2">
               <Label htmlFor="ep-body" className="font-bold caps text-xs">
-                Response Body
+                Response body
               </Label>
               <Textarea
                 id="ep-body"
@@ -156,7 +156,7 @@ export function NewEndpointDialog() {
               disabled={isSubmitting || !session?.access_token}
               className="ui-btn-primary flex-1"
             >
-              {isSubmitting ? "Creating..." : "Create Endpoint"}
+              {isSubmitting ? "Creating..." : "Create endpoint"}
             </Button>
             <Button
               type="button"

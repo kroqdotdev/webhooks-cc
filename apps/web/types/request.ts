@@ -102,7 +102,8 @@ const METHOD_COLORS_MAP: Record<HttpMethod, string> = {
   POST: "bg-secondary text-secondary-foreground clean:bg-method-post/15 clean:text-method-post",
   PUT: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
   DELETE:
-    "bg-destructive text-destructive-foreground clean:bg-method-delete/15 clean:text-method-delete",
+    // Black on the classic red, like the other classic badges: white on it fails AA.
+    "bg-destructive text-black clean:bg-method-delete/15 clean:text-method-delete",
   PATCH: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
   HEAD: "bg-muted text-muted-foreground",
   OPTIONS: "bg-muted text-muted-foreground",
@@ -132,6 +133,18 @@ export function isEmailItem(item: { kind?: "http" | "email"; method: string }): 
 export const METHOD_COLORS: Record<string, string> = {
   ...METHOD_COLORS_MAP,
 };
+
+/** A request's full receive time for detail views, e.g. "Nov 9, 13:50:36". */
+export function formatFullTimestamp(timestamp: number): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
 
 export function formatTimestamp(timestamp: number): string {
   const d = new Date(timestamp);

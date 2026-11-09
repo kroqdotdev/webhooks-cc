@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,16 @@ function sectionHasPage(section: NavSection, pathname: string): boolean {
  * short enough to scan. A section the reader opens or closes by hand keeps
  * that state until they navigate; the next page starts tidy again.
  */
+const noSubscribe = () => () => {};
+/** Whether the search shortcut is Cmd (Apple devices) or Ctrl; the server renders Cmd. */
+function useIsApple(): boolean {
+  return useSyncExternalStore(
+    noSubscribe,
+    () => /Mac|iPhone|iPad/.test(navigator.platform),
+    () => true
+  );
+}
+
 function SidebarContent({
   onNavigate,
   onSearchClick,
@@ -29,6 +39,7 @@ function SidebarContent({
   onSearchClick?: () => void;
 }) {
   const pathname = usePathname();
+  const isApple = useIsApple();
   const [toggled, setToggled] = useState<{ path: string; open: Record<string, boolean> }>({
     path: pathname,
     open: {},
@@ -56,7 +67,7 @@ function SidebarContent({
         <Search className="h-4 w-4" />
         <span>Search</span>
         <kbd className="ml-auto text-xs rounded-sm border border-foreground/30 px-1.5 py-0.5 font-mono hidden sm:inline">
-          ⌘K
+          {isApple ? "⌘K" : "Ctrl K"}
         </kbd>
       </button>
 

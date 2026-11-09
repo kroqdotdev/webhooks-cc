@@ -63,6 +63,7 @@ body {
 
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-ink: hsl(var(--primary-ink));
 
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
@@ -114,6 +115,9 @@ body {
     --popover-foreground: 0 0% 0%;
     --primary: 162 100% 41%;
     --primary-foreground: 0 0% 0%;
+    /* The primary as text or a thin mark on the page: the mint fill fails AA as text
+       on a light background, so classic light darkens it; the other sets reuse --primary. */
+    --primary-ink: 162 100% 24%;
     --secondary: 52 100% 50%;
     --secondary-foreground: 0 0% 0%;
     --muted: 60 5% 90%;
@@ -124,7 +128,7 @@ body {
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 0%;
     --input: 0 0% 0%;
-    --ring: 162 100% 41%;
+    --ring: 162 100% 28%;
     --radius: 0;
     --shadow-color: 0 0% 0%;
 
@@ -151,9 +155,9 @@ body {
     --scrollbar-thumb: hsl(var(--foreground) / 0.55);
     --scrollbar-thumb-hover: hsl(var(--foreground));
 
-    --syntax-key: var(--primary);
-    --syntax-string: 45 100% 35%;
-    --syntax-number: var(--accent);
+    --syntax-key: 162 100% 21%;
+    --syntax-string: 35 100% 27%;
+    --syntax-number: 280 70% 42%;
     --syntax-punctuation: var(--muted-foreground);
 
     /* HTTP method accents (badges use them only in clean; timeline dots in both) */
@@ -184,6 +188,7 @@ body {
     --popover-foreground: 60 9% 98%;
     --primary: 162 100% 45%;
     --primary-foreground: 0 0% 0%;
+    --primary-ink: var(--primary);
     --secondary: 52 100% 50%;
     --secondary-foreground: 0 0% 0%;
     --muted: 240 5% 20%;
@@ -205,7 +210,9 @@ body {
     );
     --scrollbar-thumb: hsl(var(--foreground) / 0.4);
     --scrollbar-thumb-hover: hsl(var(--foreground) / 0.7);
+    --syntax-key: var(--primary);
     --syntax-string: var(--secondary);
+    --syntax-number: 280 100% 78%;
     --kind-email: 211 100% 66%;
     --kind-email-ink: 211 100% 66%;
     --staff: 42 90% 62%;
@@ -225,6 +232,7 @@ body {
     --popover-foreground: 218 18% 11%;
     --primary: 164 76% 24%;
     --primary-foreground: 0 0% 100%;
+    --primary-ink: var(--primary);
     --secondary: 216 18% 93%;
     --secondary-foreground: 218 18% 14%;
     --muted: 216 20% 94.5%;
@@ -267,9 +275,9 @@ body {
     --syntax-punctuation: 218 10% 42%;
 
     --method-get: 164 76% 24%;
-    --method-post: 28 80% 36%;
+    --method-post: 28 85% 30%;
     --method-put: 262 60% 48%;
-    --method-delete: 2 70% 46%;
+    --method-delete: 2 70% 40%;
     --kind-email: 222 70% 45%;
     --kind-email-ink: 222 70% 45%;
     /* Staff: ochre, for what only staff see (notes, the support view band, ops). */
@@ -360,6 +368,12 @@ body {
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
+  }
+  /* Links get the same 2px ring as buttons and inputs, not the browser's thin outline. */
+  a:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
   }
   body {
     @apply bg-background text-foreground;

@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Globe, Mail, ShieldCheck } from "lucide-react";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { useSite } from "@/components/providers/site-provider";
 import { ResponsesSection } from "./responses-section";
 import { AddressPill } from "./endpoint-bar";
 import { DestinationsSection } from "./destinations-section";
@@ -228,12 +230,13 @@ function ReceivingSection({
               disabled={!isOwner}
             />
             <div>
-              <p className="text-sm font-semibold">Your fields</p>
+              <p className="text-sm font-semibold">Fields on every email</p>
               <p className="text-xs text-muted-foreground mt-1 mb-3 max-w-[62ch]">
                 Name a value and say where it is: a regular expression (RE2) whose first group is
                 the value. It shows with the email, appears as <code>fields</code> in its JSON, and
                 forwarding templates and filters read it as{" "}
-                <code className="font-mono">{"{{ fields.invoice }}"}</code>.
+                <code className="font-mono">{"{{ fields.invoice }}"}</code>. For fields that differ
+                by sender, add them to a layout under Layouts instead.
               </p>
               <EmailFieldsEditor
                 slug={endpoint.slug}
@@ -330,7 +333,25 @@ function SharingSection({ endpointId }: { endpointId: string }) {
     }
   };
 
-  if (loading || (teams.length === 0 && !error)) return null;
+  if (loading) return null;
+  // The nav always lists this section, so it is never left empty.
+  if (teams.length === 0 && !error) {
+    return (
+      <Section
+        id="sharing"
+        title="Team sharing"
+        description="Share this endpoint with your teams. Changes apply at once."
+      >
+        <p className="text-sm text-muted-foreground">
+          You are not in a team yet.{" "}
+          <Link href="/teams" className="underline font-medium text-foreground">
+            Create a team
+          </Link>{" "}
+          to share this endpoint with its members.
+        </p>
+      </Section>
+    );
+  }
 
   return (
     <Section
@@ -520,7 +541,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         </Field>
       )}
       {hasSecret && provider && (
-        <p className="flex items-center gap-1.5 text-xs text-primary font-semibold">
+        <p className="flex items-center gap-1.5 text-xs text-primary-ink font-semibold">
           <ShieldCheck className="h-3.5 w-3.5" />
           Verifying {getWebProviderLabel(provider) ?? provider} signatures
         </p>
@@ -613,6 +634,20 @@ function DeleteSection({
 // Panel
 // ---------------------------------------------------------------------------
 
+/** The settings order on mailhooks.cc: mail first, the HTTP-only sections after. */
+const MAIL_SECTION_ORDER: SettingsSection[] = [
+  "receiving",
+  "layouts",
+  "forwarding",
+  "deliveries",
+  "alerts",
+  "retention",
+  "verification",
+  "responses",
+  "sharing",
+  "delete",
+];
+
 export function EndpointSettingsPanel({
   endpoint,
   requestCount,
@@ -627,32 +662,46 @@ export function EndpointSettingsPanel({
   const hasLog =
     isOwner && ((endpoint.destinationCount ?? 0) > 0 || endpoint.hasForwardSecret === true);
   const hasEmail = isOwner && !!endpoint.emailAddress;
-  const sections = useMemo(
-    () =>
-      [
-        // In the order a request meets them: it arrives, its signature is
-        // checked, it is answered, and it is sent on.
-        { id: "receiving", label: "Receiving" },
-        ...(hasEmail ? [{ id: "layouts", label: "Layouts" }] : []),
-        ...(isOwner ? [{ id: "retention", label: "Retention" }] : []),
-        ...(isOwner ? [{ id: "verification", label: "Signature verification" }] : []),
-        { id: "responses", label: "Responses" },
-        ...(isOwner
-          ? [
-              { id: "forwarding", label: "Forwarding" },
-              ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
-              { id: "alerts", label: "Alerts" },
-              { id: "sharing", label: "Team sharing" },
-              { id: "delete", label: "Delete endpoint" },
-            ]
-          : []),
-      ] as { id: SettingsSection; label: string; nested?: boolean }[],
-    [isOwner, hasLog, hasEmail]
-  );
+  // mailhooks.cc leads with what mail needs; the HTTP-only sections follow.
+  const mailFirst = useSite().key === "mailhooks";
+  const sections = useMemo(() => {
+    const list = [
+      // In the order a request meets them: it arrives, its signature is
+      // checked, it is answered, and it is sent on.
+      { id: "receiving", label: "Receiving" },
+      ...(hasEmail ? [{ id: "layouts", label: "Layouts" }] : []),
+      ...(isOwner ? [{ id: "retention", label: "Retention" }] : []),
+      ...(isOwner
+        ? [
+            {
+              id: "verification",
+              label: mailFirst ? "HTTP signature verification" : "Signature verification",
+            },
+          ]
+        : []),
+      { id: "responses", label: mailFirst ? "HTTP responses" : "Responses" },
+      ...(isOwner
+        ? [
+            { id: "forwarding", label: "Forwarding" },
+            ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
+            { id: "alerts", label: "Alerts" },
+            { id: "sharing", label: "Team sharing" },
+            { id: "delete", label: "Delete endpoint" },
+          ]
+        : []),
+    ] as { id: SettingsSection; label: string; nested?: boolean }[];
+    if (!mailFirst) return list;
+    const rank = (id: SettingsSection) => MAIL_SECTION_ORDER.indexOf(id);
+    return [...list].sort((a, b) => rank(a.id) - rank(b.id));
+  }, [isOwner, hasLog, hasEmail, mailFirst]);
   const [active, setActive] = useState<SettingsSection>(focusSection ?? "receiving");
   const scroller = useRef<HTMLDivElement>(null);
 
+  // A jump scrolls smoothly past other sections; the spy stays quiet until it
+  // settles so the clicked section keeps its highlight.
+  const jumpedAt = useRef(0);
   const jump = useCallback((id: SettingsSection) => {
+    jumpedAt.current = Date.now();
     setActive(id);
     scrollToSection(id);
   }, []);
@@ -662,18 +711,25 @@ export function EndpointSettingsPanel({
       document.getElementById(`settings-${focusSection}`)?.scrollIntoView({ block: "start" });
   }, [focusSection]);
 
-  // Scroll spy: the topmost section in view is the active one.
+  // Scroll spy: the topmost section in view is the active one. The observer
+  // only reports sections whose visibility changed, so every section in view
+  // is kept here and the topmost of all of them wins.
   useEffect(() => {
     const root = scroller.current;
     if (!root) return;
+    const inView = new Map<Element, number>();
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        const id = visible[0]?.target.getAttribute(
-          "data-settings-section"
-        ) as SettingsSection | null;
+        for (const entry of entries) {
+          if (entry.isIntersecting) inView.set(entry.target, entry.boundingClientRect.top);
+          else inView.delete(entry.target);
+        }
+        if (Date.now() - jumpedAt.current < 800) return;
+        let top: Element | null = null;
+        for (const el of inView.keys()) {
+          if (!top || el.getBoundingClientRect().top < top.getBoundingClientRect().top) top = el;
+        }
+        const id = top?.getAttribute("data-settings-section") as SettingsSection | null;
         if (id) setActive(id);
       },
       { root, rootMargin: "0px 0px -60% 0px", threshold: 0 }
@@ -708,23 +764,45 @@ export function EndpointSettingsPanel({
       </nav>
       <div ref={scroller} className="flex-1 overflow-y-auto">
         <div className="max-w-[780px] p-4 md:p-6 space-y-6">
-          <ReceivingSection endpoint={endpoint} isOwner={isOwner} />
-          {hasEmail && <LayoutsSection endpoint={endpoint} />}
-          {isOwner && <RetentionSection endpoint={endpoint} />}
-          {isOwner && <VerificationSection endpoint={endpoint} />}
-          <ResponsesSection endpoint={endpoint} />
-          {isOwner && (
-            <DestinationsSection endpoint={endpoint} onSeeDeliveries={() => jump("deliveries")} />
-          )}
-          {hasLog && (
-            <DeliveriesSection
-              endpoint={endpoint}
-              onOpenRequest={(requestId) => onOpenRequestDeliveries?.(requestId)}
-            />
-          )}
-          {isOwner && <AlertsSection endpoint={endpoint} />}
-          {isOwner && <SharingSection endpointId={endpoint.id} />}
-          {isOwner && <DeleteSection endpoint={endpoint} requestCount={requestCount} />}
+          {/* The sections render in the nav's order, which the list above decides. */}
+          {sections.map(({ id }) => {
+            switch (id) {
+              case "receiving":
+                return <ReceivingSection key={id} endpoint={endpoint} isOwner={isOwner} />;
+              case "layouts":
+                return <LayoutsSection key={id} endpoint={endpoint} />;
+              case "retention":
+                return <RetentionSection key={id} endpoint={endpoint} />;
+              case "verification":
+                return <VerificationSection key={id} endpoint={endpoint} />;
+              case "responses":
+                return <ResponsesSection key={id} endpoint={endpoint} />;
+              case "forwarding":
+                return (
+                  <DestinationsSection
+                    key={id}
+                    endpoint={endpoint}
+                    onSeeDeliveries={() => jump("deliveries")}
+                  />
+                );
+              case "deliveries":
+                return (
+                  <DeliveriesSection
+                    key={id}
+                    endpoint={endpoint}
+                    onOpenRequest={(requestId) => onOpenRequestDeliveries?.(requestId)}
+                  />
+                );
+              case "alerts":
+                return <AlertsSection key={id} endpoint={endpoint} />;
+              case "sharing":
+                return <SharingSection key={id} endpointId={endpoint.id} />;
+              case "delete":
+                return <DeleteSection key={id} endpoint={endpoint} requestCount={requestCount} />;
+              default:
+                return null;
+            }
+          })}
         </div>
       </div>
     </div>

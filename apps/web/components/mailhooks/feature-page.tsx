@@ -112,7 +112,7 @@ export function FeaturePage({
               Every setting, in full:{" "}
               <Link
                 href={`${webhooksOrigin()}${feature.docs.path}`}
-                className="text-primary font-bold hover:underline"
+                className="text-primary-ink font-bold hover:underline"
               >
                 {feature.docs.label}
                 <ArrowRight className="inline-block ml-1 h-4 w-4" aria-hidden />
@@ -127,14 +127,14 @@ export function FeaturePage({
             <ul className="grid sm:grid-cols-2 gap-3">
               {feature.limits.map((item) => (
                 <li key={item} className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
+                  <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
                   <span className="text-sm">{item}</span>
                 </li>
               ))}
             </ul>
             <p className="text-sm text-muted-foreground mt-4">
               Plans, prices and limits:{" "}
-              <Link href="/pricing" className="text-primary font-bold hover:underline">
+              <Link href="/pricing" className="text-primary-ink font-bold hover:underline">
                 Pricing
               </Link>
             </p>

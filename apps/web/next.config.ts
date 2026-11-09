@@ -171,6 +171,14 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       {
+        // mailhooks.cc has a pricing page; webhooks.cc's pricing is a section
+        // of its landing page, and people guess /pricing there too.
+        source: "/pricing",
+        ...(onMailhooks.length ? { missing: onMailhooks } : {}),
+        destination: "/#pricing",
+        permanent: false,
+      },
+      {
         // The sitemap index and its child sitemaps were folded into one /sitemap.xml.
         source: "/sitemap-index.xml",
         destination: "/sitemap.xml",

@@ -28,7 +28,7 @@ export function ProviderCard({
         href={docsUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-sm text-primary hover:underline font-bold mt-2"
+        className="inline-flex items-center gap-1 text-sm text-primary-ink hover:underline font-bold mt-2"
       >
         Official docs <ExternalLink className="h-3.5 w-3.5" />
       </a>

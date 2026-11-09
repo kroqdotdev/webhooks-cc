@@ -13,11 +13,16 @@ export function OAuthSignInButtons({
   redirectTo = "/dashboard",
   buttonClassName = "w-full h-12 text-base",
   layout = "vertical",
+  verb,
 }: {
   redirectTo?: string;
   buttonClassName?: string;
   layout?: "vertical" | "horizontal";
+  /** Words before the provider in the horizontal layout, e.g. "Sign up with". */
+  verb?: string;
 }) {
+  const label = (name: string) =>
+    layout === "horizontal" ? (verb ? `${verb} ${name}` : name) : `Continue with ${name}`;
   const isAuthenticated = useIsAuthenticated();
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +80,7 @@ export function OAuthSignInButtons({
           ) : (
             <>
               <GitHubIcon className={layout === "horizontal" ? "mr-1.5 h-4 w-4" : "mr-2 h-5 w-5"} />
-              {layout === "horizontal" ? "GitHub" : "Continue with GitHub"}
+              {label("GitHub")}
             </>
           )}
         </Button>
@@ -91,7 +96,7 @@ export function OAuthSignInButtons({
           ) : (
             <>
               <GoogleIcon className={layout === "horizontal" ? "mr-1.5 h-4 w-4" : "mr-2 h-5 w-5"} />
-              {layout === "horizontal" ? "Google" : "Continue with Google"}
+              {label("Google")}
             </>
           )}
         </Button>

@@ -123,7 +123,7 @@ function JsonNode({
             title={`Copy: ${currentPath}`}
           >
             {copiedPath === currentPath ? (
-              <Check className="inline h-3 w-3 mr-1 text-primary" />
+              <Check className="inline h-3 w-3 mr-1 text-primary-ink" />
             ) : null}
             {keyName}
             <span className="syntax-punctuation">: </span>
@@ -169,7 +169,7 @@ function JsonNode({
             title={`Copy: ${currentPath}`}
           >
             {copiedPath === currentPath ? (
-              <Check className="inline h-3 w-3 mr-1 text-primary" />
+              <Check className="inline h-3 w-3 mr-1 text-primary-ink" />
             ) : null}
             {keyName}
             <span className="syntax-punctuation">: </span>

@@ -305,7 +305,7 @@ export function Segmented<T extends string>({
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
               "font-bold caps whitespace-nowrap cursor-pointer transition-colors motion-reduce:transition-none",
-              size === "sm" ? "px-3 py-1.5 text-xs" : "px-2 py-0.5 text-[10px]",
+              size === "sm" ? "px-3 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]",
               index > 0 && "border-l-strong border-line",
               checked ? "bg-selected text-selected-foreground" : "hover:bg-muted"
             )}

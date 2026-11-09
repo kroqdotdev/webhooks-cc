@@ -38,22 +38,15 @@ export function DashboardAnnouncement() {
   }
 
   return (
-    <div className="bg-card border-strong border-primary px-4 py-3">
+    <div className="hidden md:block bg-card border-strong border-primary px-4 py-3">
       <div className="flex items-start gap-3">
-        <Megaphone className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-        <div className="flex-1 space-y-1">
-          <p className="text-sm font-medium">
-            <span className="font-bold">New:</span> {text}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            <Link
-              href={cta.href}
-              className="underline font-medium text-foreground hover:opacity-80"
-            >
-              {cta.label} &rarr;
-            </Link>
-          </p>
-        </div>
+        <Megaphone className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
+        <p className="flex-1 text-sm font-medium">
+          <span className="font-bold">New:</span> {text}{" "}
+          <Link href={cta.href} className="underline font-medium text-foreground hover:opacity-80">
+            {cta.label} &rarr;
+          </Link>
+        </p>
         <button
           onClick={dismiss}
           className="p-0.5 hover:opacity-70 transition-opacity flex-shrink-0"

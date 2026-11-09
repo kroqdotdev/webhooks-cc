@@ -35,8 +35,15 @@ function PricingCTAInner() {
       <OAuthSignInButtons
         redirectTo="/dashboard"
         layout="horizontal"
-        buttonClassName="h-10 text-sm px-4 ui-btn-outline cursor-pointer flex-1"
+        verb="Sign up with"
+        buttonClassName="text-sm px-4 ui-btn-outline cursor-pointer flex-1 whitespace-nowrap"
       />
+      <Link
+        href="/login?mode=sign-up"
+        className="block text-center text-xs text-muted-foreground underline hover:text-foreground"
+      >
+        or sign up with email
+      </Link>
     </div>
   );
 }

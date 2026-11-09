@@ -133,8 +133,8 @@ function ServerSideResult({
       <div className="border-strong border-line border-l-4 border-l-primary rounded-lg p-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-primary" />
-            <span className="font-bold caps text-xs text-primary">Signature Valid</span>
+            <ShieldCheck className="h-4 w-4 text-primary-ink" />
+            <span className="font-bold caps text-xs text-primary-ink">Signature Valid</span>
           </div>
           {providerInfo && (
             <span className="text-xs font-mono text-muted-foreground">{providerInfo.label}</span>
@@ -322,7 +322,7 @@ function ClientSideVerification({
   return (
     <div className="space-y-4">
       <div>
-        <p className="font-bold caps text-xs mb-1">Verify Signature</p>
+        <p className="font-bold caps text-xs mb-1">Verify signature</p>
         <p className="text-xs text-muted-foreground">
           Paste the provider credential to verify this request&apos;s signature. Verification runs
           in your browser, and the credential is never sent to our servers.
@@ -336,7 +336,7 @@ function ClientSideVerification({
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-3 max-w-xl">
         <div className="space-y-1">
           <label htmlFor="sig-provider" className="font-bold caps text-xs">
             Provider
@@ -447,7 +447,7 @@ function ClientSideVerification({
               Want automatic verification on every request?
             </p>
             <button onClick={onOpenSettings} className="ui-btn-outline py-1.5! px-3! text-xs">
-              Save to Endpoint Settings
+              Save to endpoint settings
             </button>
           </div>
         </>
@@ -533,7 +533,7 @@ export function SignatureVerificationBadge({
       ? `Verification skipped${errorData?.code ? `: ${errorData.code}` : ""}${providerLabel ? ` (${providerLabel})` : ""}`
       : `Signature invalid${errorData?.code ? `: ${errorData.code}` : ""}${providerLabel ? ` (${providerLabel})` : ""}`;
   const icon = signatureVerified ? (
-    <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+    <ShieldCheck className="h-3.5 w-3.5 text-primary-ink" />
   ) : isSkipped ? (
     <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
   ) : (

@@ -5,6 +5,7 @@ import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-l
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { buildTestEmail, DELIVER_PATH, signMailRequest, testDeliveryBody } from "@/lib/test-email";
 import { reportError } from "@/lib/observability";
+import { SITES, siteForHost } from "@/lib/site";
 
 const SLUG_REGEX = /^[a-zA-Z0-9_-]{1,50}$/;
 const DELIVER_TIMEOUT_MS = 10_000;
@@ -54,7 +55,12 @@ export async function POST(request: Request) {
   const local = tag === undefined ? slug.toLowerCase() : `${slug.toLowerCase()}+${tag}`;
   const to = `${local}@${env.EMAIL_CAPTURE_DOMAIN}`;
   const now = new Date();
-  const { raw } = buildTestEmail({ to, appUrl: publicEnv().NEXT_PUBLIC_APP_URL, now });
+  const { raw } = buildTestEmail({
+    to,
+    appUrl: publicEnv().NEXT_PUBLIC_APP_URL,
+    now,
+    siteName: SITES[siteForHost(request.headers.get("host"))].name,
+  });
   const body = testDeliveryBody({ to, raw, now });
   const timestamp = Math.floor(now.getTime() / 1000);
 

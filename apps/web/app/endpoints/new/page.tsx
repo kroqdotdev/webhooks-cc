@@ -69,16 +69,8 @@ function NewEndpointForm() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b">
-        <div className="container mx-auto px-4 h-16 flex items-center">
-          <Link href="/dashboard" className="font-bold text-xl">
-            {site.name}
-          </Link>
-        </div>
-      </header>
-
       <main className="container mx-auto px-4 py-8 max-w-xl">
-        <h1 className="text-2xl font-bold mb-6">Create new endpoint</h1>
+        <h1 className="text-2xl font-bold mb-6">New endpoint</h1>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
@@ -94,14 +86,14 @@ function NewEndpointForm() {
 
           {twoSites() && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
 
-          <div className="border rounded-lg p-4 space-y-4">
-            <h2 className="font-semibold">Mock Response (optional)</h2>
+          <div className="border-strong border-line rounded-lg p-4 space-y-4">
+            <h2 className="font-semibold">Mock response (optional)</h2>
             <p className="text-sm text-muted-foreground">
               Configure what this endpoint returns when it receives a webhook
             </p>
 
             <div className="space-y-2">
-              <Label htmlFor="mockStatus">Status Code</Label>
+              <Label htmlFor="mockStatus">Status code</Label>
               <Input
                 id="mockStatus"
                 type="number"
@@ -114,7 +106,7 @@ function NewEndpointForm() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="mockBody">Response Body</Label>
+              <Label htmlFor="mockBody">Response body</Label>
               <Textarea
                 id="mockBody"
                 value={mockBody}
@@ -133,7 +125,7 @@ function NewEndpointForm() {
 
           <div className="flex gap-3">
             <Button type="submit" disabled={isSubmitting || !session?.access_token}>
-              {isSubmitting ? "Creating..." : "Create Endpoint"}
+              {isSubmitting ? "Creating..." : "Create endpoint"}
             </Button>
             <Button type="button" variant="outline" asChild>
               <Link href="/dashboard">Cancel</Link>

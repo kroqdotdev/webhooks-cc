@@ -197,7 +197,6 @@ function LineItemsEditor({
       <Segmented<LineItemsMode>
         name={`Layout ${n}: line items`}
         value={mode}
-        size="xs"
         onChange={(next) =>
           onChange(
             next === "none"
@@ -477,7 +476,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                     </span>
                   )}
                   {matched && (
-                    <span className="text-xs text-primary font-medium">
+                    <span className="text-xs text-primary-ink font-medium">
                       matches the email below
                     </span>
                   )}
@@ -549,7 +548,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <h4 className="text-sm font-semibold">Fields</h4>
+                      <h4 className="text-sm font-semibold">Fields for this layout</h4>
                       <EmailFieldsEditor
                         slug={endpoint.slug}
                         fields={layout.fields ?? []}

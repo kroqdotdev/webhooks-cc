@@ -51,7 +51,7 @@ export default function WebhooksHubPage() {
             Want the details first? Read the{" "}
             <Link
               href="/docs/endpoints/provider-templates"
-              className="text-primary font-bold hover:underline"
+              className="text-primary-ink font-bold hover:underline"
             >
               provider templates docs
             </Link>
@@ -91,7 +91,7 @@ export default function WebhooksHubPage() {
                             />
                           </span>
                         )}
-                        <h3 className="font-bold text-lg group-hover:text-primary transition-colors">
+                        <h3 className="font-bold text-lg group-hover:text-primary-ink transition-colors">
                           {provider.label}
                         </h3>
                       </div>
@@ -109,13 +109,13 @@ export default function WebhooksHubPage() {
           <p className="text-muted-foreground">
             Every webhooks.cc endpoint accepts any HTTP webhook; the provider pages just add signed
             sample payloads and signature verification.{" "}
-            <Link href="/" className="text-primary font-bold hover:underline">
+            <Link href="/" className="text-primary-ink font-bold hover:underline">
               Create a free endpoint
             </Link>{" "}
             and point your service at it, or use the{" "}
             <Link
               href="/docs/guides/verify-webhook-signatures"
-              className="text-primary font-bold hover:underline"
+              className="text-primary-ink font-bold hover:underline"
             >
               generic HMAC verification
             </Link>{" "}

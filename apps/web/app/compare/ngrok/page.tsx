@@ -231,33 +231,33 @@ export default function CompareNgrokPage() {
           See also:{" "}
           <Link
             href="/compare/webhook-site"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs Webhook.site
           </Link>
           {" · "}
           <Link
             href="/compare/localtunnel"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs LocalTunnel
           </Link>
           {" · "}
           <Link
             href="/compare/hookdeck"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs Hookdeck
           </Link>
           {" · "}
           <Link
             href="/compare/stripe-cli"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs Stripe CLI
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
             All comparisons
           </Link>
         </p>

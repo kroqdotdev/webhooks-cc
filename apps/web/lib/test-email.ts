@@ -35,13 +35,20 @@ export interface TestEmail {
 }
 
 /** A small multipart message with a code and a link, so the whole email view has something to show. */
-export function buildTestEmail(input: { to: string; appUrl: string; now?: Date }): TestEmail {
+export function buildTestEmail(input: {
+  to: string;
+  appUrl: string;
+  now?: Date;
+  /** The site whose dashboard sent it, named in the message (the sender address stays webhooks.cc). */
+  siteName?: string;
+}): TestEmail {
   const now = input.now ?? new Date();
+  const siteName = input.siteName ?? "webhooks.cc";
   const code = String(randomInt(100000, 1000000));
   const boundary = `webhooks-test-${randomUUID()}`;
   const link = `${input.appUrl.replace(/\/$/, "")}/docs/email-capture`;
   const text = [
-    "This is a test email from your webhooks.cc dashboard.",
+    `This is a test email from your ${siteName} dashboard.`,
     "",
     `Your test code is ${code}.`,
     "",
@@ -50,16 +57,16 @@ export function buildTestEmail(input: { to: string; appUrl: string; now?: Date }
   const html = [
     '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#18181b">',
     '<h1 style="font-size:20px;margin:0 0 12px">Test email</h1>',
-    "<p>This is a test email from your webhooks.cc dashboard.</p>",
+    `<p>This is a test email from your ${siteName} dashboard.</p>`,
     "<p>Your test code is</p>",
     `<p style="font-size:28px;letter-spacing:4px;font-weight:bold;margin:4px 0 16px">${code}</p>`,
-    `<p><a href="${link}" style="color:#047857">Read how email capture works</a></p>`,
+    `<p><a href="${link}" style="color:#047857">How email capture works</a></p>`,
     "</div>",
   ].join("");
   const headers = [
-    `From: webhooks.cc <${FROM}>`,
+    `From: ${siteName} <${FROM}>`,
     `To: <${input.to}>`,
-    "Subject: Test email from webhooks.cc",
+    `Subject: Test email from ${siteName}`,
     `Date: ${now.toUTCString().replace("GMT", "+0000")}`,
     `Message-ID: <${randomUUID()}@webhooks.cc>`,
     `${TEST_EMAIL_HEADER}: 1`,

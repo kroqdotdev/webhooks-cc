@@ -188,11 +188,11 @@ export default function CompareWebhookSitePage() {
               Sheets, Slack, Discord, Zapier or Make, on every plan. Business adds your own inbound
               domain and file drops to SFTP, FTP or S3. On Webhook.site, acting on incoming email
               takes Custom Actions, which are part of its paid plans. See{" "}
-              <Link href="/email-testing" className="font-semibold hover:text-primary">
+              <Link href="/email-testing" className="font-semibold hover:text-primary-ink">
                 email testing
               </Link>{" "}
               and{" "}
-              <Link href="/email-to-webhook" className="font-semibold hover:text-primary">
+              <Link href="/email-to-webhook" className="font-semibold hover:text-primary-ink">
                 email to webhook
               </Link>
               .
@@ -257,26 +257,26 @@ export default function CompareWebhookSitePage() {
           See also:{" "}
           <Link
             href="/compare/ngrok"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs ngrok
           </Link>
           {" · "}
           <Link
             href="/compare/beeceptor"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs Beeceptor
           </Link>
           {" · "}
           <Link
             href="/compare/requestbin"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs RequestBin
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
             All comparisons
           </Link>
         </p>

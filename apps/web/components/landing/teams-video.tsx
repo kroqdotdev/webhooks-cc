@@ -48,7 +48,7 @@ export function TeamsVideo() {
       controls={reducedMotion}
       preload="none"
       src={visible ? "/video/TeamsFeature.mp4" : undefined}
-      className="w-full h-auto block"
+      className="w-full aspect-video block bg-muted"
       aria-label="Demo of team collaboration features: creating a team, inviting members, and sharing endpoints"
     />
   );

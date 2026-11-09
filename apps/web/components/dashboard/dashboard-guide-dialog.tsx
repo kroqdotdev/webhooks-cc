@@ -136,15 +136,15 @@ const SECTIONS: Section[] = [
         </p>
         <ul className="space-y-1.5 text-sm">
           <li className="flex items-center gap-2">
-            <Star className="h-3 w-3 shrink-0" /> <strong>Pin / Unpin</strong> — pinned requests
+            <Star className="h-3 w-3 shrink-0" /> <strong>Pin / Unpin</strong>: pinned requests
             float to the top of the list
           </li>
           <li className="flex items-center gap-2">
-            <GitCompareArrows className="h-3 w-3 shrink-0" /> <strong>Compare with selected</strong>{" "}
-            — opens side-by-side diff view
+            <GitCompareArrows className="h-3 w-3 shrink-0" /> <strong>Compare with selected</strong>
+            : opens side-by-side diff view
           </li>
           <li className="flex items-center gap-2">
-            <Copy className="h-3 w-3 shrink-0" /> <strong>Copy request ID</strong> — copies the full
+            <Copy className="h-3 w-3 shrink-0" /> <strong>Copy request ID</strong>: copies the full
             ID to clipboard
           </li>
         </ul>
@@ -177,7 +177,7 @@ const SECTIONS: Section[] = [
     content: (
       <div className="space-y-3">
         <p>
-          Attach short notes to any request — useful for debugging breadcrumbs or labeling payloads.
+          Attach short notes to any request, useful for debugging breadcrumbs or labeling payloads.
         </p>
         <ul className="space-y-1 text-sm">
           <li>
@@ -273,10 +273,10 @@ const SECTIONS: Section[] = [
         <p>Multiple ways to copy and export request data.</p>
         <ul className="space-y-1 text-sm">
           <li>
-            <strong>cURL</strong> button — copies a curl command that reproduces the request
+            <strong>cURL</strong> button: copies a curl command that reproduces the request
           </li>
           <li>
-            <strong>Copy dropdown</strong> in the body tab — copy as raw, formatted, TypeScript
+            <strong>Copy dropdown</strong> in the body tab: copy as raw, formatted, TypeScript
             interface, or CSV
           </li>
           <li>
@@ -299,7 +299,7 @@ const SECTIONS: Section[] = [
         <p>Re-send captured requests or send test webhooks.</p>
         <ul className="space-y-1 text-sm">
           <li>
-            <strong>Replay</strong> button — sends the captured request to any URL from your browser
+            <strong>Replay</strong> button: sends the captured request to any URL from your browser
           </li>
           <li>
             <strong>Send</strong> menu next to the endpoint name: a test webhook with provider
@@ -358,10 +358,10 @@ const SECTIONS: Section[] = [
     icon: <ShieldCheck className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
-        <p>Verify webhook signatures directly in the dashboard — no code required.</p>
+        <p>Verify webhook signatures directly in the dashboard, no code required.</p>
         <ul className="space-y-1.5 text-sm">
           <li>
-            <strong>Signature tab</strong> (press <Kbd>5</Kbd>) — paste your signing secret and
+            <strong>Signature tab</strong> (press <Kbd>5</Kbd>): paste your signing secret and
             verify any captured request in your browser. The secret never leaves your machine.
           </li>
           <li>
@@ -369,12 +369,12 @@ const SECTIONS: Section[] = [
             <code className="text-xs">stripe-signature</code>)
           </li>
           <li>
-            <strong>Server-side verification</strong> — configure a signing secret in endpoint
+            <strong>Server-side verification</strong>: configure a signing secret in endpoint
             settings for automatic verification on every request
           </li>
           <li>
-            <strong>Verification badges</strong> —{" "}
-            <ShieldCheck className="inline h-3 w-3 text-primary" /> (valid) and shield-alert
+            <strong>Verification badges</strong>:{" "}
+            <ShieldCheck className="inline h-3 w-3 text-primary-ink" /> (valid) and shield-alert
             (invalid) icons appear in the request list
           </li>
           <li>
@@ -422,7 +422,7 @@ const SECTIONS: Section[] = [
         </ul>
         <p className="text-xs text-muted-foreground">
           Example: Route Stripe webhooks to a 201 response and GitHub webhooks to a 200 response,
-          with a 500 fallback for anything else — all from one endpoint.
+          with a 500 fallback for anything else, all from one endpoint.
         </p>
       </div>
     ),
@@ -444,7 +444,7 @@ const SECTIONS: Section[] = [
             <strong>&quot;slug (Shared with TeamName)&quot;</strong>
           </li>
           <li>Team members can view requests, edit mock responses, and rename endpoints</li>
-          <li>Real-time updates work — new requests appear instantly for all team members</li>
+          <li>Real-time updates work: new requests appear instantly for all team members</li>
           <li>
             Manage teams from the <strong>Teams</strong> page (avatar dropdown → Teams)
           </li>
@@ -464,7 +464,7 @@ const SECTIONS: Section[] = [
       <div className="space-y-3">
         <p>
           The{" "}
-          <Link href="/api-explorer" className="text-primary hover:underline font-bold">
+          <Link href="/api-explorer" className="text-primary-ink hover:underline font-bold">
             API Explorer
           </Link>{" "}
           is an interactive reference for the webhooks.cc REST API. Try endpoints directly from your
@@ -476,7 +476,7 @@ const SECTIONS: Section[] = [
           <li>Browse all available endpoints, request parameters, and response schemas</li>
           <li>
             API keys can be created from{" "}
-            <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
+            <Link href="/account/api-keys" className="text-primary-ink hover:underline font-bold">
               your API keys page
             </Link>
           </li>

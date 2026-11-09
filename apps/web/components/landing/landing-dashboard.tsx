@@ -522,7 +522,7 @@ function LandingDashboardInner() {
     <DashboardFrame>
       <ErrorBoundary resetKey={endpoint?.id}>
         {/* URL bar: same layout as the real dashboard */}
-        <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex items-center gap-3">
+        <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5">
           <span className="font-bold text-sm caps shrink-0 hidden sm:inline">Your endpoint</span>
           <UrlCopy url={endpointUrl} />
           {/* Email capture needs an account: guest captures are readable by anyone with the slug. */}
@@ -534,10 +534,11 @@ function LandingDashboardInner() {
             <Mail className="h-3 w-3" />
             Sign up to get an email address too
           </Link>
-          <div className="hidden md:flex items-center gap-4 shrink-0 text-xs text-muted-foreground ml-auto">
+          <div className="flex items-center gap-4 shrink-0 text-xs text-muted-foreground md:ml-auto max-md:w-full">
             <span className="flex items-center gap-1.5">
-              <Circle className="h-2 w-2 fill-primary text-primary" />
-              Expires in{" "}
+              <Circle className="h-2 w-2 fill-primary text-primary-ink" />
+              <span className="max-sm:hidden">Expires in</span>
+              <span className="sm:hidden">Expires</span>{" "}
               <span className="font-mono font-bold text-foreground">{timeRemaining ?? "..."}</span>
             </span>
             <span>
@@ -556,10 +557,13 @@ function LandingDashboardInner() {
 
         {/* Registration push: appears once the first webhook lands */}
         {hasRequests && !upgradeDismissed ? (
-          <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex items-center justify-between gap-4">
+          <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="text-sm font-medium">
-              Webhook received! One click keeps this endpoint, free: 50 requests/day, unlimited
-              endpoints, and full CLI, SDK &amp; MCP access. No credit card.
+              <span className="sm:hidden">Webhook received! Keep this endpoint free:</span>
+              <span className="max-sm:hidden">
+                Webhook received! One click keeps this endpoint, free: 50 requests/day, unlimited
+                endpoints, and full CLI, SDK &amp; MCP access. No credit card.
+              </span>
             </p>
             <div className="flex items-center gap-2 shrink-0">
               <OAuthSignInButtons
@@ -662,8 +666,12 @@ function LandingDashboardInner() {
           <p className="text-xs text-muted-foreground font-bold">
             Guest endpoint &middot; no account needed &middot; {REQUEST_LIMIT} requests, 12 hours
           </p>
-          <Link href="/webhooks" className="text-sm font-bold hover:text-primary transition-colors">
-            Works with Stripe, GitHub, Shopify &amp; 30+ providers
+          <Link
+            href="/webhooks"
+            className="text-xs sm:text-sm font-bold hover:text-primary-ink transition-colors whitespace-nowrap"
+          >
+            Works with <span className="max-sm:hidden">Stripe, GitHub, Shopify &amp; </span>30+
+            providers
             <ArrowRight className="inline-block ml-1 h-4 w-4" />
           </Link>
         </div>

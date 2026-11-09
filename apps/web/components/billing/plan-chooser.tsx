@@ -55,7 +55,7 @@ function optionsFor(profile: AccountProfile): Option[] {
       {
         plan: "business",
         interval: "year",
-        label: "Business, $290 a year",
+        label: "Business yearly, $290 (2 months free)",
         when: "now",
       },
     ];
@@ -173,11 +173,16 @@ export function PlanChooser({
           </Button>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
           {optionsFor(profile).map((option) => (
             <Button
               key={`${option.plan}-${option.interval}`}
-              variant={option.plan === "business" && option.when === "now" ? "default" : "outline"}
+              // One primary action: Business monthly; the yearly price is the alternative.
+              variant={
+                option.plan === "business" && option.when === "now" && option.interval === "month"
+                  ? "default"
+                  : "outline"
+              }
               disabled={busy || !accessToken}
               onClick={() => (free ? void run(option) : setConfirm(option))}
             >

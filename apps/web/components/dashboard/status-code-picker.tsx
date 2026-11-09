@@ -82,7 +82,7 @@ export function StatusCodePicker({
   id,
   value,
   onChange,
-  label = "Status Code",
+  label = "Status code",
 }: StatusCodePickerProps) {
   const isPreset = ALL_PRESET_VALUES.includes(value);
   const [isCustom, setIsCustom] = useState(!isPreset);

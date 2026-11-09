@@ -117,7 +117,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
       </DialogTrigger>
       <DialogContent className="border-strong border-line shadow-raised">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Replay Request</DialogTitle>
+          <DialogTitle className="font-bold caps">Replay request</DialogTitle>
           <DialogDescription>
             Send this captured request to another URL. Requests are made from your browser, so
             localhost URLs work for local development testing.
@@ -161,7 +161,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
             disabled={!targetUrl || status === "sending"}
             className="w-full ui-btn-primary"
           >
-            {status === "sending" ? "Sending..." : "Send Request"}
+            {status === "sending" ? "Sending..." : "Send request"}
           </Button>
         </div>
       </DialogContent>

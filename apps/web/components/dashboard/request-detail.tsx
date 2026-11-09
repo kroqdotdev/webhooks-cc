@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatBytes } from "@/types/request";
+import { formatBytes, formatFullTimestamp } from "@/types/request";
 import type { Request, ClickHouseRequest } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
@@ -46,7 +46,7 @@ interface RequestDetailProps {
   note?: string | null;
   /** Callback when note changes. */
   onNoteChange?: (note: string) => void;
-  /** Callback to open endpoint settings (for "Save to Endpoint Settings" link). */
+  /** Callback to open endpoint settings (for the "Save to endpoint settings" link). */
   onOpenSettings?: () => void;
   /** Slug of the endpoint this request belongs to (used to prefill the manual-verify URL). */
   endpointSlug?: string;
@@ -182,7 +182,7 @@ export function RequestDetail({
   }, []);
 
   const curlCommand = useMemo(() => generateCurlCommand(request), [request]);
-  const fullTime = new Date(request.receivedAt).toLocaleString();
+  const fullTime = formatFullTimestamp(request.receivedAt);
   const bodyFormat = detectFormat(request.contentType, request.body);
   const formattedBody = useMemo(
     () => (request.body ? formatBody(request.body, bodyFormat) : "(empty body)"),
@@ -220,15 +220,17 @@ export function RequestDetail({
     <div className="ph-no-capture flex flex-col h-full">
       {/* Summary bar */}
       <div className="border-b-strong border-line px-4 py-3 shrink-0">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0">
-            <div className="font-mono font-bold text-sm truncate">
+            <div className="font-mono font-bold text-sm break-all sm:truncate">
               {request.method} {request.path}
             </div>
             <div className="text-xs text-muted-foreground font-mono mt-0.5 flex items-center gap-3 flex-wrap">
               {request.detectedProvider && <ProviderBadge provider={request.detectedProvider} />}
-              {request.detectedEvent && <span>{request.detectedEvent}</span>}
-              <span>{request.ip}</span>
+              {request.detectedEvent && (
+                <span className="min-w-0 max-w-full truncate">{request.detectedEvent}</span>
+              )}
+              {request.ip && <span>{request.ip}</span>}
               <span>{formatBytes(request.size)}</span>
               <span>{fullTime}</span>
               {request.signatureVerified != null && (
@@ -610,6 +612,7 @@ export function NoteBar({
             }
           }}
           onBlur={save}
+          aria-label="Request note"
           className="flex-1 text-xs bg-transparent outline-none font-mono placeholder:text-muted-foreground min-w-0"
           placeholder="Type a note..."
         />

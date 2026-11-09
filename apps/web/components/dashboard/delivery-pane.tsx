@@ -61,7 +61,7 @@ export type ChipStatus = "succeeded" | "pending" | "failed" | "queued" | "skippe
 const CHIP: Record<ChipStatus, { label: string; className: string }> = {
   succeeded: {
     label: "Delivered",
-    className: "bg-primary text-primary-foreground clean:bg-primary/12 clean:text-primary",
+    className: "bg-primary text-primary-foreground clean:bg-primary/12 clean:text-primary-ink",
   },
   pending: {
     label: "Retrying",

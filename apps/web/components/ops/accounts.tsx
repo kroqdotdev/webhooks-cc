@@ -162,7 +162,7 @@ export function AccountInspector({ id }: { id: string }) {
   return (
     <div className="max-w-6xl p-6 lg:p-8">
       <p className="text-xs text-muted-foreground">
-        <Link href="/ops/accounts" className="text-primary hover:underline">
+        <Link href="/ops/accounts" className="text-primary-ink hover:underline">
           Accounts
         </Link>{" "}
         / {account.email}

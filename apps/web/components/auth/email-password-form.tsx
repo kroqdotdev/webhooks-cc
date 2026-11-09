@@ -26,8 +26,11 @@ export const PASSWORD_MIN_LENGTH = 8;
 export function EmailPasswordForm({
   initialMode = "sign-in",
   redirectTo = "/dashboard",
+  onModeChange,
 }: {
   initialMode?: EmailPasswordMode;
+  /** Told when the form switches mode, so the page heading can follow it. */
+  onModeChange?: (mode: EmailPasswordMode) => void;
   /** Sanitized same-origin path the login page will land on after sign-in. */
   redirectTo?: string;
 }) {
@@ -48,6 +51,7 @@ export function EmailPasswordForm({
 
   const switchMode = (next: EmailPasswordMode) => {
     setMode(next);
+    onModeChange?.(next);
     setError(null);
     setNotice(null);
     setDone(null);

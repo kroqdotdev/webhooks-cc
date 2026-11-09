@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SendWebhookDialog } from "./send-webhook-dialog";
 import { DashboardGuideDialog } from "./dashboard-guide-dialog";
+import { Segmented } from "./settings-primitives";
 import { useGettingStarted } from "./getting-started";
 
 export type EndpointTab = "requests" | "settings";
@@ -139,7 +140,7 @@ function SetupMenu({
                   done && "text-muted-foreground line-through"
                 )}
               >
-                <Icon className={cn("h-3.5 w-3.5", done && "text-primary")} />
+                <Icon className={cn("h-3.5 w-3.5", done && "text-primary-ink")} />
                 {item.label}
               </span>
             );
@@ -277,6 +278,8 @@ export function EndpointBar({
 }: EndpointBarProps) {
   const [guideOpen, setGuideOpen] = useState(false);
   const mailFirst = useSite().key === "mailhooks";
+  // Phones show one address at a time, the site's own first; a toggle swaps it.
+  const [phoneAddress, setPhoneAddress] = useState<"http" | "email">(mailFirst ? "email" : "http");
   const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
   const shownUrl = url.replace(/^https?:\/\//, "");
 
@@ -284,24 +287,44 @@ export function EndpointBar({
     <div className="border-b-strong border-line bg-card px-4 pt-3 shrink-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="font-bold text-sm caps shrink-0 order-1">{name}</span>
-        <div className="order-3 md:order-2 w-full md:w-auto md:flex-1 min-w-0 flex flex-col md:flex-row gap-2">
+        <div className="order-3 md:order-2 w-full md:w-auto md:flex-1 min-w-0 flex items-center gap-2">
           <AddressPill
             label="HTTP"
             icon={Globe}
             value={shownUrl}
             copyValue={url}
-            className="w-full md:w-auto md:max-w-[44%]"
+            className={cn(
+              "min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]",
+              emailAddress && phoneAddress !== "http" && "max-md:hidden"
+            )}
           />
           {emailAddress ? (
-            <AddressPill
-              label="Email"
-              icon={Mail}
-              value={emailAddress}
-              // mailhooks.cc leads with the address.
-              className={cn("w-full md:w-auto md:max-w-[44%]", mailFirst && "order-first")}
-            />
+            <>
+              <AddressPill
+                label="Email"
+                icon={Mail}
+                value={emailAddress}
+                // mailhooks.cc leads with the address.
+                className={cn(
+                  "min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]",
+                  mailFirst && "order-first",
+                  phoneAddress !== "email" && "max-md:hidden"
+                )}
+              />
+              <Segmented
+                name="Address shown"
+                value={phoneAddress}
+                onChange={setPhoneAddress}
+                size="xs"
+                className="md:hidden shrink-0 order-last"
+                options={[
+                  { value: "http", label: "HTTP" },
+                  { value: "email", label: "Email" },
+                ]}
+              />
+            </>
           ) : (
-            <span className="inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">
+            <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">
               <Lock className="h-3 w-3" />
               Endpoints on an account also receive email
             </span>

@@ -123,7 +123,7 @@ function PlanTable({ current }: { current: PlanKey }) {
     cn("px-4 py-3 text-left", current === plan && "bg-muted/60 font-medium");
   const plans: PlanKey[] = ["free", "pro", "business"];
   return (
-    <table className="w-full text-sm">
+    <table className="w-full min-w-[520px] text-sm">
       <caption className="sr-only">Free, Pro and Business plans compared</caption>
       <thead>
         <tr className="border-b-strong border-line">
@@ -309,7 +309,9 @@ export default function PlanPage() {
               </Notice>
             </div>
           )}
-          <PlanTable current={currentPlan} />
+          <div className="overflow-x-auto">
+            <PlanTable current={currentPlan} />
+          </div>
         </Panel>
 
         <ParsedPagesPanel

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatBytes } from "@/types/request";
+import { formatBytes, formatFullTimestamp } from "@/types/request";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
 import {
   buildEmailJson,
@@ -78,17 +78,6 @@ function useCopy() {
     timer.current = setTimeout(() => setCopied(null), 2000);
   }, []);
   return { copied, copy };
-}
-
-function formatReceived(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
 }
 
 /** The Raw tab shows at most this much of a stored message; the download has all of it. */
@@ -662,7 +651,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
                       className={cn(
                         "py-1.5 pr-3 font-mono text-xs text-right whitespace-nowrap",
                         symbol.score > 0 && "text-destructive",
-                        symbol.score < 0 && "text-primary"
+                        symbol.score < 0 && "text-primary-ink"
                       )}
                     >
                       {symbol.score > 0 ? "+" : ""}
@@ -1190,7 +1179,7 @@ export function EmailDetail({
           )}
           <dt className="text-muted-foreground">Received</dt>
           <dd>
-            {formatReceived(request.receivedAt)}
+            {formatFullTimestamp(request.receivedAt)}
             <span className="text-muted-foreground">
               , {formatBytes(email.smtp?.size ?? request.size)}
             </span>
@@ -1279,11 +1268,16 @@ export function EmailDetail({
         )}
         {activeTab === "preview" && (
           <div className="hidden md:flex ml-auto items-center pr-3 pl-3">
-            <div className="flex overflow-hidden rounded-sm border-strong border-line">
+            <div
+              role="group"
+              aria-label="Preview width"
+              className="flex overflow-hidden rounded-sm border-strong border-line"
+            >
               {(["desktop", "mobile"] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
+                  aria-pressed={width === mode}
                   onClick={() => setWidth(mode)}
                   className={cn(
                     "px-2.5 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors capitalize",

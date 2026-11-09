@@ -196,7 +196,7 @@ export function NewTicketForm() {
   return (
     <main className="mx-auto max-w-3xl px-6 pb-16 pt-10 md:px-10">
       <p className="mb-2 text-xs text-muted-foreground">
-        <Link href="/support" className="text-primary hover:underline">
+        <Link href="/support" className="text-primary-ink hover:underline">
           Support
         </Link>{" "}
         / New ticket
@@ -251,7 +251,7 @@ export function NewTicketForm() {
                       href={suggestion.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary hover:underline"
+                      className="text-primary-ink hover:underline"
                     >
                       {suggestion.title}
                     </a>

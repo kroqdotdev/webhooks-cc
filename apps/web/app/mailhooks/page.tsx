@@ -166,7 +166,7 @@ export default function MailhooksHome() {
             <ol className="grid md:grid-cols-3 gap-6">
               {STEPS.map((step, index) => (
                 <li key={step.title} className="ui-card ui-card-static">
-                  <step.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
+                  <step.icon className="h-6 w-6 text-primary-ink mb-4" aria-hidden />
                   <p className="text-xs font-bold caps text-muted-foreground mb-2">
                     Step {index + 1}
                   </p>
@@ -199,7 +199,7 @@ export default function MailhooksHome() {
               href="/parse"
               className="inline-flex items-center gap-2 mt-6 font-medium hover:underline"
             >
-              All {LAYOUT_TEMPLATES.length} senders
+              All {LAYOUT_TEMPLATES.length} layouts
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
@@ -211,14 +211,14 @@ export default function MailhooksHome() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {FEATURES.map((feature) => (
                 <div key={feature.title} className="ui-card ui-card-static">
-                  <feature.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
+                  <feature.icon className="h-6 w-6 text-primary-ink mb-4" aria-hidden />
                   <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
                   <p className="text-muted-foreground">{feature.text}</p>
                 </div>
               ))}
             </div>
             <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {MAILHOOKS_FEATURES.map((feature) => (
                 <li key={feature.path}>
                   <Link href={feature.path} className="ui-card block h-full">
@@ -231,7 +231,8 @@ export default function MailhooksHome() {
           </div>
         </section>
 
-        <section className="py-20 px-4">
+        <section id="pricing" className="py-20 px-4 scroll-mt-20">
+          <h2 className="max-w-6xl mx-auto text-3xl md:text-4xl font-bold mb-10">Pricing</h2>
           <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6">
             {[
               {
@@ -268,13 +269,15 @@ export default function MailhooksHome() {
                 </ul>
               </div>
             ))}
-            <Link
-              href="/pricing"
-              className="md:col-span-3 inline-flex items-center gap-2 font-medium hover:underline"
-            >
-              Compare plans
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+            <div className="md:col-span-3 flex flex-wrap items-center gap-4">
+              <div className="w-full sm:w-auto sm:min-w-80">
+                <PricingCTA />
+              </div>
+              <Link href="/pricing" className="ui-btn-outline inline-flex items-center gap-2">
+                Compare plans
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
         </section>
 

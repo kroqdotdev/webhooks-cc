@@ -254,7 +254,7 @@ export default async function Home() {
           <Link href="/compare" className="text-muted-foreground hover:text-foreground">
             Compare
           </Link>
-          <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
+          <Link href="/#pricing" className="text-muted-foreground hover:text-foreground">
             Pricing
           </Link>
         </nav>
@@ -266,14 +266,14 @@ export default async function Home() {
         <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-2 text-center">
           <h1 className="text-base md:text-xl font-bold tracking-tight leading-snug">
             The fastest way to{" "}
-            <span className="bg-primary text-primary-foreground px-1.5 clean:bg-transparent clean:px-0 clean:text-primary">
+            <span className="bg-primary text-primary-foreground px-1.5 clean:bg-transparent clean:px-0 clean:text-primary-ink">
               test webhooks
             </span>
           </h1>
           <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
             Your free webhook URL is live below. Point any service at it. No signup, no credit card.
             One click with GitHub or Google, or an email signup,{" "}
-            <Link href="/login" className="font-bold text-foreground hover:text-primary">
+            <Link href="/login" className="font-bold text-foreground hover:text-primary-ink">
               keeps it, free
             </Link>
             .
@@ -335,7 +335,7 @@ export default async function Home() {
                   "CLI tunnel, plus full SDK & MCP access",
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-primary shrink-0" />
+                    <Check className="h-4 w-4 text-primary-ink shrink-0" />
                     {item}
                   </li>
                 ))}
@@ -450,19 +450,28 @@ export default async function Home() {
               <h3 className="font-bold text-xl mb-2">Send signed provider test webhooks</h3>
               <p className="text-muted-foreground">
                 Realistic payloads with correct signature headers for{" "}
-                <Link href="/webhooks/stripe" className="text-primary font-bold hover:underline">
+                <Link
+                  href="/webhooks/stripe"
+                  className="text-primary-ink font-bold hover:underline"
+                >
                   Stripe
                 </Link>
                 ,{" "}
-                <Link href="/webhooks/github" className="text-primary font-bold hover:underline">
+                <Link
+                  href="/webhooks/github"
+                  className="text-primary-ink font-bold hover:underline"
+                >
                   GitHub
                 </Link>
                 ,{" "}
-                <Link href="/webhooks/shopify" className="text-primary font-bold hover:underline">
+                <Link
+                  href="/webhooks/shopify"
+                  className="text-primary-ink font-bold hover:underline"
+                >
                   Shopify
                 </Link>
                 , and{" "}
-                <Link href="/webhooks" className="text-primary font-bold hover:underline">
+                <Link href="/webhooks" className="text-primary-ink font-bold hover:underline">
                   30+ more
                 </Link>
                 . Test your verification code end-to-end.
@@ -527,7 +536,7 @@ export default async function Home() {
               Every endpoint on an account also has an email address. Test the emails your app
               sends, or turn inbound mail into signed JSON, Google Sheets rows or chat messages.
               Reading orders, bookings or reports out of mail and its attachments? Start at{" "}
-              <a href={mailhooksUrl("/")} className="text-primary font-bold hover:underline">
+              <a href={mailhooksUrl("/")} className="text-primary-ink font-bold hover:underline">
                 mailhooks.cc
               </a>
               , the mail-first side of the same account.
@@ -538,7 +547,7 @@ export default async function Home() {
                 <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
                   <Mail className="h-6 w-6 text-primary-foreground clean:text-foreground" />
                 </div>
-                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary-ink transition-colors">
                   Test signup, login and reset emails
                 </h4>
                 <p className="text-muted-foreground mb-4">
@@ -555,7 +564,7 @@ export default async function Home() {
                 <div className="w-12 h-12 border-strong border-line rounded-md bg-secondary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
                   <Webhook className="h-6 w-6 text-secondary-foreground clean:text-foreground" />
                 </div>
-                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary-ink transition-colors">
                   Turn inbound email into a webhook
                 </h4>
                 <p className="text-muted-foreground mb-4">
@@ -591,8 +600,8 @@ export default async function Home() {
               <code>
                 <span className="text-muted-foreground"># Send manually with curl</span>
                 {"\n"}
-                <span className="text-primary">$</span> curl -X POST https://go.webhooks.cc/w/abc123
-                \{"\n"}
+                <span className="text-primary-ink">$</span> curl -X POST
+                https://go.webhooks.cc/w/abc123 \{"\n"}
                 {"  "}-H{" "}
                 <span className="text-code-string">&quot;Content-Type: application/json&quot;</span>{" "}
                 \{"\n"}
@@ -691,7 +700,7 @@ export default async function Home() {
                   "Mock responses & replay",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -723,7 +732,7 @@ export default async function Home() {
                   "CLI, SDK & MCP access",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -754,7 +763,7 @@ export default async function Home() {
                   "File drops to SFTP, FTP/FTPS & S3",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -785,7 +794,7 @@ export default async function Home() {
                   "Any account can create a team",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -814,7 +823,7 @@ export default async function Home() {
                   "Extra requests in 25,000 blocks",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -845,7 +854,7 @@ export default async function Home() {
                   "File drops to SFTP, FTP/FTPS & S3",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}

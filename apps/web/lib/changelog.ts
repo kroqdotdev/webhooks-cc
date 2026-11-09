@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.8";
+export const APP_VERSION = "0.63.0";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,20 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.63.0",
+    date: "2026-11-09",
+    title: "Interface Review Fixes",
+    track: "web",
+    items: [
+      "The classic light style meets WCAG AA for links, JSON and focus rings, and method badges read clearly on a selected row",
+      "On phones the dashboard shows one address at a time with an HTTP and Email toggle, request details no longer overlap their buttons, and the guest sign-up strip and plan table fit the screen",
+      "Every focusable control shows a visible focus ring, including links, the account menu and the request search",
+      "webhooks.cc/pricing opens the pricing section, sign-up links open the sign-up form, and sign-up buttons say what they do",
+      "mailhooks.cc lists mail settings first, names its test email and empty states for mail, explains forwarding from Gmail and Outlook, and calls its catalogue Layouts",
+      "Consistent sentence case and one timestamp format across the dashboard, and no more em dashes in the interface",
+    ],
+  },
   {
     version: "0.62.8",
     date: "2026-11-08",

@@ -258,30 +258,33 @@ export default function CompareStripeCliPage() {
           See also:{" "}
           <Link
             href="/webhooks/stripe"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             Stripe Webhook Tester
           </Link>
           {" · "}
           <Link
             href="/compare/ngrok"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs ngrok
           </Link>
           {" · "}
           <Link
             href="/compare/hookdeck"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs Hookdeck
           </Link>
           {" · "}
-          <Link href="/compare/svix" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/svix"
+            className="font-semibold hover:text-primary-ink transition-colors"
+          >
             vs Svix
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
             All comparisons
           </Link>
         </p>

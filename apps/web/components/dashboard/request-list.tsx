@@ -328,19 +328,21 @@ export function RequestList({
             ))}
           </select>
         )}
-        <div className="flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background">
+        <div className="flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
+            aria-label="Search requests"
             placeholder={onKindFilterChange ? "Search" : "Search..."}
             className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground font-mono min-w-0"
           />
           {searchQuery && (
             <button
               onClick={() => onSearchQueryChange("")}
+              aria-label="Clear search"
               className="text-muted-foreground hover:text-foreground cursor-pointer"
             >
               <X className="h-3 w-3" />
@@ -535,7 +537,7 @@ export function RequestList({
           {request.size > 0 && (
             <>
               <span className="text-[10px] text-muted-foreground">&middot;</span>
-              <span className="text-[10px] text-muted-foreground font-mono">
+              <span className="text-[10px] text-muted-foreground font-mono shrink-0 whitespace-nowrap">
                 {formatBytes(request.size)}
               </span>
             </>

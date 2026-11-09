@@ -106,7 +106,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: u
   };
 }
 
-const NO_SEATS = "Team has no available seats — ask the owner to add seats";
+const NO_SEATS = "Team has no available seats. Ask the owner to add seats";
 const INACTIVE = "This team needs an active Teams subscription";
 
 const PENDING_INVITE: QueryResult = {

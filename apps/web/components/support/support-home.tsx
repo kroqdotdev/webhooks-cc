@@ -80,7 +80,7 @@ function TicketRows({ tickets }: { tickets: SupportTicketSummary[] }) {
               <span
                 className={cn(
                   "row-span-2 text-right text-xs",
-                  yours ? "font-semibold text-primary" : "text-muted-foreground"
+                  yours ? "font-semibold text-primary-ink" : "text-muted-foreground"
                 )}
               >
                 {yours && (

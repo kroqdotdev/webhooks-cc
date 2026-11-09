@@ -244,7 +244,7 @@ export function TicketView({ number }: { number: string }) {
   return (
     <main className="mx-auto max-w-5xl px-6 pb-16 pt-10 md:px-10">
       <p className="mb-2 text-xs text-muted-foreground">
-        <Link href="/support" className="text-primary hover:underline">
+        <Link href="/support" className="text-primary-ink hover:underline">
           Support
         </Link>{" "}
         / <span className="font-mono">#{ticket.number}</span>

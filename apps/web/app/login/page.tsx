@@ -5,7 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
-import { EmailPasswordForm } from "@/components/auth/email-password-form";
+import { EmailPasswordForm, type EmailPasswordMode } from "@/components/auth/email-password-form";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
@@ -43,6 +43,10 @@ function LoginContent() {
   const redirectTo = sanitizeNextPath(rawRedirect);
   // Set by /auth/callback (OAuth errors) and /auth/confirm (bad email links).
   const urlError = describeLoginError(searchParams.get("error"));
+  // ?mode=sign-up opens the form on account creation (the sign-up links on the landing pages).
+  const initialMode: EmailPasswordMode =
+    searchParams.get("mode") === "sign-up" ? "sign-up" : "sign-in";
+  const [mode, setMode] = useState<EmailPasswordMode>(initialMode);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -61,7 +65,9 @@ function LoginContent() {
   return (
     <AuthPageShell>
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold mb-2">Sign in to {site.name}</h1>
+        <h1 className="text-2xl font-bold mb-2">
+          {mode === "sign-up" ? `Create your ${site.name} account` : `Sign in to ${site.name}`}
+        </h1>
         <p className="text-muted-foreground">Continue with GitHub, Google, or email</p>
       </div>
 
@@ -82,7 +88,7 @@ function LoginContent() {
         <div className="h-px flex-1 bg-border" />
       </div>
 
-      <EmailPasswordForm redirectTo={redirectTo} />
+      <EmailPasswordForm redirectTo={redirectTo} initialMode={initialMode} onModeChange={setMode} />
 
       <p className="text-center text-sm text-muted-foreground mt-8">
         By signing in or creating an account, you agree to our{" "}

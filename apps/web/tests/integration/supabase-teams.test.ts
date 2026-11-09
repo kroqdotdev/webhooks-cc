@@ -51,7 +51,7 @@ const SEAT_REQUEST_LIMIT = 100_000;
 
 // Exact user-facing strings the invite path must return.
 const INACTIVE_TEAM_ERROR = "This team needs an active Teams subscription";
-const NO_SEATS_ERROR = "Team has no available seats — ask the owner to add seats";
+const NO_SEATS_ERROR = "Team has no available seats. Ask the owner to add seats";
 
 const TEST_PASSWORD = "TestPassword123!";
 const ts = Date.now();

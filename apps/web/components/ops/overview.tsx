@@ -283,7 +283,7 @@ export function OpsOverview() {
                     <td
                       className={cn(
                         "px-3 py-2 text-right",
-                        delta.tone === "good" && "text-primary",
+                        delta.tone === "good" && "text-primary-ink",
                         delta.tone === "bad" && "text-destructive",
                         delta.tone === "flat" && "text-muted-foreground"
                       )}

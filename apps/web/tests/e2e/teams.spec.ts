@@ -235,7 +235,7 @@ test("accepting with every seat taken surfaces the seat error", async ({ page })
   await page.getByRole("button", { name: "Accept" }).first().click();
 
   await expect(
-    page.getByText("Team has no available seats — ask the owner to add seats")
+    page.getByText("Team has no available seats. Ask the owner to add seats")
   ).toBeVisible({ timeout: 10000 });
 });
 

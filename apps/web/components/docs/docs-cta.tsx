@@ -38,7 +38,7 @@ function DocsCTAInner() {
           or{" "}
           <Link
             href="/"
-            className="text-foreground font-bold hover:text-primary transition-colors"
+            className="text-foreground font-bold hover:text-primary-ink transition-colors"
             onClick={() => trackCTAClick("try_live")}
           >
             try without an account

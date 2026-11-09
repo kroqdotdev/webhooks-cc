@@ -177,7 +177,7 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
               onMouseLeave={() => setHoveredId(null)}
             >
               <title>
-                {dot.method} — {new Date(dot.receivedAt).toLocaleTimeString()}
+                {dot.method} at {new Date(dot.receivedAt).toLocaleTimeString()}
               </title>
             </circle>
           );

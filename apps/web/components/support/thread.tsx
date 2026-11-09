@@ -40,7 +40,7 @@ export function TurnLine({
       className="grid grid-cols-[auto_1fr_auto] items-center gap-3 text-xs text-muted-foreground"
       aria-hidden="true"
     >
-      <span className={cn(!closed && atLeft && "font-semibold text-primary")}>{left}</span>
+      <span className={cn(!closed && atLeft && "font-semibold text-primary-ink")}>{left}</span>
       <span className="relative h-0.5 rounded-full bg-border">
         {!closed && (
           <span
@@ -52,7 +52,7 @@ export function TurnLine({
           />
         )}
       </span>
-      <span className={cn(!closed && !atLeft && "font-semibold text-primary")}>{right}</span>
+      <span className={cn(!closed && !atLeft && "font-semibold text-primary-ink")}>{right}</span>
     </div>
   );
 }
@@ -284,8 +284,8 @@ export function ImagePicker({
           <ImagePlus className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
             Drop images here or{" "}
-            <span className="text-primary underline underline-offset-2">choose files</span>. PNG,
-            JPEG or WebP, up to {MAX_IMAGES} files of 5 MB.
+            <span className="text-primary-ink underline underline-offset-2">choose files</span>.
+            PNG, JPEG or WebP, up to {MAX_IMAGES} files of 5 MB.
           </span>
         </button>
         <input

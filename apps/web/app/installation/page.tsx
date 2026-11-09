@@ -140,7 +140,7 @@ export default function InstallationPage() {
                       href="https://github.com/kroqdotdev/webhooks-cc/releases"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary hover:underline font-bold"
+                      className="text-primary-ink hover:underline font-bold"
                     >
                       GitHub Releases
                     </a>
@@ -167,7 +167,7 @@ export default function InstallationPage() {
 whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
                   <p className="text-sm text-muted-foreground mt-2">
                     See the{" "}
-                    <Link href="/docs/cli" className="text-primary hover:underline font-bold">
+                    <Link href="/docs/cli" className="text-primary-ink hover:underline font-bold">
                       CLI docs
                     </Link>{" "}
                     for the full command reference.
@@ -221,11 +221,14 @@ console.log(endpoint.url);`}
 
                 <p className="text-sm text-muted-foreground">
                   Generate an API key from your{" "}
-                  <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
+                  <Link
+                    href="/account/api-keys"
+                    className="text-primary-ink hover:underline font-bold"
+                  >
                     API keys page
                   </Link>
                   . See the{" "}
-                  <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
+                  <Link href="/docs/sdk" className="text-primary-ink hover:underline font-bold">
                     SDK docs
                   </Link>{" "}
                   for the full API reference.
@@ -238,7 +241,7 @@ console.log(endpoint.url);`}
                     The same testing tools for Python, with pytest fixtures. See the{" "}
                     <Link
                       href="/docs/sdk/python"
-                      className="text-primary hover:underline font-bold"
+                      className="text-primary-ink hover:underline font-bold"
                     >
                       Python SDK docs
                     </Link>
@@ -251,7 +254,10 @@ console.log(endpoint.url);`}
                   <CodeBlock>{`go get webhooks.cc/go`}</CodeBlock>
                   <p className="text-sm text-muted-foreground mt-3">
                     The same testing tools for Go, with helpers for <code>testing.TB</code>. See the{" "}
-                    <Link href="/docs/sdk/go" className="text-primary hover:underline font-bold">
+                    <Link
+                      href="/docs/sdk/go"
+                      className="text-primary-ink hover:underline font-bold"
+                    >
                       Go SDK docs
                     </Link>
                     .
@@ -322,13 +328,16 @@ console.log(endpoint.url);`}
 
                   <p className="text-sm text-muted-foreground">
                     Disconnect it at any time under{" "}
-                    <Link href="/account/agents" className="text-primary hover:underline font-bold">
+                    <Link
+                      href="/account/agents"
+                      className="text-primary-ink hover:underline font-bold"
+                    >
                       Connected agents
                     </Link>
                     . The{" "}
                     <Link
                       href="/docs/mcp#remote-server"
-                      className="text-primary hover:underline font-bold"
+                      className="text-primary-ink hover:underline font-bold"
                     >
                       remote server docs
                     </Link>{" "}
@@ -368,7 +377,7 @@ console.log(endpoint.url);`}
                       Get your key from your{" "}
                       <Link
                         href="/account/api-keys"
-                        className="text-primary hover:underline font-bold"
+                        className="text-primary-ink hover:underline font-bold"
                       >
                         API keys page
                       </Link>
@@ -464,7 +473,7 @@ console.log(endpoint.url);`}
 
                   <p className="text-sm text-muted-foreground">
                     See the{" "}
-                    <Link href="/docs/mcp" className="text-primary hover:underline font-bold">
+                    <Link href="/docs/mcp" className="text-primary-ink hover:underline font-bold">
                       MCP docs
                     </Link>{" "}
                     for the full tool reference.

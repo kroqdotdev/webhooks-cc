@@ -285,7 +285,7 @@ export default function CompareIndexPage() {
                     className="text-left py-2.5 pr-4 font-bold whitespace-nowrap"
                   >
                     {tool.href ? (
-                      <Link href={tool.href} className="hover:text-primary transition-colors">
+                      <Link href={tool.href} className="hover:text-primary-ink transition-colors">
                         {tool.name}
                       </Link>
                     ) : (
@@ -315,7 +315,7 @@ export default function CompareIndexPage() {
           Other tools as listed on their own sites when we compared in November 2026; check pricing
           before you buy. RequestBin lives on Pipedream Workflows, which takes no new signups and
           shuts down on March 31, 2027. Sharing with a team?{" "}
-          <Link href="/for-teams" className="text-primary font-bold hover:underline">
+          <Link href="/for-teams" className="text-primary-ink font-bold hover:underline">
             Webhook testing for teams
           </Link>
           .

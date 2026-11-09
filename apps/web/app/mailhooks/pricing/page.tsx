@@ -126,7 +126,7 @@ export default function MailhooksPricing() {
                 <ul className="space-y-3 my-8 flex-1">
                   {plan.lines.map((line) => (
                     <li key={line} className="flex items-start gap-3">
-                      <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
+                      <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
                       <span>{line}</span>
                     </li>
                   ))}
@@ -150,8 +150,8 @@ export default function MailhooksPricing() {
             </p>
           </div>
 
-          <section className="mt-20 max-w-3xl">
-            <h2 className="text-3xl font-bold mb-8">Questions</h2>
+          <section className="mt-20 max-w-3xl mx-auto">
+            <h2 className="text-3xl font-bold mb-8 text-center">Questions</h2>
             <FAQAccordion items={FAQ} />
           </section>
         </div>

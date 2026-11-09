@@ -104,7 +104,7 @@ export function UserDropdown() {
   return (
     <DropdownMenu onOpenChange={(open) => open && setMenuOpened(true)}>
       {/* The name and initials stay out of autocapture. */}
-      <DropdownMenuTrigger className="ph-no-capture flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer outline-none">
+      <DropdownMenuTrigger className="ph-no-capture flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
         <UserAvatar profile={profile} />
         <span className="hidden lg:inline max-w-[120px] truncate">{displayName}</span>
         <ChevronDown className="h-3.5 w-3.5" />

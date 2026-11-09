@@ -48,7 +48,9 @@ test("a free account can start Pro, Business monthly or Business yearly", async 
   await expect(
     plan.getByRole("button", { name: "Upgrade to Business, $29 a month" })
   ).toBeVisible();
-  await expect(plan.getByRole("button", { name: "Business, $290 a year" })).toBeVisible();
+  await expect(
+    plan.getByRole("button", { name: "Business yearly, $290 (2 months free)" })
+  ).toBeVisible();
   await expect(plan.getByRole("columnheader", { name: /Business/ })).toBeVisible();
 });
 

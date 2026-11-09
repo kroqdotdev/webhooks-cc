@@ -83,7 +83,7 @@ export function TemplateImportDialog({
         </DialogHeader>
         {endpoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Create an endpoint first with New Endpoint, then open this link again.
+            Create an endpoint first with New endpoint, then open this link again.
           </p>
         ) : (
           <div className="space-y-2">
