@@ -1142,14 +1142,14 @@ export function EmailDetail({
       {/* Envelope */}
       <div className="border-b-strong border-line px-4 md:px-5 pt-4 pb-3.5 shrink-0 bg-card">
         <div className="flex items-start gap-3">
-          <h1
+          <h2
             className={cn(
               "flex-1 min-w-0 text-lg md:text-[21px] font-bold clean:font-semibold leading-tight break-words",
               !email.subject && "text-muted-foreground"
             )}
           >
             {email.subject || "(no subject)"}
-          </h1>
+          </h2>
           {rawAvailable && (
             <button
               type="button"
@@ -1216,7 +1216,7 @@ export function EmailDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs: the same bar as the HTTP view */}
-      <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]">
+      <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none] max-md:[mask-image:linear-gradient(to_right,#000_85%,transparent)]">
         {tabs.map((entry) => (
           <button
             key={entry.id}

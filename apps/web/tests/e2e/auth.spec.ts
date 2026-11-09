@@ -59,7 +59,7 @@ test.describe("Authentication", () => {
 
     // Sign out lives in the avatar dropdown in the header
     await page.locator("header").getByRole("button").last().click();
-    await page.getByRole("menuitem", { name: "Sign Out" }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/(login)?$/, { timeout: 10000 });
 
     // Verify we can't access protected routes anymore

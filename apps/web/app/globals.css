@@ -574,11 +574,6 @@ body {
     box-shadow: none;
   }
 
-  /* Form controls take the darker --input boundary in clean; cards keep the hairline. */
-  [data-style="clean"] :is(.ui-input, select, textarea, [role="radiogroup"]) {
-    border-color: hsl(var(--input));
-  }
-
   [data-style="clean"] .ui-input {
     padding: 0.5rem 0.75rem;
     background-color: hsl(var(--card));
@@ -593,6 +588,25 @@ body {
     border-color: hsl(var(--ring));
     box-shadow: 0 0 0 3px hsl(var(--ring) / 0.18);
     transform: none;
+  }
+}
+
+/* Form controls take the darker --input boundary in clean (3:1 against the page, as
+   WCAG 1.4.11 asks of a control's edge); cards and dividers keep the light hairline.
+   In the utilities layer, with higher specificity than border-line, so a call site's
+   border-line cannot thin a control back down. */
+@layer utilities {
+  [data-style="clean"]
+    :is(
+      .ui-input,
+      select,
+      textarea,
+      input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="range"]),
+      [role="radiogroup"],
+      [role="combobox"],
+      .ui-control
+    ) {
+    border-color: hsl(var(--input));
   }
 }
 

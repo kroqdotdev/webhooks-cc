@@ -47,6 +47,11 @@ export const CHANGELOG: ChangelogEntry[] = [
       "The landing page's first screen previews the dashboard and says plainly that the URL is one click away; the phone menu lists Providers, Compare and Pricing",
       "Pricing cards say what each paid plan adds, and the Teams video shows a still until it plays",
       "mailhooks.cc: a Setup checklist for mail (first email, a layout, a destination, forwarding), ready-made layouts from inside Settings, emails that open on their preview, and a way to list endpoints from webhooks.cc on the empty dashboard",
+      "The dashboard keeps its view, settings section and open request in the address, so reload, links and the phone's Back button work as expected",
+      "Settings warn before unsaved changes are lost and show which sections still need saving",
+      "Layouts lead with the values they find: each field shows its value, the pattern sits behind Edit pattern, and one Add layout menu offers the ready-made senders",
+      "The Setup checklist ticks steps from what the endpoint actually has, and opens the right settings for each",
+      "Skip to content now skips the header, docs search is a proper dialog, classic buttons look alike everywhere, and Pricing is in the header on every page",
     ],
   },
   {

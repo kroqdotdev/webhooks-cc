@@ -146,8 +146,18 @@ export function NewEndpointDialog() {
                   onChange={(e) => setMockBody(e.target.value)}
                   placeholder='{"success": true}'
                   rows={3}
+                  aria-describedby="ep-body-hint"
                   className="border-strong border-line text-sm font-mono"
                 />
+                <p id="ep-body-hint" className="text-xs text-muted-foreground">
+                  {looksLikeBrokenJson(mockBody) ? (
+                    <span className="text-destructive-ink">
+                      This does not parse as JSON; it will be sent as plain text.
+                    </span>
+                  ) : (
+                    "Sent as written. Headers can be set later under Settings, Responses."
+                  )}
+                </p>
               </div>
             </div>
           )}
@@ -179,4 +189,16 @@ export function NewEndpointDialog() {
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Text that starts like JSON but does not parse: worth a gentle warning, never a block. */
+function looksLikeBrokenJson(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
+  try {
+    JSON.parse(trimmed);
+    return false;
+  } catch {
+    return true;
+  }
 }

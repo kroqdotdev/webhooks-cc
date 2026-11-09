@@ -181,6 +181,9 @@ const nextConfig: NextConfig = {
             },
           ]
         : []),
+      // Addresses people guess: sign-up opens the form, and the docs home is the quick start.
+      { source: "/signup", destination: "/login?mode=sign-up", permanent: false },
+      { source: "/docs/quickstart", destination: "/docs", permanent: true },
       {
         // mailhooks.cc has a pricing page; webhooks.cc's pricing is a section
         // of its landing page, and people guess /pricing there too.

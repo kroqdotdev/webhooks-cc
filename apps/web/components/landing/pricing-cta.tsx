@@ -59,7 +59,7 @@ function PricingCTAInner({ inverted = false, primary = false }: PricingCTAProps)
         className={cn(
           "block text-center text-sm underline underline-offset-4 py-2",
           inverted
-            ? "text-background/85 hover:text-background"
+            ? "text-background hover:text-background/80"
             : "text-muted-foreground hover:text-foreground"
         )}
       >

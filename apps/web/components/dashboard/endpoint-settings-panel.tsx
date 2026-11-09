@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Globe, Mail, ShieldCheck } from "lucide-react";
+import { ChevronRight, Globe, Mail, ShieldCheck } from "lucide-react";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -20,6 +20,7 @@ import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import { EndpointSiteField, EndpointSiteText } from "./endpoint-site-field";
 import { twoSites, type EndpointSite } from "@/lib/site";
 import { setOpenEndpoint } from "@/lib/site-switch-client";
+import { useDirtySections } from "./dirty-sections";
 import {
   Field,
   SaveFooter,
@@ -56,6 +57,8 @@ interface EndpointSettingsPanelProps {
   focusSection?: SettingsSection | null;
   /** Opens a request from the delivery log, with its Deliveries tab active. */
   onOpenRequestDeliveries?: (requestId: string) => void;
+  /** A section was jumped to from the section nav (the dashboard keeps it in the URL). */
+  onSectionJump?: (section: SettingsSection) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +73,13 @@ function ReceivingSection({
   isOwner: boolean;
 }) {
   const router = useRouter();
+  // On webhooks.cc the email-only settings fold away unless they are in use;
+  // mailhooks.cc shows them open.
+  const mailFirst = useSite().key === "mailhooks";
+  const [emailOptionsOpen, setEmailOptionsOpen] = useState(
+    () =>
+      mailFirst || (endpoint.emailFields?.length ?? 0) > 0 || endpoint.showEmailExtracts === false
+  );
   const initialName = endpoint.name ?? "";
   const initialSite: EndpointSite = endpoint.site ?? "both";
   const initialExtracts = endpoint.showEmailExtracts !== false;
@@ -169,7 +179,11 @@ function ReceivingSection({
               },
               () => {
                 const [problem] = emailFieldIssues(fields);
-                if (problem) throw new Error(`Check the fields: ${problem}.`);
+                if (problem) {
+                  // The fields with the problem are shown.
+                  setEmailOptionsOpen(true);
+                  throw new Error(`Check the fields: ${problem}.`);
+                }
               }
             ).then((ok) => {
               // A site switch before the endpoint list reloads goes by the saved site.
@@ -211,43 +225,59 @@ function ReceivingSection({
               className="w-full"
             />
           </Field>
-          <div className="pt-4 border-t border-line/20 space-y-4">
-            <h3 className="text-sm font-semibold">Picked out of emails</h3>
-            <SwitchRow
-              id="settings-extracts"
-              label="Codes and links"
-              help={
-                <>
-                  Verification codes and links found in each email, shown above it with copy buttons
-                  and sent along when it is forwarded. Turn this off for endpoints that receive mail
-                  you would rather not have scanned.
-                  {!isOwner &&
-                    " Only the endpoint's owner can change these, because they also decide what forwarding sends."}
-                </>
-              }
-              checked={extracts}
-              onChange={setExtracts}
-              disabled={!isOwner}
-            />
-            <div>
-              <p className="text-sm font-semibold">Fields on every email</p>
-              <p className="text-xs text-muted-foreground mt-1 mb-3 max-w-[62ch]">
-                Name a value and say where it is: a regular expression (RE2) whose first group is
-                the value. It shows with the email, appears as <code>fields</code> in its JSON, and
-                forwarding templates and filters read it as{" "}
-                <code className="font-mono">{"{{ fields.invoice }}"}</code>. For fields that differ
-                by sender, add them to a layout under Layouts instead.
-              </p>
-              <EmailFieldsEditor
-                slug={endpoint.slug}
-                fields={fields}
-                onChange={setFields}
-                disabled={!isOwner}
-                showRequired={triedSave}
-                emailAddress={endpoint.emailAddress}
+          <details
+            open={emailOptionsOpen}
+            onToggle={(event) => setEmailOptionsOpen(event.currentTarget.open)}
+            className="group pt-4 border-t border-line/20"
+          >
+            <summary className="flex items-center gap-1.5 text-sm font-semibold cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                aria-hidden
+                className="h-4 w-4 text-muted-foreground transition-transform motion-reduce:transition-none group-open:rotate-90"
               />
+              Email options
+              {!emailOptionsOpen && emailChanged && (
+                <span className="text-xs font-normal text-muted-foreground">(changed)</span>
+              )}
+            </summary>
+            <div className="pt-4 space-y-4">
+              <h3 className="text-sm font-semibold">Picked out of emails</h3>
+              <SwitchRow
+                id="settings-extracts"
+                label="Codes and links"
+                help={
+                  <>
+                    Verification codes and links found in each email, shown above it with copy
+                    buttons and sent along when it is forwarded. Turn this off for endpoints that
+                    receive mail you would rather not have scanned.
+                    {!isOwner &&
+                      " Only the endpoint's owner can change these, because they also decide what forwarding sends."}
+                  </>
+                }
+                checked={extracts}
+                onChange={setExtracts}
+                disabled={!isOwner}
+              />
+              <div>
+                <p className="text-sm font-semibold">Fields on every email</p>
+                <p className="text-xs text-muted-foreground mt-1 mb-3 max-w-[62ch]">
+                  Name a value and say where it is: a regular expression (RE2) whose first group is
+                  the value. It shows with the email, appears as <code>fields</code> in its JSON,
+                  and forwarding templates and filters read it as{" "}
+                  <code className="font-mono">{"{{ fields.invoice }}"}</code>. For fields that
+                  differ by sender, add them to a layout under Layouts instead.
+                </p>
+                <EmailFieldsEditor
+                  slug={endpoint.slug}
+                  fields={fields}
+                  onChange={setFields}
+                  disabled={!isOwner}
+                  showRequired={triedSave}
+                  emailAddress={endpoint.emailAddress}
+                />
+              </div>
             </div>
-          </div>
+          </details>
         </>
       )}
     </Section>
@@ -634,6 +664,20 @@ function DeleteSection({
 // Panel
 // ---------------------------------------------------------------------------
 
+/** The settings order on webhooks.cc: how a request is answered and sent on, then the rest. */
+const WEB_SECTION_ORDER: SettingsSection[] = [
+  "receiving",
+  "responses",
+  "forwarding",
+  "deliveries",
+  "alerts",
+  "verification",
+  "retention",
+  "layouts",
+  "sharing",
+  "delete",
+];
+
 /** The settings order on mailhooks.cc: mail first, the HTTP-only sections after. */
 const MAIL_SECTION_ORDER: SettingsSection[] = [
   "receiving",
@@ -653,6 +697,7 @@ export function EndpointSettingsPanel({
   requestCount,
   focusSection,
   onOpenRequestDeliveries,
+  onSectionJump,
 }: EndpointSettingsPanelProps) {
   // Owners see everything; members of a team the endpoint is shared with can
   // rename it and change its responses, but not change its email setting or
@@ -665,9 +710,8 @@ export function EndpointSettingsPanel({
   // mailhooks.cc leads with what mail needs; the HTTP-only sections follow.
   const mailFirst = useSite().key === "mailhooks";
   const sections = useMemo(() => {
+    // Each site sorts these below (WEB_SECTION_ORDER, MAIL_SECTION_ORDER).
     const list = [
-      // In the order a request meets them: it arrives, its signature is
-      // checked, it is answered, and it is sent on.
       { id: "receiving", label: "Receiving" },
       ...(hasEmail ? [{ id: "layouts", label: "Layouts" }] : []),
       ...(isOwner ? [{ id: "retention", label: "Retention" }] : []),
@@ -690,8 +734,8 @@ export function EndpointSettingsPanel({
           ]
         : []),
     ] as { id: SettingsSection; label: string; nested?: boolean }[];
-    if (!mailFirst) return list;
-    const rank = (id: SettingsSection) => MAIL_SECTION_ORDER.indexOf(id);
+    const order = mailFirst ? MAIL_SECTION_ORDER : WEB_SECTION_ORDER;
+    const rank = (id: SettingsSection) => order.indexOf(id);
     return [...list].sort((a, b) => rank(a.id) - rank(b.id));
   }, [isOwner, hasLog, hasEmail, mailFirst]);
   const [active, setActive] = useState<SettingsSection>(focusSection ?? "receiving");
@@ -700,11 +744,16 @@ export function EndpointSettingsPanel({
   // A jump scrolls smoothly past other sections; the spy stays quiet until it
   // settles so the clicked section keeps its highlight.
   const jumpedAt = useRef(0);
-  const jump = useCallback((id: SettingsSection) => {
-    jumpedAt.current = Date.now();
-    setActive(id);
-    scrollToSection(id);
-  }, []);
+  const jump = useCallback(
+    (id: SettingsSection) => {
+      jumpedAt.current = Date.now();
+      setActive(id);
+      scrollToSection(id);
+      onSectionJump?.(id);
+    },
+    [onSectionJump]
+  );
+  const dirty = useDirtySections();
 
   useEffect(() => {
     if (focusSection)
@@ -765,8 +814,8 @@ export function EndpointSettingsPanel({
           </button>
         ))}
       </nav>
-      <div ref={scroller} className="flex-1 overflow-y-auto">
-        <div className="max-w-[780px] p-4 md:p-6 space-y-6">
+      <div ref={scroller} className="flex-1 overflow-y-auto flex flex-col">
+        <div className="max-w-[780px] w-full p-4 md:p-6 space-y-6 flex-1">
           {/* The sections render in the nav's order, which the list above decides. */}
           {sections.map(({ id }) => {
             switch (id) {
@@ -807,6 +856,28 @@ export function EndpointSettingsPanel({
             }
           })}
         </div>
+        {dirty.length > 0 && (
+          // Sticks to the bottom of the scroll area while edits are unsaved.
+          <div
+            role="status"
+            className="sticky bottom-0 z-10 border-t-strong border-line bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+          >
+            <div className="max-w-[780px] px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <p className="text-sm flex-1 min-w-[180px]">
+                {dirty.length === 1
+                  ? `${dirty[0].title} has unsaved changes`
+                  : `${dirty.length} sections have unsaved changes`}
+              </p>
+              <button
+                type="button"
+                onClick={() => jump(dirty[0].id as SettingsSection)}
+                className="ui-btn-outline py-1.5! px-3! text-xs"
+              >
+                Review
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

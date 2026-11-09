@@ -116,8 +116,13 @@ export default function MailhooksPricing() {
             {PLANS.map((plan) => (
               <div
                 key={plan.name}
-                className={`ui-card flex flex-col ${plan.name === "Business" ? "border-primary" : ""}`}
+                className={`ui-card relative flex flex-col ${plan.name === "Business" ? "border-primary" : ""}`}
               >
+                {plan.name === "Business" && (
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
+                    Best for parsing
+                  </span>
+                )}
                 <h2 className="font-bold text-2xl mb-2">{plan.name}</h2>
                 <p className="text-5xl font-bold">
                   {plan.price}
@@ -131,7 +136,17 @@ export default function MailhooksPricing() {
                     </li>
                   ))}
                 </ul>
-                <PricingCTA />
+                {/* Sign-up buttons once, on Free; the paid plans start free and upgrade later. */}
+                {plan.name === "Free" ? (
+                  <PricingCTA />
+                ) : (
+                  <Link
+                    href="/login?mode=sign-up&redirect=/account/plan"
+                    className={`${plan.name === "Business" ? "ui-btn-primary" : "ui-btn-outline"} block text-center`}
+                  >
+                    Start free, upgrade anytime
+                  </Link>
+                )}
               </div>
             ))}
           </div>

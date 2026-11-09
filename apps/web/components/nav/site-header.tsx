@@ -24,6 +24,8 @@ interface NavLink {
 const NAV_LINKS: NavLink[] = [
   { href: "/docs", label: "Docs" },
   { href: "/installation", label: "Install" },
+  // Pricing is a section of the landing page, reachable from every page.
+  { href: "/#pricing", label: "Pricing" },
   { href: "/blog", label: "Blog" },
 ];
 
@@ -116,7 +118,7 @@ export function SiteHeader({
   // Layouts settings, so the public catalogue is named for what it is.
   const links = compact
     ? siteLinks
-        .filter((link) => link.href !== "/blog" && link.href !== "/integrations")
+        .filter((link) => !["/blog", "/integrations", "/#pricing"].includes(link.href))
         .map((link) => (link.href === "/parse" ? { ...link, label: "Layout gallery" } : link))
     : siteLinks;
   // The path the links are chosen by: none on the 404 page (see notFound).
@@ -146,91 +148,50 @@ export function SiteHeader({
       );
 
   return (
-    <header
-      className="sticky z-50 shrink-0 border-b-strong border-line bg-background clean:bg-card"
-      style={{ top: top ?? siteHeaderTop() }}
-    >
-      <div
-        className={cn(
-          // The app pages under a compact header run full width, so the header
-          // does too, keeping the wordmark on the same left edge as the app.
-          "px-4 flex items-center justify-between gap-4",
-          compact
-            ? "min-h-14 flex-wrap gap-y-2 py-2 md:h-14 md:flex-nowrap md:py-0"
-            : "container mx-auto h-14"
-        )}
+    <>
+      <header
+        className="sticky z-50 shrink-0 border-b-strong border-line bg-background clean:bg-card"
+        style={{ top: top ?? siteHeaderTop() }}
       >
-        {/* In compact mode on phones this group dissolves (display: contents), so
-            the context can wrap onto its own full-width row under the wordmark. */}
-        <div className={cn("flex items-center gap-3 min-w-0", compact && "max-md:contents")}>
-          <div className="flex items-center gap-1 shrink-0">
-            <Link href="/" className="font-bold text-lg tracking-tight">
-              {site.name}
-            </Link>
-            <SiteSwitcher />
-          </div>
-          {compact && children ? (
-            <div className="flex items-center gap-3 min-w-0 max-md:order-last max-md:w-full">
-              {children}
-            </div>
-          ) : (
-            children
+        <div
+          className={cn(
+            // The app pages under a compact header run full width, so the header
+            // does too, keeping the wordmark on the same left edge as the app.
+            "px-4 flex items-center justify-between gap-4",
+            compact
+              ? "min-h-14 flex-wrap gap-y-2 py-2 md:h-14 md:flex-nowrap md:py-0"
+              : "container mx-auto h-14"
           )}
-        </div>
-
-        {/* Desktop */}
-        <nav aria-label="Site" className="hidden md:flex items-center gap-5">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={isActive(navPath, link.href) ? "page" : undefined}
-              className={cn(
-                "text-sm font-medium transition-colors hover:text-foreground",
-                isActive(navPath, link.href) ? "text-foreground" : "text-muted-foreground"
-              )}
-            >
-              {link.label}
-              {link.external && (
-                <>
-                  <ArrowUpRight aria-hidden className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5" />
-                  <span className="sr-only"> (on webhooks.cc)</span>
-                </>
-              )}
-            </Link>
-          ))}
-          {authAction}
-          {isAuthenticated && <UserDropdown />}
-        </nav>
-
-        {/* Phone */}
-        <button
-          ref={toggleRef}
-          type="button"
-          aria-controls="site-menu"
-          onClick={() => setOpen((prev) => !prev)}
-          className="md:hidden p-2 rounded-md border-strong border-line hover:bg-muted transition-colors cursor-pointer"
-          aria-label={open ? "Close menu" : "Open menu"}
-          aria-expanded={open}
         >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
-      </div>
+          {/* In compact mode on phones this group dissolves (display: contents), so
+            the context can wrap onto its own full-width row under the wordmark. */}
+          <div className={cn("flex items-center gap-3 min-w-0", compact && "max-md:contents")}>
+            <div className="flex items-center gap-1 shrink-0">
+              <Link href="/" className="font-bold text-lg tracking-tight">
+                {site.name}
+              </Link>
+              <SiteSwitcher />
+            </div>
+            {compact && children ? (
+              <div className="flex items-center gap-3 min-w-0 max-md:order-last max-md:w-full">
+                {children}
+              </div>
+            ) : (
+              children
+            )}
+          </div>
 
-      {open && (
-        <nav
-          id="site-menu"
-          aria-label="Site"
-          className="md:hidden absolute top-full left-0 right-0 border-t-strong border-line bg-background clean:bg-card shadow-raised"
-        >
-          <div className="px-4 py-4 flex flex-col gap-3">
-            <SiteSwitchRow onNavigate={() => setOpen(false)} />
-            {[...mobileLinks, ...links].map((link) => (
+          {/* Desktop */}
+          <nav aria-label="Site" className="hidden md:flex items-center gap-5">
+            {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="text-foreground font-medium text-lg"
-                onClick={() => setOpen(false)}
+                aria-current={isActive(navPath, link.href) ? "page" : undefined}
+                className={cn(
+                  "text-sm font-medium transition-colors hover:text-foreground",
+                  isActive(navPath, link.href) ? "text-foreground" : "text-muted-foreground"
+                )}
               >
                 {link.label}
                 {link.external && (
@@ -241,62 +202,107 @@ export function SiteHeader({
                 )}
               </Link>
             ))}
-            {isAuthenticated ? (
-              <>
+            {authAction}
+            {isAuthenticated && <UserDropdown />}
+          </nav>
+
+          {/* Phone */}
+          <button
+            ref={toggleRef}
+            type="button"
+            aria-controls="site-menu"
+            onClick={() => setOpen((prev) => !prev)}
+            className="md:hidden p-2 rounded-md border-strong border-line hover:bg-muted transition-colors cursor-pointer"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+
+        {open && (
+          <nav
+            id="site-menu"
+            aria-label="Site"
+            className="md:hidden absolute top-full left-0 right-0 border-t-strong border-line bg-background clean:bg-card shadow-raised"
+          >
+            <div className="px-4 py-4 flex flex-col gap-3">
+              <SiteSwitchRow onNavigate={() => setOpen(false)} />
+              {[...mobileLinks, ...links].map((link) => (
                 <Link
-                  href="/dashboard"
+                  key={link.href}
+                  href={link.href}
                   className="text-foreground font-medium text-lg"
                   onClick={() => setOpen(false)}
                 >
-                  Dashboard
+                  {link.label}
+                  {link.external && (
+                    <>
+                      <ArrowUpRight aria-hidden className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5" />
+                      <span className="sr-only"> (on webhooks.cc)</span>
+                    </>
+                  )}
                 </Link>
-                <Link
-                  href="/account"
-                  className="text-foreground font-medium text-lg"
-                  onClick={() => setOpen(false)}
-                >
-                  Account
-                </Link>
-                <Link
-                  href="/teams"
-                  className="text-foreground font-medium text-lg"
-                  onClick={() => setOpen(false)}
-                >
-                  Teams
-                </Link>
-                <Link
-                  href="/support"
-                  className="text-foreground font-medium text-lg"
-                  onClick={() => setOpen(false)}
-                >
-                  Support
-                </Link>
-                <div className="pt-3 border-t-strong border-foreground/20">
-                  <button
-                    type="button"
-                    onClick={() => void handleSignOut()}
-                    className="text-foreground font-medium text-lg cursor-pointer"
-                  >
-                    Sign out
-                  </button>
-                </div>
-              </>
-            ) : (
-              !onAuthPage && (
-                <div className="pt-3 border-t-strong border-foreground/20">
+              ))}
+              {isAuthenticated ? (
+                <>
                   <Link
-                    href="/login"
-                    className="ui-btn-outline inline-block text-sm"
+                    href="/dashboard"
+                    className="text-foreground font-medium text-lg"
                     onClick={() => setOpen(false)}
                   >
-                    Sign in
+                    Dashboard
                   </Link>
-                </div>
-              )
-            )}
-          </div>
-        </nav>
-      )}
-    </header>
+                  <Link
+                    href="/account"
+                    className="text-foreground font-medium text-lg"
+                    onClick={() => setOpen(false)}
+                  >
+                    Account
+                  </Link>
+                  <Link
+                    href="/teams"
+                    className="text-foreground font-medium text-lg"
+                    onClick={() => setOpen(false)}
+                  >
+                    Teams
+                  </Link>
+                  <Link
+                    href="/support"
+                    className="text-foreground font-medium text-lg"
+                    onClick={() => setOpen(false)}
+                  >
+                    Support
+                  </Link>
+                  <div className="pt-3 border-t-strong border-foreground/20">
+                    <button
+                      type="button"
+                      onClick={() => void handleSignOut()}
+                      className="text-foreground font-medium text-lg cursor-pointer"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </>
+              ) : (
+                !onAuthPage && (
+                  <div className="pt-3 border-t-strong border-foreground/20">
+                    <Link
+                      href="/login"
+                      className="ui-btn-outline inline-block text-sm"
+                      onClick={() => setOpen(false)}
+                    >
+                      Sign in
+                    </Link>
+                  </div>
+                )
+              )}
+            </div>
+          </nav>
+        )}
+      </header>
+      {/* The "Skip to content" link (app/layout.tsx) lands here, past the header. */}
+      <div id="main-content" tabIndex={-1} className="outline-none" />
+    </>
   );
 }

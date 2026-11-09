@@ -15,6 +15,8 @@ import {
   GitCompareArrows,
   Clipboard,
   Paperclip,
+  Check,
+  Copy,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useSite } from "@/components/providers/site-provider";
@@ -69,6 +71,8 @@ interface RequestListProps {
   /** Set for endpoints that receive email: shows the All / HTTP / Email switch. */
   kindFilter?: KindFilter;
   onKindFilterChange?: (kind: KindFilter) => void;
+  /** The endpoint's address, shown when no email has arrived yet. */
+  emailAddress?: string | null;
 }
 
 const KINDS: { id: KindFilter; label: string }[] = [
@@ -118,9 +122,11 @@ export function RequestList({
   timelineSlot,
   kindFilter = "all",
   onKindFilterChange,
+  emailAddress,
 }: RequestListProps) {
   // The mail site, or a list filtered to email, talks about emails.
-  const itemNoun = useSite().key === "mailhooks" || kindFilter === "email" ? "emails" : "requests";
+  const talksEmail = useSite().key === "mailhooks" || kindFilter === "email";
+  const itemNoun = talksEmail ? "emails" : "requests";
   const displayCount = totalCount ?? requests.length;
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
@@ -362,7 +368,7 @@ export function RequestList({
             ))}
           </select>
         )}
-        <div className="flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
+        <div className="ui-control flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
@@ -419,6 +425,17 @@ export function RequestList({
             <Loader2 className="h-3 w-3 animate-spin" />
             Searching...
           </div>
+        ) : pinned.length === 0 &&
+          unpinned.length === 0 &&
+          talksEmail &&
+          emailAddress &&
+          kindFilter !== "http" &&
+          !searchQuery &&
+          methodFilter === "ALL" &&
+          !hasMore &&
+          !searchError ? (
+          // Nothing filtered away: no email has arrived yet.
+          <NoEmailsYet address={emailAddress} />
         ) : pinned.length === 0 && unpinned.length === 0 ? (
           <>
             <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps">
@@ -664,4 +681,36 @@ export function RequestList({
       </button>
     );
   }
+}
+
+/** The list's empty state while an endpoint has no email: where to send some. */
+function NoEmailsYet({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const copy = async () => {
+    if (!(await copyToClipboard(address))) return;
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="px-4 py-8 text-center space-y-3">
+      <p className="text-sm font-semibold">No emails yet.</p>
+      <div className="inline-flex max-w-full items-center gap-1 rounded-md border-strong border-line bg-background pl-2.5 pr-1 py-1">
+        <span className="font-mono text-xs truncate">{address}</span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label="Copy email address"
+          className="shrink-0 p-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground max-w-[32ch] mx-auto">
+        Forward a mailbox here or give this address to the sender.
+      </p>
+    </div>
+  );
 }

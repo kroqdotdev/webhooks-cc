@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useState, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/dashboard-api";
+import { SectionIdentityContext, useReportDirty } from "./dirty-sections";
 
 /**
  * The building blocks every section of the endpoint settings shares: the
@@ -11,17 +12,25 @@ import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/da
  * and the save hook. Kept together so the sections read the same.
  */
 
-export type SettingsSection =
-  | "receiving"
-  | "layouts"
-  | "retention"
-  | "alerts"
-  | "responses"
-  | "forwarding"
-  | "deliveries"
-  | "sharing"
-  | "verification"
-  | "delete";
+export const SETTINGS_SECTIONS = [
+  "receiving",
+  "layouts",
+  "retention",
+  "alerts",
+  "responses",
+  "forwarding",
+  "deliveries",
+  "sharing",
+  "verification",
+  "delete",
+] as const;
+
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/** A section id read back from the URL. */
+export function isSettingsSection(value: string | null | undefined): value is SettingsSection {
+  return (SETTINGS_SECTIONS as readonly string[]).includes(value ?? "");
+}
 
 export function Section({
   id,
@@ -40,32 +49,36 @@ export function Section({
   danger?: boolean;
   sectionRef?: React.Ref<HTMLElement>;
 }) {
+  // The save footer inside reports its unsaved edits under this section's name.
+  const identity = useMemo(() => ({ id, title }), [id, title]);
   return (
-    <section
-      ref={sectionRef}
-      id={`settings-${id}`}
-      aria-labelledby={`settings-${id}-title`}
-      data-settings-section={id}
-      className={cn(
-        "ui-card ui-card-static p-0! scroll-mt-4 overflow-hidden",
-        danger && "border-destructive"
-      )}
-    >
-      <div className="p-5 space-y-4">
-        <div>
-          <h2 id={`settings-${id}-title`} className="text-base font-bold clean:font-semibold">
-            {title}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-[62ch]">{description}</p>
+    <SectionIdentityContext.Provider value={identity}>
+      <section
+        ref={sectionRef}
+        id={`settings-${id}`}
+        aria-labelledby={`settings-${id}-title`}
+        data-settings-section={id}
+        className={cn(
+          "ui-card ui-card-static p-0! scroll-mt-4 overflow-hidden",
+          danger && "border-destructive"
+        )}
+      >
+        <div className="p-5 space-y-4">
+          <div>
+            <h2 id={`settings-${id}-title`} className="text-base font-bold clean:font-semibold">
+              {title}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-[62ch]">{description}</p>
+          </div>
+          {children}
         </div>
-        {children}
-      </div>
-      {footer && (
-        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40">
-          {footer}
-        </div>
-      )}
-    </section>
+        {footer && (
+          <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40">
+            {footer}
+          </div>
+        )}
+      </section>
+    </SectionIdentityContext.Provider>
   );
 }
 
@@ -126,6 +139,7 @@ export function SaveFooter({
   onSave: () => void;
   onReset: () => void;
 }) {
+  useReportDirty(dirty);
   return (
     <>
       <p

@@ -19,7 +19,6 @@ import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { PricingCTA } from "@/components/landing/pricing-cta";
 import { LandingDashboard } from "@/components/landing/landing-dashboard";
-import { TeamsVideo } from "@/components/landing/teams-video";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
 import { mailhooksUrl } from "@/lib/mailhooks-seo";
@@ -28,7 +27,6 @@ import {
   softwareApplicationSchema,
   faqSchema,
   howToSchema,
-  videoObjectSchema,
   type FAQItem,
 } from "@/lib/schemas";
 import { createClient } from "@supabase/supabase-js";
@@ -241,13 +239,11 @@ export default async function Home() {
           ],
         })}
       />
-      <JsonLd data={videoObjectSchema()} />
 
       <SiteHeader
         mobileLinks={[
           { href: "/webhooks", label: "Providers" },
           { href: "/compare", label: "Compare" },
-          { href: "/#pricing", label: "Pricing" },
         ]}
       >
         <nav
@@ -260,29 +256,28 @@ export default async function Home() {
           <Link href="/compare" className="text-muted-foreground hover:text-foreground">
             Compare
           </Link>
-          <Link href="/#pricing" className="text-muted-foreground hover:text-foreground">
-            Pricing
-          </Link>
         </nav>
       </SiteHeader>
 
       {/* Hero: the landing screen IS the dashboard, webhook.site style */}
       <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">
         {/* Title strip inside the app chrome: the page's H1 lives here */}
-        <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-2 text-center">
-          <h1 className="text-base md:text-xl font-bold tracking-tight leading-snug">
+        <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-3 md:py-5 text-center">
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
             The fastest way to{" "}
             <span className="bg-primary text-primary-foreground px-1.5 clean:bg-transparent clean:px-0 clean:text-primary-ink">
               test webhooks
             </span>
           </h1>
-          <p className="hidden md:block text-sm text-muted-foreground mt-0.5">
-            Your free webhook URL is one click away below. Point any service at it. No signup, no
-            credit card. One click with GitHub or Google, or an email signup,{" "}
-            <Link href="/login" className="font-bold text-foreground hover:text-primary-ink">
-              keeps it, free
-            </Link>
-            .
+          <p className="hidden md:block text-base text-muted-foreground mt-2">
+            Get a free webhook URL below and point any service at it. No signup, no credit card.{" "}
+            <Link
+              href="/login?mode=sign-up"
+              className="font-bold text-foreground hover:text-primary-ink"
+            >
+              Sign up free
+            </Link>{" "}
+            to keep it.
           </p>
         </div>
 
@@ -647,29 +642,19 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Teams: dedicated video section */}
-      <section className="py-20 px-4 bg-muted">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            <div>
-              <p className="text-xs font-bold caps text-muted-foreground mb-4">Teams</p>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">Built for teams</h2>
-              <p className="text-xl text-muted-foreground mb-8">
-                Create a team, invite your colleagues, and share endpoints. Everyone sees the same
-                incoming webhooks in real time, with no more pasting URLs in Slack.
-              </p>
-              <Link href="/for-teams" className="ui-btn-primary inline-block">
-                How Teams works
-              </Link>
-              <p className="text-sm text-muted-foreground mt-3">
-                From $12/seat/mo, or $35/seat/mo for Team Business with Business&apos;s limits per
-                seat
-              </p>
-            </div>
-            <div className="ui-card ui-card-static p-0! overflow-hidden">
-              <TeamsVideo />
-            </div>
+      {/* Teams: a short pointer; the demo video lives on /for-teams */}
+      <section className="pb-20 px-4">
+        <div className="max-w-6xl mx-auto ui-card ui-card-static flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
+          <div className="flex-1">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2">Built for teams</h2>
+            <p className="text-muted-foreground">
+              Share endpoints with your colleagues: everyone sees the same webhooks the moment they
+              arrive. From $12/seat/month, or $35/seat/month for Team Business.
+            </p>
           </div>
+          <Link href="/for-teams" className="ui-btn-outline inline-block text-center shrink-0">
+            How Teams works
+          </Link>
         </div>
       </section>
 
@@ -745,7 +730,7 @@ export default async function Home() {
               {/* One action per paid plan: everyone starts free and upgrades under Account. */}
               <Link
                 href="/login?mode=sign-up&redirect=/account/plan"
-                className="ui-btn-outline mt-auto block text-center"
+                className="ui-btn-primary mt-auto block text-center"
               >
                 Start free, upgrade anytime
               </Link>

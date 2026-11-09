@@ -88,6 +88,11 @@ async function openSettings(page: Page, section: string) {
     .click();
   const region = page.getByRole("region", { name: section });
   await expect(region).toBeVisible();
+  if (section === "Receiving") {
+    // On webhooks.cc the email settings start folded under "Email options".
+    const options = region.locator("details", { hasText: "Email options" });
+    if ((await options.getAttribute("open")) === null) await options.locator("summary").click();
+  }
   return region;
 }
 

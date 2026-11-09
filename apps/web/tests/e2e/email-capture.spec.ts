@@ -374,6 +374,11 @@ test("codes and links can be turned off for the endpoint", async ({ page }) => {
     .click();
 
   const receiving = page.getByRole("region", { name: "Receiving" });
+  // On webhooks.cc the email settings start folded under "Email options".
+  const emailOptions = receiving.locator("details", { hasText: "Email options" });
+  if ((await emailOptions.getAttribute("open")) === null) {
+    await emailOptions.locator("summary").click();
+  }
   await receiving.getByRole("switch", { name: "Codes and links" }).click();
   await receiving.getByRole("button", { name: "Save changes" }).click();
   await expect(receiving.getByText("Saved.")).toBeVisible({ timeout: 10000 });

@@ -30,13 +30,21 @@ import {
 import { SendWebhookDialog } from "./send-webhook-dialog";
 import { DashboardGuideDialog } from "./dashboard-guide-dialog";
 import { Segmented } from "./settings-primitives";
-import { useGettingStarted, type MailSetupState } from "./getting-started";
+import { useGettingStarted, type SetupState } from "./getting-started";
+import type { SettingsSection } from "./settings-primitives";
 
 export type EndpointTab = "requests" | "settings";
 
 interface EndpointBarProps {
-  /** What the endpoint has, for mailhooks.cc's Setup checklist. */
-  mailSetup?: MailSetupState;
+  /** What the endpoint has, for the Setup checklist. */
+  setupState?: SetupState;
+  /** Opens Settings at a section, for checklist steps done there. */
+  onOpenSettings?: (section: SettingsSection) => void;
+  /**
+   * A request is open full screen on a phone: only the name and the tabs
+   * stay, so the request gets the room.
+   */
+  detailOpen?: boolean;
   name: string;
   slug: string;
   /** null for endpoints that cannot receive email (no owner). */
@@ -106,14 +114,19 @@ function SetupMenu({
   hasRequests,
   onOpenGuide,
   slug,
-  mailSetup,
+  setupState,
+  mail,
+  onOpenSettings,
 }: {
   hasRequests: boolean;
   onOpenGuide: () => void;
   slug: string;
-  mailSetup?: MailSetupState;
+  setupState?: SetupState;
+  /** mailhooks.cc's checklist rather than webhooks.cc's. */
+  mail: boolean;
+  onOpenSettings?: (section: SettingsSection) => void;
 }) {
-  const setup = useGettingStarted(hasRequests, mailSetup);
+  const setup = useGettingStarted(hasRequests, setupState, mail);
   // One stable name; the progress rides along while the checklist is open.
   const label = setup.open ? `Setup ${setup.progress}/${setup.total}` : "Setup";
   return (
@@ -149,9 +162,15 @@ function SetupMenu({
                 {item.label}
               </span>
             );
+            const section = item.section;
             return item.href ? (
               <DropdownMenuItem key={item.id} asChild onSelect={() => setup.markVisited(item.id)}>
                 <Link href={item.href}>{body}</Link>
+              </DropdownMenuItem>
+            ) : section && onOpenSettings && !done ? (
+              // Done in Settings: the item opens the section that does it.
+              <DropdownMenuItem key={item.id} onSelect={() => onOpenSettings(section)}>
+                {body}
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem key={item.id} disabled={done}>
@@ -307,7 +326,9 @@ export function EndpointBar({
   onTabChange,
   hasRequests,
   exportMenu,
-  mailSetup,
+  setupState,
+  onOpenSettings,
+  detailOpen = false,
 }: EndpointBarProps) {
   const [guideOpen, setGuideOpen] = useState(false);
   const mailFirst = useSite().key === "mailhooks";
@@ -320,7 +341,12 @@ export function EndpointBar({
     <div className="border-b-strong border-line bg-card px-4 pt-3 shrink-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="font-bold text-sm tracking-normal shrink-0 order-1">{name}</h1>
-        <div className="order-3 md:order-2 w-full md:w-auto md:flex-1 min-w-0 flex items-center gap-2">
+        <div
+          className={cn(
+            "order-3 md:order-2 w-full md:w-auto md:flex-1 min-w-0 flex items-center gap-2",
+            detailOpen && "max-md:hidden"
+          )}
+        >
           <AddressPill
             label="HTTP"
             icon={Globe}
@@ -363,12 +389,19 @@ export function EndpointBar({
             </span>
           )}
         </div>
-        <div className="relative order-2 md:order-3 ml-auto flex items-center gap-2">
+        <div
+          className={cn(
+            "relative order-2 md:order-3 ml-auto flex items-center gap-2",
+            detailOpen && "max-md:hidden"
+          )}
+        >
           <SetupMenu
             hasRequests={hasRequests}
             onOpenGuide={() => setGuideOpen(true)}
             slug={slug}
-            mailSetup={mailFirst && emailAddress ? mailSetup : undefined}
+            setupState={setupState}
+            mail={mailFirst && !!emailAddress}
+            onOpenSettings={onOpenSettings}
           />
           <SendMenu slug={slug} canEmail={!!emailAddress} />
           {exportMenu}

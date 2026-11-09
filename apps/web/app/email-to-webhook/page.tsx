@@ -336,8 +336,8 @@ export default function EmailToWebhookPage() {
           <p className="opacity-80 mb-6 max-w-md mx-auto">
             Sign up free, create an endpoint, add your URL and send it an email.
           </p>
-          <div className="flex justify-center text-foreground">
-            <PricingCTA />
+          <div className="flex justify-center">
+            <PricingCTA inverted />
           </div>
           <p className="text-sm opacity-80 mt-6">No credit card</p>
         </div>

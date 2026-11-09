@@ -136,6 +136,7 @@ const MAILHOOKS_PREFIXES = [
   "/ai-setup",
   "/integrations",
   "/login",
+  "/signup",
   "/auth",
   "/dashboard",
   "/account",

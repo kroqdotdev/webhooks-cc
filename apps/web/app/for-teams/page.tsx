@@ -11,7 +11,15 @@ import {
   UserPlus,
 } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
-import { JsonLd, breadcrumbSchema, faqSchema, howToSchema, type FAQItem } from "@/lib/schemas";
+import {
+  JsonLd,
+  breadcrumbSchema,
+  faqSchema,
+  howToSchema,
+  videoObjectSchema,
+  type FAQItem,
+} from "@/lib/schemas";
+import { TeamsVideo } from "@/components/landing/teams-video";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { TeamsCTA } from "@/components/landing/teams-cta";
 
@@ -164,6 +172,7 @@ export default function ForTeamsPage() {
         ])}
       />
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
+      <JsonLd data={videoObjectSchema()} />
       <JsonLd
         data={howToSchema({
           name: "How to share webhook endpoints with your team",
@@ -192,6 +201,10 @@ export default function ForTeamsPage() {
             </Link>{" "}
             for every detail.
           </p>
+        </div>
+
+        <div className="ui-card ui-card-static p-0! overflow-hidden mb-12">
+          <TeamsVideo />
         </div>
 
         <section className="mb-12">

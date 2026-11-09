@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import {
   emailFieldIssues,
   MAX_EMAIL_FIELDS,
@@ -15,8 +15,9 @@ import { previewEmailFields, type EmailFieldsPreview } from "@/lib/dashboard-api
 /**
  * Named fields an endpoint picks out of every email: a name, the part of the
  * email it reads, and an RE2 pattern whose first group is the value. Each
- * row shows what its pattern finds in the newest captured email as you type
- * (the server runs it, with RE2), so a pattern is right before it is saved.
+ * row leads with what its pattern finds in the newest captured email (the
+ * server runs it, with RE2); the pattern itself sits behind "Edit pattern",
+ * open while the field is new, finds nothing or has a problem.
  */
 
 const SOURCES: { value: EmailFieldSource; label: string }[] = [
@@ -82,6 +83,10 @@ export function EmailFieldsEditor({
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const [preview, setPreview] = useState<EmailFieldsPreview | null>(null);
+  // Rows whose pattern was opened or closed by hand, by place; the rest
+  // follow their default (open while there is something to fix).
+  const [patternOpen, setPatternOpen] = useState<Record<number, boolean>>({});
+  const baseId = useId();
   const local = useMemo(() => emailFieldIssues(fields), [fields]);
   const shownLocal = local.filter((problem) => showRequired || !problem.includes("is required"));
   const problems = problemsByRow([...shownLocal, ...(preview?.problems ?? [])]);
@@ -120,20 +125,39 @@ export function EmailFieldsEditor({
     onChange(next);
   };
 
+  const remove = (index: number) => {
+    onChange(fields.filter((_, i) => i !== index));
+    // Rows below move up one place, and their open patterns with them.
+    setPatternOpen((current) => {
+      const next: Record<number, boolean> = {};
+      for (const [key, value] of Object.entries(current)) {
+        const i = Number(key);
+        if (i < index) next[i] = value;
+        else if (i > index) next[i - 1] = value;
+      }
+      return next;
+    });
+  };
+
+  const notFound = requestId ? "Not found in this email" : "Not found in the newest email";
+
   return (
     <div className="space-y-3">
       {fields.length > 0 && (
-        <ul className="space-y-2.5" aria-label="Fields">
+        <ul className="space-y-2" aria-label="Fields">
           {fields.map((field, index) => {
             const n = index + 1;
             const problem = problems.get(index);
             const value = preview?.values?.[field.name];
+            const missing = Boolean(preview?.request) && value !== undefined && !value;
+            // Open by default where there is something to do with the pattern.
+            const open =
+              patternOpen[index] ?? (!field.pattern.trim() || Boolean(problem) || missing);
+            const patternId = `${baseId}-pattern-${index}`;
+            const label = field.name || `field ${n}`;
             return (
-              <li
-                key={index}
-                className="border-strong border-line rounded-md bg-card p-2.5 space-y-1.5"
-              >
-                <div className="flex flex-wrap items-center gap-1.5">
+              <li key={index} className="border-strong border-line rounded-md bg-card p-2.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                   <input
                     aria-label={`Field ${n}: name`}
                     value={field.name}
@@ -141,7 +165,7 @@ export function EmailFieldsEditor({
                     placeholder="invoice"
                     spellCheck={false}
                     disabled={disabled}
-                    className={cn(inputClass, "w-32")}
+                    className={cn(inputClass, "w-32 font-semibold")}
                   />
                   <span className="text-xs text-muted-foreground">from</span>
                   <select
@@ -156,7 +180,7 @@ export function EmailFieldsEditor({
                       })
                     }
                     disabled={disabled}
-                    className={cn(selectClass, "w-36")}
+                    className={cn(selectClass, "w-32")}
                   >
                     {SOURCES.map((source) => (
                       <option key={source.value} value={source.value}>
@@ -172,47 +196,71 @@ export function EmailFieldsEditor({
                       placeholder="X-Mailer"
                       spellCheck={false}
                       disabled={disabled}
-                      className={cn(inputClass, "w-36")}
+                      className={cn(inputClass, "w-32")}
                     />
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onChange(fields.filter((_, i) => i !== index))}
-                    disabled={disabled}
-                    aria-label={`Remove field ${field.name || n}`}
-                    className="ml-auto p-1.5 text-muted-foreground hover:text-foreground cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <input
-                  aria-label={`Field ${n}: pattern`}
-                  value={field.pattern}
-                  onChange={(e) => update(index, { pattern: e.target.value })}
-                  placeholder="Invoice (INV-\d+)"
-                  spellCheck={false}
-                  disabled={disabled}
-                  className={cn(inputClass, "w-full")}
-                />
-                <p
-                  className={cn(
-                    "text-xs",
-                    problem ? "text-destructive-ink" : "text-muted-foreground"
-                  )}
-                  aria-live="polite"
-                >
-                  {problem ? (
-                    problem
-                  ) : !preview?.request || value === undefined ? null : value ? (
-                    <>
-                      Finds{" "}
-                      <code className="font-mono text-foreground bg-muted px-1 rounded-sm">
+                  <span className="flex-1 min-w-40 text-[13px] break-all" aria-live="polite">
+                    {problem ? null : !preview ? null : !preview.request ? (
+                      <span className="text-xs text-muted-foreground">No email yet</span>
+                    ) : value === undefined ? null : value ? (
+                      <code className="font-mono text-foreground [font-variant-ligatures:none]">
                         {value}
                       </code>
-                    </>
-                  ) : (
-                    "Finds nothing in that email."
-                  )}
+                    ) : (
+                      <span className="text-xs text-destructive-ink">{notFound}</span>
+                    )}
+                  </span>
+                  <div className="ml-auto flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setPatternOpen((current) => ({ ...current, [index]: !open }))}
+                      aria-expanded={open}
+                      aria-controls={patternId}
+                      aria-label={`Edit pattern for ${label}`}
+                      className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      Edit pattern
+                      <ChevronDown
+                        className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
+                        aria-hidden
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(index)}
+                      disabled={disabled}
+                      aria-label={`Remove field ${label}`}
+                      className="p-1.5 text-muted-foreground hover:text-foreground cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div id={patternId} hidden={!open} className="pt-2 space-y-1">
+                  <label
+                    htmlFor={`${patternId}-input`}
+                    className="block text-xs font-medium text-muted-foreground"
+                  >
+                    Pattern (RE2)
+                  </label>
+                  <input
+                    id={`${patternId}-input`}
+                    aria-label={`Field ${n}: pattern (RE2)`}
+                    value={field.pattern}
+                    // Typing keeps the pattern open, even once it finds a value.
+                    onFocus={() => setPatternOpen((current) => ({ ...current, [index]: true }))}
+                    onChange={(e) => update(index, { pattern: e.target.value })}
+                    placeholder="Invoice (INV-\d+)"
+                    spellCheck={false}
+                    disabled={disabled}
+                    className={cn(inputClass, "w-full")}
+                  />
+                </div>
+                <p
+                  className={cn("text-xs text-destructive-ink", problem && "pt-1.5")}
+                  aria-live="polite"
+                >
+                  {problem}
                 </p>
               </li>
             );

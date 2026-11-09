@@ -14,6 +14,12 @@ import {
   EndpointSettingsPanel,
   type SettingsSection,
 } from "@/components/dashboard/endpoint-settings-panel";
+import { isSettingsSection } from "@/components/dashboard/settings-primitives";
+import {
+  DirtySectionsProvider,
+  DiscardChangesDialog,
+  type DirtySection,
+} from "@/components/dashboard/dirty-sections";
 import { RequestList } from "@/components/dashboard/request-list";
 import {
   RequestDetail,
@@ -30,7 +36,7 @@ import { getNote, setNote, getAllNotes } from "@/lib/request-notes";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Check, Send, Download, ChevronDown, Mail, Inbox } from "lucide-react";
+import { Copy, Check, Send, Download, ChevronDown, Mail, Inbox, X } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
@@ -98,7 +104,7 @@ export default function DashboardPage() {
   // empty list means "loading", not "nothing captured yet".
   const [requestsLoadedFor, setRequestsLoadedFor] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const endpointSlug = searchParams.get("endpoint");
+  const endpointSlugParam = searchParams.get("endpoint");
   // A ready-made layout to add, from a mailhooks.cc sender page.
   const templateParam = searchParams.get("template");
 
@@ -106,14 +112,51 @@ export default function DashboardPage() {
     () => allEndpoints?.filter((endpoint) => listedOn(endpoint.site, site.key)),
     [allEndpoints, site.key]
   );
+  // The endpoint a slug opens: one listed here, else one opened by its slug
+  // (a link, the other site's switcher) though listed elsewhere, else the default.
+  const resolveEndpoint = (slug: string | null) =>
+    (slug
+      ? (endpoints?.find((ep) => ep.slug === slug) ?? allEndpoints?.find((ep) => ep.slug === slug))
+      : undefined) ?? (endpoints ? defaultDashboardEndpoint(endpoints) : undefined);
+
+  // Settings sections with unsaved edits (DirtySectionsProvider reports them).
+  const [dirtySections, setDirtySections] = useState<DirtySection[]>([]);
+  const dirtySectionsRef = useRef<DirtySection[]>([]);
+  const handleDirtyChange = useCallback((list: DirtySection[]) => {
+    dirtySectionsRef.current = list;
+    setDirtySections(list);
+  }, []);
+
+  // Another endpoint opened (the header's switcher) while settings are unsaved:
+  // the open one is held until the person keeps editing or discards.
+  const [heldSwitch, setHeldSwitch] = useState<{ from: string | null; keeping: boolean } | null>(
+    null
+  );
+  const [seenSlugParam, setSeenSlugParam] = useState(endpointSlugParam);
+  let held = heldSwitch;
+  if (seenSlugParam !== endpointSlugParam) {
+    setSeenSlugParam(endpointSlugParam);
+    if (
+      held === null &&
+      dirtySections.length > 0 &&
+      endpointSlugParam !== null &&
+      resolveEndpoint(endpointSlugParam)?.id !== resolveEndpoint(seenSlugParam)?.id
+    ) {
+      held = { from: seenSlugParam, keeping: false };
+      setHeldSwitch(held);
+    }
+  }
+  // Kept editing: the URL is back on the held endpoint.
+  if (held && resolveEndpoint(endpointSlugParam)?.id === resolveEndpoint(held.from)?.id) {
+    held = null;
+    setHeldSwitch(null);
+  }
+  const endpointSlug = held ? held.from : endpointSlugParam;
   // Opened by its slug (a link, the other site's switcher) though listed elsewhere.
   const linkedEndpoint = endpointSlug
     ? allEndpoints?.find((ep) => ep.slug === endpointSlug)
     : undefined;
-  const currentEndpoint =
-    endpoints?.find((ep) => ep.slug === endpointSlug) ??
-    linkedEndpoint ??
-    (endpoints ? defaultDashboardEndpoint(endpoints) : undefined);
+  const currentEndpoint = resolveEndpoint(endpointSlug);
   const currentEndpointId = currentEndpoint?.id;
   const currentSlug = currentEndpoint?.slug;
   const currentSite = currentEndpoint?.site;
@@ -123,12 +166,24 @@ export default function DashboardPage() {
     return () => setOpenEndpoint(null);
   }, [currentSlug, currentSite]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The selected request is mirrored in ?request= (updateParams below):
+  // a link or a reload opens it, and on phones Back closes it.
+  const requestParam = searchParams.get("request");
+  const [selectedId, setSelectedId] = useState<string | null>(() => requestParam);
   const [selectedClickHouseDetail, setSelectedClickHouseDetail] =
     useState<ClickHouseRequest | null>(null);
   const [liveMode, setLiveMode] = useState(true);
   const [sortNewest, setSortNewest] = useState(true);
-  const [mobileDetail, setMobileDetail] = useState(false);
+  const [mobileDetail, setMobileDetail] = useState(() => requestParam !== null);
+  const mobileDetailRef = useRef(mobileDetail);
+  // eslint-disable-next-line react-hooks/refs
+  mobileDetailRef.current = mobileDetail;
+  // The ?request= value this page last wrote; anything else came from Back,
+  // Forward or a link.
+  const writtenRequestRef = useRef(requestParam);
+  // Whether opening the request added a history entry (phones), so Back to
+  // list can go back instead of adding another.
+  const pushedRequestRef = useRef(false);
   const prevTopSummaryId = useRef<string | null>(null);
   const [newCount, setNewCount] = useState(0);
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
@@ -167,7 +222,7 @@ export default function DashboardPage() {
     [selectedId]
   );
 
-  // Compare mode — freeze both sides so live changes don't mutate the diff
+  // Compare mode: freeze both sides so live changes don't mutate the diff
   const [compareId, setCompareId] = useState<string | null>(null);
   const [compareRequest, setCompareRequest] = useState<ClickHouseRequest | null>(null);
   const [compareBase, setCompareBase] = useState<ClickHouseRequest | null>(null);
@@ -319,24 +374,31 @@ export default function DashboardPage() {
   const desktopSearchInputRef = useRef<HTMLInputElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
-  // Tab state from URL — read searchParams for deriving current tab,
+  // Tab state from URL: read searchParams for deriving current tab,
   // but write via window.location.search to avoid subscribing to the object (rerender-defer-reads).
   const router = useRouter();
   const pathname = usePathname();
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : "body";
-  const setActiveTab = useCallback(
-    (tab: Tab) => {
+  // Sets (a string) or drops (null) query parameters and keeps the rest. One
+  // handler makes one call: the URL a second call reads may not be updated yet.
+  const updateParams = useCallback(
+    (changes: Record<string, string | null>, mode: "replace" | "push" = "replace") => {
       const params = new URLSearchParams(window.location.search);
-      if (tab === "body") {
-        params.delete("tab");
-      } else {
-        params.set("tab", tab);
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === null) params.delete(key);
+        else params.set(key, value);
       }
       const qs = params.toString();
-      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+      const href = `${pathname}${qs ? `?${qs}` : ""}`;
+      if (mode === "push") router.push(href, { scroll: false });
+      else router.replace(href, { scroll: false });
     },
     [router, pathname]
+  );
+  const setActiveTab = useCallback(
+    (tab: Tab) => updateParams({ tab: tab === "body" ? null : tab }),
+    [updateParams]
   );
 
   // Retained request history state
@@ -392,7 +454,7 @@ export default function DashboardPage() {
           localStorage.removeItem("demo_endpoint");
         }
       } catch {
-        // Claim is best-effort — proceed with normal load
+        // Claim is best-effort; proceed with normal load
       }
     }
 
@@ -864,7 +926,15 @@ export default function DashboardPage() {
           .filter((request) => matchesFilters(request, methodFilter, kindFilter));
         // Follow, or announce, only arrivals the list shows; the filters hide the rest.
         if (liveMode) {
-          if (matching.length > 0) setSelectedId(matching[0]._id);
+          if (matching.length > 0) {
+            const followed = matching[0]._id;
+            setSelectedId(followed);
+            // A URL naming a request follows along; one naming none means "the newest".
+            if (writtenRequestRef.current !== null && writtenRequestRef.current !== followed) {
+              writtenRequestRef.current = followed;
+              updateParams({ request: followed });
+            }
+          }
         } else if (matching.length > 0) {
           setNewCount((prev) => prev + matching.length);
         }
@@ -880,7 +950,7 @@ export default function DashboardPage() {
 
     prevTopSummaryId.current = topId;
     countedRequestsRef.current = recentRequests;
-  }, [recentRequests, liveMode, debouncedSearch, methodFilter, kindFilter]);
+  }, [recentRequests, liveMode, debouncedSearch, methodFilter, kindFilter, updateParams]);
 
   // With nothing selected, select the newest request the list shows.
   useEffect(() => {
@@ -889,7 +959,12 @@ export default function DashboardPage() {
     setSelectedId("_id" in first ? first._id : first.id);
   }, [displayedItems, selectedId]);
 
+  // A different endpoint starts over. The first one keeps what the URL selected.
+  const prevEndpointIdRef = useRef(currentEndpointId);
   useEffect(() => {
+    const previous = prevEndpointIdRef.current;
+    prevEndpointIdRef.current = currentEndpointId;
+    if (previous === undefined || previous === currentEndpointId) return;
     setSelectedId(null);
     setSelectedClickHouseDetail(null);
     setNewCount(0);
@@ -909,10 +984,45 @@ export default function DashboardPage() {
     clickHouseDetailMap.current.clear();
   }, [currentEndpointId, defaultKind]);
 
-  const handleSelect = useCallback((id: string) => {
-    setSelectedId(id);
+  const handleSelect = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      // On a phone the detail replaces the list: opening it is a history
+      // entry, so Back returns to the list rather than leaving the dashboard.
+      const push = window.matchMedia("(max-width: 767px)").matches && !mobileDetailRef.current;
+      setMobileDetail(true);
+      if (!push && writtenRequestRef.current === id) return;
+      writtenRequestRef.current = id;
+      if (push) pushedRequestRef.current = true;
+      updateParams({ request: id }, push ? "push" : "replace");
+    },
+    [updateParams]
+  );
+
+  // ?request= changed by Back, Forward or a link: follow it.
+  useEffect(() => {
+    if (requestParam === writtenRequestRef.current) return;
+    writtenRequestRef.current = requestParam;
+    pushedRequestRef.current = false;
+    if (requestParam === null) {
+      setMobileDetail(false);
+      return;
+    }
+    setSelectedId(requestParam);
     setMobileDetail(true);
-  }, []);
+  }, [requestParam]);
+
+  // Phones: Back to list goes back when opening the request added a history entry.
+  const handleBackToList = useCallback(() => {
+    setMobileDetail(false);
+    if (pushedRequestRef.current) {
+      pushedRequestRef.current = false;
+      router.back();
+      return;
+    }
+    writtenRequestRef.current = null;
+    updateParams({ request: null });
+  }, [router, updateParams]);
 
   const handleToggleLiveMode = useCallback(() => setLiveMode((prev) => !prev), []);
   const handleToggleSort = useCallback(() => setSortNewest((prev) => !prev), []);
@@ -921,10 +1031,15 @@ export default function DashboardPage() {
     // The newest request the list shows, which the filters may make older than the newest overall.
     const newest = displayedItems[0];
     if (newest) {
-      setSelectedId("_id" in newest ? newest._id : newest.id);
+      const id = "_id" in newest ? newest._id : newest.id;
+      setSelectedId(id);
       setNewCount(0);
+      if (writtenRequestRef.current !== id) {
+        writtenRequestRef.current = id;
+        updateParams({ request: id });
+      }
     }
-  }, [displayedItems]);
+  }, [displayedItems, updateParams]);
 
   const handleExportJson = useCallback(async () => {
     if (!currentEndpoint) return;
@@ -972,7 +1087,7 @@ export default function DashboardPage() {
     }
   }, [currentEndpoint, methodFilter, kindFilter, debouncedSearch, fetchFromClickHouse]);
 
-  // Keyboard shortcuts — use refs for frequently-changing values so the
+  // Keyboard shortcuts: use refs for frequently-changing values so the
   // listener doesn't re-register on every state change (rerender-dependencies).
   const displayedItemsRef = useRef(displayedItems);
   // eslint-disable-next-line react-hooks/refs
@@ -986,7 +1101,13 @@ export default function DashboardPage() {
 
   // A filter change can hide the selected request: drop it, and the effect
   // above selects the list's newest match instead.
+  // Not on the first render: a request named by the URL is kept until the list loads.
+  const filtersChangedRef = useRef(false);
   useEffect(() => {
+    if (!filtersChangedRef.current) {
+      filtersChangedRef.current = true;
+      return;
+    }
     const id = selectedIdRef.current;
     if (!id) return;
     const visible = displayedItemsRef.current.some(
@@ -997,17 +1118,33 @@ export default function DashboardPage() {
 
   // Ref for cURL button (avoids DOM scraping in keyboard handler)
   const curlBtnRef = useRef<HTMLButtonElement>(null);
-  // Requests or Settings; links elsewhere open Settings at the right section.
-  const [endpointTab, setEndpointTab] = useState<EndpointTab>("requests");
-  const [settingsFocus, setSettingsFocus] = useState<SettingsSection | null>(null);
-  const handleOpenSettings = useCallback(() => {
-    setSettingsFocus("verification");
-    setEndpointTab("settings");
+  // Requests or Settings, from ?view=settings (a held endpoint switch stays
+  // on Settings); links elsewhere open Settings at a section, kept in ?section=.
+  const endpointTab: EndpointTab =
+    held || searchParams.get("view") === "settings" ? "settings" : "requests";
+  const [settingsFocus, setSettingsFocus] = useState<SettingsSection | null>(() => {
+    const section = searchParams.get("section");
+    return isSettingsSection(section) ? section : null;
+  });
+  const openSettingsAt = useCallback(
+    (section: SettingsSection) => {
+      setSettingsFocus(section);
+      updateParams({ view: "settings", section });
+    },
+    [updateParams]
+  );
+  const handleSectionJump = useCallback(
+    (section: SettingsSection) => updateParams({ section }),
+    [updateParams]
+  );
+  // Leaving Settings with unsaved edits asks first.
+  const [discardPrompt, setDiscardPrompt] = useState<{ proceed: () => void } | null>(null);
+  const confirmDiscard = useCallback((proceed: () => void) => {
+    if (dirtySectionsRef.current.length > 0) setDiscardPrompt({ proceed });
+    else proceed();
   }, []);
-  const handleOpenForwarding = useCallback(() => {
-    setSettingsFocus("forwarding");
-    setEndpointTab("settings");
-  }, []);
+  const handleOpenSettings = useCallback(() => openSettingsAt("verification"), [openSettingsAt]);
+  const handleOpenForwarding = useCallback(() => openSettingsAt("forwarding"), [openSettingsAt]);
   // From the delivery log: the request, with its Deliveries tab open. A request
   // the list has not loaded (older than a page) is fetched on its own.
   const handleOpenRequestDeliveries = useCallback(
@@ -1030,12 +1167,12 @@ export default function DashboardPage() {
         }
       }
       setSettingsFocus(null);
-      setEndpointTab("requests");
       setSelectedId(requestId);
       setMobileDetail(true);
-      setActiveTab("deliveries");
+      writtenRequestRef.current = requestId;
+      updateParams({ view: null, section: null, request: requestId, tab: "deliveries" });
     },
-    [recentRequests, accessToken, currentEndpoint, setActiveTab]
+    [recentRequests, accessToken, currentEndpoint, updateParams]
   );
   // The HTTP detail's Deliveries tab: once the endpoint has (or had) a forwarding URL.
   const deliveriesProps = useMemo(
@@ -1049,24 +1186,74 @@ export default function DashboardPage() {
         : undefined,
     [currentEndpoint, handleOpenForwarding]
   );
-  const handleTabChange = useCallback((tab: EndpointTab) => {
-    setSettingsFocus(null);
-    setEndpointTab(tab);
-  }, []);
-  // A different endpoint starts on its requests, unless a layout was just
-  // imported into it: then its Layouts open.
-  const pendingLayoutsIdRef = useRef<string | null>(null);
+  const handleTabChange = useCallback(
+    (tab: EndpointTab) => {
+      const go = () => {
+        setSettingsFocus(null);
+        updateParams({ view: tab === "settings" ? "settings" : null, section: null });
+      };
+      if (tab === "requests") confirmDiscard(go);
+      else go();
+    },
+    [updateParams, confirmDiscard]
+  );
+
+  // A request the URL names that the list has not loaded (older than a page)
+  // is fetched on its own; one that is gone, or another endpoint's, is dropped.
+  const requestsReady = !!currentSlug && requestsLoadedFor === currentSlug;
+  const lookedUpRequestRef = useRef<string | null>(null);
   useEffect(() => {
-    const pendingId = pendingLayoutsIdRef.current;
-    pendingLayoutsIdRef.current = null;
-    if (pendingId !== null && pendingId === currentEndpointId) {
-      setSettingsFocus("layouts");
-      setEndpointTab("settings");
-      return;
-    }
-    setEndpointTab("requests");
-    setSettingsFocus(null);
-  }, [currentEndpointId]);
+    if (!selectedId || !accessToken || !currentEndpointId || !requestsReady) return;
+    if (selectedRecentRequest || clickHouseDetailMap.current.has(selectedId)) return;
+    if (lookedUpRequestRef.current === selectedId) return;
+    lookedUpRequestRef.current = selectedId;
+    const id = selectedId;
+    fetchDashboardRequestById(accessToken, id)
+      .then((fetched) => {
+        if (selectedIdRef.current !== id) return;
+        if (fetched && fetched.endpointId === currentEndpointId && currentSlug) {
+          const detail = { ...fetched, id: fetched._id, slug: currentSlug };
+          clickHouseDetailMap.current.set(id, detail);
+          setSelectedClickHouseDetail(detail);
+          return;
+        }
+        setSelectedId(null);
+        if (writtenRequestRef.current === id) {
+          writtenRequestRef.current = null;
+          updateParams({ request: null });
+        }
+      })
+      .catch(() => {
+        // Left selected; the detail stays empty.
+      });
+  }, [
+    selectedId,
+    selectedRecentRequest,
+    accessToken,
+    currentEndpointId,
+    currentSlug,
+    requestsReady,
+    updateParams,
+  ]);
+
+  // The account has no endpoint by the slug in the URL: say which one shows
+  // instead, once a fresh load of the list agrees.
+  const missingSlug =
+    endpointSlugParam && allEndpoints && !allEndpoints.some((ep) => ep.slug === endpointSlugParam)
+      ? endpointSlugParam
+      : null;
+  const [missingVerified, setMissingVerified] = useState<string | null>(null);
+  const [missingDismissed, setMissingDismissed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!missingSlug || missingVerified === missingSlug) return;
+    let cancelled = false;
+    void loadEndpoints().then(() => {
+      if (!cancelled) setMissingVerified(missingSlug);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [missingSlug, missingVerified, loadEndpoints]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -1203,14 +1390,11 @@ export default function DashboardPage() {
             (endpoint) => ownedSlugs.has(endpoint.slug) && endpoint.emailAddress
           )}
           onAdded={(slug) => {
-            const targetId = endpoints.find((endpoint) => endpoint.slug === slug)?.id;
-            if (targetId === currentEndpointId) {
-              setSettingsFocus("layouts");
-              setEndpointTab("settings");
-            } else {
-              pendingLayoutsIdRef.current = targetId ?? null;
-            }
-            router.replace(`${pathname}?endpoint=${encodeURIComponent(slug)}`);
+            // The endpoint it went into opens at its Layouts.
+            setSettingsFocus("layouts");
+            router.replace(
+              `${pathname}?endpoint=${encodeURIComponent(slug)}&view=settings&section=layouts`
+            );
             void loadEndpoints();
           }}
           onClose={() => {
@@ -1222,8 +1406,58 @@ export default function DashboardPage() {
         />
       )}
 
+      <DiscardChangesDialog
+        sections={dirtySections}
+        open={discardPrompt !== null || (heldSwitch !== null && !heldSwitch.keeping)}
+        onKeep={() => {
+          if (discardPrompt) {
+            setDiscardPrompt(null);
+            return;
+          }
+          if (!heldSwitch) return;
+          // Back to the endpoint being edited, on its Settings.
+          setHeldSwitch({ ...heldSwitch, keeping: true });
+          const params = new URLSearchParams({
+            endpoint: currentEndpoint.slug,
+            view: "settings",
+          });
+          router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+        }}
+        onDiscard={() => {
+          if (discardPrompt) {
+            const { proceed } = discardPrompt;
+            setDiscardPrompt(null);
+            proceed();
+            return;
+          }
+          setHeldSwitch(null);
+        }}
+      />
+
+      {missingSlug && missingVerified === missingSlug && missingDismissed !== missingSlug && (
+        <div className="shrink-0 border-b border-line bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex items-center gap-3">
+          <span className="flex-1 min-w-0">
+            No endpoint named <span className="font-mono text-foreground">{missingSlug}</span> in
+            this account. Showing {currentEndpoint.name || currentEndpoint.slug} instead.
+          </span>
+          <button
+            type="button"
+            onClick={() => setMissingDismissed(missingSlug)}
+            aria-label="Dismiss"
+            className="shrink-0 p-1 rounded-sm hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {!listedOn(currentEndpoint.site, site.key) && (
-        <ListedElsewhereNotice slug={currentEndpoint.slug} endpointSite={currentEndpoint.site} />
+        <ListedElsewhereNotice
+          slug={currentEndpoint.slug}
+          endpointSite={currentEndpoint.site}
+          canList={ownsCurrentEndpoint && ownedSlugs.has(currentEndpoint.slug)}
+          onListed={loadEndpoints}
+        />
       )}
 
       <EndpointBar
@@ -1233,10 +1467,13 @@ export default function DashboardPage() {
         tab={endpointTab}
         onTabChange={handleTabChange}
         hasRequests={hasRequests}
-        mailSetup={{
+        setupState={{
           layout: (currentEndpoint.layouts?.length ?? 0) > 0,
           destination: (currentEndpoint.destinationCount ?? 0) > 0,
+          mock: !!currentEndpoint.mockResponse || (currentEndpoint.responseRules?.length ?? 0) > 0,
         }}
+        onOpenSettings={openSettingsAt}
+        detailOpen={endpointTab === "requests" && mobileDetail && !!displayRequest}
         exportMenu={
           hasRequests ? (
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
@@ -1246,13 +1483,17 @@ export default function DashboardPage() {
 
       {/* Settings, the split pane, or the empty state */}
       {endpointTab === "settings" ? (
-        <EndpointSettingsPanel
-          key={currentEndpoint.id}
-          endpoint={currentEndpoint}
-          requestCount={retainedTotalCount ?? recentRequests.length}
-          focusSection={settingsFocus}
-          onOpenRequestDeliveries={(requestId) => void handleOpenRequestDeliveries(requestId)}
-        />
+        <DirtySectionsProvider key={currentEndpoint.id} onChange={handleDirtyChange}>
+          <EndpointSettingsPanel
+            endpoint={currentEndpoint}
+            requestCount={retainedTotalCount ?? recentRequests.length}
+            focusSection={settingsFocus}
+            onSectionJump={handleSectionJump}
+            onOpenRequestDeliveries={(requestId) =>
+              confirmDiscard(() => void handleOpenRequestDeliveries(requestId))
+            }
+          />
+        </DirtySectionsProvider>
       ) : hasRequests ? (
         <>
           {/* Desktop: side-by-side with resizable pane */}
@@ -1291,6 +1532,7 @@ export default function DashboardPage() {
                   onKindFilterChange={
                     currentEndpoint.emailAddress ? handleKindFilterChange : undefined
                   }
+                  emailAddress={currentEndpoint.emailAddress}
                   timelineSlot={
                     <RequestTimeline
                       requests={displayedItems}
@@ -1352,7 +1594,7 @@ export default function DashboardPage() {
             {mobileDetail && displayRequest ? (
               <div className="flex-1 flex flex-col overflow-hidden">
                 <button
-                  onClick={() => setMobileDetail(false)}
+                  onClick={handleBackToList}
                   className="border-b-strong border-line px-4 py-2 text-sm font-bold caps hover:bg-muted cursor-pointer transition-colors shrink-0"
                 >
                   &larr; Back to list
@@ -1417,6 +1659,7 @@ export default function DashboardPage() {
                 onKindFilterChange={
                   currentEndpoint.emailAddress ? handleKindFilterChange : undefined
                 }
+                emailAddress={currentEndpoint.emailAddress}
               />
             )}
           </div>
@@ -1427,10 +1670,7 @@ export default function DashboardPage() {
         <WaitingForRequests
           slug={currentEndpoint.slug}
           emailAddress={currentEndpoint.emailAddress ?? null}
-          onOpenLayouts={() => {
-            setSettingsFocus("layouts");
-            setEndpointTab("settings");
-          }}
+          onOpenLayouts={() => openSettingsAt("layouts")}
         />
       )}
     </ErrorBoundary>
@@ -1681,7 +1921,11 @@ function WaitingForRequests({
             <button
               onClick={() => void handleSendTest()}
               disabled={sending === "http"}
-              className="ui-btn-primary self-start flex items-center gap-2 py-2! px-4! text-sm"
+              // On mailhooks.cc the email card holds the one primary action.
+              className={cn(
+                mailFirst ? "ui-btn-outline" : "ui-btn-primary",
+                "self-start flex items-center gap-2 py-2! px-4! text-sm"
+              )}
             >
               <Send className="h-4 w-4" />
               {sending === "http" ? "Sending..." : sent === "http" ? "Sent" : "Send test request"}
@@ -1907,40 +2151,56 @@ function NoEndpointsHere({
             : `Start capturing on ${site.name}`}
         </h2>
         <p className="text-muted-foreground">
-          {site.key === "mailhooks"
-            ? "Give each sender its own address and get every email as JSON. "
-            : "Get a URL that captures every request sent to it. "}
+          {site.key === "mailhooks" ? (
+            <>
+              Every endpoint has an address like{" "}
+              <span className="font-mono text-foreground whitespace-nowrap">
+                acme-orders@mailhooks.cc
+              </span>
+              . Forward a mailbox to it or give it to the sender.
+            </>
+          ) : (
+            <>
+              Every endpoint has a URL like{" "}
+              <span className="font-mono text-foreground whitespace-nowrap">
+                {WEBHOOK_BASE_URL.replace(/^https?:\/\//, "")}/w/acme-orders
+              </span>
+              . Point a webhook sender at it and every request shows up here.
+            </>
+          )}
+        </p>
+        <p className="text-sm text-muted-foreground">
           You also have {elsewhere === 1 ? "an endpoint" : `${elsewhere} endpoints`} on {other.name}
           .
         </p>
         {error && <p className="text-sm text-destructive-ink">{error}</p>}
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <button onClick={create} disabled={creating} className="ui-btn-primary">
-            {creating
-              ? "Creating..."
-              : site.key === "mailhooks"
-                ? "Create an email endpoint"
-                : `Create an endpoint on ${site.name}`}
-          </button>
-          <button
-            type="button"
-            onClick={() => void switchSite(other.key, "/dashboard", accessToken)}
-            className="ui-btn-outline"
-          >
-            Open {other.name}
-          </button>
+        <button onClick={create} disabled={creating} className="ui-btn-primary">
+          {creating
+            ? "Creating..."
+            : site.key === "mailhooks"
+              ? "Create an email endpoint"
+              : `Create an endpoint on ${site.name}`}
+        </button>
+        <div className="flex flex-col items-center gap-2">
           {ownedElsewhere.length > 0 && (
             <button
               type="button"
               onClick={listHereToo}
               disabled={listing || creating}
-              className="ui-btn-outline"
+              className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
             >
               {listing
                 ? "Listing..."
-                : `Show ${ownedElsewhere.length === 1 ? "it" : "them"} here too`}
+                : `List my ${other.name} ${ownedElsewhere.length === 1 ? "endpoint" : "endpoints"} here`}
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => void switchSite(other.key, "/dashboard", accessToken)}
+            className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground cursor-pointer"
+          >
+            Open {other.name}
+          </button>
         </div>
       </div>
     </div>
@@ -1951,18 +2211,50 @@ function NoEndpointsHere({
 function ListedElsewhereNotice({
   slug,
   endpointSite,
+  canList,
+  onListed,
 }: {
   slug: string;
   endpointSite: DashboardEndpoint["site"];
+  /** The owner can list it on both sites from here. */
+  canList: boolean;
+  onListed: () => Promise<void>;
 }) {
   const site = useSite();
   const { session } = useAuth();
   const home = SITES[endpointHomeSite(endpointSite, site.key)];
+  const [listing, setListing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const listHere = () => {
+    const accessToken = session?.access_token;
+    if (!accessToken || listing) return;
+    setListing(true);
+    setError(null);
+    updateDashboardEndpoint(accessToken, slug, { site: "both" })
+      .then(() => {
+        setOpenEndpoint({ slug, site: "both" });
+        emitDashboardEndpointsChanged();
+        return onListed();
+      })
+      .catch(() => {
+        setError("It could not be listed here. Try again.");
+        setListing(false);
+      });
+  };
   return (
     <div className="shrink-0 border-b border-line bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span>
-        This endpoint is listed on {home.name}, not here. Change that under Settings, Receiving.
-      </span>
+      <span>Listed on {home.name}.</span>
+      {canList && (
+        <button
+          type="button"
+          onClick={listHere}
+          disabled={listing}
+          className="font-medium text-foreground underline underline-offset-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {listing ? "Listing..." : "List it here too"}
+        </button>
+      )}
+      {error && <span className="text-destructive-ink">{error}</span>}
       <button
         type="button"
         onClick={() =>
@@ -1972,7 +2264,7 @@ function ListedElsewhereNotice({
             session?.access_token
           )
         }
-        className="font-medium text-foreground underline underline-offset-2 cursor-pointer"
+        className="underline underline-offset-2 hover:text-foreground cursor-pointer"
       >
         Open it on {home.name}
       </button>

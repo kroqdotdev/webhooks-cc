@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isDocsSearchUrl, normalizePagefindUrl } from "@/lib/docs-search";
@@ -45,17 +46,15 @@ export function SearchModal() {
   // Keyboard shortcut: Cmd+K / Ctrl+K
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen(true);
       }
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    // Escape, focus trapping and focus return come from the dialog itself.
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   // Listen for sidebar search button click
@@ -137,18 +136,19 @@ export function SearchModal() {
     }
   }
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
-        onClick={() => setOpen(false)}
-      />
-
-      {/* Modal */}
-      <div className="relative w-full max-w-xl mx-4 rounded-lg border-strong border-line bg-background shadow-raised">
+    <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            inputRef.current?.focus();
+          }}
+          className="fixed left-1/2 top-[15vh] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border-strong border-line bg-background shadow-raised"
+        >
+          <DialogPrimitive.Title className="sr-only">Search documentation</DialogPrimitive.Title>
         {/* Input */}
         <div className="flex items-center border-b-strong border-line px-4">
           <Search className="h-5 w-5 text-muted-foreground shrink-0" />
@@ -159,11 +159,13 @@ export function SearchModal() {
             onChange={(e) => handleInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search docs..."
+            aria-label="Search docs"
             className="flex-1 px-3 py-3 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground"
           />
           <button
             onClick={() => setOpen(false)}
             type="button"
+            aria-label="Close search"
             className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
           >
             <X className="h-4 w-4" />
@@ -226,7 +228,8 @@ export function SearchModal() {
             close
           </span>
         </div>
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { layoutIssues } from "@webhooks-cc/sdk";
 import {
   MAX_LAYOUTS,
@@ -13,7 +13,15 @@ import {
 } from "@webhooks-cc/sdk/email";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
-import { LAYOUT_TEMPLATES } from "@/lib/layout-templates";
+import { LAYOUT_TEMPLATES, type LayoutTemplate } from "@/lib/layout-templates";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   fetchAiAssists,
@@ -40,21 +48,49 @@ type LineItemsMode = "none" | "text" | "html" | "attachment";
 const inputClass =
   "ui-input text-[13px] font-mono [font-variant-ligatures:none] py-1.5! px-2! min-w-0";
 
-function newLayout(layouts: Layout[]): Layout {
+/**
+ * A blank layout. Given the domain of the newest email's sender, it applies
+ * to that sender's emails and is named after it, which is what most first
+ * layouts want; the condition is an ordinary one to change or remove.
+ */
+function newLayout(layouts: Layout[], senderDomain?: string | null): Layout {
   const taken = new Set(layouts.map((layout) => layout.id));
   let id = "";
   do {
     id = `layout-${Math.random().toString(36).slice(2, 8)}`;
   } while (taken.has(id));
+  // Not "Layout 1": places that show the name already say it is a layout.
+  const base = senderDomain ?? "New layout";
+  const names = new Set(layouts.map((layout) => layout.name));
+  let name = base;
+  for (let n = 2; names.has(name); n++) name = `${base} ${n}`;
   return {
     id,
-    name: `Layout ${layouts.length + 1}`,
+    name,
     enabled: true,
-    match: { logic: "and", conditions: [] },
+    match: {
+      logic: "and",
+      conditions: senderDomain
+        ? [{ field: "email", name: "from", op: "contains", value: senderDomain }]
+        : [],
+    },
     fields: [],
     lineItems: null,
     parseAttachments: false,
   };
+}
+
+/** The domain of an address ("orders@acme.example" gives "acme.example"), or null. */
+function domainOf(address: string | null | undefined): string | null {
+  const at = address?.lastIndexOf("@") ?? -1;
+  const domain =
+    at >= 0
+      ? address!
+          .slice(at + 1)
+          .trim()
+          .toLowerCase()
+      : "";
+  return domain || null;
 }
 
 function modeOf(layout: Layout): LineItemsMode {
@@ -92,16 +128,66 @@ export function attachmentNote(attachment: ParsedAttachment): string {
   return attachment.truncated ? `${pages}, cut off at the limit` : pages;
 }
 
+/** The line items' columns in the layout's order (`jsonb` does not keep key order). */
+function lineItemColumns(parsed: ParsedEmail): string[] {
+  return parsed.lineItemColumns?.length > 0
+    ? parsed.lineItemColumns
+    : [...new Set(parsed.lineItems.flatMap((row) => Object.keys(row)))];
+}
+
+function LineItemsTable({
+  rows,
+  columns,
+  limit,
+  more,
+  label,
+}: {
+  rows: Record<string, string | null>[];
+  columns: string[];
+  limit: number;
+  more: (count: number) => string;
+  label?: string;
+}) {
+  return (
+    <div className="overflow-x-auto border-strong border-line rounded-md">
+      <table className="w-full text-xs" aria-label={label}>
+        <thead>
+          <tr className="bg-muted">
+            {columns.map((column) => (
+              <th key={column} className="text-left font-mono font-medium px-2 py-1">
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, limit).map((row, index) => (
+            <tr key={index} className="border-t border-line/20">
+              {columns.map((column) => (
+                <td key={column} className="font-mono px-2 py-1 break-all">
+                  {row[column] ?? ""}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > limit && (
+        <p className="text-xs text-muted-foreground px-2 py-1 border-t border-line/20">
+          {more(rows.length - limit)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** A parsed result: the layout, fields, line items and attachments. Shared with the email view. */
 export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
   if (parsed.status !== "matched") {
     return <p className="text-sm text-destructive-ink">No layout matched this email.</p>;
   }
   const fieldNames = Object.keys(parsed.fields);
-  const columns =
-    parsed.lineItemColumns?.length > 0
-      ? parsed.lineItemColumns
-      : [...new Set(parsed.lineItems.flatMap((row) => Object.keys(row)))];
+  const columns = lineItemColumns(parsed);
   return (
     <div className="space-y-3 text-sm">
       <p>
@@ -126,35 +212,12 @@ export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
         </dl>
       )}
       {parsed.lineItems.length > 0 && (
-        <div className="overflow-x-auto border-strong border-line rounded-md">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-muted">
-                {columns.map((column) => (
-                  <th key={column} className="text-left font-mono font-medium px-2 py-1">
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {parsed.lineItems.slice(0, 50).map((row, index) => (
-                <tr key={index} className="border-t border-line/20">
-                  {columns.map((column) => (
-                    <td key={column} className="font-mono px-2 py-1 break-all">
-                      {row[column] ?? ""}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {parsed.lineItems.length > 50 && (
-            <p className="text-xs text-muted-foreground px-2 py-1 border-t border-line/20">
-              {parsed.lineItems.length - 50} more line items in the JSON.
-            </p>
-          )}
-        </div>
+        <LineItemsTable
+          rows={parsed.lineItems}
+          columns={columns}
+          limit={50}
+          more={(count) => `${count} more line items in the JSON.`}
+        />
       )}
       {parsed.attachments.length > 0 && (
         <ul className="text-xs space-y-0.5">
@@ -180,13 +243,28 @@ export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
   );
 }
 
+/**
+ * What a layout's line-item pattern found in the email the preview read:
+ * its rows, none, or nothing to show because the layout did not match it.
+ */
+type RowsFound =
+  | { kind: "rows"; rows: Record<string, string | null>[]; columns: string[] }
+  | { kind: "none" }
+  | { kind: "unmatched" };
+
 function LineItemsEditor({
   layout,
   index,
+  found,
+  where,
   onChange,
 }: {
   layout: Layout;
   index: number;
+  /** From the preview; null while there is none (no email, or a draft with problems). */
+  found: RowsFound | null;
+  /** The email the preview read, in words: "the newest email". */
+  where: string;
   onChange: (spec: LineItemsSpec | null) => void;
 }) {
   const mode = modeOf(layout);
@@ -216,8 +294,31 @@ function LineItemsEditor({
       />
       {spec && spec.from !== "attachment" && (
         <div className="space-y-1.5">
+          {spec.pattern && found?.kind === "rows" && (
+            <LineItemsTable
+              rows={found.rows}
+              columns={found.columns}
+              limit={5}
+              more={(count) => `${count} more rows in ${where}.`}
+              label={`Layout ${n}: rows found`}
+            />
+          )}
+          {spec.pattern && found && found.kind !== "rows" && (
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {found.kind === "none"
+                ? `No rows found in ${where}.`
+                : `This layout does not match ${where}, so there are no rows to show.`}
+            </p>
+          )}
+          <label
+            htmlFor={`layout-${layout.id}-line-pattern`}
+            className="block text-xs font-medium text-muted-foreground"
+          >
+            Line item pattern (RE2)
+          </label>
           <input
-            aria-label={`Layout ${n}: line item pattern`}
+            id={`layout-${layout.id}-line-pattern`}
+            aria-label={`Layout ${n}: line item pattern (RE2)`}
             value={spec.pattern ?? ""}
             onChange={(e) => onChange({ ...spec, pattern: e.target.value })}
             placeholder="(?P<sku>[A-Z]+-\d+)\s+x(?P<qty>\d+)"
@@ -337,7 +438,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const [preview, setPreview] = useState<LayoutsPreview | null>(null);
   // Which email the preview reads: the newest (empty) or one of the recent ones.
   const [sampleId, setSampleId] = useState("");
-  const [samples, setSamples] = useState<{ id: string; subject: string }[]>([]);
+  const [samples, setSamples] = useState<{ id: string; subject: string; from: string | null }[]>(
+    []
+  );
+  const [samplesLoaded, setSamplesLoaded] = useState(false);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
   // AI setup: a layout drafted from emails, or a field found for an open layout.
   const [aiOffered, setAiOffered] = useState(false);
@@ -378,16 +482,17 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     if (!accessToken) return;
     let cancelled = false;
     fetchDashboardRequests(accessToken, endpoint.slug, 20, "email")
-      .then(
-        (requests) =>
-          !cancelled &&
-          setSamples(
-            requests.map((request) => ({
-              id: request._id,
-              subject: request.email?.subject || "(no subject)",
-            }))
-          )
-      )
+      .then((requests) => {
+        if (cancelled) return;
+        setSamples(
+          requests.map((request) => ({
+            id: request._id,
+            subject: request.email?.subject || "(no subject)",
+            from: request.email?.from?.[0]?.address ?? null,
+          }))
+        );
+        setSamplesLoaded(true);
+      })
       .catch(() => undefined);
     return () => {
       cancelled = true;
@@ -412,6 +517,33 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
 
   const update = (index: number, change: Partial<Layout>) =>
     setLayouts(layouts.map((layout, i) => (i === index ? { ...layout, ...change } : layout)));
+  // Added layouts go at the end and open there.
+  const addLayout = (layout: Layout) => {
+    setLayouts([...layouts, layout]);
+    setOpen(layouts.length);
+  };
+  const addBlank = () => {
+    addLayout(newLayout(layouts, domainOf(samples[0]?.from)));
+    // The preview reads the newest email, the one the condition came from.
+    setSampleId("");
+  };
+  const addTemplate = (template: LayoutTemplate) =>
+    addLayout({ ...structuredClone(template.layout), id: newLayout(layouts).id });
+  const canDraft = aiOffered && layouts.length < draftCap && assist?.kind !== "layout";
+  // Known once the preview or the email list has answered.
+  const noEmail = preview ? !preview.request : samplesLoaded && samples.length === 0;
+  const where = sampleId ? "the email tried" : "the newest email";
+  const rowsFound = (layout: Layout): RowsFound | null => {
+    if (!preview?.request || local.length > 0) return null;
+    const parsed = preview.parsed;
+    if (!parsed || parsed.status !== "matched" || parsed.layout?.id !== layout.id) {
+      return { kind: "unmatched" };
+    }
+    return parsed.lineItems.length > 0
+      ? { kind: "rows", rows: parsed.lineItems, columns: lineItemColumns(parsed) }
+      : { kind: "none" };
+  };
+
   const move = (index: number, by: -1 | 1) => {
     const next = [...layouts];
     const [item] = next.splice(index, 1);
@@ -520,6 +652,11 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 )}
                 {expanded && (
                   <div className="border-t border-line/20 p-3 space-y-4">
+                    {noEmail && (
+                      <p className="text-sm text-muted-foreground">
+                        No emails yet. Add the fields now; the preview runs on your first email.
+                      </p>
+                    )}
                     <div className="flex flex-wrap items-center gap-3">
                       <input
                         aria-label={`Layout ${n}: name`}
@@ -589,6 +726,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                       <LineItemsEditor
                         layout={layout}
                         index={index}
+                        found={rowsFound(layout)}
+                        where={where}
                         onChange={(lineItems) => update(index, { lineItems })}
                       />
                     </div>
@@ -612,52 +751,51 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <button
-          type="button"
-          onClick={() => {
-            setLayouts([...layouts, newLayout(layouts)]);
-            setOpen(layouts.length);
-          }}
-          disabled={layouts.length >= MAX_LAYOUTS}
-          className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
-        >
-          <Plus className="h-3 w-3" />
-          Add layout
-        </button>
-        {/* The ready-made layouts from the gallery, added as a draft to adjust and save. */}
-        {layouts.length < MAX_LAYOUTS && (
-          <select
-            aria-label="Start from a sender"
-            value=""
-            onChange={(event) => {
-              const template = LAYOUT_TEMPLATES.find((entry) => entry.id === event.target.value);
-              if (!template) return;
-              const id = newLayout(layouts).id;
-              setLayouts([...layouts, { ...structuredClone(template.layout), id }]);
-              setOpen(layouts.length);
-            }}
-            className="ui-input py-1! px-2! text-xs w-auto cursor-pointer"
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={layouts.length >= MAX_LAYOUTS}
+              className={cn(
+                layouts.length === 0 ? "ui-btn-primary" : "ui-btn-outline",
+                "py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
+              )}
+            >
+              <Plus className="h-3 w-3" />
+              Add layout
+              <ChevronDown className="h-3 w-3" aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="w-72 max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border-strong border-line shadow-raised"
           >
-            <option value="" disabled>
-              Start from a sender...
-            </option>
+            <DropdownMenuLabel className="text-xs text-muted-foreground font-medium">
+              Start from a sender
+            </DropdownMenuLabel>
             {LAYOUT_TEMPLATES.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.sender}: {template.kind}
-              </option>
+              <DropdownMenuItem
+                key={template.id}
+                onSelect={() => addTemplate(template)}
+                className="flex-wrap gap-x-1.5 gap-y-0"
+              >
+                <span className="font-semibold">{template.sender}</span>
+                <span className="text-muted-foreground">{template.kind}</span>
+              </DropdownMenuItem>
             ))}
-          </select>
-        )}
-        {aiOffered && layouts.length < draftCap && assist?.kind !== "layout" && (
-          <button
-            type="button"
-            onClick={() => setAssist({ kind: "layout" })}
-            className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
-          >
-            <Sparkles className="h-3 w-3" />
-            Draft a layout with AI
-          </button>
-        )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={addBlank}>
+              <Plus className="h-3.5 w-3.5" />
+              Blank layout
+            </DropdownMenuItem>
+            {canDraft && (
+              <DropdownMenuItem onSelect={() => setAssist({ kind: "layout" })}>
+                <Sparkles className="h-3.5 w-3.5" />
+                Draft with AI
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {layouts.length === 0 && (
           <span className="text-sm text-muted-foreground basis-full">
             Start from a sender you already get mail from, or add a blank layout. Without layouts,

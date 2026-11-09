@@ -88,7 +88,19 @@ function LoginContent() {
         <div className="h-px flex-1 bg-border" />
       </div>
 
-      <EmailPasswordForm redirectTo={redirectTo} initialMode={initialMode} onModeChange={setMode} />
+      <EmailPasswordForm
+        redirectTo={redirectTo}
+        initialMode={initialMode}
+        onModeChange={(next) => {
+          setMode(next);
+          // The address says which form is open, so it can be shared or reloaded.
+          const params = new URLSearchParams(searchParams.toString());
+          if (next === "sign-up") params.set("mode", "sign-up");
+          else params.delete("mode");
+          const query = params.toString();
+          router.replace(query ? `/login?${query}` : "/login", { scroll: false });
+        }}
+      />
 
       <p className="text-center text-sm text-muted-foreground mt-8">
         By signing in or creating an account, you agree to our{" "}

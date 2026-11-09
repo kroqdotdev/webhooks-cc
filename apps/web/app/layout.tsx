@@ -180,7 +180,7 @@ export default function RootLayout({
             </noscript>
             <MaintenanceBanner />
             <AnnouncementBanner />
-            <div id="main-content" tabIndex={-1} />
+            {/* The skip link's target is rendered right after the site header (SiteHeader). */}
             {children}
           </ThemeProvider>
         </PostHogProvider>
