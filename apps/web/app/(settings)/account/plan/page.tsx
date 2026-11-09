@@ -119,7 +119,14 @@ const PLAN_ROWS: { label: string; free: string; pro: string; business: string }[
   },
 ];
 
+/** mailhooks.cc names the shared quota in the words of mail first. */
+const MAIL_ROW_LABELS: Record<string, string> = {
+  Requests: "Emails and webhooks",
+  "Requests kept for": "Kept for",
+};
+
 function PlanTable({ current }: { current: PlanKey }) {
+  const mailFirst = useSite().key === "mailhooks";
   const column = (plan: PlanKey) =>
     cn("px-4 py-3 text-left", current === plan && "bg-muted/60 font-medium");
   const plans: PlanKey[] = ["free", "pro", "business"];
@@ -145,7 +152,7 @@ function PlanTable({ current }: { current: PlanKey }) {
         {PLAN_ROWS.map((row) => (
           <tr key={row.label} className="border-b border-line/60 last:border-b-0">
             <th scope="row" className="px-5 py-3 text-left font-normal text-muted-foreground">
-              {row.label}
+              {(mailFirst && MAIL_ROW_LABELS[row.label]) || row.label}
             </th>
             {plans.map((plan) => (
               <td key={plan} className={column(plan)}>

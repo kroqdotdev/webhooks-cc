@@ -9,6 +9,7 @@ import {
   FileDown,
   ImageOff,
   Info,
+  Loader2,
   Paperclip,
   RotateCcw,
   Send,
@@ -82,7 +83,23 @@ interface EmailDetailProps {
   onNoteChange?: (note: string) => void;
   /** The tab to open with, for a delivery opened from the log. */
   initialTab?: EmailTab;
+  /** A parse finished while the email was open (the list only has what it loaded). */
+  onParsed?: (requestId: string, parsed: ParsedEmail) => void;
 }
+
+/**
+ * No event says a parse finished, so an open email the layouts are still
+ * reading is asked for again: one that arrived in the last two minutes (or was
+ * just read again), every two seconds for up to a minute.
+ */
+const PARSE_FRESH_MS = 2 * 60 * 1000;
+const PARSE_POLL_MS = 2000;
+const PARSE_WATCH_MS = 60 * 1000;
+
+type ParseWatch =
+  | { id: string; state: "reading"; mode: "new" | "again"; until: number }
+  /** `layout`: the name of the layout that read it, null when none did (or no answer came). */
+  | { id: string; state: "done"; mode: "new" | "again"; layout: string | null };
 
 function useCopy() {
   const [copied, setCopied] = useState<string | null>(null);
@@ -401,7 +418,7 @@ function Pick({
     >
       <span
         className={cn(
-          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[140px] max-sm:max-w-[72px] max-sm:px-2",
+          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[220px] max-sm:max-w-[120px] max-sm:px-2",
           exactLabel ? "font-mono" : "caps"
         )}
         title={label}
@@ -448,23 +465,34 @@ function PickButton({
   );
 }
 
+/** Keeps both ends of a long piece of a link: "abcdefgh...uvwxyz". */
+function middle(text: string, keep: number): string {
+  if (text.length <= keep) return text;
+  const head = Math.ceil((keep - 3) / 2);
+  return `${text.slice(0, head)}...${text.slice(text.length - (keep - 3 - head))}`;
+}
+
 /**
- * A link as a chip shows it: its host and the start of its path
- * ("acme.example/confirm/abc..."), since the rest is a token nobody reads.
+ * A link as a chip shows it: its host and its last path segment, cut in the
+ * middle ("acme.example/.../confirm"), since what sits between is rarely read.
+ * The chip's title, copy and open keep the whole URL.
  */
 function shortLink(url: string): string {
   let host: string;
-  let rest: string;
+  let segments: string[];
+  let search: string;
   try {
     const parsed = new URL(url);
     host = parsed.host;
-    rest = `${parsed.pathname}${parsed.search}`;
+    segments = parsed.pathname.split("/").filter(Boolean);
+    search = parsed.search;
   } catch {
-    return url.replace(/^https?:\/\//, "");
+    return middle(url.replace(/^https?:\/\//, ""), 48);
   }
-  if (rest === "/") rest = "";
-  const keep = 16;
-  return rest.length > keep ? `${host}${rest.slice(0, keep)}...` : `${host}${rest}`;
+  const query = search ? "?..." : "";
+  if (segments.length === 0) return `${host}${query}`;
+  const last = middle(segments[segments.length - 1], 24);
+  return segments.length === 1 ? `${host}/${last}${query}` : `${host}/.../${last}${query}`;
 }
 
 function FoundInEmail({
@@ -944,7 +972,9 @@ function EmailJsonPane({
               className={cn(
                 "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
                 mode === "tree" && "border-l-strong border-line",
-                view === mode ? "bg-selected text-selected-foreground" : "hover:bg-muted"
+                view === mode
+                  ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                  : "hover:bg-muted"
               )}
             >
               {mode === "formatted" ? "Formatted" : "Tree"}
@@ -984,6 +1014,7 @@ export function EmailDetail({
   note,
   onNoteChange,
   initialTab,
+  onParsed,
 }: EmailDetailProps) {
   const email = request.email ?? null;
   const requestId = "id" in request ? request.id : request._id;
@@ -992,6 +1023,9 @@ export function EmailDetail({
   const mailFirst = useSite().key === "mailhooks";
   // The page can show this view twice (desktop and phone), so ids are per instance.
   const tabIds = useId();
+  const hasLayouts = (endpoint.layouts?.length ?? 0) > 0;
+  // A tab the person picked stays: a parse that finishes later does not move them.
+  const tabPicked = useRef(initialTab !== undefined);
   const [tab, setTab] = useState<EmailTab>(
     initialTab ??
       // Opens on Parsed when a layout read it; mail no layout reads opens as usual.
@@ -1003,6 +1037,10 @@ export function EmailDetail({
             : "text"
           : "json")
   );
+  const pickTab = useCallback((id: EmailTab) => {
+    tabPicked.current = true;
+    setTab(id);
+  }, []);
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
   const raw = useMemo(() => rawMessage(request), [request]);
@@ -1053,12 +1091,61 @@ export function EmailDetail({
       cancelled = true;
     };
   }, [accessToken, isEmail, requestId, fieldsKnownEmpty, partialParse]);
+  // A new email the layouts may still be reading.
+  const [watch, setWatch] = useState<ParseWatch | null>(() =>
+    email && hasLayouts && !request.parsed && Date.now() - request.receivedAt < PARSE_FRESH_MS
+      ? { id: requestId, state: "reading", mode: "new", until: Date.now() + PARSE_WATCH_MS }
+      : null
+  );
+  const watchHere = watch?.id === requestId ? watch : null;
+  const onParsedRef = useRef(onParsed);
+  useEffect(() => {
+    onParsedRef.current = onParsed;
+  }, [onParsed]);
+  useEffect(() => {
+    if (watchHere?.state !== "reading" || !accessToken) return;
+    const { mode, until } = watchHere;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        const found = await fetchEmailDetails(accessToken, requestId);
+        if (cancelled) return;
+        setDetails({ id: requestId, values: found.emailFields, parsed: found.parsed });
+        if (found.parsed) {
+          const layout =
+            found.parsed.status === "matched" ? (found.parsed.layout?.name ?? "a layout") : null;
+          setWatch({ id: requestId, state: "done", mode, layout });
+          if (layout && !tabPicked.current) setTab("parsed");
+          onParsedRef.current?.(requestId, found.parsed);
+          return;
+        }
+      } catch {
+        // Asked again on the next tick.
+      }
+      if (cancelled) return;
+      if (Date.now() >= until) {
+        setWatch({ id: requestId, state: "done", mode, layout: null });
+        return;
+      }
+      timer = setTimeout(() => void tick(), PARSE_POLL_MS);
+    };
+    timer = setTimeout(() => void tick(), PARSE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [watchHere, accessToken, requestId]);
+  const readingAgain = watchHere?.mode === "again";
   const fields = details?.id === requestId ? details.values : null;
   const fetchFailed = details?.id === requestId && details.failed === true;
-  // The list's summary stands in when the whole result cannot be fetched.
+  // The list's summary stands in when the whole result cannot be fetched; once
+  // the email is read again, it is the old result and no longer counts.
+  const listParsed = readingAgain ? null : (request.parsed ?? null);
   const parsed =
     (details?.id === requestId ? details.parsed : null) ??
-    (partialParse && !fetchFailed ? null : (request.parsed ?? null));
+    (partialParse && !fetchFailed ? null : listParsed);
+  const reading = watchHere?.state === "reading" && (watchHere.mode === "again" || parsed === null);
   // With object storage the exact message is fetched when it is wanted (the
   // Raw tab or a download), whatever its size.
   const stored = email?.stored === true;
@@ -1126,7 +1213,6 @@ export function EmailDetail({
   // Read again: the email is parsed with the current layouts (when there are
   // any) and sent to its destinations again (lib/replay). Its status shows
   // beside the button that asked for it.
-  const hasLayouts = (endpoint.layouts?.length ?? 0) > 0;
   const hasDestinations = endpoint.forwardEnabled === true || (endpoint.destinationCount ?? 0) > 0;
   const [replay, setReplay] = useState<{
     id: string;
@@ -1150,6 +1236,18 @@ export function EmailDetail({
       try {
         const queued = await replayRequest(accessToken, requestId);
         setReplay({ id: requestId, from, state: { kind: "done", queued } });
+        if (queued && hasLayouts) {
+          // The parse is pending again: the result shown so far is the old one.
+          setDetails((current) =>
+            current?.id === requestId ? { ...current, parsed: null } : current
+          );
+          setWatch({
+            id: requestId,
+            state: "reading",
+            mode: "again",
+            until: Date.now() + PARSE_WATCH_MS,
+          });
+        }
       } catch (error) {
         setReplay({
           id: requestId,
@@ -1161,7 +1259,7 @@ export function EmailDetail({
         });
       }
     },
-    [accessToken, requestId, replayHere?.state.kind]
+    [accessToken, requestId, replayHere?.state.kind, hasLayouts]
   );
   const replayMessage = (from: "header" | "parsed") => {
     if (replayHere?.from !== from) return null;
@@ -1170,9 +1268,11 @@ export function EmailDetail({
     if (state.kind === "error") return state.message;
     if (!state.queued) return "Nothing was queued: no layout or destination takes this email.";
     if (!hasLayouts) return "Queued. It is sent to destinations again.";
-    return hasDestinations
-      ? "Queued. It is read with the current layouts and sent to destinations again."
-      : "Queued. It is read with the current layouts.";
+    if (watchHere?.mode !== "again" || watchHere.state === "reading") return "Reading again...";
+    const sent = hasDestinations ? " It is sent to destinations again." : "";
+    return watchHere.layout
+      ? `Read by ${watchHere.layout} just now.${sent}`
+      : `Still no layout applies.${sent}`;
   };
   const replayFailed = replayHere?.state.kind === "error";
   // Offered when reading it again would do something: a layout or a destination.
@@ -1244,7 +1344,7 @@ export function EmailDetail({
   const openTab = (id: EmailTab) => {
     // A failed load of the stored message is tried again.
     if (id === "raw" && storedRawHere && "error" in storedRawHere) setStoredRaw(null);
-    setTab(id);
+    pickTab(id);
   };
   const rawAvailable = stored || (!!raw && !email.truncated.raw);
 
@@ -1252,17 +1352,18 @@ export function EmailDetail({
     <div className="ph-no-capture flex flex-col h-full">
       {/* Envelope */}
       <div className="border-b-strong border-line px-4 md:px-5 pt-4 pb-3.5 shrink-0 bg-card">
-        <div className="flex items-start gap-3">
+        {/* On a phone the buttons go under the subject, which keeps the full width. */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
           <h2
             className={cn(
-              "flex-1 min-w-0 text-lg md:text-[21px] font-bold clean:font-semibold leading-tight break-words",
+              "sm:flex-1 min-w-0 text-lg md:text-[21px] font-bold clean:font-semibold leading-tight break-words",
               !email.subject && "text-muted-foreground"
             )}
           >
             {email.subject || "(no subject)"}
           </h2>
           {(canReadAgain || rawAvailable) && (
-            <div className="flex flex-wrap justify-end gap-2 shrink-0">
+            <div className="flex flex-wrap gap-2 sm:justify-end sm:shrink-0">
               {canReadAgain && (
                 <button
                   type="button"
@@ -1335,7 +1436,7 @@ export function EmailDetail({
             email={email}
             isTest={isTest}
             report={report}
-            onOpen={() => setTab("authentication")}
+            onOpen={() => pickTab("authentication")}
           />
         </div>
         {(showExtracts || fields) && (
@@ -1378,7 +1479,7 @@ export function EmailDetail({
               className={cn(
                 "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
                 activeTab === entry.id
-                  ? "bg-selected text-selected-foreground"
+                  ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                   : "bg-background hover:bg-muted"
               )}
             >
@@ -1411,7 +1512,7 @@ export function EmailDetail({
                     "px-2.5 py-0.5 text-[11px] font-bold caps clean:capitalize cursor-pointer transition-colors whitespace-nowrap",
                     mode === "reply" && "border-l-strong border-line",
                     textView === mode
-                      ? "bg-selected text-selected-foreground"
+                      ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                       : "bg-background hover:bg-muted"
                   )}
                 >
@@ -1438,7 +1539,7 @@ export function EmailDetail({
                     "px-2.5 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors capitalize",
                     mode === "mobile" && "border-l-strong border-line",
                     width === mode
-                      ? "bg-selected text-selected-foreground"
+                      ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                       : "bg-background hover:bg-muted"
                   )}
                 >
@@ -1457,24 +1558,43 @@ export function EmailDetail({
         className="flex-1 overflow-auto p-4 md:p-5"
       >
         {activeTab === "parsed" &&
-          (parsed && (parsed.status === "matched" || !hasLayouts) ? (
+          (reading ? (
+            <p
+              // Read again from the header: its own status line already says so.
+              {...(readingAgain && replayHere?.from === "header"
+                ? {}
+                : { role: "status", "aria-live": "polite" as const })}
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+            >
+              <Loader2
+                className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+                aria-hidden
+              />
+              {readingAgain ? "Reading again..." : "Reading with your layouts..."}
+            </p>
+          ) : parsed && (parsed.status === "matched" || !hasLayouts) ? (
             <>
+              {replayHere?.from === "parsed" && (
+                <p role="status" aria-live="polite" className="text-xs text-muted-foreground mb-2">
+                  {replayMessage("parsed")}
+                </p>
+              )}
               {parsed.partial && (
                 <p className="text-xs text-muted-foreground mb-2">
                   The line items and attachments could not be loaded; reopen the email to try again.
                 </p>
               )}
-              <ParsedResult parsed={parsed} />
+              <ParsedResult parsed={parsed} layouts={endpoint.layouts} />
             </>
-          ) : !parsed && request.parsed ? (
+          ) : !parsed && listParsed ? (
             <p className="text-sm text-muted-foreground">Loading the parsed result...</p>
           ) : (
             <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
-              <h3 className="text-sm font-semibold">Not read by a layout yet</h3>
+              <h3 className="text-sm font-semibold">No layout applied to this email.</h3>
               <p className="text-sm text-muted-foreground">
                 {canManageForwarding
-                  ? "This email arrived before the current layouts, or none of them applies to it. Read it again to try the current layouts, or open Layouts to adjust one."
-                  : "This email arrived before the current layouts, or none of them applies to it."}
+                  ? "It arrived before the current layouts, or none of them applies to it. Read it again to try the current layouts, or open Layouts to adjust one."
+                  : "It arrived before the current layouts, or none of them applies to it."}
               </p>
               {canManageForwarding && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -1520,7 +1640,7 @@ export function EmailDetail({
             forwardUrl={endpoint.forwardUrl}
             canManageForwarding={canManageForwarding}
             onOpenForwarding={onOpenForwarding}
-            onOpenDeliveries={() => setTab("deliveries")}
+            onOpenDeliveries={() => pickTab("deliveries")}
           />
         )}
 

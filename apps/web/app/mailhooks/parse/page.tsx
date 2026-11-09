@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { LAYOUT_TEMPLATES } from "@/lib/layout-templates";
@@ -32,6 +33,10 @@ export default function SendersIndex() {
                   </p>
                   <h2 className="font-bold text-lg mb-2">{template.title}</h2>
                   <p className="text-sm text-muted-foreground">{template.description}</p>
+                  <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary-ink">
+                    See the layout
+                    <ArrowRight className="h-4 w-4" aria-hidden />
+                  </span>
                 </Link>
               </li>
             ))}

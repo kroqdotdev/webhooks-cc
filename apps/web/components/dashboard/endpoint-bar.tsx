@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSite } from "@/components/providers/site-provider";
 import Link from "next/link";
 import {
@@ -258,11 +258,11 @@ function useSendActions(slug: string) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
 
-  const show = (next: { kind: "ok" | "error"; text: string }) => {
+  const show = useCallback((next: { kind: "ok" | "error"; text: string }) => {
     setStatus(next);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setStatus(null), 6000);
-  };
+  }, []);
 
   const sendEmail = async () => {
     if (!session?.access_token || sending) return;
@@ -280,7 +280,7 @@ function useSendActions(slug: string) {
     }
   };
 
-  return { requestOpen, setRequestOpen, status, sending, sendEmail };
+  return { requestOpen, setRequestOpen, status, sending, sendEmail, show };
 }
 
 type SendActions = ReturnType<typeof useSendActions>;
@@ -404,6 +404,7 @@ function ActionsMenu({
   onOpenGuide,
   onOpenSettings,
   onExport,
+  copyAddresses,
 }: {
   setup: Setup;
   send: SendActions;
@@ -413,7 +414,41 @@ function ActionsMenu({
   onOpenGuide: () => void;
   onOpenSettings?: (section: SettingsSection) => void;
   onExport?: (format: "json" | "csv") => void;
+  /** A phone's address row is hidden (the endpoint has requests): copy them from here. */
+  copyAddresses?: { url: string; email: string | null };
 }) {
+  const copyAddress = async (text: string, what: string) => {
+    send.show(
+      (await copyToClipboard(text))
+        ? { kind: "ok", text: `${what} copied` }
+        : { kind: "error", text: `The ${what.toLowerCase()} could not be copied` }
+    );
+  };
+  const email = copyAddresses?.email ?? null;
+  const copyItems = copyAddresses
+    ? [
+        <DropdownMenuItem
+          key="url"
+          className="md:hidden"
+          onSelect={() => void copyAddress(copyAddresses.url, "Webhook URL")}
+        >
+          <Globe className="h-3.5 w-3.5" />
+          Copy webhook URL
+        </DropdownMenuItem>,
+        ...(email
+          ? [
+              <DropdownMenuItem
+                key="email"
+                className="md:hidden"
+                onSelect={() => void copyAddress(email, "Email address")}
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Copy email address
+              </DropdownMenuItem>,
+            ]
+          : []),
+      ]
+    : [];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -430,6 +465,16 @@ function ActionsMenu({
         align="end"
         className="w-72 max-w-[calc(100vw-2rem)] border-strong border-line shadow-raised"
       >
+        {copyItems.length > 0 && (
+          <>
+            <DropdownMenuLabel className="text-xs text-muted-foreground md:hidden">
+              Address
+            </DropdownMenuLabel>
+            {/* The site's own address first, as the address row has it. */}
+            {mailFirst ? [...copyItems].reverse() : copyItems}
+            <DropdownMenuSeparator className="md:hidden" />
+          </>
+        )}
         <DropdownMenuLabel className="text-xs text-muted-foreground">Send</DropdownMenuLabel>
         <SendItems send={send} canEmail={canEmail} mailFirst={mailFirst} />
         {onExport && (
@@ -461,35 +506,24 @@ function ActionsMenu({
   );
 }
 
-export function EndpointBar({
-  name,
+/**
+ * The endpoint's addresses: both pills on wide screens; below xl one at a
+ * time, the site's own first, with a toggle that swaps it (two pills beside
+ * the actions would squeeze both until the values vanish).
+ */
+function EndpointAddresses({
   slug,
   emailAddress,
-  tab,
-  onTabChange,
-  hasRequests,
-  exportMenu,
-  onExport,
-  setupState,
-  onOpenSettings,
-  detailOpen = false,
-}: EndpointBarProps) {
-  const [guideOpen, setGuideOpen] = useState(false);
+  className,
+}: {
+  slug: string;
+  emailAddress?: string | null;
+  className?: string;
+}) {
   const mailFirst = useSite().key === "mailhooks";
-  const canEmail = Boolean(emailAddress);
-  const setup = useGettingStarted(hasRequests, setupState, mailFirst && canEmail);
-  const send = useSendActions(slug);
-  const openGuide = () => setGuideOpen(true);
-  // Below xl one address shows at a time, the site's own first; a toggle swaps
-  // it. Two pills beside the actions would squeeze both until the values vanish.
   const [phoneAddress, setPhoneAddress] = useState<"http" | "email">(mailFirst ? "email" : "http");
-  // mailhooks.cc names its request list for what it mostly holds.
-  const inboxLabel = mailFirst && canEmail ? "Inbox" : "Requests";
   const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
   const shownUrl = url.replace(/^https?:\/\//, "");
-  // Export folds into Actions on a phone when the page hands over the exports
-  // themselves; otherwise its own menu sits beside Actions.
-  const phoneExport = hasRequests ? onExport : undefined;
   const pillClass = "min-w-0 flex-1 xl:flex-none xl:w-auto xl:max-w-[calc(50%-0.25rem)]";
   const httpPill = (
     <AddressPill
@@ -510,6 +544,87 @@ export function EndpointBar({
       className={cn(pillClass, phoneAddress !== "email" && "max-xl:hidden")}
     />
   ) : null;
+  return (
+    <div className={cn("min-w-0 flex items-center gap-2", className)}>
+      {emailAddress ? (
+        <>
+          {/* In the DOM in the order they show, so Tab meets the site's own first. */}
+          {mailFirst ? (
+            <>
+              {emailPill}
+              {httpPill}
+            </>
+          ) : (
+            <>
+              {httpPill}
+              {emailPill}
+            </>
+          )}
+          <Segmented
+            name="Address shown"
+            value={phoneAddress}
+            onChange={setPhoneAddress}
+            size="xs"
+            className="xl:hidden shrink-0"
+            // In the order the pills come in on wide screens, the site's own first.
+            options={
+              mailFirst
+                ? [
+                    { value: "email", label: "Email" },
+                    { value: "http", label: "HTTP" },
+                  ]
+                : [
+                    { value: "http", label: "HTTP" },
+                    { value: "email", label: "Email" },
+                  ]
+            }
+          />
+        </>
+      ) : (
+        <>
+          <AddressPill
+            label="HTTP"
+            icon={Globe}
+            value={shownUrl}
+            copyValue={url}
+            className="min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]"
+          />
+          <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">
+            <Lock className="h-3 w-3" />
+            Endpoints on an account also receive email
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function EndpointBar({
+  name,
+  slug,
+  emailAddress,
+  tab,
+  onTabChange,
+  hasRequests,
+  exportMenu,
+  onExport,
+  setupState,
+  onOpenSettings,
+  detailOpen = false,
+}: EndpointBarProps) {
+  const [guideOpen, setGuideOpen] = useState(false);
+  const mailFirst = useSite().key === "mailhooks";
+  const canEmail = Boolean(emailAddress);
+  // mailhooks.cc's checklist whatever the endpoint: its address may not be known yet.
+  const setup = useGettingStarted(hasRequests, setupState, mailFirst);
+  const send = useSendActions(slug);
+  const openGuide = () => setGuideOpen(true);
+  // mailhooks.cc names its request list for what it mostly holds.
+  const inboxLabel = mailFirst && canEmail ? "Inbox" : "Requests";
+  const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
+  // Export folds into Actions on a phone when the page hands over the exports
+  // themselves; otherwise its own menu sits beside Actions.
+  const phoneExport = hasRequests ? onExport : undefined;
 
   return (
     <div className="border-b-strong border-line bg-card px-4 pt-3 max-md:pt-2 shrink-0">
@@ -518,62 +633,16 @@ export function EndpointBar({
         <h1 className="font-bold text-sm tracking-normal shrink-0 order-1 max-md:sr-only">
           {name}
         </h1>
-        <div
+        {/* Once requests arrive, a phone gives the list the address row's room:
+            the addresses are copied from Actions there. */}
+        <EndpointAddresses
+          slug={slug}
+          emailAddress={emailAddress}
           className={cn(
-            "order-3 md:order-2 w-full md:w-auto md:flex-1 min-w-0 flex items-center gap-2",
-            detailOpen && "max-md:hidden"
+            "order-3 md:order-2 w-full md:w-auto md:flex-1",
+            (detailOpen || hasRequests) && "max-md:hidden"
           )}
-        >
-          {emailAddress ? (
-            <>
-              {/* In the DOM in the order they show, so Tab meets the site's own first. */}
-              {mailFirst ? (
-                <>
-                  {emailPill}
-                  {httpPill}
-                </>
-              ) : (
-                <>
-                  {httpPill}
-                  {emailPill}
-                </>
-              )}
-              <Segmented
-                name="Address shown"
-                value={phoneAddress}
-                onChange={setPhoneAddress}
-                size="xs"
-                className="xl:hidden shrink-0"
-                // In the order the pills come in on wide screens, the site's own first.
-                options={
-                  mailFirst
-                    ? [
-                        { value: "email", label: "Email" },
-                        { value: "http", label: "HTTP" },
-                      ]
-                    : [
-                        { value: "http", label: "HTTP" },
-                        { value: "email", label: "Email" },
-                      ]
-                }
-              />
-            </>
-          ) : (
-            <>
-              <AddressPill
-                label="HTTP"
-                icon={Globe}
-                value={shownUrl}
-                copyValue={url}
-                className="min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]"
-              />
-              <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">
-                <Lock className="h-3 w-3" />
-                Endpoints on an account also receive email
-              </span>
-            </>
-          )}
-        </div>
+        />
         {/* Below lg the group's box goes (its buttons move to Actions, which
             leaves a tablet's address its room) and only the send status stays, as
             a toast. */}
@@ -637,6 +706,7 @@ export function EndpointBar({
             onOpenGuide={openGuide}
             onOpenSettings={onOpenSettings}
             onExport={phoneExport}
+            copyAddresses={hasRequests ? { url, email: emailAddress ?? null } : undefined}
           />
         </div>
       </nav>

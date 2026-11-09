@@ -52,6 +52,21 @@ function isValidTargetUrl(url: string): { valid: boolean; error?: string } {
   }
 }
 
+/**
+ * A fetch from the browser fails with a bare TypeError ("Failed to fetch")
+ * both for a closed port and for a CORS refusal, and the browser does not say
+ * which, so the message names both and the ways around them.
+ */
+function unreachableMessage(target: string): string {
+  let host = target;
+  try {
+    host = new URL(target).host;
+  } catch {
+    // Validated above; keep the text as typed if it still does not parse.
+  }
+  return `Could not reach ${host}. Check that the server is running and accepts requests from ${window.location.origin} (CORS). If it does not, use whk tunnel or a forwarding destination.`;
+}
+
 export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogProps) {
   const bodySize = bodyBytes ? bodyBytes.length : body ? new TextEncoder().encode(body).length : 0;
   const [targetUrl, setTargetUrl] = useState("");
@@ -93,7 +108,13 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
       setStatus("done");
       trackRequestReplayed(method, res.status);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Request failed");
+      setErrorMsg(
+        err instanceof TypeError
+          ? unreachableMessage(targetUrl)
+          : err instanceof Error
+            ? err.message
+            : "Request failed"
+      );
       setStatus("error");
     }
   };

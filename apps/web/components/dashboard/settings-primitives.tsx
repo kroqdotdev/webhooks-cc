@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/dashboard-api";
@@ -154,7 +154,46 @@ export function SaveFooter({
   onSave: () => void;
   onReset: () => void;
 }) {
-  useReportDirty(dirty);
+  // A save started from outside the section (the sticky bar, the discard
+  // dialog) clicks this footer's Save and resolves once the state says how it
+  // went: an error, or saved (or no longer dirty) with nothing running.
+  const onSaveRef = useRef(onSave);
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  });
+  const pending = useRef<((ok: boolean) => void) | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const saveFromOutside = useCallback(
+    () =>
+      new Promise<boolean>((resolve) => {
+        pending.current?.(false);
+        pending.current = resolve;
+        // Batched with the section's own state changes from onSave, so the
+        // effect below first sees this attempt's state, never the last one's.
+        setAttempt((n) => n + 1);
+        onSaveRef.current();
+      }),
+    []
+  );
+  useEffect(() => {
+    const resolve = pending.current;
+    if (!resolve || saving) return;
+    if (error) {
+      pending.current = null;
+      resolve(false);
+    } else if (saved || !dirty) {
+      pending.current = null;
+      resolve(true);
+    }
+  }, [attempt, dirty, saving, error, saved]);
+  useEffect(
+    () => () => {
+      pending.current?.(false);
+      pending.current = null;
+    },
+    []
+  );
+  useReportDirty(dirty, saveFromOutside);
   const idle = !dirty && !saving && !saved && !error;
   // A failed save leaves the edits, so Save stays for a retry.
   const showSave = dirty || saving;

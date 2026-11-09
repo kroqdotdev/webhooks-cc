@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,12 @@ import {
 export interface DirtySection {
   id: string;
   title: string;
+  /**
+   * Runs the section's own save, as its Save button would, and resolves true
+   * once it saved, false when it did not (a validation or server error, which
+   * the section's footer shows).
+   */
+  save?: () => Promise<boolean>;
 }
 
 interface DirtySectionsValue {
@@ -96,8 +103,12 @@ export function useDirtySections(): DirtySection[] {
 
 const EMPTY: DirtySection[] = [];
 
-/** Reports whether the section this sits in has unsaved edits. */
-export function useReportDirty(dirty: boolean) {
+/**
+ * Reports whether the section this sits in has unsaved edits, and how to save
+ * them (a stable callback), so the sticky bar and the discard dialog can save
+ * a single dirty section without scrolling to it.
+ */
+export function useReportDirty(dirty: boolean, save?: () => Promise<boolean>) {
   const context = useContext(DirtySectionsContext);
   const section = useContext(SectionIdentityContext);
   const report = context?.report;
@@ -105,9 +116,9 @@ export function useReportDirty(dirty: boolean) {
   const title = section?.title;
   useEffect(() => {
     if (!report || !id || !title) return;
-    report({ id, title }, dirty);
-    return () => report({ id, title }, false);
-  }, [report, id, title, dirty]);
+    report({ id, title, save }, dirty);
+    return () => report({ id, title, save }, false);
+  }, [report, id, title, dirty, save]);
 }
 
 /** "Responses", "Responses and Alerts", "Receiving, Responses and Alerts". */
@@ -129,6 +140,25 @@ export function DiscardChangesDialog({
   onKeep: () => void;
   onDiscard: () => void;
 }) {
+  // One unsaved section can be saved from here; then the way out goes ahead.
+  const save = sections.length === 1 ? sections[0].save : undefined;
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  // A fresh prompt starts without the last one's failure.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setFailed(false);
+  }
+  const saveAndLeave = async () => {
+    if (!save || saving) return;
+    setSaving(true);
+    setFailed(false);
+    const ok = await save();
+    setSaving(false);
+    if (ok) onDiscard();
+    else setFailed(true);
+  };
   return (
     // Each way out says what it means: Escape and Keep editing keep, Discard discards.
     <AlertDialog open={open}>
@@ -145,9 +175,25 @@ export function DiscardChangesDialog({
             {sections.length === 1 ? "This section has" : "These sections have"} edits that were not
             saved. Discarding them cannot be undone.
           </AlertDialogDescription>
+          {failed && (
+            <p role="alert" className="text-sm text-destructive-ink">
+              The changes were not saved. Keep editing to see why in {sections[0]?.title}.
+            </p>
+          )}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onKeep}>Keep editing</AlertDialogCancel>
+          {save && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void saveAndLeave()}
+              disabled={saving}
+              className="mt-2 sm:mt-0"
+            >
+              {saving ? "Saving..." : "Save and leave"}
+            </Button>
+          )}
           <AlertDialogAction
             onClick={onDiscard}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

@@ -44,6 +44,28 @@ function defaultTemplateSelection(): TemplateSelectionByProvider {
   ) as TemplateSelectionByProvider;
 }
 
+/**
+ * The catalog labels each template "<Provider> template", with "(signed)" or
+ * "(token)" when the request carries a signature or a secret token. The mode
+ * list groups by that instead of repeating it on every option.
+ */
+function templateOptionGroups() {
+  const signed: { id: TemplateProvider; label: string }[] = [];
+  const unsigned: { id: TemplateProvider; label: string }[] = [];
+  for (const option of WEB_TEMPLATE_PROVIDER_OPTIONS) {
+    const match = / template(?: \((signed|token)\))?$/.exec(option.label);
+    const name = match ? option.label.slice(0, match.index) : option.label;
+    if (match?.[1] === "signed") signed.push({ id: option.id, label: name });
+    else if (match?.[1] === "token")
+      signed.push({ id: option.id, label: `${name} (secret token)` });
+    else unsigned.push({ id: option.id, label: name });
+  }
+  return { signed, unsigned };
+}
+
+const { signed: SIGNED_TEMPLATE_OPTIONS, unsigned: UNSIGNED_TEMPLATE_OPTIONS } =
+  templateOptionGroups();
+
 function parseHeaders(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
   const lines = raw
@@ -247,12 +269,23 @@ export function SendWebhookDialog({
                 onChange={(e) => handleModeChange(e.target.value as SendMode)}
                 className="ui-input text-sm w-full"
               >
-                <option value="manual">Manual request</option>
-                {WEB_TEMPLATE_PROVIDER_OPTIONS.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.label}
-                  </option>
-                ))}
+                <optgroup label="Write your own">
+                  <option value="manual">Manual request</option>
+                </optgroup>
+                <optgroup label="Signed provider templates">
+                  {SIGNED_TEMPLATE_OPTIONS.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Unsigned templates">
+                  {UNSIGNED_TEMPLATE_OPTIONS.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
             {isTemplateMode && (

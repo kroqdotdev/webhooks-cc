@@ -99,7 +99,7 @@ test("the dashboard on mailhooks.cc is under its name and opens on emails", asyn
   await signInTestUser(page, user, "/pricing", MAIL);
   await page.goto(`${MAIL}/dashboard?endpoint=${endpointSlug}`);
   await expect(page.getByText("Send an email")).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("Team collaboration")).toHaveCount(0);
+  await expect(page.getByText("Teams: share endpoints with your team.")).toHaveCount(0);
 
   // With mail in it, the list opens on emails.
   await captureEmail("Order 1 confirmed");

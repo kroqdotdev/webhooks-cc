@@ -29,7 +29,10 @@ export function newEndpointDescription(mailFirst: boolean): string {
 export function NewEndpointForm({
   onCreated,
   cancel,
+  autoFocusName = false,
 }: {
+  /** Puts the cursor in the name field (the dialog, which opens to name an endpoint). */
+  autoFocusName?: boolean;
   /** Called with the new endpoint's slug once it exists. */
   onCreated: (slug: string) => void;
   /** The Cancel control: a button in the dialog, a link on the page. */
@@ -90,6 +93,7 @@ export function NewEndpointForm({
         </Label>
         <input
           id="ep-name"
+          autoFocus={autoFocusName}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={mailFirst ? "Acme orders" : "My webhook"}

@@ -112,7 +112,7 @@ export default function MailhooksPricing() {
             parsed pages, more layouts, custom domains, file drops and longer retention.
           </p>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-3 gap-6 items-start">
             {PLANS.map((plan) => (
               <div
                 key={plan.name}
@@ -128,7 +128,7 @@ export default function MailhooksPricing() {
                   {plan.price}
                   <span className="text-lg font-normal text-muted-foreground"> {plan.note}</span>
                 </p>
-                <ul className="space-y-3 my-8 flex-1">
+                <ul className="space-y-3 my-8">
                   {plan.lines.map((line) => (
                     <li key={line} className="flex items-start gap-3">
                       <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />

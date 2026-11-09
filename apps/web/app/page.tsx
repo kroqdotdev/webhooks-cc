@@ -1,3 +1,4 @@
+import { STARS_FLOOR } from "@/components/landing/github-card";
 import Link from "next/link";
 import { CookieSettingsLink } from "@/components/providers/cookie-consent";
 import { SiteHeader } from "@/components/nav/site-header";
@@ -378,7 +379,7 @@ export default async function Home() {
               className="font-semibold hover:text-foreground"
             >
               Open source
-              {typeof stars === "number" ? (
+              {typeof stars === "number" && stars >= STARS_FLOOR ? (
                 <>
                   {" "}
                   &middot; <Star className="inline-block h-3.5 w-3.5 -mt-0.5" />{" "}
@@ -661,14 +662,14 @@ export default async function Home() {
           </div>
 
           {/* Personal plans */}
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-3 gap-6 items-start">
             {/* Free Plan */}
             <div className="ui-card flex flex-col">
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Free</h3>
                 <p className="text-5xl font-bold">
                   $0
-                  <span className="text-lg font-normal text-muted-foreground">/forever</span>
+                  <span className="text-lg font-normal text-muted-foreground"> forever</span>
                 </p>
               </div>
               <ul className="space-y-3 mb-8">
@@ -687,7 +688,7 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <div className="mt-auto">
+              <div>
                 <PricingCTA />
               </div>
             </div>
@@ -701,7 +702,7 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Pro</h3>
                 <p className="text-5xl font-bold">
                   $8
-                  <span className="text-lg font-normal text-muted-foreground">/month</span>
+                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
                 </p>
               </div>
               <p className="text-sm font-semibold mb-3">Everything in Free, plus:</p>
@@ -721,7 +722,7 @@ export default async function Home() {
               {/* One action per paid plan: everyone starts free and upgrades under Account. */}
               <Link
                 href="/login?mode=sign-up&redirect=/account/plan"
-                className="ui-btn-primary mt-auto block text-center"
+                className="ui-btn-primary block text-center"
               >
                 Start free, upgrade anytime
               </Link>
@@ -733,9 +734,9 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Business</h3>
                 <p className="text-5xl font-bold">
                   $29
-                  <span className="text-lg font-normal text-muted-foreground">/month</span>
+                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
                 </p>
-                <p className="text-sm text-muted-foreground mt-2">or $290/year</p>
+                <p className="text-sm text-muted-foreground mt-2">or $290 a year</p>
               </div>
               <p className="text-sm font-semibold mb-3">Everything in Pro, plus:</p>
               <ul className="space-y-3 mb-8">
@@ -756,7 +757,7 @@ export default async function Home() {
               {/* One action per paid plan: everyone starts free and upgrades under Account. */}
               <Link
                 href="/login?mode=sign-up&redirect=/account/plan"
-                className="ui-btn-outline mt-auto block text-center"
+                className="ui-btn-outline block text-center"
               >
                 Start free, upgrade anytime
               </Link>
@@ -775,14 +776,14 @@ export default async function Home() {
                 <li className="flex items-start gap-3">
                   <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-bold">Teams, $12/seat/month:</span> 100,000 pooled
+                    <span className="font-bold">Teams, $12 a seat a month:</span> 100,000 pooled
                     requests per seat, 31-day retention
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
                   <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-bold">Team Business, $35/seat/month:</span>{" "}
+                    <span className="font-bold">Team Business, $35 a seat a month:</span>{" "}
                     Business&apos;s limits per seat, 90-day retention
                   </span>
                 </li>
@@ -879,7 +880,7 @@ export default async function Home() {
               <PricingCTA inverted />
             </div>
             <p className="text-sm opacity-80 mt-6">
-              No credit card &middot; or scroll up: your guest URL is already live
+              No credit card &middot; or scroll up for a guest URL, no account needed
             </p>
           </div>
         </div>

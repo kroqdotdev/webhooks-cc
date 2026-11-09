@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   AtSign,
+  Check,
   Bell,
   FileSpreadsheet,
   History,
@@ -148,7 +149,7 @@ export default function MailhooksHome() {
                 {/* h-11: centred on the sign-up buttons beside it. */}
                 <Link
                   href="/parse"
-                  className="sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+                  className="max-md:hidden sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
                 >
                   See the layout gallery
                   <ArrowRight className="h-4 w-4" />
@@ -156,6 +157,15 @@ export default function MailhooksHome() {
               </div>
               <p className="text-sm text-muted-foreground mt-4">
                 Free: 50 emails a day and 20 parsed attachment pages a month. No credit card.
+                {/* On phones the gallery link joins this line, so the buttons stand alone. */}
+                <span className="md:hidden">
+                  {" "}
+                  Or browse the{" "}
+                  <Link href="/parse" className="font-bold text-primary-ink underline">
+                    layout gallery
+                  </Link>
+                  .
+                </span>
               </p>
             </div>
             <div className="mt-14">
@@ -267,12 +277,24 @@ export default function MailhooksHome() {
                 ],
               },
             ].map((plan) => (
-              <Link key={plan.name} href="/pricing" className="ui-card block">
+              <Link
+                key={plan.name}
+                href="/pricing"
+                className={`ui-card relative block ${plan.name === "Business" ? "border-primary" : ""}`}
+              >
+                {plan.name === "Business" && (
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
+                    Best for parsing
+                  </span>
+                )}
                 <p className="font-bold text-xl">{plan.name}</p>
                 <p className="text-2xl font-bold mt-1 mb-4">{plan.price}</p>
-                <ul className="space-y-1 text-muted-foreground">
+                <ul className="space-y-2">
                   {plan.lines.map((line) => (
-                    <li key={line}>{line}</li>
+                    <li key={line} className="flex items-start gap-2">
+                      <Check className="h-5 w-5 text-primary-ink shrink-0" aria-hidden />
+                      <span>{line}</span>
+                    </li>
                   ))}
                 </ul>
               </Link>

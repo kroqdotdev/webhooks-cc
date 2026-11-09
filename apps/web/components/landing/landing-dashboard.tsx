@@ -499,7 +499,7 @@ function LandingDashboardInner() {
               <div className="w-full md:w-96 shrink-0 md:border-r-strong md:border-line p-3 space-y-2">
                 {/* One readable example row says what the frame will hold. */}
                 <div className="flex items-center gap-2 font-mono text-xs">
-                  <span className="px-1.5 py-0.5 font-bold rounded-sm bg-method-post/15 text-method-post">
+                  <span className="px-1.5 py-0.5 font-bold rounded-sm clean:bg-method-post/15 clean:text-method-post classic:bg-method-post classic:text-black">
                     POST
                   </span>
                   <span className="flex-1 truncate">/webhooks/stripe</span>

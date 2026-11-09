@@ -1,11 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { APP_VERSION } from "@/lib/changelog";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSettingsData } from "./settings-data";
+
+const NEW_TEAM_HREF = "/teams?new=1";
 
 interface NavItem {
   href: string;
@@ -34,15 +46,7 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-function NavLink({
-  item,
-  pathname,
-  compact,
-}: {
-  item: NavItem;
-  pathname: string;
-  compact?: boolean;
-}) {
+function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = isActive(pathname, item);
   return (
     <Link
@@ -51,14 +55,14 @@ function NavLink({
       className={cn(
         "flex items-center justify-between gap-3 rounded-md text-sm transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        compact ? "px-3 py-1.5 whitespace-nowrap" : "px-3 py-2",
+        "px-3 py-2",
         active
           ? "bg-selected text-selected-foreground font-medium"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
       )}
     >
       <span className="truncate">{item.label}</span>
-      {item.meta && !compact && (
+      {item.meta && (
         <span
           className={cn(
             "shrink-0 text-xs",
@@ -96,25 +100,53 @@ function useTeamItems(): NavItem[] {
 
 /**
  * The account and team settings frame: a sticky side nav on wide screens, a
- * scrolling strip of the same links on narrow ones, and the page beside it.
+ * list to pick the same pages from on narrow ones, and the page beside it.
  */
 export function SettingsShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const teamItems = useTeamItems();
+  // The page shown, for the narrow screens' list: the most specific match.
+  const activeHref =
+    [...ACCOUNT_ITEMS, ...teamItems]
+      .filter((item) => isActive(pathname, item))
+      .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? "";
 
   return (
     <div className="container mx-auto px-4 py-6 lg:py-10">
-      <nav
-        aria-label="Settings"
-        className="lg:hidden -mx-4 mb-6 overflow-x-auto border-b-strong border-line px-4 pb-3 [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)]"
-      >
-        <ul className="flex gap-1">
-          {[...ACCOUNT_ITEMS, ...teamItems].map((item) => (
-            <li key={item.href}>
-              <NavLink item={item} pathname={pathname} compact />
-            </li>
-          ))}
-        </ul>
+      {/* Nine account pages and the teams do not fit a phone's width, so
+          narrow screens pick the page from a list. */}
+      <nav aria-label="Settings" className="lg:hidden mb-6">
+        <Select value={activeHref} onValueChange={(href) => router.push(href)}>
+          <SelectTrigger aria-label="Account section" className="w-full">
+            <SelectValue placeholder="Account section" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel className="text-xs font-medium text-muted-foreground">
+                Account
+              </SelectLabel>
+              {ACCOUNT_ITEMS.map((item) => (
+                <SelectItem key={item.href} value={item.href}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectSeparator />
+            {/* Team names are the owner's own words; keep them out of autocapture. */}
+            <SelectGroup className="ph-no-capture">
+              <SelectLabel className="text-xs font-medium text-muted-foreground">Teams</SelectLabel>
+              {teamItems.map((item) => (
+                <SelectItem key={item.href} value={item.href}>
+                  {item.meta && item.href !== "/teams"
+                    ? `${item.label} (${item.meta})`
+                    : item.label}
+                </SelectItem>
+              ))}
+              <SelectItem value={NEW_TEAM_HREF}>New team</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </nav>
 
       <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
@@ -140,7 +172,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
                 ))}
                 <li>
                   <Link
-                    href="/teams?new=1"
+                    href={NEW_TEAM_HREF}
                     className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />

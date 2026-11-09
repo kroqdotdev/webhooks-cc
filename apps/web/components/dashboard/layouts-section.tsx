@@ -48,6 +48,7 @@ import { ConditionList } from "./condition-list";
 import { EmailFieldsEditor } from "./email-fields-editor";
 import { SaveFooter, Section, Segmented, SwitchRow, useSave } from "./settings-primitives";
 import { stableStringify } from "@/lib/stable-json";
+import { describeCondition, takesValue } from "@/lib/condition-labels";
 
 /**
  * Layouts: how this endpoint reads the emails of each sender or kind. The
@@ -230,6 +231,29 @@ function SampleSendStatus({ state }: { state: SampleSend }) {
   );
 }
 
+/**
+ * A layout in one line, for one just added from a template: "Shopify orders:
+ * applies when email subject contains "placed by", reads 6 fields, and line items".
+ */
+function layoutSummary(layout: Layout): string {
+  const conditions = layout.match?.conditions ?? [];
+  const when =
+    conditions.length === 0
+      ? "every email"
+      : conditions
+          .map((condition) =>
+            describeCondition(
+              takesValue(condition.op) && condition.value
+                ? { ...condition, value: `"${condition.value}"` }
+                : condition
+            )
+          )
+          .join(layout.match?.logic === "or" ? " or " : " and ");
+  const count = layout.fields?.length ?? 0;
+  const reads = `reads ${count} field${count === 1 ? "" : "s"}`;
+  return `${layout.name}: applies when ${when}, ${reads}${layout.lineItems ? ", and line items" : ""}`;
+}
+
 function modeOf(layout: Layout): LineItemsMode {
   return layout.lineItems?.from ?? "none";
 }
@@ -318,13 +342,43 @@ function LineItemsTable({
   );
 }
 
+/**
+ * The fields in the order the layout lists them (`jsonb` does not keep an
+ * object's key order), then any the layout no longer names. The layout is
+ * found among `layouts` by id, else by name.
+ */
+export function orderedFieldNames(parsed: ParsedEmail, layouts?: readonly unknown[]): string[] {
+  const names = Object.keys(parsed.fields);
+  const candidates = (layouts ?? []).filter(
+    (layout): layout is Pick<Layout, "id" | "name" | "fields"> =>
+      typeof layout === "object" && layout !== null && "id" in layout
+  );
+  const layout =
+    candidates.find((entry) => entry.id === parsed.layout?.id) ??
+    candidates.find((entry) => entry.name === parsed.layout?.name);
+  if (!layout || !Array.isArray(layout.fields)) return names;
+  const present = new Set(names);
+  const ordered = layout.fields
+    .map((field) => field?.name)
+    .filter((name): name is string => typeof name === "string" && present.has(name));
+  const placed = new Set(ordered);
+  return [...new Set(ordered), ...names.filter((name) => !placed.has(name))];
+}
+
 /** A parsed result: the layout, fields, line items and attachments. Shared with the email view. */
-export function ParsedResult({ parsed }: { parsed: ParsedEmail }) {
+export function ParsedResult({
+  parsed,
+  layouts,
+}: {
+  parsed: ParsedEmail;
+  /** The endpoint's layouts (or the draft), so the fields show in their layout's order. */
+  layouts?: readonly unknown[];
+}) {
   if (parsed.status !== "matched") {
     // Expected for mail no layout is written for yet: not an error.
     return <p className="text-sm text-muted-foreground">No layout applies to this email yet.</p>;
   }
-  const fieldNames = Object.keys(parsed.fields);
+  const fieldNames = orderedFieldNames(parsed, layouts);
   const columns = lineItemColumns(parsed);
   return (
     <div className="space-y-3 text-sm">
@@ -644,13 +698,18 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   // A layout just added, by id: its header is brought into view and its name focused
   // once it has rendered and the Add layout menu has closed.
   const revealId = useRef<string | null>(null);
+  // Layouts added from a template here, shown as a summary until "Edit" opens
+  // the editor: a ready-made layout rarely needs its patterns read first.
+  const [summarized, setSummarized] = useState<Set<string>>(() => new Set());
   useEffect(() => {
     const id = revealId.current;
     if (!id || menuOpen) return;
     revealId.current = null;
     const frame = requestAnimationFrame(() => {
       document.getElementById(`layout-${id}-header`)?.scrollIntoView({ block: "start" });
-      document.getElementById(`layout-${id}-name`)?.focus({ preventScroll: true });
+      (
+        document.getElementById(`layout-${id}-name`) ?? document.getElementById(`layout-${id}-edit`)
+      )?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
   }, [layouts, open, menuOpen]);
@@ -735,8 +794,21 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   };
   const addTemplate = (template: LayoutTemplate) => {
     const { id } = newLayout(layouts);
-    addLayout({ ...structuredClone(template.layout), id });
+    // Added closed, as a summary; Save in the footer keeps it as it is.
+    setLayouts([...layouts, { ...structuredClone(template.layout), id }]);
+    setOpen(null);
+    revealId.current = id;
+    setSummarized((current) => new Set(current).add(id));
     setAddedFrom((current) => ({ ...current, [id]: template.id }));
+  };
+  const openEditor = (index: number, id: string) => {
+    setOpen(index);
+    setSummarized((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
   };
   const sendSample = async (template: LayoutTemplate) => {
     if (!accessToken || sampleSend?.kind === "sending") return;
@@ -801,8 +873,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   // The Tried on row offers a sample only while no layout is open (an open
   // layout's notice offers its own): the first used layout from a sender's
   // template that does not read the email tried.
+  // A summary offers its own sample, so the preview's offer and status wait.
+  const summaryShown = layouts.some((layout, index) => open !== index && summarized.has(layout.id));
   const idleTemplate =
-    open === null
+    open === null && !summaryShown
       ? (layouts
           .map((layout, index) => ({ layout, index }))
           .filter(
@@ -918,6 +992,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             const expanded = open === index;
             const layoutProblems = problems.get(index) ?? [];
             const matched = preview?.parsed?.layout?.id === layout.id;
+            const summaryTemplate =
+              !expanded && summarized.has(layout.id) ? templateFor(layout) : null;
             return (
               <li key={layout.id} className="border-strong border-line rounded-md bg-card">
                 <div
@@ -927,7 +1003,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   <span className="text-xs text-muted-foreground w-5">{n}.</span>
                   <button
                     type="button"
-                    onClick={() => setOpen(expanded ? null : index)}
+                    onClick={() => (expanded ? setOpen(null) : openEditor(index, layout.id))}
                     aria-expanded={expanded}
                     className="text-sm font-semibold text-left cursor-pointer hover:underline"
                   >
@@ -982,6 +1058,37 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   <p className="text-xs text-destructive-ink px-2.5 pb-2" aria-live="polite">
                     {layoutProblems[0]}
                   </p>
+                )}
+                {!expanded && summarized.has(layout.id) && (
+                  <div className="border-t border-line/20 p-3 space-y-2.5">
+                    <p className="text-sm">{layoutSummary(layout)}.</p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <SwitchRow
+                        id={`layout-${layout.id}-enabled`}
+                        label="On"
+                        checked={layout.enabled !== false}
+                        onChange={(next) => update(index, { enabled: next })}
+                      />
+                      {summaryTemplate && (
+                        <SampleEmailButton
+                          template={summaryTemplate}
+                          state={sampleSend}
+                          onSend={sendSample}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        id={`layout-${layout.id}-edit`}
+                        onClick={() => openEditor(index, layout.id)}
+                        aria-expanded={false}
+                        aria-label={`Edit layout ${n}`}
+                        className="ml-auto inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        Edit
+                        <ChevronDown className="h-3 w-3" aria-hidden />
+                      </button>
+                    </div>
+                  </div>
                 )}
                 {expanded && (
                   <div className="border-t border-line/20 p-3 space-y-4">
@@ -1292,10 +1399,10 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           {preview.request ? (
             <>
               {/* The status of a send from the Tried on row; an open layout's notice has its own. */}
-              {(sampleSend?.kind === "sent" || (open === null && sampleSend)) && (
+              {!summaryShown && (sampleSend?.kind === "sent" || (open === null && sampleSend)) && (
                 <SampleSendStatus state={sampleSend} />
               )}
-              {preview.parsed ? <ParsedResult parsed={preview.parsed} /> : null}
+              {preview.parsed ? <ParsedResult parsed={preview.parsed} layouts={layouts} /> : null}
             </>
           ) : (
             <>
@@ -1304,7 +1411,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 the layouts.
               </p>
               {/* Once: the open layout's notice offers it when that layout has a sample. */}
-              {firstTemplate && !openTemplate && (
+              {firstTemplate && !openTemplate && !summaryShown && (
                 <SampleEmailButton
                   template={firstTemplate}
                   state={sampleSend}

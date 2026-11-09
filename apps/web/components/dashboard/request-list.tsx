@@ -32,6 +32,7 @@ import {
   isEmailItem,
 } from "@/types/request";
 import type { AnyRequestSummary, KindFilter } from "@/types/request";
+import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 
 const TS_PREF_KEY = "request_list_relative_time";
 
@@ -74,7 +75,16 @@ interface RequestListProps {
   onKindFilterChange?: (kind: KindFilter) => void;
   /** The endpoint's address, shown when no email has arrived yet. */
   emailAddress?: string | null;
+  /** What the layouts made of each email, by id (the rows carry no parse). */
+  parsedById?: Map<string, ParsedEmail | null>;
+  /** The endpoint has layouts: an email without a result says so. */
+  layoutsActive?: boolean;
+  /** The time the page last looked at parses, for "reading..." (see PARSE_FRESH_MS). */
+  parseNow?: number;
 }
+
+/** An email that arrived this recently with no result may still be read by a layout. */
+const PARSE_FRESH_MS = 2 * 60 * 1000;
 
 const KINDS: { id: KindFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -124,6 +134,9 @@ export function RequestList({
   kindFilter = "all",
   onKindFilterChange,
   emailAddress,
+  parsedById,
+  layoutsActive = false,
+  parseNow,
 }: RequestListProps) {
   // The mail site, or a list filtered to email, talks about emails.
   const talksEmail = useSite().key === "mailhooks" || kindFilter === "email";
@@ -695,6 +708,7 @@ export function RequestList({
   ) {
     const email = request.email;
     const sender = email?.from?.name || email?.from?.address || null;
+    const parse = parseStatus(id, request.receivedAt);
     return (
       <div key={id} {...rowProps(id, isComparing)}>
         <div className="flex items-center gap-2">
@@ -739,9 +753,39 @@ export function RequestList({
               {formatBytes(request.size)}
             </span>
           )}
+          {parse && (
+            <span
+              className={cn(
+                "text-xs truncate min-w-0",
+                parse.kind === "read" ? "text-primary-ink" : "text-muted-foreground"
+              )}
+            >
+              &middot;{" "}
+              {parse.kind === "read"
+                ? parse.layout
+                : parse.kind === "none"
+                  ? "no layout"
+                  : "reading..."}
+            </span>
+          )}
         </div>
       </div>
     );
+  }
+
+  /** How the layouts read an email, for its row: null when there is nothing to say. */
+  function parseStatus(
+    id: string,
+    receivedAt: number
+  ): { kind: "read"; layout: string } | { kind: "none" } | { kind: "pending" } | null {
+    const parsed = parsedById?.get(id);
+    if (parsed?.status === "matched")
+      return { kind: "read", layout: parsed.layout?.name ?? "layout" };
+    if (!layoutsActive || parsed === undefined) return null;
+    if (parsed === null && parseNow !== undefined && parseNow - receivedAt < PARSE_FRESH_MS) {
+      return { kind: "pending" };
+    }
+    return { kind: "none" };
   }
 }
 

@@ -28,6 +28,8 @@ import {
   type Tab,
 } from "@/components/dashboard/request-detail";
 import { EmailDetail } from "@/components/dashboard/email-detail";
+import { NewEndpointDialog } from "@/components/dashboard/new-endpoint-dialog";
+import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 import { KeyboardShortcutsDialog } from "@/components/dashboard/keyboard-shortcuts-dialog";
 import { RequestDiff } from "@/components/dashboard/request-diff";
 import { RequestTimeline } from "@/components/dashboard/request-timeline";
@@ -89,6 +91,10 @@ const REALTIME_MIN_INTERVAL_MS = 1000;
 // every COUNT_RESYNC_INTERVAL_MS to drop requests that left retention.
 const COUNT_MIN_INTERVAL_MS = 10_000;
 const COUNT_RESYNC_INTERVAL_MS = 60_000;
+// No event says a parse finished: while an email that arrived in the last two
+// minutes on an endpoint with layouts has no result, the list is read again.
+const PARSE_FRESH_MS = 2 * 60 * 1000;
+const PARSE_REFRESH_MS = 4000;
 
 export default function DashboardPage() {
   const { session, isLoading: authLoading } = useAuth();
@@ -896,6 +902,46 @@ export default function DashboardPage() {
     [allItems, kindFilter]
   );
 
+  // What the layouts made of each email the list shows (the summary rows carry none).
+  const parsedById = useMemo(() => {
+    const map = new Map<string, ParsedEmail | null>();
+    for (const r of [...olderRequests, ...searchResults]) {
+      if (r.kind === "email") map.set(r.id, r.parsed ?? null);
+    }
+    for (const r of recentRequests) {
+      if (r.kind === "email") map.set(r._id, r.parsed ?? null);
+    }
+    return map;
+  }, [recentRequests, olderRequests, searchResults]);
+  const layoutsActive = (currentEndpoint?.layouts?.length ?? 0) > 0;
+  const [parseClock, setParseClock] = useState(() => Date.now());
+  const parsePending =
+    layoutsActive &&
+    recentRequests.some(
+      (request) =>
+        request.kind === "email" &&
+        !request.parsed &&
+        parseClock - request.receivedAt < PARSE_FRESH_MS
+    );
+  useEffect(() => {
+    if (!parsePending) return;
+    const timer = setInterval(() => {
+      setParseClock(Date.now());
+      void refreshRecentRequests();
+    }, PARSE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [parsePending, refreshRecentRequests]);
+  // An open email the layouts finished reading: the list shows it at once.
+  const handleParsed = useCallback((id: string, parsed: ParsedEmail) => {
+    setRecentRequests((prev) =>
+      prev.some((request) => request._id === id)
+        ? prev.map((request) => (request._id === id ? { ...request, parsed } : request))
+        : prev
+    );
+    const older = clickHouseDetailMap.current.get(id);
+    if (older) clickHouseDetailMap.current.set(id, { ...older, parsed });
+  }, []);
+
   useEffect(() => {
     if (recentRequests.length === 0) {
       prevTopSummaryId.current = null;
@@ -1368,6 +1414,14 @@ export default function DashboardPage() {
   // Only this endpoint's list counts: right after a switch the previous
   // endpoint's requests are still in state until the new page arrives.
   const requestsLoading = requestsLoadedFor !== currentEndpoint.slug;
+  // A search that hides the open request: the detail says so instead of showing it.
+  const searchActive = searchInput !== "" || debouncedSearch !== "";
+  const selectedHidden =
+    searchActive &&
+    !searchLoading &&
+    selectedId !== null &&
+    !displayedItems.some((item) => ("_id" in item ? item._id : item.id) === selectedId);
+  const itemNoun = site.key === "mailhooks" || kindFilter === "email" ? "email" : "request";
   const hasRequests = !requestsLoading && recentRequests.length > 0;
   const loadedCount = displayedItems.length;
   const initialCanLoadMore = recentRequests.length >= CLICKHOUSE_PAGE_SIZE;
@@ -1539,6 +1593,9 @@ export default function DashboardPage() {
                     currentEndpoint.emailAddress ? handleKindFilterChange : undefined
                   }
                   emailAddress={currentEndpoint.emailAddress}
+                  parsedById={parsedById}
+                  layoutsActive={layoutsActive}
+                  parseNow={parseClock}
                   timelineSlot={
                     <RequestTimeline
                       requests={displayedItems}
@@ -1562,6 +1619,12 @@ export default function DashboardPage() {
               <ErrorBoundary resetKey={selectedId ?? undefined}>
                 {compareId && compareBase && compareRequest ? (
                   <RequestDiff left={compareBase} right={compareRequest} onExit={exitCompare} />
+                ) : selectedHidden ? (
+                  <NoMatchingRequest
+                    noun={itemNoun}
+                    listEmpty={displayedItems.length === 0}
+                    onClear={() => setSearchInput("")}
+                  />
                 ) : displayRequest?.kind === "email" ? (
                   <EmailDetail
                     key={selectedId ?? undefined}
@@ -1576,6 +1639,7 @@ export default function DashboardPage() {
                     note={currentNote}
                     onNoteChange={handleNoteChange}
                     initialTab={activeTab === "deliveries" ? "deliveries" : undefined}
+                    onParsed={handleParsed}
                   />
                 ) : displayRequest ? (
                   <RequestDetail
@@ -1624,6 +1688,7 @@ export default function DashboardPage() {
                         note={currentNote}
                         onNoteChange={handleNoteChange}
                         initialTab={activeTab === "deliveries" ? "deliveries" : undefined}
+                        onParsed={handleParsed}
                       />
                     ) : (
                       <RequestDetail
@@ -1672,6 +1737,9 @@ export default function DashboardPage() {
                   currentEndpoint.emailAddress ? handleKindFilterChange : undefined
                 }
                 emailAddress={currentEndpoint.emailAddress}
+                parsedById={parsedById}
+                layoutsActive={layoutsActive}
+                parseNow={parseClock}
               />
             )}
           </div>
@@ -1806,6 +1874,32 @@ function RequestsSkeleton() {
           </div>
           <Skeleton className="h-64 w-full" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** The detail pane while a search hides the request that was open. */
+function NoMatchingRequest({
+  noun,
+  listEmpty,
+  onClear,
+}: {
+  noun: "request" | "email";
+  listEmpty: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <div className="h-full flex items-center justify-center p-8">
+      <div className="text-center space-y-3 max-w-sm">
+        <p className="text-sm text-muted-foreground">
+          {listEmpty
+            ? `No ${noun} matches this search. Clear it to see all ${noun}s.`
+            : `The ${noun} that was open does not match this search. Pick one from the list, or clear the search to see all ${noun}s.`}
+        </p>
+        <button type="button" onClick={onClear} className="ui-btn-outline py-1.5! px-3! text-xs">
+          Clear
+        </button>
       </div>
     </div>
   );
@@ -1955,7 +2049,7 @@ function WaitingForRequests({
                 <div>
                   <p className="font-medium">Gmail</p>
                   <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
-                    <li>Settings, See all settings, Forwarding and POP/IMAP.</li>
+                    <li>Settings › See all settings › Forwarding and POP/IMAP.</li>
                     <li>Add a forwarding address: this endpoint&apos;s address.</li>
                     <li>Gmail&apos;s confirmation code lands here; enter it there.</li>
                   </ol>
@@ -1963,7 +2057,7 @@ function WaitingForRequests({
                 <div>
                   <p className="font-medium">Outlook</p>
                   <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
-                    <li>Settings, Mail, Rules, Add new rule.</li>
+                    <li>Settings › Mail › Rules › Add new rule.</li>
                     <li>Pick the sender, then Forward to this address.</li>
                   </ol>
                 </div>
@@ -2161,24 +2255,10 @@ function NoEndpointsHere({
 }) {
   const site = useSite();
   const other = SITES[otherSite(site.key)];
+  // The New endpoint dialog, so the endpoint is named before it exists.
   const [creating, setCreating] = useState(false);
   const [listing, setListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const create = () => {
-    if (!accessToken) return;
-    setCreating(true);
-    setError(null);
-    createDashboardEndpoint(accessToken, siteBody(site.key))
-      .then(() => {
-        emitDashboardEndpointsChanged();
-        return onCreated();
-      })
-      .catch(() => {
-        setError("Could not create the endpoint. Try again.");
-        setCreating(false);
-      });
-  };
 
   const listHereToo = () => {
     if (!accessToken || ownedElsewhere.length === 0) return;
@@ -2192,7 +2272,7 @@ function NoEndpointsHere({
         return onCreated();
       })
       .catch(() => {
-        setError("Could not list them here. Try again.");
+        setError("Could not show them here. Try again.");
         setListing(false);
       });
   };
@@ -2213,21 +2293,22 @@ function NoEndpointsHere({
             : `Start capturing on ${site.name}`}
         </h2>
         <p className="text-muted-foreground">
+          {/* Addresses are random; the name is what tells endpoints apart. */}
           {site.key === "mailhooks" ? (
             <>
-              Every endpoint has an address like{" "}
+              Each endpoint gets its own address, like{" "}
               <span className="font-mono text-foreground whitespace-nowrap">
-                acme-orders@mailhooks.cc
+                k7m2q9xd4a@mailhooks.cc
               </span>
-              . Forward a mailbox to it or give it to the sender.
+              . Name it after the sender it is for, and add a +tag to tell sources apart.
             </>
           ) : (
             <>
-              Every endpoint has a URL like{" "}
+              Each endpoint gets its own URL, like{" "}
               <span className="font-mono text-foreground whitespace-nowrap">
-                {WEBHOOK_BASE_URL.replace(/^https?:\/\//, "")}/w/acme-orders
+                {WEBHOOK_BASE_URL.replace(/^https?:\/\//, "")}/w/k7m2q9xd4a
               </span>
-              . Point a webhook sender at it and every request shows up here.
+              . Name it after the sender it is for, and add a path to tell sources apart.
             </>
           )}
         </p>
@@ -2236,13 +2317,12 @@ function NoEndpointsHere({
           .
         </p>
         {error && <p className="text-sm text-destructive-ink">{error}</p>}
-        <button onClick={create} disabled={creating} className="ui-btn-primary">
-          {creating
-            ? "Creating..."
-            : site.key === "mailhooks"
-              ? "Create an email endpoint"
-              : `Create an endpoint on ${site.name}`}
+        <button type="button" onClick={() => setCreating(true)} className="ui-btn-primary">
+          {site.key === "mailhooks"
+            ? "Create an email endpoint"
+            : `Create an endpoint on ${site.name}`}
         </button>
+        <NewEndpointDialog open={creating} onOpenChange={setCreating} />
         <div className="flex flex-col items-center gap-2">
           {ownedElsewhere.length > 0 && (
             <button
@@ -2252,8 +2332,8 @@ function NoEndpointsHere({
               className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
             >
               {listing
-                ? "Listing..."
-                : `List my ${other.name} ${ownedElsewhere.length === 1 ? "endpoint" : "endpoints"} here`}
+                ? "Showing them here..."
+                : `Show my ${other.name} ${ownedElsewhere.length === 1 ? "endpoint" : "endpoints"} here too`}
             </button>
           )}
           <button

@@ -471,7 +471,8 @@ body {
   .ui-btn-primary,
   .ui-btn-secondary,
   .ui-btn-outline {
-    @apply border-strong border-line rounded-md px-6 py-3 font-bold caps transition-all cursor-pointer;
+    /* Not transition-all: the focus outline must appear at once, not fade in from currentColor. */
+    @apply border-strong border-line rounded-md px-6 py-3 font-bold caps transition-[background-color,color,box-shadow,transform,border-color] cursor-pointer;
     box-shadow: var(--elevation);
   }
 

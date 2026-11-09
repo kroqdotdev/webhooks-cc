@@ -15,7 +15,7 @@ interface GitHubCardProps {
 }
 
 /** Below this the star count is left out: it would undersell an open repository. */
-const STARS_FLOOR = 100;
+export const STARS_FLOOR = 100;
 
 export function GitHubCard({ stars }: GitHubCardProps) {
   return (

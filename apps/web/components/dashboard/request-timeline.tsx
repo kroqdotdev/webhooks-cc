@@ -14,6 +14,14 @@ const METHOD_FILL: Record<string, string> = {
 };
 const DEFAULT_FILL = "hsl(0, 0%, 60%)";
 
+/** The legend under the axis: one swatch per colour the dots use. */
+const LEGEND: { key: string; label: string }[] = [
+  { key: "GET", label: "GET" },
+  { key: "POST", label: "POST" },
+  { key: "PUT", label: "PUT, PATCH" },
+  { key: "DELETE", label: "DELETE" },
+];
+
 function getItemId(item: AnyRequestSummary): string {
   return "_id" in item ? item._id : item.id;
 }
@@ -83,14 +91,17 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
       const stackIndex = columns.get(col) ?? 0;
       columns.set(col, stackIndex + 1);
 
+      const what = r.email ? r.email.subject || "(no subject)" : r.path;
       return {
         id,
         x: PADDING_X + rawX,
         y: PADDING_Y + stackIndex * ROW_HEIGHT,
         method: r.method,
-        // What the tooltip names: the path, or an email's subject.
-        what: r.email ? r.email.subject || "(no subject)" : r.path,
-        receivedAt: r.receivedAt,
+        // What the tooltip (and the dot's accessible name) says: the method,
+        // the path or an email's subject, and the time.
+        label: [r.method, what, new Date(r.receivedAt).toLocaleTimeString()]
+          .filter(Boolean)
+          .join(" "),
       };
     });
 
@@ -130,6 +141,8 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
     }
     return labels;
   }, [timeRange, width]);
+
+  const hasEmail = requests.some((request) => request.method === "EMAIL");
 
   if (requests.length === 0) {
     return (
@@ -174,16 +187,31 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
           return (
             <g
               key={dot.id}
-              className="cursor-pointer"
+              role="button"
+              tabIndex={0}
+              aria-label={dot.label}
+              aria-pressed={isSelected}
+              className="group cursor-pointer outline-none"
               onClick={() => onSelect(dot.id)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                onSelect(dot.id);
+              }}
               onMouseEnter={() => setHoveredId(dot.id)}
               onMouseLeave={() => setHoveredId(null)}
             >
-              <title>
-                {[dot.method, dot.what, new Date(dot.receivedAt).toLocaleTimeString()]
-                  .filter(Boolean)
-                  .join(" ")}
-              </title>
+              <title>{dot.label}</title>
+              {/* The keyboard focus ring, drawn around the dot. */}
+              <circle
+                cx={dot.x}
+                cy={dot.y}
+                r={r + 4}
+                fill="none"
+                stroke="hsl(var(--ring))"
+                strokeWidth={2}
+                className="opacity-0 group-focus-visible:opacity-100"
+              />
               <circle
                 cx={dot.x}
                 cy={dot.y}
@@ -199,6 +227,21 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
           );
         })}
       </svg>
+      <ul
+        aria-label="Legend"
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 px-6 pb-3 text-xs text-muted-foreground"
+      >
+        {[...LEGEND, ...(hasEmail ? [{ key: "EMAIL", label: "Email" }] : [])].map((entry) => (
+          <li key={entry.key} className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ background: METHOD_FILL[entry.key] }}
+            />
+            {entry.label}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -22,6 +22,13 @@ import { twoSites, type EndpointSite } from "@/lib/site";
 import { setOpenEndpoint } from "@/lib/site-switch-client";
 import { useDirtySections } from "./dirty-sections";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Field,
   SaveFooter,
   Section,
@@ -858,36 +865,69 @@ export function EndpointSettingsPanel({
   }, [sections, dirtyKey]);
   const showUnsavedBar = dirty.some((section) => !footersInView.has(section.id));
 
+  // One unsaved section saves from the bar; a failed save opens the section,
+  // whose footer says what went wrong.
+  const [barSaving, setBarSaving] = useState(false);
+  const saveFromBar = async () => {
+    const [section] = dirty;
+    if (dirty.length !== 1 || !section?.save || barSaving) return;
+    setBarSaving(true);
+    const ok = await section.save();
+    setBarSaving(false);
+    if (!ok) jump(section.id as SettingsSection);
+  };
+
   return (
     <div className="flex-1 flex flex-col md:flex-row min-h-0">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 flex md:flex-col gap-1 p-2 md:p-3 overflow-x-auto [scrollbar-width:none] max-md:[mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)]"
+        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 p-2 md:p-3"
       >
-        {sections.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            onClick={() => jump(section.id)}
-            className={cn(
-              "text-left whitespace-nowrap px-3 py-2 text-sm rounded-md cursor-pointer transition-colors",
-              section.id === "delete" && "md:mt-3",
-              section.nested && "md:pl-6",
-              active === section.id
-                ? "bg-selected text-selected-foreground font-semibold"
-                : section.id === "delete"
-                  ? "text-destructive-ink hover:bg-destructive/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-            aria-current={active === section.id ? "true" : undefined}
-          >
-            {section.label}
-          </button>
-        ))}
+        {/* Ten sections do not fit a phone's width, and wrapped they take four
+            rows, so phones pick the section from a list instead. */}
+        <Select
+          value={active}
+          // After the list closes, so focus can move to the section's heading.
+          onValueChange={(value) => window.setTimeout(() => jump(value as SettingsSection), 0)}
+        >
+          <SelectTrigger aria-label="Settings section" className="md:hidden h-9">
+            <SelectValue />
+          </SelectTrigger>
+          {/* The jump focuses the section's heading; keep it there on close. */}
+          <SelectContent onCloseAutoFocus={(event) => event.preventDefault()}>
+            {sections.map((section) => (
+              <SelectItem key={section.id} value={section.id}>
+                {section.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="max-md:hidden flex flex-col gap-1">
+          {sections.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => jump(section.id)}
+              className={cn(
+                "text-left whitespace-nowrap px-3 py-2 text-sm rounded-md cursor-pointer transition-colors",
+                section.id === "delete" && "mt-3",
+                section.nested && "pl-6",
+                active === section.id
+                  ? "bg-selected text-selected-foreground font-semibold"
+                  : section.id === "delete"
+                    ? "text-destructive-ink hover:bg-destructive/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              aria-current={active === section.id ? "true" : undefined}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
       </nav>
       <div ref={scroller} className="flex-1 overflow-y-auto flex flex-col">
         {/* The room at the bottom lets the last sections scroll up to the spy line. */}
-        <div className="max-w-[920px] w-full p-4 md:p-6 pb-[45vh] md:pb-[45vh] space-y-6 flex-1">
+        <div className="max-w-[920px] w-full mx-auto p-4 md:p-6 pb-[40vh] md:pb-24 space-y-6 flex-1">
           {/* The sections render in the nav's order, which the list above decides. */}
           {sections.map(({ id }) => {
             switch (id) {
@@ -941,7 +981,7 @@ export function EndpointSettingsPanel({
           )}
         >
           {showUnsavedBar && (
-            <div className="max-w-[920px] px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="max-w-[920px] mx-auto px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
               <p className="text-sm flex-1 min-w-[180px]">
                 {dirty.length === 1
                   ? `Unsaved changes in ${dirty[0].title}`
@@ -955,6 +995,20 @@ export function EndpointSettingsPanel({
               >
                 Review
               </button>
+              {dirty.length === 1 && dirty[0].save && (
+                <button
+                  type="button"
+                  onClick={() => void saveFromBar()}
+                  disabled={barSaving}
+                  aria-label={`Save ${dirty[0].title}`}
+                  className={cn(
+                    "ui-btn-primary py-1.5! px-3! text-xs",
+                    barSaving && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {barSaving ? "Saving..." : "Save"}
+                </button>
+              )}
             </div>
           )}
         </div>

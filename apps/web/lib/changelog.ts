@@ -64,6 +64,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "mailhooks.cc: read earlier emails again after changing layouts, a Read again button on each email, a Parsed tab that explains an unread email, Inbox wording, and Email first in the keyboard order",
       "The selected option in toggles and tabs is marked with a visible underline, wide toggles stack on phones, tablets show one full address with a toggle, and a Sign up free button is in every header",
       "Clearer destination URL errors with focus kept on the form, sign-in errors next to the password field, a wider settings column whose links land on the right section, and a Create a team button",
+      "mailhooks.cc: an email shows Reading with your layouts while it is parsed and updates when it is done, the inbox shows which layout read each email, fields keep the layout's order, and a ready-made layout is added as a short summary you can expand",
+      "On phones, settings and account pages use a section picker instead of a clipped strip, the email header gives the subject the full width, and the address row steps aside once requests arrive",
+      "The unsaved-changes bar can save directly, Replay explains a server it cannot reach, expired share links say so, the Send dialog groups its templates, and the timeline has a legend and keyboard access",
+      "Pricing cards hug their content, prices read the same on both sites, and the New endpoint dialog opens with the name field ready",
     ],
   },
   {

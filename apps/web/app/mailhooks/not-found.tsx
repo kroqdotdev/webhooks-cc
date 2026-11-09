@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
+
+export const metadata: Metadata = { title: "Page not found" };
 
 export default function MailhooksNotFound() {
   return (
