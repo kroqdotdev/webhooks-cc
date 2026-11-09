@@ -12,7 +12,7 @@
     "zapier-platform-core": "19.3.0"
   },
   "devDependencies": {
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.0",
     "zapier-platform-schema": "19.3.0"
   },
   "overrides": {
