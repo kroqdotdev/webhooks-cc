@@ -50,7 +50,7 @@ import {
   type HeaderRow,
 } from "./forwarding-parts";
 import { PlaceholderMenu, forwardingPlaceholders, insertAtCursor } from "./placeholder-menu";
-import { Field, Segmented, Switch, SwitchRow } from "./settings-primitives";
+import { Field, Segmented, Switch, SwitchRow, useConfirmStep } from "./settings-primitives";
 import { SheetsDestinationEditor } from "./sheets-destination-editor";
 import { FileDropDestinationEditor } from "./file-drop-destination-editor";
 
@@ -500,7 +500,13 @@ function GenericDestinationEditor({
   const [saved, setSaved] = useState(false);
   // A URL the server refused, with its reason, shown under the field until the URL changes.
   const [refusedUrl, setRefusedUrl] = useState<{ url: string; message: string } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const {
+    armed: confirmArmed,
+    arm: armConfirm,
+    cancel: cancelConfirm,
+    settled: confirmSettled,
+    cancelRef: keepRef,
+  } = useConfirmStep();
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<
     (ForwardTestResult & { filterPasses: boolean }) | { error: string } | null
@@ -1168,28 +1174,37 @@ function GenericDestinationEditor({
         >
           {error ?? (saved && !dirty ? "Saved." : dirty ? "Not saved yet." : "")}
         </p>
+        {/* Armed, "Keep it" takes Remove's place (and focus) and the
+            confirmation is a new button before it, so a second press where
+            the first one landed keeps the destination. */}
         {destination &&
-          (confirmDelete ? (
+          (confirmArmed ? (
             <>
               <button
+                key="confirm"
                 type="button"
-                onClick={() => void remove()}
+                onClick={() => {
+                  if (confirmSettled()) void remove();
+                }}
                 className="ui-btn-outline py-1.5! px-3! text-xs text-destructive-ink"
               >
                 Remove destination
               </button>
               <button
+                key="cancel"
+                ref={keepRef}
                 type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="ui-btn-outline py-1.5! px-3! text-xs"
+                onClick={cancelConfirm}
+                className="ui-btn-outline py-1.5! px-3! text-xs min-w-24 classic:min-w-26"
               >
                 Keep it
               </button>
             </>
           ) : (
             <button
+              key="arm"
               type="button"
-              onClick={() => setConfirmDelete(true)}
+              onClick={armConfirm}
               className="ui-btn-outline py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
             >
               <Trash2 className="h-3 w-3" /> Remove
@@ -1223,7 +1238,7 @@ function GenericDestinationEditor({
           {saving ? "Saving..." : destination ? "Save destination" : "Add destination"}
         </button>
       </div>
-      {confirmDelete && (
+      {confirmArmed && (
         <p className="text-xs text-muted-foreground -mt-2">
           Deliveries still waiting for it are marked failed; its log stays.
         </p>

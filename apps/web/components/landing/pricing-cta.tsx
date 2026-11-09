@@ -75,3 +75,34 @@ function PricingCTAInner({
     </div>
   );
 }
+
+/**
+ * The button on a paid plan's card. Everyone starts free, so a visitor signs
+ * up first and upgrades later; someone already signed in goes straight to
+ * Plan and usage to upgrade.
+ */
+export function PaidPlanCTA({
+  plan,
+  primary = false,
+}: {
+  plan: "Pro" | "Business";
+  primary?: boolean;
+}) {
+  return (
+    <SupabaseAuthProvider>
+      <PaidPlanCTAInner plan={plan} primary={primary} />
+    </SupabaseAuthProvider>
+  );
+}
+
+function PaidPlanCTAInner({ plan, primary }: { plan: "Pro" | "Business"; primary: boolean }) {
+  const isAuthenticated = useIsAuthenticated();
+  return (
+    <Link
+      href={isAuthenticated ? "/account/plan" : "/login?mode=sign-up&redirect=/account/plan"}
+      className={cn(primary ? "ui-btn-primary" : "ui-btn-outline", "mt-auto block text-center")}
+    >
+      {isAuthenticated ? `Upgrade to ${plan}` : `Start free, then go ${plan}`}
+    </Link>
+  );
+}

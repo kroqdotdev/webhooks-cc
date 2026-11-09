@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
-import { PricingCTA } from "@/components/landing/pricing-cta";
+import { PaidPlanCTA, PricingCTA } from "@/components/landing/pricing-cta";
 import { LandingDashboard } from "@/components/landing/landing-dashboard";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
@@ -268,7 +268,8 @@ export default async function Home() {
       </SiteHeader>
 
       {/* Hero: the landing screen IS the dashboard, webhook.site style */}
-      <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">
+      {/* A signed-in visitor gets a compact band instead of the full-height frame. */}
+      <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] has-[[data-landing-signed-in]]:h-auto flex flex-col">
         {/* Title strip inside the app chrome: the page's H1 lives here */}
         <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-3 md:py-5 text-center">
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
@@ -290,7 +291,7 @@ export default async function Home() {
         </div>
 
         {/* The dashboard fills the rest of the first viewport: a real endpoint, created on page load */}
-        <div className="flex-1 min-h-[440px]">
+        <div className="flex-1 min-h-[440px] has-[[data-landing-signed-in]]:flex-none has-[[data-landing-signed-in]]:min-h-0">
           <LandingDashboard />
         </div>
       </section>
@@ -722,12 +723,7 @@ export default async function Home() {
                 ))}
               </ul>
               {/* One action per paid plan: everyone starts free and upgrades under Account. */}
-              <Link
-                href="/login?mode=sign-up&redirect=/account/plan"
-                className="ui-btn-primary mt-auto block text-center"
-              >
-                Start free, then go Pro
-              </Link>
+              <PaidPlanCTA plan="Pro" primary />
             </div>
 
             {/* Business Plan */}
@@ -757,12 +753,7 @@ export default async function Home() {
                 ))}
               </ul>
               {/* One action per paid plan: everyone starts free and upgrades under Account. */}
-              <Link
-                href="/login?mode=sign-up&redirect=/account/plan"
-                className="ui-btn-outline mt-auto block text-center"
-              >
-                Start free, then go Business
-              </Link>
+              <PaidPlanCTA plan="Business" />
             </div>
           </div>
 
@@ -900,16 +891,19 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Product</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 <li>
-                  <Link href="/docs" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Documentation
                   </Link>
                 </li>
                 <li>
                   <Link
                     href="/installation"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Installation
                   </Link>
@@ -917,7 +911,7 @@ export default async function Home() {
                 <li>
                   <Link
                     href="/email-testing"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Email testing
                   </Link>
@@ -925,28 +919,40 @@ export default async function Home() {
                 <li>
                   <Link
                     href="/email-to-webhook"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Email to webhook
                   </Link>
                 </li>
                 <li>
-                  <Link href="/for-teams" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/for-teams"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Teams
                   </Link>
                 </li>
                 <li>
-                  <Link href="/compare" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/compare"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Compare
                   </Link>
                 </li>
                 <li>
-                  <Link href="/login" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/login"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Dashboard
                   </Link>
                 </li>
                 <li>
-                  <Link href="/changelog" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/changelog"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Changelog
                   </Link>
                 </li>
@@ -954,10 +960,13 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Providers</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 {FOOTER_PROVIDERS.map((item) => (
                   <li key={item.href}>
-                    <Link href={item.href} className="text-muted-foreground hover:text-foreground">
+                    <Link
+                      href={item.href}
+                      className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                    >
                       {item.label}
                     </Link>
                   </li>
@@ -966,24 +975,36 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Resources</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 <li>
-                  <Link href="/docs/cli" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs/cli"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     CLI Reference
                   </Link>
                 </li>
                 <li>
-                  <Link href="/docs/sdk" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs/sdk"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     SDK Reference
                   </Link>
                 </li>
                 <li>
-                  <Link href="/docs/mcp" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs/mcp"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     MCP Server
                   </Link>
                 </li>
                 <li>
-                  <Link href="/blog" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/blog"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Blog
                   </Link>
                 </li>
@@ -991,37 +1012,46 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Legal</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 <li>
-                  <Link href="/privacy" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/privacy"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Privacy Policy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/terms" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/terms"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Terms of Service
                   </Link>
                 </li>
                 <li>
                   <Link
                     href="/subprocessors"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Subprocessors
                   </Link>
                 </li>
                 <li>
-                  <CookieSettingsLink className="text-muted-foreground hover:text-foreground" />
+                  <CookieSettingsLink className="inline-block py-1.5 text-muted-foreground hover:text-foreground" />
                 </li>
                 <li>
-                  <Link href="/support" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/support"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Support
                   </Link>
                 </li>
                 <li>
                   <a
                     href="https://status.webhooks.cc"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                     target="_blank"
                     rel="noopener noreferrer"
                   >

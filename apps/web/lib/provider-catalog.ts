@@ -355,13 +355,13 @@ function formatAlgorithm(value: string | undefined): string {
 }
 
 export function getWebProviderCredentialLabel(provider: string | null | undefined): string {
-  if (provider === "discord") return "Public Key";
+  if (provider === "discord") return "Public key";
   if (provider === "paypal") return "Webhook ID";
-  if (provider === "adyen") return "HMAC Key";
-  if (provider === "docusign") return "HMAC Secret";
-  if (provider === "gitlab" || provider === "telegram") return "Secret Token";
-  if (provider === "generic-hmac") return "Shared Secret";
-  return "Signing Secret";
+  if (provider === "adyen") return "HMAC key";
+  if (provider === "docusign") return "HMAC secret";
+  if (provider === "gitlab" || provider === "telegram") return "Secret token";
+  if (provider === "generic-hmac") return "Shared secret";
+  return "Signing secret";
 }
 
 export const WEB_PROVIDER_CATALOG: Record<WebProviderId, WebProviderInfo> = {

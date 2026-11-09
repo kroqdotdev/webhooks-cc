@@ -385,6 +385,8 @@ body {
     outline-offset: -3px;
   }
   :is(a, button, select, summary, [role="radio"], [role="tab"]):focus-visible {
+    /* The outline must not fade in with a transition-colors control's other colours. */
+    transition-property: color, background-color, border-color, box-shadow, transform;
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
     border-radius: var(--radius-sm);

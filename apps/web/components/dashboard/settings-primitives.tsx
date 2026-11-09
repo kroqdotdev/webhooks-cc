@@ -126,7 +126,7 @@ export function Field({
           {error}
         </p>
       )}
-      {help && <div className="text-xs text-muted-foreground space-y-1">{help}</div>}
+      {help && <div className="text-[13px] text-muted-foreground space-y-1">{help}</div>}
     </div>
   );
 }
@@ -300,7 +300,7 @@ export function SwitchRow({
           {label}
         </label>
         {help && (
-          <p id={`${id}-help`} className="text-xs text-muted-foreground mt-1 max-w-[62ch]">
+          <p id={`${id}-help`} className="text-[13px] text-muted-foreground mt-1 max-w-[62ch]">
             {help}
           </p>
         )}
@@ -412,6 +412,33 @@ export function Segmented<T extends string>({
       })}
     </div>
   );
+}
+
+/** How long after arming a confirmation a press on it still counts as the arming one. */
+const CONFIRM_SETTLE_MS = 600;
+
+/**
+ * A destructive action confirmed in a second step. The first press arms it and
+ * moves focus to the button that backs out, which the caller renders where the
+ * arming button was. Presses within 600 ms of arming are ignored on both
+ * buttons, so a double-click or a double Enter neither confirms nor cancels.
+ */
+export function useConfirmStep() {
+  const [armed, setArmed] = useState(false);
+  const armedAt = useRef(0);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const arm = useCallback(() => {
+    armedAt.current = Date.now();
+    setArmed(true);
+    requestAnimationFrame(() => cancelRef.current?.focus());
+  }, []);
+  /** False while a press is too soon after arming to be a decision. */
+  const settled = useCallback(() => Date.now() - armedAt.current >= CONFIRM_SETTLE_MS, []);
+  const cancel = useCallback(() => {
+    if (settled()) setArmed(false);
+  }, [settled]);
+  const reset = useCallback(() => setArmed(false), []);
+  return { armed, arm, cancel, reset, settled, cancelRef };
 }
 
 export function useSave(slug: string) {

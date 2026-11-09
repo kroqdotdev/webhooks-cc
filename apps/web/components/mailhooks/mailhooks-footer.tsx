@@ -53,17 +53,20 @@ export function MailhooksFooter() {
         {columns.map((column) => (
           <div key={column.title}>
             <p className="font-bold mb-4">{column.title}</p>
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-0.5 text-sm">
               {column.links.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href={link.href}
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     {link.label}
                   </Link>
                 </li>
               ))}
               {column.title === "Company" ? (
                 <li>
-                  <CookieSettingsLink className="text-muted-foreground hover:text-foreground" />
+                  <CookieSettingsLink className="inline-block py-1.5 text-muted-foreground hover:text-foreground" />
                 </li>
               ) : null}
             </ul>

@@ -61,7 +61,7 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
   return (
     <div
       aria-hidden
-      className="h-7 w-7 rounded-full border-strong border-line bg-muted flex items-center justify-center text-[10px] font-bold leading-none"
+      className="h-7 w-7 rounded-full border-strong border-line bg-muted flex items-center justify-center text-xs font-bold leading-none"
     >
       {initials}
     </div>

@@ -441,21 +441,26 @@ function LandingDashboardInner() {
   const remainingRequests = Math.max(0, REQUEST_LIMIT - requestCount);
   const hasRequests = requests.length > 0;
 
-  // Signed-in visitors already have persistent endpoints: send them there.
+  // Signed-in visitors already have persistent endpoints: send them there. A compact
+  // band rather than the tall app frame, which would leave a small card in empty space.
+  // data-landing-signed-in lets the hero wrapper drop its viewport height (:has()).
   if (isAuthenticated) {
     return (
-      <DashboardFrame>
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-          <p className="text-lg font-bold">You&apos;re signed in</p>
-          <p className="text-sm text-muted-foreground max-w-sm">
-            Your persistent endpoints live in the dashboard; guest URLs are for first-time visitors.
-          </p>
-          <Link href="/dashboard" className="ui-btn-primary inline-block">
-            Go to dashboard
+      <div data-landing-signed-in className="border-b-strong border-line bg-background px-4 py-10">
+        <div className="max-w-3xl mx-auto flex flex-col items-center gap-4 text-center md:flex-row md:justify-between md:text-left">
+          <div className="space-y-1">
+            <p className="text-lg font-bold">You&apos;re signed in</p>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Your persistent endpoints live in the dashboard; guest URLs are for first-time
+              visitors.
+            </p>
+          </div>
+          <Link href="/dashboard" className="ui-btn-primary inline-block shrink-0">
+            Go to Dashboard
             <ArrowRight className="inline-block ml-2 h-4 w-4" />
           </Link>
         </div>
-      </DashboardFrame>
+      </div>
     );
   }
 
@@ -839,7 +844,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
               <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
             </span>
-            <p className="font-bold caps">Waiting for first request...</p>
+            <p className="font-bold caps">Waiting for the first request</p>
           </div>
 
           <button
@@ -891,7 +896,12 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
                 )}
               </button>
             </div>
-            <pre className="ui-code text-sm whitespace-pre overflow-x-auto text-left">
+            {/* Focusable, so the keyboard can scroll a line that does not fit. */}
+            <pre
+              tabIndex={0}
+              aria-label="curl command"
+              className="ui-code text-sm whitespace-pre overflow-x-auto text-left"
+            >
               {curlCmd}
             </pre>
           </div>

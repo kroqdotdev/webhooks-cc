@@ -342,7 +342,7 @@ export function DeliveriesSection({
           <div className="overflow-x-auto -mx-1 px-1">
             <table className="w-full text-[13px] border-collapse">
               <thead>
-                <tr className="text-left text-[10px] font-bold caps text-muted-foreground">
+                <tr className="text-left text-[11px] font-bold caps text-muted-foreground">
                   <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
                     Status
                   </th>
@@ -419,7 +419,7 @@ export function DeliveriesSection({
                       <td className={cn(cell, "min-w-0 whitespace-nowrap")}>
                         <span
                           className={cn(
-                            "inline-block px-1.5 py-0.5 text-[10px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent w-14 text-center align-middle",
+                            "inline-block px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent w-14 text-center align-middle",
                             getMethodColor(method)
                           )}
                         >

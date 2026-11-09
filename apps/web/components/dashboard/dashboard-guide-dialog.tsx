@@ -494,7 +494,7 @@ const SECTIONS: Section[] = [
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold border-strong border-line rounded-sm bg-muted inline-block">
+    <kbd className="px-1.5 py-0.5 text-[11px] font-mono font-bold border-strong border-line rounded-sm bg-muted inline-block">
       {children}
     </kbd>
   );

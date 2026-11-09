@@ -232,10 +232,13 @@ export default function MailhooksHome() {
               ))}
             </div>
             <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
-            {/* Five cards in three columns: the last spans two, so no slot is left empty. */}
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:[&>li:last-child]:col-span-2">
+            {/* Equal cards; an unfinished last row is centred rather than left with a hole. */}
+            <ul className="flex flex-wrap justify-center gap-6">
               {MAILHOOKS_FEATURES.map((feature) => (
-                <li key={feature.path}>
+                <li
+                  key={feature.path}
+                  className="w-full sm:w-[calc(50%-0.75rem)] lg:w-[calc((100%-3rem)/3)]"
+                >
                   <Link href={feature.path} className="ui-card block h-full">
                     <p className="font-bold mb-1">{feature.name}</p>
                     <p className="text-sm text-muted-foreground">{feature.summary}</p>
@@ -320,6 +323,21 @@ export default function MailhooksHome() {
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl md:text-4xl font-bold mb-10">Questions</h2>
             <FAQAccordion items={FAQ} />
+          </div>
+        </section>
+
+        {/* The closing ask, so the page does not end on questions. */}
+        <section className="py-20 px-4">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Start with one sender</h2>
+            <p className="text-lg text-muted-foreground mb-8">
+              Free: 50 emails a day and 20 parsed attachment pages a month. No credit card.
+            </p>
+            <div className="flex justify-center">
+              <div className="w-full sm:w-auto sm:min-w-80">
+                <PricingCTA primary />
+              </div>
+            </div>
           </div>
         </section>
       </main>

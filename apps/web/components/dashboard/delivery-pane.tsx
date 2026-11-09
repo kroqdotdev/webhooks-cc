@@ -416,7 +416,7 @@ function TriesList({
   const shown = all ? tries : tries.slice(0, TRIES_SHOWN);
   return (
     <div className="mt-3.5 border-t border-line/20">
-      <p className="pt-2.5 pb-0.5 text-[10px] font-bold caps text-muted-foreground">Tries</p>
+      <p className="pt-2.5 pb-0.5 text-[11px] font-bold caps text-muted-foreground">Tries</p>
       <ol className="text-[13px]">
         {shown.map((attempt, index) => {
           const number = tries.length - index;

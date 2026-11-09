@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { SiteHeader } from "@/components/nav/site-header";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
-import { PricingCTA } from "@/components/landing/pricing-cta";
+import { PaidPlanCTA, PricingCTA } from "@/components/landing/pricing-cta";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
@@ -143,12 +143,10 @@ export default function MailhooksPricing() {
                     <PricingCTA />
                   </div>
                 ) : (
-                  <Link
-                    href="/login?mode=sign-up&redirect=/account/plan"
-                    className={`${plan.name === "Business" ? "ui-btn-primary" : "ui-btn-outline"} mt-auto block text-center`}
-                  >
-                    Start free, then go {plan.name}
-                  </Link>
+                  <PaidPlanCTA
+                    plan={plan.name as "Pro" | "Business"}
+                    primary={plan.name === "Business"}
+                  />
                 )}
               </div>
             ))}

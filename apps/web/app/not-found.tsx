@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DashboardLinkIfSignedIn } from "@/components/nav/dashboard-link-if-signed-in";
 import { SiteHeader } from "@/components/nav/site-header";
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function NotFound() {
             This page doesn&apos;t exist or has been moved.
           </p>
           <nav className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <DashboardLinkIfSignedIn />
             <Link href="/" className="ui-btn-primary">
               Home
             </Link>

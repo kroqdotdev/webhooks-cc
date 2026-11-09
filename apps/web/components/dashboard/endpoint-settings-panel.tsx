@@ -34,6 +34,7 @@ import {
   Section,
   SwitchRow,
   scrollToSection,
+  useConfirmStep,
   useSave,
   type SettingsSection,
 } from "./settings-primitives";
@@ -151,7 +152,7 @@ function ReceivingSection({
     <Section
       id="receiving"
       title="Receiving"
-      description="Anything sent to either address lands in Requests and counts toward your plan's limit."
+      description={`Anything sent to either address lands in ${mailFirst ? "Inbox" : "Requests"} and counts toward your plan's limit.`}
       footer={
         <SaveFooter
           dirty={dirty}
@@ -436,6 +437,8 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
   const [hasSecret, setHasSecret] = useState(initialHasSecret);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
   const info = getWebProviderInfo(provider);
+  // mailhooks.cc names the HTTP-only sections as such, here and in the nav.
+  const mailFirst = useSite().key === "mailhooks";
 
   const reset = useCallback(() => {
     setProvider(initialProvider);
@@ -486,7 +489,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
   return (
     <Section
       id="verification"
-      title="Signature verification"
+      title={mailFirst ? "HTTP signature verification" : "Signature verification"}
       description="Check the signature on every HTTP request from a provider. Email is checked for SPF, DKIM and DMARC on its own."
       footer={
         <SaveFooter
@@ -507,7 +510,13 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
       <Field
         id="settings-signing-provider"
         label="Provider"
-        help="SendGrid uses IP allowlisting. Plaid verification needs Plaid API credentials, so it is template-only for now."
+        help={
+          provider === "sendgrid"
+            ? "SendGrid uses IP allowlisting, so it is template-only for now."
+            : provider === "plaid"
+              ? "Plaid verification needs Plaid API credentials, so it is template-only for now."
+              : "Pick the provider that signs this endpoint's webhooks, and paste its secret."
+        }
       >
         {/* Radix items cannot carry an empty value, so None has its own. */}
         <Select
@@ -607,20 +616,29 @@ function DeleteSection({
 }) {
   const { session } = useAuth();
   const router = useRouter();
-  const [confirm, setConfirm] = useState(false);
+  const mailFirst = useSite().key === "mailhooks";
+  const {
+    armed: confirmArmed,
+    arm: armConfirm,
+    cancel: cancelConfirm,
+    settled: confirmSettled,
+    cancelRef: keepRef,
+  } = useConfirmStep();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const name = endpoint.name || endpoint.slug;
+  // mailhooks.cc calls what an endpoint holds emails first.
+  const held = mailFirst ? "emails and requests" : "requests";
   const what =
     requestCount === undefined
-      ? "its requests"
-      : `its ${requestCount} request${requestCount === 1 ? "" : "s"}`;
+      ? `its ${held}`
+      : mailFirst
+        ? `its ${requestCount} ${held}`
+        : `its ${requestCount} request${requestCount === 1 ? "" : "s"}`;
 
   const onDelete = async () => {
-    if (!confirm) {
-      setConfirm(true);
-      return;
-    }
+    // A second press right after arming (a double-click, a double Enter) is not a decision.
+    if (!confirmSettled() || deleting) return;
     setDeleting(true);
     setError(null);
     try {
@@ -648,30 +666,43 @@ function DeleteSection({
             aria-live="polite"
             className="text-xs flex-1 min-w-[180px] text-destructive-ink"
           >
-            {error ?? (confirm ? "This cannot be undone." : "")}
+            {error ?? (confirmArmed ? "This cannot be undone." : "")}
           </p>
-          {confirm && (
+          {/* Armed, Cancel takes the arming button's place (and focus) and the
+              confirmation is a new button beside it, so a second press where
+              the first one landed cannot delete. */}
+          {confirmArmed ? (
+            <>
+              <button
+                key="confirm"
+                type="button"
+                onClick={() => void onDelete()}
+                disabled={deleting}
+                className="ui-btn-outline py-1.5! px-3! text-xs bg-destructive! text-destructive-foreground! border-destructive!"
+              >
+                {deleting ? "Deleting..." : "Delete for good"}
+              </button>
+              <button
+                key="cancel"
+                ref={keepRef}
+                type="button"
+                onClick={cancelConfirm}
+                disabled={deleting}
+                className="ui-btn-outline py-1.5! px-3! text-xs min-w-30 classic:min-w-36"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
             <button
+              key="arm"
               type="button"
-              onClick={() => setConfirm(false)}
-              className="ui-btn-outline py-1.5! px-3! text-xs"
+              onClick={armConfirm}
+              className="ui-btn-outline py-1.5! px-3! text-xs text-destructive-ink"
             >
-              Cancel
+              Delete endpoint
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void onDelete()}
-            disabled={deleting}
-            className={cn(
-              "ui-btn-outline py-1.5! px-3! text-xs",
-              confirm
-                ? "bg-destructive! text-destructive-foreground! border-destructive!"
-                : "text-destructive-ink"
-            )}
-          >
-            {deleting ? "Deleting..." : confirm ? "Delete for good" : "Delete endpoint"}
-          </button>
         </>
       }
     />
@@ -812,40 +843,40 @@ export function EndpointSettingsPanel({
     };
   }, [focusSection]);
 
-  // Scroll spy: a thin line a quarter of the way down the view; the section
-  // crossing it is the active one. In the gap between two sections nothing
-  // crosses it and the highlight stays where it was. The jump lock keeps a
-  // clicked section highlighted while the smooth scroll passes others.
-  // Scrolled to the very end, the last sections may never reach that line,
-  // so the bottom of the scroll area makes the last one active.
+  // Scroll spy: the active section is the last one whose top has passed 40%
+  // of the way down the view, so a tall section (an open editor) stays active
+  // all the way through. The jump lock keeps a clicked section highlighted
+  // while the smooth scroll passes others. Scrolled to the very end, the last
+  // sections may never reach that line, so the bottom of the scroll area
+  // makes the last one active.
   useEffect(() => {
     const root = scroller.current;
     if (!root) return;
-    const atBottom = () => root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
-    const lastSection = () => {
-      const all = root.querySelectorAll("[data-settings-section]");
-      return all[all.length - 1]?.getAttribute("data-settings-section") as SettingsSection | null;
-    };
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (Date.now() - jumpedAt.current < 800) return;
-        const crossing = entries.find((entry) => entry.isIntersecting);
-        const id = atBottom()
-          ? lastSection()
-          : (crossing?.target.getAttribute("data-settings-section") as SettingsSection | null);
-        if (id) setActive(id);
-      },
-      { root, rootMargin: "-25% 0px -74% 0px", threshold: 0 }
-    );
-    root.querySelectorAll("[data-settings-section]").forEach((el) => observer.observe(el));
-    const onScroll = () => {
-      if (Date.now() - jumpedAt.current < 800 || !atBottom()) return;
-      const id = lastSection();
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      if (Date.now() - jumpedAt.current < 800) return;
+      const all = Array.from(root.querySelectorAll<HTMLElement>("[data-settings-section]"));
+      if (all.length === 0) return;
+      const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
+      let current = all[0];
+      if (atBottom) current = all[all.length - 1];
+      else {
+        const line = root.getBoundingClientRect().top + root.clientHeight * 0.4;
+        for (const section of all) {
+          if (section.getBoundingClientRect().top <= line) current = section;
+          else break;
+        }
+      }
+      const id = current.getAttribute("data-settings-section") as SettingsSection | null;
       if (id) setActive(id);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
     };
     root.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
       root.removeEventListener("scroll", onScroll);
     };
   }, [sections]);

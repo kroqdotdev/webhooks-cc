@@ -75,7 +75,7 @@ export function RequestDiff({ left, right, onExit }: RequestDiffProps) {
             <span className="font-mono text-xs text-muted-foreground">#{leftId.slice(-6)}</span>
             <span className="text-xs text-muted-foreground">vs</span>
             <span className="font-mono text-xs text-muted-foreground">#{rightId.slice(-6)}</span>
-            <span className="px-2 py-0.5 text-[10px] font-bold caps rounded-sm border-strong border-line bg-muted">
+            <span className="px-2 py-0.5 text-[11px] font-bold caps rounded-sm border-strong border-line bg-muted">
               {changedCount} difference{changedCount !== 1 ? "s" : ""}
             </span>
           </div>

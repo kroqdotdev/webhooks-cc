@@ -71,6 +71,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Request and email details adapt to the width of their pane, the list pane is capped and its divider works with keyboard and touch, and each endpoint and account page has its own title",
       "One dropdown style everywhere, parsed results that are easy to read and copy, an Edit layout button, sign-in tab order fixed, and plan upgrades shown under each plan",
       "Phones: larger touch targets, the address stays one tap away, and the authentication details no longer break words",
+      "Deleting an endpoint or removing a destination can no longer happen from a double-click: the confirmation moves focus to Cancel and ignores a second quick press",
+      "Plan buttons say Upgrade to someone already signed in, signed-in visitors get a compact landing band, and every 404 offers the Dashboard when signed in",
+      "mailhooks.cc: layout pages explain what a layout reads in a table, the email header starts higher, settings say Inbox, and the landing ends with a sign-up",
+      "One select style in condition rows and the support form, larger helper text, and settings that highlight the section you are reading",
     ],
   },
   {

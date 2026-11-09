@@ -86,11 +86,11 @@ export function FeaturePage({
           <p className="text-xs font-bold caps text-muted-foreground mb-3">{feature.plans}</p>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">{feature.heading}</h1>
           <p className="text-xl text-muted-foreground mb-8">{feature.intro}</p>
-          <div className="flex flex-wrap items-center gap-4 mb-14">
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-2 mb-14">
             <div className="w-full sm:w-auto sm:min-w-80">
-              <PricingCTA />
+              <PricingCTA primary emailAlign="start" />
             </div>
-            <span className="text-sm text-muted-foreground">{feature.planNote}</span>
+            <span className="text-sm text-muted-foreground sm:pt-2.5">{feature.planNote}</span>
           </div>
 
           <section className="mb-12">

@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { conditionIssues, type Condition } from "@webhooks-cc/sdk";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { useSite } from "@/components/providers/site-provider";
 import { describeConditions } from "@/lib/condition-labels";
 import { trackEndpointSaved } from "@/lib/analytics";
 import {
@@ -349,6 +350,8 @@ function PreviewPanel({
 }
 
 export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) {
+  // mailhooks.cc names the HTTP-only sections as such, here and in the nav.
+  const mailFirst = useSite().key === "mailhooks";
   // Keyed on values, not object identity: every endpoints refetch (another
   // section saving) hands back new objects, which must not discard edits here.
   const savedJson = stableStringify({
@@ -416,6 +419,8 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
       return next;
     });
 
+  // A rule just added opens with its name field focused and in view.
+  const focusRule = useRef<string | null>(null);
   const addRule = () => {
     const rule: RuleDraft = {
       key: randomId(),
@@ -428,7 +433,17 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
     };
     setRules((prev) => [...prev, rule]);
     setOpen((prev) => new Set(prev).add(rule.key));
+    focusRule.current = rule.key;
   };
+
+  useEffect(() => {
+    const key = focusRule.current;
+    if (!key) return;
+    focusRule.current = null;
+    const input = document.getElementById(`responses-rule-${key}-name`);
+    input?.focus({ preventScroll: true });
+    input?.scrollIntoView({ block: "nearest" });
+  }, [rules]);
 
   const onResult = useCallback((result: ResponsePreviewResult | null) => {
     if (!result || result.email) setAnswering(null);
@@ -479,7 +494,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
   return (
     <Section
       id="responses"
-      title="Responses"
+      title={mailFirst ? "HTTP responses" : "Responses"}
       description="What senders get back. Rules are checked from the top and the first that matches answers; everything else gets Otherwise. Emails always get a standard mail-server reply."
       footer={
         <SaveFooter

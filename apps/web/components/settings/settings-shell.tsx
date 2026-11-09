@@ -222,7 +222,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
           </nav>
         </aside>
 
-        <main className="min-w-0 max-w-3xl">{children}</main>
+        <main className="min-w-0 max-w-4xl">{children}</main>
       </div>
     </div>
   );

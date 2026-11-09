@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DashboardLinkIfSignedIn } from "@/components/nav/dashboard-link-if-signed-in";
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 
@@ -19,6 +20,7 @@ export default function MailhooksNotFound() {
             aria-label="Places to go"
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
+            <DashboardLinkIfSignedIn />
             <Link href="/" className="ui-btn-primary">
               Home
             </Link>

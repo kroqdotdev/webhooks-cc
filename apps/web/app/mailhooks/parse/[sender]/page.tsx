@@ -9,7 +9,8 @@ import { LAYOUT_TEMPLATES, layoutTemplate } from "@/lib/layout-templates";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { webhooksOrigin } from "@/lib/site";
 
-export const dynamicParams = false;
+// Unknown senders fall through to notFound() below, which renders mailhooks.cc's
+// own 404 (app/mailhooks/not-found.tsx); dynamicParams = false would serve the root one.
 
 export function generateStaticParams() {
   return LAYOUT_TEMPLATES.map((template) => ({ sender: template.id }));
@@ -71,9 +72,46 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                 of it in the endpoint&apos;s settings, where the preview tries it on an email you
                 captured as you type.
               </p>
-              <pre className="ui-card ui-card-static text-xs font-mono overflow-x-auto leading-relaxed">
-                {JSON.stringify(template.layout, null, 2)}
-              </pre>
+              <p className="mb-4">{matchSentence(template.layout.match?.conditions ?? [])}</p>
+              {/* What it reads, as a table; the patterns stay one click away, as JSON. */}
+              <div className="ui-card ui-card-static p-0! overflow-x-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b-strong border-line text-left">
+                      <th scope="col" className="px-4 py-2 font-semibold">
+                        Field
+                      </th>
+                      <th scope="col" className="px-4 py-2 font-semibold">
+                        Read from
+                      </th>
+                      <th scope="col" className="px-4 py-2 font-semibold">
+                        In the example
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(template.layout.fields ?? []).map((field) => (
+                      <tr key={field.name} className="border-b border-line last:border-0">
+                        <td className="px-4 py-2 font-mono">{field.name}</td>
+                        <td className="px-4 py-2 text-muted-foreground">
+                          {field.from === "header"
+                            ? `the ${field.header} header`
+                            : `the ${field.from}`}
+                        </td>
+                        <td className="px-4 py-2 font-mono">
+                          {template.result.fields[field.name] ?? "Not found"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <details className="ui-card ui-card-static">
+                <summary className="cursor-pointer font-semibold">The layout as JSON</summary>
+                <pre className="mt-3 text-xs font-mono overflow-x-auto leading-relaxed">
+                  {JSON.stringify(template.layout, null, 2)}
+                </pre>
+              </details>
             </section>
             <aside className="min-w-0">
               <h2 className="text-2xl font-bold mb-4">Before you rely on it</h2>
@@ -112,4 +150,21 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
       <MailhooksFooter />
     </>
   );
+}
+
+/** The layout's conditions as one plain sentence. */
+function matchSentence(conditions: { name?: string; op?: string; value?: unknown }[]): string {
+  if (conditions.length === 0) return "It applies to every email the endpoint receives.";
+  const ops: Record<string, string> = {
+    contains: "contains",
+    equals: "is",
+    starts_with: "starts with",
+    ends_with: "ends with",
+    matches: "matches",
+  };
+  const parts = conditions.map(
+    (c) =>
+      `the ${c.name ?? "email"} ${ops[c.op ?? ""] ?? c.op ?? "matches"} "${String(c.value ?? "")}"`
+  );
+  return `It applies when ${parts.join(" and ")}.`;
 }

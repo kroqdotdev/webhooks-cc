@@ -6,6 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/support/client";
 import { isDocsSearchUrl, normalizePagefindUrl } from "@/lib/docs-search";
@@ -21,6 +28,9 @@ interface Endpoint {
 }
 
 const DRAFT_KEY = "whk-support-draft";
+
+/** The endpoint choice that means none (Radix items cannot carry an empty value). */
+const NO_ENDPOINT = "__none__";
 
 /** Up to three docs pages for what the subject says, from the site's Pagefind index. */
 function useDocSuggestions(query: string): { url: string; title: string }[] {
@@ -283,19 +293,22 @@ export function NewTicketForm() {
             <label htmlFor="ticket-endpoint" className="text-sm font-medium">
               Endpoint
             </label>
-            <select
-              id="ticket-endpoint"
-              value={endpointId}
-              onChange={(event) => setEndpointId(event.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <Select
+              value={endpointId || NO_ENDPOINT}
+              onValueChange={(value) => setEndpointId(value === NO_ENDPOINT ? "" : value)}
             >
-              <option value="">None</option>
-              {endpoints.map((endpoint) => (
-                <option key={endpoint.id} value={endpoint.id}>
-                  {endpoint.name ? `${endpoint.name} (${endpoint.slug})` : endpoint.slug}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="ticket-endpoint">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-80">
+                <SelectItem value={NO_ENDPOINT}>None</SelectItem>
+                {endpoints.map((endpoint) => (
+                  <SelectItem key={endpoint.id} value={endpoint.id}>
+                    {endpoint.name ? `${endpoint.name} (${endpoint.slug})` : endpoint.slug}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground">Optional, if it is about one endpoint.</p>
           </div>
           <fieldset className="space-y-2">

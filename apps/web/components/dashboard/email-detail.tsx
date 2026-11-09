@@ -44,7 +44,7 @@ import {
   type FindingStatus,
 } from "@/lib/deliverability";
 import { JsonTree } from "./json-tree";
-import { NoteBar, type DisplayableRequest } from "./request-detail";
+import { NoteBar, useMoreToRight, type DisplayableRequest } from "./request-detail";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 import { ParsedResult } from "./layouts-section";
 
@@ -100,32 +100,6 @@ type ParseWatch =
   | { id: string; state: "reading"; mode: "new" | "again"; until: number }
   /** `layout`: the name of the layout that read it, null when none did (or no answer came). */
   | { id: string; state: "done"; mode: "new" | "again"; layout: string | null };
-
-/**
- * Whether a horizontally scrolling element has more content past its right
- * edge: the tab strip fades there only then, at any width.
- */
-function useMoreToRight<T extends HTMLElement>() {
-  const [more, setMore] = useState(false);
-  const cleanup = useRef<(() => void) | null>(null);
-  const ref = useCallback((element: T | null) => {
-    cleanup.current?.();
-    cleanup.current = null;
-    if (!element) return;
-    const update = () =>
-      setMore(element.scrollWidth - element.clientWidth - element.scrollLeft > 1);
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    if (element.firstElementChild) observer.observe(element.firstElementChild);
-    element.addEventListener("scroll", update, { passive: true });
-    update();
-    cleanup.current = () => {
-      observer.disconnect();
-      element.removeEventListener("scroll", update);
-    };
-  }, []);
-  return [ref, more] as const;
-}
 
 function useCopy() {
   const [copied, setCopied] = useState<string | null>(null);
@@ -230,24 +204,16 @@ function tlsLabel(smtp: EmailSmtp | null): string | null {
   return version.replace(/^TLSv1_(\d)$/, "TLS 1.$1").replace(/^TLSv1$/, "TLS 1.0");
 }
 
+/** Sender check verdicts; a test email from the dashboard shows a Test badge instead. */
 function Verdicts({
   email,
-  isTest,
   report,
   onOpen,
 }: {
   email: EmailCapture;
-  isTest: boolean;
   report: DeliverabilityReport | null;
   onOpen: () => void;
 }) {
-  if (isTest) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Test email from the dashboard: sender checks do not apply.
-      </p>
-    );
-  }
   const auth = email.auth;
   const spam = spamChip(email);
   const issues = report ? issuesChip(report) : null;
@@ -396,7 +362,7 @@ function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
         if (findings.length === 0) return null;
         return (
           <div key={group} className="mt-3">
-            <h4 className="text-[10px] font-bold caps text-muted-foreground mb-1">{title}</h4>
+            <h4 className="text-[11px] font-bold caps text-muted-foreground mb-1">{title}</h4>
             <ul>
               {findings.map((finding: Finding) => (
                 <li
@@ -538,7 +504,7 @@ function FoundInEmail({
   if (!code && !link && fields.length === 0) return null;
   return (
     // At phone width: the label in one column, the chips stacked in the other.
-    <div className="mt-3 pt-3 border-t border-line/20 text-sm max-sm:grid max-sm:grid-cols-[auto_minmax(0,1fr)] max-sm:gap-x-3 max-sm:items-start sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+    <div className="mt-2 text-sm max-sm:grid max-sm:grid-cols-[auto_minmax(0,1fr)] max-sm:gap-x-3 max-sm:items-start sm:flex sm:flex-wrap sm:items-center sm:gap-2">
       <span className="text-muted-foreground mr-1 max-sm:mr-0 max-sm:w-16 max-sm:text-xs max-sm:leading-snug max-sm:pt-1">
         Found in this email
       </span>
@@ -730,7 +696,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
           {spam.symbols.length > 0 && (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[10px] font-bold caps text-muted-foreground">
+                <tr className="text-left text-[11px] font-bold caps text-muted-foreground">
                   <th className="py-1.5 pr-3 font-bold">Rule</th>
                   <th className="py-1.5 pr-3 font-bold text-right">Score</th>
                   <th className="py-1.5 font-bold">Matched</th>
@@ -1005,7 +971,7 @@ function EmailJsonPane({
               type="button"
               onClick={() => setView(mode)}
               className={cn(
-                "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
+                "px-2 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors",
                 mode === "tree" && "border-l-strong border-line",
                 view === mode
                   ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
@@ -1387,17 +1353,28 @@ export function EmailDetail({
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Envelope */}
-      <div className="@container border-b-strong border-line px-4 pt-4 pb-3.5 shrink-0 bg-card">
+      <div className="@container border-b-strong border-line px-4 pt-3 pb-3 shrink-0 bg-card">
         {/* In a narrow pane the buttons go under the subject, which keeps the full width. */}
         <div className="flex flex-col gap-2 @xl:flex-row @xl:items-start @xl:gap-3">
-          <h2
-            className={cn(
-              "@xl:flex-1 min-w-0 text-lg md:text-[21px] font-bold clean:font-semibold leading-tight break-words",
-              !email.subject && "text-muted-foreground"
+          <div className="@xl:flex-1 min-w-0 flex items-start gap-2">
+            <h2
+              className={cn(
+                "min-w-0 text-lg font-bold clean:font-semibold leading-tight break-words",
+                !email.subject && "text-muted-foreground"
+              )}
+            >
+              {email.subject || "(no subject)"}
+            </h2>
+            {/* The Authentication tab says why sender checks do not apply. */}
+            {isTest && (
+              <span
+                title="Test email sent from the dashboard"
+                className="mt-0.5 shrink-0 px-1.5 py-0.5 text-xs font-bold caps leading-none rounded-sm border-strong border-line bg-muted text-muted-foreground"
+              >
+                Test
+              </span>
             )}
-          >
-            {email.subject || "(no subject)"}
-          </h2>
+          </div>
           {(canReadAgain || rawAvailable) && (
             <div className="flex flex-wrap gap-2 @xl:justify-end @xl:shrink-0">
               {canReadAgain && (
@@ -1405,7 +1382,7 @@ export function EmailDetail({
                   type="button"
                   onClick={() => void readAgain("header")}
                   disabled={replayHere?.state.kind === "sending"}
-                  className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+                  className="ui-btn-outline py-1! px-3! text-xs flex items-center gap-1.5"
                 >
                   <RotateCcw className="h-3 w-3" aria-hidden />
                   Read again
@@ -1415,7 +1392,7 @@ export function EmailDetail({
                 <button
                   type="button"
                   onClick={downloadEml}
-                  className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+                  className="ui-btn-outline py-1! px-3! text-xs flex items-center gap-1.5"
                 >
                   <FileDown className="h-3 w-3" aria-hidden />
                   Download .eml
@@ -1436,10 +1413,17 @@ export function EmailDetail({
             {replayMessage("header")}
           </p>
         )}
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+        <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
           <dt className="text-muted-foreground">From</dt>
-          <dd className="min-w-0">
+          {/* Received and the size share the From row, which keeps the envelope short. */}
+          <dd className="min-w-0 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
             <AddressLine addresses={email.from.length > 0 ? email.from : email.sender} />
+            <span className="text-xs text-muted-foreground">
+              <span className="sr-only">Received </span>
+              {formatFullTimestamp(request.receivedAt)}
+              {", "}
+              {formatBytes(email.smtp?.size ?? request.size)}
+            </span>
           </dd>
           <dt className="text-muted-foreground">To</dt>
           <dd className="min-w-0">
@@ -1459,22 +1443,12 @@ export function EmailDetail({
               </dd>
             </>
           )}
-          <dt className="text-muted-foreground">Received</dt>
-          <dd>
-            {formatFullTimestamp(request.receivedAt)}
-            <span className="text-muted-foreground">
-              , {formatBytes(email.smtp?.size ?? request.size)}
-            </span>
-          </dd>
         </dl>
-        <div className="mt-3">
-          <Verdicts
-            email={email}
-            isTest={isTest}
-            report={report}
-            onOpen={() => pickTab("authentication")}
-          />
-        </div>
+        {!isTest && (
+          <div className="mt-3">
+            <Verdicts email={email} report={report} onOpen={() => pickTab("authentication")} />
+          </div>
+        )}
         {(showExtracts || fields) && (
           <FoundInEmail
             code={showExtracts ? (extracts.codes[0] ?? null) : null}
@@ -1528,7 +1502,10 @@ export function EmailDetail({
             >
               {entry.label}
               {entry.count !== undefined && (
-                <span className="ml-1.5 font-mono opacity-70">{entry.count}</span>
+                <>
+                  <span className="sr-only">, </span>
+                  <span className="ml-1.5 font-mono opacity-70">{entry.count}</span>
+                </>
               )}
             </button>
           ))}

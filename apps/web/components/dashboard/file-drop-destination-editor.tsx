@@ -15,7 +15,7 @@ import {
   type FileDropDestinationConfig,
 } from "@/lib/dashboard-api";
 import { ConditionList } from "./condition-list";
-import { Field, Segmented, SwitchRow } from "./settings-primitives";
+import { Field, Segmented, SwitchRow, useConfirmStep } from "./settings-primitives";
 
 type Protocol = FileDropDestinationConfig["protocol"];
 type Column = { header: string; value: string };
@@ -149,7 +149,13 @@ export function FileDropDestinationEditor({
     });
   const [savedState, setSavedState] = useState(() => formState(false, false));
   const dirty = !destination || formState(secret !== "", forgetHostKey) !== savedState;
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const {
+    armed: confirmArmed,
+    arm: armConfirm,
+    cancel: cancelConfirm,
+    settled: confirmSettled,
+    cancelRef: keepRef,
+  } = useConfirmStep();
 
   const secretInput = (): DestinationInput["dropSecret"] => {
     if (!secret) return undefined;
@@ -627,28 +633,34 @@ export function FileDropDestinationEditor({
             Cancel
           </button>
         )}
+        {/* Armed, "Keep it" ends the row where Remove was and takes focus;
+            the confirmation is a new button before it. */}
         {destination &&
-          (confirmDelete ? (
-            <span className="ml-auto flex items-center gap-3">
+          (confirmArmed ? (
+            <span key="confirm" className="ml-auto flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => void remove()}
+                onClick={() => {
+                  if (confirmSettled()) void remove();
+                }}
                 className="text-sm text-destructive-ink"
               >
                 Remove destination
               </button>
               <button
+                ref={keepRef}
                 type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="text-sm text-muted-foreground"
+                onClick={cancelConfirm}
+                className="text-sm text-muted-foreground min-w-14"
               >
                 Keep it
               </button>
             </span>
           ) : (
             <button
+              key="arm"
               type="button"
-              onClick={() => setConfirmDelete(true)}
+              onClick={armConfirm}
               className="text-sm text-destructive-ink ml-auto"
             >
               Remove

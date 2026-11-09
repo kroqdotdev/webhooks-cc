@@ -98,6 +98,8 @@ const KINDS: { id: KindFilter; label: string }[] = [
   { id: "http", label: "HTTP" },
   { id: "email", label: "Email" },
 ];
+/** mailhooks.cc leads with email, like its endpoint bar. */
+const MAIL_KINDS: { id: KindFilter; label: string }[] = [KINDS[0], KINDS[2], KINDS[1]];
 
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 const METHOD_LABELS: Record<(typeof METHODS)[number], string> = {
@@ -154,6 +156,7 @@ export function RequestList({
   const onlyEmail =
     kindFilter === "email" || (site.key === "mailhooks" && requests.every(isEmailItem));
   const displayCount = totalCount ?? requests.length;
+  const kinds = site.key === "mailhooks" ? MAIL_KINDS : KINDS;
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
 
@@ -347,7 +350,7 @@ export function RequestList({
             aria-label="Show"
             className="flex min-w-0 overflow-hidden rounded-md border-strong border-line"
           >
-            {KINDS.map((kind, index) => (
+            {kinds.map((kind, index) => (
               <button
                 key={kind.id}
                 type="button"
@@ -369,11 +372,11 @@ export function RequestList({
                         : 0;
                   if (!step) return;
                   event.preventDefault();
-                  const next = KINDS[(index + step + KINDS.length) % KINDS.length];
+                  const next = kinds[(index + step + kinds.length) % kinds.length];
                   onKindFilterChange(next.id);
                   event.currentTarget.parentElement
                     ?.querySelectorAll<HTMLButtonElement>("[role=radio]")
-                    [(index + step + KINDS.length) % KINDS.length]?.focus();
+                    [(index + step + kinds.length) % kinds.length]?.focus();
                 }}
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold caps cursor-pointer transition-colors whitespace-nowrap",
@@ -567,7 +570,7 @@ export function RequestList({
                   <div role="group" aria-label="Pinned">
                     <div
                       aria-hidden="true"
-                      className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1"
+                      className="px-3 py-1 text-xs font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1"
                     >
                       <Star className="h-2.5 w-2.5 fill-current" />
                       Pinned
@@ -578,7 +581,7 @@ export function RequestList({
                     <div role="group" aria-label={`All ${itemNoun}`}>
                       <div
                         aria-hidden="true"
-                        className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10"
+                        className="px-3 py-1 text-xs font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10"
                       >
                         All {itemNoun}
                       </div>
@@ -665,7 +668,7 @@ export function RequestList({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-14 text-center",
+              "px-1.5 py-0.5 text-xs font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-15 text-center",
               getMethodColor(request.method)
             )}
           >
@@ -687,7 +690,7 @@ export function RequestList({
           </span>
         </div>
         {/* Bottom line: ID + content type + size */}
-        <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)]">
+        <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.75rem+0.5rem)]">
           <span className="text-xs text-muted-foreground font-mono">#{id.slice(-6)}</span>
           {ctLabel && (
             <>
@@ -734,7 +737,7 @@ export function RequestList({
           {!onlyEmail && (
             <span
               className={cn(
-                "px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-14 text-center",
+                "px-1.5 py-0.5 text-xs font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-15 text-center",
                 getMethodColor("EMAIL")
               )}
             >
@@ -758,7 +761,7 @@ export function RequestList({
         <div
           className={cn(
             "flex items-center gap-2 mt-0.5 min-w-0",
-            !onlyEmail && "ml-[calc(3.5rem+0.5rem)]"
+            !onlyEmail && "ml-[calc(3.75rem+0.5rem)]"
           )}
         >
           {sender && <span className="text-xs text-muted-foreground truncate">{sender}</span>}

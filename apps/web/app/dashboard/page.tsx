@@ -2187,7 +2187,7 @@ function WaitingForRequests({
     // m-auto centres the content while it fits and lets it scroll from the top when it
     // does not (centring with the flex container's own alignment cuts off the top).
     <div className="flex-1 overflow-y-auto flex p-6 md:p-8">
-      <div className={cn("m-auto w-full space-y-6", emailAddress ? "max-w-4xl" : "max-w-lg")}>
+      <div className={cn("m-auto w-full space-y-6", emailAddress ? "max-w-5xl" : "max-w-lg")}>
         <div className="flex items-center justify-center gap-3">
           <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
@@ -2200,7 +2200,7 @@ function WaitingForRequests({
         <div
           className={cn(
             "grid gap-4 grid-cols-[minmax(0,1fr)]",
-            emailAddress && "md:grid-cols-[repeat(2,minmax(0,1fr))]"
+            emailAddress && "xl:grid-cols-[repeat(2,minmax(0,1fr))]"
           )}
         >
           <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
@@ -2213,7 +2213,12 @@ function WaitingForRequests({
                 <CopyLabel done={copied === "curl"} />
               </button>
             </div>
-            <pre className="ui-code text-sm whitespace-pre overflow-x-auto text-left shadow-none!">
+            {/* Focusable, so the keyboard can scroll a line that does not fit. */}
+            <pre
+              tabIndex={0}
+              aria-label="curl command"
+              className="ui-code text-sm whitespace-pre overflow-x-auto text-left shadow-none!"
+            >
               {curlCmd}
             </pre>
             <button

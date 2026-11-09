@@ -32,7 +32,8 @@ export function ProviderStrip() {
                   <span
                     // A light chip in dark mode, so dark brand marks (GitHub, Vercel) stay visible.
                     className="w-5 h-5 flex items-center justify-center shrink-0 rounded-sm dark:bg-white"
-                    style={{ color: icon.background }}
+                    // A near-white brand colour would vanish on the white chip: use the text colour.
+                    style={{ color: isNearWhite(icon.background) ? undefined : icon.background }}
                   >
                     <ProviderIcon glyph={icon.glyph} fallbackText={icon.text} className="h-4 w-4" />
                   </span>
@@ -52,4 +53,13 @@ export function ProviderStrip() {
       </div>
     </section>
   );
+}
+
+/** Whether a #rgb or #rrggbb colour is so light it cannot be seen on a white chip. */
+function isNearWhite(color: string | undefined): boolean {
+  const hex = color?.trim().replace(/^#/, "") ?? "";
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  if (!/^[0-9a-f]{6}$/i.test(full)) return false;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  return 0.299 * r + 0.587 * g + 0.114 * b > 225;
 }

@@ -1231,6 +1231,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         showRequired={triedSave}
                         emailFieldNames={(endpoint.emailFields ?? []).map((field) => field.name)}
                         emptyLabel="Every email (add a condition, such as the sender, to tell layouts apart)."
+                        lead={false}
                         onChange={(next) => update(index, { match: next })}
                       />
                     </div>
