@@ -3,6 +3,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
+import { layoutTemplate, type LayoutTemplate } from "@/lib/layout-templates";
 import { buildTestEmail, DELIVER_PATH, signMailRequest, testDeliveryBody } from "@/lib/test-email";
 import { reportError } from "@/lib/observability";
 import { SITES, siteForHost } from "@/lib/site";
@@ -14,7 +15,9 @@ const DELIVER_TIMEOUT_MS = 10_000;
  * Delivers a sample email to one of the caller's endpoints through the
  * receiver's private mail API (see lib/test-email.ts). It is captured and
  * counted like any other email. With `tag`, it goes to `{slug}+{tag}@...`,
- * so a test can wait for its own sample.
+ * so a test can wait for its own sample. With `template` (a ready-made
+ * layout's id, lib/layout-templates.ts), it is that template's sample email,
+ * so a layout added from it has something to read.
  */
 export async function POST(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
@@ -35,8 +38,13 @@ export async function POST(request: Request) {
 
   let slug: unknown;
   let tag: unknown;
+  let templateId: unknown;
   try {
-    ({ slug, tag } = (await request.json()) as { slug?: unknown; tag?: unknown });
+    ({
+      slug,
+      tag,
+      template: templateId,
+    } = (await request.json()) as { slug?: unknown; tag?: unknown; template?: unknown });
   } catch {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -45,6 +53,11 @@ export async function POST(request: Request) {
   }
   if (tag !== undefined && (typeof tag !== "string" || !isValidEmailTag(tag, slug))) {
     return Response.json({ error: "Invalid tag" }, { status: 400 });
+  }
+  let template: LayoutTemplate | undefined;
+  if (templateId !== undefined) {
+    template = (typeof templateId === "string" && layoutTemplate(templateId)) || undefined;
+    if (!template) return Response.json({ error: "Unknown template" }, { status: 400 });
   }
 
   const access = await resolveEndpointAccess(auth.userId, slug);
@@ -60,6 +73,7 @@ export async function POST(request: Request) {
     appUrl: publicEnv().NEXT_PUBLIC_APP_URL,
     now,
     siteName: SITES[siteForHost(request.headers.get("host"))].name,
+    template,
   });
   const body = testDeliveryBody({ to, raw, now });
   const timestamp = Math.floor(now.getTime() / 1000);

@@ -29,6 +29,8 @@ const SELECTED_RADIUS = 7;
 const PADDING_X = 24;
 const PADDING_Y = 20;
 const ROW_HEIGHT = 16;
+/** The click target around each dot: 24px across, larger than the dot itself. */
+const HIT_RADIUS = 12;
 
 export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimelineProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -86,6 +88,8 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
         x: PADDING_X + rawX,
         y: PADDING_Y + stackIndex * ROW_HEIGHT,
         method: r.method,
+        // What the tooltip names: the path, or an email's subject.
+        what: r.email ? r.email.subject || "(no subject)" : r.path,
         receivedAt: r.receivedAt,
       };
     });
@@ -168,24 +172,30 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
           const fill = METHOD_FILL[dot.method] ?? DEFAULT_FILL;
 
           return (
-            <circle
+            <g
               key={dot.id}
-              cx={dot.x}
-              cy={dot.y}
-              r={r}
-              fill={fill}
-              stroke={isSelected ? "hsl(var(--foreground))" : "none"}
-              strokeWidth={isSelected ? 2 : 0}
-              opacity={isSelected || isHovered ? 1 : 0.7}
-              className="cursor-pointer transition-all duration-100"
+              className="cursor-pointer"
               onClick={() => onSelect(dot.id)}
               onMouseEnter={() => setHoveredId(dot.id)}
               onMouseLeave={() => setHoveredId(null)}
             >
               <title>
-                {dot.method} at {new Date(dot.receivedAt).toLocaleTimeString()}
+                {[dot.method, dot.what, new Date(dot.receivedAt).toLocaleTimeString()]
+                  .filter(Boolean)
+                  .join(" ")}
               </title>
-            </circle>
+              <circle
+                cx={dot.x}
+                cy={dot.y}
+                r={r}
+                fill={fill}
+                stroke={isSelected ? "hsl(var(--foreground))" : "none"}
+                strokeWidth={isSelected ? 2 : 0}
+                opacity={isSelected || isHovered ? 1 : 0.7}
+                className="transition-all duration-100"
+              />
+              <circle cx={dot.x} cy={dot.y} r={HIT_RADIUS} fill="transparent" />
+            </g>
           );
         })}
       </svg>

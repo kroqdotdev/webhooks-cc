@@ -39,7 +39,7 @@ const ITEMS: ChecklistItem[] = [
     icon: Forward,
   },
   // Kept as "cli" so a visit recorded before the list changed still counts.
-  { id: "cli", label: "Connect a tool", href: "/docs/cli", icon: Terminal },
+  { id: "cli", label: "Connect a tool", href: "/installation", icon: Terminal },
 ];
 
 /**
@@ -48,7 +48,7 @@ const ITEMS: ChecklistItem[] = [
  */
 const MAIL_ITEMS: ChecklistItem[] = [
   { id: "webhook", label: "Receive your first email", icon: Mail },
-  { id: "layout", label: "Add a layout", section: "layouts", icon: LayoutList },
+  { id: "layout", label: "Add a layout for a sender", section: "layouts", icon: LayoutList },
   { id: "destination", label: "Send it somewhere", section: "forwarding", icon: Send },
   { id: "forward", label: "Forward a mailbox here", href: "/docs/email-capture", icon: Forward },
 ];

@@ -48,7 +48,7 @@ test("mailhooks.cc has its own pages, and sends webhooks.cc's elsewhere", async 
   await expect(page).toHaveTitle(/^mailhooks\.cc: /);
   const header = page.getByRole("banner");
   await expect(header.getByRole("link", { name: "mailhooks.cc" })).toBeVisible();
-  await expect(header.getByRole("link", { name: "Layouts" })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Layout gallery" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Turn the emails you receive into structured data" })
   ).toBeVisible();

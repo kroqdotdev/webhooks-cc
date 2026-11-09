@@ -108,6 +108,7 @@ export function mailhooksSitemapEntries(): SitemapEntry[] {
   const pages = [
     { path: "/", updated: MAILHOOKS_PLANS_UPDATED },
     { path: "/pricing", updated: MAILHOOKS_PLANS_UPDATED },
+    { path: "/guides", updated: "2026-11-09" },
     ...MAILHOOKS_FEATURES.map((feature) => ({ path: feature.path, updated: feature.updated })),
     { path: "/parse", updated: MAILHOOKS_SENDERS_UPDATED },
     ...LAYOUT_TEMPLATES.map((t) => ({

@@ -13,10 +13,11 @@ import {
 } from "@webhooks-cc/sdk/email";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
-import { LAYOUT_TEMPLATES, type LayoutTemplate } from "@/lib/layout-templates";
+import { LAYOUT_TEMPLATES, layoutTemplate, type LayoutTemplate } from "@/lib/layout-templates";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -27,6 +28,7 @@ import {
   fetchAiAssists,
   fetchDashboardRequests,
   previewLayouts,
+  sendTestEmail,
   type DashboardEndpoint,
   type LayoutsPreview,
 } from "@/lib/dashboard-api";
@@ -91,6 +93,104 @@ function domainOf(address: string | null | undefined): string | null {
           .toLowerCase()
       : "";
   return domain || null;
+}
+
+/**
+ * The Add layout menu's sender groups, by template id. A template not listed
+ * here still shows, under "Other senders".
+ */
+const TEMPLATE_GROUPS: { name: string; ids: string[] }[] = [
+  {
+    name: "Commerce",
+    ids: [
+      "shopify-orders",
+      "woocommerce-orders",
+      "etsy-sales",
+      "amazon-seller-orders",
+      "ebay-sales",
+    ],
+  },
+  { name: "Payments", ids: ["stripe-receipts", "paypal-payments"] },
+  {
+    name: "Bookings and travel",
+    ids: ["booking-com-reservations", "airbnb-reservations", "calendly-bookings"],
+  },
+  { name: "Forms, reports and files", ids: ["form-responses", "csv-reports", "pdf-invoices"] },
+];
+
+function groupedTemplates(): { name: string; templates: LayoutTemplate[] }[] {
+  const listed = new Set(TEMPLATE_GROUPS.flatMap((group) => group.ids));
+  const groups = TEMPLATE_GROUPS.map((group) => ({
+    name: group.name,
+    templates: group.ids
+      .map((id) => layoutTemplate(id))
+      .filter((template): template is LayoutTemplate => template !== null),
+  }));
+  const other = LAYOUT_TEMPLATES.filter((template) => !listed.has(template.id));
+  if (other.length > 0) groups.push({ name: "Other senders", templates: other });
+  return groups.filter((group) => group.templates.length > 0);
+}
+
+const TEMPLATE_GROUPS_SHOWN = groupedTemplates();
+/** Past this many templates, the sender list gets a filter. */
+const FILTER_FROM = 10;
+
+/**
+ * The template a layout came from: one added here this session, or one
+ * added from a sender page, whose id is the template's ("shopify-orders",
+ * "shopify-orders-2" for a second copy).
+ */
+function templateOf(layout: Layout, addedFrom: Record<string, string>): LayoutTemplate | null {
+  return layoutTemplate(addedFrom[layout.id] ?? layout.id.replace(/-\d+$/, ""));
+}
+
+type SampleSend =
+  { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string } | null;
+
+/** "Send the Shopify sample email": the template's sample, delivered to this endpoint. */
+function SampleEmailButton({
+  template,
+  state,
+  onSend,
+}: {
+  template: LayoutTemplate;
+  state: SampleSend;
+  onSend: (template: LayoutTemplate) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      <button
+        type="button"
+        onClick={() => onSend(template)}
+        disabled={state?.kind === "sending"}
+        className="ui-btn-outline py-1! px-2.5! text-xs"
+      >
+        Send the {template.sender} sample email
+      </button>
+      <SampleSendStatus state={state} />
+    </div>
+  );
+}
+
+function SampleSendStatus({ state }: { state: SampleSend }) {
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "text-xs",
+        state?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
+      )}
+    >
+      {state?.kind === "sending"
+        ? "Sending..."
+        : state?.kind === "sent"
+          ? "Sent. It shows up in Requests and here in a moment."
+          : state?.kind === "error"
+            ? state.message
+            : null}
+    </span>
+  );
 }
 
 function modeOf(layout: Layout): LineItemsMode {
@@ -271,6 +371,13 @@ function LineItemsEditor({
   const spec = layout.lineItems ?? null;
   const n = index + 1;
   const columns = spec?.columns ?? [];
+  // The pattern opened or closed by hand; otherwise open while there is
+  // something to do with it (empty, or it finds nothing in the email), and
+  // closed for one that finds rows or waits for its first email, such as a
+  // ready-made layout's.
+  const [patternOpen, setPatternOpen] = useState<boolean | null>(null);
+  const open = patternOpen ?? (!spec?.pattern?.trim() || found?.kind === "none");
+  const patternId = `layout-${layout.id}-line-pattern`;
   return (
     <div className="space-y-2">
       <Segmented<LineItemsMode>
@@ -303,49 +410,82 @@ function LineItemsEditor({
               label={`Layout ${n}: rows found`}
             />
           )}
-          {spec.pattern && found && found.kind !== "rows" && (
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              {found.kind === "none"
-                ? `No rows found in ${where}.`
-                : `This layout does not match ${where}, so there are no rows to show.`}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="flex-1 min-w-40 text-xs text-muted-foreground" aria-live="polite">
+              {spec.pattern && found && found.kind !== "rows"
+                ? found.kind === "none"
+                  ? `No rows found in ${where}.`
+                  : `This layout does not match ${where}, so there are no rows to show.`
+                : null}
             </p>
-          )}
-          <label
-            htmlFor={`layout-${layout.id}-line-pattern`}
-            className="block text-xs font-medium text-muted-foreground"
-          >
-            Line item pattern (RE2)
-          </label>
-          <input
-            id={`layout-${layout.id}-line-pattern`}
-            aria-label={`Layout ${n}: line item pattern (RE2)`}
-            value={spec.pattern ?? ""}
-            onChange={(e) => onChange({ ...spec, pattern: e.target.value })}
-            placeholder="(?P<sku>[A-Z]+-\d+)\s+x(?P<qty>\d+)"
-            spellCheck={false}
-            className={cn(inputClass, "w-full")}
-          />
-          <div className="flex flex-wrap gap-1.5">
-            <input
-              aria-label={`Layout ${n}: start after`}
-              value={spec.start ?? ""}
-              onChange={(e) => onChange({ ...spec, start: e.target.value || undefined })}
-              placeholder="Start after (optional), e.g. Items ordered"
-              spellCheck={false}
-              className={cn(inputClass, "flex-1 min-w-48")}
-            />
-            <input
-              aria-label={`Layout ${n}: stop at`}
-              value={spec.end ?? ""}
-              onChange={(e) => onChange({ ...spec, end: e.target.value || undefined })}
-              placeholder="Stop at (optional), e.g. Subtotal"
-              spellCheck={false}
-              className={cn(inputClass, "flex-1 min-w-48")}
-            />
+            <button
+              type="button"
+              onClick={() => setPatternOpen(!open)}
+              aria-expanded={open}
+              aria-controls={patternId}
+              aria-label={`Layout ${n}: edit line item pattern`}
+              className="ml-auto inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              Edit pattern
+              <ChevronDown
+                className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
+                aria-hidden
+              />
+            </button>
           </div>
-          <p className="text-xs text-muted-foreground max-w-[62ch]">
-            An RE2 pattern found again and again; each match is a row, its named groups the columns.
-          </p>
+          {/* Typing keeps it open, even once the pattern finds rows. */}
+          <div
+            id={patternId}
+            hidden={!open}
+            className="space-y-1.5"
+            onFocus={() => setPatternOpen(true)}
+          >
+            <label
+              htmlFor={`${patternId}-input`}
+              className="block text-xs font-medium text-muted-foreground"
+            >
+              Line item pattern (RE2)
+            </label>
+            <input
+              id={`${patternId}-input`}
+              aria-label={`Layout ${n}: line item pattern (RE2)`}
+              value={spec.pattern ?? ""}
+              onChange={(e) => onChange({ ...spec, pattern: e.target.value })}
+              placeholder="(?P<sku>[A-Z]+-\d+)\s+x(?P<qty>\d+)"
+              spellCheck={false}
+              className={cn(inputClass, "w-full")}
+            />
+            <div className="flex flex-wrap gap-1.5">
+              <label className="flex-1 min-w-48 space-y-1">
+                <span className="block text-xs font-medium text-muted-foreground">
+                  Start after (optional)
+                </span>
+                <input
+                  value={spec.start ?? ""}
+                  onChange={(e) => onChange({ ...spec, start: e.target.value || undefined })}
+                  placeholder="e.g. Items ordered"
+                  spellCheck={false}
+                  className={cn(inputClass, "w-full")}
+                />
+              </label>
+              <label className="flex-1 min-w-48 space-y-1">
+                <span className="block text-xs font-medium text-muted-foreground">
+                  Stop at (optional)
+                </span>
+                <input
+                  value={spec.end ?? ""}
+                  onChange={(e) => onChange({ ...spec, end: e.target.value || undefined })}
+                  placeholder="e.g. Subtotal"
+                  spellCheck={false}
+                  className={cn(inputClass, "w-full")}
+                />
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground max-w-[62ch]">
+              An RE2 pattern found again and again; each match is a row, its named groups the
+              columns.
+            </p>
+          </div>
         </div>
       )}
       {spec?.from === "attachment" && (
@@ -443,6 +583,18 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   );
   const [samplesLoaded, setSamplesLoaded] = useState(false);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
+  // The template each layout added here came from, by layout id (this session only).
+  const [addedFrom, setAddedFrom] = useState<Record<string, string>>({});
+  const [sampleSend, setSampleSend] = useState<SampleSend>(null);
+  // Bumped when an email was sent from here, so the email list and the previews read again.
+  const [reloadKey, setReloadKey] = useState(0);
+  const sentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (sentTimer.current && clearTimeout(sentTimer.current)), []);
+  // The Add layout menu's sender filter.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuFilter, setMenuFilter] = useState("");
+  const filterRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   // AI setup: a layout drafted from emails, or a field found for an open layout.
   const [aiOffered, setAiOffered] = useState(false);
   const [assist, setAssist] = useState<
@@ -497,7 +649,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, endpoint.slug]);
+  }, [accessToken, endpoint.slug, reloadKey]);
 
   useEffect(() => {
     if (!accessToken || layouts.length === 0 || local.length > 0) return;
@@ -513,7 +665,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     };
     // draftKey stands for `layouts`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, endpoint.slug, draftKey, local.length, sampleId]);
+  }, [accessToken, endpoint.slug, draftKey, local.length, sampleId, reloadKey]);
 
   const update = (index: number, change: Partial<Layout>) =>
     setLayouts(layouts.map((layout, i) => (i === index ? { ...layout, ...change } : layout)));
@@ -527,8 +679,46 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     // The preview reads the newest email, the one the condition came from.
     setSampleId("");
   };
-  const addTemplate = (template: LayoutTemplate) =>
-    addLayout({ ...structuredClone(template.layout), id: newLayout(layouts).id });
+  const addTemplate = (template: LayoutTemplate) => {
+    const { id } = newLayout(layouts);
+    addLayout({ ...structuredClone(template.layout), id });
+    setAddedFrom((current) => ({ ...current, [id]: template.id }));
+  };
+  const sendSample = async (template: LayoutTemplate) => {
+    if (!accessToken || sampleSend?.kind === "sending") return;
+    if (sentTimer.current) clearTimeout(sentTimer.current);
+    setSampleSend({ kind: "sending" });
+    try {
+      await sendTestEmail(accessToken, endpoint.slug, template.id);
+      setSampleSend({ kind: "sent" });
+      // The preview reads the newest email, which is now the sample.
+      setSampleId("");
+      setReloadKey((key) => key + 1);
+      sentTimer.current = setTimeout(() => setSampleSend(null), 8000);
+    } catch (sendError) {
+      setSampleSend({
+        kind: "error",
+        message:
+          sendError instanceof Error ? sendError.message : "The sample email could not be sent",
+      });
+    }
+  };
+  const templateFor = (layout: Layout) => templateOf(layout, addedFrom);
+  // Offered in the open layout's notice when it came from a template, else in the preview's.
+  const openTemplate = open !== null && layouts[open] ? templateFor(layouts[open]) : null;
+  const firstTemplate =
+    layouts.map(templateFor).find((template): template is LayoutTemplate => template !== null) ??
+    null;
+  const filter = menuFilter.trim().toLowerCase();
+  const menuGroups = TEMPLATE_GROUPS_SHOWN.map((group) => ({
+    ...group,
+    templates: group.templates.filter(
+      (template) =>
+        !filter ||
+        `${template.sender} ${template.kind} ${group.name}`.toLowerCase().includes(filter)
+    ),
+  })).filter((group) => group.templates.length > 0);
+  const showFilter = LAYOUT_TEMPLATES.length > FILTER_FROM;
   const canDraft = aiOffered && layouts.length < draftCap && assist?.kind !== "layout";
   // Known once the preview or the email list has answered.
   const noEmail = preview ? !preview.request : samplesLoaded && samples.length === 0;
@@ -653,9 +843,18 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 {expanded && (
                   <div className="border-t border-line/20 p-3 space-y-4">
                     {noEmail && (
-                      <p className="text-sm text-muted-foreground">
-                        No emails yet. Add the fields now; the preview runs on your first email.
-                      </p>
+                      <div className="space-y-1.5">
+                        <p className="text-sm text-muted-foreground">
+                          No emails yet. Add the fields now; the preview runs on your first email.
+                        </p>
+                        {openTemplate && (
+                          <SampleEmailButton
+                            template={openTemplate}
+                            state={sampleSend}
+                            onSend={sendSample}
+                          />
+                        )}
+                      </div>
                     )}
                     <div className="flex flex-wrap items-center gap-3">
                       <input
@@ -694,6 +893,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         showRequired={triedSave}
                         emailAddress={endpoint.emailAddress ?? ""}
                         requestId={sampleId || undefined}
+                        refreshKey={reloadKey}
                       />
                       {aiOffered &&
                         (assist?.kind === "field" && assist.layoutId === layout.id ? (
@@ -751,7 +951,13 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <DropdownMenu>
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(next) => {
+            setMenuOpen(next);
+            if (!next) setMenuFilter("");
+          }}
+        >
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -767,23 +973,29 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
+            ref={menuRef}
             align="start"
             className="w-72 max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border-strong border-line shadow-raised"
+            onKeyDown={(e) => {
+              // Typing anywhere in the menu filters the senders (instead of
+              // the menu's own jump to the item starting with that letter).
+              const input = filterRef.current;
+              if (
+                !input ||
+                e.target === input ||
+                e.key.length !== 1 ||
+                e.key === " " ||
+                e.ctrlKey ||
+                e.metaKey ||
+                e.altKey
+              ) {
+                return;
+              }
+              e.preventDefault();
+              setMenuFilter((current) => current + e.key);
+              input.focus();
+            }}
           >
-            <DropdownMenuLabel className="text-xs text-muted-foreground font-medium">
-              Start from a sender
-            </DropdownMenuLabel>
-            {LAYOUT_TEMPLATES.map((template) => (
-              <DropdownMenuItem
-                key={template.id}
-                onSelect={() => addTemplate(template)}
-                className="flex-wrap gap-x-1.5 gap-y-0"
-              >
-                <span className="font-semibold">{template.sender}</span>
-                <span className="text-muted-foreground">{template.kind}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={addBlank}>
               <Plus className="h-3.5 w-3.5" />
               Blank layout
@@ -793,6 +1005,67 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 <Sparkles className="h-3.5 w-3.5" />
                 Draft with AI
               </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs font-semibold">
+              Start from a sender
+            </DropdownMenuLabel>
+            {showFilter && (
+              <div className="px-2 pb-1.5">
+                <input
+                  ref={filterRef}
+                  type="search"
+                  aria-label="Filter senders"
+                  placeholder="Filter, e.g. Shopify or bookings"
+                  value={menuFilter}
+                  onChange={(e) => setMenuFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      menuRef.current?.querySelector<HTMLElement>("[data-template-item]")?.focus();
+                      return;
+                    }
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const first = menuGroups[0]?.templates[0];
+                      if (first) {
+                        addTemplate(first);
+                        setMenuOpen(false);
+                        setMenuFilter("");
+                      }
+                      return;
+                    }
+                    // Keep the menu's own keys (letters jump to items, Tab is held) out of the input.
+                    e.stopPropagation();
+                  }}
+                  spellCheck={false}
+                  className="ui-input text-xs py-1! px-2! w-full"
+                />
+              </div>
+            )}
+            {menuGroups.map((group) => (
+              <DropdownMenuGroup key={group.name}>
+                <DropdownMenuLabel className="caps text-[11px] text-muted-foreground font-medium pt-2 pb-1">
+                  {group.name}
+                </DropdownMenuLabel>
+                {group.templates.map((template) => (
+                  <DropdownMenuItem
+                    key={template.id}
+                    data-template-item=""
+                    onSelect={() => addTemplate(template)}
+                    className="flex-wrap gap-x-1.5 gap-y-0"
+                  >
+                    <span className="font-semibold">{template.sender}</span>
+                    <span className="text-muted-foreground">{template.kind}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            ))}
+            {menuGroups.length === 0 && (
+              <p className="px-2 py-1.5 text-xs text-muted-foreground" role="status">
+                No sender matches &ldquo;{menuFilter.trim()}&rdquo;. Try a blank layout.
+              </p>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -852,14 +1125,25 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             <h3 className="text-sm font-semibold">No email yet</h3>
           )}
           {preview.request ? (
-            preview.parsed ? (
-              <ParsedResult parsed={preview.parsed} />
-            ) : null
+            <>
+              {sampleSend?.kind === "sent" && <SampleSendStatus state={sampleSend} />}
+              {preview.parsed ? <ParsedResult parsed={preview.parsed} /> : null}
+            </>
           ) : (
-            <p className="text-xs text-muted-foreground">
-              Send an email to <span className="font-mono">{endpoint.emailAddress}</span> to try the
-              layouts.
-            </p>
+            <>
+              <p className="text-xs text-muted-foreground">
+                Send an email to <span className="font-mono">{endpoint.emailAddress}</span> to try
+                the layouts.
+              </p>
+              {/* Once: the open layout's notice offers it when that layout has a sample. */}
+              {firstTemplate && !openTemplate && (
+                <SampleEmailButton
+                  template={firstTemplate}
+                  state={sampleSend}
+                  onSend={sendSample}
+                />
+              )}
+            </>
           )}
         </div>
       )}

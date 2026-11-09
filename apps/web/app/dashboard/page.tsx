@@ -1904,8 +1904,14 @@ function WaitingForRequests({
           </p>
         </div>
 
-        <div className={cn("grid gap-4", emailAddress && "md:grid-cols-2")}>
-          <div className="ui-card ui-card-static p-5! flex flex-col gap-3">
+        {/* minmax(0, 1fr): a long curl line scrolls inside its card instead of widening the page. */}
+        <div
+          className={cn(
+            "grid gap-4 grid-cols-[minmax(0,1fr)]",
+            emailAddress && "md:grid-cols-[repeat(2,minmax(0,1fr))]"
+          )}
+        >
+          <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
             <div className="flex items-center justify-between">
               <p className="font-bold">Send an HTTP request</p>
               <button
@@ -1935,7 +1941,7 @@ function WaitingForRequests({
           {emailAddress && (
             <div
               className={cn(
-                "ui-card ui-card-static p-5! flex flex-col gap-3",
+                "ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0",
                 mailFirst && "order-first"
               )}
             >

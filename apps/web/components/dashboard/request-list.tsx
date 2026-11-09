@@ -17,6 +17,7 @@ import {
   Paperclip,
   Check,
   Copy,
+  Clock,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useSite } from "@/components/providers/site-provider";
@@ -154,7 +155,7 @@ export function RequestList({
     e.preventDefault();
     // Clamp to viewport so the menu doesn't overflow off-screen
     const menuW = 180;
-    const menuH = 120;
+    const menuH = 160;
     const x = Math.min(e.clientX, window.innerWidth - menuW - 8);
     const y = Math.min(e.clientY, window.innerHeight - menuH - 8);
     setCtxMenu({ x: Math.max(0, x), y: Math.max(0, y), id });
@@ -220,6 +221,74 @@ export function RequestList({
 
   const renderTimestamp = (ts: number) =>
     relativeTime ? formatRelativeTimestamp(ts) : formatTimestamp(ts);
+
+  // The rows are one listbox: one tab stop (the selected row, else the first),
+  // arrow keys, Home and End move the selection and focus with it.
+  const listboxRef = useRef<HTMLDivElement>(null);
+  const orderedIds = useMemo(() => [...pinned, ...unpinned].map(getItemId), [pinned, unpinned]);
+  const tabStopId =
+    selectedId && orderedIds.includes(selectedId) ? selectedId : (orderedIds[0] ?? null);
+
+  const handleRowKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>, id: string) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (e.shiftKey && onCompareSelect) onCompareSelect(id);
+        else onSelect(id);
+        return;
+      }
+      const index = orderedIds.indexOf(id);
+      let nextIndex: number;
+      switch (e.key) {
+        case "ArrowDown":
+          nextIndex = Math.min(index + 1, orderedIds.length - 1);
+          break;
+        case "ArrowUp":
+          nextIndex = Math.max(index - 1, 0);
+          break;
+        case "Home":
+          nextIndex = 0;
+          break;
+        case "End":
+          nextIndex = orderedIds.length - 1;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      const nextId = orderedIds[nextIndex];
+      if (!nextId) return;
+      if (nextId !== id) onSelect(nextId);
+      listboxRef.current
+        ?.querySelector<HTMLElement>(`[role="option"][data-request-id="${CSS.escape(nextId)}"]`)
+        ?.focus();
+    },
+    [orderedIds, onSelect, onCompareSelect]
+  );
+
+  const rowClass = (id: string, isComparing: boolean) =>
+    cn(
+      "w-full px-3 py-2 text-left cursor-pointer transition-colors border-b border-foreground/10",
+      // The ring sits inside the row, so the scrolling list never clips it.
+      "outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:-outline-offset-2",
+      isComparing
+        ? "bg-amber-100 dark:bg-amber-900/30 border-l-4 border-l-amber-500"
+        : selectedId === id
+          ? "bg-muted border-l-4 border-l-primary"
+          : "hover:bg-muted/50 border-l-4 border-l-transparent"
+    );
+
+  const rowProps = (id: string, isComparing: boolean) => ({
+    role: "option" as const,
+    "aria-selected": selectedId === id,
+    tabIndex: tabStopId === id ? 0 : -1,
+    "data-request-id": id,
+    onClick: (e: React.MouseEvent) => handleRowClick(e, id),
+    onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, id),
+    onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => handleRowKeyDown(e, id),
+    className: rowClass(id, isComparing),
+  });
 
   const loadMore = hasMore ? (
     <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
@@ -288,7 +357,7 @@ export function RequestList({
                 {kind.label}
                 {/* The count of what is shown, from the server, so only the picked kind has one. */}
                 {kindFilter === kind.id && (
-                  <span className="hidden @[300px]:inline font-mono font-normal opacity-70">
+                  <span className="hidden @[300px]:inline font-mono font-normal opacity-90">
                     {displayCount}
                   </span>
                 )}
@@ -450,23 +519,39 @@ export function RequestList({
           </>
         ) : (
           <>
-            {/* Pinned section */}
-            {pinned.length > 0 && (
-              <>
-                <div className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1">
-                  <Star className="h-2.5 w-2.5 fill-current" />
-                  Pinned
-                </div>
-                {pinned.map((request) => renderRow(request))}
-                {unpinned.length > 0 && (
-                  <div className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10">
-                    All requests
+            <div
+              ref={listboxRef}
+              role="listbox"
+              aria-label={kindFilter === "email" ? "Emails" : "Requests"}
+            >
+              {pinned.length > 0 ? (
+                <>
+                  <div role="group" aria-label="Pinned">
+                    <div
+                      aria-hidden="true"
+                      className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1"
+                    >
+                      <Star className="h-2.5 w-2.5 fill-current" />
+                      Pinned
+                    </div>
+                    {pinned.map((request) => renderRow(request))}
                   </div>
-                )}
-              </>
-            )}
-
-            {unpinned.map((request) => renderRow(request))}
+                  {unpinned.length > 0 && (
+                    <div role="group" aria-label={`All ${itemNoun}`}>
+                      <div
+                        aria-hidden="true"
+                        className="px-3 py-1 text-[11px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10"
+                      >
+                        All {itemNoun}
+                      </div>
+                      {unpinned.map((request) => renderRow(request))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                unpinned.map((request) => renderRow(request))
+              )}
+            </div>
 
             {loadMore}
           </>
@@ -509,10 +594,20 @@ export function RequestList({
               void copyToClipboard(ctxMenu.id);
               setCtxMenu(null);
             }}
-            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
+            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line flex items-center gap-2"
           >
             <Clipboard className="h-3 w-3" />
             Copy ID
+          </button>
+          <button
+            onClick={() => {
+              toggleTimestampMode();
+              setCtxMenu(null);
+            }}
+            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
+          >
+            <Clock className="h-3 w-3" />
+            {relativeTime ? "Show clock times" : "Show relative times"}
           </button>
         </div>
       )}
@@ -527,19 +622,7 @@ export function RequestList({
     const isComparing = compareId === id;
     if (isEmailItem(request)) return renderEmailRow(request, id, isPinned, hasNote, isComparing);
     return (
-      <button
-        key={id}
-        onClick={(e) => handleRowClick(e, id)}
-        onContextMenu={(e) => handleContextMenu(e, id)}
-        className={cn(
-          "w-full px-3 py-2 text-left cursor-pointer transition-colors border-b border-foreground/10",
-          isComparing
-            ? "bg-amber-100 dark:bg-amber-900/30 border-l-4 border-l-amber-500"
-            : selectedId === id
-              ? "bg-muted border-l-4 border-l-primary"
-              : "hover:bg-muted/50 border-l-4 border-l-transparent"
-        )}
-      >
+      <div key={id} {...rowProps(id, isComparing)}>
         {/* Top line: method + path + icons + timestamp */}
         <div className="flex items-center gap-2">
           <span
@@ -561,14 +644,7 @@ export function RequestList({
           <span className="text-xs font-mono truncate flex-1">{request.path}</span>
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
-          <span
-            className="text-[11px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleTimestampMode();
-            }}
-            title="Click to toggle time format"
-          >
+          <span className="text-[11px] text-muted-foreground font-mono shrink-0">
             {renderTimestamp(request.receivedAt)}
           </span>
         </div>
@@ -598,7 +674,7 @@ export function RequestList({
             </>
           )}
         </div>
-      </button>
+      </div>
     );
   }
 
@@ -613,19 +689,7 @@ export function RequestList({
     const email = request.email;
     const sender = email?.from?.name || email?.from?.address || null;
     return (
-      <button
-        key={id}
-        onClick={(e) => handleRowClick(e, id)}
-        onContextMenu={(e) => handleContextMenu(e, id)}
-        className={cn(
-          "w-full px-3 py-2 text-left cursor-pointer transition-colors border-b border-foreground/10",
-          isComparing
-            ? "bg-amber-100 dark:bg-amber-900/30 border-l-4 border-l-amber-500"
-            : selectedId === id
-              ? "bg-muted border-l-4 border-l-primary"
-              : "hover:bg-muted/50 border-l-4 border-l-transparent"
-        )}
-      >
+      <div key={id} {...rowProps(id, isComparing)}>
         <div className="flex items-center gap-2">
           <span
             className={cn(
@@ -645,14 +709,7 @@ export function RequestList({
           </span>
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
-          <span
-            className="text-[11px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleTimestampMode();
-            }}
-            title="Click to toggle time format"
-          >
+          <span className="text-[11px] text-muted-foreground font-mono shrink-0">
             {renderTimestamp(request.receivedAt)}
           </span>
         </div>
@@ -678,7 +735,7 @@ export function RequestList({
             </span>
           )}
         </div>
-      </button>
+      </div>
     );
   }
 }

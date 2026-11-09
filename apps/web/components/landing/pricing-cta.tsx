@@ -14,6 +14,8 @@ interface PricingCTAProps {
   inverted?: boolean;
   /** Make the first button the page's primary action. */
   primary?: boolean;
+  /** Where the email link sits: centred under both buttons, or under the first. */
+  emailAlign?: "center" | "start";
 }
 
 export function PricingCTA(props: PricingCTAProps) {
@@ -24,7 +26,11 @@ export function PricingCTA(props: PricingCTAProps) {
   );
 }
 
-function PricingCTAInner({ inverted = false, primary = false }: PricingCTAProps) {
+function PricingCTAInner({
+  inverted = false,
+  primary = false,
+  emailAlign = "center",
+}: PricingCTAProps) {
   const isAuthenticated = useIsAuthenticated();
 
   // Signed-out is the default branch so the CTA is part of the prerendered
@@ -57,7 +63,8 @@ function PricingCTAInner({ inverted = false, primary = false }: PricingCTAProps)
       <Link
         href="/login?mode=sign-up"
         className={cn(
-          "block text-center text-sm underline underline-offset-4 py-2",
+          "block text-sm underline underline-offset-4 py-2",
+          emailAlign === "start" ? "text-left" : "text-center",
           inverted
             ? "text-background hover:text-background/80"
             : "text-muted-foreground hover:text-foreground"

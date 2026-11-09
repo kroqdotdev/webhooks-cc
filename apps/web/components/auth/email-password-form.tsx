@@ -39,6 +39,14 @@ export function EmailPasswordForm({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A check the form makes itself names the field it is about: the message sits
+  // under that field and focus goes there. Server answers use the banner.
+  const [fieldError, setFieldError] = useState<{
+    field: "email" | "password";
+    message: string;
+  } | null>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
@@ -48,6 +56,10 @@ export function EmailPasswordForm({
   useEffect(() => {
     if (error) alertRef.current?.focus();
   }, [error]);
+  useEffect(() => {
+    if (fieldError?.field === "email") emailRef.current?.focus();
+    else if (fieldError?.field === "password") passwordRef.current?.focus();
+  }, [fieldError]);
 
   // Sign-up confirmation happens out of band (email link, possibly another
   // browser), so the login page's ?redirect= travels with it: GoTrue renders
@@ -59,6 +71,7 @@ export function EmailPasswordForm({
     setMode(next);
     onModeChange?.(next);
     setError(null);
+    setFieldError(null);
     setNotice(null);
     setDone(null);
     setCanResend(false);
@@ -69,24 +82,29 @@ export function EmailPasswordForm({
     event.preventDefault();
     if (busy) return;
     setError(null);
+    setFieldError(null);
     setNotice(null);
     setCanResend(false);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setError("Enter your email address");
-      return;
-    }
-    if (mode !== "forgot" && password.length < PASSWORD_MIN_LENGTH) {
-      setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+      setFieldError({ field: "email", message: "Enter your email address" });
       return;
     }
     // GoTrue refuses these too (migration 00052), but its answer carries no
     // error code, so the form would only show the generic message.
     if (mode === "sign-up" && isCaptureDomainAddress(trimmedEmail, DEFAULT_EMAIL_DOMAIN)) {
-      setError(
-        `Addresses at ${DEFAULT_EMAIL_DOMAIN} can't be used for an account. Sign up with your own email address.`
-      );
+      setFieldError({
+        field: "email",
+        message: `Addresses at ${DEFAULT_EMAIL_DOMAIN} can't be used for an account. Sign up with your own email address.`,
+      });
+      return;
+    }
+    if (mode !== "forgot" && password.length < PASSWORD_MIN_LENGTH) {
+      setFieldError({
+        field: "password",
+        message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+      });
       return;
     }
 
@@ -182,11 +200,8 @@ export function EmailPasswordForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      {mode === "sign-up" ? (
-        <h2 className="text-base font-semibold">Create an account</h2>
-      ) : mode === "forgot" ? (
-        <h2 className="text-base font-semibold">Reset your password</h2>
-      ) : null}
+      {/* Sign-up needs no heading of its own: the page's says "Create your ... account". */}
+      {mode === "forgot" ? <h2 className="text-base font-semibold">Reset your password</h2> : null}
 
       {error ? (
         <div
@@ -226,10 +241,18 @@ export function EmailPasswordForm({
           type="email"
           autoComplete="email"
           required
+          ref={emailRef}
+          aria-invalid={fieldError?.field === "email" || undefined}
+          aria-describedby={fieldError?.field === "email" ? "auth-email-error" : undefined}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={busy}
         />
+        {fieldError?.field === "email" ? (
+          <p id="auth-email-error" className="text-xs text-destructive-ink">
+            {fieldError.message}
+          </p>
+        ) : null}
       </div>
 
       {mode !== "forgot" ? (
@@ -253,12 +276,27 @@ export function EmailPasswordForm({
             autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
             required
             minLength={PASSWORD_MIN_LENGTH}
+            ref={passwordRef}
+            aria-invalid={fieldError?.field === "password" || undefined}
+            aria-describedby={
+              [
+                fieldError?.field === "password" ? "auth-password-error" : null,
+                mode === "sign-up" ? "auth-password-hint" : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={busy}
           />
+          {fieldError?.field === "password" ? (
+            <p id="auth-password-error" className="text-xs text-destructive-ink">
+              {fieldError.message}
+            </p>
+          ) : null}
           {mode === "sign-up" ? (
-            <p className="text-xs text-muted-foreground">
+            <p id="auth-password-hint" className="text-xs text-muted-foreground">
               At least {PASSWORD_MIN_LENGTH} characters.
             </p>
           ) : null}

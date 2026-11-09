@@ -113,7 +113,7 @@ test("a layout is tried on a captured email as it is built, then saved", async (
   await layouts
     .getByLabel("Layout 1: line item pattern")
     .fill("(?P<sku>[A-Z]-\\d+) x(?P<qty>\\d+)");
-  await layouts.getByLabel("Layout 1: start after").fill("Items:");
+  await layouts.getByLabel("Start after (optional)").fill("Items:");
 
   // The preview runs the draft on the newest email.
   await expect(layouts.getByText("matches the email below")).toBeVisible({ timeout: 10000 });

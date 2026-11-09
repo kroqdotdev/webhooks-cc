@@ -15,7 +15,7 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
     },
   };
   return (
-    <div className="grid lg:grid-cols-2 gap-6 items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[repeat(2,minmax(0,1fr))] gap-6 items-start">
       <figure className="ui-card ui-card-static p-0! overflow-hidden">
         <figcaption className="px-5 py-3 border-b-strong border-line text-xs font-bold caps text-muted-foreground">
           The email

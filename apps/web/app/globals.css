@@ -118,7 +118,7 @@ body {
     --primary-foreground: 0 0% 0%;
     /* The primary as text or a thin mark on the page: the mint fill fails AA as text
        on a light background, so classic light darkens it; the other sets reuse --primary. */
-    --primary-ink: 162 100% 24%;
+    --primary-ink: 162 100% 21%;
     --secondary: 52 100% 50%;
     --secondary-foreground: 0 0% 0%;
     --muted: 60 5% 90%;
@@ -503,6 +503,11 @@ body {
   }
 
   /* Input fields */
+  .ui-input::placeholder {
+    color: hsl(var(--muted-foreground));
+    opacity: 1;
+  }
+
   .ui-input {
     @apply border-strong border-line rounded-md bg-background px-4 py-3 outline-none;
     box-shadow: var(--elevation);

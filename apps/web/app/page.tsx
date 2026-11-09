@@ -319,7 +319,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card ui-card-static border-primary relative">
-              <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
+              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
                 1 click away
               </div>
               <p className="text-xs font-bold caps text-muted-foreground mb-3">
@@ -642,22 +642,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Teams: a short pointer; the demo video lives on /for-teams */}
-      <section className="pb-20 px-4">
-        <div className="max-w-6xl mx-auto ui-card ui-card-static flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
-          <div className="flex-1">
-            <h2 className="text-2xl md:text-3xl font-bold mb-2">Built for teams</h2>
-            <p className="text-muted-foreground">
-              Share endpoints with your colleagues: everyone sees the same webhooks the moment they
-              arrive. From $12/seat/month, or $35/seat/month for Team Business.
-            </p>
-          </div>
-          <Link href="/for-teams" className="ui-btn-outline inline-block text-center shrink-0">
-            How Teams works
-          </Link>
-        </div>
-      </section>
-
       {/* Pricing */}
       <section id="pricing" className="py-20 px-4 scroll-mt-20">
         <div className="max-w-6xl mx-auto">
@@ -772,95 +756,35 @@ export default async function Home() {
             </div>
           </div>
 
-          {/* Team plans: what a team is, then its two plans */}
-          <div className="grid md:grid-cols-3 gap-6 mt-6">
-            <div className="ui-card ui-card-static flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Team plans</h3>
-                <p className="text-muted-foreground">
-                  Share endpoints with the people you work with. A team has its own subscription,
-                  billed per seat from 2 seats, whatever plan each member is on.
-                </p>
-              </div>
-              <ul className="space-y-3 mb-8">
-                {[
-                  "Shared endpoints, real-time for everyone",
-                  "Seats are the member cap",
-                  "One pooled quota for the whole team",
-                  "Billed per team, not per account",
-                  "Any account can create a team",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
+          {/* Teams: one strip with both team plans; the details live on /for-teams. */}
+          <div className="ui-card ui-card-static mt-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <div>
+              <h3 className="font-bold text-2xl mb-2">Teams</h3>
+              <p className="text-muted-foreground mb-4">
+                Share endpoints with the people you work with: everyone sees the same webhooks the
+                moment they arrive. A team has its own subscription, billed per seat from 2 seats.
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-bold">Teams, $12/seat/month:</span> 100,000 pooled
+                    requests per seat, 31-day retention
+                  </span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-bold">Team Business, $35/seat/month:</span>{" "}
+                    Business&apos;s limits per seat, 90-day retention
+                  </span>
+                </li>
               </ul>
-              <Link href="/for-teams" className="ui-btn-outline w-full text-center block mt-auto">
-                How Teams works
-                <ArrowRight className="inline-block ml-2 h-5 w-5" />
-              </Link>
             </div>
-
-            {/* Teams Plan */}
-            <div className="ui-card flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Teams</h3>
-                <p className="text-5xl font-bold">
-                  $12
-                  <span className="text-lg font-normal text-muted-foreground">/seat/month</span>
-                </p>
-              </div>
-              <ul className="space-y-3 mb-8">
-                {[
-                  "100,000 pooled requests per seat/month",
-                  "31-day retention on team traffic",
-                  "100 parsed attachment pages/month",
-                  "20 AI assists/30 days",
-                  "Extra requests in 25,000 blocks",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link href="/teams" className="ui-btn-outline w-full text-center block mt-auto">
-                Create a team
-                <ArrowRight className="inline-block ml-2 h-5 w-5" />
-              </Link>
-            </div>
-
-            {/* Team Business Plan */}
-            <div className="ui-card flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Team Business</h3>
-                <p className="text-5xl font-bold">
-                  $35
-                  <span className="text-lg font-normal text-muted-foreground">/seat/month</span>
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">or $350/seat/year</p>
-              </div>
-              <ul className="space-y-3 mb-8">
-                {[
-                  "250,000 pooled requests per seat/month",
-                  "90-day retention on team traffic",
-                  "2,000 parsed attachment pages per seat/month",
-                  "Up to 50 layouts, 250 AI assists per seat",
-                  "1 custom inbound domain per team",
-                  "File drops to SFTP, FTP/FTPS & S3",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link href="/teams" className="ui-btn-outline w-full text-center block mt-auto">
-                Create a team
-                <ArrowRight className="inline-block ml-2 h-5 w-5" />
-              </Link>
-            </div>
+            <Link href="/for-teams" className="ui-btn-outline text-center block">
+              How Teams works
+              <ArrowRight className="inline-block ml-2 h-5 w-5" />
+            </Link>
           </div>
         </div>
       </section>

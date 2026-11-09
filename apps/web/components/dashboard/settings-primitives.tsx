@@ -65,7 +65,12 @@ export function Section({
       >
         <div className="p-5 space-y-4">
           <div>
-            <h2 id={`settings-${id}-title`} className="text-base font-bold clean:font-semibold">
+            {/* A jump focuses the heading, so the next Tab enters this section. */}
+            <h2
+              id={`settings-${id}-title`}
+              tabIndex={-1}
+              className="text-base font-bold clean:font-semibold outline-none"
+            >
               {title}
             </h2>
             <p className="text-sm text-muted-foreground mt-0.5 max-w-[62ch]">{description}</p>
@@ -371,10 +376,14 @@ export function useSave(slug: string) {
   return { save, saving, error, saved, setError, setSaved };
 }
 
-/** Scrolls a settings section into view; no smooth scroll under reduced motion. */
-export function scrollToSection(id: SettingsSection) {
+/**
+ * Scrolls a settings section into view (no smooth scroll under reduced motion)
+ * and moves focus to its heading, so the next Tab lands inside the section.
+ */
+export function scrollToSection(id: SettingsSection, { smooth = true }: { smooth?: boolean } = {}) {
   const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   document
     .getElementById(`settings-${id}`)
-    ?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    ?.scrollIntoView({ behavior: smooth && !reduce ? "smooth" : "auto", block: "start" });
+  document.getElementById(`settings-${id}-title`)?.focus({ preventScroll: true });
 }

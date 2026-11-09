@@ -52,6 +52,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Layouts lead with the values they find: each field shows its value, the pattern sits behind Edit pattern, and one Add layout menu offers the ready-made senders",
       "The Setup checklist ticks steps from what the endpoint actually has, and opens the right settings for each",
       "Skip to content now skips the header, docs search is a proper dialog, classic buttons look alike everywhere, and Pricing is in the header on every page",
+      "The request list is one keyboard stop with arrow keys, email detail tabs work like request tabs, and choosing a settings section moves focus into it",
+      "Small JSON bodies open fully, and sign-up form errors appear on the field they concern",
+      "mailhooks.cc: send a ready-made layout's sample email to see it parse at once, a Guides page, line-item fields with visible labels, and a grouped, filterable Add layout menu",
+      "One New endpoint form for the dialog and its page, pages that no longer scroll sideways on phones, and a shorter landing page",
     ],
   },
   {

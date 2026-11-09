@@ -756,8 +756,7 @@ export function EndpointSettingsPanel({
   const dirty = useDirtySections();
 
   useEffect(() => {
-    if (focusSection)
-      document.getElementById(`settings-${focusSection}`)?.scrollIntoView({ block: "start" });
+    if (focusSection) scrollToSection(focusSection, { smooth: false });
   }, [focusSection]);
 
   // Scroll spy: the topmost section in view is the active one. The observer
@@ -865,8 +864,8 @@ export function EndpointSettingsPanel({
             <div className="max-w-[780px] px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
               <p className="text-sm flex-1 min-w-[180px]">
                 {dirty.length === 1
-                  ? `${dirty[0].title} has unsaved changes`
-                  : `${dirty.length} sections have unsaved changes`}
+                  ? `Unsaved changes in ${dirty[0].title}`
+                  : `Unsaved changes in ${dirty.length} sections`}
               </p>
               <button
                 type="button"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -949,6 +949,8 @@ export function EmailDetail({
   // webhooks.cc leads with JSON: it is what forwarding sends and what a handler is
   // written against. mailhooks.cc leads with the email as people read it.
   const mailFirst = useSite().key === "mailhooks";
+  // The page can show this view twice (desktop and phone), so ids are per instance.
+  const tabIds = useId();
   const [tab, setTab] = useState<EmailTab>(
     initialTab ??
       (request.parsed ? "parsed" : mailFirst ? (email?.html ? "preview" : "text") : "json")
@@ -1135,6 +1137,11 @@ export function EmailDetail({
       : []),
   ];
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : tabs[0].id;
+  const openTab = (id: EmailTab) => {
+    // A failed load of the stored message is tried again.
+    if (id === "raw" && storedRawHere && "error" in storedRawHere) setStoredRaw(null);
+    setTab(id);
+  };
   const rawAvailable = stored || (!!raw && !email.truncated.raw);
 
   return (
@@ -1217,30 +1224,40 @@ export function EmailDetail({
 
       {/* Tabs: the same bar as the HTTP view */}
       <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none] max-md:[mask-image:linear-gradient(to_right,#000_85%,transparent)]">
-        {tabs.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            onClick={() => {
-              // A failed load of the stored message is tried again.
-              if (entry.id === "raw" && storedRawHere && "error" in storedRawHere) {
-                setStoredRaw(null);
-              }
-              setTab(entry.id);
-            }}
-            className={cn(
-              "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
-              activeTab === entry.id
-                ? "bg-selected text-selected-foreground"
-                : "bg-background hover:bg-muted"
-            )}
-          >
-            {entry.label}
-            {entry.count !== undefined && (
-              <span className="ml-1.5 font-mono opacity-70">{entry.count}</span>
-            )}
-          </button>
-        ))}
+        <div role="tablist" aria-label="Email sections" className="flex shrink-0">
+          {tabs.map((entry, index) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              id={`${tabIds}-tab-${entry.id}`}
+              aria-selected={activeTab === entry.id}
+              aria-controls={`${tabIds}-panel`}
+              tabIndex={activeTab === entry.id ? 0 : -1}
+              onClick={() => openTab(entry.id)}
+              onKeyDown={(event) => {
+                // Arrow keys move between tabs, as in any tab list.
+                const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                if (!step) return;
+                event.preventDefault();
+                const next = tabs[(index + step + tabs.length) % tabs.length];
+                openTab(next.id);
+                document.getElementById(`${tabIds}-tab-${next.id}`)?.focus();
+              }}
+              className={cn(
+                "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
+                activeTab === entry.id
+                  ? "bg-selected text-selected-foreground"
+                  : "bg-background hover:bg-muted"
+              )}
+            >
+              {entry.label}
+              {entry.count !== undefined && (
+                <span className="ml-1.5 font-mono opacity-70">{entry.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
         {activeTab === "text" && reply && (
           <div className="flex ml-auto items-center pr-3 pl-3">
             <div
@@ -1302,7 +1319,12 @@ export function EmailDetail({
         )}
       </div>
 
-      <div className="flex-1 overflow-auto p-4 md:p-5">
+      <div
+        role="tabpanel"
+        id={`${tabIds}-panel`}
+        aria-labelledby={`${tabIds}-tab-${activeTab}`}
+        className="flex-1 overflow-auto p-4 md:p-5"
+      >
         {activeTab === "parsed" &&
           (parsed ? (
             <>

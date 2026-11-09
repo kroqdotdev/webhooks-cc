@@ -63,12 +63,15 @@ export function AddressPill({
   value,
   copyValue,
   className,
+  hideLabelOnPhone = false,
 }: {
   label: string;
   icon: React.ElementType;
   value: string;
   copyValue?: string;
   className?: string;
+  /** Drop the label on small phones, where something next to the pill already names it. */
+  hideLabelOnPhone?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,21 +85,27 @@ export function AddressPill({
   return (
     <span
       className={cn(
-        "inline-flex items-stretch h-9 min-w-0 border-strong border-line rounded-md bg-background shadow-raised-sm overflow-hidden",
+        // On a phone the value wraps rather than losing its end to an ellipsis.
+        "inline-flex items-stretch h-9 max-sm:h-auto max-sm:min-h-9 min-w-0 border-strong border-line rounded-md bg-background shadow-raised-sm overflow-hidden",
         className
       )}
     >
-      <span className="flex items-center gap-1.5 px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold caps border-r-strong border-line shrink-0">
+      <span
+        className={cn(
+          "flex items-center gap-1.5 px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold caps border-r-strong border-line shrink-0",
+          hideLabelOnPhone && "max-sm:hidden"
+        )}
+      >
         <Icon className="h-3 w-3 hidden sm:block" />
         {label}
       </span>
       <button
         type="button"
         onClick={copy}
-        className="flex flex-1 items-center px-2.5 min-w-0 font-mono text-[13px] text-left cursor-pointer hover:bg-muted/50"
+        className="flex flex-1 items-center px-2.5 max-sm:py-1.5 min-w-0 font-mono text-[13px] text-left cursor-pointer hover:bg-muted/50"
         title="Copy"
       >
-        <span className="truncate">{value}</span>
+        <span className="truncate max-sm:whitespace-normal max-sm:break-all">{value}</span>
       </button>
       <button
         type="button"
@@ -352,6 +361,7 @@ export function EndpointBar({
             icon={Globe}
             value={shownUrl}
             copyValue={url}
+            hideLabelOnPhone={Boolean(emailAddress)}
             className={cn(
               "min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]",
               emailAddress && phoneAddress !== "http" && "max-md:hidden"
@@ -363,6 +373,7 @@ export function EndpointBar({
                 label="Email"
                 icon={Mail}
                 value={emailAddress}
+                hideLabelOnPhone
                 // mailhooks.cc leads with the address.
                 className={cn(
                   "min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]",

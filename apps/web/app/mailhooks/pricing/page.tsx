@@ -153,16 +153,31 @@ export default function MailhooksPricing() {
 
           <div className="ui-card ui-card-static mt-8">
             <h2 className="font-bold text-xl mb-2">Teams</h2>
-            <p className="text-muted-foreground">
-              From 2 seats, billed per team. Teams is $12 per seat a month, with 100,000 pooled
-              requests per seat. Team Business is $35 per seat a month, or $350 per seat a year:
-              each seat brings Business&apos;s 250,000 requests, 2,000 parsed pages and 250 AI
-              assists to the team&apos;s pool, with 50 layouts per endpoint, a custom domain, file
-              drops and 90-day retention for the endpoints you share.{" "}
-              <Link href={`${webhooksOrigin()}/for-teams`} className="underline">
-                About teams
-              </Link>
+            <p className="text-muted-foreground mb-4">
+              Share endpoints with the people you work with. From 2 seats, billed per team.
             </p>
+            <ul className="grid gap-3 md:grid-cols-2 mb-6">
+              <li className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                <span>
+                  <span className="font-bold">Teams, $12 a seat a month:</span> 100,000 pooled
+                  emails or webhooks per seat, 31-day retention
+                </span>
+              </li>
+              <li className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                <span>
+                  <span className="font-bold">
+                    Team Business, $35 a seat a month or $350 a year:
+                  </span>{" "}
+                  Business&apos;s limits per seat (250,000 emails or webhooks, 2,000 parsed pages,
+                  250 AI assists), 50 layouts, a custom domain, file drops, 90-day retention
+                </span>
+              </li>
+            </ul>
+            <Link href={`${webhooksOrigin()}/for-teams`} className="ui-btn-outline inline-block">
+              About teams
+            </Link>
           </div>
 
           <section className="mt-20 max-w-3xl mx-auto">

@@ -19,13 +19,14 @@ export function ProviderStrip() {
           without touching a production account.
         </p>
         <div className="flex flex-wrap gap-3">
-          {providers.map((provider) => {
+          {providers.map((provider, index) => {
             const icon = getWebProviderInfo(provider.slug)?.icon;
             return (
               <Link
                 key={provider.slug}
                 href={`/webhooks/${provider.slug}`}
-                className="inline-flex items-center gap-2 border-strong border-line rounded-md bg-card px-3 py-2 font-bold text-sm shadow-raised-sm hover:-translate-x-(--press) hover:-translate-y-(--press) hover:shadow-raised-lg transition-all"
+                // Phones show the first dozen; the link below the chips lists every provider.
+                className={`${index >= 12 ? "max-sm:hidden " : ""}inline-flex items-center gap-2 border-strong border-line rounded-md bg-card px-3 py-2 font-bold text-sm shadow-raised-sm hover:-translate-x-(--press) hover:-translate-y-(--press) hover:shadow-raised-lg transition-all`}
               >
                 {icon && (
                   <span

@@ -129,6 +129,7 @@ export function requestSiteOrigin(request: Request): string {
 const MAILHOOKS_PREFIXES = [
   "/pricing",
   "/parse",
+  "/guides",
   // The feature pages (lib/mailhooks-features.ts).
   "/google-sheets",
   "/file-drops",

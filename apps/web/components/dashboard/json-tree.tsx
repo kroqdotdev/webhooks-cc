@@ -12,10 +12,32 @@ interface JsonTreeProps {
   defaultExpandDepth?: number;
 }
 
-export function JsonTree({ data, defaultExpandDepth = 2 }: JsonTreeProps) {
+/** Nodes in a JSON value, counted up to a limit (enough to decide whether to open it all). */
+function countNodes(value: unknown, limit: number): number {
+  let count = 0;
+  const stack: unknown[] = [value];
+  while (stack.length > 0 && count <= limit) {
+    const next = stack.pop();
+    count += 1;
+    if (next && typeof next === "object") stack.push(...Object.values(next as object));
+  }
+  return count;
+}
+
+/** A payload this small opens fully; a bigger one opens three levels deep. */
+const OPEN_ALL_BELOW_NODES = 150;
+
+export function JsonTree({ data, defaultExpandDepth }: JsonTreeProps) {
+  const depth = useMemo(
+    () =>
+      defaultExpandDepth ??
+      (countNodes(data, OPEN_ALL_BELOW_NODES) < OPEN_ALL_BELOW_NODES ? Infinity : 3),
+    [data, defaultExpandDepth]
+  );
   // expandAll uses a version counter: when bumped, every node syncs its
-  // localOpen to expandTarget, then resumes independent control.
-  const [expandTarget, setExpandTarget] = useState(true);
+  // localOpen to expandTarget, then resumes independent control. It starts
+  // true only when everything is open, so the button names what it will do.
+  const [expandTarget, setExpandTarget] = useState(depth === Infinity);
   const [expandVersion, setExpandVersion] = useState(0);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,7 +78,7 @@ export function JsonTree({ data, defaultExpandDepth = 2 }: JsonTreeProps) {
         value={data}
         path=""
         depth={0}
-        defaultExpandDepth={defaultExpandDepth}
+        defaultExpandDepth={depth}
         expandTarget={expandTarget}
         expandVersion={expandVersion}
         onCopyPath={handleCopyPath}
@@ -236,6 +258,6 @@ function TypeAnnotation({ value }: { value: unknown }) {
   else label = typeof value;
 
   return (
-    <span className="text-[10px] text-muted-foreground/60 ml-2 shrink-0 select-none">{label}</span>
+    <span className="text-[11px] text-muted-foreground ml-2 shrink-0 select-none">{label}</span>
   );
 }

@@ -69,6 +69,7 @@ export function EmailFieldsEditor({
   showRequired,
   emailAddress,
   requestId,
+  refreshKey,
 }: {
   slug: string;
   fields: EmailField[];
@@ -79,6 +80,8 @@ export function EmailFieldsEditor({
   emailAddress: string;
   /** Try the fields on this email instead of the newest. */
   requestId?: string;
+  /** Changed when an email arrived that the preview should read (one sent from the page). */
+  refreshKey?: number;
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
@@ -113,7 +116,7 @@ export function EmailFieldsEditor({
     };
     // draftKey stands for `fields`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, slug, draftKey, local.length, requestId]);
+  }, [accessToken, slug, draftKey, local.length, requestId, refreshKey]);
 
   const update = (index: number, change: Partial<EmailField>) => {
     const next = fields.map((field, i) => {
@@ -200,9 +203,8 @@ export function EmailFieldsEditor({
                     />
                   )}
                   <span className="flex-1 min-w-40 text-[13px] break-all" aria-live="polite">
-                    {problem ? null : !preview ? null : !preview.request ? (
-                      <span className="text-xs text-muted-foreground">No email yet</span>
-                    ) : value === undefined ? null : value ? (
+                    {/* Without an email, the one line under the rows says so, not every row. */}
+                    {problem || !preview?.request ? null : value === undefined ? null : value ? (
                       <code className="font-mono text-foreground [font-variant-ligatures:none]">
                         {value}
                       </code>

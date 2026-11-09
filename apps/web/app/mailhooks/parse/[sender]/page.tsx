@@ -61,8 +61,8 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
 
           <EmailToJson template={template} />
 
-          <div className="grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-8 mt-12">
-            <section>
+          <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-8 mt-12">
+            <section className="min-w-0">
               <h2 className="text-2xl font-bold mb-4">The layout</h2>
               <p className="text-muted-foreground mb-4">
                 It matches the email by its subject, reads each field with an RE2 pattern
@@ -75,7 +75,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                 {JSON.stringify(template.layout, null, 2)}
               </pre>
             </section>
-            <aside>
+            <aside className="min-w-0">
               <h2 className="text-2xl font-bold mb-4">Before you rely on it</h2>
               <p className="text-muted-foreground mb-4">
                 The email above is an example: real ones differ by account, settings and language.

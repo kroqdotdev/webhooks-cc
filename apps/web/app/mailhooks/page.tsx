@@ -141,13 +141,14 @@ export default function MailhooksHome() {
                 booking, receipt or report arrives as JSON at your webhook, as rows in Google
                 Sheets, or as a message in Slack or Discord.
               </p>
-              <div className="flex flex-wrap items-start gap-4">
+              <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
                 <div className="w-full sm:w-auto sm:min-w-80">
-                  <PricingCTA primary />
+                  <PricingCTA primary emailAlign="start" />
                 </div>
+                {/* h-11: centred on the sign-up buttons beside it. */}
                 <Link
                   href="/parse"
-                  className="inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+                  className="sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
                 >
                   See ready-made layouts
                   <ArrowRight className="h-4 w-4" />
@@ -188,7 +189,7 @@ export default function MailhooksHome() {
               Start from a sender you already get email from, then adjust it to your own emails in
               the preview.
             </p>
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <ul className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               {LAYOUT_TEMPLATES.slice(0, 8).map((template) => (
                 <li key={template.id}>
                   <Link href={`/parse/${template.id}`} className="ui-card block h-full">
@@ -241,13 +242,17 @@ export default function MailhooksHome() {
               {
                 name: "Free",
                 price: "$0",
-                lines: ["50 emails a day", "20 parsed pages a month", "5 AI assists every 30 days"],
+                lines: [
+                  "50 emails or webhooks a day",
+                  "20 parsed pages a month",
+                  "5 AI assists every 30 days",
+                ],
               },
               {
                 name: "Pro",
                 price: "$8 a month",
                 lines: [
-                  "100,000 emails and webhooks",
+                  "100,000 emails or webhooks a month",
                   "100 parsed pages a month",
                   "20 AI assists every 30 days",
                 ],
@@ -256,13 +261,13 @@ export default function MailhooksHome() {
                 name: "Business",
                 price: "$29 a month",
                 lines: [
-                  "250,000 emails and webhooks",
+                  "250,000 emails or webhooks a month",
                   "2,000 parsed pages a month, 50 layouts",
                   "Your own domain and file drops",
                 ],
               },
             ].map((plan) => (
-              <div key={plan.name} className="ui-card ui-card-static">
+              <Link key={plan.name} href="/pricing" className="ui-card block">
                 <p className="font-bold text-xl">{plan.name}</p>
                 <p className="text-2xl font-bold mt-1 mb-4">{plan.price}</p>
                 <ul className="space-y-1 text-muted-foreground">
@@ -270,13 +275,13 @@ export default function MailhooksHome() {
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
-              </div>
+              </Link>
             ))}
             <div className="md:col-span-3 flex flex-wrap items-start gap-4">
               <div className="w-full sm:w-auto sm:min-w-80">
-                <PricingCTA />
+                <PricingCTA emailAlign="start" />
               </div>
-              <Link href="/pricing" className="ui-btn-outline inline-flex items-center gap-2">
+              <Link href="/pricing" className="ui-btn-primary inline-flex items-center gap-2">
                 Compare plans
                 <ArrowRight className="h-4 w-4" />
               </Link>

@@ -17,6 +17,7 @@ import {
   GitCompareArrows,
   BarChart3,
   Copy,
+  Clock,
   Play,
   MousePointer,
   GripVertical,
@@ -111,6 +112,7 @@ const SECTIONS: Section[] = [
         <ShortcutTable
           shortcuts={[
             ["j / k", "Navigate request list down / up"],
+            ["Up / Down, Home / End", "Move through the request list while it has focus"],
             ["1 / 2 / 3 / 4 / 5", "Switch to Body / Headers / Query / Raw / Signature tab"],
             ["c", "Copy cURL command for selected request"],
             ["r", "Open replay dialog"],
@@ -146,6 +148,10 @@ const SECTIONS: Section[] = [
           <li className="flex items-center gap-2">
             <Copy className="h-3 w-3 shrink-0" /> <strong>Copy request ID</strong>: copies the full
             ID to clipboard
+          </li>
+          <li className="flex items-center gap-2">
+            <Clock className="h-3 w-3 shrink-0" /> <strong>Show relative times</strong>: switches
+            the list between clock times and how long ago
           </li>
         </ul>
       </div>
@@ -532,8 +538,9 @@ export function DashboardGuideDialog({
           </button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-4xl h-[640px] max-h-[85vh] p-0 overflow-hidden">
-        <div className="flex h-full">
+      {/* As tall as the longer of the two columns, up to 85vh; each column scrolls past that. */}
+      <DialogContent className="max-w-3xl max-h-[85vh] p-0 overflow-hidden">
+        <div className="flex max-h-[85vh] min-h-0">
           {/* Sidebar */}
           <nav className="w-52 shrink-0 border-r-strong border-line overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">

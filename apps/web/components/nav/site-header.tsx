@@ -11,7 +11,6 @@ import { SiteSwitchRow, SiteSwitcher } from "@/components/nav/site-switcher";
 import { siteHeaderTop } from "@/lib/announcements";
 import { resetUser, trackSignOut } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
-import { webhooksOrigin } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 interface NavLink {
@@ -32,11 +31,11 @@ const NAV_LINKS: NavLink[] = [
 // mailhooks.cc keeps its docs on webhooks.cc (one copy, one canonical URL).
 const MAILHOOKS_LINKS: NavLink[] = [
   // One name for the catalogue everywhere: the dashboard section is Layouts too.
-  { href: "/parse", label: "Layouts" },
+  { href: "/parse", label: "Layout gallery" },
   { href: "/integrations", label: "Integrations" },
   { href: "/pricing", label: "Pricing" },
-  // The email docs live on webhooks.cc; the link says so, to eyes and screen readers.
-  { href: `${webhooksOrigin()}/docs/email-capture`, label: "Email docs", external: true },
+  // The guides page stays on this site and points into the docs on webhooks.cc.
+  { href: "/guides", label: "Guides" },
 ];
 
 interface SiteHeaderProps {
@@ -114,16 +113,17 @@ export function SiteHeader({
   useEffect(() => setOpen(false), [pathname]);
 
   const siteLinks = site.key === "mailhooks" ? MAILHOOKS_LINKS : NAV_LINKS;
-  // The app is short on room, and there "Layouts" would read as the endpoint's own
-  // Layouts settings, so the public catalogue is named for what it is.
-  const links = compact
-    ? siteLinks
-        .filter((link) => !["/blog", "/integrations", "/#pricing"].includes(link.href))
-        .map((link) => (link.href === "/parse" ? { ...link, label: "Layout gallery" } : link))
-    : siteLinks;
   // The path the links are chosen by: none on the 404 page (see notFound).
   const navPath = notFound ? "" : pathname;
   const { onAuthPage, inApp } = headerPlace(navPath);
+  // Every signed-in app page (dashboard, account, teams) gets the same short set,
+  // so the header does not change as people move around the app.
+  const links =
+    compact || (isAuthenticated && inApp)
+      ? siteLinks.filter(
+          (link) => !["/blog", "/integrations", "/#pricing", "/pricing"].includes(link.href)
+        )
+      : siteLinks;
 
   const handleSignOut = async () => {
     setOpen(false);
@@ -189,7 +189,8 @@ export function SiteHeader({
                 href={link.href}
                 aria-current={isActive(navPath, link.href) ? "page" : undefined}
                 className={cn(
-                  "text-sm font-medium transition-colors hover:text-foreground",
+                  // py-1 -my-1: a 24px hit area without moving the layout.
+                  "text-sm font-medium py-1 -my-1 transition-colors hover:text-foreground",
                   isActive(navPath, link.href) ? "text-foreground" : "text-muted-foreground"
                 )}
               >

@@ -309,9 +309,13 @@ export default function PlanPage() {
               </Notice>
             </div>
           )}
-          <div className="overflow-x-auto">
+          {/* On phones the table scrolls sideways; the fade and the caption say so. */}
+          <div className="overflow-x-auto max-md:[mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)]">
             <PlanTable current={currentPlan} />
           </div>
+          <p className="md:hidden px-5 pb-3 text-xs text-muted-foreground">
+            Swipe the table to compare Business.
+          </p>
         </Panel>
 
         <ParsedPagesPanel

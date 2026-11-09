@@ -10,7 +10,8 @@ export function MailhooksFooter() {
     {
       title: "Product",
       links: [
-        { href: "/parse", label: "Layouts" },
+        { href: "/parse", label: "Layout gallery" },
+        { href: "/guides", label: "Guides" },
         { href: "/pricing", label: "Pricing" },
         { href: "/login", label: "Sign in" },
       ],
@@ -20,9 +21,9 @@ export function MailhooksFooter() {
       links: MAILHOOKS_FEATURES.map((feature) => ({ href: feature.path, label: feature.name })),
     },
     {
-      title: "Docs",
+      title: "Docs on webhooks.cc",
       links: [
-        { href: `${webhooks}/docs/layouts`, label: "Layouts" },
+        { href: `${webhooks}/docs/layouts`, label: "Layout docs" },
         { href: `${webhooks}/docs/email-capture`, label: "Email capture" },
         { href: `${webhooks}/docs/forwarding`, label: "Destinations" },
         { href: `${webhooks}/docs/plans-limits`, label: "Plans and limits" },

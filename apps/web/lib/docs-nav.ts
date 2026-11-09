@@ -18,16 +18,16 @@ export interface NavSection {
 
 export const NAV_SECTIONS: NavSection[] = [
   {
-    title: "Getting Started",
+    title: "Getting started",
     id: "getting-started",
     items: [
-      { title: "Quick Start", href: "/docs" },
+      { title: "Quick start", href: "/docs" },
       { title: "Installation", href: "/installation" },
-      { title: "Core Concepts", href: "/docs/core-concepts" },
-      { title: "Plans & Limits", href: "/docs/plans-limits" },
+      { title: "Core concepts", href: "/docs/core-concepts" },
+      { title: "Plans & limits", href: "/docs/plans-limits" },
       { title: "REST API", href: "/docs/api" },
       { title: "API Explorer", href: "/api-explorer", depth: 1 },
-      { title: "AI Agents", href: "/docs/agents" },
+      { title: "AI agents", href: "/docs/agents" },
     ],
   },
   {
@@ -35,22 +35,22 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "dashboard",
     items: [
       { title: "Endpoints", href: "/docs/endpoints" },
-      { title: "Test Webhooks", href: "/docs/endpoints/test-webhooks", depth: 1 },
+      { title: "Test webhooks", href: "/docs/endpoints/test-webhooks", depth: 1 },
       {
-        title: "Provider Templates",
+        title: "Provider templates",
         href: "/docs/endpoints/provider-templates",
         depth: 1,
       },
       { title: "Requests", href: "/docs/requests" },
-      { title: "Email Capture", href: "/docs/email-capture" },
+      { title: "Email capture", href: "/docs/email-capture" },
       { title: "Layouts", href: "/docs/layouts", depth: 1, isNew: true },
       { title: "Forwarding", href: "/docs/forwarding", depth: 1 },
       { title: "Zapier and Make", href: "/docs/zapier-make", depth: 1, isNew: true },
-      { title: "Mock Responses", href: "/docs/mock-responses" },
-      { title: "Dashboard Features", href: "/docs/dashboard-features" },
-      { title: "Notification Webhooks", href: "/docs/notification-webhooks" },
+      { title: "Mock responses", href: "/docs/mock-responses" },
+      { title: "Dashboard features", href: "/docs/dashboard-features" },
+      { title: "Notification webhooks", href: "/docs/notification-webhooks" },
       { title: "Teams", href: "/docs/teams" },
-      { title: "Support and Security", href: "/docs/support", isNew: true },
+      { title: "Support and security", href: "/docs/support", isNew: true },
     ],
   },
   {
@@ -67,9 +67,9 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "sdk",
     items: [
       { title: "Overview", href: "/docs/sdk" },
-      { title: "API Reference", href: "/docs/sdk/api" },
-      { title: "Matchers & Helpers", href: "/docs/sdk/matchers" },
-      { title: "Signature Verification", href: "/docs/sdk/signatures" },
+      { title: "API reference", href: "/docs/sdk/api" },
+      { title: "Matchers & helpers", href: "/docs/sdk/matchers" },
+      { title: "Signature verification", href: "/docs/sdk/signatures" },
       { title: "Python", href: "/docs/sdk/python", isNew: true },
       { title: "Go", href: "/docs/sdk/go", isNew: true },
       { title: "Testing", href: "/docs/sdk/testing" },
@@ -87,24 +87,24 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "MCP",
     id: "mcp",
     items: [
-      { title: "MCP Server", href: "/docs/mcp" },
-      { title: "Tool Reference", href: "/docs/mcp/tools" },
-      { title: "Agent Workflows", href: "/docs/mcp/workflows" },
-      { title: "Agent Skill", href: "/docs/mcp/skills", isNew: true },
+      { title: "MCP server", href: "/docs/mcp" },
+      { title: "Tool reference", href: "/docs/mcp/tools" },
+      { title: "Agent workflows", href: "/docs/mcp/workflows" },
+      { title: "Agent skill", href: "/docs/mcp/skills", isNew: true },
     ],
   },
   {
     title: "Guides",
     id: "guides",
     items: [
-      { title: "Test Webhooks Locally", href: "/docs/guides/test-webhooks-locally" },
-      { title: "Test Stripe Webhooks", href: "/docs/guides/test-stripe-webhooks" },
-      { title: "Test GitHub Webhooks", href: "/docs/guides/test-github-webhooks" },
-      { title: "Test Shopify Webhooks", href: "/docs/guides/test-shopify-webhooks" },
-      { title: "Verify Signatures", href: "/docs/guides/verify-webhook-signatures" },
-      { title: "Webhook Testing in CI/CD", href: "/docs/guides/webhook-testing-ci-cd" },
+      { title: "Test webhooks locally", href: "/docs/guides/test-webhooks-locally" },
+      { title: "Test Stripe webhooks", href: "/docs/guides/test-stripe-webhooks" },
+      { title: "Test GitHub webhooks", href: "/docs/guides/test-github-webhooks" },
+      { title: "Test Shopify webhooks", href: "/docs/guides/test-shopify-webhooks" },
+      { title: "Verify signatures", href: "/docs/guides/verify-webhook-signatures" },
+      { title: "Webhook testing in CI/CD", href: "/docs/guides/webhook-testing-ci-cd" },
       {
-        title: "Test Signup Emails in Playwright",
+        title: "Test signup emails in Playwright",
         href: "/docs/guides/test-signup-emails-playwright",
       },
     ],
@@ -115,7 +115,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       // The /compare pages, not the docs guides they replaced: those redirect
       // there now, and linking them from every docs page kept them indexed.
-      { title: "Webhook Testing Tools", href: "/compare" },
+      { title: "Webhook testing tools", href: "/compare" },
       { title: "ngrok vs webhooks.cc", href: "/compare/ngrok" },
       { title: "Webhook.site vs webhooks.cc", href: "/compare/webhook-site" },
       { title: "Stripe CLI vs webhooks.cc", href: "/compare/stripe-cli", isNew: true },
@@ -157,5 +157,7 @@ export function getBreadcrumbLabels(): Record<string, string> {
       labels[item.href] = item.title;
     }
   }
+  // The docs root is the quick start, but as a parent in a trail it is just "Docs".
+  labels["/docs"] = "Docs";
   return labels;
 }

@@ -198,11 +198,16 @@ export function ResponseEditor({
           ref={bodyRef}
           value={draft.body}
           onChange={(e) => set({ body: e.target.value })}
-          placeholder='{"received": "{{ json.id }}"}'
+          placeholder="Response body (optional)"
           rows={4}
           spellCheck={false}
+          aria-describedby={`${idPrefix}-body-hint`}
           className="border-strong border-line text-[13px] font-mono"
         />
+        <p id={`${idPrefix}-body-hint`} className="text-xs text-muted-foreground">
+          Fill in values from the request with placeholders, for example{" "}
+          <code className="font-mono">{"{{ json.id }}"}</code>.
+        </p>
       </div>
 
       <div className="space-y-1.5">

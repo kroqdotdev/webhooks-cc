@@ -277,12 +277,12 @@ test("an email's attachment and its exact message download from the dashboard", 
   const subject = `Order attached ${ts}`;
   const { raw } = await deliverMail(subject, "sku,qty\r\nB-2,5");
   await openDashboard(page);
-  await page.getByRole("button", { name: new RegExp(`EMAIL ${subject}`) }).click();
+  await page.getByRole("option", { name: new RegExp(`EMAIL ${subject}`) }).click();
   await expect(shown(page.getByRole("heading", { name: subject }))).toBeVisible({
     timeout: 15000,
   });
 
-  await shown(page.getByRole("button", { name: /^Attachments/ })).click();
+  await shown(page.getByRole("tab", { name: /^Attachments/ })).click();
   await expect(
     shown(page.getByText("Attachments are kept with the email and deleted with it."))
   ).toBeVisible();
@@ -293,7 +293,7 @@ test("an email's attachment and its exact message download from the dashboard", 
   const csv = await (await file.createReadStream()).toArray();
   expect(Buffer.concat(csv).toString("utf8")).toBe("sku,qty\r\nB-2,5");
 
-  await shown(page.getByRole("button", { name: /^Raw$/ })).click();
+  await shown(page.getByRole("tab", { name: /^Raw$/ })).click();
   await expect(shown(page.getByText(`Subject: ${subject}`))).toBeVisible();
   const eml = page.waitForEvent("download");
   await shown(page.getByRole("button", { name: "Download .eml" })).click();
