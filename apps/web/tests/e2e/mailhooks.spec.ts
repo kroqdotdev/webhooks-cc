@@ -86,6 +86,32 @@ test("an unknown path on mailhooks.cc answers 404 with its own page", async ({ p
   await expect(page).toHaveTitle(/^mailhooks\.cc: /);
 });
 
+test("an unknown sender page is a 404 that is neither rendered nor cached", async ({
+  page,
+  request,
+}) => {
+  const path = `/parse/no-such-sender-${Date.now()}`;
+  // Twice: a page rendered on demand would be a cache HIT the second time.
+  for (let i = 0; i < 2; i++) {
+    const response = await request.get(`${MAIL}${path}`, { maxRedirects: 0 });
+    expect(response.status()).toBe(404);
+    const headers = response.headers();
+    expect(headers["cache-control"]).toContain("no-store");
+    expect(headers["cache-control"]).not.toContain("s-maxage");
+    expect(headers["x-nextjs-cache"]).toBeUndefined();
+  }
+  // Below a page with nothing below it, too.
+  const deeper = await request.get(`${MAIL}/pricing/no-such-page`, { maxRedirects: 0 });
+  expect(deeper.status()).toBe(404);
+  expect(deeper.headers()["cache-control"]).toContain("no-store");
+
+  // It is mailhooks.cc's own 404, and a known sender still has its page.
+  await page.goto(`${MAIL}${path}`);
+  await expect(page.getByText("This page doesn't exist on mailhooks.cc.")).toBeVisible();
+  const known = await request.get(`${MAIL}/parse/shopify-orders`);
+  expect(known.status()).toBe(200);
+});
+
 async function captureEmail(subject: string) {
   const text = "Thanks for your order.";
   const { error } = await admin.rpc("capture_webhook", {

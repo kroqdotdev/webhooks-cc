@@ -25,11 +25,17 @@ let endpointSlug: string;
 let oldestId: string;
 let middleId: string;
 let newestId: string;
+let otherSlug: string;
+let otherNewestId: string;
 
 /** Captures an HTTP request the way the receiver does, through the stored procedure. */
-async function captureRequest(path: string, receivedAt: Date): Promise<string> {
+async function captureRequest(
+  path: string,
+  receivedAt: Date,
+  slug = endpointSlug
+): Promise<string> {
   const { data, error } = await admin.rpc("capture_webhook", {
-    p_slug: endpointSlug,
+    p_slug: slug,
     p_method: "POST",
     p_path: path,
     p_headers: { "content-type": "application/json" },
@@ -65,6 +71,15 @@ test.beforeAll(async () => {
     .from("endpoints")
     .insert({ slug: endpointSlug, name: "Deep link E2E", user_id: user.id });
   if (error) throw error;
+
+  // A second endpoint to switch to, with requests of its own.
+  otherSlug = `e2e-deep-other-${Date.now()}`;
+  const { error: otherError } = await admin
+    .from("endpoints")
+    .insert({ slug: otherSlug, name: "Deep link other E2E", user_id: user.id });
+  if (otherError) throw otherError;
+  await captureRequest("/other/1", new Date(Date.now() - 5 * 60_000), otherSlug);
+  otherNewestId = await captureRequest("/other/2", new Date(Date.now() - 4 * 60_000), otherSlug);
 
   // One request older than the first page, then a full page after it.
   const start = Date.now() - 10 * 60_000;
@@ -115,6 +130,37 @@ test("a link to a request that is not there opens the newest", async ({ page }) 
   await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}&request=${missing}`);
   await expect(row(page, newestId)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
   await expect.poll(() => requestOf(page)).toBeNull();
+});
+
+test("Back and Forward between endpoints select each one's own request", async ({ page }) => {
+  await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
+  await expect(row(page, newestId)).toBeVisible({ timeout: 15000 });
+  await row(page, middleId).click();
+  await expect.poll(() => requestOf(page)).toBe(middleId);
+
+  // The other endpoint must never ask for one of this endpoint's requests.
+  const lookups: string[] = [];
+  page.on("request", (request) => {
+    const match = /\/api\/requests\/([0-9a-f-]{36})$/.exec(new URL(request.url()).pathname);
+    if (match && request.method() === "GET") lookups.push(match[1]);
+  });
+
+  await page.getByRole("combobox", { name: "Endpoint" }).click();
+  await page.getByRole("option", { name: "Deep link other E2E" }).click();
+  await expect(row(page, otherNewestId)).toHaveAttribute("aria-selected", "true", {
+    timeout: 15000,
+  });
+
+  await page.goBack();
+  await expect(row(page, middleId)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
+  await expect(shown(page.getByText('"/orders/20"'))).toBeVisible();
+
+  await page.goForward();
+  await expect(row(page, otherNewestId)).toHaveAttribute("aria-selected", "true", {
+    timeout: 15000,
+  });
+  await expect(shown(page.getByText('"/other/2"'))).toBeVisible();
+  expect(lookups).toEqual([]);
 });
 
 test.describe("at phone width", () => {
@@ -203,4 +249,40 @@ test("following live requests selects the newest and names no request in the add
     await page.evaluate(() => (window as unknown as { __writes: { count: number } }).__writes.count)
   ).toBe(0);
   expect(requestOf(page)).toBeNull();
+});
+
+test("a request arriving while a navigation is on its way does not cancel it", async ({ page }) => {
+  // The address names a request, so following the arrival wants to rewrite it.
+  await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}&request=${middleId}`);
+  await expect(row(page, middleId)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
+
+  // Hold the Account page back, so the arrival lands while the router waits for it.
+  let held = 0;
+  await page.route(
+    (url) => url.pathname === "/account",
+    async (route) => {
+      held++;
+      await new Promise((done) => setTimeout(done, 3000));
+      await route.continue();
+    }
+  );
+  await page
+    .getByRole("banner")
+    .getByRole("button", { name: /E2E Test User/ })
+    .click();
+  await page.getByRole("menuitem", { name: "Account" }).click();
+  await expect.poll(() => held).toBeGreaterThan(0);
+
+  const arrived = await captureRequest("/orders/during-navigation", new Date());
+  await expect(row(page, arrived)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
+  // The address is left alone while the navigation is pending...
+  await page.waitForTimeout(600);
+  expect(requestOf(page)).toBe(middleId);
+  // ...and the navigation lands.
+  await expect(page).toHaveURL(/\/account$/, { timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  // Nothing from the dashboard writes the address afterwards.
+  await page.waitForTimeout(1000);
+  expect(new URL(page.url()).pathname).toBe("/account");
+  expect(new URL(page.url()).search).toBe("");
 });

@@ -4,6 +4,7 @@ import {
   navigationPending,
   navigationSettled,
   noteNavigation,
+  noteNavigationTo,
   setLeaveGuard,
 } from "./leave-guard";
 
@@ -11,6 +12,7 @@ afterEach(() => {
   setLeaveGuard(null);
   navigationSettled();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("leaveThrough", () => {
@@ -48,6 +50,31 @@ describe("navigationPending", () => {
     vi.advanceTimersByTime(9_000);
     expect(navigationPending()).toBe(true);
     vi.advanceTimersByTime(2_000);
+    expect(navigationPending()).toBe(false);
+  });
+});
+
+describe("noteNavigationTo", () => {
+  const at = (href: string) => {
+    const url = new URL(href);
+    vi.stubGlobal("window", {
+      location: { href, origin: url.origin, pathname: url.pathname, search: url.search },
+    });
+  };
+
+  it("notes a navigation to another page or another query", () => {
+    at("https://webhooks.cc/dashboard?endpoint=acme");
+    noteNavigationTo("/account");
+    expect(navigationPending()).toBe(true);
+    navigationSettled();
+    noteNavigationTo("/dashboard?endpoint=other");
+    expect(navigationPending()).toBe(true);
+  });
+
+  it("does not note a navigation to where the browser already is", () => {
+    at("https://webhooks.cc/dashboard?endpoint=acme");
+    noteNavigationTo("/dashboard?endpoint=acme");
+    noteNavigationTo("https://webhooks.cc/dashboard?endpoint=acme#top");
     expect(navigationPending()).toBe(false);
   });
 });

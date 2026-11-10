@@ -337,6 +337,89 @@ test("the favourite star keeps Settings open and the edit in it", async ({ page 
   expect(saved).not.toBe("Edited before the star");
 });
 
+test("Back to Settings without ?endpoint= lets go of the held way out", async ({ page }) => {
+  // Opened without ?endpoint=, so the address the edit was made at names none.
+  await signInTestUser(page, user, "/dashboard?view=settings");
+  await expect(nameField(page)).toBeVisible({ timeout: 15000 });
+  const editing = await nameField(page).inputValue();
+  const other = editing === BETA ? ALPHA : BETA;
+  await nameField(page).fill("Edited at the default endpoint");
+
+  await switchEndpoint(page, other);
+  await expect(
+    dialog(page).getByRole("heading", { name: "Discard unsaved changes in Receiving?" })
+  ).toBeVisible();
+
+  // Back answers the question the way Keep editing would.
+  await page.goBack();
+  await expect(dialog(page)).toBeHidden();
+  await expect(nameField(page)).toHaveValue("Edited at the default endpoint");
+  expect(endpointOf(page)).toBeNull();
+  expect(viewOf(page)).toBe("settings");
+
+  // Nothing is held any more: the next way out asks afresh and can be discarded.
+  await endpointTab(page, "Requests").click();
+  await expectAsked(page);
+  await dialog(page).getByRole("button", { name: "Discard" }).click();
+  await expect(nameField(page)).toBeHidden();
+  await expect(dialog(page)).toBeHidden();
+});
+
+test("the question closes on its own when a save already running finishes", async ({ page }) => {
+  await openSettings(page);
+  // Hold the save back long enough to ask to leave while it runs.
+  await page.route(`**/api/endpoints/${alphaSlug}`, async (route) => {
+    if (route.request().method() !== "GET") await new Promise((done) => setTimeout(done, 2000));
+    await route.continue();
+  });
+  await editName(page, `Saved first ${ts}`);
+  await page
+    .getByRole("region", { name: "Receiving" })
+    .getByRole("button", { name: "Save changes" })
+    .click();
+  await endpointTab(page, "Requests").click();
+  await expectAsked(page);
+
+  // Nobody answers: once the save lands nothing is unsaved, and Settings close.
+  await expect(dialog(page)).toBeHidden({ timeout: 15000 });
+  await expect(nameField(page)).toBeHidden();
+  await expect.poll(() => viewOf(page)).toBeNull();
+  expect(await savedName()).toBe(`Saved first ${ts}`);
+});
+
+test("save and leave during a save that is running adds the destination once", async ({ page }) => {
+  await openSettings(page);
+  let posts = 0;
+  await page.route(`**/api/endpoints/${alphaSlug}/destinations`, async (route) => {
+    if (route.request().method() === "POST") {
+      posts++;
+      await new Promise((done) => setTimeout(done, 2000));
+    }
+    await route.continue();
+  });
+  const forwarding = page.getByRole("region", { name: "Forwarding" });
+  await forwarding.getByRole("button", { name: "Add destination" }).click();
+  await forwarding.getByRole("button", { name: /^Your server/ }).click();
+  await forwarding.getByLabel("Send to").fill("https://hooks.example.com/once");
+  await forwarding.getByRole("button", { name: "Add destination" }).click();
+  await expect.poll(() => posts).toBe(1);
+
+  await endpointTab(page, "Requests").click();
+  await expectAsked(page, "Forwarding");
+  await dialog(page).getByRole("button", { name: "Save and leave" }).click();
+  await expect(dialog(page)).toBeHidden({ timeout: 15000 });
+  await expect(nameField(page)).toBeHidden();
+  await page.waitForTimeout(500);
+
+  expect(posts).toBe(1);
+  const { data } = await admin
+    .from("endpoint_destinations")
+    .select("url")
+    .eq("endpoint_id", alphaId)
+    .eq("url", "https://hooks.example.com/once");
+  expect(data).toHaveLength(1);
+});
+
 test("leaving the dashboard for another page asks too", async ({ page }) => {
   await openSettings(page);
   await editName(page, "Edited before leaving");

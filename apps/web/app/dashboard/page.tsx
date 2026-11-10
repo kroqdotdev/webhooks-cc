@@ -1,7 +1,8 @@
 "use client";
 
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { useSite } from "@/components/providers/site-provider";
 import { setOpenEndpoint, switchSite } from "@/lib/site-switch-client";
 import { SITES, endpointHomeSite, listedOn, otherSite, twoSites, type SiteKey } from "@/lib/site";
@@ -211,6 +212,20 @@ export default function DashboardPage() {
       })
     ) {
       held = { slug: editing, keeping: false };
+      setHeldLeave(held);
+    } else if (
+      // Kept editing, but the address moved on to yet another place before it
+      // came back to these settings (a quick Back): that is a new way out, so
+      // the question is asked again instead of staying answered.
+      held?.keeping &&
+      leavesEditedSettings({
+        editing: held.slug,
+        slug: endpointSlugParam,
+        settings: settingsParam,
+        defaultSlug: endpoints ? defaultDashboardEndpoint(endpoints)?.slug : undefined,
+      })
+    ) {
+      held = { slug: held.slug, keeping: false };
       setHeldLeave(held);
     }
   }
@@ -487,7 +502,7 @@ export default function DashboardPage() {
 
   // Tab state from URL: read searchParams for deriving current tab,
   // but write via window.location.search to avoid subscribing to the object (rerender-defer-reads).
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const pathname = usePathname();
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : "body";
@@ -507,10 +522,21 @@ export default function DashboardPage() {
     if (waiting) clearTimeout(waiting.timer);
     return waiting;
   }, []);
-  useEffect(() => () => void cancelRequestWrite(), [cancelRequestWrite]);
+  // Gone from the screen (another page opened), this page writes nothing more:
+  // a write that was waiting is dropped and none is armed afterwards.
+  const onScreenRef = useRef(false);
+  useEffect(() => {
+    onScreenRef.current = true;
+    return () => {
+      onScreenRef.current = false;
+      cancelRequestWrite();
+    };
+  }, [cancelRequestWrite]);
   const updateParams = useCallback(
     (given: Record<string, string | null>, mode: "replace" | "push" = "replace") => {
       const waiting = cancelRequestWrite();
+      // The address is another page's by now (this one is on its way out).
+      if (!onScreenRef.current || window.location.pathname !== pathname) return;
       const changes =
         waiting && !("request" in given) ? { request: waiting.value, ...given } : given;
       const params = new URLSearchParams(window.location.search);
@@ -538,6 +564,7 @@ export default function DashboardPage() {
     (value: string | null) => {
       writtenRequestRef.current = value;
       cancelRequestWrite();
+      if (!onScreenRef.current) return;
       const flush = () => {
         if (navigationPending()) {
           requestWriteRef.current = { value, timer: setTimeout(flush, REQUEST_WRITE_DELAY_MS) };
@@ -1193,21 +1220,29 @@ export default function DashboardPage() {
     countedRequestsRef.current = recentRequests;
   }, [recentRequests, liveMode, debouncedSearch, methodFilter, kindFilter, writeRequestSoon]);
 
-  // With nothing selected, select the newest request the list shows.
+  // With nothing selected, select the newest request the list shows. Only once
+  // the list is this endpoint's: right after a switch it still holds the
+  // previous endpoint's requests, and one of those would be looked up here,
+  // found to be another endpoint's and dropped, leaving nothing selected.
   useEffect(() => {
     if (selectedId || displayedItems.length === 0) return;
+    if (!currentSlug || requestsLoadedFor !== currentSlug) return;
     const first = displayedItems[0];
     setSelectedId("_id" in first ? first._id : first.id);
-  }, [displayedItems, selectedId]);
+  }, [displayedItems, selectedId, currentSlug, requestsLoadedFor]);
 
+  // The request last fetched on its own because the list did not hold it.
+  const lookedUpRequestRef = useRef<string | null>(null);
   // A different endpoint starts over. The first one keeps what the URL selected.
   const prevEndpointIdRef = useRef(currentEndpointId);
   useEffect(() => {
     const previous = prevEndpointIdRef.current;
     prevEndpointIdRef.current = currentEndpointId;
     if (previous === undefined || previous === currentEndpointId) return;
-    // A request of the endpoint left behind is not written to this one's address.
+    // A request of the endpoint left behind is not written to this one's address,
+    // and one looked up there may be looked up again here.
     cancelRequestWrite();
+    lookedUpRequestRef.current = null;
     setSelectedId(null);
     setSelectedClickHouseDetail(null);
     setNewCount(0);
@@ -1246,17 +1281,23 @@ export default function DashboardPage() {
   );
 
   // ?request= changed by Back, Forward or a link: follow it.
-  const followRequestParam = useCallback((value: string | null) => {
-    if (value === writtenRequestRef.current) return;
-    writtenRequestRef.current = value;
-    pushedRequestRef.current = false;
-    if (value === null) {
-      setMobileDetail(false);
-      return;
-    }
-    setSelectedId(value);
-    setMobileDetail(true);
-  }, []);
+  const followRequestParam = useCallback(
+    (value: string | null) => {
+      if (value === writtenRequestRef.current) return;
+      // The address says something this page did not write (a link, the menu's
+      // Dashboard, Back): a write still waiting would put the old request back.
+      cancelRequestWrite();
+      writtenRequestRef.current = value;
+      pushedRequestRef.current = false;
+      if (value === null) {
+        setMobileDetail(false);
+        return;
+      }
+      setSelectedId(value);
+      setMobileDetail(true);
+    },
+    [cancelRequestWrite]
+  );
   useEffect(() => followRequestParam(requestParam), [requestParam, followRequestParam]);
   // Back and Forward are also read from the address itself. Next brings a
   // pushed URL into useSearchParams in a transition; a Back that lands before
@@ -1472,10 +1513,7 @@ export default function DashboardPage() {
       if (hasUnsaved && url.pathname !== pathname) {
         event.preventDefault();
         askToDiscard({
-          proceed: () => {
-            noteNavigation();
-            router.push(`${url.pathname}${url.search}${url.hash}`);
-          },
+          proceed: () => router.push(`${url.pathname}${url.search}${url.hash}`),
         });
         return;
       }
@@ -1544,7 +1582,6 @@ export default function DashboardPage() {
   // A request the URL names that the list has not loaded (older than a page)
   // is fetched on its own; one that is gone, or another endpoint's, is dropped.
   const requestsReady = !!currentSlug && requestsLoadedFor === currentSlug;
-  const lookedUpRequestRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedId || !accessToken || !currentEndpointId || !requestsReady) return;
     if (selectedRecentRequest || clickHouseDetailMap.current.has(selectedId)) return;

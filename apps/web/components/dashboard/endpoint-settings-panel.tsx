@@ -1,8 +1,8 @@
 "use client";
 
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ChevronRight, Globe, Mail, ShieldCheck } from "lucide-react";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
@@ -84,7 +84,7 @@ function ReceivingSection({
   endpoint: EndpointSettingsPanelProps["endpoint"];
   isOwner: boolean;
 }) {
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const { leaving } = useSettingsLeave();
   // On webhooks.cc the email-only settings fold away unless they are in use;
   // mailhooks.cc shows them open.
@@ -618,7 +618,7 @@ function DeleteSection({
   requestCount?: number;
 }) {
   const { session } = useAuth();
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const { abandon } = useSettingsLeave();
   const mailFirst = useSite().key === "mailhooks";
   const {

@@ -9,8 +9,12 @@ import { LAYOUT_TEMPLATES, layoutTemplate } from "@/lib/layout-templates";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { webhooksOrigin } from "@/lib/site";
 
-// Unknown senders fall through to notFound() below, which renders mailhooks.cc's
-// own 404 (app/mailhooks/not-found.tsx); dynamicParams = false would serve the root one.
+// Only the senders in the catalogue are pages. An unknown one is never
+// rendered here: rendered on demand, each made-up slug was written to the
+// route cache and answered 404 with a year of s-maxage. proxy.ts marks an
+// unknown sender as missing, so the visitor still gets mailhooks.cc's own 404
+// (app/mailhooks/missing), uncached.
+export const dynamicParams = false;
 
 export function generateStaticParams() {
   return LAYOUT_TEMPLATES.map((template) => ({ sender: template.id }));

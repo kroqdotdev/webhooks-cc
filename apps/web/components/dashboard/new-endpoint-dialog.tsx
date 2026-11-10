@@ -1,8 +1,7 @@
 "use client";
 
-import { noteNavigation } from "@/lib/leave-guard";
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useSite } from "@/components/providers/site-provider";
@@ -28,7 +27,7 @@ export function NewEndpointDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 } = {}) {
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const mailFirst = useSite().key === "mailhooks";
   // The form lives in the dialog's content, which unmounts on close, so it starts fresh each time.
   const [ownOpen, setOwnOpen] = useState(false);
@@ -62,7 +61,6 @@ export function NewEndpointDialog({
           autoFocusName
           onCreated={(slug) => {
             setOpen(false);
-            noteNavigation();
             router.push(`/dashboard?endpoint=${slug}`);
           }}
           cancel={

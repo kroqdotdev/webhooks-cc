@@ -178,6 +178,9 @@ export function listSectionTitles(sections: DirtySection[]): string {
   return `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`;
 }
 
+/** How long "Save and leave" may run before Keep editing is offered again. */
+const SAVE_PATIENCE_MS = 8000;
+
 /** Asks before unsaved settings are dropped. */
 export function DiscardChangesDialog({
   sections,
@@ -203,6 +206,18 @@ export function DiscardChangesDialog({
     setWasOpen(open);
     if (open) setFailed(false);
   }
+  // A save that takes this long may never answer (a lost connection): Keep
+  // editing and Escape work again, so the dialog is never a dead end. The save
+  // may still land; it then no longer leaves, since the question is closed.
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    if (!saving) return;
+    const timer = setTimeout(() => setStuck(true), SAVE_PATIENCE_MS);
+    return () => {
+      clearTimeout(timer);
+      setStuck(false);
+    };
+  }, [saving]);
   // Whether the question is still up when a save started from it finishes.
   const openRef = useRef(open);
   useEffect(() => {
@@ -227,7 +242,7 @@ export function DiscardChangesDialog({
         className="border-strong border-line shadow-raised"
         // While a save runs the answer is already given: it leaves once saved.
         onEscapeKeyDown={(event) => {
-          if (saving) event.preventDefault();
+          if (saving && !stuck) event.preventDefault();
           else onKeep();
         }}
       >
@@ -248,7 +263,7 @@ export function DiscardChangesDialog({
           )}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onKeep} disabled={saving}>
+          <AlertDialogCancel onClick={onKeep} disabled={saving && !stuck}>
             Keep editing
           </AlertDialogCancel>
           {save && (

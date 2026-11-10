@@ -227,6 +227,26 @@ describe("proxy: two sites", () => {
     expect(res.headers.get("x-middleware-request-x-whk-site")).toBe("mailhooks");
   });
 
+  it("marks an unknown sender, and anything below a page with nothing below it, as missing", async () => {
+    for (const path of [
+      "/parse/no-such-sender",
+      "/parse/shopify-orders/extra",
+      "/parse/%E0%A4%A",
+      "/pricing/extra",
+      "/guides/extra",
+      `${MAILHOOKS_FEATURES[0].path}/extra`,
+    ]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBe("1");
+    }
+    // The catalogue's senders and the app's own paths are served as they are.
+    for (const path of ["/parse", "/parse/shopify-orders", "/dashboard/anything", "/pricing"]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBeNull();
+    }
+  });
+
   it("drops a missing marker a client sends, on either site", async () => {
     for (const url of ["https://mailhooks.cc/pricing", "https://webhooks.cc/docs"]) {
       const res = await proxy(new NextRequest(url, { headers: { "x-whk-missing": "1" } }));

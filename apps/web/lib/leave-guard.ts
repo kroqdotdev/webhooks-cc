@@ -28,9 +28,32 @@ export function leaveThrough(proceed: () => void): void {
 const NAVIGATION_GIVE_UP_MS = 10_000;
 let navigationStartedAt: number | null = null;
 
-/** Call right before router.push or router.replace to another page or endpoint. */
+/** A navigation is starting (a link was clicked, the router was told to go). */
 export function noteNavigation(): void {
   navigationStartedAt = Date.now();
+}
+
+/**
+ * The same for a navigation to `href`, unless that is where the browser
+ * already is: such a navigation changes nothing, so nothing would ever
+ * settle it.
+ */
+export function noteNavigationTo(href: string): void {
+  if (typeof window === "undefined") return;
+  let url: URL;
+  try {
+    url = new URL(href, window.location.href);
+  } catch {
+    return;
+  }
+  if (
+    url.origin === window.location.origin &&
+    url.pathname === window.location.pathname &&
+    url.search === window.location.search
+  ) {
+    return;
+  }
+  noteNavigation();
 }
 
 /** The navigation landed (the page saw its URL change) or its page went away. */

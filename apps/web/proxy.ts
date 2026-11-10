@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { layoutTemplate } from "@/lib/layout-templates";
+import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { imgSrcDirective } from "@/lib/csp-img-src";
 import {
   MARKDOWN_TWIN_HEADER,
@@ -62,6 +64,34 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/ops",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+/** mailhooks.cc's own pages (the host rewrites in next.config.ts). */
+const MAILHOOKS_PAGES: ReadonlySet<string> = new Set([
+  "/pricing",
+  "/parse",
+  "/guides",
+  ...MAILHOOKS_FEATURES.map((feature) => feature.path),
+]);
+
+/**
+ * A path below one of mailhooks.cc's own pages that is no page: /parse/<sender>
+ * for a sender the catalogue does not have, or anything below the pages that
+ * have nothing below them. Those get mailhooks.cc's 404 from the missing
+ * rewrite (uncacheable) instead of being rendered or answered by the root 404.
+ */
+function unknownMailhooksPage(pathname: string): boolean {
+  const [, first, ...rest] = pathname.split("/");
+  if (rest.length === 0 || !MAILHOOKS_PAGES.has(`/${first}`)) return false;
+  if (first !== "parse") return true;
+  if (rest.length > 1) return true;
+  let sender = rest[0];
+  try {
+    sender = decodeURIComponent(sender);
+  } catch {
+    return true;
+  }
+  return layoutTemplate(sender) === null;
 }
 
 /** Refreshes the Supabase session so server components get fresh cookies. */
@@ -139,6 +169,8 @@ export async function proxy(request: NextRequest) {
     }
     missingOnMailhooks = true;
   }
+  // Under mailhooks.cc's own pages only the catalogue's senders exist.
+  if (site === "mailhooks" && unknownMailhooksPage(pathname)) missingOnMailhooks = true;
   if (site === "webhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
     const mail = mailhooksOrigin();
     if (!mail) {

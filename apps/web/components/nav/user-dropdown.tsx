@@ -1,10 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { resetUser, trackSignOut } from "@/lib/analytics";
-import { leaveThrough, noteNavigation } from "@/lib/leave-guard";
+import { leaveThrough } from "@/lib/leave-guard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,7 +71,7 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
 
 export function UserDropdown() {
   const { user: authUser, session } = useAuth();
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   // Asked when the menu first opens, not on every page load.
   const [menuOpened, setMenuOpened] = useState(false);
@@ -104,13 +104,8 @@ export function UserDropdown() {
     router.push("/");
   };
 
-  // Other pages ask first while the dashboard holds unsaved settings, and the
-  // dashboard is told a navigation is on its way (lib/leave-guard.ts).
-  const go = (href: string) =>
-    leaveThrough(() => {
-      noteNavigation();
-      router.push(href);
-    });
+  // Other pages ask first while the dashboard holds unsaved settings (lib/leave-guard.ts).
+  const go = (href: string) => leaveThrough(() => router.push(href));
 
   const displayName = profile.name || profile.email.split("@")[0];
 
@@ -123,13 +118,7 @@ export function UserDropdown() {
         <ChevronDown className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="ph-no-capture w-48">
-        <DropdownMenuItem
-          onClick={() => {
-            noteNavigation();
-            router.push("/dashboard");
-          }}
-          className="cursor-pointer"
-        >
+        <DropdownMenuItem onClick={() => router.push("/dashboard")} className="cursor-pointer">
           <LayoutDashboard className="h-4 w-4 mr-2" />
           Dashboard
         </DropdownMenuItem>

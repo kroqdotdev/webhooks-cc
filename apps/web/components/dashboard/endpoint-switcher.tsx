@@ -1,8 +1,8 @@
 "use client";
 
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { noteNavigation } from "@/lib/leave-guard";
+import { useSearchParams } from "next/navigation";
 import { Star } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
@@ -32,7 +32,7 @@ import { listedOn, type EndpointSite } from "@/lib/site";
 export function EndpointSwitcher() {
   const { session } = useAuth();
   const [data, setData] = useState<DashboardEndpointsResponse | null>(null);
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const searchParams = useSearchParams();
   const currentSlug = searchParams.get("endpoint");
   const site = useSite();
@@ -91,7 +91,6 @@ export function EndpointSwitcher() {
 
   const handleChange = (slug: string) => {
     trackEndpointSwitched();
-    noteNavigation();
     router.push(`/dashboard?endpoint=${slug}`);
   };
 

@@ -1,9 +1,10 @@
 "use client";
 
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { leaveThrough } from "@/lib/leave-guard";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
@@ -98,7 +99,7 @@ export function SiteHeader({
   mobileLinks = [],
 }: SiteHeaderProps) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const isAuthenticated = useIsAuthenticated();
   const site = useSite();
   const [open, setOpen] = useState(false);
