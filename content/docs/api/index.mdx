@@ -38,6 +38,44 @@ API keys are generated from the [API keys page](/account/api-keys). Keys use the
   `403` when called with an API key.
 </Callout>
 
+The machine-readable version of this page is the [OpenAPI document](/openapi.yaml), which lists every route below with its parameters and response shapes.
+
+## Route index
+
+Every route an API key can call. Timestamps are Unix milliseconds unless a field says otherwise, and "owner only" routes answer `404` to anyone else.
+
+| Route | What it does |
+| ----- | ------------ |
+| `GET` `POST /api/endpoints` | [List](#list-endpoints) or [create](#create-endpoint) endpoints |
+| `GET` `PATCH` `DELETE /api/endpoints/:slug` | [Read](#get-endpoint), [change](#update-endpoint) or [delete](#delete-endpoint) one |
+| `PUT` `DELETE /api/endpoints/:slug/favorite` | [Favourite](#favourite-an-endpoint) it, or undo that |
+| `POST /api/endpoints/claim` | [Claim a guest endpoint](#claim-a-guest-endpoint) |
+| `GET` `DELETE /api/endpoints/:slug/requests` | [List](#list-requests) or [clear](#clear-requests) requests |
+| `GET /api/endpoints/:slug/requests/paginated` | [List requests page by page](#list-requests-paginated) |
+| `GET /api/requests/:id` | [One request](#get-single-request) |
+| `GET /api/requests/:id/raw` | [An email's exact message](#download-the-raw-email) |
+| `GET /api/requests/:id/attachments/:index` | [One attachment](#download-an-attachment) |
+| `POST /api/requests/:id/render` | [An email in a mail provider's shape](#render-an-email) |
+| `POST /api/endpoints/:slug/responses/preview` | [What a sender would get back](#preview-a-response) |
+| `POST /api/endpoints/:slug/email-fields/preview` | [Try email fields](#try-email-fields) |
+| `POST /api/endpoints/:slug/layouts/preview` | [Try layouts](#try-layouts) |
+| `POST /api/endpoints/:slug/layouts/template` | [Add a ready-made layout](#add-a-ready-made-layout) |
+| `GET` `PUT /api/endpoints/:slug/alerts` | [Alerts](#alerts) |
+| `GET` `POST /api/endpoints/:slug/destinations` and the routes under it | [Destinations](#destinations) |
+| `GET` `POST /api/endpoints/:slug/forwarding`, `POST .../forwarding/test` | The primary destination's [secret](#get-the-signing-secret) and [test](#send-a-test-delivery) |
+| `GET /api/endpoints/:slug/deliveries`, `GET .../deliveries/summary` | The [delivery log](#list-deliveries) and its [counts](#delivery-counts) |
+| `POST /api/endpoints/:slug/deliveries/redeliver-failed` | [Redeliver all failed](#redeliver-all-failed) |
+| `GET` `POST /api/requests/:id/deliveries` | [Deliveries of a request](#list-deliveries-of-a-request), [redeliver it](#redeliver-a-request) |
+| `POST /api/requests/:id/replay`, `POST /api/endpoints/:slug/replay` | [Replay](#replay) one request or a time range |
+| `GET /api/integrations/google/connections` | [Connected Google accounts](#connected-google-accounts) |
+| `POST /api/send-test`, `POST /api/send-test-email` | Send a [test webhook](#send-test-webhook) or [test email](#send-test-email) |
+| `GET /api/search/requests`, `GET /api/search/requests/count` | [Search](#search) |
+| `GET /api/stream/:slug` | [Real-time stream](#real-time-streaming-sse) |
+| `GET /api/usage` | [Usage](#usage) |
+| `/api/teams/...`, `/api/invites/...` | [Teams](#teams) and [invites](#invites) |
+
+Agents that register themselves use the routes in [/auth.md](/auth.md); they are in the OpenAPI document too.
+
 ## Endpoints
 
 ### Create endpoint
@@ -155,6 +193,98 @@ curl -X DELETE https://webhooks.cc/api/endpoints/abc123 \
   -H "Authorization: Bearer whcc_..."
 ```
 
+### Claim a guest endpoint
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/claim \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "abc123"}'
+```
+
+Moves an endpoint made without an account (on the landing page) into yours, with the requests it has captured, and returns the endpoint. From then on it no longer expires and receives email. Returns `404` when the slug does not exist or already belongs to an account.
+
+### Preview a response
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/responses/preview \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"responseRules": [{"name": "Payment failed", "conditions": [{"field": "body_path", "op": "eq", "path": "type", "value": "payment.failed"}], "response": {"status": 402, "body": "{\"id\": \"{{ json.id }}\"}", "headers": {"Content-Type": "application/json"}}}]}'
+```
+
+Runs [response rules](/docs/mock-responses) against a captured request and fills in the placeholders, without sending anything. `mockResponse` and `responseRules` try unsaved settings; left out, the saved ones apply. `requestId` picks the request; by default it is the endpoint's newest HTTP request, or a sample when there is none. Anyone who can change the endpoint's responses can preview them. Rate limited to 120 requests per minute.
+
+**Response:**
+
+```json
+{
+  "rule": { "index": 0, "name": "Payment failed" },
+  "response": {
+    "status": 402,
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"id\": \"evt_1042\"}",
+    "delay": 0
+  },
+  "unknownPlaceholders": [],
+  "email": false,
+  "request": { "id": "REQUEST_ID", "method": "POST", "path": "/", "receivedAt": 1791538201882, "sample": false }
+}
+```
+
+`rule` is `null` when no rule matches and the endpoint's default response answers; `response` is `null` for the plain `200 OK`. `unknownPlaceholders` lists placeholders the receiver would send as written, which usually means a typo. `email` is `true` for an email, which gets a mail server's reply and never a mock response.
+
+### Try layouts
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/layouts/preview \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"layouts": [{"id": "acme", "name": "Acme orders", "match": {"conditions": [{"field": "email", "name": "subject", "op": "contains", "value": "Order"}]}, "fields": [{"name": "order", "from": "subject", "pattern": "#(\\d+)"}]}]}'
+```
+
+A dry run of [layouts](/docs/layouts): which one a captured email matches, and the fields and line items it finds. `layouts` tries unsaved ones (the saved ones when left out), and `requestId` picks the email (the endpoint's newest when left out). Returns `{ "problems": [...], "layoutsCap": 2, "request": { "id", "subject", "receivedAt" } | null, "parsed": { "status", "layout", "fields", "lineItems", ... } | null }`, where `parsed` is what [the result](/docs/layouts#the-result) describes. Nothing is saved and no pages are used: attachments show what an earlier parse stored, never a new one. Owner only. Rate limited to 20 requests per minute.
+
+To save layouts, send the whole list as `layouts` in an [endpoint update](#update-endpoint).
+
+### Add a ready-made layout
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/layouts/template \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"template": "shopify-orders"}'
+```
+
+Adds one of the [ready-made layouts](/docs/layouts#ready-made-layouts) to the end of the endpoint's layouts and returns `201` with `{ "layoutId": "shopify-orders" }` (`shopify-orders-2` when that id is taken). The templates are `shopify-orders`, `woocommerce-orders`, `etsy-sales`, `amazon-seller-orders`, `ebay-sales`, `stripe-receipts`, `paypal-payments`, `booking-com-reservations`, `airbnb-reservations`, `calendly-bookings`, `form-responses`, `csv-reports` and `pdf-invoices`. Returns `400` for an unknown template or an endpoint that already has 50 layouts. Owner only.
+
+### Alerts
+
+```bash
+curl https://webhooks.cc/api/endpoints/abc123/alerts \
+  -H "Authorization: Bearer whcc_..."
+
+curl -X PUT https://webhooks.cc/api/endpoints/abc123/alerts \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "fieldFailures": 3, "silenceHours": 24, "destinationFailures": true}'
+```
+
+[Alerts](/docs/forwarding#alerts) tell the endpoint's owner when emails keep missing a field, when no email arrives for a while, or when a delivery failed after every retry. `GET` returns `{ "settings": {...}, "events": [...] }`, the latest 50 alerts with open ones first; `PUT` changes the settings sent, leaves the rest, and returns `{ "settings": {...} }`. Owner only.
+
+| Setting                | Values                                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `enabled`              | `true` or `false` (default)                                                                         |
+| `fieldFailures`        | Emails in a row that miss a required field before an alert opens: 1 to 100, or `null` for off       |
+| `fieldFailureShare`    | Percent of the last 20 emails that missed one: 1 to 100, or `null` for off                          |
+| `requiredFields`       | Names of the fields that must be found (at most 50), or `null` for every field                      |
+| `silenceHours`         | Hours without an email before an alert opens: 1 to 720, or `null` for off                           |
+| `destinationFailures`  | `true` for an alert when a delivery fails for good                                                  |
+| `notifyEmail`          | `true` to email the account's address                                                               |
+| `notifyDestinationIds` | Ids of this endpoint's destinations (at most 10) that also get `alert.opened` and `alert.resolved`  |
+
+Each event has `id`, `kind` (`fields`, `silence` or `destination`), `subject` (the destination, for a destination alert), `openedAt`, `resolvedAt` (`null` while open) and `details`.
+
 ## Requests
 
 ### List requests
@@ -263,6 +393,28 @@ Add `extracts=true` to the request list, the paginated list or a single request,
 `action` is `true` for a link that looks like what the email asks you to click (confirm, verify, reset, sign in); those come first. `label` is the link text when the link came from the HTML part, otherwise `null`.
 
 With `extracts=true` an email also has `emailFields`, the endpoint's [named fields](/docs/email-capture#fields-you-pick-out) by name (each the text its pattern found, or `null`; `emailFields` is `null` when the endpoint has none), and `replyText`, the new text of a reply without the quoted message ([Reply text](/docs/email-capture#reply-text)). Both are there whatever `showEmailExtracts` says.
+
+### Download the raw email
+
+```bash
+curl https://webhooks.cc/api/requests/REQUEST_ID/raw \
+  -H "Authorization: Bearer whcc_..." \
+  -o message.eml
+```
+
+A captured email's exact message as `message/rfc822`, byte for byte when the message was kept in object storage (`email.stored` is `true`), whatever its size. Otherwise it is the database copy, which exists for messages up to 1 MiB. Returns `400` with `{ "error": "not_an_email" }` for an HTTP request and `404` with `{ "error": "not_kept" }` when the full message was not kept. Anyone who can read the request can download it.
+
+### Download an attachment
+
+```bash
+curl https://webhooks.cc/api/requests/REQUEST_ID/attachments/0 \
+  -H "Authorization: Bearer whcc_..." \
+  -o invoice.pdf
+```
+
+One attachment of a captured email as a download, by its position in `email.attachments` (from 0), with the attachment's own content type and file name. Only emails kept in object storage (`email.stored`) have their attachments' contents; for the others this returns `404` with `{ "error": "not_kept" }`.
+
+Forwarded JSON carries attachment links of another kind, `/api/attachments/:id/:index?e=...&s=...`: those are signed, need no API key, and redirect to a short-lived download until the email passes its retention.
 
 ### Render an email
 
@@ -426,6 +578,24 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/deliveries/redeliver-faile
 
 Queues every request whose latest delivery to a destination failed again, oldest first, with that destination's current settings, and returns `{ "queued": 12 }`. Add `?destination=<id>` for one destination only. At most 1,000 deliveries wait for a destination at a time, so `queued` can be lower than the failed count; call it again once those are through. Returns `409` when no destination is on. Rate limited to 10 requests per minute.
 
+### Replay
+
+```bash
+# One request
+curl -X POST https://webhooks.cc/api/requests/REQUEST_ID/replay \
+  -H "Authorization: Bearer whcc_..."
+
+# Everything an endpoint received in a time range
+curl -X POST https://webhooks.cc/api/endpoints/abc123/replay \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"since": 1791450000000, "until": 1791536400000, "kind": "email"}'
+```
+
+[Replay](/docs/forwarding#replay) sends captured requests through the endpoint's destinations again, with their current settings; on an endpoint with [layouts](/docs/layouts), an email is parsed again with the current layouts first. It is what to call after fixing a pattern or a destination. One request returns `{ "queued": true }` (`false` when no destination takes it; rate limited to 60 requests per minute). A time range takes `since` and `until` in milliseconds, both optional, and an optional `kind` (`http` or `email`), replays at most 500 requests, oldest first, and returns `{ "requests": 37, "queued": 37, "limit": 500 }` (rate limited to 10 requests per minute). Owner only.
+
+Replay differs from [Redeliver a request](#redeliver-a-request) in that it reads an email again before sending it; redelivery sends what was read when the email arrived, and can target one destination.
+
 ### List deliveries of a request
 
 ```bash
@@ -504,7 +674,49 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
 | `POST /api/endpoints/:slug/destinations/:id/test`  | Send one delivery now (`kind`, `requestId`), as the forwarding test above, plus `filterPasses`            |
 | `POST /api/endpoints/:slug/destinations/preview`   | Dry run: `destinationId` and/or unsaved `destination` fields, optional `requestId`; nothing is sent       |
 
-A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template`, `chat`, or a mail provider's shape for emails: `postmark`, `sendgrid`, `mailgun`, `cloudmailin`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `mailgunSigningKey` (for `mailgun`; write-only, the destination says `hasMailgunSigningKey`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600), `attachments` (how an email's files travel: `links`, `inline` or `none`) and `position`. [Google Sheets](/docs/forwarding#google-sheets) (`sheets`) and [file drop](/docs/forwarding#file-drops) (`file_drop`, Business) destinations keep their settings in `config` and are easiest to set up in the dashboard. A mistake in a template or a condition returns `400` naming the field. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
+A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template`, `chat`, or a mail provider's shape for emails: `postmark`, `sendgrid`, `mailgun`, `cloudmailin`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `mailgunSigningKey` (for `mailgun`; write-only, the destination says `hasMailgunSigningKey`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600), `attachments` (how an email's files travel: `links`, `inline` or `none`) and `position`. A destination also says `id`, `hasSecret`, `role` (`forward` for the primary destination the endpoint's `forward*` fields stand for, `notify` for its `notificationUrl`, otherwise `null`), `createdAt` and `updatedAt`. A mistake in a template or a condition returns `400` naming the field, an eleventh destination `409`. Adding and changing destinations is rate limited to 60 requests per minute per account. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
+
+The preview returns `{ "request": { "id", "kind", "method", "path", "subject", "receivedAt", "sample" }, "takesKind", "filterPasses", "format", "delivery": { "method", "url", "headers", "body", "bodyBase64" } | null, "error" }`: the request it ran on, whether the destination takes it, and the exact request it would send.
+
+#### File drops
+
+A [file drop](/docs/forwarding#file-drops) (Business) is a destination with `"format": "file_drop"`, no `url`, its settings in `config` and its password or key in `dropSecret`:
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"format": "file_drop", "http": false, "email": true, "name": "Orders to ERP", "config": {"protocol": "sftp", "host": "sftp.acme.example", "username": "orders", "folder": "incoming", "file": "csv", "rows": "line_items", "columns": [{"header": "Order", "value": "{{ parsed.fields.order }}"}, {"header": "SKU", "value": "{{ item.sku }}"}]}, "dropSecret": {"password": "..."}}'
+```
+
+| `config` field                                   | Values                                                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `protocol`                                       | `sftp`, `ftps`, `ftp` or `s3`                                                                            |
+| `host`, `port`, `username`                       | SFTP, FTPS and FTP: a public host name; `port` defaults to 22 (SFTP) or 21                               |
+| `endpoint`, `region`, `bucket`, `accessKeyId`    | S3: the storage endpoint's URL, the region (default `us-east-1`), the bucket and the access key id       |
+| `folder`                                         | The folder (it must exist, relative to the login's home folder) or the S3 key prefix                     |
+| `file`                                           | `csv` (default), `xml` or `json`                                                                         |
+| `rows`                                           | `email` (default, a row per email) or `line_items` (a row per line item)                                 |
+| `columns`                                        | CSV and XML: up to 50 of `{ "header", "value" }`, the value written with placeholders                    |
+| `prefix`                                         | Put before each file's name, at most 60 characters                                                       |
+| `batch`                                          | `true` for one file per batch; the destination's `delaySeconds` is the batch window                      |
+| `tlsFingerprint`                                 | FTPS and S3: a self-signed certificate's SHA-256 fingerprint, then the only one accepted                 |
+| `hostKey`                                        | SFTP: the server's host key fingerprint, pinned on the first connection; `null`, sent with `dropSecret`, forgets it |
+
+`dropSecret` is `{ "password" }` (FTP, FTPS, SFTP), `{ "privateKey" }` (SFTP, OpenSSH or PEM) or `{ "secretAccessKey" }` (S3). It is stored encrypted and never returned (the destination says `hasDropSecret`), and a change to the server, login, bucket, host key or certificate fingerprint needs it sent again. The destination's test (`POST .../destinations/:id/test`) logs in and writes `webhooks-cc-test.txt`, answering `{ "ok", "file", "hostKey", "delivered", "error", ... }`. Files arrive from `mx.mailhooks.cc`.
+
+#### Google Sheets
+
+A [Google Sheets](/docs/forwarding#google-sheets) destination has `"format": "sheets"` and `config`: `{ "connectionId", "spreadsheetId", "sheet", "rows": "email" | "line_items", "columns": [{ "header", "value" }] }`. Connecting a Google account and picking the spreadsheet happen in the dashboard (Google's consent and file picker need a browser); after that the destination can be read and changed here like any other.
+
+### Connected Google accounts
+
+```bash
+curl https://webhooks.cc/api/integrations/google/connections \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "available": true, "connections": [{ "id": "...", "email": "ops@acme.example", "createdAt": 1791450602000 }] }`: the Google accounts a Sheets destination's `config.connectionId` can name. `available` is whether Google Sheets is set up on the server.
 
 ## Search
 
@@ -601,7 +813,7 @@ curl https://webhooks.cc/api/teams \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns an array of team objects that you own or belong to.
+Returns an array of the teams you own or belong to. Each has `id`, `name`, `role` (`owner` or `member`), `memberCount`, `createdBy`, `createdAt`, and the team's subscription and pooled quota: `suspended` (`true` until the team has a subscription), `subscriptionStatus`, `business` (Team Business), `billingInterval`, `seats`, `requestsUsed`, `requestLimit`, `blockRequests`, `periodEnd`, `billingPeriodEnd`, `cancelAtPeriodEnd`, `pendingSeats`, `pendingPlan` and `pendingInterval`.
 
 ### Create team
 
@@ -618,10 +830,19 @@ curl -X POST https://webhooks.cc/api/teams \
 {
   "id": "TEAM_ID",
   "name": "My Team",
-  "ownerId": "...",
-  "createdAt": "2026-03-28T00:00:00.000Z"
+  "createdBy": "USER_ID",
+  "createdAt": 1791450602000,
+  "memberCount": 1,
+  "role": "owner",
+  "suspended": true,
+  "subscriptionStatus": null,
+  "seats": 0,
+  "requestsUsed": 0,
+  "requestLimit": 0
 }
 ```
+
+A new team is `suspended` until it has a subscription, which is started in the dashboard. Rate limited to 10 requests per 10 minutes.
 
 ### Update team
 
@@ -655,6 +876,17 @@ curl -X POST https://webhooks.cc/api/teams/TEAM_ID/endpoints \
   -H "Content-Type: application/json" \
   -d '{"endpointId": "ENDPOINT_ID"}'
 ```
+
+Returns `{ "success": true }`. Only the endpoint's owner can share it, and the team needs an active subscription.
+
+### List a team's endpoints
+
+```bash
+curl https://webhooks.cc/api/teams/TEAM_ID/endpoints \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "endpoints": [...] }`: every endpoint shared with the team, oldest share first, each with `id`, `slug`, `name`, `ownerId`, `ownerName`, `ownerEmail`, `sharedBy`, `sharedAt` and `requestCount`. Any member can read it, also while the team is suspended. To read the endpoints themselves, with their requests, use [List endpoints](#list-endpoints), where they appear under `shared`.
 
 ### Unshare endpoint
 
@@ -692,10 +924,12 @@ curl https://webhooks.cc/api/teams/TEAM_ID/members \
 ```json
 {
   "members": [
-    { "userId": "...", "email": "owner@example.com", "role": "owner" },
-    { "userId": "...", "email": "member@example.com", "role": "member" }
+    { "id": "...", "userId": "...", "email": "owner@example.com", "name": "Ada", "image": null, "role": "owner", "joinedAt": 1791450602000 },
+    { "id": "...", "userId": "...", "email": "member@example.com", "name": null, "image": null, "role": "member", "joinedAt": 1791537002000 }
   ],
-  "pendingInvites": [{ "id": "...", "email": "invited@example.com", "createdAt": "..." }]
+  "pendingInvites": [
+    { "id": "...", "teamId": "TEAM_ID", "teamName": "My Team", "invitedEmail": "invited@example.com", "invitedBy": "...", "inviterEmail": "owner@example.com", "status": "pending", "createdAt": 1791537002000 }
+  ]
 }
 ```
 

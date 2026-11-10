@@ -8,15 +8,24 @@ import {
   useIsAuthenticated,
 } from "@/components/providers/supabase-auth-provider";
 
-export function ComparisonCTA({ compact = false }: { compact?: boolean }) {
+const DEFAULT_HEADING = "Start testing webhooks in under a minute";
+
+export function ComparisonCTA({
+  compact = false,
+  heading = DEFAULT_HEADING,
+}: {
+  compact?: boolean;
+  /** The full-size card's heading; the mail comparisons say email. */
+  heading?: string;
+}) {
   return (
     <SupabaseAuthProvider>
-      <ComparisonCTAInner compact={compact} />
+      <ComparisonCTAInner compact={compact} heading={heading} />
     </SupabaseAuthProvider>
   );
 }
 
-function ComparisonCTAInner({ compact }: { compact: boolean }) {
+function ComparisonCTAInner({ compact, heading }: { compact: boolean; heading: string }) {
   const isAuthenticated = useIsAuthenticated();
 
   // Signed-out is the default branch so the CTA is part of the prerendered
@@ -54,7 +63,7 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
 
   return (
     <section className="ui-card ui-card-static bg-card mt-12">
-      <h2 className="text-2xl font-bold mb-2">Start testing webhooks in under a minute</h2>
+      <h2 className="text-2xl font-bold mb-2">{heading}</h2>
       <p className="text-muted-foreground mb-5">
         Sign up with one click. No credit card, no setup wizard, no trial limits on core features.
       </p>

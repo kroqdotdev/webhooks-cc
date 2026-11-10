@@ -1,0 +1,12 @@
+{
+  "title": "Email testing pages, a welcome email and share previews",
+  "items": [
+    "New comparisons with Mailtrap, Mailosaur and MailSlurp, and an email testing section on the compare page",
+    "The email testing page and the Playwright guide are rewritten around signup, magic link, one-time code and password reset tests",
+    "New accounts get one getting-started email with the CLI, MCP and SDK setup",
+    "Compare, provider and blog pages show their own image when a link is shared",
+    "The DocuSign page lists Connect's events and explains its HMAC signatures, and the smee.io comparison says what smee.io is and how to use it",
+    "The API reference and openapi.yaml cover destinations, previews, replay, raw email, attachments, claims and team endpoints",
+    "A page that picked up code from an earlier release out of the browser's cache now reloads itself once instead of showing an error"
+  ]
+}

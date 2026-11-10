@@ -711,7 +711,22 @@ export default async function Home() {
               {
                 href: "/compare/smee",
                 title: "vs Smee.io",
-                summary: "Full testing platform vs GitHub's lightweight webhook proxy.",
+                summary: "Full testing platform vs the Probot team's lightweight webhook proxy.",
+              },
+              {
+                href: "/compare/mailtrap",
+                title: "vs Mailtrap",
+                summary: "Real addresses with waits and code extraction vs a sandbox SMTP inbox.",
+              },
+              {
+                href: "/compare/mailosaur",
+                title: "vs Mailosaur",
+                summary: "Email testing on a free plan vs a paid email and SMS testing suite.",
+              },
+              {
+                href: "/compare/mailslurp",
+                title: "vs MailSlurp",
+                summary: "One tool for webhooks and email vs an inbox API with SMS and IMAP.",
               },
             ].map((item) => (
               <Link

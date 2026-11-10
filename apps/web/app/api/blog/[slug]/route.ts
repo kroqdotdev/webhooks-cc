@@ -60,6 +60,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     after(() => {
       revalidatePath("/blog", "page");
       revalidatePath(`/blog/${slug}`, "page");
+      // The share image may hold a 404 cached from before the post was live.
+      revalidatePath(`/blog/${slug}/opengraph-image`);
     });
     return Response.json(result);
   } catch (error) {
@@ -86,6 +88,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
     after(() => {
       revalidatePath("/blog", "page");
       revalidatePath(`/blog/${slug}`, "page");
+      // The share image may hold a 404 cached from before the post was live.
+      revalidatePath(`/blog/${slug}/opengraph-image`);
     });
     return Response.json(result);
   } catch (error) {

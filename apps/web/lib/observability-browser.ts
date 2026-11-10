@@ -59,20 +59,41 @@ export function isHydrationMismatch(event: Event): boolean {
   );
 }
 
-/** True if an error indicates a missing or failed chunk/module (e.g. stale tab after deploy). */
+/**
+ * A lazy component whose module had no such export. With one build in the tab
+ * that cannot happen (the build would have failed), so it means two builds
+ * are mixed: Turbopack keeps the first factory it sees for a module id, and
+ * an older build's copy of the module came first.
+ */
+const LAZY_RESOLVED_TO_NOTHING =
+  /Minified React error #306\b|Lazy element type must resolve to a class or function/;
+
+/** How long a #306 reload waits so the error report can be sent first. */
+const REPORT_GRACE_MS = 2000;
+
+/**
+ * True if an error says the tab holds code from more than one build, or could
+ * not load a chunk: a tab left open across a deploy, or a previous build's
+ * payload from the browser's HTTP cache whose chunks loaded before this
+ * build's. Trying again cannot help, since the module registry and a lazy
+ * component both keep what they got; a reload does.
+ */
 export function isChunkLoadError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const err = error as { name?: string; message?: string };
+  const message = err.message ?? "";
   return (
     err.name === "ChunkLoadError" ||
-    /Loading (CSS )?chunk [\w-]+ failed/.test(err.message ?? "") ||
-    /the module factory is not available/.test(err.message ?? "")
+    /Loading (CSS )?chunk [\w-]+ failed/.test(message) ||
+    /the module factory is not available/.test(message) ||
+    LAZY_RESOLVED_TO_NOTHING.test(message)
   );
 }
 
 /**
  * Attempts a one-time hard reload to fetch fresh assets if the error is a
- * stale-tab chunk/module load failure. Throttled to avoid reload loops.
+ * chunk/module load failure or a sign of mixed builds. Throttled to avoid
+ * reload loops.
  */
 export function tryReloadOnChunkError(error: unknown): boolean {
   if (!isChunkLoadError(error) || typeof window === "undefined") return false;
@@ -83,7 +104,14 @@ export function tryReloadOnChunkError(error: unknown): boolean {
     const now = Date.now();
     if (Number.isNaN(lastTs) || now - lastTs > 15_000) {
       window.sessionStorage?.setItem(key, String(now));
-      window.location.reload();
+      // #306 can also be a real bug within one build, so give its report a
+      // moment to leave before the page goes; a failed chunk reloads at once.
+      const message = (error as { message?: string }).message ?? "";
+      if (LAZY_RESOLVED_TO_NOTHING.test(message)) {
+        window.setTimeout(() => window.location.reload(), REPORT_GRACE_MS);
+      } else {
+        window.location.reload();
+      }
       return true;
     }
   } catch {

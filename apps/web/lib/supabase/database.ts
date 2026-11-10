@@ -655,6 +655,8 @@ export interface Database {
           created_at: string;
           quota_email_sent_at: string | null;
           quota_email_claimed_at: string | null;
+          welcome_email_sent_at: string | null;
+          welcome_email_claimed_at: string | null;
           emails_used: number;
           emails_period_start: string | null;
           block_requests: number;
@@ -717,6 +719,8 @@ export interface Database {
           created_at?: string;
           quota_email_sent_at?: string | null;
           quota_email_claimed_at?: string | null;
+          welcome_email_sent_at?: string | null;
+          welcome_email_claimed_at?: string | null;
           emails_used?: number;
           emails_period_start?: string | null;
           block_requests?: number;
@@ -774,6 +778,8 @@ export interface Database {
           tunnels_suspended?: boolean;
           quota_email_sent_at?: string | null;
           quota_email_claimed_at?: string | null;
+          welcome_email_sent_at?: string | null;
+          welcome_email_claimed_at?: string | null;
           emails_used?: number;
           emails_period_start?: string | null;
           block_requests?: number;
@@ -3003,6 +3009,14 @@ export interface Database {
       mark_quota_email_sent: {
         Args: { p_user_id: string };
         Returns: undefined;
+      };
+      claim_welcome_email_users: {
+        Args: { p_limit?: number };
+        Returns: Array<{ id: string; email: string; home_site: string }>;
+      };
+      mark_welcome_email_sent: {
+        Args: { p_user_id: string };
+        Returns: boolean;
       };
       cleanup_expired_request_shares: {
         Args: Record<string, never>;

@@ -35,7 +35,11 @@ export async function POST(request: Request) {
 
   try {
     const result = await createBlogPost(parsed.data);
-    after(() => revalidatePath("/blog", "page"));
+    after(() => {
+      revalidatePath("/blog", "page");
+      // The share image may hold a 404 cached from before the post existed.
+      revalidatePath(`/blog/${parsed.data.slug}/opengraph-image`);
+    });
     return Response.json(result, { status: 201 });
   } catch (error) {
     if (isSlugExistsError(error)) {

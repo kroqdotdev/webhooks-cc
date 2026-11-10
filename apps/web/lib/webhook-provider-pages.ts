@@ -213,7 +213,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "DocuSign Connect sends webhooks as envelopes are sent, viewed, signed, completed, or declined.",
     configHint: "DocuSign Admin → Integrations → Connect → Add Configuration",
     category: "Identity & data",
-    updated: "2026-10-20",
+    updated: "2026-11-10",
   },
   adyen: {
     blurb:
@@ -710,21 +710,27 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
  * a webhook tester. Facts come from the provider's own docs, linked in
  * `reference.source`.
  */
+export interface ProviderReference {
+  heading: string;
+  intro: string;
+  columns: readonly [string, string];
+  /** The column holding literal values (card numbers, event names), set in monospace. */
+  codeColumn?: 0 | 1;
+  rows: readonly (readonly [string, string])[];
+  source: { label: string; href: string };
+}
+
 export interface ProviderSeo {
+  /** Replaces the page heading ("Test {label} webhooks") when the searches ask for more. */
+  h1?: string;
   /** Replaces the generated title. */
   title?: string;
   /** Replaces the generated meta description. */
   description?: string;
   /** A table shown above the FAQ, for facts searchers look up (test cards, event names). */
-  reference?: {
-    heading: string;
-    intro: string;
-    columns: readonly [string, string];
-    /** The column holding literal values (card numbers, event names), set in monospace. */
-    codeColumn: 0 | 1;
-    rows: readonly (readonly [string, string])[];
-    source: { label: string; href: string };
-  };
+  reference?: ProviderReference;
+  /** Further tables shown after `reference`, each with its own source. */
+  moreReferences?: readonly ProviderReference[];
   /** Questions added to the page FAQ and its FAQPage schema. */
   faq?: readonly { question: string; answer: string }[];
 }
@@ -886,38 +892,147 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
   },
   docusign: {
     title: "DocuSign Connect Webhooks: Events, HMAC & Best Practices",
+    h1: "DocuSign Connect webhooks: events, HMAC and best practices",
     description:
-      "Capture DocuSign Connect webhook events (envelope-sent, envelope-completed), verify x-docusign-signature-1 HMAC headers, and follow listener best practices.",
+      "DocuSign Connect events, X-DocuSign-Signature-1 HMAC verification, retry schedule and listener best practices, plus a free endpoint to capture every delivery.",
     reference: {
-      heading: "Common DocuSign Connect webhook events",
+      heading: "DocuSign Connect webhook events",
       intro:
-        "DocuSign Connect JSON SIM (Connect 2.0) notifications send an event string alongside envelopeId and data. Configure these events under DocuSign Admin -> Connect.",
-      columns: ["Event", "When it fires"],
+        "DocuSign Connect is DocuSign's webhook service. In the recommended JSON SIM format (Connect 2.0) every message carries an event string, a uri, retryCount, configurationId, apiVersion and generatedDateTime, and a data object holding accountId, envelopeId and whatever else the configuration subscribes to. These are the envelope and recipient events; the docs also list template, Workflow Builder, notary and other events.",
+      columns: ["Event", "When DocuSign sends it"],
       codeColumn: 0,
       rows: [
-        ["envelope-sent", "Envelope has been sent to at least one recipient"],
-        ["envelope-delivered", "All recipients have opened the envelope"],
-        ["envelope-completed", "All recipients have signed and completed the envelope"],
-        ["envelope-declined", "A recipient declined to sign the envelope"],
-        ["envelope-voided", "The sender voided the envelope"],
-        ["recipient-completed", "An individual recipient finished signing"],
-        ["recipient-authenticationfailed", "A recipient failed an identity or access-code check"],
+        [
+          "envelope-created",
+          "An envelope is created in the DocuSign UI or its status is set to created through the API (JSON SIM only)",
+        ],
+        [
+          "envelope-sent",
+          "The email with the envelope link goes to at least one recipient, or it is a recipient's turn in embedded signing",
+        ],
+        [
+          "envelope-delivered",
+          "All recipients have opened the envelope on the DocuSign signing site (not an email delivery)",
+        ],
+        ["envelope-completed", "All recipients have completed the envelope"],
+        ["envelope-declined", "One of the recipients declined the envelope"],
+        [
+          "envelope-voided",
+          "The sender voided the envelope or it expired; the void reason says which",
+        ],
+        ["envelope-resent", "The envelope is resent in the UI or through the API (JSON SIM only)"],
+        [
+          "envelope-corrected",
+          "The envelope is corrected in the UI or through the API (JSON SIM only)",
+        ],
+        [
+          "envelope-reminder-sent",
+          "The automated reminders feature sends a reminder for the envelope (JSON SIM only)",
+        ],
+        ["envelope-discard", "A created or draft envelope is deleted or discarded (JSON SIM only)"],
+        ["envelope-deleted", "An envelope that was already sent is deleted (JSON SIM only)"],
+        ["envelope-purge", "The envelope is queued to be purged (JSON SIM only)"],
+        [
+          "envelope-removed",
+          "DocuSign permanently deletes an envelope after its retention period (JSON SIM only)",
+        ],
+        ["recipient-sent", "The recipient is emailed that it is their turn to sign"],
+        [
+          "recipient-delivered",
+          "The recipient has viewed the documents on the DocuSign signing site",
+        ],
+        [
+          "recipient-completed",
+          "The recipient has completed their actions for the envelope, typically by signing",
+        ],
+        ["recipient-declined", "The recipient declines to sign"],
+        [
+          "recipient-authenticationfailed",
+          "The recipient fails an authentication check, after every allowed attempt",
+        ],
+        [
+          "recipient-autoresponded",
+          "DocuSign is told that email delivery to the recipient failed, for example a bad address or an auto-reply",
+        ],
+        ["recipient-resent", "The envelope is resent to a recipient (JSON SIM only)"],
+        ["recipient-reassign", "A recipient reassigns the envelope (JSON SIM only)"],
+        [
+          "recipient-delegate",
+          "A delegated signer is sent the envelope under a delegation rule (JSON SIM only)",
+        ],
+        ["recipient-finish-later", "The recipient selects Finish Later (JSON SIM only)"],
       ],
       source: {
-        label: "DocuSign Connect webhook docs",
-        href: "https://developers.docusign.com/platform/webhooks/connect/",
+        label: "DocuSign webhook event triggers",
+        href: "https://developers.docusign.com/platform/webhooks/connect/event-triggers/",
       },
     },
+    moreReferences: [
+      {
+        heading: "DocuSign Connect HMAC signature",
+        intro:
+          "With Include HMAC Signature turned on for a Connect configuration, every message carries one signature header per HMAC key defined under Connect Keys. Header names are case-insensitive, so your framework may show them as x-docusign-signature-1.",
+        columns: ["Detail", "What DocuSign documents"],
+        rows: [
+          [
+            "Headers",
+            "X-DocuSign-Signature-1, X-DocuSign-Signature-2 and so on, one for each HMAC key on the account",
+          ],
+          ["Algorithm", "HMAC with SHA-256, keyed with the HMAC secret key"],
+          ["Signed content", "The entire body of the POST request as bytes, line endings included"],
+          ["Encoding", "The hash is Base64-encoded"],
+          [
+            "Passing rule",
+            "A hash computed with one of your keys must exactly match its header; one match is enough, and with no match the message should not be trusted",
+          ],
+          ["Comparison", "Use a constant-time comparison, as for any HMAC"],
+          [
+            "When it fails",
+            "Read the body with the right string encoding, and remove any double quote characters from the secret before computing",
+          ],
+        ],
+        source: {
+          label: "DocuSign: How to validate an HMAC signature",
+          href: "https://developers.docusign.com/platform/webhooks/connect/validate/",
+        },
+      },
+    ],
     faq: [
+      {
+        question: "What is DocuSign Connect?",
+        answer:
+          "DocuSign Connect is DocuSign's webhook service: when an event you subscribed to happens in an eSignature workflow, such as an envelope being sent or completed, Connect sends an HTTPS POST to your listener, a web service that must be reachable on the public internet. DocuSign recommends it over polling, which it limits to one status check per envelope every 15 minutes, and Connect messages do not count against API request limits.",
+      },
+      {
+        question: "How do I verify the DocuSign webhook HMAC signature?",
+        answer:
+          "Add a secret key under Connect Keys in DocuSign Admin and tick Include HMAC Signature on the Connect configuration. For each delivery, compute HMAC-SHA256 over the entire raw request body with that key, Base64-encode the result, and compare it in constant time with the X-DocuSign-Signature-1 header (X-DocuSign-Signature-2 for a second key, and so on). One match is enough. On webhooks.cc, add your first key to the endpoint and every captured delivery is marked valid or invalid against X-DocuSign-Signature-1.",
+      },
+      {
+        question: "How many DocuSign HMAC keys can I have, and how do I rotate them?",
+        answer:
+          "An account can define up to one hundred HMAC keys, and each message gets one signature header per key, though DocuSign recommends using one key when possible. Removing a key shifts every key below it up a number, so key 3 becomes key 2 and the header numbers move with them. To rotate, DocuSign recommends stopping your app, deleting the old key, creating a new one, adding it to your app and starting it again. A key is shown in full only when it is created.",
+      },
       {
         question: "What are the DocuSign webhook listener best practices?",
         answer:
-          "Acknowledge every delivery with HTTP 200 immediately before running slow tasks or downloading signed PDFs, verify the x-docusign-signature-1 base64 HMAC-SHA256 header against the raw body, deduplicate retries using envelopeId plus event timestamp, and omit Include Documents from the webhook payload so your worker fetches PDFs asynchronously via the eSignature REST API.",
+          "DocuSign's guidance: always answer with a 200, even for messages you do not need; respond within five seconds; queue each message and process it asynchronously rather than inside the request; keep the listener available 99% of the time or put a cloud queue in front of it; use the JSON SIM format; and do not include documents on every event, since most apps only need the final completed document. For production, DocuSign recommends securing messages with both HMAC and OAuth for Connect. Because a failed delivery is retried, make your handler idempotent, for example by keying on the envelopeId, event and generatedDateTime of each message.",
       },
       {
-        question: "How do I verify x-docusign-signature-1?",
+        question: "What is the DocuSign Connect retry schedule?",
         answer:
-          "Enable HMAC security in your DocuSign Connect configuration and copy the HMAC key. Compute a base64-encoded HMAC-SHA256 digest of the raw UTF-8 request body using that key and compare it in constant time with x-docusign-signature-1.",
+          "When delivery of a message fails, Connect retries with exponential back-off: after five minutes, then 10, 20 and 40 minutes, then one hour, two hours and one day later, and then once a day for a 15-day span. JSON SIM messages carry a retryCount field.",
+      },
+      {
+        question:
+          "What is the difference between account-level Connect and envelope-level eventNotification?",
+        answer:
+          "An account-level Connect configuration, made in DocuSign Admin or through the API, notifies your listener about the subscribed events for every envelope in the account or for chosen users, including envelopes sent from the DocuSign web and mobile apps; it is only available on specific DocuSign plans. Envelope-level Connect is set per envelope by adding an eventNotification object when your app creates the envelope through the eSignature API, so each envelope can ask for different events and data; it is available on all plans. DocuSign offers HMAC for every Connect configuration type; for envelope-level messages, Connect must be enabled on the account.",
+      },
+      {
+        question: "Does DocuSign Connect support mutual TLS?",
+        answer:
+          "Yes. Your listener can request DocuSign's client certificate during the TLS handshake and authorize it, in both XML and JSON modes. DocuSign notes that mutual TLS is often difficult to configure and must be updated when its certificate is renewed, about once a year, and recommends HMAC over mutual TLS for access control because HMAC also proves the message was not changed.",
       },
     ],
   },

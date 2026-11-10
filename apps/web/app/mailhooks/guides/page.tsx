@@ -41,6 +41,12 @@ const GUIDES = [
     summary: "Start a Zap or a Make scenario from every email an endpoint receives.",
   },
   {
+    path: "/docs/guides/test-signup-emails-playwright",
+    title: "Test emails in Playwright",
+    summary:
+      "Sign up with a real address per test, wait for the email your app sends, and finish the flow with its code or magic link.",
+  },
+  {
     path: "/docs/plans-limits",
     title: "Plans and limits",
     summary: "What each plan includes: emails, parsed pages, layouts, AI assists and retention.",

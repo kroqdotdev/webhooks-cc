@@ -67,7 +67,9 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Plans and limits: https://webhooks.cc/docs/plans-limits
 - Teams: https://webhooks.cc/for-teams and https://webhooks.cc/docs/teams
 - Zapier and Make (the apps, in review, and the catch hook that works today): https://webhooks.cc/docs/zapier-make
-- Email testing overview: https://webhooks.cc/email-testing
+- Email testing overview (signup, magic link and password reset emails in Playwright, Cypress and CI): https://webhooks.cc/email-testing
+- Playwright email testing guide: https://webhooks.cc/docs/guides/test-signup-emails-playwright
+- Email testing tools compared (Mailtrap, Mailosaur, MailSlurp): https://webhooks.cc/compare#email-testing-tools
 - Email to webhook overview: https://webhooks.cc/email-to-webhook
 - mailhooks.cc, the mail-first site (same account, endpoints and plans): https://mailhooks.cc, with ready-made layouts at https://mailhooks.cc/parse
 - Email to Google Sheets (a row per email or per line item): https://mailhooks.cc/google-sheets
@@ -75,8 +77,8 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Custom inbound domains (Business): https://mailhooks.cc/custom-domains
 - AI setup for layouts and fields: https://mailhooks.cc/ai-setup
 - Zapier and Make: https://mailhooks.cc/integrations
-- REST API: https://webhooks.cc/docs/api
-- OpenAPI spec: https://webhooks.cc/openapi.yaml
+- REST API (endpoints, requests, destinations and deliveries, replay, alerts, layout and response previews, raw email and attachment downloads, teams): https://webhooks.cc/docs/api
+- OpenAPI spec (every route an API key can call, with request and response schemas): https://webhooks.cc/openapi.yaml
 - Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents get a sandbox and a credential without an account
 - Agent Skills discovery: https://webhooks.cc/.well-known/agent-skills/index.json, serving the webhook-testing skill
 - API catalog (RFC 9727): https://webhooks.cc/.well-known/api-catalog
