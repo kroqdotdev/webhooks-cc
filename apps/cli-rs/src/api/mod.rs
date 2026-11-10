@@ -3,6 +3,7 @@ pub mod device_auth;
 pub mod endpoints;
 pub mod requests;
 pub mod send;
+pub mod shares;
 pub mod stream;
 pub mod teams;
 pub mod update;
@@ -177,6 +178,22 @@ impl ApiClient {
             );
         }
         Ok(headers)
+    }
+
+    /// The bearer this client sends, for a connection made outside reqwest
+    /// (the tunnel's WebSocket): the login's key, or an agent connection's
+    /// access token, exchanged again when `refresh` or when it ran out.
+    pub async fn bearer_token(&self, refresh: bool) -> Result<Option<String>> {
+        Ok(match &self.bearer {
+            Bearer::None => None,
+            Bearer::Token(token) => Some(token.clone()),
+            Bearer::Agent(session) => Some(session.token(refresh).await?),
+        })
+    }
+
+    /// Whether a refused bearer is worth one more try with a new token.
+    pub fn bearer_refreshes(&self) -> bool {
+        self.can_refresh()
     }
 
     /// The headers without a bearer, for the routes that take none (the

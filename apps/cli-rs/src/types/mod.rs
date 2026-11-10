@@ -1,3 +1,6 @@
+mod shares;
+pub use shares::*;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -824,7 +827,8 @@ mod tests {
 
     #[test]
     fn test_deserialize_endpoint_list() {
-        let json = r#"{"owned": [{"id":"1","slug":"a","createdAt":123,"sharedWith":[]}], "shared": []}"#;
+        let json =
+            r#"{"owned": [{"id":"1","slug":"a","createdAt":123,"sharedWith":[]}], "shared": []}"#;
         let list: EndpointList = serde_json::from_str(json).unwrap();
         assert_eq!(list.owned.len(), 1);
         assert_eq!(list.owned[0].slug, "a");
@@ -926,7 +930,10 @@ mod tests {
             delay: None,
         };
         let json = serde_json::to_string(&mock).unwrap();
-        assert!(!json.contains("delay"), "delay should be skipped when None: {json}");
+        assert!(
+            !json.contains("delay"),
+            "delay should be skipped when None: {json}"
+        );
     }
 
     #[test]
@@ -937,7 +944,10 @@ mod tests {
             email: "test@example.com".into(),
         };
         let debug = format!("{:?}", token);
-        assert!(!debug.contains("secret-key-123"), "token should be redacted in Debug: {debug}");
+        assert!(
+            !debug.contains("secret-key-123"),
+            "token should be redacted in Debug: {debug}"
+        );
         assert!(debug.contains("[REDACTED]"));
     }
 
@@ -991,7 +1001,10 @@ mod email_tests {
         let email = request.email.unwrap();
         assert_eq!(email.subject.as_deref(), Some("Confirm your email"));
         assert_eq!(email.tag.as_deref(), Some("run"));
-        assert_eq!(email.from[0].to_string(), "Tidewater <no-reply@tidewater.app>");
+        assert_eq!(
+            email.from[0].to_string(),
+            "Tidewater <no-reply@tidewater.app>"
+        );
         assert_eq!(email.attachments[0].size, 10);
     }
 
@@ -1012,7 +1025,10 @@ mod email_tests {
 
     #[test]
     fn address_without_a_name_prints_the_address() {
-        let address = EmailAddress { name: None, address: Some("a@b.c".into()) };
+        let address = EmailAddress {
+            name: None,
+            address: Some("a@b.c".into()),
+        };
         assert_eq!(address.to_string(), "a@b.c");
     }
 

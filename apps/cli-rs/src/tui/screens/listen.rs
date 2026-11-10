@@ -1,18 +1,18 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Row, Table, TableState},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
 use crate::api::stream::join_stream;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::request_list::{RequestList, RequestListState};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 use crate::types::{Endpoint, SseEvent, favorites_first};
 
 use super::{Action, Message, Screen, ScreenId, favorite_marker};
@@ -56,7 +56,6 @@ impl ListenScreen {
             tick: 0,
         }
     }
-
 }
 
 impl Screen for ListenScreen {
@@ -82,7 +81,9 @@ impl Screen for ListenScreen {
                     return None;
                 }
                 if keys::is_enter(key) {
-                    if let Some(i) = self.table_state.selected() && let Some(ep) = self.endpoints.get(i) {
+                    if let Some(i) = self.table_state.selected()
+                        && let Some(ep) = self.endpoints.get(i)
+                    {
                         self.slug = Some(ep.slug.clone());
                         self.state = State::Connecting;
                         self.start_stream();
@@ -102,7 +103,9 @@ impl Screen for ListenScreen {
                     self.requests.select_next();
                     return None;
                 }
-                if keys::is_enter(key) && let Some(req) = self.requests.selected_item() {
+                if keys::is_enter(key)
+                    && let Some(req) = self.requests.selected_item()
+                {
                     return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
                 }
             }
@@ -208,7 +211,7 @@ impl Screen for ListenScreen {
             State::Streaming => {
                 let chunks = Layout::vertical([
                     Constraint::Length(3), // Info
-                    Constraint::Min(8),   // Request list
+                    Constraint::Min(8),    // Request list
                 ])
                 .split(area);
 

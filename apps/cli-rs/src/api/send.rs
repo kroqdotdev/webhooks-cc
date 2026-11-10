@@ -19,10 +19,9 @@ impl ApiClient {
         headers: &std::collections::HashMap<String, String>,
         body: Option<&str>,
     ) -> Result<SendResponse> {
-        let mut req_builder = self.http.request(
-            method.parse().unwrap_or(reqwest::Method::POST),
-            url,
-        );
+        let mut req_builder = self
+            .http
+            .request(method.parse().unwrap_or(reqwest::Method::POST), url);
 
         for (k, v) in headers {
             req_builder = req_builder.header(k.as_str(), v.as_str());

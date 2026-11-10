@@ -1,10 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph},
-    Frame,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,10 +12,10 @@ use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
 use crate::api::stream::join_stream;
-use crate::tunnel::{parse_target, EmailOptions, Tunnel};
-use crate::tui::{keys, theme};
 use crate::tui::widgets::request_list::{RequestList, RequestListState};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
+use crate::tunnel::{EmailOptions, Tunnel, parse_target};
 use crate::types::{CreateEndpointRequest, ForwardResult, SseEvent};
 
 use super::{Action, Message, Screen, ScreenId};
@@ -87,7 +87,14 @@ impl Screen for TunnelScreen {
                         return None;
                     }
                     KeyCode::Esc => return Some(Action::NavigateBack),
-                    KeyCode::Char(c) if c.is_ascii_alphanumeric() || c == '/' || c == '-' || c == '_' || c == '.' || c == ':' => {
+                    KeyCode::Char(c)
+                        if c.is_ascii_alphanumeric()
+                            || c == '/'
+                            || c == '-'
+                            || c == '_'
+                            || c == '.'
+                            || c == ':' =>
+                    {
                         self.input.push(c);
                         return None;
                     }
@@ -122,7 +129,9 @@ impl Screen for TunnelScreen {
                     self.requests.select_next();
                     return None;
                 }
-                if keys::is_enter(key) && let Some(req) = self.requests.selected_item() {
+                if keys::is_enter(key)
+                    && let Some(req) = self.requests.selected_item()
+                {
                     return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
                 }
             }
@@ -272,7 +281,7 @@ impl Screen for TunnelScreen {
             State::Active => {
                 let chunks = Layout::vertical([
                     Constraint::Length(4), // Connection info
-                    Constraint::Min(8),   // Request list
+                    Constraint::Min(8),    // Request list
                 ])
                 .split(area);
 
@@ -315,7 +324,10 @@ impl Screen for TunnelScreen {
                         Span::styled(msg.as_str(), theme::style_dim()),
                     ]),
                     Line::from(""),
-                    Line::from(Span::styled("  Press Enter to try again.", theme::style_muted())),
+                    Line::from(Span::styled(
+                        "  Press Enter to try again.",
+                        theme::style_muted(),
+                    )),
                 ]);
                 frame.render_widget(p, area);
             }

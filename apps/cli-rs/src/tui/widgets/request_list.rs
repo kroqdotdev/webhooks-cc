@@ -123,7 +123,11 @@ impl StatefulWidget for RequestList<'_> {
 
             // Time
             let time = chrono::DateTime::from_timestamp_millis(req.received_at)
-                .map(|dt| dt.with_timezone(&chrono::Local).format("%H:%M:%S").to_string())
+                .map(|dt| {
+                    dt.with_timezone(&chrono::Local)
+                        .format("%H:%M:%S")
+                        .to_string()
+                })
                 .unwrap_or_else(|| "??:??:??".to_string());
 
             // Method with color

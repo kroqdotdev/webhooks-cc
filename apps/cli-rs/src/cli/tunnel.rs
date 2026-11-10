@@ -8,6 +8,7 @@ use crate::cli::output::{
     bold, dim, green, method_color, print_reconnected, print_reconnecting, red, sanitize,
     sanitize_line,
 };
+use crate::share::{self, Kind, Rewrite, Session, Update};
 use crate::tunnel::{EMAIL_SKIPPED, EmailOptions, Tunnel, email_target_url, parse_target};
 use crate::types::{CapturedRequest, CreateEndpointRequest, EmailFormat, ForwardResult, SseEvent};
 
@@ -26,6 +27,7 @@ pub fn email_options(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     client: &ApiClient,
     target: &str,
@@ -33,9 +35,15 @@ pub async fn run(
     ephemeral: bool,
     headers: Vec<String>,
     emails: Option<EmailOptions>,
+    live: bool,
     json: bool,
 ) -> Result<()> {
     let target_url = parse_target(target)?;
+    let live_target = if live {
+        Some(live_target(target)?)
+    } else {
+        None
+    };
 
     let mut extra_headers = HashMap::new();
     for h in &headers {
@@ -88,12 +96,20 @@ pub async fn run(
                 "email_address": email_address,
                 "email_target": email_url,
                 "email_format": email_format.map(EmailFormat::as_str),
+                "live": live,
             })
         );
     } else {
         println!("\n  {} Tunnel active", green("●"));
         println!("  {} {}", dim("Webhook URL:"), bold(&webhook_url));
         println!("  {} {}", dim("Forwarding to:"), bold(&target_url));
+        if live {
+            println!(
+                "  {} {}",
+                dim("Live:"),
+                dim("senders get your app's answer while whk runs")
+            );
+        }
         match (&emails, &email_url) {
             (Some(options), Some(url)) => {
                 if let Some(ref address) = email_address {
@@ -110,6 +126,34 @@ pub async fn run(
         }
         println!("  {}\n", dim("Press Ctrl+C to stop."));
     }
+
+    // --live: the edge relays each HTTP capture down this session while the
+    // sender waits; the SSE stream below then only brings emails.
+    let (live_tx, mut live_rx) = mpsc::channel::<Update>(256);
+    let mut live_task = live_target.map(|(port, base_path)| {
+        let session = Session {
+            tunnel_url: share::tunnel_url(),
+            api: client.clone(),
+            kind: Kind::Live {
+                endpoint: slug.clone(),
+            },
+            port,
+            rewrite: Some(Rewrite {
+                base_path,
+                headers: extra_headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            }),
+            client: share::client_name(),
+        };
+        tokio::spawn(async move {
+            let mut send = |update: Update| {
+                let _ = live_tx.try_send(update);
+            };
+            share::run(&session, &mut send).await
+        })
+    });
 
     let mut tunnel = Tunnel::new(target_url, extra_headers)?;
     if let Some(options) = emails {
@@ -133,6 +177,8 @@ pub async fn run(
             event = rx.recv() => {
                 let Some(event) = event else { break };
                 match event {
+                    // --live: HTTP captures came through the edge already.
+                    SseEvent::Request(req) if live && !req.is_email() => {}
                     SseEvent::Request(req) => {
                         // --no-email: the email is listed, not posted.
                         if req.is_email() && email_format.is_none() {
@@ -189,11 +235,32 @@ pub async fn run(
                     SseEvent::Timeout => {}
                 }
             }
+            update = live_rx.recv(), if live_task.is_some() => {
+                if let Some(update) = update {
+                    show_live_update(update, json);
+                }
+            }
+            ended = async { live_task.as_mut().expect("guarded").await }, if live_task.is_some() => {
+                live_task = None;
+                // Show what the session said before it ended.
+                while let Ok(update) = live_rx.try_recv() {
+                    show_live_update(update, json);
+                }
+                match ended {
+                    Ok(Ok(reason)) => live_stopped(json, &reason),
+                    Ok(Err(e)) => live_stopped(json, &format!("{e:#}")),
+                    Err(e) => live_stopped(json, &format!("{e}")),
+                }
+                break;
+            }
             _ = tokio::signal::ctrl_c() => {
                 interrupted = true;
                 break;
             }
         }
+    }
+    if let Some(task) = live_task {
+        task.abort();
     }
 
     // Make any in-flight send in the stream task fail fast, then collect its result.
@@ -222,6 +289,102 @@ pub async fn run(
     }
 
     stream_result
+}
+
+/// The port and base path of a `--live` target ("8080" or
+/// "8080/api/webhooks"): relayed requests go to that port, under that path.
+pub fn live_target(target: &str) -> Result<(u16, String)> {
+    let (port, path) = match target.find('/') {
+        Some(pos) => (&target[..pos], &target[pos..]),
+        None => (target, ""),
+    };
+    let port: u16 = port.parse().ok().filter(|p| *p != 0).ok_or_else(|| {
+        anyhow::anyhow!("--live needs a local port, such as `whk tunnel 3000 --live`")
+    })?;
+    Ok((port, path.trim_end_matches('/').to_string()))
+}
+
+/// What the live session said, as the tunnel shows it.
+fn show_live_update(update: Update, json: bool) {
+    match update {
+        Update::Ready { .. } => {
+            if json {
+                println!("{}", serde_json::json!({ "event": "live_connected" }));
+            } else {
+                println!("  {} {}", green("●"), dim("Live relay connected"));
+            }
+        }
+        Update::Reconnected => {
+            if json {
+                println!("{}", serde_json::json!({ "event": "live_reconnected" }));
+            } else {
+                print_reconnected(false);
+            }
+        }
+        Update::Request {
+            method,
+            path,
+            status,
+            ms,
+        } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "event": "relayed",
+                        "method": method,
+                        "path": path,
+                        "status": status,
+                        "duration_ms": ms,
+                    })
+                );
+            } else {
+                println!(
+                    "{}",
+                    crate::cli::share::request_line(&method, &path, status, ms)
+                );
+            }
+        }
+        Update::Notice(text) => {
+            if json {
+                println!("{}", serde_json::json!({ "event": "notice", "text": text }));
+            } else {
+                println!("  {} {}", dim("●"), sanitize(&text));
+            }
+        }
+        Update::Retrying { message, seconds } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({ "event": "live_retrying", "message": message, "seconds": seconds })
+                );
+            } else {
+                println!(
+                    "  {} {}",
+                    dim("●"),
+                    dim(&format!(
+                        "Live relay: {} Trying again in {seconds}s.",
+                        sanitize_line(&message)
+                    ))
+                );
+            }
+        }
+    }
+}
+
+fn live_stopped(json: bool, reason: &str) {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "event": "live_stopped", "reason": reason })
+        );
+    } else {
+        println!(
+            "\n  {} Live relay stopped: {}",
+            red("●"),
+            sanitize_line(reason)
+        );
+    }
 }
 
 /// How emails are posted, for the banner.
@@ -302,6 +465,17 @@ mod tests {
             duration: Duration::from_millis(12),
             error: None,
         }
+    }
+
+    #[test]
+    fn live_targets_are_a_port_and_a_base_path() {
+        assert_eq!(live_target("3000").unwrap(), (3000, String::new()));
+        assert_eq!(
+            live_target("8080/api/webhooks/").unwrap(),
+            (8080, "/api/webhooks".to_string())
+        );
+        assert!(live_target("0").is_err());
+        assert!(live_target("abc").is_err());
     }
 
     #[test]

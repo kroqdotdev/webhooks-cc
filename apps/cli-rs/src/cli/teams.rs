@@ -32,7 +32,10 @@ pub fn resolve_team<'a>(teams: &'a [Team], needle: &str) -> Result<&'a Team> {
         many => anyhow::bail!(
             "{} teams are named {needle:?}; pass the id instead ({})",
             many.len(),
-            many.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")
+            many.iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
     }
 }
@@ -87,12 +90,18 @@ fn print_invite_table(invites: &[TeamInvite], show_team: bool) {
     if show_team {
         println!(
             "  {}",
-            dim(&format!("{:<24} {:<28} {:<20} {}", "TEAM", "FROM", "SENT", "INVITE ID"))
+            dim(&format!(
+                "{:<24} {:<28} {:<20} {}",
+                "TEAM", "FROM", "SENT", "INVITE ID"
+            ))
         );
     } else {
         println!(
             "  {}",
-            dim(&format!("{:<32} {:<28} {:<20} {}", "EMAIL", "FROM", "SENT", "INVITE ID"))
+            dim(&format!(
+                "{:<32} {:<28} {:<20} {}",
+                "EMAIL", "FROM", "SENT", "INVITE ID"
+            ))
         );
     }
     for invite in invites {
@@ -129,7 +138,10 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
     }
 
     if teams.is_empty() {
-        println!("  No teams. Create one at {}", bold("https://webhooks.cc/teams"));
+        println!(
+            "  No teams. Create one at {}",
+            bold("https://webhooks.cc/teams")
+        );
         return Ok(());
     }
 
@@ -149,7 +161,10 @@ pub async fn members(client: &ApiClient, team: &str, json: bool) -> Result<()> {
     println!("{} ({})", bold(&sanitize(&team.name)), status_label(&team));
     println!(
         "  {}",
-        dim(&format!("{:<32} {:<24} {:<8} {}", "EMAIL", "NAME", "ROLE", "JOINED"))
+        dim(&format!(
+            "{:<32} {:<24} {:<8} {}",
+            "EMAIL", "NAME", "ROLE", "JOINED"
+        ))
     );
     for member in &result.members {
         let joined = member
@@ -272,9 +287,16 @@ pub async fn invites(client: &ApiClient, json: bool) -> Result<()> {
 pub async fn accept(client: &ApiClient, invite_id: &str, json: bool) -> Result<()> {
     client.accept_invite(invite_id).await?;
     if json {
-        println!("{}", serde_json::json!({ "accepted": true, "inviteId": invite_id }));
+        println!(
+            "{}",
+            serde_json::json!({ "accepted": true, "inviteId": invite_id })
+        );
     } else {
-        println!("{} Invite accepted. Run {} to see the team.", green("✓"), bold("whk teams list"));
+        println!(
+            "{} Invite accepted. Run {} to see the team.",
+            green("✓"),
+            bold("whk teams list")
+        );
     }
     Ok(())
 }
@@ -282,7 +304,10 @@ pub async fn accept(client: &ApiClient, invite_id: &str, json: bool) -> Result<(
 pub async fn decline(client: &ApiClient, invite_id: &str, json: bool) -> Result<()> {
     client.decline_invite(invite_id).await?;
     if json {
-        println!("{}", serde_json::json!({ "declined": true, "inviteId": invite_id }));
+        println!(
+            "{}",
+            serde_json::json!({ "declined": true, "inviteId": invite_id })
+        );
     } else {
         println!("{} Invite declined.", green("✓"));
     }
@@ -332,8 +357,18 @@ mod tests {
     #[test]
     fn reports_unknown_and_empty_needles() {
         let teams = vec![team("abc", "Payments")];
-        assert!(resolve_team(&teams, "nope").unwrap_err().to_string().contains("no team"));
-        assert!(resolve_team(&teams, "   ").unwrap_err().to_string().contains("required"));
+        assert!(
+            resolve_team(&teams, "nope")
+                .unwrap_err()
+                .to_string()
+                .contains("no team")
+        );
+        assert!(
+            resolve_team(&teams, "   ")
+                .unwrap_err()
+                .to_string()
+                .contains("required")
+        );
     }
 
     #[test]

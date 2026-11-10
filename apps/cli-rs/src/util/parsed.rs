@@ -469,7 +469,10 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(texts(&parsed), ["No layout matched this email."]);
-        assert_eq!(parsed_lines(&parsed, MAX_TABLE_WIDTH)[0].spans[0].0, Tone::Danger);
+        assert_eq!(
+            parsed_lines(&parsed, MAX_TABLE_WIDTH)[0].spans[0].0,
+            Tone::Danger
+        );
     }
 
     #[test]
@@ -572,7 +575,10 @@ pub(crate) mod tests {
         assert_eq!(lines[2].width(), 18, "{}", lines[2]);
         // sku, qty and price fit in 18 columns with their gaps; colour is counted.
         assert_eq!(lines[4], "sku  qty  price");
-        assert!(lines.contains(&"1 more column in the JSON.".to_string()), "{lines:#?}");
+        assert!(
+            lines.contains(&"1 more column in the JSON.".to_string()),
+            "{lines:#?}"
+        );
     }
 
     #[test]

@@ -1,16 +1,16 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 use crate::types::{CapturedRequest, ParsedEmail};
 use crate::util::format::{format_bytes, format_timestamp};
 use crate::util::parsed::{Tone, parsed_lines};
@@ -152,7 +152,7 @@ impl Screen for RequestDetailScreen {
 
         let chunks = Layout::vertical([
             Constraint::Length(3), // Tab bar
-            Constraint::Min(0),   // Content
+            Constraint::Min(0),    // Content
         ])
         .split(area);
 
@@ -281,7 +281,10 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
 
     if !req.query_params.is_empty() {
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("  Query Parameters", theme::style_primary_bold())));
+        lines.push(Line::from(Span::styled(
+            "  Query Parameters",
+            theme::style_primary_bold(),
+        )));
         for (k, v) in &req.query_params {
             lines.push(Line::from(vec![
                 Span::styled(format!("    {k}"), theme::style_bold()),
@@ -301,8 +304,7 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
         Span::styled(&req.id, theme::style_dim()),
     ]));
 
-    let p = Paragraph::new(lines)
-        .scroll((scroll, 0));
+    let p = Paragraph::new(lines).scroll((scroll, 0));
     frame.render_widget(p, area);
 }
 
@@ -344,11 +346,13 @@ fn render_headers(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll: 
     }
 
     if lines.len() == 1 {
-        lines.push(Line::from(Span::styled("  No headers.", theme::style_muted())));
+        lines.push(Line::from(Span::styled(
+            "  No headers.",
+            theme::style_muted(),
+        )));
     }
 
-    let p = Paragraph::new(lines)
-        .scroll((scroll, 0));
+    let p = Paragraph::new(lines).scroll((scroll, 0));
     frame.render_widget(p, area);
 }
 
@@ -370,9 +374,11 @@ fn render_body(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll: u16
     };
 
     let lines: Vec<Line> = std::iter::once(Line::from(""))
-        .chain(formatted.lines().map(|l| {
-            Line::from(Span::styled(format!("  {l}"), theme::style()))
-        }))
+        .chain(
+            formatted
+                .lines()
+                .map(|l| Line::from(Span::styled(format!("  {l}"), theme::style()))),
+        )
         .collect();
 
     let block = Block::default().padding(Padding::new(0, 0, 0, 0));

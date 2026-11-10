@@ -1,17 +1,17 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::request_list::{RequestList, RequestListState};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 use crate::types::Endpoint;
 
 use super::{Action, Message, Screen, ScreenId};
@@ -124,7 +124,7 @@ impl Screen for EndpointDetailScreen {
 
         let chunks = Layout::vertical([
             Constraint::Length(6), // Endpoint info
-            Constraint::Min(8),   // Request list
+            Constraint::Min(8),    // Request list
         ])
         .split(area);
 
@@ -138,10 +138,7 @@ impl Screen for EndpointDetailScreen {
                 ]),
                 Line::from(vec![
                     Span::styled("  Name:      ", theme::style_muted()),
-                    Span::styled(
-                        ep.name.as_deref().unwrap_or("—"),
-                        theme::style(),
-                    ),
+                    Span::styled(ep.name.as_deref().unwrap_or("—"), theme::style()),
                 ]),
                 Line::from(vec![
                     Span::styled("  Requests:  ", theme::style_muted()),
@@ -153,7 +150,11 @@ impl Screen for EndpointDetailScreen {
                 lines.push(Line::from(vec![
                     Span::styled("  Mock:      ", theme::style_muted()),
                     Span::styled(
-                        format!("{} — {}", mock.status, mock.body.chars().take(40).collect::<String>()),
+                        format!(
+                            "{} — {}",
+                            mock.status,
+                            mock.body.chars().take(40).collect::<String>()
+                        ),
                         Style::default().fg(theme::ACCENT),
                     ),
                 ]));

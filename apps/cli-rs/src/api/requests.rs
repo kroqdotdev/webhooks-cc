@@ -59,14 +59,19 @@ impl ApiClient {
             format!("?{}", params.join("&"))
         };
         let resp = self
-            .get(&format!("/api/endpoints/{}/requests/paginated{qs}", encode(slug)))
+            .get(&format!(
+                "/api/endpoints/{}/requests/paginated{qs}",
+                encode(slug)
+            ))
             .await?;
         serde_json::from_str(&resp.body).context("failed to parse paginated request list")
     }
 
     pub async fn get_request(&self, request_id: &str) -> Result<CapturedRequest> {
         self.require_auth()?;
-        let resp = self.get(&format!("/api/requests/{}", encode(request_id))).await?;
+        let resp = self
+            .get(&format!("/api/requests/{}", encode(request_id)))
+            .await?;
         serde_json::from_str(&resp.body).context("failed to parse request")
     }
 
@@ -170,9 +175,7 @@ impl ApiClient {
         } else {
             format!("?{}", params.join("&"))
         };
-        let resp = self
-            .get(&format!("/api/search/requests/count{qs}"))
-            .await?;
+        let resp = self.get(&format!("/api/search/requests/count{qs}")).await?;
         serde_json::from_str(&resp.body).context("failed to parse count result")
     }
 
@@ -187,4 +190,3 @@ impl ApiClient {
         Ok(())
     }
 }
-

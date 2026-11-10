@@ -27,6 +27,16 @@ tokio-stream = "0.1"
 # HTTP
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 
+# Sharing (`whk share`, `whk tunnel --live`): the tunnel protocol shared
+# with the edge, over a WebSocket on rustls (ring, as reqwest uses).
+whk-tunnel = { path = "../../crates/tunnel" }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+yamux = "0.14"
+gethostname = "1"
+rpassword = "7"
+qrcode = { version = "0.14", default-features = false }
+
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -51,6 +61,7 @@ urlencoding = "2"
 
 [dev-dependencies]
 axum = "0.8"
+rqrr = "0.11"
 
 [profile.release]
 opt-level = "z"

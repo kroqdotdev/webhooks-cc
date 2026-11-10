@@ -1,16 +1,16 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 use crate::types::{SendResponse, SendWebhookRequest};
 
 use super::{Action, Message, Screen};
@@ -116,12 +116,18 @@ impl Screen for SendScreen {
                 }
                 match key.code {
                     KeyCode::Tab => {
-                        let idx = FIELDS.iter().position(|f| *f == self.active_field).unwrap_or(0);
+                        let idx = FIELDS
+                            .iter()
+                            .position(|f| *f == self.active_field)
+                            .unwrap_or(0);
                         self.active_field = FIELDS[(idx + 1) % FIELDS.len()];
                         return None;
                     }
                     KeyCode::BackTab => {
-                        let idx = FIELDS.iter().position(|f| *f == self.active_field).unwrap_or(0);
+                        let idx = FIELDS
+                            .iter()
+                            .position(|f| *f == self.active_field)
+                            .unwrap_or(0);
                         self.active_field = FIELDS[(idx + FIELDS.len() - 1) % FIELDS.len()];
                         return None;
                     }
@@ -164,7 +170,7 @@ impl Screen for SendScreen {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::vertical([
             Constraint::Length(9), // Form
-            Constraint::Min(0),   // Result
+            Constraint::Min(0),    // Result
         ])
         .split(area);
 
@@ -194,8 +200,16 @@ impl Screen for SendScreen {
             let is_active = editing && self.active_field == *field;
 
             let cursor = if is_active { "█" } else { "" };
-            let label_style = if is_active { theme::style_primary() } else { theme::style_muted() };
-            let value_style = if is_active { theme::style_bold() } else { theme::style() };
+            let label_style = if is_active {
+                theme::style_primary()
+            } else {
+                theme::style_muted()
+            };
+            let value_style = if is_active {
+                theme::style_bold()
+            } else {
+                theme::style()
+            };
 
             let line = Line::from(vec![
                 Span::styled(if is_active { "▸ " } else { "  " }, label_style),
@@ -212,11 +226,20 @@ impl Screen for SendScreen {
             State::Sending => {
                 frame.render_widget(
                     Spinner::new(self.tick, "Sending..."),
-                    Rect::new(chunks[1].x + 2, chunks[1].y + 1, chunks[1].width.saturating_sub(4), 1),
+                    Rect::new(
+                        chunks[1].x + 2,
+                        chunks[1].y + 1,
+                        chunks[1].width.saturating_sub(4),
+                        1,
+                    ),
                 );
             }
             State::Done(resp) => {
-                let status_color = if resp.status < 400 { theme::SUCCESS } else { theme::DANGER };
+                let status_color = if resp.status < 400 {
+                    theme::SUCCESS
+                } else {
+                    theme::DANGER
+                };
                 let mut lines = vec![
                     Line::from(""),
                     Line::from(vec![
@@ -228,12 +251,18 @@ impl Screen for SendScreen {
                     ]),
                 ];
 
-                if let Some(ref body) = resp.body && !body.is_empty() {
+                if let Some(ref body) = resp.body
+                    && !body.is_empty()
+                {
                     lines.push(Line::from(""));
-                    lines.push(Line::from(Span::styled("  Response:", theme::style_muted())));
+                    lines.push(Line::from(Span::styled(
+                        "  Response:",
+                        theme::style_muted(),
+                    )));
 
                     // Pretty-print JSON if possible
-                    let formatted = if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
+                    let formatted = if let Ok(val) = serde_json::from_str::<serde_json::Value>(body)
+                    {
                         serde_json::to_string_pretty(&val).unwrap_or_else(|_| body.clone())
                     } else {
                         body.clone()
@@ -255,10 +284,15 @@ impl Screen for SendScreen {
                 let block = Block::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(status_color))
-                    .title(Span::styled(" Response ", Style::default().fg(status_color)));
+                    .title(Span::styled(
+                        " Response ",
+                        Style::default().fg(status_color),
+                    ));
 
                 frame.render_widget(
-                    Paragraph::new(lines).block(block).wrap(Wrap { trim: false }),
+                    Paragraph::new(lines)
+                        .block(block)
+                        .wrap(Wrap { trim: false }),
                     chunks[1],
                 );
             }
@@ -270,7 +304,10 @@ impl Screen for SendScreen {
                         Span::styled(msg.as_str(), theme::style_dim()),
                     ]),
                     Line::from(""),
-                    Line::from(Span::styled("  Press Enter to try again.", theme::style_muted())),
+                    Line::from(Span::styled(
+                        "  Press Enter to try again.",
+                        theme::style_muted(),
+                    )),
                 ]);
                 frame.render_widget(p, chunks[1]);
             }

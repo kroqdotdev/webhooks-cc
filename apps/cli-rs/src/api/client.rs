@@ -31,6 +31,12 @@ impl ApiClient {
         self.send(Method::PUT, path, None).await
     }
 
+    /// Perform a PUT request with a JSON body.
+    pub async fn put_json(&self, path: &str, body: &impl serde::Serialize) -> Result<ApiResponse> {
+        let body = serde_json::to_vec(body).context("failed to encode request body")?;
+        self.send(Method::PUT, path, Some(body)).await
+    }
+
     /// Perform a DELETE request.
     pub async fn delete(&self, path: &str) -> Result<ApiResponse> {
         self.send(Method::DELETE, path, None).await

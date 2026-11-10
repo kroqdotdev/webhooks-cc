@@ -1,10 +1,10 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph},
-    Frame,
 };
 use tokio::sync::mpsc;
 
@@ -72,7 +72,9 @@ impl Screen for AuthScreen {
                     }
                 } else {
                     // Not logged in — press 'l' to login
-                    if keys::is_char(key, 'l') && let (Some(tx), Some(client)) = (&self.tx, &self.client) {
+                    if keys::is_char(key, 'l')
+                        && let (Some(tx), Some(client)) = (&self.tx, &self.client)
+                    {
                         let tx = tx.clone();
                         let client = client.clone();
                         let handle = tokio::spawn(async move {
@@ -143,7 +145,10 @@ impl Screen for AuthScreen {
             Message::AuthPoll(Ok(poll)) => {
                 if poll.status == "authorized" {
                     // Claim the code
-                    if let State::Polling { ref device_code, .. } = self.state {
+                    if let State::Polling {
+                        ref device_code, ..
+                    } = self.state
+                    {
                         let dc = device_code.clone();
                         if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                             let tx = tx.clone();
@@ -183,11 +188,7 @@ impl Screen for AuthScreen {
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let chunks = Layout::vertical([
-            Constraint::Length(2),
-            Constraint::Min(0),
-        ])
-        .split(area);
+        let chunks = Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).split(area);
 
         let content_area = centered_rect(60, 12, chunks[1]);
 
@@ -201,10 +202,7 @@ impl Screen for AuthScreen {
                             Span::styled(email, theme::style_bold()),
                         ]),
                         Line::from(""),
-                        Line::from(Span::styled(
-                            "  Press  o  to logout",
-                            theme::style_muted(),
-                        )),
+                        Line::from(Span::styled("  Press  o  to logout", theme::style_muted())),
                     ];
                     let block = Block::default()
                         .borders(Borders::ALL)
@@ -215,10 +213,7 @@ impl Screen for AuthScreen {
                 } else {
                     let lines = vec![
                         Line::from(""),
-                        Line::from(Span::styled(
-                            "  Not logged in",
-                            theme::style_muted(),
-                        )),
+                        Line::from(Span::styled("  Not logged in", theme::style_muted())),
                         Line::from(""),
                         Line::from(Span::styled(
                             "  Press  l  to login via browser",
@@ -260,7 +255,10 @@ impl Screen for AuthScreen {
                     )),
                     Line::from(""),
                     Line::from(Span::styled(
-                        format!("  {} Waiting for authorization...", spinner_frame(self.tick)),
+                        format!(
+                            "  {} Waiting for authorization...",
+                            spinner_frame(self.tick)
+                        ),
                         theme::style_primary(),
                     )),
                 ];
@@ -352,7 +350,6 @@ impl Screen for AuthScreen {
     }
 }
 
-
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let x = area.x + area.width.saturating_sub(width) / 2;
     let y = area.y + area.height.saturating_sub(height) / 2;
@@ -374,10 +371,7 @@ fn copy_to_clipboard(text: &str) {
     #[cfg(target_os = "macos")]
     {
         use std::process::{Command, Stdio};
-        if let Ok(mut child) = Command::new("pbcopy")
-            .stdin(Stdio::piped())
-            .spawn()
-        {
+        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
             if let Some(mut stdin) = child.stdin.take() {
                 use std::io::Write;
                 let _ = stdin.write_all(text.as_bytes());

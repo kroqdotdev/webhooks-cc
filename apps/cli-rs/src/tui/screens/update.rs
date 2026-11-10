@@ -1,16 +1,16 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph},
-    Frame,
 };
 use tokio::sync::mpsc;
 
-use crate::api::{update, ApiClient};
-use crate::tui::{keys, theme};
+use crate::api::{ApiClient, update};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 
 use super::{Action, Message, Screen};
 
@@ -112,14 +112,16 @@ impl Screen for UpdateScreen {
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let content = Rect::new(area.x + 2, area.y + 1, area.width.saturating_sub(4), area.height.saturating_sub(2));
+        let content = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
 
         match &self.state {
             State::Checking => {
-                frame.render_widget(
-                    Spinner::new(self.tick, "Checking for updates..."),
-                    content,
-                );
+                frame.render_widget(Spinner::new(self.tick, "Checking for updates..."), content);
             }
             State::UpToDate => {
                 let lines = vec![
@@ -132,7 +134,10 @@ impl Screen for UpdateScreen {
                         ),
                     ]),
                     Line::from(""),
-                    Line::from(Span::styled("  Press Enter to go back.", theme::style_muted())),
+                    Line::from(Span::styled(
+                        "  Press Enter to go back.",
+                        theme::style_muted(),
+                    )),
                 ];
                 let block = Block::default()
                     .borders(Borders::ALL)
@@ -153,15 +158,15 @@ impl Screen for UpdateScreen {
                         Span::styled(&release.version, theme::style_primary_bold()),
                     ]),
                     Line::from(""),
-                    Line::from(Span::styled(
-                        "  Press  u  to update.",
-                        theme::style(),
-                    )),
+                    Line::from(Span::styled("  Press  u  to update.", theme::style())),
                 ];
                 let block = Block::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(theme::PRIMARY))
-                    .title(Span::styled(" Update Available ", theme::style_primary_bold()))
+                    .title(Span::styled(
+                        " Update Available ",
+                        theme::style_primary_bold(),
+                    ))
                     .padding(Padding::vertical(1));
                 frame.render_widget(Paragraph::new(lines).block(block), content);
             }
@@ -184,7 +189,10 @@ impl Screen for UpdateScreen {
                         theme::style_muted(),
                     )),
                     Line::from(""),
-                    Line::from(Span::styled("  Press Enter to go back.", theme::style_muted())),
+                    Line::from(Span::styled(
+                        "  Press Enter to go back.",
+                        theme::style_muted(),
+                    )),
                 ];
                 let block = Block::default()
                     .borders(Borders::ALL)
@@ -201,7 +209,10 @@ impl Screen for UpdateScreen {
                         Span::styled(msg.as_str(), theme::style_dim()),
                     ]),
                     Line::from(""),
-                    Line::from(Span::styled("  Press Enter to go back.", theme::style_muted())),
+                    Line::from(Span::styled(
+                        "  Press Enter to go back.",
+                        theme::style_muted(),
+                    )),
                 ];
                 let block = Block::default()
                     .borders(Borders::ALL)

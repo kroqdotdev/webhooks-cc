@@ -69,7 +69,5 @@ pub fn style_surface() -> Style {
 }
 
 pub fn style_highlight() -> Style {
-    Style::default()
-        .bg(Color::Rgb(55, 65, 81))
-        .fg(TEXT)
+    Style::default().bg(Color::Rgb(55, 65, 81)).fg(TEXT)
 }

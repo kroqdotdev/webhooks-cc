@@ -1,16 +1,16 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Row, Table, TableState},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 use crate::types::CapturedRequest;
 use crate::util::format::{format_bytes, format_timestamp};
 
@@ -84,9 +84,21 @@ impl SearchScreen {
             self.state = State::Loading;
             let tx = tx.clone();
             let client = client.clone();
-            let q = if self.query.is_empty() { None } else { Some(self.query.clone()) };
-            let method = if self.method.is_empty() { None } else { Some(self.method.clone()) };
-            let slug = if self.slug.is_empty() { None } else { Some(self.slug.clone()) };
+            let q = if self.query.is_empty() {
+                None
+            } else {
+                Some(self.query.clone())
+            };
+            let method = if self.method.is_empty() {
+                None
+            } else {
+                Some(self.method.clone())
+            };
+            let slug = if self.slug.is_empty() {
+                None
+            } else {
+                Some(self.slug.clone())
+            };
 
             let handle = tokio::spawn(async move {
                 // The search route returns one page and no total, so the
@@ -102,7 +114,13 @@ impl SearchScreen {
                         None,
                         Some("desc"),
                     ),
-                    client.count_requests(slug.as_deref(), method.as_deref(), q.as_deref(), None, None)
+                    client.count_requests(
+                        slug.as_deref(),
+                        method.as_deref(),
+                        q.as_deref(),
+                        None,
+                        None
+                    )
                 );
 
                 match result {
@@ -137,12 +155,18 @@ impl Screen for SearchScreen {
 
                 match key.code {
                     KeyCode::Tab => {
-                        let idx = FIELDS.iter().position(|f| *f == self.active_field).unwrap_or(0);
+                        let idx = FIELDS
+                            .iter()
+                            .position(|f| *f == self.active_field)
+                            .unwrap_or(0);
                         self.active_field = FIELDS[(idx + 1) % FIELDS.len()];
                         return None;
                     }
                     KeyCode::BackTab => {
-                        let idx = FIELDS.iter().position(|f| *f == self.active_field).unwrap_or(0);
+                        let idx = FIELDS
+                            .iter()
+                            .position(|f| *f == self.active_field)
+                            .unwrap_or(0);
                         self.active_field = FIELDS[(idx + FIELDS.len() - 1) % FIELDS.len()];
                         return None;
                     }
@@ -179,7 +203,9 @@ impl Screen for SearchScreen {
                     return None;
                 }
                 if keys::is_enter(key) {
-                    if let Some(i) = self.table_state.selected() && let Some(req) = self.results.get(i) {
+                    if let Some(i) = self.table_state.selected()
+                        && let Some(req) = self.results.get(i)
+                    {
                         return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
                     }
                     return None;
@@ -224,7 +250,7 @@ impl Screen for SearchScreen {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::vertical([
             Constraint::Length(7), // Search fields
-            Constraint::Min(0),   // Results
+            Constraint::Min(0),    // Results
         ])
         .split(area);
 
@@ -244,11 +270,22 @@ impl Screen for SearchScreen {
             State::Loading => {
                 frame.render_widget(
                     Spinner::new(self.tick, "Searching..."),
-                    Rect::new(chunks[1].x + 2, chunks[1].y + 1, chunks[1].width.saturating_sub(4), 1),
+                    Rect::new(
+                        chunks[1].x + 2,
+                        chunks[1].y + 1,
+                        chunks[1].width.saturating_sub(4),
+                        1,
+                    ),
                 );
             }
             State::Results => {
-                render_results(frame, chunks[1], &self.results, self.total, &mut self.table_state);
+                render_results(
+                    frame,
+                    chunks[1],
+                    &self.results,
+                    self.total,
+                    &mut self.table_state,
+                );
             }
             State::Error(msg) => {
                 let p = Paragraph::new(Line::from(vec![
@@ -259,7 +296,13 @@ impl Screen for SearchScreen {
             }
             State::Editing => {
                 if !self.results.is_empty() {
-                    render_results(frame, chunks[1], &self.results, self.total, &mut self.table_state);
+                    render_results(
+                        frame,
+                        chunks[1],
+                        &self.results,
+                        self.total,
+                        &mut self.table_state,
+                    );
                 } else {
                     let p = Paragraph::new(Line::from(Span::styled(
                         "  Press Enter to search.",
@@ -290,7 +333,12 @@ impl Screen for SearchScreen {
     fn status_keys(&self) -> Vec<(&str, &str)> {
         match &self.state {
             State::Editing => vec![("tab", "next field"), ("enter", "search"), ("esc", "back")],
-            State::Results => vec![("↑↓", "navigate"), ("enter", "inspect"), ("/", "edit"), ("esc", "back")],
+            State::Results => vec![
+                ("↑↓", "navigate"),
+                ("enter", "inspect"),
+                ("/", "edit"),
+                ("esc", "back"),
+            ],
             _ => vec![("esc", "back")],
         }
     }
@@ -340,8 +388,16 @@ fn render_search_fields(
         let is_active = editing && active == *field;
 
         let cursor = if is_active { "█" } else { "" };
-        let label_style = if is_active { theme::style_primary() } else { theme::style_muted() };
-        let value_style = if is_active { theme::style_bold() } else { theme::style() };
+        let label_style = if is_active {
+            theme::style_primary()
+        } else {
+            theme::style_muted()
+        };
+        let value_style = if is_active {
+            theme::style_bold()
+        } else {
+            theme::style()
+        };
 
         let line = Line::from(vec![
             Span::styled(if is_active { "▸ " } else { "  " }, label_style),
@@ -370,8 +426,7 @@ fn render_results(
         return;
     }
 
-    let header = Row::new(vec!["  TIME", "METHOD", "PATH", "SIZE"])
-        .style(theme::style_muted());
+    let header = Row::new(vec!["  TIME", "METHOD", "PATH", "SIZE"]).style(theme::style_muted());
 
     let rows: Vec<Row> = results
         .iter()
