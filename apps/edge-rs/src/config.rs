@@ -42,6 +42,10 @@ pub struct Config {
     pub held_up_max: usize,
 }
 
+/// The label under the preview domain that is the control host, never a
+/// preview.
+pub const CONTROL_LABEL: &str = "tunnel";
+
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let get = |name: &str, default: &str| {
@@ -153,10 +157,14 @@ impl Config {
             .eq_ignore_ascii_case(&self.preview_domain)
     }
 
+    /// The preview name a host asks for: one label under the preview
+    /// domain. `tunnel` is never a preview (the web app keeps the name
+    /// reserved): under the preview domain it is the control host, which a
+    /// staging edge without a second domain uses for `/v1/connect`.
     pub fn name_of(&self, host: &str) -> Option<String> {
         let host = host.trim_end_matches('.').to_lowercase();
         let name = host.strip_suffix(&format!(".{}", self.preview_domain))?;
-        if name.is_empty() || name.contains('.') {
+        if name.is_empty() || name.contains('.') || name == CONTROL_LABEL {
             return None;
         }
         Some(name.to_string())
@@ -185,6 +193,8 @@ mod tests {
         assert_eq!(config.name_of("a.b.sharehooks.cc"), None);
         assert_eq!(config.name_of("evil-sharehooks.cc"), None);
         assert_eq!(config.name_of("tunnel.webhooks.cc"), None);
+        assert_eq!(config.name_of("tunnel.sharehooks.cc"), None);
+        assert_eq!(config.name_of("Tunnel.Sharehooks.cc"), None);
         assert!(config.is_bare_domain("Sharehooks.cc"));
         assert!(!config.is_bare_domain("acme.sharehooks.cc"));
     }
