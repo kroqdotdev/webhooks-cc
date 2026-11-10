@@ -143,6 +143,8 @@ function fragmentsAdded(git, range) {
     "log",
     "--reverse",
     "--first-parent",
+    // A renamed file counts as added under its new name, as check-pr sees it.
+    "--no-renames",
     "--diff-filter=A",
     "--name-only",
     "--format=",

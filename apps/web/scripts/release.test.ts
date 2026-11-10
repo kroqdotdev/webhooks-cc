@@ -195,6 +195,17 @@ describe("plan", () => {
     ]);
   });
 
+  it("follows a changelog file renamed before its release", async () => {
+    repo.merge(["release: patch"], { [at("first-name")]: fragment("Renamed", "kept") });
+    repo.merge(["release: none"], { [at("second-name")]: fragment("Renamed", "kept") }, [
+      at("first-name"),
+    ]);
+    const result = await deploy("HEAD");
+    expect(result.entries).toEqual([
+      { version: "0.64.1", date: today, title: "Renamed", track: "web", items: ["kept"] },
+    ]);
+  });
+
   it("deploys a tagged commit as its own version again, so a rollback keeps its number", async () => {
     const one = repo.merge(["release: patch"], { [at("one")]: fragment("One", "1") });
     repo.tag("web-v0.64.1", "2026-11-11");

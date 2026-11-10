@@ -7,8 +7,11 @@ import type { NextConfig } from "next";
 // publicEnv() loader. Same default as lib/env.ts (NEXT_PUBLIC_APP_URL).
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://webhooks.cc";
 
-// The browser's StatOSS release, like the server's (lib/observability-start.ts).
-const webVersion = JSON.parse(readFileSync(path.join(__dirname, "package.json"), "utf8")).version;
+// The browser's StatOSS release, like the server's (lib/observability-start.ts):
+// the version the deploy wrote into lib/changelog-release.json, "dev" without one.
+const webVersion: string =
+  JSON.parse(readFileSync(path.join(__dirname, "lib/changelog-release.json"), "utf8")).version ??
+  "dev";
 const gitSha = process.env.GIT_SHA?.trim().slice(0, 12);
 
 // Discovery relations sent on every response (RFC 8288), so agents that only
