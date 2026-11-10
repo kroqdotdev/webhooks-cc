@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.65.0";
+export const APP_VERSION = "0.65.1";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.65.1",
+    date: "2026-11-10",
+    title: "No Error After an Update",
+    track: "web",
+    items: [
+      'Opening another page right after a site update no longer shows "Something went wrong": the browser always fetches a page\'s data fresh instead of reusing the copy from the previous release',
+    ],
+  },
   {
     version: "0.65.0",
     date: "2026-11-10",

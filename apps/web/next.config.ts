@@ -33,6 +33,20 @@ const varyAccept = { key: "Vary", value: "Accept" };
 // MARKDOWN_TWIN_HEADER in lib/markdown-negotiation.ts.
 const prefersMarkdown = [{ type: "header" as const, key: "x-markdown-twin", value: "1" }];
 
+// The router's own fetches of a page (RSC payloads) must never come from the
+// browser's HTTP cache. Next marks a prerendered page "s-maxage=...,
+// stale-while-revalidate=<a year>" and its `_rsc` URL is the same in every
+// build, so after a deploy Chromium served the previous build's payload once.
+// Decoding it loads the old build's chunks, and Turbopack keeps the first
+// factory it sees for a module id: a module shared by both builds stayed the
+// old one, and the next page's new export of it (PaidPlanCTA) came back
+// undefined, React error #306. Next only sets Cache-Control when none is set.
+const rscRequest = [{ type: "header" as const, key: "rsc", value: "1" }];
+const noStore = {
+  key: "Cache-Control",
+  value: "private, no-cache, no-store, max-age=0, must-revalidate",
+};
+
 // mailhooks.cc (lib/site.ts): its own pages live in app/mailhooks and are
 // served at its root by host. A host match ignores the port.
 function hostnameOf(value: string | undefined): string | null {
@@ -157,6 +171,9 @@ const nextConfig: NextConfig = {
         source: "/email-templates/:file",
         headers: [{ key: "Cache-Control", value: "public, max-age=0, no-transform" }],
       },
+      // Every page's RSC payload, prefetch or navigation (see noStore above).
+      // `/:path*` alone does not match the root.
+      ...["/", "/:path*"].map((source) => ({ source, has: rscRequest, headers: [noStore] })),
     ];
   },
   async rewrites() {
