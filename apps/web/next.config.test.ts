@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 // rule in order, the later one winning per header; for rewrites the first
 // matching rule.
 import { getPathMatch } from "next/dist/shared/lib/router/utils/path-match";
+import { modifyRouteRegex } from "next/dist/lib/redirect-status";
 import {
   compileNonPath,
   matchHas,
@@ -27,7 +28,13 @@ async function headersFor(
   const req = { headers: requestHeaders } as unknown as Parameters<typeof matchHas>[0];
   const result: Record<string, string> = {};
   for (const rule of rules) {
-    const params = getPathMatch(rule.source, { strict: true, removeUnnamedParams: true })(pathname);
+    // The router compiles header sources with modifyRouteRegex, which lets
+    // "/:path*" match the root and a trailing slash.
+    const params = getPathMatch(rule.source, {
+      strict: true,
+      removeUnnamedParams: true,
+      regexModifier: (regex) => modifyRouteRegex(regex),
+    })(pathname);
     if (!params) continue;
     if ((rule.has || rule.missing) && !matchHas(req, {}, rule.has, rule.missing)) continue;
     const hasParams = Object.keys(params).length > 0;
@@ -71,8 +78,13 @@ describe("next.config.ts headers", () => {
   it.each(["/", "/dashboard", "/docs/agents", "/webhooks/stripe"])(
     "keeps the RSC payload of %s out of the browser's HTTP cache",
     async (path) => {
-      const prefetches: Record<string, string>[] = [{}, { "next-router-prefetch": "1" }];
-      for (const prefetch of prefetches) {
+      // A navigation, and the segment cache's route tree prefetch (the one that
+      // brought in the stale payload).
+      const requests: Record<string, string>[] = [
+        {},
+        { "next-router-prefetch": "1", "next-router-segment-prefetch": "/_tree" },
+      ];
+      for (const prefetch of requests) {
         const headers = await headersFor(path, { rsc: "1", ...prefetch });
         expect(headers["cache-control"]).toBe(
           "private, no-cache, no-store, max-age=0, must-revalidate"

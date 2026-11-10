@@ -171,9 +171,12 @@ const nextConfig: NextConfig = {
         source: "/email-templates/:file",
         headers: [{ key: "Cache-Control", value: "public, max-age=0, no-transform" }],
       },
-      // Every page's RSC payload, prefetch or navigation (see noStore above).
-      // `/:path*` alone does not match the root.
-      ...["/", "/:path*"].map((source) => ({ source, has: rscRequest, headers: [noStore] })),
+      {
+        // Every page's RSC payload, prefetch or navigation (see noStore above).
+        source: "/:path*",
+        has: rscRequest,
+        headers: [noStore],
+      },
     ];
   },
   async rewrites() {
