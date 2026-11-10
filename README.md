@@ -23,7 +23,7 @@ Get a unique URL, point your webhook there, and see every request in real time. 
 - **Forward**: tunnel webhooks to localhost during development (with `--live`, the sender gets your local app's answer), or forward them to other URLs, chat and file drops
 - **Share localhost**: put the site on your machine at a public link on sharehooks.cc with `whk share`
 - **CLI with interactive TUI**: manage endpoints, tunnel and stream requests from your terminal
-- **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI
+- **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI, and share a local port from code
 - **MCP server**: connect AI coding agents (Claude Code, Cursor, VS Code, Codex) to your webhooks
 
 ## Use Cases
@@ -138,7 +138,7 @@ await client.requests.replay(req.id, "http://localhost:3000/webhooks");
 
 ## MCP server
 
-The `@webhooks-cc/mcp` package exposes 57 tools (54 on the remote server) that let AI agents manage endpoints, inspect webhooks, send test payloads, and replay requests through natural language.
+The `@webhooks-cc/mcp` package exposes 57 tools (54 on the remote server) that let AI agents manage endpoints, inspect webhooks, send test payloads, replay requests, and share a local site at a public link through natural language.
 
 ```
 You: "Create a webhook endpoint for testing Stripe"

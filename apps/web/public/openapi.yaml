@@ -63,6 +63,13 @@ tags:
     description: Team management and endpoint sharing. Any account can create a team; the team needs its own Teams subscription before it can invite members or share endpoints.
   - name: Invites
     description: Team invitation management.
+  - name: Sharing
+    description: |
+      `whk share` previews of local ports at `<name>.sharehooks.cc` and `whk tunnel --live`
+      sessions: list and stop them, read a preview's visitor log, and manage reserved names. The
+      CLI starts a share (it holds the tunnel); everything else is here, so an agent never needs
+      the dashboard. Every route answers 503 where sharing is not set up. Tokens of an unclaimed
+      agent sandbox get 403. See https://webhooks.cc/docs/share.
   - name: Agents
     description: |
       Agent registration (auth.md v0.6, documented at https://webhooks.cc/auth.md) and the agent
@@ -1885,6 +1892,402 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # -- Sharing -----------------------------------------------------------------
+
+  /api/shares:
+    get:
+      operationId: listShares
+      tags: [Sharing]
+      summary: List previews and live tunnels
+      description: |
+        The account's `whk share` previews and `whk tunnel --live` sessions (live first, then the
+        latest that ended), teammates' previews under its teams' names and teammates' live tunnels
+        on its own endpoints, with this month's shared data, the plan's limits, where it stands on
+        reserved names, and `hints`: next steps as `whk` commands. Rate limited to 120 requests a
+        minute.
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [live, ended]
+          description: Only live, or only ended, runs
+      responses:
+        "200":
+          description: Shares, usage, limits and hints
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TunnelShareList"
+        "400":
+          description: "`state` is not `live` or `ended`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The token belongs to an unclaimed agent sandbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
+  /api/shares/{shareId}/stop:
+    parameters:
+      - $ref: "#/components/parameters/shareId"
+    post:
+      operationId: stopShare
+      tags: [Sharing]
+      summary: Stop a preview or live tunnel
+      description: |
+        Stops one of the account's runs, a teammate's preview under one of its teams' names, or a
+        teammate's live tunnel on one of its own endpoints. The CLI running it is told why and
+        exits. Rate limited to 60 requests a minute.
+      responses:
+        "200":
+          description: Stopped
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, stopped, edgeReached]
+                properties:
+                  ok:
+                    type: boolean
+                  stopped:
+                    type: boolean
+                    description: Whether a running share was ended (false when it had already ended)
+                  edgeReached:
+                    type: boolean
+                    description: Whether the tunnel service closed it at once; otherwise it closes within 30 seconds
+        "404":
+          description: No such run for this account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
+  /api/shares/{shareId}/requests:
+    parameters:
+      - $ref: "#/components/parameters/shareId"
+    get:
+      operationId: listShareRequests
+      tags: [Sharing]
+      summary: A preview's visitor log
+      description: |
+        The last requests visitors made to a running preview, newest first, from the tunnel
+        service's memory: no addresses, a number per visitor. Rate limited to 120 requests a minute.
+      responses:
+        "200":
+          description: The visitor log
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TunnelVisits"
+        "404":
+          description: No such run for this account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
+  /api/tunnel-names:
+    get:
+      operationId: listTunnelNames
+      tags: [Sharing]
+      summary: List reserved names
+      description: |
+        The account's reserved preview names and its teams' names. `limit` and `used` count its own
+        names against its plan; names kept inside a team count against the team (`teams`).
+        Rate limited to 120 requests a minute.
+      responses:
+        "200":
+          description: Names and counts
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TunnelNameList"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
+    post:
+      operationId: reserveTunnelName
+      tags: [Sharing]
+      summary: Reserve a name
+      description: |
+        Keeps a preview name (Pro and Business). With `team` it belongs to that team, and every
+        member may share under it. Names are 3 to 40 lowercase letters, digits and single hyphens,
+        never ending in `-free` or shaped like a random preview name. Rate limited to 30 requests
+        per 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 40
+                team:
+                  type: string
+                  description: A team id, to keep the name inside that team
+      responses:
+        "201":
+          description: Reserved
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name]
+                properties:
+                  name:
+                    $ref: "#/components/schemas/TunnelName"
+        "200":
+          description: Already yours
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name]
+                properties:
+                  name:
+                    $ref: "#/components/schemas/TunnelName"
+        "400":
+          description: Not a valid name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Free plan, the plan's or team's names are all used, a blocked name, sharing suspended, or an unclaimed agent sandbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Someone else holds that name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
+  /api/tunnel-names/{name}:
+    parameters:
+      - $ref: "#/components/parameters/tunnelName"
+    delete:
+      operationId: releaseTunnelName
+      tags: [Sharing]
+      summary: Release a name
+      description: |
+        Releases a name the account reserved, or as a team's owner one of its names. A preview
+        running under it stops. Rate limited to 30 requests per 10 minutes.
+      responses:
+        "200":
+          description: Released
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Name not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
+  /api/tunnel-names/{name}/password:
+    parameters:
+      - $ref: "#/components/parameters/tunnelName"
+    put:
+      operationId: setTunnelNamePassword
+      tags: [Sharing]
+      summary: Set a name's password
+      description: |
+        Every preview under the name asks visitors for this password, a running one included (Pro
+        and Business). Only a hash is kept. Rate limited to 30 requests per 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 200
+      responses:
+        "200":
+          description: The password is set
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TunnelPasswordResult"
+        "400":
+          description: No password, or one that is too short or too long
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: No passwords on this plan, not allowed to change this name, or sharing suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Name not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
+    delete:
+      operationId: clearTunnelNamePassword
+      tags: [Sharing]
+      summary: Clear a name's password
+      description: Removes the name's password. Rate limited to 30 requests per 10 minutes.
+      responses:
+        "200":
+          description: The password is cleared
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TunnelPasswordResult"
+        "403":
+          description: Not allowed to change this name, or sharing suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Name not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedRateLimited"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+        "503":
+          $ref: "#/components/responses/SharingUnavailable"
+
   # -- Agents ------------------------------------------------------------------
 
   /api/agent/identity/challenge:
@@ -2652,6 +3055,24 @@ components:
         type: string
       description: Team ID
 
+    shareId:
+      name: shareId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: A share's id, from `GET /api/shares`
+
+    tunnelName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9-]{3,40}$"
+      description: A reserved preview name, as in `<name>.sharehooks.cc`
+
   headers:
     X-RateLimit-Limit:
       description: Maximum requests allowed in the current window
@@ -3192,6 +3613,360 @@ components:
             Only with `extracts=true`, and only on a captured email: the one-time codes and links
             found in it, as the dashboard shows them. Null when the endpoint's `showEmailExtracts`
             is off.
+        responseStatus:
+          type: ["integer", "null"]
+          description: |
+            The HTTP status the endpoint answered the sender with. Null for emails and for requests
+            captured before answers were recorded (November 2026).
+        responseRule:
+          type: ["string", "null"]
+          description: The response rule that chose the answer, or null when none matched
+        liveResponse:
+          oneOf:
+            - $ref: "#/components/schemas/LiveResponse"
+            - type: "null"
+          description: |
+            What the local app answered, for an HTTP request captured while `whk tunnel --live`
+            relayed the endpoint. Null otherwise.
+
+    LiveResponse:
+      type: object
+      description: |
+        What the sender of a request got back while `whk tunnel --live` relayed the endpoint to an
+        app on someone's computer, recorded once the answer finished.
+      required: [status, headers, body, bodyTruncated, bodyEncoding, ms, outcome]
+      properties:
+        status:
+          type: ["integer", "null"]
+          description: The status the sender got, the app's or the stand-in's
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            The headers the sender got: the app's without Set-Cookie and security headers, plus the
+            nosniff and sandbox CSP headers the receiver adds
+        body:
+          type: string
+          description: The first 64 KB of the answer, as text, or base64 when `bodyEncoding` is `base64`
+        bodyTruncated:
+          type: boolean
+          description: True when the answer was longer than what is kept, or cut off past 1 MB
+        bodyEncoding:
+          type: string
+          enum: [utf8, base64]
+        ms:
+          type: ["integer", "null"]
+          description: How long the app took, in milliseconds
+        outcome:
+          type: string
+          enum: [answered, offline, timeout, unreachable, busy, refused]
+          description: |
+            `answered` when the app answered; otherwise what stood in: `offline` (502, whk not
+            connected), `timeout` (504, no answer within 25 seconds), `unreachable` (502, nothing on
+            the local port), `busy` (503, too many relays waiting), `refused` (502, an answer that is
+            not passed back: a download, a type an API does not answer with, over 1 MB, or a path
+            outside the endpoint)
+
+    TunnelShare:
+      type: object
+      description: "A `whk share` preview (`kind: share`) or a `whk tunnel --live` session (`kind: live`)"
+      required:
+        [
+          id,
+          kind,
+          name,
+          url,
+          endpointSlug,
+          client,
+          startedAt,
+          endedAt,
+          endReason,
+          expiresAt,
+          bytes,
+          requests,
+          password,
+          notice,
+          mine,
+          startedBy,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [share, live]
+        name:
+          type: ["string", "null"]
+          description: The preview's name; null for a live tunnel
+        url:
+          type: ["string", "null"]
+          description: The preview link, or the capture URL of a live tunnel
+        endpointSlug:
+          type: ["string", "null"]
+          description: A live tunnel's endpoint
+        client:
+          type: string
+          description: "What it runs on, as the CLI reported it: `laptop, macOS`"
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: ["string", "null"]
+          format: date-time
+        endReason:
+          type: ["string", "null"]
+          description: Why it ended, in words
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+          description: When a time-limited (Free) preview ends
+        bytes:
+          type: integer
+          description: Data sent to visitors
+        requests:
+          type: integer
+        password:
+          type: boolean
+          description: Whether visitors need a password
+        notice:
+          type: boolean
+          description: Whether visitors see a short notice page first
+        mine:
+          type: boolean
+          description: False for a teammate's run
+        startedBy:
+          oneOf:
+            - type: object
+              required: [id, email]
+              properties:
+                id:
+                  type: string
+                email:
+                  type: string
+            - type: "null"
+          description: Who started it, for a teammate's run
+
+    TunnelUsage:
+      type: object
+      description: This UTC month's shared data against the plan
+      required: [month, bytes, limitBytes, over, resetsAt, message]
+      properties:
+        month:
+          type: string
+          example: "2026-11"
+        bytes:
+          type: integer
+        limitBytes:
+          type: integer
+        over:
+          type: boolean
+          description: True once the month's data is used; previews pause until `resetsAt`
+        resetsAt:
+          type: string
+          format: date-time
+        message:
+          type: ["string", "null"]
+          description: Why previews are paused and when they open again, while `over`
+
+    TunnelLimits:
+      type: object
+      description: The plan sharing follows, the best of the account's own and its subscribed teams'
+      required: [plan, label, shares, reservedNames, sessionMinutes, dataGb, passwords, notice]
+      properties:
+        plan:
+          type: string
+          enum: [free, pro, business, team, team_business]
+        label:
+          type: string
+          example: Pro
+        shares:
+          type: integer
+          description: Previews at once
+        reservedNames:
+          type: integer
+        sessionMinutes:
+          type: ["integer", "null"]
+          description: How long a preview may run, or null without a limit
+        dataGb:
+          type: integer
+          description: Shared data a month
+        passwords:
+          type: boolean
+        notice:
+          type: boolean
+          description: Whether visitors see a short notice page first
+
+    TunnelShareList:
+      type: object
+      required: [shares, usage, limits, names, suspended, hints]
+      properties:
+        shares:
+          type: array
+          items:
+            $ref: "#/components/schemas/TunnelShare"
+        usage:
+          $ref: "#/components/schemas/TunnelUsage"
+        limits:
+          $ref: "#/components/schemas/TunnelLimits"
+        names:
+          type: object
+          required: [limit, used, usable]
+          properties:
+            limit:
+              type: integer
+              description: Own names the plan allows
+            used:
+              type: integer
+              description: Own names kept
+            usable:
+              type: integer
+              description: Names, own and teams', that can be shared under now
+        suspended:
+          type: boolean
+          description: True when staff suspended sharing on the account
+        hints:
+          type: array
+          items:
+            type: string
+          description: What the account can do next, as `whk` commands
+
+    TunnelVisit:
+      type: object
+      required: [method, path, status, ms, bytes, at, country, device, visitor]
+      properties:
+        method:
+          type: string
+        path:
+          type: string
+        status:
+          type: integer
+        ms:
+          type: integer
+        bytes:
+          type: integer
+        at:
+          type: string
+          format: date-time
+        country:
+          type: ["string", "null"]
+          description: Two-letter country code
+        device:
+          type: string
+          enum: [phone, tablet, computer, bot, unknown]
+        visitor:
+          type: integer
+          description: 1 for the first visitor seen, 2 for the next; never an address
+
+    TunnelVisits:
+      type: object
+      required: [available, requests]
+      properties:
+        available:
+          type: boolean
+          description: False when the tunnel service could not be asked just now
+        requests:
+          type: array
+          description: Newest first
+          items:
+            $ref: "#/components/schemas/TunnelVisit"
+
+    TunnelName:
+      type: object
+      required: [name, url, team, reservedBy, mine, password, live, usable, createdAt]
+      properties:
+        name:
+          type: string
+        url:
+          type: ["string", "null"]
+          description: The preview link the name gives
+        team:
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            - type: "null"
+          description: The team the name belongs to, when kept inside one
+        reservedBy:
+          oneOf:
+            - type: object
+              required: [id, email]
+              properties:
+                id:
+                  type: string
+                email:
+                  type: string
+            - type: "null"
+        mine:
+          type: boolean
+        password:
+          type: boolean
+          description: Whether the name has a password
+        live:
+          type: boolean
+          description: Whether a preview runs under it now
+        usable:
+          type: boolean
+          description: |
+            False when the plan no longer covers it (past the count after a downgrade, or a team
+            whose subscription ended): kept, but nothing can be shared under it
+        createdAt:
+          type: string
+          format: date-time
+
+    TunnelTeamNameCount:
+      type: object
+      required: [id, name, active, limit, used]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        active:
+          type: boolean
+          description: False while the team has no subscription
+        limit:
+          type: integer
+          description: The team plan's names per seat times its seats
+        used:
+          type: integer
+
+    TunnelNameList:
+      type: object
+      required: [names, limit, used, plan, teams]
+      properties:
+        names:
+          type: array
+          items:
+            $ref: "#/components/schemas/TunnelName"
+        limit:
+          type: integer
+          description: Own names the plan allows
+        used:
+          type: integer
+          description: Own names kept
+        plan:
+          type: string
+          enum: [free, pro, business, team, team_business]
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/TunnelTeamNameCount"
+
+    TunnelPasswordResult:
+      type: object
+      required: [ok, password]
+      properties:
+        ok:
+          type: boolean
+        password:
+          type: boolean
+          description: Whether the name has a password now
 
     StreamRequest:
       type: object
@@ -4438,6 +5213,13 @@ components:
 
     InternalError:
       description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    SharingUnavailable:
+      description: "Sharing is not set up on this server: `Sharing is not available here.`"
       content:
         application/json:
           schema:

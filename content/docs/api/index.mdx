@@ -215,11 +215,35 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
   "responseStatus": 402,
   "responseRule": "Payment failed",
   "kind": "http",
-  "email": null
+  "email": null,
+  "liveResponse": null
 }
 ```
 
 `responseStatus` is the HTTP status the endpoint answered the sender with, and `responseRule` the [response rule](/docs/mock-responses) that chose it: its name, or `Rule 2` for an unnamed one by its place in the list. `responseRule` is `null` when no rule matched and the endpoint's own response or the plain 200 answered. Both are recorded when the request arrives, so later edits to the rules do not change them, and both are `null` for emails and for requests captured before answers were recorded, in November 2026.
+
+`liveResponse` is set on HTTP requests captured while [`whk tunnel --live`](/docs/live-tunnel) relayed the endpoint to an app on someone's computer: what the sender got back, recorded once the answer finished. `responseStatus` is then that answer's status and `responseRule` is `null`, since mock responses and rules do not apply while live. It is `null` for every other request.
+
+```json
+"liveResponse": {
+  "status": 200,
+  "headers": { "content-type": "application/json", "x-content-type-options": "nosniff" },
+  "body": "{\"received\":true}",
+  "bodyTruncated": false,
+  "bodyEncoding": "utf8",
+  "ms": 41,
+  "outcome": "answered"
+}
+```
+
+| Field           | Description |
+| --------------- | ----------- |
+| `status`        | The status the sender got: the app's, or the stand-in's below. `null` when none was recorded. |
+| `headers`       | The headers the sender got: the app's, without `Set-Cookie` and security headers, plus the `nosniff` and sandbox CSP headers the receiver adds. |
+| `body`          | The first 64 KB of the answer: text when `bodyEncoding` is `utf8`, base64 when it is `base64`. |
+| `bodyTruncated` | `true` when the answer was longer than what is kept, or was cut off past 1 MB. |
+| `ms`            | How long the app took, in milliseconds. |
+| `outcome`       | `answered` when the app answered. Otherwise what stood in: `offline` (502, `whk` not connected), `timeout` (504, no answer within 25 seconds), `unreachable` (502, nothing on the local port), `busy` (503, too many relays waiting) or `refused` (502, an answer that is not passed back: a download, a type an API does not answer with, over 1 MB, or a path outside the endpoint). |
 
 `detectedProvider` and `detectedEvent` are best-effort metadata derived from headers and body shape. They power the provider icon and event badge in the dashboard. Signature fields are present when endpoint-level verification is configured.
 
@@ -722,6 +746,183 @@ curl -X POST https://webhooks.cc/api/invites/INVITE_ID/decline \
   -H "Authorization: Bearer whcc_..."
 ```
 
+## Sharing localhost
+
+The routes behind [`whk share`](/docs/share) and [`whk tunnel --live`](/docs/live-tunnel): list and stop previews and live tunnels, read a preview's visitor log, and manage reserved names. Starting a share is the CLI's job (it holds the tunnel); everything else is here, so an agent never needs the dashboard.
+
+They take an API key, a claimed agent token or a session token. Tokens of an unclaimed [agent sandbox](/docs/agents) get `403`: sharing needs an account with a confirmed email. Where sharing is not set up, every route answers `503` with `{ "error": "Sharing is not available here." }`.
+
+### List shares
+
+```bash
+curl "https://webhooks.cc/api/shares?state=live" \
+  -H "Authorization: Bearer whcc_..."
+```
+
+`state` is `live` or `ended`; without it you get the live ones first, then the latest that ended. The list includes teammates' previews under your teams' names, and teammates' live tunnels on endpoints you own.
+
+**Response:**
+
+```json
+{
+  "shares": [
+    {
+      "id": "8f0c2a6e-3b1d-4c55-9a51-2f6b7e0d4c11",
+      "kind": "share",
+      "name": "acme-demo",
+      "url": "https://acme-demo.sharehooks.cc",
+      "endpointSlug": null,
+      "client": "laptop, macOS",
+      "startedAt": "2026-11-10T09:00:00.000Z",
+      "endedAt": null,
+      "endReason": null,
+      "expiresAt": null,
+      "bytes": 573440,
+      "requests": 42,
+      "password": true,
+      "notice": false,
+      "mine": true,
+      "startedBy": null
+    }
+  ],
+  "usage": {
+    "month": "2026-11",
+    "bytes": 573440,
+    "limitBytes": 26843545600,
+    "over": false,
+    "resetsAt": "2026-12-01T00:00:00.000Z",
+    "message": null
+  },
+  "limits": {
+    "plan": "pro",
+    "label": "Pro",
+    "shares": 3,
+    "reservedNames": 3,
+    "sessionMinutes": null,
+    "dataGb": 25,
+    "passwords": true,
+    "notice": false
+  },
+  "names": { "limit": 3, "used": 1, "usable": 1 },
+  "suspended": false,
+  "hints": [
+    "Share a local port with whk share <port>; it prints the link.",
+    "Keep a link the same every time with whk names reserve <name>, then whk share <port> --name <name>."
+  ]
+}
+```
+
+| Field       | Description |
+| ----------- | ----------- |
+| `shares`    | Previews (`kind: "share"`, with `name` and the preview `url`) and live tunnels (`kind: "live"`, with `endpointSlug` and the capture `url`). `endedAt` and `endReason` are `null` while one runs; `expiresAt` is when a Free preview's 2 hours run out. `bytes` and `requests` are what visitors took. `mine` is `false` for a teammate's run, with `startedBy` naming them. |
+| `usage`     | This UTC month's shared data against the plan. While `over`, previews are paused until `resetsAt` and `message` says so. Live tunnels count against requests, not data. |
+| `limits`    | The plan sharing follows: the best of your own plan and your subscribed teams'. `shares` at once, `reservedNames`, `sessionMinutes` (`null`: no time limit), `dataGb` a month, whether `passwords` are allowed and whether visitors see the `notice` page. |
+| `names`     | Your own reserved names against the plan (`limit`, `used`), and how many names, yours and your teams', you can share under now (`usable`). |
+| `suspended` | `true` when staff suspended sharing on the account. |
+| `hints`     | What you can do next, as `whk` commands, for agents and scripts. |
+
+### Stop a share
+
+```bash
+curl -X POST https://webhooks.cc/api/shares/SHARE_ID/stop \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "ok": true, "stopped": true, "edgeReached": true }`. The CLI running it is told why and exits. You can stop your own runs, a teammate's preview under one of your teams' names, and a teammate's live tunnel on an endpoint you own. `404` when there is no such run for you.
+
+### A preview's visitor log
+
+```bash
+curl https://webhooks.cc/api/shares/SHARE_ID/requests \
+  -H "Authorization: Bearer whcc_..."
+```
+
+```json
+{
+  "available": true,
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/pricing",
+      "status": 200,
+      "ms": 38,
+      "bytes": 18211,
+      "at": "2026-11-10T09:12:04.000Z",
+      "country": "DK",
+      "device": "phone",
+      "visitor": 2
+    }
+  ]
+}
+```
+
+The last requests visitors made to a running preview, newest first, from the tunnel service's memory: no addresses, only a number per visitor (`1` for the first one seen). `device` is `phone`, `tablet`, `computer`, `bot` or `unknown`. `available` is `false` when the tunnel service could not be asked just now; an ended preview has no log.
+
+### List reserved names
+
+```bash
+curl https://webhooks.cc/api/tunnel-names \
+  -H "Authorization: Bearer whcc_..."
+```
+
+```json
+{
+  "names": [
+    {
+      "name": "acme-demo",
+      "url": "https://acme-demo.sharehooks.cc",
+      "team": null,
+      "reservedBy": { "id": "...", "email": "you@example.com" },
+      "mine": true,
+      "password": true,
+      "live": true,
+      "usable": true,
+      "createdAt": "2026-11-10T08:55:00.000Z"
+    }
+  ],
+  "limit": 3,
+  "used": 1,
+  "plan": "pro",
+  "teams": [{ "id": "...", "name": "Acme", "active": true, "limit": 6, "used": 2 }]
+}
+```
+
+`limit` and `used` count your own names against your plan. Names kept inside a team count against the team instead: its plan's names per seat times its seats, in `teams`. `usable` is `false` for a name the plan no longer covers (past the count after a downgrade, or a team whose subscription ended): it is kept, but nothing can be shared under it until the plan grows or another name is released.
+
+### Reserve a name
+
+```bash
+curl -X POST https://webhooks.cc/api/tunnel-names \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "acme-demo"}'
+```
+
+Returns `201` with `{ "name": { ... } }` in the shape above (`200` when you already held it). Add `"team": "TEAM_ID"` to keep the name inside one of your teams, so every member may share under it. Names are 3 to 40 characters of lowercase letters, digits and single hyphens; they may not end in `-free`, look like a random preview name, or be on the blocklist. Free plans get `403` (reserved names come with Pro and Business), a full plan or team `403` with how to release one, and a name someone else holds `409`.
+
+### Release a name
+
+```bash
+curl -X DELETE https://webhooks.cc/api/tunnel-names/acme-demo \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "ok": true }`. A preview running under the name stops. You can release names you reserved, and as a team's owner any of its names.
+
+### Name passwords
+
+```bash
+curl -X PUT https://webhooks.cc/api/tunnel-names/acme-demo/password \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"password": "a long passphrase"}'
+
+curl -X DELETE https://webhooks.cc/api/tunnel-names/acme-demo/password \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "ok": true, "password": true }` (or `false` after `DELETE`). Every preview under the name asks visitors for it, a running one included. Passwords are 8 to 200 characters and come with Pro and Business; only a hash is kept, and the API never returns it.
+
 ## Session-token-only routes
 
 Some routes require a Supabase session token (from browser login) instead of an API key. These return `403` when called with an API key.
@@ -756,6 +957,7 @@ All errors return a JSON body with an `error` field:
 | `409`  | Conflict, for example redelivering with forwarding off  |
 | `429`  | Rate limited: check `Retry-After` header for wait time  |
 | `500`  | Server error                                            |
+| `503`  | Not available here, for example [sharing](#sharing-localhost) where it is not set up |
 
 ### Rate limit headers
 

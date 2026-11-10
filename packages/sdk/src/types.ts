@@ -286,6 +286,8 @@ export interface TunnelShare {
   mine: boolean;
   /** Who started it, for a teammate's share. */
   startedBy: { id: string; email: string } | null;
+  /** Whether visitors see the notice page before the preview. */
+  notice?: boolean;
 }
 
 /** This month's shared data (UTC month). */
@@ -297,11 +299,15 @@ export interface TunnelUsage {
   /** True once the month's data is used: previews pause until `resetsAt`. */
   over: boolean;
   resetsAt: string;
+  /** Why previews are paused and until when, when `over`. */
+  message?: string | null;
 }
 
 /** What the account's plan allows for sharing. */
 export interface TunnelLimits {
   plan: string;
+  /** The plan's name for people: "Pro", "Team Business". */
+  label?: string;
   /** Previews at once. */
   shares: number;
   reservedNames: number;
@@ -314,10 +320,26 @@ export interface TunnelLimits {
   notice: boolean;
 }
 
+/** Reserved names against the plan, for GET /api/shares. */
+export interface TunnelNamesSummary {
+  /** One's own names the plan allows. */
+  limit: number;
+  /** One's own names reserved. */
+  used: number;
+  /** Names one may share under now, own and teams'. */
+  usable: number;
+}
+
 export interface TunnelShareList {
   shares: TunnelShare[];
   usage: TunnelUsage;
   limits: TunnelLimits;
+  /** Reserved names standing (newer servers). */
+  names?: TunnelNamesSummary;
+  /** True when sharing is suspended on this account. */
+  suspended?: boolean;
+  /** What to do next, as whk commands an agent can run. */
+  hints?: string[];
 }
 
 /** One visitor request to a preview, from the edge's memory (no addresses). */

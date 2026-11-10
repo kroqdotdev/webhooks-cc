@@ -1,9 +1,9 @@
 ---
 title: "SDK"
-description: "The TypeScript SDK lets you create endpoints, capture and replay requests, stream webhooks in real-time, and integrate webhooks.cc into your test suite programmatically."
+description: "The TypeScript SDK lets you create endpoints, capture and replay requests, stream webhooks in real-time, share local ports at public links, and integrate webhooks.cc into your test suite programmatically."
 section: sdk
 order: 1
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: faq
 keywords: ["webhook SDK", "TypeScript SDK", "webhook testing SDK", "@webhooks-cc/sdk"]
 seo:
@@ -138,6 +138,20 @@ const response = await client.requests.replay(request.id, "http://localhost:3000
 
 console.log(response.status); // 200
 ```
+
+## Share a local port
+
+Put the site on your computer at a public link, for a teammate, a client or a test that runs elsewhere. It runs the [`whk` CLI](/docs/share) underneath, so `whk` must be installed (Node.js only):
+
+```ts
+const preview = await client.shares.start({ port: 3000 });
+
+console.log(preview.url); // https://calm-river-7f2a-free.sharehooks.cc
+// ... run your checks against preview.url ...
+await preview.stop();
+```
+
+`client.shares.list()` shows what runs, with this month's data and your plan's limits, `client.shares.requests(id)` a preview's visitor log, and `client.names` reserves a name that stays the same every time (Pro and Business). Requests captured while [`whk tunnel --live`](/docs/live-tunnel) relays an endpoint to your app carry `liveResponse`, what your app answered. See [Sharing localhost](/docs/sdk/api#sharing-localhost).
 
 ## Lifecycle hooks
 

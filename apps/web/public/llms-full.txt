@@ -407,6 +407,29 @@ const usage = await client.usage();
 // Returns: { used, limit, remaining, plan: "free"|"pro"|"business", periodEnd }
 ```
 
+### Sharing Localhost
+
+```typescript
+// Previews (whk share) and live tunnels (whk tunnel --live), with data and plan limits
+const { shares, usage, limits } = await client.shares.list({ state: "live" });
+await client.shares.stop(shares[0].id);
+const { requests } = await client.shares.requests(shares[0].id); // visitor log, no addresses
+
+// Share a local port by running the whk CLI (Node.js; whk on the PATH)
+const preview = await client.shares.start({ port: 3000 });
+console.log(preview.url); // https://calm-river-7f2a-free.sharehooks.cc
+await preview.stop();
+
+// Reserved names (Pro and Business): <name>.sharehooks.cc
+await client.names.reserve("acme-demo");           // { team } keeps it inside a team
+await client.names.setPassword("acme-demo", "a long passphrase");
+await client.names.clearPassword("acme-demo");
+await client.names.release("acme-demo");
+const { names, limit, used, teams } = await client.names.list();
+```
+
+`share()` (exported) does the same without a client. Requests captured while `whk tunnel --live` ran carry `liveResponse`: `{ status, headers, body, bodyTruncated, bodyEncoding, ms, outcome }`, what the local app answered and the sender got.
+
 ### Matchers
 
 All matchers return `(request: Request) => boolean` for use with `waitFor` and `waitForAll`:
@@ -512,6 +535,7 @@ interface Request {
   receivedAt: number;       // Unix ms
   kind?: "http" | "email";
   email?: EmailCapture | null;  // Parsed message, for a captured email (see Email Capture)
+  liveResponse?: LiveResponse | null;  // What the local app answered, under whk tunnel --live
 }
 
 interface EmailRequest extends Request {
@@ -886,6 +910,20 @@ Forwarding settings are owner only. The owner-only routes below answer `404` to 
 | GET/POST | `/api/teams/[id]/endpoints` | Bearer | Team endpoints |
 | POST | `/api/teams/[id]/invite` | Bearer | Send invite |
 | POST | `/api/invites/[id]/accept` | Bearer | Accept invite |
+
+### Sharing Localhost
+
+API key, claimed agent token or session; 503 where sharing is not set up.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/shares?state=live\|ended` | Bearer | Previews and live tunnels, this month's data, plan limits, names standing, `hints` (next steps as whk commands) |
+| POST | `/api/shares/[id]/stop` | Bearer | Stop a preview or live tunnel (the CLI exits, saying why) |
+| GET | `/api/shares/[id]/requests` | Bearer | A running preview's visitor log (no addresses) |
+| GET | `/api/tunnel-names` | Bearer | Reserved names, own and team counts |
+| POST | `/api/tunnel-names` | Bearer | Reserve a name; body `{ "name", "team"? }` |
+| DELETE | `/api/tunnel-names/[name]` | Bearer | Release a name (stops a preview under it) |
+| PUT/DELETE | `/api/tunnel-names/[name]/password` | Bearer | Set (`{ "password" }`, 8 to 200 characters) or clear a name's password |
 
 ### Guest (No Auth)
 

@@ -279,6 +279,7 @@ export type {
   TunnelUsage,
   TunnelLimits,
   TunnelShareList,
+  TunnelNamesSummary,
   TunnelVisit,
   TunnelVisits,
   TunnelName,

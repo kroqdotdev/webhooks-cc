@@ -1,9 +1,9 @@
 ---
 title: "Go SDK"
-description: "The webhooks.cc Go module captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes testing.TB helpers."
+description: "The webhooks.cc Go module captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures, and shares a local port at a public link. Includes testing.TB helpers."
 section: sdk
 order: 7
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords: ["go webhook sdk", "golang webhooks", "webhook testing go", "verify webhook signature go", "webhooks.cc/go"]
 seo:
@@ -328,6 +328,49 @@ var paid struct {
 }
 _ = json.Unmarshal(payload, &paid)
 ```
+
+## Share a local port
+
+Put the site on this computer at a public link, for a teammate, a client, or a check that runs elsewhere. It runs the [`whk` CLI](/docs/share) underneath, so `whk` must be on the `PATH`:
+
+```go
+live, err := client.Shares.Start(ctx, webhookscc.ShareOptions{Port: 3000})
+if err != nil {
+	return err
+}
+defer live.Stop(context.Background())
+fmt.Println(live.URL) // https://calm-river-7f2a-free.sharehooks.cc
+```
+
+`client.Shares.Start` shares as the client's own account: an API-key client passes its key, and a connected agent client has `whk` read the same agent credential file (a sandbox client gets an error: connect it first). `webhookscc.Share(ctx, opts)` does the same without a client, with `ShareOptions.APIKey` or the CLI's own login. `ShareOptions` takes `Port`, `Name` (a name you reserved, Pro and Business), `Password` (8 to 200 characters, passed through the environment, never the command line), `WhkPath`, `TunnelURL` and `OpenTimeout`. The `*LiveShare` it returns has:
+
+| Member | What it is |
+| --- | --- |
+| `URL`, `Name` | The public link and its name (a random one ending in `-free` on Free) |
+| `ExpiresAt` | When a Free share's 2 hours run out; zero without a limit |
+| `Notice`, `Password` | Whether visitors see a short notice first, and whether they need a password |
+| `Events()` | A channel of what the CLI prints (requests, notices, reconnects), closed when the share ends |
+| `Done()`, `Wait(ctx)`, `Reason()` | When it ended and why |
+| `Stop(ctx)` | Close the CLI's input, then signal it after 5 seconds and kill it after 10 |
+
+A refusal returns a `*ShareError` with the CLI's own words; `errors.Is(err, webhookscc.ErrWhkNotInstalled)` tells you `whk` is missing, and `WhkInstallHint()` how to install it. The share also stops when your program exits.
+
+The rest of the [Shares page](/docs/share#for-agents) is on the client:
+
+```go
+list, err := client.Shares.List(ctx, webhookscc.ListSharesOptions{State: webhookscc.ShareStateLive})
+// list.Shares, list.Usage, list.Limits, list.Names, list.Suspended, list.Hints
+visits, err := client.Shares.Requests(ctx, list.Shares[0].ID) // a preview's visitor log, no addresses
+err = client.Shares.Stop(ctx, list.Shares[0].ID)
+
+name, err := client.Names.Reserve(ctx, "acme-demo", "") // a team ID keeps it inside a team
+err = client.Names.SetPassword(ctx, "acme-demo", "a long passphrase")
+err = client.Names.ClearPassword(ctx, "acme-demo")
+names, err := client.Names.List(ctx) // Names, Limit and Used (your own), Teams (each team's count)
+err = client.Names.Release(ctx, "acme-demo")
+```
+
+A request captured while [`whk tunnel --live`](/docs/live-tunnel) relayed the endpoint to your app has `LiveResponse`: what your app answered and the sender got (`Status`, `Headers`, `Body`, `BodyTruncated`, `BodyEncoding`, `MS`, and `Outcome`, which is `"answered"` or why a stand-in answered instead).
 
 ## Stream requests as they arrive
 
