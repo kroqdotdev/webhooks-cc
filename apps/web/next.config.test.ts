@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 // rule in order, the later one winning per header; for rewrites the first
 // matching rule.
 import { getPathMatch } from "next/dist/shared/lib/router/utils/path-match";
+import { modifyRouteRegex } from "next/dist/lib/redirect-status";
 import {
   compileNonPath,
   matchHas,
@@ -19,12 +20,23 @@ const APP = process.env.NEXT_PUBLIC_APP_URL ?? "https://webhooks.cc";
 const AUTH_MD = `<${APP}/auth.md>; rel="auth.md"`;
 const API_CATALOG = `<${APP}/.well-known/api-catalog>; rel="api-catalog"`;
 
-async function headersFor(pathname: string): Promise<Record<string, string>> {
+async function headersFor(
+  pathname: string,
+  requestHeaders: Record<string, string> = {}
+): Promise<Record<string, string>> {
   const rules = (await nextConfig.headers?.()) ?? [];
+  const req = { headers: requestHeaders } as unknown as Parameters<typeof matchHas>[0];
   const result: Record<string, string> = {};
   for (const rule of rules) {
-    const params = getPathMatch(rule.source, { strict: true, removeUnnamedParams: true })(pathname);
+    // The router compiles header sources with modifyRouteRegex, which lets
+    // "/:path*" match the root and a trailing slash.
+    const params = getPathMatch(rule.source, {
+      strict: true,
+      removeUnnamedParams: true,
+      regexModifier: (regex) => modifyRouteRegex(regex),
+    })(pathname);
     if (!params) continue;
+    if ((rule.has || rule.missing) && !matchHas(req, {}, rule.has, rule.missing)) continue;
     const hasParams = Object.keys(params).length > 0;
     for (const { key, value } of rule.headers) {
       result[key.toLowerCase()] = hasParams ? compileNonPath(value, params) : value;
@@ -57,6 +69,37 @@ describe("next.config.ts headers", () => {
       `${AUTH_MD}, ${API_CATALOG}, <${APP}${twin}>; rel="alternate"; type="text/markdown"`
     );
     expect(headers.vary).toBe("Accept");
+  });
+
+  // The router's RSC fetches of a prerendered page share one `_rsc` URL across
+  // builds, and Next marks them stale-while-revalidate for a year: Chromium
+  // then served the previous build's payload after a deploy, whose chunks left
+  // old module factories behind (React error #306 on the landing page).
+  it.each(["/", "/dashboard", "/docs/agents", "/webhooks/stripe"])(
+    "keeps the RSC payload of %s out of the browser's HTTP cache",
+    async (path) => {
+      // A navigation, and the segment cache's route tree prefetch (the one that
+      // brought in the stale payload).
+      const requests: Record<string, string>[] = [
+        {},
+        { "next-router-prefetch": "1", "next-router-segment-prefetch": "/_tree" },
+      ];
+      for (const prefetch of requests) {
+        const headers = await headersFor(path, { rsc: "1", ...prefetch });
+        expect(headers["cache-control"]).toBe(
+          "private, no-cache, no-store, max-age=0, must-revalidate"
+        );
+      }
+    }
+  );
+
+  it("leaves Cache-Control to Next for a page's HTML", async () => {
+    for (const path of ["/", "/dashboard", "/docs/agents"]) {
+      expect((await headersFor(path))["cache-control"]).toBeUndefined();
+    }
+    expect((await headersFor("/email-templates/invite.html"))["cache-control"]).toBe(
+      "public, max-age=0, no-transform"
+    );
   });
 
   it("keeps every relation on the deprecated auth.md v0.1 routes", async () => {
