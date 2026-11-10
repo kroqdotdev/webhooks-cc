@@ -40,8 +40,13 @@ export async function POST(request: Request) {
   if (ids.length === 0) return Response.json({ close: [], gates: [], over });
 
   const admin = createAdminClient();
-  // Open previews held to the plan as it is now (a downgrade, a lapsed team):
-  // first, so a time limit it adds ends runs past it just below.
+  // Runs whose access ended since they opened (a team left or lapsed, an
+  // endpoint unshared, an agent disconnected, an account deleted), in case
+  // the change itself could not reach the edge. First, so a run that lost
+  // its team is told so, not that its plan changed.
+  await endRunsWithoutAccess();
+  // Open previews held to the plan as it is now (a downgrade, a refund, fewer
+  // seats).
   await enforcePlans().catch((err) => reportError("Failed to hold tunnel runs to their plan", err));
   // Runs past their plan's time end here, so the CLI hears why.
   const { data: expired, error: expiredError } = await admin
@@ -58,11 +63,6 @@ export async function POST(request: Request) {
     });
     if (error) throw error;
   }
-
-  // Runs whose access ended since they opened (a team left or lapsed, an
-  // endpoint unshared, an agent disconnected, an account deleted), in case
-  // the change itself could not reach the edge.
-  await endRunsWithoutAccess();
 
   const { data: rows, error } = await admin
     .from("tunnel_shares")

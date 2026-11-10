@@ -24,6 +24,7 @@ function share(id: string, startedAt: string, endedAt: string | null): ApiShare 
     bytes: 0,
     requests: 0,
     password: false,
+    notice: false,
     mine: true,
     startedBy: null,
   };
@@ -46,7 +47,7 @@ describe("splitShares", () => {
 
 describe("usagePercent", () => {
   it("rounds and caps", () => {
-    const usage = { month: "2026-11", over: false, resetsAt: "" };
+    const usage = { month: "2026-11", over: false, resetsAt: "", message: null };
     expect(usagePercent({ ...usage, bytes: 250, limitBytes: 1000 })).toBe(25);
     expect(usagePercent({ ...usage, bytes: 5000, limitBytes: 1000 })).toBe(100);
     expect(usagePercent({ ...usage, bytes: 0, limitBytes: 0 })).toBe(100);

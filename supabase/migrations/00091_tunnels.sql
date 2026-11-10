@@ -8,7 +8,8 @@
 --
 -- plan_entitlements: share_slots (live previews at once), share_session_minutes
 --   (null for no limit), share_data_gb (what visitors may take a UTC month),
---   reserved_names and share_passwords. Team plans count per member.
+--   reserved_names and share_passwords. Team plans count per member, except
+--   reserved names: a team's names count against the team (per seat).
 --
 -- tunnel_names: names kept by an account (or kept inside one of its teams,
 --   team_id, so every member may share under it), with an optional password
@@ -50,7 +51,7 @@
 --   tunnel_end_shares(ids, reason) ends runs, clears live_session_id
 --   tunnel_close_all_open(reason)  the edge restarted
 --   tunnel_apply_usage_batch(id, usage, month) adds one batch, once
---   tunnel_reserve_name(...)   keeps a name under the plan's count
+--   tunnel_reserve_name(...)   keeps a name under the plan's or team's count
 --   tunnel_runs_without_access()   open runs whose access has ended since
 --
 -- The index on endpoints(live_session_id) is built concurrently after the
@@ -212,6 +213,9 @@ create table if not exists public.tunnel_shares (
   -- 'endpoint deleted' (tunnel_runs_without_access()) and keeps its record.
   endpoint_id      uuid references public.endpoints(id) on delete set null,
   free             boolean not null default false,
+  -- Whether visitors saw the notice when the run opened: a plan change that
+  -- now asks for it (a downgrade to Free) ends a run that opened without it.
+  notice           boolean not null default false,
   client           text not null default '' check (char_length(client) <= 100),
   key_id           uuid references public.api_keys(id) on delete set null,
   -- The agent registration whose access token opened the run, if one did. No
@@ -359,7 +363,8 @@ create or replace function public.tunnel_open_share(
   p_client_address text,
   p_password_hash text,
   p_password_version text,
-  p_agent_registration_id uuid default null
+  p_agent_registration_id uuid default null,
+  p_notice boolean default false
 )
 returns jsonb
 language plpgsql
@@ -400,14 +405,14 @@ begin
 
   begin
     insert into public.tunnel_shares (
-      kind, user_id, name, endpoint_id, free, client, key_id, instance,
+      kind, user_id, name, endpoint_id, free, notice, client, key_id, instance,
       client_address, expires_at, password_hash, password_version,
       agent_registration_id
     ) values (
       p_kind, p_user_id,
       case when p_kind = 'share' then p_name end,
       case when p_kind = 'live' then p_endpoint_id end,
-      p_free, left(coalesce(p_client, ''), 100), p_key_id, left(p_instance, 64),
+      p_free, coalesce(p_notice, false), left(coalesce(p_client, ''), 100), p_key_id, left(p_instance, 64),
       left(p_client_address, 64),
       -- A reconnect of the same run (same account and instance) keeps the
       -- time limit it started with: reconnecting never buys more time.
@@ -440,9 +445,9 @@ begin
 end;
 $$;
 
-revoke all on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid)
+revoke all on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid, boolean)
   from public, anon, authenticated;
-grant execute on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid)
+grant execute on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid, boolean)
   to service_role;
 
 -- Ends the open runs among p_ids with p_reason and clears the live session
@@ -624,8 +629,10 @@ $$;
 revoke all on function public.tunnel_apply_usage_batch(text, jsonb, date) from public, anon, authenticated;
 grant execute on function public.tunnel_apply_usage_batch(text, jsonb, date) to service_role;
 
--- Keeps a name for the account (in p_team_id when given) while it holds
--- fewer than p_limit. Answers 'ok', 'limit' or 'taken'.
+-- Keeps a name for the account. Without p_team_id it is the account's own
+-- and counts against p_limit, the account's plan's names; with p_team_id it
+-- is the team's and counts against the team's cap (its plan's names per
+-- seat, times its seats). Answers 'ok', 'limit', 'team_limit' or 'taken'.
 create or replace function public.tunnel_reserve_name(
   p_user_id uuid,
   p_team_id uuid,
@@ -638,11 +645,34 @@ set search_path = ''
 as $$
 declare
   v_held integer;
+  v_cap integer;
 begin
-  perform 1 from public.users where id = p_user_id for update;
-  select count(*) into v_held from public.tunnel_names where user_id = p_user_id;
-  if v_held >= p_limit then
-    return 'limit';
+  if p_team_id is null then
+    -- One's own names count against one's own plan (p_limit).
+    perform 1 from public.users where id = p_user_id for update;
+    select count(*) into v_held
+      from public.tunnel_names
+     where user_id = p_user_id and team_id is null;
+    if v_held >= p_limit then
+      return 'limit';
+    end if;
+  else
+    -- A team's names count against the team: its plan's names per seat,
+    -- times its seats (as account_entitlements() multiplies per seat), so a
+    -- name changing keeper inside the team never moves anyone's own count.
+    select pe.reserved_names * greatest(t.seats, 1) into v_cap
+      from public.teams t
+      join public.plan_entitlements pe
+        on pe.key = case when t.business then 'team_business' else 'team' end
+     where t.id = p_team_id
+       for update of t;
+    if v_cap is null then
+      return 'limit';
+    end if;
+    select count(*) into v_held from public.tunnel_names where team_id = p_team_id;
+    if v_held >= v_cap then
+      return 'team_limit';
+    end if;
   end if;
   insert into public.tunnel_names (name, user_id, team_id)
   values (p_name, p_user_id, p_team_id)

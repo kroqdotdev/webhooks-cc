@@ -1,3 +1,4 @@
+import { ENTITLEMENTS } from "@/lib/entitlements";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   drawName,
@@ -14,10 +15,12 @@ import { stopShares } from "./stops";
  * Kept preview names (tunnel_names). A name kept inside a team (team_id) may
  * be shared under, and its password changed, by the team's current members
  * while the team's subscription is live; names kept alone stay the account's
- * own. An account's own names count against its plan's reserved names: after
- * a downgrade the oldest ones it is allowed stay usable and the rest wait,
- * never deleted. When a member leaves or is removed, the names they kept in
- * that team go to the team's owner (handOverTeamNames), so the team keeps them.
+ * own. An account's own names count against its plan's reserved names; a
+ * team's names count against the team (its plan's names per seat, times its
+ * seats), whoever keeps them. After a downgrade or a seat reduction the
+ * oldest ones allowed stay usable and the rest wait, never deleted. When a
+ * member leaves or is removed, the names they kept in that team go to the
+ * team's owner (handOverTeamNames), which moves no one's own count.
  */
 
 interface NameRow {
@@ -30,9 +33,10 @@ interface NameRow {
 }
 
 /**
- * The account's own names its plan covers: the oldest `limit`, by when they
- * were kept. Names past the plan's count (after a downgrade) are kept but not
- * usable until others are released or the plan grows.
+ * The account's own names its plan covers: the oldest `limit` of the names it
+ * keeps outside any team, by when they were kept. Names past the plan's count
+ * (after a downgrade) are kept but not usable until others are released or
+ * the plan grows. A team's names never count here (teamNameCap).
  */
 export async function coveredOwnNames(userId: string, limit: number): Promise<Set<string>> {
   if (limit <= 0) return new Set();
@@ -40,6 +44,7 @@ export async function coveredOwnNames(userId: string, limit: number): Promise<Se
     .from("tunnel_names")
     .select("name")
     .eq("user_id", userId)
+    .is("team_id", null)
     .order("created_at", { ascending: true })
     .order("name", { ascending: true })
     .limit(limit);
@@ -47,10 +52,64 @@ export async function coveredOwnNames(userId: string, limit: number): Promise<Se
   return new Set((data ?? []).map((n) => n.name));
 }
 
+/**
+ * How many names a team may keep: its plan's names per seat, times its seats
+ * (at least one), as tunnel_reserve_name() counts them.
+ */
+export function teamNameCap(seats: number | null, business: boolean): number {
+  return ENTITLEMENTS[business ? "team_business" : "team"].reservedNames * Math.max(seats ?? 0, 1);
+}
+
+/** The name caps of these teams (teamNameCap), in one query. */
+export async function teamNameCaps(teamIds: string[]): Promise<Map<string, number>> {
+  const caps = new Map<string, number>();
+  const ids = [...new Set(teamIds)];
+  if (ids.length === 0) return caps;
+  const { data, error } = await createAdminClient()
+    .from("teams")
+    .select("id, seats, business")
+    .in("id", ids);
+  if (error) throw error;
+  for (const t of data ?? []) caps.set(t.id, teamNameCap(t.seats, t.business));
+  return caps;
+}
+
+/** Pure: the oldest `limit` names, by when they were kept, then by name. */
+export function oldestNames(
+  rows: { name: string; created_at: string }[],
+  limit: number
+): Set<string> {
+  return new Set(
+    [...rows]
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.name.localeCompare(b.name))
+      .slice(0, Math.max(0, limit))
+      .map((r) => r.name)
+  );
+}
+
+/** The team's names its cap covers: the oldest ones, as for own names. */
+async function coveredTeamNames(teamId: string): Promise<Set<string>> {
+  const cap = (await teamNameCaps([teamId])).get(teamId) ?? 0;
+  if (cap <= 0) return new Set();
+  const { data, error } = await createAdminClient()
+    .from("tunnel_names")
+    .select("name, created_at")
+    .eq("team_id", teamId)
+    .order("created_at", { ascending: true })
+    .order("name", { ascending: true })
+    .limit(cap);
+  if (error) throw error;
+  return new Set((data ?? []).map((n) => n.name));
+}
+
 /** What an account is told about a name it keeps past its plan's count. */
 export function pastCountMessage(plan: TunnelPlan): string {
-  return `${plan.label} covers ${plan.limits.reservedNames} reserved ${plan.limits.reservedNames === 1 ? "name" : "names"}, and this one is past that. Release another name or move to a bigger plan to use it.`;
+  return `${plan.label} covers ${plan.limits.reservedNames} reserved ${plan.limits.reservedNames === 1 ? "name" : "names"}, and this one is past that. Release another with whk names release <name>, or move to a bigger plan, to use it.`;
 }
+
+/** What a member is told about a team name past the team's count. */
+export const PAST_TEAM_COUNT =
+  "This team keeps more names than its seats cover, and this one is past that. Release another team name with whk names release <name>, or add seats, to use it.";
 
 /** What an account is told about a name of a team whose subscription ended. */
 export const LAPSED_TEAM_NAME =
@@ -169,7 +228,11 @@ export async function nameStanding(
   if (held) {
     // A team's name: its current members, while the team's subscription is live.
     if (held.team_id !== null) {
-      if (plan.activeTeamIds.includes(held.team_id)) return { name, yours: true };
+      if (plan.activeTeamIds.includes(held.team_id)) {
+        if (!(await coveredTeamNames(held.team_id)).has(name))
+          return { error: PAST_TEAM_COUNT, status: 403 };
+        return { name, yours: true };
+      }
       if (plan.teamIds.includes(held.team_id)) return { error: LAPSED_TEAM_NAME, status: 403 };
       return { error: "That name is taken.", status: 409 };
     }
@@ -224,7 +287,13 @@ export async function reserveName(
   if (error) throw error;
   if (data === "limit")
     return {
-      error: `You have ${plan.limits.reservedNames} reserved ${plan.limits.reservedNames === 1 ? "name" : "names"}, the most on ${plan.label}. Release one first.`,
+      error: `You have ${plan.limits.reservedNames} reserved ${plan.limits.reservedNames === 1 ? "name" : "names"}, the most on ${plan.label}. Release one with whk names release <name> first.`,
+      status: 403,
+    };
+  if (data === "team_limit")
+    return {
+      error:
+        "That team keeps as many names as its seats cover. Release a team name with whk names release <name>, or add seats, first.",
       status: 403,
     };
   if (data === "taken") return { error: "That name is taken.", status: 409 };
@@ -253,25 +322,45 @@ export interface UsableName {
   password: boolean;
   /**
    * Whether it can be shared under now: false for one's own names past the
-   * plan's count, and for names of a team whose subscription ended.
+   * plan's count, for a team's names past the team's count, and for names of
+   * a team whose subscription ended.
    */
   usable: boolean;
   createdAt: string;
 }
 
+/** A team's names against its cap, as the names API reports them. */
+export interface TeamNameCount {
+  teamId: string;
+  limit: number;
+  used: number;
+}
+
+export interface NamesView {
+  names: UsableName[];
+  /** One's own names (outside teams) against one's plan. */
+  own: { limit: number; used: number };
+  /** Each of one's teams' names against the team's cap. */
+  teams: TeamNameCount[];
+}
+
 /** The names an account sees: its own and its teams'. */
 export async function namesOf(userId: string, plan: TunnelPlan): Promise<UsableName[]> {
+  return (await namesView(userId, plan)).names;
+}
+
+/** The names an account sees, with its own and its teams' counts. */
+export async function namesView(userId: string, plan: TunnelPlan): Promise<NamesView> {
   const { teamIds } = plan;
   const admin = createAdminClient();
   const filter =
     teamIds.length > 0
       ? `user_id.eq.${userId},team_id.in.(${teamIds.join(",")})`
       : `user_id.eq.${userId}`;
-  const { data, error } = await admin
-    .from("tunnel_names")
-    .select("*")
-    .or(filter)
-    .order("created_at", { ascending: true });
+  const [{ data, error }, caps] = await Promise.all([
+    admin.from("tunnel_names").select("*").or(filter).order("created_at", { ascending: true }),
+    teamNameCaps(teamIds),
+  ]);
   if (error) throw error;
   const rows = (data ?? []) as NameRow[];
   const holders = [...new Set(rows.map((r) => r.user_id))];
@@ -284,24 +373,41 @@ export async function namesOf(userId: string, plan: TunnelPlan): Promise<UsableN
     if (usersError) throw usersError;
     for (const u of users ?? []) emails.set(u.id, u.email);
   }
-  // Names one keeps count against one's plan by when they were kept (as in
-  // coveredOwnNames): the plan covers the oldest ones.
-  const covered = new Set(
-    rows
-      .filter((r) => r.user_id === userId)
-      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.name.localeCompare(b.name))
-      .slice(0, Math.max(0, plan.limits.reservedNames))
-      .map((r) => r.name)
-  );
-  return rows.map((r) => ({
+  // One's own names count against one's plan, a team's against the team
+  // (as coveredOwnNames and coveredTeamNames): each covers its oldest names.
+  const own = rows.filter((r) => r.user_id === userId && r.team_id === null);
+  const coveredOwn = oldestNames(own, plan.limits.reservedNames);
+  const coveredTeam = new Map<string, Set<string>>();
+  for (const teamId of teamIds)
+    coveredTeam.set(
+      teamId,
+      oldestNames(
+        rows.filter((r) => r.team_id === teamId),
+        caps.get(teamId) ?? 0
+      )
+    );
+  const names = rows.map((r) => ({
     name: r.name,
     teamId: r.team_id,
     reservedBy: emails.has(r.user_id) ? { id: r.user_id, email: emails.get(r.user_id)! } : null,
     mine: r.user_id === userId,
     password: r.password_version !== null,
-    usable: r.team_id !== null ? plan.activeTeamIds.includes(r.team_id) : covered.has(r.name),
+    usable:
+      r.team_id !== null
+        ? plan.activeTeamIds.includes(r.team_id) &&
+          (coveredTeam.get(r.team_id)?.has(r.name) ?? false)
+        : coveredOwn.has(r.name),
     createdAt: r.created_at,
   }));
+  return {
+    names,
+    own: { limit: plan.limits.reservedNames, used: own.length },
+    teams: teamIds.map((teamId) => ({
+      teamId,
+      limit: caps.get(teamId) ?? 0,
+      used: rows.filter((r) => r.team_id === teamId).length,
+    })),
+  };
 }
 
 /**

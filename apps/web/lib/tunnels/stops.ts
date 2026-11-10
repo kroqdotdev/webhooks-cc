@@ -70,7 +70,7 @@ export const STOPS = {
   },
   plan: {
     record: "plan changed",
-    tell: "your plan changed and no longer covers it (fewer shares, names or passwords, or a time limit). Start it again within the new plan",
+    tell: "your plan changed and no longer covers it as it ran (fewer shares, names or passwords, a time limit, or the visitor notice). Start it again with whk share to get what the plan gives now",
     ending: "the plan changed",
   },
   access: {

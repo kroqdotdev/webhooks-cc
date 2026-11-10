@@ -2,7 +2,9 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { reportError } from "@/lib/observability";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { sharingOff, tunnelConfig } from "@/lib/tunnels/config";
-import { apiLimits, apiUsage, sharesFor } from "@/lib/tunnels/listing";
+import { sharingSuspended } from "@/lib/tunnels/accounts";
+import { apiLimits, apiUsage, shareHints, sharesFor } from "@/lib/tunnels/listing";
+import { namesView } from "@/lib/tunnels/names";
 import { tunnelPlanOf } from "@/lib/tunnels/plan";
 import { usageOf } from "@/lib/tunnels/usage";
 
@@ -12,7 +14,9 @@ const READ_WINDOW_MS = 60_000;
 /**
  * The account's `whk share` previews and `whk tunnel --live` sessions (live
  * ones, then the latest that ended), its teams' live previews, this month's
- * shared data, and the plan's limits. `?state=live` or `?state=ended` narrows.
+ * shared data, the plan's limits, where it stands on reserved names, whether
+ * sharing is suspended, and `hints`: what it can do next, as commands, so an
+ * agent never needs the dashboard. `?state=live` or `?state=ended` narrows.
  */
 export async function GET(request: Request) {
   if (!tunnelConfig()) return sharingOff();
@@ -33,12 +37,36 @@ export async function GET(request: Request) {
   try {
     const plan = await tunnelPlanOf(auth.userId);
     if (!plan) return Response.json({ error: "Account not found" }, { status: 404 });
-    const [shares, usage] = await Promise.all([
+    const [shares, usage, suspended, view] = await Promise.all([
       sharesFor(auth.userId, plan, raw),
       usageOf(plan, auth.userId),
+      sharingSuspended(auth.userId),
+      namesView(auth.userId, plan),
     ]);
+    const names = {
+      limit: view.own.limit,
+      used: view.own.used,
+      usable: view.names.filter((n) => n.usable).length,
+    };
+    // Counted from the live list itself when it was asked for; otherwise
+    // the ended list says nothing about slots.
+    const live =
+      raw === "ended" ? null : shares.filter((s) => s.mine && s.kind === "share" && !s.endedAt);
     return applyRateLimitHeaders(
-      Response.json({ shares, usage: apiUsage(usage), limits: apiLimits(plan) }),
+      Response.json({
+        shares,
+        usage: apiUsage(usage),
+        limits: apiLimits(plan),
+        names,
+        suspended,
+        hints: shareHints({
+          plan,
+          usage,
+          suspended,
+          liveShares: live?.length ?? 0,
+          names,
+        }),
+      }),
       rateLimit
     );
   } catch (error) {

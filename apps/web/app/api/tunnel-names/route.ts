@@ -5,7 +5,8 @@ import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-l
 import { SUSPENDED, sharingSuspended } from "@/lib/tunnels/accounts";
 import { sharingOff, tunnelConfig } from "@/lib/tunnels/config";
 import { apiNames } from "@/lib/tunnels/name-api";
-import { namesOf, reserveName } from "@/lib/tunnels/names";
+import { namesOf, namesView, reserveName } from "@/lib/tunnels/names";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { tunnelPlanOf } from "@/lib/tunnels/plan";
 
 const READ_LIMIT = 120;
@@ -29,12 +30,31 @@ export async function GET(request: Request) {
   try {
     const plan = await tunnelPlanOf(auth.userId);
     if (!plan) return Response.json({ error: "Account not found" }, { status: 404 });
-    const names = await namesOf(auth.userId, plan);
+    const view = await namesView(auth.userId, plan);
+    const teamNames = new Map<string, string>();
+    if (plan.teamIds.length > 0) {
+      const { data: teams, error } = await createAdminClient()
+        .from("teams")
+        .select("id, name")
+        .in("id", plan.teamIds);
+      if (error) throw error;
+      for (const t of teams ?? []) teamNames.set(t.id, t.name);
+    }
+    // `limit` and `used` are the account's own names (outside teams) against
+    // its plan; each team's names count against the team, in `teams`.
     return applyRateLimitHeaders(
       Response.json({
-        names: await apiNames(names),
-        limit: plan.limits.reservedNames,
-        used: names.filter((n) => n.mine).length,
+        names: await apiNames(view.names),
+        limit: view.own.limit,
+        used: view.own.used,
+        plan: plan.key,
+        teams: view.teams.map((t) => ({
+          id: t.teamId,
+          name: teamNames.get(t.teamId) ?? "",
+          active: plan.activeTeamIds.includes(t.teamId),
+          limit: t.limit,
+          used: t.used,
+        })),
       }),
       rateLimit
     );

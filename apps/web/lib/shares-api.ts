@@ -13,12 +13,21 @@ export interface SharesListing {
   shares: ApiShare[];
   usage: ApiTunnelUsage;
   limits: ApiTunnelLimits;
+  /** One's own names against the plan, and how many names are usable now. */
+  names?: { limit: number; used: number; usable: number };
+  suspended?: boolean;
+  /** What the account can do next, as commands. */
+  hints?: string[];
 }
 
 export interface NamesListing {
   names: ApiName[];
+  /** One's own names (outside teams) against the plan. */
   limit: number;
   used: number;
+  plan?: string;
+  /** Each team's names against the team's cap (per seat). */
+  teams?: { id: string; name: string; active: boolean; limit: number; used: number }[];
 }
 
 export interface SeenRequest {

@@ -1558,6 +1558,7 @@ export interface Database {
           name: string | null;
           endpoint_id: string | null;
           free: boolean;
+          notice: boolean;
           client: string;
           key_id: string | null;
           agent_registration_id: string | null;
@@ -2311,6 +2312,7 @@ export interface Database {
           p_password_hash: string | null;
           p_password_version: string | null;
           p_agent_registration_id?: string | null;
+          p_notice?: boolean;
         };
         Returns: Json;
       };
@@ -2338,7 +2340,7 @@ export interface Database {
       };
       tunnel_reserve_name: {
         Args: { p_user_id: string; p_team_id: string | null; p_name: string; p_limit: number };
-        Returns: "ok" | "limit" | "taken";
+        Returns: "ok" | "limit" | "team_limit" | "taken";
       };
       /** Written by the receiver after a live relay (migration 00092). */
       record_live_response: {

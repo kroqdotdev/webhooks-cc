@@ -662,6 +662,79 @@ describe("edge routes", () => {
     expect(revoked?.end_reason).toBe("access ended");
   });
 
+  it("gives an agent token everything the Shares page shows, with next steps as commands", async () => {
+    const user = await createUser({
+      plan: "pro",
+      request_limit: 100_000,
+      paid_since: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+    });
+    const { data: registration, error: regError } = await admin
+      .from("agent_registrations")
+      .insert({
+        kind: "service_auth",
+        user_id: user.id,
+        claimed_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      })
+      .select("id")
+      .single();
+    if (regError) throw regError;
+    const agentKey = `whcc_agent_access_${ts}_${Math.random().toString(36).slice(2, 10)}`;
+    const { error: keyError } = await admin.from("api_keys").insert({
+      user_id: user.id,
+      key_hash: hashApiKey(agentKey),
+      key_prefix: agentKey.slice(0, 12),
+      name: "agent access token",
+      is_agent_issued: true,
+      agent_registration_id: registration.id,
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    if (keyError) throw keyError;
+
+    const name = `agent-made-${ts % 100_000}`;
+    expect((await api("/api/tunnel-names", "POST", agentKey, { body: { name } })).status).toBe(201);
+    const opened = await open(agentKey, { name });
+    expect(opened.status).toBe(200);
+
+    const listing = (await (await api("/api/shares", "GET", agentKey)).json()) as {
+      shares: { id: string; notice: boolean }[];
+      limits: { plan: string; label: string };
+      usage: { message: string | null };
+      names: { limit: number; used: number; usable: number };
+      suspended: boolean;
+      hints: string[];
+    };
+    expect(listing.shares).toContainEqual(
+      expect.objectContaining({ id: opened.body.shareId, notice: false })
+    );
+    expect(listing.limits).toMatchObject({ plan: "pro", label: "Pro" });
+    expect(listing.usage.message).toBeNull();
+    expect(listing.names).toEqual({ limit: 3, used: 1, usable: 1 });
+    expect(listing.suspended).toBe(false);
+    expect(listing.hints.join("\n")).toMatch(/whk share <port>/);
+    expect(listing.hints.join("\n")).toMatch(/whk tunnel <port> --live/);
+
+    const requests = await api("/api/shares/requests", "GET", agentKey, {
+      params: { id: opened.body.shareId as string },
+    });
+    expect(requests.status).toBe(200);
+    expect(
+      (
+        await api("/api/tunnel-names/password", "PUT", agentKey, {
+          params: { name },
+          body: { password: "correct-horse-1" },
+        })
+      ).status
+    ).toBe(200);
+    const stop = await api("/api/shares/stop", "POST", agentKey, {
+      params: { id: opened.body.shareId as string },
+    });
+    expect(stop.status).toBe(200);
+    expect(
+      (await api("/api/tunnel-names/name", "DELETE", agentKey, { params: { name } })).status
+    ).toBe(200);
+  });
+
   it("keeps a deleted account's runs for the evidence, and ends them", async () => {
     const user = await createUser();
     const opened = await open(user.key);
@@ -885,6 +958,100 @@ describe("round two: limits, names and access while runs are open", () => {
     ).toBe(404);
   });
 
+  it("counts team names against the team, so a handed-over name never ends the owner's own previews", async () => {
+    const { removeTeamMember } = await import("@/lib/supabase/teams-members");
+    const owner = await createUser({
+      plan: "pro",
+      request_limit: 100_000,
+      paid_since: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+    });
+    const member = await createUser({ plan: "pro", request_limit: 100_000 });
+    const teamId = await team(owner.id, [member.id]);
+    // The member keeps a team name first; then the owner keeps three own
+    // names, all Pro covers.
+    const teamName = `crew-early-${ts % 100_000}`;
+    expect(
+      (
+        await api("/api/tunnel-names", "POST", member.key, {
+          body: { name: teamName, team: teamId },
+        })
+      ).status
+    ).toBe(201);
+    const own = [1, 2, 3].map((i) => `own-${i}-${ts % 100_000}`);
+    for (const name of own)
+      expect((await api("/api/tunnel-names", "POST", owner.key, { body: { name } })).status).toBe(
+        201
+      );
+    const run = await open(owner.key, { name: own[2] });
+    expect(run.status).toBe(200);
+
+    // The member leaves: the older team name goes to the owner.
+    expect(await removeTeamMember(owner.id, teamId, member.id)).toBe(true);
+    const synced = (await (
+      await edge("sync", { shareIds: [run.body.shareId], batches: [] })
+    ).json()) as { close: { shareId: string }[] };
+    expect(synced.close.map((c) => c.shareId)).not.toContain(run.body.shareId);
+    expect(await endReason(run.body.shareId)).toBeNull();
+
+    // The names API counts the owner's own names against Pro, the team's
+    // against the team (3 per seat, 2 seats).
+    const listing = (await (await api("/api/tunnel-names", "GET", owner.key)).json()) as {
+      limit: number;
+      used: number;
+      teams: { id: string; limit: number; used: number; active: boolean }[];
+      names: { name: string; usable: boolean }[];
+    };
+    expect(listing.limit).toBe(3);
+    expect(listing.used).toBe(3);
+    expect(listing.teams).toContainEqual(
+      expect.objectContaining({ id: teamId, limit: 6, used: 1, active: true })
+    );
+    for (const name of [...own, teamName])
+      expect(listing.names).toContainEqual(expect.objectContaining({ name, usable: true }));
+    await edge("close", { shareId: run.body.shareId, reason: "closed" });
+  });
+
+  it("holds a team to its names per seat", async () => {
+    const owner = await createUser({ plan: "pro", request_limit: 100_000 });
+    const teamId = await team(owner.id, []);
+    // Teams covers 3 names a seat; the helper's team has 2 seats.
+    for (let i = 1; i <= 6; i++)
+      expect(
+        (
+          await api("/api/tunnel-names", "POST", owner.key, {
+            body: { name: `seat-${i}-${ts % 100_000}`, team: teamId },
+          })
+        ).status
+      ).toBe(201);
+    const over = await api("/api/tunnel-names", "POST", owner.key, {
+      body: { name: `seat-7-${ts % 100_000}`, team: teamId },
+    });
+    expect(over.status).toBe(403);
+    expect(((await over.json()) as { error: string }).error).toMatch(/seats cover/);
+    // The owner's own names are untouched by the team's.
+    expect(
+      (
+        await api("/api/tunnel-names", "POST", owner.key, {
+          body: { name: `mine-${ts % 100_000}` },
+        })
+      ).status
+    ).toBe(201);
+    // Fewer seats: the newest team names wait, the oldest stay usable.
+    await admin.from("teams").update({ seats: 1 }).eq("id", teamId);
+    const listing = (await (await api("/api/tunnel-names", "GET", owner.key)).json()) as {
+      names: { name: string; usable: boolean }[];
+    };
+    expect(listing.names).toContainEqual(
+      expect.objectContaining({ name: `seat-1-${ts % 100_000}`, usable: true })
+    );
+    expect(listing.names).toContainEqual(
+      expect.objectContaining({ name: `seat-6-${ts % 100_000}`, usable: false })
+    );
+    const past = await open(owner.key, { name: `seat-6-${ts % 100_000}` });
+    expect(past.status).toBe(403);
+    expect(past.body.error).toMatch(/seats cover/);
+  });
+
   it("ends previews under a lapsed team's names and refuses their passwords", async () => {
     const owner = await createUser({ plan: "pro", request_limit: 100_000 });
     const member = await createUser();
@@ -941,21 +1108,26 @@ describe("round two: limits, names and access while runs are open", () => {
       reason: expect.stringMatching(/your plan changed/),
     });
     expect(await endReason(named.body.shareId)).toBe("plan changed");
-    // The other stays, now with Free's two hours from when it started.
-    expect(await endReason(plain.body.shareId)).toBeNull();
-    const { data: limited } = await admin
-      .from("tunnel_shares")
-      .select("started_at, expires_at")
-      .eq("id", plain.body.shareId as string)
-      .single();
-    expect(Date.parse(limited!.expires_at!) - Date.parse(limited!.started_at)).toBe(120 * 60_000);
+    // The other ends too: it opened as a paid preview (no -free name, no
+    // notice, no time limit), and the edge cannot tell its CLI otherwise.
+    // Started again, it gets Free's name, notice and two hours.
+    expect(synced.close).toContainEqual({
+      shareId: plain.body.shareId,
+      reason: expect.stringMatching(/your plan changed/),
+    });
+    expect(await endReason(plain.body.shareId)).toBe("plan changed");
+    const again = await open(user.key);
+    expect(again.status).toBe(200);
+    expect(again.body.name).toMatch(/-free$/);
+    expect(again.body.notice).toBe(true);
+    expect(again.body.expiresIn).toBe(120 * 60);
 
     // The kept name is past Free's count: listed, not usable.
     const names = (await (await api("/api/tunnel-names", "GET", user.key)).json()) as {
       names: { name: string; usable: boolean }[];
     };
     expect(names.names).toContainEqual(expect.objectContaining({ name, usable: false }));
-    await edge("close", { shareId: plain.body.shareId, reason: "closed" });
+    await edge("close", { shareId: again.body.shareId, reason: "closed" });
   });
 
   it("covers only the oldest reserved names after a downgrade to fewer", async () => {

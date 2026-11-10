@@ -84,31 +84,55 @@ export function batchesOf(raw: unknown): Batch[] {
 }
 
 /**
+ * Whether a database error is a passing one (the connection, a deadlock, a
+ * serialization failure, too little room, a statement or lock timeout, the
+ * server going down, PostgREST unable to reach Postgres): the same batch is
+ * likely to go through on the next sync.
+ */
+export function isTransientDbError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return true; // no answer at all
+  const code = (err as { code?: unknown }).code;
+  if (typeof code !== "string" || code === "") {
+    // A fetch that failed never reached the database.
+    return err instanceof TypeError;
+  }
+  if (/^(08|40|53|57)/.test(code)) return true; // connection, rollback, resources, operator
+  if (code === "55P03") return true; // lock_not_available (lock_timeout)
+  return /^PGRST00\d$/.test(code); // PostgREST could not reach Postgres
+}
+
+/**
  * Adds the edge's batches of counts. Each batch is added once: the edge sends
  * one again when it missed the answer, which may have been after it was
  * added. The account is taken from the run itself, never from the edge.
  *
- * A batch the database refuses is reported and dropped, never thrown: the
- * edge resends what the sync did not confirm, oldest first, so one bad batch
- * would otherwise fail every sync (and the stops, gates and pauses it
- * carries) until the edge gave up on it. Answers how many failed.
+ * A passing database error (isTransientDbError) is thrown, so the sync
+ * answers 500 and the edge sends every batch again (adding is idempotent).
+ * A batch the database refuses for good is reported and dropped, never
+ * thrown: the edge resends what the sync did not confirm, oldest first, so
+ * one bad batch would otherwise fail every sync (and the stops, gates and
+ * pauses it carries) until the edge gave up on it. Answers how many failed.
  */
 export async function recordUsage(raw: unknown, now = Date.now()): Promise<number> {
   const admin = createAdminClient();
   let failed = 0;
   let firstError: unknown = null;
   for (const batch of batchesOf(raw)) {
+    let caught: unknown = null;
     try {
       const { error } = await admin.rpc("tunnel_apply_usage_batch", {
         p_batch_id: batch.id,
         p_usage: batch.usage as unknown as never,
         p_month: monthOf(now),
       });
-      if (error) throw error;
+      if (error) caught = error;
     } catch (err) {
-      failed += 1;
-      firstError ??= err;
+      caught = err;
     }
+    if (caught === null) continue;
+    if (isTransientDbError(caught)) throw caught;
+    failed += 1;
+    firstError ??= caught;
   }
   if (firstError) reportError(`Failed to add ${failed} tunnel usage batch(es)`, firstError);
   return failed;

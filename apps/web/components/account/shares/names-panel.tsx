@@ -79,7 +79,9 @@ export function NamesPanel({
   const [password, setPassword] = useState("");
 
   const canReserve = listing.limit > 0;
-  const full = listing.used >= listing.limit;
+  // One's own names against the plan; a team's names count against the
+  // team, so a member with teams may still keep names in them.
+  const full = listing.used >= listing.limit && teams.length === 0;
 
   const run = async (action: () => Promise<string>) => {
     setBusy(true);
@@ -132,7 +134,7 @@ export function NamesPanel({
       title="Names"
       description={
         canReserve
-          ? `A name keeps your link the same every time you share under it. ${listing.used} of ${listing.limit} on your plan.`
+          ? `A name keeps your link the same every time you share under it. ${listing.used} of ${listing.limit} of your own on your plan; a team's names count against the team.`
           : "Free previews get a new random name each time."
       }
     >

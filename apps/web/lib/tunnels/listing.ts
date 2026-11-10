@@ -1,11 +1,11 @@
 import { getWebhookUrl } from "@/lib/constants";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { previewUrl } from "./config";
-import type { TunnelPlan } from "./plan";
+import { namesUpsell, type TunnelPlan } from "./plan";
 import type { ShareRow } from "./shares";
 import { foldEnded } from "./fold-ended";
 import { describeEnding } from "./stops";
-import type { MonthUsage } from "./usage";
+import { overMessage, type MonthUsage } from "./usage";
 
 /*
  * Runs and limits as the API shows them (GET /api/shares): the account's own
@@ -29,6 +29,8 @@ export interface ApiShare {
   bytes: number;
   requests: number;
   password: boolean;
+  /** Whether visitors see the notice page before the preview. */
+  notice: boolean;
   mine: boolean;
   startedBy: { id: string; email: string } | null;
 }
@@ -39,10 +41,14 @@ export interface ApiTunnelUsage {
   limitBytes: number;
   over: boolean;
   resetsAt: string;
+  /** Why previews are paused and when they open again, while `over`. */
+  message: string | null;
 }
 
 export interface ApiTunnelLimits {
   plan: string;
+  /** "Pro", "Team Business": the plan's name as people read it. */
+  label: string;
   shares: number;
   reservedNames: number;
   sessionMinutes: number | null;
@@ -58,12 +64,14 @@ export function apiUsage(u: MonthUsage): ApiTunnelUsage {
     limitBytes: u.allowanceBytes,
     over: u.over,
     resetsAt: u.resetsAt.toISOString(),
+    message: u.over ? overMessage(u) : null,
   };
 }
 
 export function apiLimits(plan: TunnelPlan): ApiTunnelLimits {
   return {
     plan: plan.key,
+    label: plan.label,
     shares: plan.limits.shareSlots,
     reservedNames: plan.limits.reservedNames,
     sessionMinutes: plan.limits.shareSessionMinutes,
@@ -73,8 +81,57 @@ export function apiLimits(plan: TunnelPlan): ApiTunnelLimits {
   };
 }
 
+/** Where an account stands on reserved names (GET /api/tunnel-names lists them). */
+export interface ApiNamesSummary {
+  /** One's own names against the plan. */
+  limit: number;
+  used: number;
+  /** Names one may share under now, own and teams'. */
+  usable: number;
+}
+
+/**
+ * What an account can do next, as commands an agent can run: the API answer
+ * carries them so nothing needs the dashboard. Pure.
+ */
+export function shareHints(input: {
+  plan: TunnelPlan;
+  usage: MonthUsage;
+  suspended: boolean;
+  liveShares: number;
+  names: ApiNamesSummary;
+}): string[] {
+  const { plan, usage, suspended, liveShares, names } = input;
+  if (suspended)
+    return [
+      "Sharing is suspended on this account. Write to support@webhooks.cc if this is a mistake.",
+    ];
+  const hints: string[] = [];
+  if (usage.over) hints.push(overMessage(usage));
+  if (liveShares >= plan.limits.shareSlots)
+    hints.push(
+      `${plan.label} allows ${plan.limits.shareSlots} ${plan.limits.shareSlots === 1 ? "preview" : "previews"} at a time, and that many are running. Stop one with whk shares stop <id or name> to start another.`
+    );
+  else hints.push("Share a local port with whk share <port>; it prints the link.");
+  if (plan.limits.reservedNames === 0) hints.push(namesUpsell(plan));
+  else if (names.used < names.limit)
+    hints.push(
+      "Keep a link the same every time with whk names reserve <name>, then whk share <port> --name <name>."
+    );
+  if (plan.limits.sharePasswords)
+    hints.push("Put a password on a preview with whk share <port> --password.");
+  if (plan.limits.shareSessionMinutes !== null)
+    hints.push(
+      `${plan.label} previews last ${plan.limits.shareSessionMinutes} minutes; start one again with whk share <port> for a new link.`
+    );
+  hints.push(
+    "Send webhooks to a local app and give the sender its real answer with whk tunnel <port> --live."
+  );
+  return hints;
+}
+
 const COLUMNS =
-  "id, kind, user_id, name, endpoint_id, free, client, key_id, instance, client_address, started_at, expires_at, ended_at, end_reason, password_hash, password_version, bytes, requests";
+  "id, kind, user_id, name, endpoint_id, free, notice, client, key_id, instance, client_address, started_at, expires_at, ended_at, end_reason, password_hash, password_version, bytes, requests";
 
 /** Live runs of teammates under the names of the account's teams. */
 async function teamLiveShares(userId: string, teamIds: string[]): Promise<ShareRow[]> {
@@ -202,6 +259,7 @@ export async function describe(rows: ShareRow[], userId: string): Promise<ApiSha
       bytes: Number(r.bytes),
       requests: Number(r.requests),
       password: r.password_version !== null || (r.name !== null && namePassword.has(r.name)),
+      notice: r.notice,
       mine: r.user_id === userId,
       startedBy:
         r.user_id && emailOf.has(r.user_id)

@@ -16,6 +16,7 @@ export type ShareRow = {
   name: string | null;
   endpoint_id: string | null;
   free: boolean;
+  notice: boolean;
   client: string;
   key_id: string | null;
   instance: string | null;
@@ -71,6 +72,8 @@ export async function openShare(input: {
     p_password_hash: input.password?.hash ?? null,
     p_password_version: input.password?.version ?? null,
     p_agent_registration_id: input.agentRegistrationId ?? null,
+    // Live sessions have no visitors, so no notice.
+    p_notice: input.kind === "share" && input.plan.notice,
   });
   if (error) throw error;
   const answer = data as { shareId?: string; expiresAt?: string | null; error?: string };
