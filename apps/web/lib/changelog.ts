@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.63.0";
+export const APP_VERSION = "0.63.1";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,15 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.63.1",
+    date: "2026-11-10",
+    title: "Steady Page Behind Menus",
+    track: "web",
+    items: [
+      "Opening the site switcher or any other menu or dialog no longer shifts the page a few pixels to the left",
+    ],
+  },
   {
     version: "0.63.0",
     date: "2026-11-10",
