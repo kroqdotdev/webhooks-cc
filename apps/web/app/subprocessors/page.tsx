@@ -26,7 +26,7 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     name: "Hetzner",
     entity: "Hetzner Online GmbH, Germany",
     purpose:
-      "Hosts the server that runs webhooks.cc, its database, and its backups, and the standby server of StatOSS, our error and log monitoring.",
+      "Hosts the server that runs webhooks.cc, its database, and its backups, the object storage that keeps the original message and attachments of each captured email, and the standby server of StatOSS, our error and log monitoring.",
     data: "All data described in our privacy policy, including captured webhooks.",
     location: "Falkenstein, Germany. Backups stay in Falkenstein, in a separate data center.",
   },
@@ -81,7 +81,7 @@ export default function SubprocessorsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Subprocessors</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: November 2, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 10, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>

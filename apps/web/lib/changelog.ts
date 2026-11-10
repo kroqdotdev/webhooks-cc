@@ -28,7 +28,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.63.0",
-    date: "2026-11-09",
+    date: "2026-11-10",
     title: "Interface Review Fixes",
     track: "web",
     items: [
@@ -80,7 +80,16 @@ export const CHANGELOG: ChangelogEntry[] = [
       "mailhooks.cc: every email offers a way to add a layout, gallery visitors land on sign-up, HTTP responses start collapsed, and inbox rows say reading only while a layout can still read them",
       "Signed-in visitors no longer see guest sign-up copy, the announcement stays off sign-in pages and phones, sign-up checks the email format first, and the phone landing page is shorter",
       "Following live requests or stepping through them with the keyboard no longer drops a tab you just opened, and an octet-stream body that is plain text shows as text",
-      "Unsaved settings are asked about however you leave them: the account menu, Back, another endpoint or another page, and an edited destination counts too",
+      "Unsaved settings are asked about however you leave them: the account menu, Back within the dashboard, another endpoint or a link to another page, and an edited destination counts too",
+    ],
+  },
+  {
+    version: "0.62.9",
+    date: "2026-11-10",
+    title: "Email Storage in Falkenstein",
+    track: "web",
+    items: [
+      "The original message and attachments of each captured email are now kept in Hetzner's object storage in Falkenstein, Germany, next to our servers, instead of on our own server in Denmark; the privacy policy and the subprocessors page say so",
     ],
   },
   {
