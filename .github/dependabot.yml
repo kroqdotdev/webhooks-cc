@@ -19,6 +19,7 @@ updates:
           - "patch"
     labels:
       - "dependencies"
+      - "release: none"
       - "javascript"
 
   # Rust dependencies
@@ -30,6 +31,7 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+      - "release: none"
       - "rust"
 
   - package-ecosystem: "cargo"
@@ -40,6 +42,7 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+      - "release: none"
       - "rust"
 
   # Python SDK (uv.lock); the runtime dependency ranges in pyproject.toml are
@@ -57,6 +60,7 @@ updates:
           - "*"
     labels:
       - "dependencies"
+      - "release: none"
       - "python"
 
   # GitHub Actions
@@ -68,6 +72,7 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+      - "release: none"
       - "github-actions"
 
   # Docker
@@ -77,6 +82,7 @@ updates:
       interval: "weekly"
     labels:
       - "dependencies"
+      - "release: none"
       - "docker"
     # Production runs Node 24 LTS; move to a new major on purpose, not by bot.
     ignore:
@@ -89,4 +95,5 @@ updates:
       interval: "weekly"
     labels:
       - "dependencies"
+      - "release: none"
       - "docker"

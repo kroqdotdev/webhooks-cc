@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,11 +9,12 @@ import {
   PYTHON_SDK_VERSION,
   SDK_VERSION,
 } from "./changelog";
+import release from "./changelog-release.json";
+import { validateFragment } from "../scripts/release.mjs";
 
 /**
  * Guards against version drift between the public changelog page and what is
- * actually shipped: the web app's own package.json, and the SDK/MCP package
- * versions that the publish workflows read when a tag is pushed. (The CLI
+ * actually shipped: the SDK/MCP package versions that the publish workflows read when a tag is pushed. (The CLI
  * version comes from the git tag at build time, so it has no file to compare.)
  */
 function readPackageVersion(relativePath: string): string {
@@ -24,8 +25,12 @@ function readPackageVersion(relativePath: string): string {
 }
 
 describe("changelog version constants", () => {
-  it("APP_VERSION matches apps/web/package.json", () => {
-    expect(APP_VERSION).toBe(readPackageVersion("package.json"));
+  it("the web version is given at deploy time, so the repository holds none", () => {
+    // The deploy writes changelog-release.json for the build; a committed copy
+    // would show a stale version in every later build.
+    expect(release).toEqual({ version: null, entries: [] });
+    expect(APP_VERSION).toBe("dev");
+    expect(readPackageVersion("package.json")).toBe("0.0.0");
   });
 
   it("SDK_VERSION matches packages/sdk/package.json", () => {
@@ -51,10 +56,19 @@ describe("changelog version constants", () => {
 
   it("the newest entry of each track matches its version constant", () => {
     const newest = (track: string) => CHANGELOG.find((entry) => entry.track === track)?.version;
-    expect(newest("web")).toBe(APP_VERSION);
     expect(newest("sdk")).toBe(SDK_VERSION);
     expect(newest("python")).toBe(PYTHON_SDK_VERSION);
     expect(newest("go")).toBe(GO_SDK_VERSION);
     expect(newest("mcp")).toBe(MCP_VERSION);
+  });
+});
+
+describe("web changelog files", () => {
+  const dir = resolve(__dirname, "..", "changelog/web");
+  const files = readdirSync(dir).filter((name) => name.endsWith(".json"));
+
+  it.each(files.length ? files : ["(none)"])("%s is a valid changelog file", (name) => {
+    if (name === "(none)") return;
+    expect(validateFragment(name, readFileSync(resolve(dir, name), "utf8"))).toEqual([]);
   });
 });
