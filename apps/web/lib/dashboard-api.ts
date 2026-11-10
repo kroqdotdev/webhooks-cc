@@ -5,6 +5,7 @@ import type { EmailField, Layout, ParsedEmail } from "@webhooks-cc/sdk/email";
 import type { EmailCapture } from "@/lib/email-capture";
 import type { EndpointSite } from "@/lib/site";
 import type { ClickHouseRequest, Request } from "@/types/request";
+import { readLiveResponse } from "@/lib/live-response";
 
 export type ResponseRuleCondition = Condition;
 
@@ -172,6 +173,7 @@ function toDashboardRequest(record: {
   kind?: "http" | "email";
   email?: EmailCapture | null;
   parsed?: ParsedEmail | null;
+  liveResponse?: unknown;
 }): Request {
   return {
     _id: record.id,
@@ -197,6 +199,7 @@ function toDashboardRequest(record: {
     kind: record.kind ?? "http",
     email: record.email ?? null,
     ...(record.parsed !== undefined ? { parsed: record.parsed } : {}),
+    ...(record.liveResponse != null ? { liveResponse: readLiveResponse(record.liveResponse) } : {}),
   };
 }
 

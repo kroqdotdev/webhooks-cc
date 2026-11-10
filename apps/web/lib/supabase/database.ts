@@ -2330,6 +2330,20 @@ export interface Database {
         Args: { p_user_id: string; p_team_id: string | null; p_name: string; p_limit: number };
         Returns: "ok" | "limit" | "taken";
       };
+      /** Written by the receiver after a live relay (migration 00092). */
+      record_live_response: {
+        Args: {
+          p_request_id: string;
+          p_status: number;
+          p_headers: Json;
+          p_body: string;
+          p_body_truncated: boolean;
+          p_ms: number;
+          p_body_encoding?: "utf8" | "base64";
+          p_outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy";
+        };
+        Returns: boolean;
+      };
       is_staff: {
         Args: { p_user_id: string };
         Returns: boolean;

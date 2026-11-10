@@ -1,5 +1,6 @@
 import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 import type { EmailCapture, EmailSummary } from "@/lib/email-capture";
+import type { LiveResponse } from "@/lib/live-response";
 
 export interface Request {
   _id: string;
@@ -26,6 +27,8 @@ export interface Request {
   responseStatus?: number | null;
   /** The response rule that chose that answer (its name, or "Rule N"); null when none did */
   responseRule?: string | null;
+  /** What the local app answered, for a live capture (`whk tunnel --live`). */
+  liveResponse?: LiveResponse | null;
   /** Best-effort detected provider derived from request headers/body */
   detectedProvider?: string | null;
   /** Best-effort detected event or topic derived from request headers/body */
@@ -75,6 +78,8 @@ export interface ClickHouseRequest {
   signingProvider?: string | null;
   responseStatus?: number | null;
   responseRule?: string | null;
+  /** What the local app answered, for a live capture (`whk tunnel --live`). */
+  liveResponse?: LiveResponse | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
   kind?: "http" | "email";

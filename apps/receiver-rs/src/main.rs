@@ -33,6 +33,8 @@ pub struct AppState {
     pub object_store: Option<std::sync::Arc<object_store::ObjectStore>>,
     /// Customers' verified inbound domains, read once a minute.
     pub inbound_domains: std::sync::Arc<mail::domains::InboundDomains>,
+    /// The relay to the tunnel edge for live endpoints, when configured.
+    pub live: Option<std::sync::Arc<handlers::live::LiveRelay>>,
 }
 
 fn main() {
@@ -116,6 +118,10 @@ async fn run(statoss: bool) {
             .object_store
             .clone()
             .map(|c| std::sync::Arc::new(object_store::ObjectStore::new(c))),
+        live: config
+            .live
+            .clone()
+            .map(|c| std::sync::Arc::new(handlers::live::LiveRelay::new(c))),
     };
 
     // Private mail ingest listener for the MX host. Bound here, before the

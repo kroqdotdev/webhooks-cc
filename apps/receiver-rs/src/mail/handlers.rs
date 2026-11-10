@@ -916,6 +916,7 @@ mod tests {
             mail_deliver_slots: Arc::new(tokio::sync::Semaphore::new(DELIVER_CONCURRENCY)),
             object_store: None,
             inbound_domains: Arc::new(crate::mail::domains::InboundDomains::fixed(&[])),
+            live: None,
         }
     }
 

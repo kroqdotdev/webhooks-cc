@@ -68,6 +68,14 @@ pub fn mail_ingest(outcome: &'static str) {
     add("mail", outcome);
 }
 
+/// Record one live relay outcome (`whk tunnel --live`): `answered`,
+/// `offline`, `timeout`, `unreachable` or `busy` as the edge marked it, or
+/// `receiver_busy`, `edge_unreachable`, `edge_timeout`, `refused`,
+/// `body_failed`, `record_failed`.
+pub fn live(outcome: &'static str) {
+    add("live", outcome);
+}
+
 /// Writes the counts line every `period` while anything was counted.
 pub fn spawn_reporter(period: Duration) {
     tokio::spawn(async move {
