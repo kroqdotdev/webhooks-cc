@@ -44,7 +44,10 @@ describe("preview names", () => {
       expect(isDrawnName(paid, true)).toBe(false);
       expect(isDrawnName(free, true)).toBe(true);
       expect(free.endsWith("-free")).toBe(true);
-      expect(nameProblem(paid)).toBeNull();
+      // A drawn name can still read as a blocked word through its digits
+      // (5 for s); randomName() draws again then, so only the shape is
+      // the draw's to get right.
+      expect(nameShapeProblem(paid)).toBeNull();
     }
     expect(isDrawnName("acme-shop-1234", false)).toBe(false);
   });

@@ -179,6 +179,14 @@ const serverEnvSchema = z
     EDGE_SECRET: blankToUndefined(z.string().min(32).optional()),
     EDGE_URL: blankToUndefined(z.string().url().default("http://127.0.0.1:4001")),
     SHARE_PREVIEW_ORIGIN: blankToUndefined(z.string().url().optional()),
+    // Cloudflare Turnstile on the public report form (/report): both keys,
+    // or neither (no check, as in development without keys).
+    TURNSTILE_SITE_KEY: blankToUndefined(z.string().optional()),
+    TURNSTILE_SECRET_KEY: blankToUndefined(z.string().optional()),
+    // Google Web Risk (the commercial Safe Browsing): the daily check of the
+    // preview domain's reputation (lib/tunnels/reputation.ts) runs only
+    // with a key.
+    WEB_RISK_API_KEY: blankToUndefined(z.string().optional()),
     // AI setup and repair (lib/ai): the Anthropic API key; without it the
     // feature is not offered. AI_API_BASE_URL points tests at a fake model.
     ANTHROPIC_API_KEY: blankToUndefined(z.string().optional()),
@@ -354,6 +362,9 @@ export function serverEnv() {
       EDGE_SECRET: process.env.EDGE_SECRET,
       EDGE_URL: process.env.EDGE_URL,
       SHARE_PREVIEW_ORIGIN: process.env.SHARE_PREVIEW_ORIGIN,
+      TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY,
+      TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
+      WEB_RISK_API_KEY: process.env.WEB_RISK_API_KEY,
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
       AI_API_BASE_URL: process.env.AI_API_BASE_URL,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,

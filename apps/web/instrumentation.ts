@@ -64,6 +64,11 @@ export async function register() {
     const { startRefundWorker } = await import("./lib/billing/refunds");
     startRefundWorker();
 
+    // The preview domain's reputation with Google Web Risk, once a day
+    // (lib/tunnels/reputation.ts); starts only with WEB_RISK_API_KEY.
+    const { startReputationChecker } = await import("./lib/tunnels/reputation");
+    startReputationChecker();
+
     // Support ticket emails (lib/support/notifications.ts) and the ops
     // overview's daily rollups (lib/ops/metrics.ts).
     const { startSupportNotifier } = await import("./lib/support/notifications");

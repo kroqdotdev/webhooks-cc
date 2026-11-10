@@ -98,7 +98,20 @@ export type AuditAction =
   | "tunnel.name_reserved"
   | "tunnel.name_released"
   | "tunnel.name_password_set"
-  | "tunnel.name_password_cleared";
+  | "tunnel.name_password_cleared"
+  | "ops.share_stopped"
+  | "ops.account_shares_stopped"
+  | "ops.sharing_suspended"
+  | "ops.sharing_restored"
+  | "ops.share_notice_lifted"
+  | "ops.share_notice_restored"
+  | "ops.name_blocked"
+  | "ops.name_unblocked"
+  | "ops.word_blocked"
+  | "ops.word_unblocked"
+  | "ops.report_recorded"
+  | "ops.report_resolved"
+  | "ops.reputation_checked";
 
 /** Agent registration (auth.md) events: no signed-in user is behind most of them. */
 export type AgentAuditAction =
