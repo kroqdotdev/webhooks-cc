@@ -61,6 +61,12 @@ pub enum Refusal {
     Download,
     /// No `Content-Type` on a response with a body.
     Untyped,
+    /// More than one type: two `Content-Type` headers, or a list in one.
+    /// Browsers take the last valid one, so checking the first would let
+    /// anything through behind an allowed type.
+    Mixed,
+    /// A page compressed in a way the edge cannot read (decode.rs).
+    Encoding(String),
     TooLarge,
 }
 
@@ -78,6 +84,8 @@ impl Refusal {
             }
             Refusal::Download => "a download".into(),
             Refusal::Untyped => "a file with no content type".into(),
+            Refusal::Mixed => "a response with more than one content type".into(),
+            Refusal::Encoding(encoding) => format!("a page compressed as {encoding}"),
             Refusal::TooLarge => format!("a file over {} MB", MAX_RESPONSE / (1024 * 1024)),
         }
     }
@@ -114,15 +122,83 @@ fn is_followed_redirect(status: StatusCode) -> bool {
     matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308)
 }
 
+/// Whether a browser would follow this answer rather than show it: a
+/// redirect status with one Location that names somewhere. An empty
+/// Location, or two, is no redirect to a browser (it shows or saves the
+/// body), so such an answer gets the full checks.
+fn is_redirect(status: StatusCode, headers: &HeaderMap) -> bool {
+    if !is_followed_redirect(status) {
+        return false;
+    }
+    let mut locations = headers.get_all(header::LOCATION).iter();
+    let (Some(location), None) = (locations.next(), locations.next()) else {
+        return false;
+    };
+    location.to_str().is_ok_and(|l| {
+        let l = l.trim();
+        !l.is_empty() && !l.bytes().any(|b| b.is_ascii_control() || b == b' ')
+    })
+}
+
+/// Whether a header value holds a comma outside a quoted string: a list,
+/// which a browser reads item by item (Fetch, "extract a MIME type").
+fn has_list(value: &str) -> bool {
+    let mut quoted = false;
+    let mut escaped = false;
+    for c in value.chars() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            ',' if !quoted => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The one media type a response states, lowercased without parameters;
+/// `Ok(None)` when it states none, `Err` when it states more than one.
+fn media_type(headers: &HeaderMap) -> Result<Option<String>, Refusal> {
+    let mut values = headers.get_all(header::CONTENT_TYPE).iter();
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(Refusal::Mixed);
+    }
+    let Ok(value) = value.to_str() else {
+        return Err(Refusal::Mixed);
+    };
+    if has_list(value) {
+        return Err(Refusal::Mixed);
+    }
+    let kind = value
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    Ok((!kind.is_empty()).then_some(kind))
+}
+
+/// Whether any `Content-Disposition` the response carries makes it a
+/// download.
+fn is_attachment(headers: &HeaderMap) -> bool {
+    headers.get_all("content-disposition").iter().any(|v| {
+        v.to_str().map_or(true, |d| {
+            d.trim_start()
+                .to_ascii_lowercase()
+                .starts_with("attachment")
+        })
+    })
+}
+
 /// Whether a response from the laptop may go on to the visitor, and how.
 /// `dest` is what the browser asked for it as (`Sec-Fetch-Dest`): "image"
 /// for an `<img>`.
 pub fn check(status: StatusCode, headers: &HeaderMap, dest: Option<&str>) -> Result<Pass, Refusal> {
-    let attachment = header_str(headers, "content-disposition").is_some_and(|d| {
-        d.trim_start()
-            .to_ascii_lowercase()
-            .starts_with("attachment")
-    });
+    let attachment = is_attachment(headers);
     // Nothing to show: informational, no content, not modified.
     if status.is_informational()
         || status == StatusCode::NO_CONTENT
@@ -133,7 +209,7 @@ pub fn check(status: StatusCode, headers: &HeaderMap, dest: Option<&str>) -> Res
     // A redirect the browser follows shows nothing of its own. Without a
     // Location (or as 300, 305 or 306, which browsers do not follow) a 3xx
     // is shown or saved like any answer, so it gets the full checks below.
-    if is_followed_redirect(status) && headers.contains_key(header::LOCATION) {
+    if is_redirect(status, headers) {
         return if attachment {
             Err(Refusal::Download)
         } else {
@@ -147,18 +223,7 @@ pub fn check(status: StatusCode, headers: &HeaderMap, dest: Option<&str>) -> Res
     if length.is_some_and(|l| l > MAX_RESPONSE as u64) {
         return Err(Refusal::TooLarge);
     }
-    let Some(kind) = headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| {
-            v.split(';')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_ascii_lowercase()
-        })
-        .filter(|v| !v.is_empty())
-    else {
+    let Some(kind) = media_type(headers)? else {
         // Errors, and a 3xx that is no redirect, go on as plain text.
         let error = status.is_client_error() || status.is_server_error() || status.is_redirection();
         return if length == Some(0) {
@@ -561,5 +626,63 @@ mod tests {
             check(StatusCode::NO_CONTENT, &HeaderMap::new(), None),
             Ok(Pass::AsSent)
         ));
+    }
+
+    #[test]
+    fn more_than_one_type_is_refused() {
+        // A list in one header: browsers take the last valid type.
+        assert_eq!(
+            check(
+                StatusCode::OK,
+                &response(&[("content-type", "text/html, video/mp4")]),
+                None
+            ),
+            Err(Refusal::Mixed)
+        );
+        assert_eq!(
+            check(
+                StatusCode::OK,
+                &response(&[("content-type", "text/html; charset=utf-8, video/mp4")]),
+                None
+            ),
+            Err(Refusal::Mixed)
+        );
+        // A comma inside a quoted parameter is no list.
+        assert!(ok(&[("content-type", "text/html; foo=\"a,b\"")]));
+        // Two headers.
+        let mut two = response(&[("content-type", "text/html")]);
+        two.append(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        );
+        assert_eq!(check(StatusCode::OK, &two, None), Err(Refusal::Mixed));
+        // Two dispositions, one a download.
+        let mut dispositions = response(&[
+            ("content-type", "text/html"),
+            ("content-disposition", "inline"),
+        ]);
+        dispositions.append(
+            "content-disposition",
+            HeaderValue::from_static("attachment; filename=a.exe"),
+        );
+        assert_eq!(
+            check(StatusCode::OK, &dispositions, None),
+            Err(Refusal::Download)
+        );
+    }
+
+    #[test]
+    fn an_empty_or_doubled_location_is_no_redirect() {
+        let video = |location: &[&'static str]| {
+            let mut h = response(&[("content-type", "video/mp4")]);
+            for l in location {
+                h.append(header::LOCATION, HeaderValue::from_static(l));
+            }
+            check(StatusCode::FOUND, &h, None)
+        };
+        assert!(matches!(video(&[""]), Err(Refusal::Kind(_))));
+        assert!(matches!(video(&["   "]), Err(Refusal::Kind(_))));
+        assert!(matches!(video(&["/a", "/b"]), Err(Refusal::Kind(_))));
+        assert!(matches!(video(&["/a"]), Ok(Pass::AsSent)));
     }
 }

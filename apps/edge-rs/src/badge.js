@@ -6,16 +6,16 @@
 // CSP) and built without innerHTML (allowed under Trusted Types), and it
 // appears only after the page has loaded, so it never meets hydration.
 //
-// It also looks at the page once it has run, for what phishing pages have
-// (a password or card field, and a brand or lure word in the title), which the
-// edge cannot see in a page built in the browser. If both are there it
-// tells the edge, once a tab; only those facts leave the page.
+// It also looks at the page once it has run, for what phishing pages have,
+// which the edge cannot see in a page built in the browser. When the page
+// has a password or card field it sends the edge the page's title and which
+// fields there are, once a tab; the edge compares the title with its own
+// list of brand and lure words, which never comes to the browser.
 (() => {
   if (window.top !== window || document.querySelector("whk-report")) return;
   const REPORT = "__REPORT_URL__";
   const HIDDEN = "whk-report-hidden";
   const FLAGGED = "whk-report-flagged";
-  const BRANDS = __BRANDS__;
 
   const CSS = `
     :host { all: initial; }
@@ -128,14 +128,13 @@
     try {
       if (sessionStorage.getItem(FLAGGED)) return true;
     } catch {}
-    const title = (document.title || "").toLowerCase();
-    const brands = BRANDS.filter((brand) => title.includes(brand));
     const password = !!document.querySelector('input[type="password" i]');
     const card = !!document.querySelector(
       'input[autocomplete~="cc-number" i], input[name="cardnumber" i]'
     );
-    if (brands.length === 0 || !(password || card)) return false;
-    const body = JSON.stringify({ password, card, brands, url: location.href });
+    if (!(password || card)) return false;
+    const title = (document.title || "").slice(0, 300);
+    const body = JSON.stringify({ password, card, title, url: location.href });
     try {
       navigator.sendBeacon("/__whk/flag", new Blob([body], { type: "text/plain" }));
       sessionStorage.setItem(FLAGGED, "1");

@@ -7,9 +7,11 @@
 //! and looks for what phishing pages have: a password or card field on a
 //! page whose title names a bank or a big brand. A page built in the
 //! browser has no such field in what is sent, so badge.js looks again once
-//! the page has run and reports what it saw to [`FLAG_PATH`]. Either only
-//! flags the share for staff to look at (the ops center's reports); it
-//! blocks nothing. The words come from a private file (words.rs).
+//! the page has run and, when it finds such a field, sends the page's title
+//! and the fields to [`FLAG_PATH`]; the edge compares the title with the
+//! words, which never leave it. Either only flags the share for staff to
+//! look at (the ops center's reports); it blocks nothing. The words come
+//! from a private file (words.rs).
 
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
@@ -30,11 +32,10 @@ const SCAN_LIMIT: usize = 256 * 1024;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// The badge script, with the address reports go to and the brand words.
+/// The badge script, with the address reports go to. It carries none of
+/// the words: anyone can read it on any preview.
 pub fn badge_script(app_url: &str) -> String {
-    include_str!("badge.js")
-        .replace("__REPORT_URL__", &format!("{app_url}/report"))
-        .replace("__BRANDS__", &serde_json::to_string(brands()).unwrap())
+    include_str!("badge.js").replace("__REPORT_URL__", &format!("{app_url}/report"))
 }
 
 /// Where the tag goes: just after the `<head ...>` opening tag.
@@ -152,8 +153,11 @@ fn describe(password: bool, card: bool, brands: &[&str]) -> Vec<String> {
     why
 }
 
-/// What badge.js saw in a page after it ran: which fields, which brand
-/// words of [`brands`] in the title, and the page's address.
+/// The longest title taken from a browser's report.
+const TITLE_MAX: usize = 300;
+
+/// What badge.js saw in a page after it ran: which fields, the page's
+/// title, and its address.
 #[derive(serde::Deserialize)]
 struct Seen {
     #[serde(default)]
@@ -161,21 +165,27 @@ struct Seen {
     #[serde(default)]
     card: bool,
     #[serde(default)]
-    brands: Vec<String>,
+    title: String,
     #[serde(default)]
     url: Option<String>,
 }
 
 /// A browser's report, as the same words [`phishing_signals`] uses, and the
-/// page it came from, or nothing. Anyone can send one, so only facts from
-/// a fixed list are taken: brand words outside [`brands`] are dropped, and
-/// the words are the edge's own.
+/// page it came from, or nothing. Anyone can send one, so the edge does the
+/// judging: it compares the title with its own words, and the words in the
+/// result are its own, never the sender's.
 pub fn browser_signals(body: &[u8]) -> Option<(Vec<String>, Option<String>)> {
     let seen: Seen = serde_json::from_slice(body).ok()?;
+    let title: String = seen
+        .title
+        .chars()
+        .take(TITLE_MAX)
+        .collect::<String>()
+        .to_lowercase();
     let brands: Vec<&str> = brands()
         .iter()
         .map(String::as_str)
-        .filter(|b| seen.brands.iter().any(|s| s == b))
+        .filter(|b| title.contains(b))
         .collect();
     let why = describe(seen.password, seen.card, &brands);
     (!why.is_empty()).then_some((why, seen.url))
@@ -212,6 +222,14 @@ impl<B> Inject<B> {
             scan: Some(scan),
             tag: TAG.to_vec(),
         }
+    }
+
+    /// The look for phishing alone: the body passes as it is, and only its
+    /// start is copied.
+    pub fn scan_only(inner: B, scan: oneshot::Sender<Bytes>) -> Self {
+        let mut body = Self::new(inner, scan);
+        body.searching = false;
+        body
     }
 
     fn keep(&mut self, data: &[u8]) {
@@ -451,26 +469,39 @@ mod tests {
     }
 
     #[test]
-    fn browser_reports_keep_only_known_facts() {
+    fn browser_reports_are_judged_on_the_edge() {
         let (why, url) = browser_signals(
-            br#"{"password":true,"brands":["paypal","<b>evil</b>"],"url":"https://a.sharehooks.cc/x"}"#,
+            br#"{"password":true,"title":"PayPal - Log in","url":"https://a.sharehooks.cc/x"}"#,
         )
         .unwrap();
         assert_eq!(why, vec!["a password field", "\"paypal\" in the title"]);
         assert_eq!(url.as_deref(), Some("https://a.sharehooks.cc/x"));
-        // A field but no known brand, a brand but no field, and junk.
-        assert!(browser_signals(br#"{"password":true,"brands":["acme"]}"#).is_none());
-        assert!(browser_signals(br#"{"brands":["paypal"]}"#).is_none());
+        // A field but no known word, a word but no field, and junk.
+        assert!(browser_signals(br#"{"password":true,"title":"Acme dashboard"}"#).is_none());
+        assert!(browser_signals(br#"{"title":"PayPal"}"#).is_none());
         assert!(browser_signals(b"not json").is_none());
+        // Words the sender names are not taken: only the title counts.
+        assert!(browser_signals(br#"{"password":true,"brands":["paypal"],"title":"x"}"#).is_none());
+        // A word past the title's cap is not looked at.
+        let long = format!(
+            r#"{{"password":true,"title":"{}paypal"}}"#,
+            "a".repeat(TITLE_MAX)
+        );
+        assert!(browser_signals(long.as_bytes()).is_none());
     }
 
     #[test]
-    fn the_script_gets_the_brand_words() {
+    fn the_script_carries_none_of_the_words() {
         let script = badge_script("https://webhooks.cc");
         assert!(script.contains("\"https://webhooks.cc/report\""));
-        assert!(script.contains("[\"paypal\",\"apple id\""));
-        assert!(script.contains("\"seed phrase\""));
-        assert!(!script.contains("__BRANDS__"));
+        // Only the report address is filled in: nothing from the list.
+        assert_eq!(
+            script,
+            include_str!("badge.js").replace("__REPORT_URL__", "https://webhooks.cc/report")
+        );
+        for word in ["paypal", "seed phrase", "metamask", "recovery phrase"] {
+            assert!(!script.to_lowercase().contains(word), "{word}");
+        }
     }
 
     #[test]

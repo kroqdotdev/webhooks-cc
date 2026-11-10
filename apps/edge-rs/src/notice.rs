@@ -5,9 +5,11 @@
 //!
 //! "Continue" posts to [`CONTINUE_PATH`], which only answers a request from
 //! the notice page itself (same origin), so a link elsewhere cannot skip
-//! it. The cookie it sets is signed with the edge's secret and names the
-//! share (its id, so a name drawn again later starts over), so neither the
-//! shared site nor another share can forge one. Both are kept from the
+//! it. The cookie it sets is signed with the edge's secret over the
+//! account, the name and the CLI's run (`Door::notice_key`): the same
+//! across the run's reconnects, while a later run, or a name drawn again
+//! for someone else, starts over. Neither the shared site nor another share
+//! can forge one. Both are kept from the
 //! laptop: stripped from requests, and dropped from responses that try to
 //! set them. Responses also may not set cookies for other hosts: until
 //! sharehooks.cc is on the Public Suffix List, a `Domain=sharehooks.cc` cookie would

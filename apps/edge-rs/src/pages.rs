@@ -271,6 +271,7 @@ fn not_served_page(refusal: &crate::content::Refusal, report: &str) -> Response<
             "This file is larger than a preview passes on ({} MB).",
             crate::content::MAX_RESPONSE / (1024 * 1024)
         ),
+        crate::content::Refusal::Encoding(_) => "This page came compressed in a way a preview doesn't pass on. Previews pass on pages sent plain or compressed with gzip, deflate or Brotli.".to_string(),
         _ => "Previews show web pages: their HTML, styles, scripts, images and fonts. Videos, audio and files to download, like this one, aren't passed on.".to_string(),
     };
     page(

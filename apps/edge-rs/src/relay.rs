@@ -7,9 +7,12 @@
 //! `localhost:<port>` with `<rest>` as its path, and streams the app's
 //! answer back, so the sender gets what the app said.
 //!
-//! None of the share's front door applies: no notice, password, report
-//! button or content rules, and the bytes are not metered as sharing data,
-//! since each request is already a capture on the account's request quota.
+//! None of the share's front door applies: no notice, password or report
+//! button, and the bytes are not metered as sharing data, since each
+//! request is already a capture on the account's request quota. The answer
+//! goes out on the capture host (go.webhooks.cc), for free accounts too, so
+//! it has rules of its own ([`check`]): what an API answers with (JSON, XML,
+//! form data, text other than script), no downloads, at most [`MAX_ANSWER`].
 //! What the edge says itself carries `x-whk-live`:
 //!
 //! - `offline` (502): no live session for the endpoint.
@@ -17,6 +20,8 @@
 //!   local port, or the tunnel dropped mid-request.
 //! - `timeout` (504): no answer's head within [`HEAD_TIMEOUT`].
 //! - `busy` (503): the account has too many requests in flight.
+//! - `refused` (502): the app's answer is not passed back ([`check`]); the
+//!   CLI hears why. (A 404 `refused` is a request without the secret.)
 //! - `answered`: on the app's own answer, whatever its status, so the
 //!   receiver can tell the app's 502 from the edge's.
 
@@ -48,8 +53,13 @@ pub const HEAD_TIMEOUT: Duration = if cfg!(test) {
 } else {
     Duration::from_secs(25)
 };
-/// The most of an answer passed back; past it the answer is cut off.
-pub const MAX_ANSWER: usize = 10 * 1024 * 1024;
+/// The most of an answer passed back: a webhook's answer is a few bytes of
+/// JSON or text. A longer stated length is refused up front.
+pub const MAX_ANSWER: usize = 1024 * 1024;
+/// Where a stream with no stated length is broken off: a little past
+/// [`MAX_ANSWER`], so the receiver, which cuts at [`MAX_ANSWER`] itself, is
+/// the one that ends it and records why.
+const STREAM_CUT: usize = MAX_ANSWER + 64 * 1024;
 /// A path segment's most, for the endpoint id.
 const ID_MAX: usize = 64;
 
@@ -105,6 +115,91 @@ fn split_path(path_and_query: &str) -> Option<(&str, String)> {
         format!("/{rest}")
     };
     Some((id, rest))
+}
+
+/// Why an app's answer is not passed back, in words for the developer.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Refusal {
+    Download,
+    Kind(String),
+    Untyped,
+    Mixed,
+    TooLarge,
+}
+
+impl Refusal {
+    pub fn describe(&self) -> String {
+        match self {
+            Refusal::Download => "a download".into(),
+            Refusal::Kind(kind) => format!("an answer of type {kind}"),
+            Refusal::Untyped => "an answer with a body but no content type".into(),
+            Refusal::Mixed => "an answer with more than one content type".into(),
+            Refusal::TooLarge => format!("an answer over {} MB", MAX_ANSWER / (1024 * 1024)),
+        }
+    }
+}
+
+/// Types an API answers with. Script is left out, even as `text/*`: the
+/// capture host is no place to serve it from.
+fn api_type(kind: &str) -> bool {
+    let script = kind.contains("javascript") || kind.contains("ecmascript");
+    !script
+        && (kind.starts_with("text/")
+            || kind == "application/json"
+            || kind == "application/xml"
+            || kind == "application/x-www-form-urlencoded"
+            || (kind.starts_with("application/")
+                && (kind.ends_with("+json") || kind.ends_with("+xml"))))
+}
+
+/// Whether an app's answer may go back to the sender on the capture host.
+pub fn check(status: StatusCode, headers: &http::HeaderMap) -> Result<(), Refusal> {
+    if status.is_informational()
+        || status == StatusCode::NO_CONTENT
+        || status == StatusCode::NOT_MODIFIED
+    {
+        return Ok(());
+    }
+    let attachment = headers.get_all("content-disposition").iter().any(|v| {
+        v.to_str().map_or(true, |d| {
+            d.trim_start()
+                .to_ascii_lowercase()
+                .starts_with("attachment")
+        })
+    });
+    if attachment {
+        return Err(Refusal::Download);
+    }
+    let length = header_str(headers, "content-length").and_then(|l| l.parse::<u64>().ok());
+    if length.is_some_and(|l| l > MAX_ANSWER as u64) {
+        return Err(Refusal::TooLarge);
+    }
+    let mut types = headers.get_all(header::CONTENT_TYPE).iter();
+    let kind = match (types.next(), types.next()) {
+        (None, _) => None,
+        (Some(_), Some(_)) => return Err(Refusal::Mixed),
+        (Some(value), None) => {
+            let value = value.to_str().map_err(|_| Refusal::Mixed)?;
+            if value.contains(',') {
+                return Err(Refusal::Mixed);
+            }
+            Some(
+                value
+                    .split(';')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_lowercase(),
+            )
+            .filter(|k| !k.is_empty())
+        }
+    };
+    match kind {
+        None if length == Some(0) => Ok(()),
+        None => Err(Refusal::Untyped),
+        Some(kind) if api_type(&kind) => Ok(()),
+        Some(kind) => Err(Refusal::Kind(kind)),
+    }
 }
 
 /// An answer the edge gives itself, marked with what happened.
@@ -224,21 +319,39 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             ),
         );
     }
+    let (mut parts, body) = response.into_parts();
+    parts.version = http::Version::HTTP_11;
+    crate::strip_hop_by_hop(&mut parts.headers, false);
+    if let Err(refusal) = check(status, &parts.headers) {
+        unreachable(&session, 502);
+        if session.limits.should_warn_blocked(Instant::now()) {
+            session.notify(&EdgeMessage::Notice {
+                text: format!(
+                    "Not passed back to the sender: {} at {}. A live tunnel passes back what an API answers with (JSON, XML, form data or text, not script), up to {} MB, and no downloads.",
+                    refusal.describe(),
+                    rest.chars().take(120).collect::<String>(),
+                    MAX_ANSWER / (1024 * 1024)
+                ),
+            });
+        }
+        return said(
+            StatusCode::BAD_GATEWAY,
+            "refused",
+            "The app's answer was not passed back.",
+        );
+    }
     session.notify(&EdgeMessage::Request {
         method,
         path: rest,
         status: status.as_u16(),
         ms: started.elapsed().as_millis() as u64,
     });
-    let (mut parts, body) = response.into_parts();
-    parts.version = http::Version::HTTP_11;
-    crate::strip_hop_by_hop(&mut parts.headers, false);
     parts
         .headers
         .insert(LIVE_HEADER, HeaderValue::from_static("answered"));
     // The hold on the account's streams lasts until the answer is through.
     let body = Holding {
-        inner: Limited::new(body, MAX_ANSWER).boxed(),
+        inner: Limited::new(body, STREAM_CUT).boxed(),
         _hold,
     };
     Response::from_parts(parts, Body::new(body))
@@ -374,6 +487,7 @@ mod tests {
                 endpoint_id: Some(endpoint.into()),
                 notice: false,
                 gate: None,
+                run: "run-1".into(),
             },
             opener,
             text.sender(),
@@ -401,6 +515,7 @@ mod tests {
             let body = req.into_body().collect().await.unwrap().to_bytes();
             Response::builder()
                 .status(201)
+                .header("content-type", "text/plain")
                 .header("x-app", "yes")
                 .body(Full::new(Bytes::from(format!(
                     "{host}|{auth}|{path}|{}",
@@ -488,5 +603,116 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), 502);
         assert_eq!(response.headers()[LIVE_HEADER], "unreachable");
+    }
+
+    #[test]
+    fn only_api_answers_go_back() {
+        let with = |pairs: &[(&'static str, &'static str)]| {
+            let mut h = http::HeaderMap::new();
+            for (k, v) in pairs {
+                h.append(*k, HeaderValue::from_static(v));
+            }
+            h
+        };
+        let ok = |pairs: &[(&'static str, &'static str)]| check(StatusCode::OK, &with(pairs));
+        for kind in [
+            "application/json",
+            "application/json; charset=utf-8",
+            "application/problem+json",
+            "application/xml",
+            "application/soap+xml",
+            "text/xml",
+            "text/plain",
+            "text/html",
+            "application/x-www-form-urlencoded",
+        ] {
+            assert_eq!(ok(&[("content-type", kind)]), Ok(()), "{kind}");
+        }
+        for kind in [
+            "application/javascript",
+            "text/javascript",
+            "application/octet-stream",
+            "video/mp4",
+            "image/png",
+            "application/pdf",
+        ] {
+            assert!(
+                matches!(ok(&[("content-type", kind)]), Err(Refusal::Kind(_))),
+                "{kind}"
+            );
+        }
+        assert_eq!(
+            ok(&[
+                ("content-type", "application/json"),
+                ("content-disposition", "attachment; filename=a.exe")
+            ]),
+            Err(Refusal::Download)
+        );
+        assert_eq!(
+            ok(&[("content-type", "application/json, video/mp4")]),
+            Err(Refusal::Mixed)
+        );
+        assert_eq!(
+            ok(&[
+                ("content-type", "text/plain"),
+                ("content-type", "video/mp4")
+            ]),
+            Err(Refusal::Mixed)
+        );
+        assert_eq!(
+            ok(&[
+                ("content-type", "text/plain"),
+                ("content-length", "1048577")
+            ]),
+            Err(Refusal::TooLarge)
+        );
+        // No type is fine for nothing at all.
+        assert_eq!(ok(&[("content-length", "0")]), Ok(()));
+        assert_eq!(ok(&[("content-length", "3")]), Err(Refusal::Untyped));
+        assert_eq!(check(StatusCode::NO_CONTENT, &with(&[])), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn a_download_is_not_passed_back() {
+        let state = state();
+        let port = app(|_req: Request<Incoming>| async move {
+            Response::builder()
+                .header("content-type", "application/octet-stream")
+                .body(Full::new(Bytes::from_static(b"MZ\x90\x00")))
+                .unwrap()
+        })
+        .await;
+        live_session(&state, "ep4", port).await;
+        let base = relay(&state).await;
+        let response = reqwest::Client::new()
+            .post(format!("{base}/v1/live/ep4/x"))
+            .header(AUTH_HEADER, "s")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 502);
+        assert_eq!(response.headers()[LIVE_HEADER], "refused");
+    }
+
+    #[tokio::test]
+    async fn a_stated_length_past_the_cap_is_refused_up_front() {
+        let state = state();
+        let port = app(|_req: Request<Incoming>| async move {
+            Response::builder()
+                .header("content-type", "text/plain")
+                .body(Full::new(Bytes::from(vec![b'x'; MAX_ANSWER + 1])))
+                .unwrap()
+        })
+        .await;
+        live_session(&state, "ep5", port).await;
+        let base = relay(&state).await;
+        let response = reqwest::Client::new()
+            .post(format!("{base}/v1/live/ep5/x"))
+            .header(AUTH_HEADER, "s")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 502);
+        assert_eq!(response.headers()[LIVE_HEADER], "refused");
     }
 }

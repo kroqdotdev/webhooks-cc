@@ -979,6 +979,7 @@ async fn handle_webhook_inner(
                         let (response, record) = live
                             .relay(super::live::LiveRequest {
                                 endpoint_id,
+                                slug: &slug,
                                 limit_key: &limit_key,
                                 method: &method,
                                 rest: &raw_rest,

@@ -670,29 +670,76 @@ impl Drop for Metered {
 
 /// The visitor's side of a WebSocket, counting what it is sent as it goes,
 /// so an open socket counts before it closes and one that ends in an error
-/// counts all the same.
+/// counts all the same. At every count it looks again at what the front
+/// door checked when the socket opened: once the account's data for the
+/// month or the visitor's day is used up, the socket ends, so a socket
+/// opened just before cannot stream on past either. It also keeps when it
+/// last moved either way ([`LastMoved`]), for the idle timeout (main.rs).
 pub struct CountedSocket<T> {
     inner: T,
     meter: Arc<Meter>,
     owner: Owner,
     visitor: u64,
+    visitor_key: String,
     unsent: u64,
+    activity: LastMoved,
+}
+
+/// When a socket last carried a byte either way.
+#[derive(Clone, Debug)]
+pub struct LastMoved(Arc<AtomicU64>);
+
+impl LastMoved {
+    fn now_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    }
+
+    fn new() -> Self {
+        Self(Arc::new(AtomicU64::new(Self::now_ms())))
+    }
+
+    fn touch(&self) {
+        self.0.store(Self::now_ms(), Ordering::Relaxed);
+    }
+
+    /// How long since it last moved.
+    pub fn idle(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(
+            Self::now_ms().saturating_sub(self.0.load(Ordering::Relaxed)),
+        )
+    }
 }
 
 impl<T> CountedSocket<T> {
-    pub fn new(inner: T, meter: Arc<Meter>, owner: Owner, visitor: u64) -> Self {
+    pub fn new(inner: T, meter: Arc<Meter>, owner: Owner, visitor_key: &str) -> Self {
         Self {
+            visitor: meter.visitor_hash(visitor_key),
             inner,
             meter,
             owner,
-            visitor,
+            visitor_key: visitor_key.to_string(),
             unsent: 0,
+            activity: LastMoved::new(),
         }
+    }
+
+    pub fn activity(&self) -> LastMoved {
+        self.activity.clone()
     }
 
     fn count(&mut self) {
         let bytes = std::mem::take(&mut self.unsent);
         self.meter.add_bytes(&self.owner, self.visitor, bytes);
+    }
+
+    /// Whether the account's month or the visitor's day ran out since the
+    /// socket opened.
+    fn spent(&self) -> bool {
+        self.meter.is_over(&self.owner.user_id)
+            || self.meter.visitor_spent(&self.owner.id, &self.visitor_key)
     }
 }
 
@@ -702,7 +749,12 @@ impl<T: AsyncRead + Unpin> AsyncRead for CountedSocket<T> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_read(cx, buf)
+        let before = buf.filled().len();
+        let read = Pin::new(&mut self.inner).poll_read(cx, buf);
+        if matches!(read, Poll::Ready(Ok(()))) && buf.filled().len() > before {
+            self.activity.touch();
+        }
+        read
     }
 }
 
@@ -714,9 +766,17 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for CountedSocket<T> {
     ) -> Poll<std::io::Result<usize>> {
         let written = Pin::new(&mut self.inner).poll_write(cx, buf);
         if let Poll::Ready(Ok(n)) = written {
+            if n > 0 {
+                self.activity.touch();
+            }
             self.unsent += n as u64;
             if self.unsent >= WEBSOCKET_STEP {
                 self.count();
+                if self.spent() {
+                    return Poll::Ready(Err(std::io::Error::other(
+                        "the data allowance ran out while the socket was open",
+                    )));
+                }
             }
         }
         written
@@ -1053,7 +1113,7 @@ mod tests {
             0,
         );
         let (a, _b) = tokio::io::duplex(1 << 20);
-        let mut socket = CountedSocket::new(a, m.clone(), owner("s1"), m.visitor_hash("v"));
+        let mut socket = CountedSocket::new(a, m.clone(), owner("s1"), "v");
         socket
             .write_all(&vec![0u8; WEBSOCKET_STEP as usize])
             .await
@@ -1067,6 +1127,33 @@ mod tests {
         drop(socket);
         assert_eq!(m.activity("s1").total.bytes, WEBSOCKET_STEP + 10);
         assert_eq!(usage_of(&m.batches())[0].bytes, WEBSOCKET_STEP + 10);
+    }
+
+    #[tokio::test]
+    async fn an_open_socket_ends_once_the_allowance_runs_out() {
+        let m = Arc::new(Meter::default());
+        let (a, _b) = tokio::io::duplex(1 << 22);
+        let mut socket = CountedSocket::new(a, m.clone(), owner("s1"), "v");
+        socket
+            .write_all(&vec![0u8; WEBSOCKET_STEP as usize])
+            .await
+            .unwrap();
+        // The account went over while the socket was open.
+        m.set_over(vec!["user-1".into()]);
+        let again = socket.write_all(&vec![0u8; WEBSOCKET_STEP as usize]).await;
+        assert!(again.is_err(), "the socket ends at the next count");
+    }
+
+    #[tokio::test]
+    async fn a_socket_knows_how_long_it_sat_idle() {
+        let m = Arc::new(Meter::default());
+        let (a, _b) = tokio::io::duplex(1 << 16);
+        let mut socket = CountedSocket::new(a, m, owner("s1"), "v");
+        let activity = socket.activity();
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        assert!(activity.idle() >= std::time::Duration::from_millis(25));
+        socket.write_all(b"x").await.unwrap();
+        assert!(activity.idle() < std::time::Duration::from_millis(25));
     }
 
     #[test]

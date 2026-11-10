@@ -19,6 +19,7 @@ mod config;
 mod content;
 mod control;
 mod debugger;
+mod decode;
 mod door;
 mod gate;
 mod held;
@@ -32,6 +33,7 @@ mod pace;
 mod pages;
 mod registry;
 mod relay;
+mod slow;
 mod web;
 mod words;
 
@@ -426,7 +428,7 @@ async fn connect(state: State, mut req: Request<Incoming>, remote: SocketAddr) -
     };
 
     let upgrade = hyper::upgrade::on(&mut req);
-    tokio::spawn(run_session(state, upgrade, opened, port));
+    tokio::spawn(run_session(state, upgrade, opened, port, instance));
 
     Response::builder()
         .status(StatusCode::SWITCHING_PROTOCOLS)
@@ -440,7 +442,7 @@ async fn connect(state: State, mut req: Request<Incoming>, remote: SocketAddr) -
         .unwrap()
 }
 
-async fn run_session(state: State, upgrade: OnUpgrade, opened: Opened, port: u16) {
+async fn run_session(state: State, upgrade: OnUpgrade, opened: Opened, port: u16, run: String) {
     let upgraded = match upgrade.await {
         Ok(upgraded) => upgraded,
         Err(e) => {
@@ -479,6 +481,7 @@ async fn run_session(state: State, upgrade: OnUpgrade, opened: Opened, port: u16
             // A live session's traffic never meets the door (relay.rs).
             notice: opened.notice && opened.endpoint_id.is_none(),
             gate: opened.gate.clone().filter(|_| opened.endpoint_id.is_none()),
+            run: run.clone(),
         },
         opener,
         text.sender(),
@@ -563,10 +566,26 @@ pub(crate) fn wants_upgrade(headers: &HeaderMap) -> bool {
         })
 }
 
+/// Headers `Connection` may not take away: what says what a body is. A
+/// laptop answering `Connection: content-type` would otherwise have its
+/// type checked (content.rs) and then dropped, and the visitor would get an
+/// untyped body to sniff or save.
+const NEVER_HOP_BY_HOP: &[&str] = &[
+    "content-type",
+    "content-length",
+    "content-encoding",
+    "content-disposition",
+];
+
 fn strip_hop_by_hop(headers: &mut HeaderMap, keep_upgrade: bool) {
-    let listed: Vec<String> = header_str(headers, "connection")
-        .map(|c| c.split(',').map(|t| t.trim().to_lowercase()).collect())
-        .unwrap_or_default();
+    let listed: Vec<String> = headers
+        .get_all(header::CONNECTION)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|c| c.split(','))
+        .map(|t| t.trim().to_lowercase())
+        .filter(|t| !t.is_empty() && !NEVER_HOP_BY_HOP.contains(&t.as_str()))
+        .collect();
     for name in HOP_BY_HOP
         .iter()
         .copied()
@@ -622,18 +641,35 @@ fn visitor_address(headers: &HeaderMap, remote: SocketAddr) -> String {
         .to_string()
 }
 
-/// Whom the per-visitor limits count: the address, or for IPv6 its /64,
-/// which one household or server holds whole.
+/// Whom the per-visitor limits count: the address, or for IPv6 its /56.
+/// Providers hand a household or a server at least a /64, and often a /56
+/// or a /48, so counting per /64 would let one of them be 256 visitors or
+/// more.
 fn visitor_key(address: &str) -> String {
     match address.parse::<std::net::IpAddr>() {
         Ok(std::net::IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
             Some(v4) => v4.to_string(),
             None => {
                 let s = v6.segments();
-                format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+                format!("{:x}:{:x}:{:x}:{:x}::/56", s[0], s[1], s[2], s[3] & 0xff00)
             }
         },
         _ => address.to_string(),
+    }
+}
+
+/// How long a visitor's WebSocket may carry nothing either way before the
+/// edge ends it. Live reload sends pings well within this.
+const SOCKET_IDLE: Duration = Duration::from_secs(10 * 60);
+
+/// Resolves once `activity` has been still for `limit`.
+async fn idle_for(activity: &meter::LastMoved, limit: Duration) {
+    loop {
+        let idle = activity.idle();
+        if idle >= limit {
+            return;
+        }
+        tokio::time::sleep((limit - idle).min(Duration::from_secs(30))).await;
     }
 }
 
@@ -670,6 +706,7 @@ async fn proxy(
     };
     let started = Instant::now();
     let method = req.method().to_string();
+    let head = req.method() == Method::HEAD;
     if state.meter.is_over(&session.user_id) && session.limits.should_warn_over(started) {
         session.notify(&EdgeMessage::Notice {
             text: format!(
@@ -692,6 +729,7 @@ async fn proxy(
         upgrading,
         gated,
         guard,
+        socket,
         paces,
     } = entered;
 
@@ -760,6 +798,9 @@ async fn proxy(
         parts.headers.insert("x-forwarded-for", v);
     }
 
+    // A body that stops coming ends the request (slow.rs). A WebSocket's
+    // request has no body; its socket has its own idle timeout.
+    let body = slow::Steady::new(body);
     let response = match sender.send_request(Request::from_parts(parts, body)).await {
         Ok(response) => response,
         // The CLI answers 502 itself when nothing listens on the port, so
@@ -776,13 +817,15 @@ async fn proxy(
     };
     let status = response.status();
     if response.headers().contains_key(HEADER_NOTHING_LISTENING) {
+        // The CLI's line shows what the visitor got: the edge's page.
+        let page = pages::nothing_running(session.port, &report);
         session.notify(&EdgeMessage::Request {
             method,
             path,
-            status: status.as_u16(),
+            status: page.status().as_u16(),
             ms: started.elapsed().as_millis() as u64,
         });
-        return pages::nothing_running(session.port, &report);
+        return page;
     }
     // Werkzeug's console page, once its answer shows it is (debugger.rs):
     // a page that short is read whole, then passed on if it is the app's.
@@ -807,12 +850,27 @@ async fn proxy(
     } else {
         response.map(Either::Left)
     };
-    // Web pages only: no videos, audio or downloads (content.rs).
+    // Web pages only: no videos, audio or downloads (content.rs). What
+    // belongs to the laptop's hop goes first, so the check sees what the
+    // visitor will get.
     let pass = match status {
-        StatusCode::SWITCHING_PROTOCOLS => Ok(content::Pass::AsSent),
-        _ => content::check(status, response.headers(), dest.as_deref()),
+        StatusCode::SWITCHING_PROTOCOLS => Ok((content::Pass::AsSent, None)),
+        _ => {
+            strip_hop_by_hop(response.headers_mut(), false);
+            content::check(status, response.headers(), dest.as_deref()).and_then(|pass| {
+                // A page load compressed in a way the edge cannot read
+                // could not get the report button or the phishing look
+                // (decode.rs).
+                if !page_visit {
+                    return Ok((pass, None));
+                }
+                decode::codec(header_str(response.headers(), "content-encoding"))
+                    .map(|codec| (pass, codec))
+                    .map_err(content::Refusal::Encoding)
+            })
+        }
     };
-    let pass = match pass {
+    let (pass, codec) = match pass {
         Ok(pass) => pass,
         Err(refusal) => {
             let page = pages::not_served(&refusal, &report);
@@ -850,18 +908,27 @@ async fn proxy(
                 id: session.id.clone(),
                 user_id: session.user_id.clone(),
             };
-            let who = state.meter.visitor_hash(&visitor_key(&visitor));
+            let who = visitor_key(&visitor);
             tokio::spawn(async move {
                 if let (Ok(visitor), Ok(local)) = (visitor_upgrade.await, local_upgrade.await) {
                     // What the laptop sends the visitor counts as it goes,
-                    // no faster than the share's pace (pace.rs).
+                    // no faster than the share's pace (pace.rs), and ends
+                    // the socket once the data runs out (meter.rs).
                     let visitor = pace::PacedSocket::new(TokioIo::new(visitor), paces);
-                    let mut visitor = meter::CountedSocket::new(visitor, meter, owner, who);
+                    let mut visitor = meter::CountedSocket::new(visitor, meter, owner, &who);
+                    let activity = visitor.activity();
                     // Ends soon after either side does, so a server that
                     // keeps a left visitor's socket half-open does not
-                    // hold the counts (splice.rs).
-                    splice::splice(&mut visitor, &mut TokioIo::new(local), splice::LINGER).await;
+                    // hold the counts (splice.rs); and after a long while
+                    // with nothing either way, so idle sockets cannot hold
+                    // the visitor's and the account's streams for good.
+                    let mut local = TokioIo::new(local);
+                    tokio::select! {
+                        _ = splice::splice(&mut visitor, &mut local, splice::LINGER) => {}
+                        _ = idle_for(&activity, SOCKET_IDLE) => {}
+                    }
                 }
+                drop(socket);
                 drop(guard);
             });
         }
@@ -897,21 +964,41 @@ async fn proxy(
         HeaderValue::from_static(cdn),
     );
 
-    // Pages get the report button, and a look for phishing (inject.rs).
-    let html = header_str(&parts.headers, "content-type")
-        .is_some_and(|t| t.to_ascii_lowercase().starts_with("text/html"));
-    let encoded = header_str(&parts.headers, "content-encoding")
-        .is_some_and(|e| !e.eq_ignore_ascii_case("identity"));
-    let body = if page_visit && status == StatusCode::OK && html && !encoded {
+    // Pages get the report button, and a look for phishing (inject.rs),
+    // whatever their status: a phishing page served as a 404 is still a
+    // page. An SVG opened as a page can hold a form too, so it is looked
+    // at, though it gets no button. A compressed one is read back first
+    // and goes on uncompressed (decode.rs).
+    let kind = header_str(&parts.headers, "content-type")
+        .map(|t| {
+            t.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .unwrap_or_default();
+    let has_body =
+        !(head || status == StatusCode::NO_CONTENT || status == StatusCode::NOT_MODIFIED);
+    let html = matches!(kind.as_str(), "text/html" | "application/xhtml+xml");
+    let svg = kind == "image/svg+xml";
+    let looked_at = page_visit && has_body && (html || svg);
+    let body: Body = match codec.filter(|_| looked_at) {
+        Some(codec) => {
+            parts.headers.remove(header::CONTENT_ENCODING);
+            parts.headers.remove(header::CONTENT_LENGTH);
+            decode::decode(body, codec)
+        }
+        None => body.map_err(Into::into).boxed(),
+    };
+    let page_url = format!("{public_origin}{path}");
+    let body = if looked_at && html {
         parts.headers.remove(header::CONTENT_LENGTH);
-        with_badge(
-            &state,
-            &session.door,
-            body,
-            format!("{public_origin}{path}"),
-        )
+        with_badge(&state, &session.door, body, page_url)
+    } else if looked_at {
+        with_scan(&state, &session.door, body, page_url)
     } else {
-        body.map_err(Into::into).boxed()
+        body
     };
     // An untyped error ends at its smaller cap, whole (content.rs).
     let body = match pass {
@@ -976,6 +1063,9 @@ pub(crate) struct Entered {
     pub gated: Option<String>,
     /// The visitor's and the account's counts, held until the answer ends.
     pub guard: Arc<(limits::StreamGuard, limits::StreamGuard)>,
+    /// For a WebSocket, the visitor's count of open sockets, held while it
+    /// is open.
+    pub socket: Option<limits::StreamGuard>,
     /// How fast the answer may go to the visitor (pace.rs).
     pub paces: pace::Paces,
 }
@@ -1012,7 +1102,9 @@ pub(crate) async fn front_door(
         }
         inject::BADGE_PATH => return Admission::Answered(badge(state)),
         inject::FLAG_PATH => {
-            return Admission::Answered(browser_flag(state, door, req, visit.public_origin).await);
+            return Admission::Answered(
+                browser_flag(state, door, req, visit.public_origin, &key).await,
+            );
         }
         gate::UNLOCK_PATH => {
             return Admission::Answered(
@@ -1052,7 +1144,7 @@ pub(crate) async fn front_door(
         && !notice::has_seen(
             req.headers(),
             secret,
-            &door.id,
+            &door.notice_key(),
             state.config.secure(),
             unix_now(),
         )
@@ -1070,6 +1162,16 @@ pub(crate) async fn front_door(
         on_limited();
         return Admission::Answered(pages::too_many(visit.report));
     };
+    // A WebSocket stays open, so one visitor may hold only a few.
+    let socket = if upgrading {
+        let Some(socket) = door.limits.enter_socket(&key) else {
+            on_limited();
+            return Admission::Answered(pages::too_many(visit.report));
+        };
+        Some(socket)
+    } else {
+        None
+    };
     Admission::Entered(
         req,
         Box::new(Entered {
@@ -1078,6 +1180,7 @@ pub(crate) async fn front_door(
             upgrading,
             gated,
             guard: Arc::new((visitor_hold, account_hold)),
+            socket,
             paces: door.paces.clone().on(visit.conn.clone()),
         }),
     )
@@ -1090,6 +1193,25 @@ where
     B: hyper::body::Body<Data = Bytes> + Send + Sync + Unpin + 'static,
     B::Error: Into<inject::BoxError>,
 {
+    inject::Inject::new(body, scan(state, door, page)).boxed()
+}
+
+/// The look for phishing alone, with nothing added: an SVG opened as a
+/// page.
+pub(crate) fn with_scan<B>(state: &State, door: &Arc<door::Door>, body: B, page: String) -> Body
+where
+    B: hyper::body::Body<Data = Bytes> + Send + Sync + Unpin + 'static,
+    B::Error: Into<inject::BoxError>,
+{
+    inject::Inject::scan_only(body, scan(state, door, page)).boxed()
+}
+
+/// Where a page's start goes to be looked at, and the look itself.
+fn scan(
+    state: &State,
+    door: &Arc<door::Door>,
+    page: String,
+) -> tokio::sync::oneshot::Sender<Bytes> {
     let (scan_tx, scan_rx) = tokio::sync::oneshot::channel::<Bytes>();
     if !door.was_flagged() {
         let web = state.web.clone();
@@ -1102,7 +1224,7 @@ where
             }
         });
     }
-    inject::Inject::new(body, scan_tx).boxed()
+    scan_tx
 }
 
 /// A plain image that one visitor may see as well as another: an answer to
@@ -1217,6 +1339,7 @@ async fn browser_flag(
     door: &Arc<door::Door>,
     req: Request<Incoming>,
     public_origin: &str,
+    visitor: &str,
 ) -> Response<Body> {
     let answer = || {
         meter::own_page(
@@ -1231,7 +1354,7 @@ async fn browser_flag(
     // From the page itself only: another site cannot post here for it.
     let same_origin = req.method() == Method::POST
         && header_str(req.headers(), "sec-fetch-site").is_none_or(|s| s == "same-origin");
-    if !same_origin {
+    if !same_origin || !door.limits.try_flag(visitor, Instant::now()) {
         return answer();
     }
     let Ok(body) = Limited::new(req.into_body(), 4096).collect().await else {
@@ -1302,7 +1425,7 @@ async fn continue_visit(
     let to = notice::form_target(&body);
     let cookie = notice::seen_cookie(
         state.config.edge_secret.as_bytes(),
-        &door.id,
+        &door.notice_key(),
         state.config.secure(),
         unix_now(),
     );
@@ -1400,16 +1523,21 @@ mod tests {
     }
 
     #[test]
-    fn visitors_are_counted_by_address_or_ipv6_64() {
+    fn visitors_are_counted_by_address_or_ipv6_56() {
         assert_eq!(visitor_key("203.0.113.7"), "203.0.113.7");
-        assert_eq!(visitor_key("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64");
+        assert_eq!(visitor_key("2001:db8:1:2:aaaa::1"), "2001:db8:1:0::/56");
+        // One /64 is one visitor, and so are the /64s of one /56.
         assert_eq!(
             visitor_key("2001:db8:1:2:bbbb:cccc:dddd:eeee"),
             visitor_key("2001:db8:1:2::9")
         );
+        assert_eq!(
+            visitor_key("2001:db8:1:2::1"),
+            visitor_key("2001:db8:1:ff::1")
+        );
         assert_ne!(
             visitor_key("2001:db8:1:2::1"),
-            visitor_key("2001:db8:1:3::1")
+            visitor_key("2001:db8:1:100::1")
         );
         assert_eq!(visitor_key("unknown"), "unknown");
         assert_eq!(visitor_key("::ffff:203.0.113.7"), "203.0.113.7");
@@ -1591,5 +1719,151 @@ mod tests {
             "https://other.sharehooks.cc"
         );
         assert_eq!(origin_after("null", "/_next/hmr", true), "null");
+    }
+
+    /// A share named `acme` whose laptop answers every request with `raw`
+    /// (a whole HTTP/1.1 response), then closes.
+    async fn share_answering(state: &State, raw: Vec<u8>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (edge_io, cli_io) = tokio::io::duplex(1 << 20);
+        let (opener, inbound, task) = mux::spawn(edge_io, yamux::Mode::Client);
+        drop(inbound);
+        std::mem::forget(task);
+        let (cli_opener, mut streams, cli_task) = mux::spawn(cli_io, yamux::Mode::Server);
+        std::mem::forget(cli_opener);
+        std::mem::forget(cli_task);
+        let raw = Arc::new(raw);
+        tokio::spawn(async move {
+            while let Some(mut stream) = streams.recv().await {
+                let raw = raw.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let mut got = Vec::new();
+                    loop {
+                        let n = stream.read(&mut buf).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        got.extend_from_slice(&buf[..n]);
+                        if got.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    let _ = stream.write_all(&raw).await;
+                    let _ = stream.shutdown().await;
+                });
+            }
+        });
+        let (text_io, other) = tokio::io::duplex(1 << 16);
+        std::mem::forget(other);
+        let socket = WebSocketStream::from_raw_socket(text_io, Role::Server, None).await;
+        let (bytes, text) = ws::split(socket);
+        std::mem::forget(bytes);
+        let session = Arc::new(Session::new(
+            Opening {
+                share_id: "s1".into(),
+                user_id: "u1".into(),
+                name: "acme".into(),
+                port: 3000,
+                endpoint_id: None,
+                notice: false,
+                gate: None,
+                run: "run-1".into(),
+            },
+            opener,
+            text.sender(),
+            state.registry.account("u1"),
+        ));
+        std::mem::forget(text);
+        state.registry.insert(session);
+    }
+
+    /// A page load of `acme` against a laptop answering `head` and `body`.
+    async fn visit(head: &str, body: &[u8]) -> (u16, HeaderMap, Vec<u8>) {
+        let (base, state) = edge().await;
+        let mut raw = format!("{head}\r\nconnection: close\r\n\r\n").into_bytes();
+        raw.extend_from_slice(body);
+        share_answering(&state, raw).await;
+        let r = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
+            .get(format!("{base}/x"))
+            .header("host", "acme.sharehooks.localhost:4000")
+            .header("sec-fetch-mode", "navigate")
+            .header("sec-fetch-dest", "document")
+            .send()
+            .await
+            .unwrap();
+        let status = r.status().as_u16();
+        let headers = r.headers().clone();
+        let body = r.bytes().await.unwrap_or_default().to_vec();
+        (status, headers, body)
+    }
+
+    const PAGE: &str = "<html><head><title>Acme</title></head><body>hi</body></html>";
+
+    fn badged(body: &[u8]) -> bool {
+        String::from_utf8_lossy(body).contains("/__whk/badge.js")
+    }
+
+    #[tokio::test]
+    async fn every_page_gets_the_button_whatever_its_status_or_type() {
+        for head in [
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html",
+            "HTTP/1.1 404 Not Found\r\ncontent-type: text/html; charset=utf-8",
+            "HTTP/1.1 500 Internal Server Error\r\ncontent-type: text/html",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/xhtml+xml",
+        ] {
+            let (status, _, body) = visit(head, PAGE.as_bytes()).await;
+            assert!(badged(&body), "{head}: {status}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_compressed_page_is_read_back_and_gets_the_button() {
+        use tokio::io::AsyncWriteExt;
+        let mut encoder = async_compression::tokio::write::GzipEncoder::new(Vec::new());
+        encoder.write_all(PAGE.as_bytes()).await.unwrap();
+        encoder.shutdown().await.unwrap();
+        let gzipped = encoder.into_inner();
+        let (status, headers, body) = visit(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-encoding: gzip",
+            &gzipped,
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(headers.get("content-encoding").is_none());
+        assert!(badged(&body));
+        assert!(String::from_utf8_lossy(&body).contains("<title>Acme</title>"));
+        // An encoding the edge cannot read is refused on a page load.
+        let (status, _, body) = visit(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-encoding: zstd",
+            b"\x28\xb5\x2f\xfd",
+        )
+        .await;
+        assert_eq!(status, 403);
+        assert!(!badged(&body));
+    }
+
+    #[tokio::test]
+    async fn type_tricks_do_not_get_past_the_check() {
+        // A list of types, two headers, Connection naming the type, and a
+        // redirect without a place to go.
+        for head in [
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html, video/mp4",
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-type: application/octet-stream",
+            "HTTP/1.1 302 Found\r\nlocation: \r\ncontent-type: application/octet-stream",
+        ] {
+            let (status, _, _) = visit(head, b"MZ\x90\x00").await;
+            assert_eq!(status, 403, "{head}");
+        }
+        let (status, headers, _) = visit(
+            "HTTP/1.1 200 OK\r\nconnection: content-type\r\ncontent-type: text/plain",
+            b"text",
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(headers["content-type"], "text/plain");
     }
 }

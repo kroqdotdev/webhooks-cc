@@ -36,9 +36,12 @@ pub struct Door {
     pub paces: Paces,
     /// Whether its pages were flagged as phishing already (inject.rs).
     flagged: AtomicBool,
+    /// The CLI's run, the same across its reconnects (`x-whk-instance`).
+    run: String,
 }
 
 impl Door {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         kind: Kind,
@@ -46,6 +49,7 @@ impl Door {
         name: String,
         notice: bool,
         gate: Option<String>,
+        run: String,
         account: Account,
     ) -> Self {
         Self {
@@ -59,7 +63,17 @@ impl Door {
             streams: account.streams,
             paces: account.paces,
             flagged: AtomicBool::new(false),
+            run,
         }
+    }
+
+    /// What a visitor's notice cookie is signed over (notice.rs): the
+    /// account, the name and the CLI's run. Not the share id, which is new
+    /// on every reconnect, so a dropped tunnel does not show visitors the
+    /// notice again; a later run (or a name drawn again for someone else)
+    /// starts over.
+    pub fn notice_key(&self) -> String {
+        format!("{}|{}|{}", self.user_id, self.name, self.run)
     }
 
     pub fn gate(&self) -> Option<String> {

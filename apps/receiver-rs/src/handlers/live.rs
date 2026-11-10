@@ -11,13 +11,21 @@
 //! answered (whatever its status), or what stood in for an answer:
 //! `offline` (502, no session), `timeout` (504, no answer within 25 s),
 //! `unreachable` (502, nothing on the port or the tunnel dropped), `busy`
-//! (503, the account's streams are in use). The header is removed before the
-//! answer goes out. When the edge itself cannot be reached the sender gets
+//! (503, the account's streams are in use), `refused` (502, an answer the
+//! edge does not pass back: a download, a type no API answers with, or one
+//! over [`MAX_ANSWER_BYTES`]; or, as a 404, our own secret or path, which is
+//! a fault on our side). The header is removed before the answer goes out. When the edge itself cannot be reached the sender gets
 //! 502, and a capture past the account's live relays gets 503 with
 //! `Retry-After`.
 //!
 //! The app's answer streams through to the sender as it arrives; only its
-//! first 64 KB are kept on the side. What the sender got is then recorded on
+//! first 64 KB are kept on the side. An answer that runs past
+//! [`MAX_ANSWER_BYTES`] is broken off, so the sender sees a failed answer
+//! rather than a clean, cut one, and the row records it as refused.
+//!
+//! The app gets `X-Forwarded-Host`, `X-Forwarded-Proto` and
+//! `X-Forwarded-Prefix` (`/w/<slug>`), so it can rebuild the public URL the
+//! sender signed (Twilio signs the whole URL). What the sender got is then recorded on
 //! the row (`record_live_response()`: status, headers, those first 64 KB as
 //! text or base64) once the answer has gone out, in the background and
 //! never changing the answer. Relays in flight are capped per account and
@@ -42,10 +50,12 @@ pub const RELAY_AUTH_HEADER: &str = "x-whk-relay-auth";
 pub const LIVE_HEADER: &str = "x-whk-live";
 /// How much of an answer's body the row keeps.
 pub const RECORDED_BODY_BYTES: usize = 64 * 1024;
-/// The most of an answer passed on; the edge caps it at the same size.
-const MAX_ANSWER_BYTES: usize = 10 * 1024 * 1024;
-/// The edge gives the app 25 s for the head and caps bodies at 10 MB; this
-/// bounds the whole exchange from the receiver's side.
+/// The most of an answer passed on: a webhook's answer is a few bytes of
+/// JSON or text. The edge refuses a longer stated length and cuts a stream a
+/// little past this, so this cap is the one that ends it and says so.
+pub const MAX_ANSWER_BYTES: usize = 1024 * 1024;
+/// The edge gives the app 25 s for the head and caps bodies at about 1 MB;
+/// this bounds the whole exchange from the receiver's side.
 const RELAY_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 /// Seconds a sender is asked to wait when the account's live relays are full.
@@ -85,6 +95,10 @@ pub struct LiveConfig {
     pub max_inflight_per_account: usize,
     /// Live relays in flight across all accounts; 0 turns the cap off.
     pub max_inflight_total: usize,
+    /// The capture host the app is told the sender used
+    /// (`X-Forwarded-Host`), from `WEBHOOK_BASE_URL`; without it, the
+    /// request's own Host.
+    pub public_host: Option<String>,
 }
 
 impl std::fmt::Debug for LiveConfig {
@@ -94,6 +108,7 @@ impl std::fmt::Debug for LiveConfig {
             .field("secret", &"[REDACTED]")
             .field("max_inflight_per_account", &self.max_inflight_per_account)
             .field("max_inflight_total", &self.max_inflight_total)
+            .field("public_host", &self.public_host)
             .finish()
     }
 }
@@ -127,6 +142,8 @@ pub type Recorded = oneshot::Receiver<LiveRecord>;
 /// One live capture to relay.
 pub struct LiveRequest<'a> {
     pub endpoint_id: &'a str,
+    /// The endpoint's slug, for `X-Forwarded-Prefix: /w/<slug>`.
+    pub slug: &'a str,
     /// The billing key the capture returned, for the per-account cap.
     pub limit_key: &'a str,
     pub method: &'a Method,
@@ -215,6 +232,14 @@ impl LiveRelay {
             );
         };
         let mut headers = relay_headers(request.headers);
+        forwarded_headers(
+            &mut headers,
+            self.config
+                .public_host
+                .as_deref()
+                .or_else(|| request.headers.get("host").and_then(|h| h.to_str().ok())),
+            request.slug,
+        );
         if let Ok(secret) = HeaderValue::from_str(&self.config.secret) {
             headers.insert(HeaderName::from_static(RELAY_AUTH_HEADER), secret);
         }
@@ -251,9 +276,10 @@ impl LiveRelay {
 
         let status = answer.status();
         let outcome = outcome_of(answer.headers().get(LIVE_HEADER));
-        if outcome == "refused" {
+        if outcome == "refused" && status == StatusCode::NOT_FOUND {
             // The edge did not take our secret or path: a configuration
-            // fault on our side, not the sender's.
+            // fault on our side, not the sender's. (Its other refusals are
+            // 502s about the app's answer, passed on below.)
             metrics::live("refused");
             tracing::error!("live relay: the edge refused the relay (check EDGE_SECRET)");
             return (
@@ -262,23 +288,17 @@ impl LiveRelay {
             );
         }
         metrics::live(outcome);
-        let answer_headers = answer.headers().clone();
+        let sent_headers = sent_answer_headers(answer.headers());
         let mut builder = axum::http::Response::builder().status(status);
-        for (name, value) in answer_headers.iter() {
-            if sendable_answer_header(name.as_str()) {
-                builder = builder.header(name, value);
-            }
+        for (name, value) in sent_headers.iter() {
+            builder = builder.header(name, value);
         }
-        // The answer comes from the capture host: the browser must take it
-        // for nothing but what it says, and run nothing in it.
-        builder = builder
-            .header("x-content-type-options", "nosniff")
-            .header("content-security-policy", "sandbox");
         let (tx, rx) = oneshot::channel();
         let recorder = Recorder {
             base: LiveRecord {
                 status: status.as_u16(),
-                headers: recorded_headers(&answer_headers),
+                // What the sender got, not what the app sent.
+                headers: recorded_headers(&sent_headers),
                 outcome,
                 ..recorded_body(b"")
             },
@@ -286,6 +306,7 @@ impl LiveRelay {
             kept: BytesMut::new(),
             total: 0,
             complete: false,
+            too_large: false,
             tx: Some(tx),
             _permits: (account_permit, total_permit),
         };
@@ -309,6 +330,8 @@ struct Recorder {
     kept: BytesMut,
     total: usize,
     complete: bool,
+    /// Broken off at [`MAX_ANSWER_BYTES`].
+    too_large: bool,
     tx: Option<oneshot::Sender<LiveRecord>>,
     _permits: (CapturePermit, Option<OwnedSemaphorePermit>),
 }
@@ -326,7 +349,9 @@ impl Drop for Recorder {
         let Some(tx) = self.tx.take() else {
             return;
         };
-        if !self.complete {
+        if self.too_large {
+            metrics::live("too_large");
+        } else if !self.complete {
             metrics::live("body_failed");
         }
         let truncated = !self.complete || self.total > RECORDED_BODY_BYTES;
@@ -334,6 +359,9 @@ impl Drop for Recorder {
             ms: elapsed_ms(self.started),
             ..std::mem::replace(&mut self.base, recorded_body(b""))
         };
+        if self.too_large {
+            record.outcome = "refused";
+        }
         let kept = recorded_body_of(&self.kept, truncated);
         record.body = kept.body;
         record.body_truncated = kept.body_truncated;
@@ -342,26 +370,25 @@ impl Drop for Recorder {
     }
 }
 
-/// The answer's body, chunk by chunk as the edge sends it, ended cleanly
-/// at [`MAX_ANSWER_BYTES`].
+/// The answer's body, chunk by chunk as the edge sends it. Past
+/// [`MAX_ANSWER_BYTES`] it is broken off with an error, so the sender sees
+/// an answer that failed, never a clean one that was cut short.
 fn answer_stream(
     answer: reqwest::Response,
     recorder: Recorder,
-) -> impl futures_util::Stream<Item = Result<Bytes, reqwest::Error>> + Send {
+) -> impl futures_util::Stream<Item = Result<Bytes, std::io::Error>> + Send {
     futures_util::stream::unfold(Some((answer, recorder)), |state| async move {
         let (mut answer, mut recorder) = state?;
-        if recorder.total >= MAX_ANSWER_BYTES {
-            // Cut: the record says so (complete stays false).
-            return None;
-        }
         match answer.chunk().await {
             Ok(Some(chunk)) => {
                 let room = MAX_ANSWER_BYTES - recorder.total;
-                let chunk = if chunk.len() > room {
-                    chunk.slice(..room)
-                } else {
-                    chunk
-                };
+                if chunk.len() > room {
+                    // What fits is kept for the row; the sender gets an
+                    // error in place of the rest.
+                    recorder.take(&chunk[..room]);
+                    recorder.too_large = true;
+                    return Some((Err(std::io::Error::other("live answer too large")), None));
+                }
                 recorder.take(&chunk);
                 Some((Ok(chunk), Some((answer, recorder))))
             }
@@ -371,7 +398,7 @@ fn answer_stream(
             }
             Err(e) => {
                 tracing::warn!(error = %e, "live relay: the answer's body was cut off");
-                Some((Err(e), None))
+                Some((Err(std::io::Error::other(e)), None))
             }
         }
     })
@@ -472,6 +499,49 @@ pub fn relay_headers(headers: &HeaderMap) -> HeaderMap {
 
 fn sendable_answer_header(name: &str) -> bool {
     !(HOP_BY_HOP.contains(&name) || name == LIVE_HEADER || BLOCKED_ANSWER_HEADERS.contains(&name))
+}
+
+/// The headers the sender gets: the app's, without hop-by-hop headers, the
+/// edge's mark and those the capture host keeps for itself, plus its guard:
+/// the answer comes from the capture host, so the browser must take it for
+/// nothing but what it says, and run nothing in it.
+fn sent_answer_headers(answer: &HeaderMap) -> HeaderMap {
+    let mut out = HeaderMap::with_capacity(answer.len() + 2);
+    for (name, value) in answer.iter() {
+        if sendable_answer_header(name.as_str()) {
+            out.append(name.clone(), value.clone());
+        }
+    }
+    out.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    out.insert(
+        "content-security-policy",
+        HeaderValue::from_static("sandbox"),
+    );
+    out
+}
+
+/// Tells the app where the sender sent it: the capture host, https, and
+/// the `/w/<slug>` the edge took off the path, so it can rebuild the public
+/// URL a provider signed. Whatever the sender put in these headers was
+/// dropped with the proxy headers (relay_headers).
+fn forwarded_headers(headers: &mut HeaderMap, host: Option<&str>, slug: &str) {
+    for name in [
+        "x-forwarded-host",
+        "x-forwarded-proto",
+        "x-forwarded-prefix",
+    ] {
+        headers.remove(name);
+    }
+    if let Some(host) = host.and_then(|h| HeaderValue::from_str(h).ok()) {
+        headers.insert("x-forwarded-host", host);
+    }
+    headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+    if let Ok(prefix) = HeaderValue::from_str(&format!("/w/{slug}")) {
+        headers.insert("x-forwarded-prefix", prefix);
+    }
 }
 
 /// The answer's headers for the row: everything the app sent apart from
@@ -699,6 +769,7 @@ mod tests {
             secret: "s3cret".into(),
             max_inflight_per_account: per_account,
             max_inflight_total: total,
+            public_host: Some("go.webhooks.cc".into()),
         })
     }
 
@@ -721,6 +792,7 @@ mod tests {
     fn live_request<'a>(headers: &'a HeaderMap, method: &'a Method) -> LiveRequest<'a> {
         LiveRequest {
             endpoint_id: "ep_1",
+            slug: "acme-hooks",
             limit_key: "user:1",
             method,
             rest: "/orders",
@@ -739,6 +811,16 @@ mod tests {
             assert_eq!(req.uri().query(), Some("x=1"));
             assert_eq!(req.headers().get(RELAY_AUTH_HEADER).unwrap(), "s3cret");
             assert_eq!(req.method(), Method::POST);
+            // Where the sender sent it, for the app to rebuild the URL.
+            assert_eq!(
+                req.headers().get("x-forwarded-host").unwrap(),
+                "go.webhooks.cc"
+            );
+            assert_eq!(req.headers().get("x-forwarded-proto").unwrap(), "https");
+            assert_eq!(
+                req.headers().get("x-forwarded-prefix").unwrap(),
+                "/w/acme-hooks"
+            );
             axum::http::Response::builder()
                 .status(201)
                 .header("content-type", "application/json")
@@ -770,8 +852,11 @@ mod tests {
         assert_eq!(record.status, 201);
         assert_eq!(record.outcome, "answered");
         assert_eq!(record.body, r#"{"created":true}"#);
-        assert!(record.headers.contains_key("set-cookie"));
+        // The row holds what the sender got.
+        assert!(!record.headers.contains_key("set-cookie"));
         assert!(!record.headers.contains_key(LIVE_HEADER));
+        assert_eq!(record.headers["content-security-policy"], "sandbox");
+        assert_eq!(record.headers["x-app"], "yes");
     }
 
     #[tokio::test]
@@ -978,5 +1063,65 @@ mod tests {
         assert!(record.body_truncated);
         assert!(record.body.len() >= first.len());
         assert!(record.body.chars().all(|c| c == 'y'));
+    }
+
+    #[tokio::test]
+    async fn an_answer_past_the_cap_is_broken_off_and_recorded_as_refused() {
+        // 1.5 MB in 64 KB chunks: the sender's read fails, the row keeps the
+        // start and says refused.
+        let base = fake_edge(|_req: Request| {
+            let chunks =
+                (0..24).map(|_| Ok::<_, std::io::Error>(Bytes::from(vec![b'z'; 64 * 1024])));
+            axum::http::Response::builder()
+                .status(200)
+                .header("content-type", "text/plain")
+                .header(LIVE_HEADER, "answered")
+                .body(Body::from_stream(futures_util::stream::iter(chunks)))
+                .unwrap()
+        })
+        .await;
+        let relay = relay_to(base, 16);
+        let headers = HeaderMap::new();
+        let method = Method::POST;
+        let (response, recorded) = relay.relay(live_request(&headers, &method)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let read = axum::body::to_bytes(response.into_body(), usize::MAX).await;
+        assert!(read.is_err(), "the sender must not get a clean, cut answer");
+        let record = recorded.await.unwrap();
+        assert_eq!(record.outcome, "refused");
+        assert!(record.body_truncated);
+        assert_eq!(record.body.len(), RECORDED_BODY_BYTES);
+    }
+
+    #[tokio::test]
+    async fn the_edges_refusal_of_an_answer_passes_on_as_refused() {
+        // A 502 marked refused is the edge turning the app's answer down (a
+        // download, say), not a fault of ours.
+        let base = fake_edge(|_req: Request| {
+            axum::http::Response::builder()
+                .status(502)
+                .header("content-type", "application/json")
+                .header(LIVE_HEADER, "refused")
+                .body(Body::from(r#"{"error":"not passed back"}"#))
+                .unwrap()
+        })
+        .await;
+        let headers = HeaderMap::new();
+        let method = Method::POST;
+        let (status, _, body, record) = exchange(&relay_to(base, 16), &headers, &method).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(&body[..], br#"{"error":"not passed back"}"#);
+        assert_eq!((record.status, record.outcome), (502, "refused"));
+    }
+
+    #[test]
+    fn the_app_learns_where_the_sender_sent_it() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-prefix", HeaderValue::from_static("/evil"));
+        forwarded_headers(&mut headers, Some("go.webhooks.cc"), "acme");
+        assert_eq!(headers["x-forwarded-host"], "go.webhooks.cc");
+        assert_eq!(headers["x-forwarded-proto"], "https");
+        assert_eq!(headers["x-forwarded-prefix"], "/w/acme");
+        assert_eq!(headers.get_all("x-forwarded-prefix").iter().count(), 1);
     }
 }

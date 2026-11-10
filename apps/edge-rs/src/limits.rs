@@ -2,7 +2,7 @@
 //! home line the edge sits on: requests a second per share and per visitor,
 //! and streams in flight per visitor and per account. A dev server's page
 //! load is a burst of a few hundred requests, so the buckets are deep and
-//! refill quickly. A visitor is an IPv4 address or an IPv6 /64 (main.rs).
+//! refill quickly. A visitor is an IPv4 address or an IPv6 /56 (main.rs).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -21,6 +21,13 @@ pub const ACCOUNT_STREAMS: usize = 256;
 /// The same for one visitor on one share, so a single visitor holding
 /// idle connections cannot use up the account's.
 const VISITOR_STREAMS: usize = 64;
+/// Of those, the WebSockets one visitor may hold open: a page needs one or
+/// two (live reload), and a socket stays open, unlike a request.
+const VISITOR_SOCKETS: usize = 16;
+/// Phishing reports from badge.js (inject.rs) one visitor may send a share:
+/// a few, then one a minute. Each makes the edge read a title.
+const FLAG_RATE: f64 = 1.0 / 60.0;
+const FLAG_BURST: f64 = 5.0;
 /// How often the CLI hears that visitors are being turned away.
 const WARN_EVERY: Duration = Duration::from_secs(30);
 /// Visitors remembered per share before the idle ones are forgotten.
@@ -102,6 +109,8 @@ pub struct ShareLimits {
     tries: Mutex<Bucket>,
     visitor_tries: Mutex<HashMap<String, Bucket>>,
     visitor_streams: Mutex<HashMap<String, Arc<Streams>>>,
+    visitor_sockets: Mutex<HashMap<String, Arc<Streams>>>,
+    flags: Mutex<HashMap<String, Bucket>>,
     warned: Mutex<Option<Instant>>,
     blocked_warned: Mutex<Option<Instant>>,
     over_warned: Mutex<Option<Instant>>,
@@ -126,6 +135,8 @@ impl ShareLimits {
             tries: Mutex::new(Bucket::full(TRY_SHARE_BURST, now)),
             visitor_tries: Mutex::new(HashMap::new()),
             visitor_streams: Mutex::new(HashMap::new()),
+            visitor_sockets: Mutex::new(HashMap::new()),
+            flags: Mutex::new(HashMap::new()),
             warned: Mutex::new(None),
             blocked_warned: Mutex::new(None),
             over_warned: Mutex::new(None),
@@ -143,6 +154,32 @@ impl ShareLimits {
             all.entry(visitor.to_string()).or_default().clone()
         };
         streams.enter(VISITOR_STREAMS)
+    }
+
+    /// Counts one more WebSocket for this visitor, unless they hold
+    /// [`VISITOR_SOCKETS`]. Held as well as the stream, for as long as the
+    /// socket is open.
+    pub fn enter_socket(&self, visitor: &str) -> Option<StreamGuard> {
+        let sockets = {
+            let mut all = self.visitor_sockets.lock().unwrap();
+            if all.len() >= VISITORS_KEPT {
+                all.retain(|_, s| s.count() > 0);
+            }
+            all.entry(visitor.to_string()).or_default().clone()
+        };
+        sockets.enter(VISITOR_SOCKETS)
+    }
+
+    /// Whether this visitor may send a phishing report now, counting it.
+    pub fn try_flag(&self, visitor: &str, now: Instant) -> bool {
+        let mut visitors = self.flags.lock().unwrap();
+        if visitors.len() >= VISITORS_KEPT {
+            visitors.retain(|_, b| !b.idle(FLAG_RATE, FLAG_BURST, now));
+        }
+        visitors
+            .entry(visitor.to_string())
+            .or_insert_with(|| Bucket::full(FLAG_BURST, now))
+            .take(FLAG_RATE, FLAG_BURST, now)
     }
 
     /// Whether one more request from this visitor fits, counting it.
@@ -333,5 +370,29 @@ mod tests {
         drop(held);
         assert_eq!(streams.count(), 0);
         assert!(streams.enter(3).is_some());
+    }
+
+    #[test]
+    fn one_visitor_holds_a_few_sockets_at_most() {
+        let limits = ShareLimits::new(Instant::now());
+        let held: Vec<_> = (0..VISITOR_SOCKETS)
+            .map(|_| limits.enter_socket("203.0.113.7").unwrap())
+            .collect();
+        assert!(limits.enter_socket("203.0.113.7").is_none());
+        assert!(limits.enter_socket("198.51.100.2").is_some());
+        drop(held);
+        assert!(limits.enter_socket("203.0.113.7").is_some());
+    }
+
+    #[test]
+    fn flags_are_limited_per_visitor() {
+        let now = Instant::now();
+        let limits = ShareLimits::new(now);
+        let let_in = (0..20)
+            .filter(|_| limits.try_flag("203.0.113.7", now))
+            .count();
+        assert_eq!(let_in, FLAG_BURST as usize);
+        assert!(limits.try_flag("198.51.100.2", now));
+        assert!(limits.try_flag("203.0.113.7", now + Duration::from_secs(61)));
     }
 }

@@ -191,6 +191,15 @@ fn live_from_env() -> Option<crate::handlers::live::LiveConfig> {
         secret,
         max_inflight_per_account: parse_env_or("LIVE_MAX_INFLIGHT_PER_ACCOUNT", 16),
         max_inflight_total: parse_env_or("LIVE_MAX_INFLIGHT_TOTAL", 256),
+        public_host: get("WEBHOOK_BASE_URL")
+            .and_then(|u| url::Url::parse(&u).ok())
+            .and_then(|u| {
+                let host = u.host_str()?.to_string();
+                Some(match u.port() {
+                    Some(port) => format!("{host}:{port}"),
+                    None => host,
+                })
+            }),
     })
 }
 

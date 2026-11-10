@@ -50,6 +50,8 @@ pub struct Opening {
     pub endpoint_id: Option<String>,
     pub notice: bool,
     pub gate: Option<String>,
+    /// The CLI's run (`x-whk-instance`), the same across its reconnects.
+    pub run: String,
 }
 
 impl Session {
@@ -62,6 +64,7 @@ impl Session {
                 opening.name,
                 opening.notice,
                 opening.gate,
+                opening.run,
                 account,
             )),
             port: opening.port,
@@ -292,6 +295,7 @@ mod tests {
                 endpoint_id: None,
                 notice: false,
                 gate: None,
+                run: "run-1".into(),
             },
             opener,
             text.sender(),
@@ -333,5 +337,18 @@ mod tests {
         registry.close_share_at("share-1", "stopped", long_ago);
         let later = session(&registry, "share-1", "acme").await;
         assert!(registry.insert_unless_closed(later).is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_reconnect_keeps_the_notice_cookie_good() {
+        let registry = Registry::default();
+        // The same run under the same name, before and after a reconnect:
+        // a new share id, the same notice key.
+        let before = session(&registry, "share-1", "acme").await;
+        let after = session(&registry, "share-2", "acme").await;
+        assert_eq!(before.notice_key(), after.notice_key());
+        // Another name is another key.
+        let other = session(&registry, "share-3", "other").await;
+        assert_ne!(before.notice_key(), other.notice_key());
     }
 }
