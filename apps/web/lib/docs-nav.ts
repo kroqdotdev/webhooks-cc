@@ -104,7 +104,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Verify signatures", href: "/docs/guides/verify-webhook-signatures" },
       { title: "Webhook testing in CI/CD", href: "/docs/guides/webhook-testing-ci-cd" },
       {
-        title: "Test signup emails in Playwright",
+        title: "Email testing in Playwright",
         href: "/docs/guides/test-signup-emails-playwright",
       },
     ],
@@ -120,6 +120,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Webhook.site vs webhooks.cc", href: "/compare/webhook-site" },
       { title: "Stripe CLI vs webhooks.cc", href: "/compare/stripe-cli", isNew: true },
       { title: "Svix vs webhooks.cc", href: "/compare/svix", isNew: true },
+      { title: "Mailtrap vs webhooks.cc", href: "/compare/mailtrap", isNew: true },
+      { title: "Mailosaur vs webhooks.cc", href: "/compare/mailosaur", isNew: true },
+      { title: "MailSlurp vs webhooks.cc", href: "/compare/mailslurp", isNew: true },
     ],
   },
 ];

@@ -1,35 +1,60 @@
 ---
-title: "How to Test Signup and Login Emails in Playwright"
-description: "Test the confirmation codes, magic links and password reset emails your app sends, end to end in Playwright, with a real email address per test run. No mail server and no mocks."
+title: "Playwright Email Testing: Signup, Magic Link and Password Reset"
+description: "How to test emails in Playwright: sign up with a real address per test, wait for the confirmation, magic link, one-time code or password reset email, and finish the flow with what is in it. Runnable TypeScript, with CI notes."
 section: guides
 order: 10
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: howto
 keywords:
   [
     "playwright email testing",
+    "test email magic link",
+    "playwright magic link test",
+    "playwright otp email test",
+    "playwright password reset test",
     "test signup email playwright",
-    "playwright otp test",
-    "playwright magic link",
     "e2e email verification test",
-    "test email in playwright",
+    "email testing in ci",
   ]
 seo:
-  ogTitle: "Test Signup and Login Emails in Playwright"
-  ogDescription: "Confirmation codes, magic links and reset emails, tested end to end in Playwright with a real email address per test run."
+  ogTitle: "Playwright Email Testing: Signup, Magic Link, Password Reset"
+  ogDescription: "Sign up with a real address per test, wait for the email, and finish the flow with its code or link. Runnable TypeScript for Playwright, with CI notes."
 ---
 
-Signup, login and password reset flows all stop at the same place in an end-to-end test: the app sends an email, and the test needs the code or the link inside it. Mocking the mail provider skips the part most likely to break (the template, the link, the sending setup). With webhooks.cc your test signs up with a real address, the email arrives at your endpoint, and the SDK hands the test its code or link.
+To test an email flow in Playwright, the test needs three things: an address it can sign up with, a way to wait for the email the app sends, and the code or link inside it. With webhooks.cc the address is `{slug}+{tag}@mailhooks.cc`, `client.emails.waitFor()` waits for the email, and `extractCode()` and `extractLink()` return the code and the link. The shortest complete test:
 
-## What you'll build
+```ts
+import { test, expect } from "@playwright/test";
+import { WebhooksCC, extractLink } from "@webhooks-cc/sdk";
 
-A Playwright setup where each test gets its own email address, waits for the email the app sends to it, and finishes the flow with the code or link from that email. It works with any mail provider (Resend, Postmark, SES, SendGrid, plain SMTP) because the email is really sent.
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const SLUG = process.env.WHK_EMAIL_ENDPOINT!;
+
+test("sign in with a magic link", async ({ page }, testInfo) => {
+  const tag = `w${testInfo.workerIndex}-${Date.now()}`;
+
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(client.emails.address(SLUG, tag));
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+
+  const email = await client.emails.waitFor(SLUG, { tag });
+  await page.goto(extractLink(email, { actionOnly: true })!);
+  await expect(page).toHaveURL(/\/dashboard/);
+});
+```
+
+The rest of this guide builds that into a setup for a whole suite: a fixture that gives every test its own address, then signup confirmation, magic links, one-time codes and password resets, and what to set in CI.
+
+## Why a real address instead of a mock
+
+Signup, login and password reset tests all stop at the same place: the app sends an email, and the test needs what is in it. Mocking the mail provider skips the parts most likely to break (the template, the link it builds, the sending setup). Here the email is really sent, through whatever your app uses (Resend, Postmark, SES, SendGrid, plain SMTP), and nothing in the app's mail settings changes for the test.
 
 <Callout type="info">
   Every endpoint on a webhooks.cc account receives email at `{slug}@mailhooks.cc`, and at
-  `{slug}+{tag}@mailhooks.cc` for any tag. One endpoint is enough for a whole test suite: a fresh
-  tag per test keeps parallel tests apart. Each email counts as one request against your quota.
-  Guest endpoints (created without an account) receive no email.
+  `{slug}+{tag}@mailhooks.cc` for any tag, on every plan. One endpoint is enough for a whole test
+  suite: there are no inboxes to create, and a fresh tag per test keeps parallel tests apart. Each
+  email counts as one request against your quota (50 a day on Free). Guest endpoints (created
+  without an account) receive no email.
 </Callout>
 
 <Steps>
@@ -54,39 +79,47 @@ Create an API key on your [API keys page](/account/api-keys) and keep it in `WHK
 </Step>
 <Step title="Give every test its own address">
 
-A Playwright fixture builds a tagged address for each test, so tests running in parallel never read each other's email:
+A Playwright fixture builds a tagged address for each test and a `waitFor` that only sees mail sent to it, so tests running in parallel never read each other's email:
 
 ```ts
 // tests/fixtures.ts
 import { test as base } from "@playwright/test";
-import { WebhooksCC } from "@webhooks-cc/sdk";
+import { WebhooksCC, type EmailRequest, type WaitForEmailOptions } from "@webhooks-cc/sdk";
 
-export const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
-export const SLUG = process.env.WHK_EMAIL_ENDPOINT!;
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const SLUG = process.env.WHK_EMAIL_ENDPOINT!;
 
-type Inbox = { address: string; tag: string };
+type Inbox = {
+  /** This test's address: {slug}+{tag}@mailhooks.cc */
+  address: string;
+  /** Waits for an email sent to this test's address. */
+  waitFor: (options?: WaitForEmailOptions) => Promise<EmailRequest>;
+};
 
 export const test = base.extend<{ inbox: Inbox }>({
   inbox: async ({}, use, testInfo) => {
     const tag = `w${testInfo.workerIndex}-${Date.now()}`;
-    await use({ address: client.emails.address(SLUG, tag), tag });
+    await use({
+      address: client.emails.address(SLUG, tag),
+      waitFor: (options = {}) => client.emails.waitFor(SLUG, { ...options, tag }),
+    });
   },
 });
 
 export { expect } from "@playwright/test";
 ```
 
-Tags are case-sensitive and may use letters, digits and most punctuation such as `.`, `_`, `-` or `=` (no spaces, quotes, brackets, `@`, `,`, `;` or `:`); keep the whole address part before the `@` within 64 characters.
+Tags are case-sensitive and may use letters, digits and most punctuation such as `.`, `_`, `-` or `=` (no spaces, quotes, brackets, `@`, `,`, `;` or `:`); keep the whole address part before the `@` within 64 characters. `client.emails.address()` throws on a tag that would not work.
 
 </Step>
-<Step title="Sign up and enter the code from the email">
+<Step title="Test the signup confirmation email">
 
-`client.emails.waitFor()` polls until an email for this test's tag arrives (60 seconds by default), and `extractCode()` returns the one-time code, using the same finder as the dashboard's "Found in this email" strip:
+`waitFor()` polls until an email for this test's tag arrives (60 seconds by default, then it throws a `TimeoutError`). `extractCode()` returns the one-time code, using the same finder as the dashboard's "Found in this email" strip:
 
 ```ts
 // tests/signup.spec.ts
 import { extractCode } from "@webhooks-cc/sdk";
-import { test, expect, client, SLUG } from "./fixtures";
+import { test, expect } from "./fixtures";
 
 test("new users confirm their email with a code", async ({ page, inbox }) => {
   await page.goto("/signup");
@@ -94,7 +127,7 @@ test("new users confirm their email with a code", async ({ page, inbox }) => {
   await page.getByLabel("Password").fill("correct horse battery staple");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  const email = await client.emails.waitFor(SLUG, { tag: inbox.tag });
+  const email = await inbox.waitFor();
   expect(email.email.subject).toContain("Confirm");
 
   const code = extractCode(email);
@@ -104,38 +137,77 @@ test("new users confirm their email with a code", async ({ page, inbox }) => {
 });
 ```
 
-</Step>
-<Step title="Follow a magic link or a reset link">
+If your confirmation email carries a link instead of a code, use `extractLink()` as in the next step.
 
-`extractLink()` returns the link the email asks you to click. With `actionOnly: true` it only accepts a confirm, verify, reset or sign-in link, so a test fails clearly when the email has none:
+</Step>
+<Step title="Test a magic link">
+
+`extractLink()` returns the link the email asks you to click. With `actionOnly: true` it only accepts a confirm, verify, reset or sign-in link and returns `null` otherwise, so a template that lost its link fails the test clearly:
 
 ```ts
+// tests/magic-link.spec.ts
 import { extractLink } from "@webhooks-cc/sdk";
-import { test, expect, client, SLUG } from "./fixtures";
+import { test, expect } from "./fixtures";
 
 test("users sign in with a magic link", async ({ page, inbox }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill(inbox.address);
   await page.getByRole("button", { name: "Email me a sign-in link" }).click();
 
-  const email = await client.emails.waitFor(SLUG, { tag: inbox.tag, subject: "Sign in" });
+  const email = await inbox.waitFor({ subject: "Sign in" });
   const link = extractLink(email, { actionOnly: true });
   expect(link).not.toBeNull();
 
+  // The same page, so the session cookie lands in this browser context.
   await page.goto(link!);
   await expect(page).toHaveURL(/\/dashboard/);
 });
 ```
 
+Two things worth asserting on a magic link: that it points at the environment under test (`expect(new URL(link!).origin).toBe(baseURL)`, with `baseURL` from the test's fixtures), and that it works once only, by opening it a second time in a new context and expecting the app's "link expired" page.
+
+</Step>
+<Step title="Test a password reset">
+
+A reset test needs an account first. Create it however your suite seeds users (an API call, a database helper, or the signup flow above), with the test's own address, then ask for the reset:
+
+```ts
+// tests/password-reset.spec.ts
+import { extractLink } from "@webhooks-cc/sdk";
+import { test, expect } from "./fixtures";
+import { createUser } from "./helpers"; // your own seeding helper
+
+test("users reset a forgotten password", async ({ page, inbox }) => {
+  await createUser({ email: inbox.address, password: "old password 123" });
+
+  await page.goto("/forgot-password");
+  await page.getByLabel("Email").fill(inbox.address);
+  await page.getByRole("button", { name: "Send reset link" }).click();
+
+  // The subject keeps this apart from a welcome email sent to the same address.
+  const email = await inbox.waitFor({ subject: /reset/i });
+  const link = extractLink(email, { actionOnly: true });
+  expect(link).not.toBeNull();
+
+  await page.goto(link!);
+  await page.getByLabel("New password").fill("new password 456");
+  await page.getByRole("button", { name: "Set password" }).click();
+  await expect(page).toHaveURL(/\/login/);
+});
+```
+
+When one address receives several emails in a test (a welcome email, then a reset), give `waitFor()` a `subject` (a substring, or a regular expression) or a `from` address. Without one it returns the oldest email for the tag from the last five minutes, which would be the welcome email.
+
 </Step>
 <Step title="Check the email itself">
 
-The captured email carries everything the app sent, so the same test can check the sender, the recipients, the text and the sender checks:
+The captured email carries everything the app sent, so the same test can check the sender, the text and how the mail was authenticated:
 
 ```ts
 const { email: message } = email;
 expect(message.from[0]?.address).toBe("no-reply@yourapp.dev");
 expect(message.text).toContain("expires in 10 minutes");
+expect(message.html).toContain("Reset your password");
 expect(message.attachments).toHaveLength(0);
 
 // SPF, DKIM and DMARC as a receiving mail server saw them
@@ -153,8 +225,10 @@ Sender checks reflect how the email was really sent: a development setup that do
 If you would rather not keep an endpoint around, `captureEmailDuring()` creates one, passes your action its address, waits for the email and deletes the endpoint afterwards:
 
 ```ts
+import { WebhooksCC, extractCode } from "@webhooks-cc/sdk";
 import { captureEmailDuring } from "@webhooks-cc/sdk/testing";
-import { extractCode } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
 
 const [email] = await captureEmailDuring(
   client,
@@ -169,17 +243,51 @@ expect(extractCode(email)).toMatch(/^\d{6}$/);
 
 ## Running in CI
 
-- Store `WHK_API_KEY` and `WHK_EMAIL_ENDPOINT` as CI secrets.
-- Parallel workers are safe: each test has its own tag, and `waitFor` only matches its own.
-- Every email counts as one request. The free plan takes 50 a day; [Pro](/docs/plans-limits) takes 100,000 a month.
-- Emails follow your plan's retention, so old test mail cleans itself up.
+Give the test more time than the wait. Playwright's default test timeout is 30 seconds and `waitFor()` waits up to 60, so a slow email would end the test before the wait reports what it was waiting for:
+
+```ts
+// playwright.config.ts
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  fullyParallel: true,
+  // Longer than the 60 seconds waitFor() may take, plus the clicks around it.
+  timeout: 90_000,
+  use: { baseURL: process.env.BASE_URL ?? "http://localhost:3000" },
+});
+```
+
+```yaml
+# .github/workflows/e2e.yml (excerpt)
+env:
+  WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
+  WHK_EMAIL_ENDPOINT: ${{ secrets.WHK_EMAIL_ENDPOINT }}
+steps:
+  - uses: actions/checkout@v4
+  - run: npm ci
+  - run: npx playwright install --with-deps
+  - run: npx playwright test
+```
+
+- **The app must really send.** The environment under test needs working mail credentials; a provider's sandbox mode that drops mail delivers nothing. If the provider only sends to verified recipients (Amazon SES in its sandbox, for example), move it out of that mode or verify the domain first.
+- **Parallel workers and concurrent pipelines are safe.** Each test has its own tag, and `waitFor()` only matches mail sent to it. The tag above combines the worker index and the time; add the CI run id if two pipelines share an endpoint and start in the same millisecond.
+- **Retries get a new address.** The fixture runs again for every retry, so a retried test never picks up the first attempt's email.
+- **Quota.** Every email counts as one request. The free plan takes 50 a day; [Pro](/docs/plans-limits) takes 100,000 a month. A full quota refuses mail (the sender gets a bounce) instead of dropping it silently.
+- **Cleanup.** There is none to do: emails follow your plan's retention (7 days on Free), or a shorter one you set on the endpoint.
+- **Nothing to expose.** The test reads the email over HTTPS, so the CI runner needs outbound access only.
 
 ## Troubleshooting
 
-- **No email arrives.** Check that the app really sends (its mail provider's log), that the slug belongs to an endpoint on your account, and that the address has no typo. Open the endpoint in the dashboard: mail that arrived shows up there with an **EMAIL** badge.
+- **No email arrives (`TimeoutError`).** Check that the app really sends (its mail provider's log), that the slug belongs to an endpoint on your account, and that the address has no typo. Open the endpoint in the dashboard: mail that arrived shows up there with an **EMAIL** badge. To rule out your app, `await client.emails.sendTest(SLUG, { tag })` delivers a sample email with a code and a link to the tagged address.
+- **The test times out before `waitFor()` does.** Raise Playwright's `timeout`, or pass a shorter one to the wait: `inbox.waitFor({ timeout: "20s" })`.
 - **`extractCode()` returns null.** The finder only takes a code that sits next to a word like "code", "verification" or "PIN". If your template says something else, read the code with your own pattern from `email.email.text`.
+- **`extractLink()` returns the wrong link, or null.** With `actionOnly: true` only a confirm, verify, reset or sign-in link counts. For a link the finder does not recognise, pick it from `email.email.html` or `email.email.text` with your own pattern.
 - **The wrong email matches.** Make the tag unique per test, or add `subject` or `from` to `waitFor()`.
-- **Timeouts in slow environments.** Raise `timeout` on `waitFor()`, for example `"120s"`.
+- **The provider rewrites links.** Click tracking replaces links with the provider's redirect URLs. The redirect still leads to your app, so `page.goto()` works; to assert on the final URL, turn click tracking off for transactional mail.
+
+## Other runners and languages
+
+The same flow works outside Playwright: call the SDK from a `cy.task` in Cypress, use `client.emails.wait_for()` and `extract_code()` in the [Python SDK](/docs/sdk/python) or `client.Emails.WaitFor()` and `ExtractCode()` in the [Go SDK](/docs/sdk/go), or poll the [REST API](/docs/api) with `kind=email` and `extracts=true`. See [Email testing](/email-testing) for a Cypress example, and how it compares with [Mailtrap](/compare/mailtrap), [Mailosaur](/compare/mailosaur) and [MailSlurp](/compare/mailslurp).
 
 ## Next steps
 

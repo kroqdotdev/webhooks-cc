@@ -120,3 +120,48 @@ jobs:
             checksums.txt
             checksums.txt.sigstore.json
           generate_release_notes: true
+
+      - name: Keep checksums for the tap
+        uses: actions/upload-artifact@v7
+        with:
+          name: checksums
+          path: checksums.txt
+
+  # Points the Homebrew tap (kroqdotdev/homebrew-tap, whk.rb) at this release,
+  # so `brew install kroqdotdev/tap/whk` never falls behind. Needs the
+  # HOMEBREW_TAP_TOKEN secret: a fine-grained token with contents write on the
+  # tap repository only. Without it the job says so and does nothing.
+  homebrew:
+    name: Update Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, '-') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: checksums
+
+      - name: Update the formula
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN is not set; the Homebrew tap was not updated."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/kroqdotdev/homebrew-tap.git" tap
+          .github/scripts/homebrew-formula.sh "$version" checksums.txt > tap/whk.rb
+          cd tap
+          if git diff --quiet; then
+            echo "The tap already has whk $version."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "whk $version"
+          git push origin HEAD

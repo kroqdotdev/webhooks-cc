@@ -341,7 +341,7 @@ const recent = await client.forwarding.deliveries("my-slug", { limit: 10 });
 
 // Every delivery of one email, with each try in attemptLog
 const deliveries = await client.forwarding.emailDeliveries("request-id");
-// Returns: EmailDelivery[] (see Delivery under Email Forwarding below)
+// Returns: EmailDelivery[] (see Delivery under Forwarding below)
 
 // Queue the email again with the current URL and secret (409 when forwarding is off)
 const { id } = await client.forwarding.redeliver("request-id");
@@ -791,60 +791,77 @@ Config stored at `~/.config/whk/token.json`.
 
 Base URL: `https://webhooks.cc`
 
-All endpoints require `Authorization: Bearer whcc_...` unless noted.
+Docs: https://webhooks.cc/docs/api. OpenAPI 3.1 document with every route below, its parameters and its response shapes: https://webhooks.cc/openapi.yaml
+
+All endpoints require `Authorization: Bearer whcc_...` unless noted. "Bearer" is an API key, an OAuth access token or an agent's access token (all `whcc_` tokens). "Session" routes take only a signed-in browser session and answer `403` to an API key. "Owner" routes answer `404` to anyone but the endpoint's owner. Bodies and responses are JSON; timestamps are Unix milliseconds. Errors are `{ "error": "..." }` with `400` (validation), `401` (missing or invalid token), `403` (not allowed), `404`, `409` (conflict), `429` (rate limited, with `Retry-After`) or `500`.
 
 ### Endpoints
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/endpoints` | Bearer | List all endpoints (owned + shared) |
-| POST | `/api/endpoints` | Bearer | Create endpoint |
+| GET | `/api/endpoints` | Bearer | List endpoints: `{ "owned": [...], "shared": [...] }` |
+| POST | `/api/endpoints` | Bearer | Create endpoint; body `{ "name"?, "isEphemeral"?, "expiresAt"?, "mockResponse"?, "responseRules"?, "notificationUrl"?, "site"? }` (rate limit: 30 per 10 min) |
 | GET | `/api/endpoints/[slug]` | Bearer | Get endpoint |
-| PATCH | `/api/endpoints/[slug]` | Bearer | Update endpoint |
-| DELETE | `/api/endpoints/[slug]` | Bearer | Delete endpoint |
-| POST | `/api/endpoints/claim` | Bearer | Claim a guest endpoint |
+| PATCH | `/api/endpoints/[slug]` | Bearer | Update endpoint: `name`, `mockResponse`, `responseRules` (team members too), and for the owner `notificationUrl`, `showEmailExtracts`, `site`, `emailFields`, `layouts`, `retentionDays`, `deleteAfterDelivery`, `signingProvider`, `signingSecret`, `signingHeader` and the `forward*` fields |
+| DELETE | `/api/endpoints/[slug]` | Bearer | Delete endpoint and its requests |
+| PUT/DELETE | `/api/endpoints/[slug]/favorite` | Bearer | Mark or unmark it as your favourite: `{ "favorite": true }` |
+| POST | `/api/endpoints/claim` | Bearer | Claim a guest endpoint into your account; body `{ "slug": "..." }` |
+| POST | `/api/endpoints/[slug]/responses/preview` | Bearer | Dry run of the response rules on a captured request; body `{ "requestId"?, "mockResponse"?, "responseRules"? }`; returns `{ "rule", "response", "unknownPlaceholders", "email", "request" }` |
+| POST | `/api/endpoints/[slug]/email-fields/preview` | Bearer, owner | Dry run of named email fields; body `{ "requestId"?, "emailFields"? }`; returns `{ "problems", "request", "values" }` |
+| POST | `/api/endpoints/[slug]/layouts/preview` | Bearer, owner | Dry run of layouts on a captured email; body `{ "requestId"?, "layouts"? }`; returns `{ "problems", "layoutsCap", "request", "parsed" }`; uses no pages |
+| POST | `/api/endpoints/[slug]/layouts/template` | Bearer, owner | Add a ready-made layout; body `{ "template": "shopify-orders" }`; returns `201` `{ "layoutId": "..." }` |
+| GET/PUT | `/api/endpoints/[slug]/alerts` | Bearer, owner | Read `{ "settings", "events" }` or change the alert settings |
 
 ### Requests
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/endpoints/[slug]/requests` | Bearer | List requests (limit, since, cursor, kind=http\|email) |
-| GET | `/api/requests/[id]` | Bearer | Get single request |
-| GET | `/api/search/requests` | Bearer | Search requests (slug, method, kind, q, from, to) |
-| GET | `/api/search/requests/count` | Bearer | Count matching requests |
+| GET | `/api/endpoints/[slug]/requests` | Bearer | List requests, newest first (`limit`, `since`, `kind=http\|email`, `extracts=true`) |
+| GET | `/api/endpoints/[slug]/requests/paginated` | Bearer | The same page by page (`limit`, `cursor`, `kind`, `extracts`): `{ "items", "cursor", "hasMore" }` |
+| DELETE | `/api/endpoints/[slug]/requests` | Bearer | Clear requests (`before=<ms>` for older ones only); `204` |
+| GET | `/api/requests/[id]` | Bearer | Get single request (`extracts=true` adds an email's codes, links, named fields and reply text) |
+| GET | `/api/requests/[id]/raw` | Bearer | A captured email's exact message as `message/rfc822` |
+| GET | `/api/requests/[id]/attachments/[index]` | Bearer | One attachment of a stored email, as a download |
+| POST | `/api/requests/[id]/render` | Bearer | A captured email as an inbound mail provider posts it; body `{ "format": "postmark" \| "sendgrid" \| "mailgun" \| "cloudmailin" \| "json" }`; returns `{ "format", "method", "headers", "body" }` |
+| GET | `/api/search/requests` | Bearer | Search requests (`slug`, `method`, `kind`, `q`, `from`, `to`, `limit`, `offset`, `order`) |
+| GET | `/api/search/requests/count` | Bearer | Count matching requests: `{ "count": 42 }` |
 
 ### Webhooks
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/send-test` | Bearer | Send test webhook (rate limit: 30/min) |
+| POST | `/api/send-test` | Bearer | Send test webhook; body `{ "slug", "method", "path"?, "headers"?, "body"? }` (rate limit: 30/min) |
 | POST | `/api/send-test-email` | Bearer | Deliver a sample email to an endpoint, body `{ "slug": "...", "tag": "..." }` with `tag` optional (rate limit: 10/min) |
 
 ### Forwarding
 
-Forwarding settings are owner only. The owner-only routes below answer `404` to anyone else.
+Forwarding settings are owner only. The owner-only routes below answer `404` to anyone else. Destinations are the current API; the `forward*` endpoint fields and the `/forwarding` routes are the older single-URL API, which still works and stands for the endpoint's primary destination.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET/POST | `/api/endpoints/[slug]/destinations` | Bearer, owner | List or add destinations (up to 10) |
+| GET/POST | `/api/endpoints/[slug]/destinations` | Bearer, owner | List (`?summary=true` adds each one's last 24 hours) or add destinations (up to 10; `201`) |
 | GET/PATCH/DELETE | `/api/endpoints/[slug]/destinations/[id]` | Bearer, owner | Read, change or remove one destination |
-| GET/POST | `/api/endpoints/[slug]/destinations/[id]/secret` | Bearer, owner | Read or rotate a destination's signing secret |
-| POST | `/api/endpoints/[slug]/destinations/[id]/test` | Bearer, owner | Send one delivery now and report the answer |
-| POST | `/api/endpoints/[slug]/destinations/preview` | Bearer, owner | Dry run of a destination against a captured request |
-| PUT | `/api/endpoints/[slug]/destinations/order` | Bearer, owner | Reorder destinations |
-| PATCH | `/api/endpoints/[slug]` | Bearer, owner | Set `forwardUrl` and `forwardEnabled` for the primary destination (team members get `403`) |
-| GET | `/api/endpoints/[slug]/forwarding` | Bearer, owner | Get the signing secret: `{ "secret": "whsec_..." }` |
-| POST | `/api/endpoints/[slug]/forwarding` | Bearer, owner | Rotate the signing secret, returns the new one |
-| POST | `/api/endpoints/[slug]/forwarding/test` | Bearer, owner | Post the newest email (or a sample) once and report the answer (rate limit: 10/min) |
-| GET | `/api/endpoints/[slug]/deliveries` | Bearer, owner | Latest deliveries, `limit` 1 to 20 (default 5) |
-| GET | `/api/requests/[id]/deliveries` | Bearer | Deliveries of one email with every attempt; anyone who can read the email |
-| POST | `/api/requests/[id]/deliveries` | Bearer, owner | Redeliver the email; `409` when forwarding is off (rate limit: 30/min) |
+| GET/POST | `/api/endpoints/[slug]/destinations/[id]/secret` | Bearer, owner | Read or rotate a destination's signing secret: `{ "secret": "whsec_..." }` |
+| POST | `/api/endpoints/[slug]/destinations/[id]/test` | Bearer, owner | Send one delivery now and report the answer; body `{ "kind"?, "requestId"? }` (rate limit: 10/min) |
+| POST | `/api/endpoints/[slug]/destinations/preview` | Bearer, owner | Dry run: body `{ "destinationId"?, "destination"?, "requestId"? }`; returns the exact request it would send, nothing is sent |
+| PUT | `/api/endpoints/[slug]/destinations/order` | Bearer, owner | Reorder destinations; body `{ "ids": [...] }` |
+| GET | `/api/endpoints/[slug]/deliveries` | Bearer, owner | The delivery log, newest first: `limit` 1 to 100 (default 5), `status` (`all`, `pending`, `failed`, `skipped`), `destination` (an id), `before` (a row's `cursor`) |
+| GET | `/api/endpoints/[slug]/deliveries/summary` | Bearer, owner | Counts: `{ "last24h": { "delivered", "failed" }, "pending", "failed", "total" }` |
+| POST | `/api/endpoints/[slug]/deliveries/redeliver-failed` | Bearer, owner | Queue every failed delivery again (`?destination=<id>` for one): `{ "queued": 12 }` (rate limit: 10/min) |
+| GET | `/api/requests/[id]/deliveries` | Bearer | Deliveries of one request with every attempt; anyone who can read the request |
+| POST | `/api/requests/[id]/deliveries` | Bearer, owner | Redeliver the request (HTTP or email) to every destination that takes it, or body `{ "destinationId": "..." }` for one; `409` when none takes it (rate limit: 30/min) |
+| POST | `/api/requests/[id]/replay` | Bearer, owner | Read the request again (layouts included) and send it through the destinations: `{ "queued": true }` (rate limit: 60/min) |
+| POST | `/api/endpoints/[slug]/replay` | Bearer, owner | The same for a time range; body `{ "since"?, "until"?, "kind"? }` in ms, at most 500 requests: `{ "requests", "queued", "limit" }` (rate limit: 10/min) |
+| GET | `/api/integrations/google/connections` | Bearer | Connected Google accounts for Sheets destinations: `{ "available", "connections" }` |
+| PATCH | `/api/endpoints/[slug]` | Bearer, owner | Legacy: set `forwardUrl`, `forwardEnabled` and the other `forward*` fields of the primary destination (team members get `403`) |
+| GET/POST | `/api/endpoints/[slug]/forwarding` | Bearer, owner | Legacy: read or rotate the primary destination's signing secret |
+| POST | `/api/endpoints/[slug]/forwarding/test` | Bearer, owner | Legacy: send the newest request (or a sample) to the primary destination once and report the answer (rate limit: 10/min) |
 
 ### Streaming
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/stream/[slug]` | Bearer | SSE stream of incoming requests |
+| GET | `/api/stream/[slug]` | Bearer | SSE stream of incoming requests (`connected`, `request`, `timeout`, `endpoint_deleted` events; 30 minutes at most) |
 
 ### Auth (Device Flow for CLI)
 
@@ -855,33 +872,43 @@ Forwarding settings are owner only. The owner-only routes below answer `404` to 
 | GET | `/api/auth/device-poll?code=<device code>` | None | Poll until the device code is authorized |
 | POST | `/api/auth/device-claim` | None | Exchange an authorized device code for an API key; body `{ "deviceCode": "..." }` |
 
+Agents without a human at hand register through `/api/agent/identity` and exchange the assertion at `/api/oauth2/token`; see https://webhooks.cc/auth.md.
+
 ### Account
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/usage` | Bearer | Get usage and quota |
-| GET | `/api/api-keys` | Bearer | List API keys |
-| POST | `/api/api-keys` | Bearer | Create API key |
-| DELETE | `/api/api-keys` | Bearer | Delete API key |
-| DELETE | `/api/account` | Session | Delete account (session auth only) |
+| GET | `/api/usage` | Bearer | Usage and quota: `{ "used", "limit", "remaining", "blockRequests", "creditRequests", "overage", "plan", "periodEnd", "teamBilledEndpoints", "emails" }` |
+| GET/POST/DELETE | `/api/api-keys` | Session | List, create or delete API keys |
+| PATCH/DELETE | `/api/account` | Session | Change account settings, or delete the account |
+| * | `/api/billing/*`, `/api/teams/[id]/billing/*` | Session | Plans, seats, extra capacity, checkout and cancellation |
+| * | `/api/domains`, `/api/domains/[id]`, `/api/domains/[id]/verify` | Session | Custom inbound domains (Business) |
+| * | `/api/requests/[id]/shares`, `/api/request-shares` | Session | Share links |
+| GET/POST | `/api/endpoints/[slug]/layouts/assist` | Session | AI setup for layouts and fields |
 
 ### Teams
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/teams` | Bearer | List teams |
-| POST | `/api/teams` | Bearer | Create team |
-| GET/PATCH/DELETE | `/api/teams/[id]` | Bearer | Manage team |
-| GET/POST | `/api/teams/[id]/members` | Bearer | Manage members |
-| GET/POST | `/api/teams/[id]/endpoints` | Bearer | Team endpoints |
-| POST | `/api/teams/[id]/invite` | Bearer | Send invite |
-| POST | `/api/invites/[id]/accept` | Bearer | Accept invite |
+| POST | `/api/teams` | Bearer | Create team; body `{ "name": "..." }` |
+| PATCH/DELETE | `/api/teams/[id]` | Bearer | Rename or delete a team (owner) |
+| GET | `/api/teams/[id]/members` | Bearer | Members and pending invites |
+| DELETE | `/api/teams/[id]/members/[userId]` | Bearer | Remove a member (owner) |
+| GET | `/api/teams/[id]/endpoints` | Bearer | Endpoints shared with the team: `{ "endpoints": [...] }` |
+| POST | `/api/teams/[id]/endpoints` | Bearer | Share one of your endpoints; body `{ "endpointId": "..." }` |
+| DELETE | `/api/teams/[id]/endpoints/[endpointId]` | Bearer | Unshare an endpoint |
+| POST | `/api/teams/[id]/invite` | Bearer | Invite by email (owner); body `{ "email": "..." }` |
+| DELETE | `/api/teams/[id]/invites/[inviteId]` | Bearer | Revoke a pending invite (owner) |
+| POST | `/api/teams/[id]/leave` | Bearer | Leave a team |
+| GET | `/api/invites` | Bearer | Invites addressed to you |
+| POST | `/api/invites/[id]/accept`, `/api/invites/[id]/decline` | Bearer | Accept or decline an invite |
 
 ### Guest (No Auth)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/go/endpoint` | None | Create ephemeral endpoint (IP rate limited) |
+| POST | `/api/go/endpoint` | None | Create ephemeral endpoint (IP rate limited; refuses crawler and missing user agents with `403`) |
 
 ---
 
@@ -1115,33 +1142,74 @@ Limits and SMTP replies:
 
 ---
 
-## Email Forwarding
+## Forwarding (Destinations)
 
 Docs: https://webhooks.cc/docs/forwarding
 
-Forwarding sends what an endpoint captures, HTTP requests and emails, to up to 10 destinations, usually within a second or two (see Destinations in the TypeScript SDK Reference). This section covers the signed JSON format for emails, set up through the endpoint's primary destination; an HTTP request sent as received keeps its own method, headers and body, plus signed `webhooks-cc-*` headers. Only the endpoint's owner can configure forwarding. It is available on every plan and does not use request quota (each email already counted once when it arrived).
+Forwarding sends what an endpoint captures, HTTP requests and emails, to up to 10 destinations, usually within a second or two. Each destination has its own kinds (`http`, `email`), filter, format, headers, timing and `whsec_` signing secret. Only the endpoint's owner can configure forwarding. It is available on every plan (file drops need Business) and does not use request quota (each request already counted once when it arrived).
 
 ### Set up
 
 ```bash
-# Save the URL and turn forwarding on (the first URL creates the signing secret)
+# Add a destination (its signing secret is created with it)
+curl -X POST https://webhooks.cc/api/endpoints/<slug>/destinations \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/hooks/email", "http": false, "email": true, "format": "json"}'
+# 201 {"id": "<destination id>", "url": "https://example.com/hooks/email", "enabled": true, "hasSecret": true, ...}
+
+# Read the signing secret for your handler
+curl https://webhooks.cc/api/endpoints/<slug>/destinations/<destination id>/secret \
+  -H "Authorization: Bearer whcc_..."
+# {"secret": "whsec_..."}
+
+# Dry run: the exact request it would send for the newest capture, nothing is sent
+curl -X POST https://webhooks.cc/api/endpoints/<slug>/destinations/preview \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"destinationId": "<destination id>"}'
+
+# Send the newest capture (or a sample) once and see what your server answered
+curl -X POST https://webhooks.cc/api/endpoints/<slug>/destinations/<destination id>/test \
+  -H "Authorization: Bearer whcc_..."
+# {"status": 200, "durationMs": 182, "excerpt": "ok", "error": null, "delivered": true, "sample": false, "kind": "email", "format": "json", "filterPasses": true, ...}
+```
+
+A destination's fields (all optional except `url` when adding one; `PATCH` changes only what is sent):
+
+| Field | Values |
+|-------|--------|
+| `url` | `https` on a public host name, at most 2048 characters |
+| `name` | A label, at most 100 characters |
+| `enabled` | Default `true` |
+| `http`, `email` | Which kinds it receives; both default `true`, at least one must be on |
+| `format` | `auto` (default: chat for Slack and Discord webhook URLs, otherwise HTTP as received and emails as signed JSON), `as_received`, `json`, `template`, `chat`, `postmark`, `sendgrid`, `mailgun`, `cloudmailin`, `sheets`, `file_drop` |
+| `filter` | `{ "logic": "and" \| "or", "conditions": [...] }` or `null`: only captures that match are sent (the rule language of response rules, plus `kind`, `email`, `email_field`, `spam_score`, `email_auth` and `signature` fields); the rest are settled as `skipped` |
+| `bodyTemplate` | For `template`: any JSON value with `{{ path \| filter }}` placeholders in its strings, such as `{"order": "{{ parsed.fields.order }}", "type": "{{ json.type }}"}` |
+| `messageTemplate` | For `chat`: the message text with placeholders |
+| `headers` | Up to 10 of `{ "name", "value" }`; values come back masked, a `null` value keeps the stored one |
+| `appendPath` | Add the path after the slug to the URL for relayed requests; default `true` |
+| `retrySeconds` | `86400` (default), `3600`, or `0` for a single try |
+| `keepOrder` | One delivery at a time, in capture order |
+| `sentField` | A JSON body field holding the sender's own timestamp |
+| `throttleSeconds`, `delaySeconds` | 0 to 3600: at most one delivery every N seconds; wait N seconds before the first try |
+| `attachments` | How an email's files travel in JSON: `links` (signed download links), `inline` (base64) or `none` |
+| `config`, `dropSecret` | Settings of `sheets` and `file_drop` destinations (see File Drops below) |
+
+Formats: `as_received` relays an HTTP request with its own method, headers, query string and exact bytes, plus `webhooks-cc-*` metadata headers signed with the destination's secret (`webhooks-cc-signature`). `json` sends signed JSON (below) for an email, and a JSON description of an HTTP request. `template` sends your own JSON body, signed like `json`. `chat` posts a message to a Slack or Discord webhook. `postmark`, `sendgrid`, `mailgun` and `cloudmailin` send an email the way that inbound mail service posts it, so a handler written for one of them works unchanged. `sheets` appends rows to a Google Sheet (connect the Google account and pick the spreadsheet in the dashboard). A destination whose URL answers `410 Gone` is switched off.
+
+### The legacy single-URL API
+
+Code written before destinations keeps working. The endpoint fields `forwardUrl`, `forwardEnabled`, `forwardHttp`, `forwardEmail`, `forwardFormat`, `forwardHeaders`, `forwardAppendPath`, `forwardRetrySeconds`, `forwardKeepOrder` and `forwardSentField` (set with `PATCH /api/endpoints/<slug>`) read and write the endpoint's primary destination, the one whose `role` is `forward`; `GET` and `POST /api/endpoints/<slug>/forwarding` read and rotate its secret, and `POST /api/endpoints/<slug>/forwarding/test` tests it. `notificationUrl` stands for a chat destination named Notifications (`role: "notify"`, at most one message a second, not retried). Prefer the destination routes in new code: they reach every destination, not only the first.
+
+```bash
 curl -X PATCH https://webhooks.cc/api/endpoints/<slug> \
   -H "Authorization: Bearer whcc_..." \
   -H "Content-Type: application/json" \
   -d '{"forwardUrl": "https://example.com/hooks/email", "forwardEnabled": true}'
-
-# Read the signing secret for your handler
-curl https://webhooks.cc/api/endpoints/<slug>/forwarding \
-  -H "Authorization: Bearer whcc_..."
-# {"secret": "whsec_..."}
-
-# Post the newest email (or a sample) once and see what your server answered
-curl -X POST https://webhooks.cc/api/endpoints/<slug>/forwarding/test \
-  -H "Authorization: Bearer whcc_..."
-# {"status": 200, "durationMs": 182, "excerpt": "ok", "error": null, "delivered": true, "sample": false}
 ```
 
-`forwardEnabled: true` needs a `forwardUrl`. Saving a URL before turning forwarding on lets you set up the handler and send a test delivery first. Endpoint objects carry `forwardEnabled`, `hasForwardSecret` and (for the owner only) `forwardUrl`.
+`forwardEnabled: true` needs a `forwardUrl`. Endpoint objects carry `forwardEnabled`, `hasForwardSecret`, `destinationCount` and (for the owner only) `forwardUrl`.
 
 ### The request
 
@@ -1244,8 +1312,10 @@ The official Standard Webhooks libraries (https://github.com/standard-webhooks/s
 - Any `2xx` answer accepts a delivery. Redirects are not followed and count as failures. Your server has 15 seconds to answer.
 - A failed delivery is retried after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours (about a day in all), then marked failed.
 - Every copy of one email has the same `webhook-id`, so a handler can skip repeats. Delivery is at least once, in no guaranteed order.
-- A retry goes to the URL and secret saved at that moment. Turning forwarding off marks deliveries still waiting as failed.
-- `POST /api/requests/<id>/deliveries` queues a redelivery with the current settings (forwarding must be on).
+- A retry goes to the URL and secret saved at that moment. Switching a destination off, removing it, or taking a kind away from it marks its deliveries still waiting as failed.
+- `retrySeconds` shortens the schedule: `3600` stops after an hour, `0` makes one try.
+- `POST /api/requests/<id>/deliveries` queues a redelivery with the current settings, to every destination that takes the request or to `{ "destinationId": "..." }`; `POST /api/endpoints/<slug>/deliveries/redeliver-failed` does it for everything that failed.
+- `POST /api/requests/<id>/replay` and `POST /api/endpoints/<slug>/replay` (`since`, `until` in ms, at most 500) read emails again with the current layouts and fields before sending them, for use after fixing a pattern.
 
 Delivery history (`GET /api/requests/<id>/deliveries`, newest first, up to 20):
 
@@ -1253,7 +1323,13 @@ Delivery history (`GET /api/requests/<id>/deliveries`, newest first, up to 20):
 interface Delivery {
   id: string;
   requestId: string;
-  status: "pending" | "succeeded" | "failed";
+  kind: "http" | "email";
+  status: "pending" | "succeeded" | "failed" | "skipped"; // skipped: the filter turned it down
+  destination: { id: string; name: string | null; url: string } | null; // null once it is removed
+  format: string | null;           // how it went out: "json", "as_received", "chat", ...
+  target: string | null;           // host and path it went to (host only for Slack and Discord)
+  senderAt: number | null;         // the sender's own timestamp, when the request had one
+  senderSource: string | null;
   attempts: number;
   createdAt: number;               // Unix ms
   finishedAt: number | null;
@@ -1270,22 +1346,137 @@ interface Delivery {
 }
 ```
 
-`GET /api/endpoints/<slug>/deliveries` returns the endpoint's latest deliveries in a shorter form: `id`, `requestId`, `status`, `attempts`, `createdAt`, `lastStatus`, `lastError` and the email's `subject`.
+`GET /api/endpoints/<slug>/deliveries` returns the endpoint's delivery log without the attempts (`limit` 1 to 100, default 5; `status=all|pending|failed|skipped`; `destination=<id>`; `before=<cursor>` for older rows): `id`, `requestId`, `kind`, `status`, `destination`, `attempts`, `createdAt`, `finishedAt`, `nextAttemptAt`, `lastStatus`, `lastError`, `lastDurationMs`, `format`, `senderAt`, `senderSource`, `cursor`, and the request's `method`, `path`, `receivedAt` and (for an email) `subject`. `GET /api/endpoints/<slug>/deliveries/summary` returns the counts.
+
+### Alerts
+
+`GET` and `PUT /api/endpoints/<slug>/alerts` (owner only, every plan) read and change when the endpoint tells its owner that something stopped working: `enabled`, `fieldFailures` (emails in a row that miss a required field, 1 to 100 or `null`), `fieldFailureShare` (percent of the last 20 emails, or `null`), `requiredFields` (names, or `null` for all), `silenceHours` (hours without an email, 1 to 720 or `null`), `destinationFailures` (a delivery failed after every retry), `notifyEmail`, and `notifyDestinationIds` (destinations that also get a chat message or a signed `alert.opened` / `alert.resolved` JSON event). `GET` also returns the latest `events`: `{ "id", "kind": "fields" | "silence" | "destination", "subject", "openedAt", "resolvedAt", "details" }`. Alerts carry field names and delivery errors, never an email's contents.
 
 ### Limits
 
-- The URL must be `https` on a public host name, at most 2048 characters: no IP addresses, `localhost`, private networks, credentials in the URL, or mail, database and other internal ports.
+- An endpoint has at most 10 destinations, and at most 1,000 deliveries wait for one destination at a time.
+- The URL must be `https` on a public host name, at most 2048 characters: no IP addresses, `localhost`, private networks, credentials in the URL, or mail, database and other internal ports. A URL on webhooks.cc's own capture host is refused.
 - On webhooks.cc, requests come from Cloudflare's network, not a fixed address. Do not allowlist IPs; check the signature.
 - An email whose JSON would be larger than 10 MB is not forwarded.
 - Deliveries are kept as long as the email itself.
+
+## Layouts and Attachment Parsing
+
+Docs: https://webhooks.cc/docs/layouts
+
+A layout says how an endpoint reads one sender's or one kind of email: which emails it is for, which values to pick out, which rows to turn into line items, and whether to parse the attachments. Layouts are tried in order and the first whose conditions hold applies. The result travels with the email as `parsed`: in the API (`GET /api/requests/<id>`), in every forwarded delivery, in templates (`{{ parsed.fields.order }}`, `{{ item.sku }}`), in the SDKs and in the MCP tools. Emails on an endpoint with layouts are delivered once they are parsed, usually within seconds.
+
+Layouts are part of the endpoint: send the whole list with `PATCH /api/endpoints/<slug>` (owner only; `null` or `[]` removes them).
+
+```bash
+curl -X PATCH https://webhooks.cc/api/endpoints/<slug> \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"layouts": [{
+    "id": "acme",
+    "name": "Acme orders",
+    "match": {"conditions": [{"field": "email", "name": "subject", "op": "contains", "value": "Order"}]},
+    "fields": [{"name": "order", "from": "subject", "pattern": "#(\\d+)"}],
+    "lineItems": {"from": "text", "pattern": "(?P<sku>[A-Z]+-\\d+)\\s+x(?P<qty>\\d+)\\s+(?P<price>[\\d.]+)"},
+    "parseAttachments": true
+  }]}'
+```
+
+- `match`: conditions in the rule language of destination filters (`{ "logic"?, "conditions": [...] }`); none takes every email.
+- `fields`: up to 20 of `{ "name", "from": "subject" | "text" | "html" | "from" | "to" | "header", "header"?, "pattern" }`. Patterns are RE2; the first group is the value.
+- `lineItems`: `{ "from": "text" | "html", "pattern", "start"?, "end"? }`, an RE2 pattern with named groups found again and again, optionally between two markers; or `"from": "attachment"` with `attachment` (a file name pattern) and `sheet`, whose rows become the line items. At most 1,000 line items per email.
+- `parseAttachments`: CSV and TSV (rows), XLSX, XLS and ODS (rows per sheet), PDF (the text layer per page, no OCR), TXT, JSON, XML and ICS (text). Files over 32 MB, encrypted files and malformed files are reported with an `error` instead.
+
+The exact layout schema is `Layout` in https://webhooks.cc/openapi.yaml.
+
+`parsed` on an email:
+
+```json
+{
+  "status": "matched",
+  "layout": { "id": "acme", "name": "Acme orders" },
+  "fields": { "order": "1001" },
+  "lineItems": [{ "sku": "A-1", "qty": "2", "price": "9.50" }],
+  "lineItemColumns": ["sku", "qty", "price"],
+  "attachments": [{ "index": 0, "filename": "order-1001.csv", "format": "csv", "pages": 1, "sheets": [] }],
+  "pages": 1
+}
+```
+
+`status` is `no_layout` when no layout matched; the email is still captured and delivered. `parsed` is `null` while the parse is pending.
+
+- Try before saving: `POST /api/endpoints/<slug>/layouts/preview` with `{ "layouts"?, "requestId"? }` returns `{ "problems", "layoutsCap", "request", "parsed" }` for a captured email. It saves nothing and uses no pages.
+- Ready-made layouts: `POST /api/endpoints/<slug>/layouts/template` with `{ "template": "<id>" }` adds one of `shopify-orders`, `woocommerce-orders`, `etsy-sales`, `amazon-seller-orders`, `ebay-sales`, `stripe-receipts`, `paypal-payments`, `booking-com-reservations`, `airbnb-reservations`, `calendly-bookings`, `form-responses`, `csv-reports`, `pdf-invoices` (examples at https://mailhooks.cc/parse).
+- After changing a layout, replay earlier emails to read them again: `POST /api/endpoints/<slug>/replay`.
+- AI setup (propose patterns from up to 5 of the endpoint's own emails) is a dashboard feature that needs a signed-in person's consent on each ask; it is not offered to API keys. The patterns it writes are ordinary layouts.
+- Parsed pages: each started 1,000 rows of a sheet or CSV, each PDF page and each text file is a page; a file uses at most 100. Free includes 20 pages a month, Pro 100, Business 2,000 (then page blocks or overage). Fields and line items read from the email's text never count. Without pages left, emails are still delivered, with attachments unparsed (`error: "limit"`).
+- Layouts used per endpoint: 2 on Free, Pro and Teams, up to 50 on Business and Team Business. Layouts past the plan's number are kept but not matched (`layoutsCap` on the endpoint).
+
+---
+
+## Custom Inbound Domains
+
+Docs: https://webhooks.cc/docs/email-capture#your-own-domain
+
+On Business (and for a Team Business team) mail can also arrive at a domain the account owns, such as `orders@inbound.acme.example`, instead of `<slug>@mailhooks.cc`.
+
+1. Add the domain under Account > Domains in the dashboard (a team's on the team's page).
+2. Add two DNS records: a TXT record `_mailhooks.<domain>` with the value `mailhooks-verify=<token from the page>`, and an MX record for `<domain>` pointing at `mx.mailhooks.cc`. Use a subdomain that receives no other mail, because the MX record sends all of its mail here.
+3. Check the records on the page. Once verified, mail is accepted within a minute.
+4. Route it: an address per endpoint (`orders@` to one endpoint, `invoices@` to another) and, optionally, one endpoint for every other address. Plus tags work as on mailhooks.cc (`orders+test@` lands where `orders@` does).
+
+- Mail to a custom domain is an ordinary captured email: the same request list, API, layouts and destinations, with the recipient address as `path`.
+- The records are checked every day; after three failed checks in a row the domain lapses and its mail is refused until the records are back.
+- Business includes one domain and Team Business one per team; each extra domain is $3 a month.
+- An address at a verified domain cannot be used to sign up for an account, because its mail is readable here.
+- Domains are managed in the dashboard only: the `/api/domains` routes take a signed-in session and answer `403` to an API key, and there are no SDK or MCP tools for them.
+
+---
+
+## File Drops
+
+Docs: https://webhooks.cc/docs/forwarding#file-drops
+
+A file drop is a destination that writes what the endpoint captures as CSV, XML or JSON files to the owner's own SFTP, FTPS, FTP or S3-compatible server, for systems that watch a folder (an ERP import, a warehouse system, a nightly job). Business, and Team Business for endpoints shared with the team.
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/<slug>/destinations \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "format": "file_drop", "name": "Orders to ERP", "http": false, "email": true,
+    "config": {
+      "protocol": "sftp", "host": "sftp.acme.example", "username": "orders", "folder": "incoming",
+      "file": "csv", "rows": "line_items",
+      "columns": [{"header": "Order", "value": "{{ parsed.fields.order }}"}, {"header": "SKU", "value": "{{ item.sku }}"}]
+    },
+    "dropSecret": {"password": "..."}
+  }'
+```
+
+- `config.protocol`: `sftp` (`host`, `port` 22, `username`), `ftps` or `ftp` (`host`, `port` 21, `username`), or `s3` (`endpoint` URL, `region`, `bucket`, `accessKeyId`). `folder` is the folder (it must exist) or the S3 key prefix.
+- `config.file`: `csv` (default) or `xml` with `columns` (up to 50 of `{ "header", "value" }`, values written with placeholders), or `json` (each email as the signed JSON format sends it). `rows`: `email` (a row per email) or `line_items` (a row per line item of a layout).
+- `config.batch: true` writes one file for everything that arrives within the destination's `delaySeconds` (up to 3600) of a batch's first email, instead of a file per email. `config.prefix` goes before each file name.
+- `dropSecret`: `{ "password" }`, `{ "privateKey" }` (SFTP, OpenSSH or PEM) or `{ "secretAccessKey" }` (S3). Write only and stored encrypted; the destination reports `hasDropSecret`. Changing the server, login, bucket, pinned host key or certificate fingerprint needs it sent again.
+- SFTP host keys are pinned on the first connection (`config.hostKey`); a different key afterwards stops the drop. `config.tlsFingerprint` accepts one self-signed certificate (FTPS, S3).
+- `POST /api/endpoints/<slug>/destinations/<id>/test` logs in and writes `webhooks-cc-test.txt` to the folder.
+- Files are named after the time and the first request's id (`orders-20261029-173326-3f2a9c1e.csv`), written under a temporary name and renamed, so a watcher never sees half a file; a retry replaces its own file.
+- Connections come from `mx.mailhooks.cc`; allow that address if the server only takes known ones. A refused login or a missing folder fails at once; an unreachable server is retried like any delivery.
+- The MCP server does not offer file drops, so an agent never handles a server password; use the REST API, an SDK or the dashboard.
+
+---
 
 ## Rate Limits
 
 - Endpoint creation: 30 per 10 minutes
 - Send test: 30 per minute
 - Send test email: 10 per minute
-- Forwarding test delivery: 10 per minute
-- Redeliver a forwarded email: 30 per minute
+- Forwarding and destination test delivery: 10 per minute
+- Adding and changing destinations: 60 per minute per account
+- Destination and response previews: 120 per minute
+- Layouts preview: 20 per minute; email fields preview: 30 per minute
+- Redeliver a request: 30 per minute; redeliver all failed: 10 per minute
+- Replay one request: 60 per minute; replay a time range: 10 per minute
 - Search: 60 per 10 minutes
 - Search count: 120 per 10 minutes
 - Guest endpoint creation: 20 per 10 minutes per IP

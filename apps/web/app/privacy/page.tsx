@@ -207,7 +207,8 @@ export default function PrivacyPage() {
               </span>{" "}
               (GDPR Art.&nbsp;6(1)(b), performance of a contract): signing you in, capturing and
               showing your webhooks, teams, notifications, billing, and service emails such as
-              sign-up confirmations, team invites, and quota notices.
+              sign-up confirmations, one getting-started email after you sign up, team invites, and
+              quota notices.
             </p>
             <p>
               <span className="font-bold text-foreground">

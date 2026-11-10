@@ -6,7 +6,7 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 export const metadata = createPageMetadata({
   title: "Webhook Testing Tools Compared: Features & Pricing (2026)",
   description:
-    "One feature checklist for webhooks.cc, Webhook.site, RequestBin, Beeceptor, Hookdeck, ngrok, Svix, Stripe CLI, Smee.io and LocalTunnel: history, replay, CLI, CI SDKs, email and MCP.",
+    "Feature checklists for webhooks.cc against Webhook.site, RequestBin, Beeceptor, Hookdeck, ngrok, Svix, Stripe CLI, Smee.io and LocalTunnel, and against Mailtrap, Mailosaur and MailSlurp for email testing.",
   path: "/compare",
   keywords: [
     "webhook testing tool comparison",
@@ -22,6 +22,10 @@ export const metadata = createPageMetadata({
     "smee.io alternative",
     "localtunnel alternative",
     "webhook inspection tools",
+    "email testing tools",
+    "mailtrap alternative",
+    "mailosaur alternative",
+    "mailslurp alternative",
   ],
 });
 
@@ -72,13 +76,34 @@ const COMPARISONS = [
     href: "/compare/smee",
     title: "webhooks.cc vs Smee.io",
     summary:
-      "Smee.io is a minimal webhook proxy by GitHub. webhooks.cc adds persistent history, replay, SDK assertions, email capture, and MCP on top of forwarding.",
+      "Smee.io is a minimal webhook proxy from the Probot team. webhooks.cc adds persistent history, replay, SDK assertions, email capture, and MCP on top of forwarding.",
   },
   {
     href: "/compare/localtunnel",
     title: "webhooks.cc vs LocalTunnel",
     summary:
       "LocalTunnel is a free, simple tunnel that has had no release since 2021. webhooks.cc tunnels too, and also captures, inspects, replays, and tests every request.",
+  },
+] as const;
+
+const EMAIL_COMPARISONS = [
+  {
+    href: "/compare/mailtrap",
+    title: "webhooks.cc vs Mailtrap",
+    summary:
+      "Mailtrap Email Sandbox is a fake SMTP server with HTML and spam checks. webhooks.cc gives tests a real address, waits for the email in the SDK and picks out the code or the link, with 50 emails a day on the free plan.",
+  },
+  {
+    href: "/compare/mailosaur",
+    title: "webhooks.cc vs Mailosaur",
+    summary:
+      "Both give tests real addresses, a wait and code extraction. Mailosaur adds SMS numbers, real-device previews and an authenticator on plans from $20 a month; webhooks.cc has a free plan, Pro at $8 and webhooks on the same endpoint.",
+  },
+  {
+    href: "/compare/mailslurp",
+    title: "webhooks.cc vs MailSlurp",
+    summary:
+      "MailSlurp is an email and SMS API whose inboxes send as well as receive. webhooks.cc only receives: one endpoint, a tag per test run, no inboxes to create, and 100,000 emails or webhooks a month for $8.",
   },
 ] as const;
 
@@ -121,7 +146,7 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "To local upstream",
     "Resend deliveries",
     "stripe events resend",
-    "No",
+    "To the channel's clients",
     "No",
   ],
   [
@@ -217,7 +242,59 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
   ],
 ];
 
+const EMAIL_TOOLS = [
+  { name: "webhooks.cc", href: null },
+  { name: "Mailtrap", href: "/compare/mailtrap" },
+  { name: "Mailosaur", href: "/compare/mailosaur" },
+  { name: "MailSlurp", href: "/compare/mailslurp" },
+] as const;
+
+// The same rule as MATRIX, for the email testing tools in EMAIL_TOOLS order.
+const EMAIL_MATRIX: readonly (readonly [string, ...string[]])[] = [
+  [
+    "How mail gets in",
+    "Real address per endpoint",
+    "Fake SMTP server; address from Basic",
+    "Real addresses, or SMTP",
+    "Inboxes created by API",
+  ],
+  [
+    "Free plan",
+    "50 emails a day",
+    "50 test emails a month",
+    "None; 14-day trial",
+    "250 received a month",
+  ],
+  ["Paid plans from", "$8/mo", "$17/mo", "$20/mo, billed annually", "$19.99/mo"],
+  ["Codes and links picked out", "Yes", "Not documented", "Yes", "Yes"],
+  ["Wait for an email in a test", "Yes", "Not documented", "Yes", "Yes"],
+  [
+    "SDKs",
+    "TypeScript, Python, Go",
+    "Node.js, PHP, Ruby, Python, Java, .NET, Elixir, Go",
+    "Node.js, Python, Java, .NET, Ruby, PHP, Go",
+    "JavaScript, Python, Java, C#, PHP, Ruby, Go and more",
+  ],
+  ["CLI", "Yes", "Yes", "Not documented", "Not documented"],
+  ["MCP server", "Remote (OAuth) or local", "Local", "Core and up", "Hosted"],
+  [
+    "Webhook when an email arrives",
+    "Yes, with retries",
+    "Not for sandboxes",
+    "Not documented",
+    "Yes, with retries",
+  ],
+  ["Email client screenshots", "No", "Paid add-on", "Add-on on Core", "1 to 200 a month by plan"],
+  ["Webhook capture on the same endpoint", "Yes", "No", "No", "No"],
+  ["Open source", "Yes", "SDKs and Mailtrap Local", "Client libraries on GitHub", "SDKs on GitHub"],
+];
+
 const FAQ_ITEMS: FAQItem[] = [
+  {
+    question: "Which email testing tools have a free plan?",
+    answer:
+      "webhooks.cc takes 50 emails a day on its free plan, with real addresses, the SDKs, the CLI and the MCP server included. Mailtrap's free Email Sandbox takes 50 test emails a month in one sandbox, and MailSlurp's free plan receives 250 emails a month in temporary inboxes. Mailosaur has a 14-day trial and no free plan. Figures from each tool's pricing page in November 2026.",
+  },
   {
     question: "Which webhook testing tools also capture email?",
     answer:
@@ -251,6 +328,57 @@ const FAQ_ITEMS: FAQItem[] = [
   },
 ];
 
+function Checklist({
+  tools,
+  matrix,
+}: {
+  tools: readonly { name: string; href: string | null }[];
+  matrix: readonly (readonly [string, ...string[]])[];
+}) {
+  return (
+    <div className="ui-code overflow-x-auto mb-3">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b-strong border-line">
+            <th scope="col" className="text-left py-2.5 pr-4 font-bold">
+              Feature
+            </th>
+            {tools.map((tool) => (
+              <th
+                key={tool.name}
+                scope="col"
+                className="text-left py-2.5 pr-4 font-bold whitespace-nowrap"
+              >
+                {tool.href ? (
+                  <Link href={tool.href} className="hover:text-primary-ink transition-colors">
+                    {tool.name}
+                  </Link>
+                ) : (
+                  tool.name
+                )}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.map(([feature, ...cells]) => (
+            <tr key={feature} className="border-b border-foreground/20 last:border-0">
+              <th scope="row" className="text-left py-2.5 pr-4 font-medium whitespace-nowrap">
+                {feature}
+              </th>
+              {cells.map((cell, i) => (
+                <td key={tools[i].name} className="py-2.5 pr-4">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function CompareIndexPage() {
   return (
     <main className="min-h-screen pt-12 pb-20 px-4">
@@ -265,52 +393,17 @@ export default function CompareIndexPage() {
         <p className="text-xs font-bold caps text-muted-foreground mb-3">Updated November 2026</p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">Webhook testing tools compared</h1>
         <p className="text-lg text-muted-foreground mb-10">
-          Honest, developer-focused comparisons against popular webhook testing alternatives,
-          including how each handles inbound email. The checklist below puts them side by side; each
-          page covers features, tradeoffs, and when to choose each tool.
+          Honest, developer-focused comparisons against popular webhook testing alternatives, and
+          against the{" "}
+          <a href="#email-testing-tools" className="text-primary-ink font-bold hover:underline">
+            email testing tools
+          </a>{" "}
+          developers weigh for signup and login tests. The checklists below put them side by side;
+          each page covers features, tradeoffs, and when to choose each tool.
         </p>
 
         <h2 className="text-2xl font-bold mb-4">Feature checklist</h2>
-        <div className="ui-code overflow-x-auto mb-3">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b-strong border-line">
-                <th scope="col" className="text-left py-2.5 pr-4 font-bold">
-                  Feature
-                </th>
-                {TOOLS.map((tool) => (
-                  <th
-                    key={tool.name}
-                    scope="col"
-                    className="text-left py-2.5 pr-4 font-bold whitespace-nowrap"
-                  >
-                    {tool.href ? (
-                      <Link href={tool.href} className="hover:text-primary-ink transition-colors">
-                        {tool.name}
-                      </Link>
-                    ) : (
-                      tool.name
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {MATRIX.map(([feature, ...cells]) => (
-                <tr key={feature} className="border-b border-foreground/20 last:border-0">
-                  <th scope="row" className="text-left py-2.5 pr-4 font-medium whitespace-nowrap">
-                    {feature}
-                  </th>
-                  {cells.map((cell, i) => (
-                    <td key={TOOLS[i].name} className="py-2.5 pr-4">
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Checklist tools={TOOLS} matrix={MATRIX} />
         <p className="text-sm text-muted-foreground mb-10">
           Other tools as listed on their own sites when we compared in November 2026; check pricing
           before you buy. RequestBin lives on Pipedream Workflows, which takes no new signups and
@@ -331,6 +424,35 @@ export default function CompareIndexPage() {
               className="ui-card ui-card-static block transition-colors hover:bg-muted"
             >
               <h2 className="text-xl font-bold mb-2">{item.title}</h2>
+              <p className="text-muted-foreground">{item.summary}</p>
+            </Link>
+          ))}
+        </div>
+
+        <h2 id="email-testing-tools" className="text-2xl font-bold mt-12 mb-4 scroll-mt-24">
+          Email testing tools compared
+        </h2>
+        <p className="text-muted-foreground mb-4">
+          Every endpoint on a webhooks.cc account also receives email, so the same tool covers{" "}
+          <Link href="/email-testing" className="text-primary-ink font-bold hover:underline">
+            email testing
+          </Link>
+          : signup, magic link and password reset emails in Playwright, Cypress and CI. This is how
+          it compares with the tools built for that alone.
+        </p>
+        <Checklist tools={EMAIL_TOOLS} matrix={EMAIL_MATRIX} />
+        <p className="text-sm text-muted-foreground mb-6">
+          Other tools as listed on their own sites when we compared in November 2026; &quot;not
+          documented&quot; means we did not find it there.
+        </p>
+        <div className="space-y-4">
+          {EMAIL_COMPARISONS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="ui-card ui-card-static block transition-colors hover:bg-muted"
+            >
+              <h3 className="text-xl font-bold mb-2">{item.title}</h3>
               <p className="text-muted-foreground">{item.summary}</p>
             </Link>
           ))}
