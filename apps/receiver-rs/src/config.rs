@@ -171,7 +171,8 @@ impl Config {
 }
 
 /// `EDGE_RELAY_URL` and `EDGE_SECRET` together turn live captures on;
-/// `LIVE_MAX_INFLIGHT_PER_ACCOUNT` (default 16) caps relays per account.
+/// `LIVE_MAX_INFLIGHT_PER_ACCOUNT` (default 16) caps relays per account and
+/// `LIVE_MAX_INFLIGHT_TOTAL` (default 256) across all accounts.
 fn live_from_env() -> Option<crate::handlers::live::LiveConfig> {
     let get = |name: &str| {
         env::var(name)
@@ -189,6 +190,7 @@ fn live_from_env() -> Option<crate::handlers::live::LiveConfig> {
         relay_url: relay_url.trim_end_matches('/').to_string(),
         secret,
         max_inflight_per_account: parse_env_or("LIVE_MAX_INFLIGHT_PER_ACCOUNT", 16),
+        max_inflight_total: parse_env_or("LIVE_MAX_INFLIGHT_TOTAL", 256),
     })
 }
 

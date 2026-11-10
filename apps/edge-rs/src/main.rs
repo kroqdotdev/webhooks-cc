@@ -484,12 +484,15 @@ async fn run_session(state: State, upgrade: OnUpgrade, opened: Opened, port: u16
         text.sender(),
         state.registry.account(&opened.user_id),
     ));
-    if let Some(old) = state.registry.insert(session.clone()) {
-        old.close(if session.endpoint_id.is_some() {
+    match state.registry.insert_unless_closed(session.clone()) {
+        Ok(Some(old)) => old.close(if session.endpoint_id.is_some() {
             "a newer live tunnel took this endpoint"
         } else {
             "a newer share took this name"
-        });
+        }),
+        Ok(None) => {}
+        // Stopped while it was opening: it ends below without serving.
+        Err(reason) => session.close(&reason),
     }
     tracing::info!(
         name = %session.name,

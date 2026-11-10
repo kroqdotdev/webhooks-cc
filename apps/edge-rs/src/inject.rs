@@ -23,6 +23,9 @@ pub const FLAG_PATH: &str = "/__whk/flag";
 const TAG: &[u8] = b"<script src=\"/__whk/badge.js\" async></script>";
 
 const SEARCH_LIMIT: usize = 64 * 1024;
+/// Frames looked at for `<head` before giving up: a page whose start comes
+/// in tiny pieces passes untouched rather than costing a poll per byte.
+const SEARCH_FRAMES: usize = 4096;
 const SCAN_LIMIT: usize = 256 * 1024;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -35,27 +38,68 @@ pub fn badge_script(app_url: &str) -> String {
 }
 
 /// Where the tag goes: just after the `<head ...>` opening tag.
+#[cfg(test)]
 fn insert_at(html: &[u8]) -> Option<usize> {
-    let lower = html.to_ascii_lowercase();
-    let mut from = 0;
-    while let Some(i) = find(&lower[from..], b"<head") {
-        let start = from + i;
-        // `<header>` is not `<head>`.
-        match lower.get(start + 5) {
-            Some(b'>') | Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r') | Some(b'/') => {
-                return find(&lower[start..], b">").map(|end| start + end + 1);
-            }
-            None => return None,
-            _ => from = start + 5,
-        }
-    }
-    None
+    HeadFinder::default().advance(html)
 }
 
-fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
+/// Finds the end of the `<head ...>` opening tag in a buffer that only
+/// grows, looking at each byte once: [`HeadFinder::advance`] takes the
+/// whole buffer every time and goes on where the last call stopped, so a
+/// page sent one byte at a time costs no more than one sent at once.
+#[derive(Default)]
+struct HeadFinder {
+    /// Where to look for the next `<head`; everything before it is settled.
+    from: usize,
+    /// Where `<head` starts, once the byte after it showed it is the tag
+    /// (not `<header>`); then only its closing `>` is looked for.
+    head: Option<usize>,
+}
+
+impl HeadFinder {
+    /// The index just after the tag's `>`, once the buffer holds it.
+    fn advance(&mut self, buf: &[u8]) -> Option<usize> {
+        if self.head.is_none() {
+            loop {
+                let Some(rel) = buf
+                    .get(self.from..)
+                    .and_then(|b| b.iter().position(|&c| c == b'<'))
+                else {
+                    self.from = buf.len();
+                    return None;
+                };
+                let start = self.from + rel;
+                // `<head` and the byte after it decide; wait for them.
+                let Some(next) = buf.get(start + 5) else {
+                    let seen = &buf[start + 1..];
+                    if b"head"[..seen.len()].eq_ignore_ascii_case(seen) {
+                        self.from = start;
+                        return None;
+                    }
+                    self.from = start + 1;
+                    continue;
+                };
+                if !buf[start + 1..start + 5].eq_ignore_ascii_case(b"head") {
+                    self.from = start + 1;
+                    continue;
+                }
+                // `<header>` is not `<head>`.
+                if matches!(next, b'>' | b' ' | b'\t' | b'\n' | b'\r' | b'/') {
+                    self.head = Some(start);
+                    self.from = start + 5;
+                    break;
+                }
+                self.from = start + 5;
+            }
+        }
+        match buf[self.from..].iter().position(|&c| c == b'>') {
+            Some(i) => Some(self.from + i + 1),
+            None => {
+                self.from = buf.len();
+                None
+            }
+        }
+    }
 }
 
 /// Brand and lure words a phishing page puts in its title (words.rs).
@@ -146,6 +190,8 @@ pub struct Inject<B> {
     ended: bool,
     searching: bool,
     held: BytesMut,
+    finder: HeadFinder,
+    frames: usize,
     ready: Option<Bytes>,
     copy: BytesMut,
     scan: Option<oneshot::Sender<Bytes>>,
@@ -159,6 +205,8 @@ impl<B> Inject<B> {
             ended: false,
             searching: true,
             held: BytesMut::new(),
+            finder: HeadFinder::default(),
+            frames: 0,
             ready: None,
             copy: BytesMut::new(),
             scan: Some(scan),
@@ -186,7 +234,8 @@ impl<B> Inject<B> {
     /// Takes in a chunk while the tag is not placed yet.
     fn search(&mut self, data: Bytes) {
         self.held.extend_from_slice(&data);
-        if let Some(at) = insert_at(&self.held) {
+        self.frames += 1;
+        if let Some(at) = self.finder.advance(&self.held) {
             let mut out = BytesMut::with_capacity(self.held.len() + self.tag.len());
             out.extend_from_slice(&self.held[..at]);
             out.extend_from_slice(&self.tag);
@@ -194,7 +243,7 @@ impl<B> Inject<B> {
             self.held.clear();
             self.ready = Some(out.freeze());
             self.searching = false;
-        } else if self.held.len() > SEARCH_LIMIT {
+        } else if self.held.len() > SEARCH_LIMIT || self.frames >= SEARCH_FRAMES {
             self.ready = Some(self.held.split().freeze());
             self.searching = false;
         }
@@ -321,6 +370,58 @@ mod tests {
             .unwrap()
             .to_bytes();
         assert_eq!(&out[..], b"<p>plain</p>");
+    }
+
+    #[test]
+    fn the_finder_takes_a_page_in_any_pieces() {
+        let page = b"<!doctype html><HeAder>x</header><head lang=en><title>t</title>";
+        let whole = insert_at(page).unwrap();
+        for step in 1..8 {
+            let mut finder = HeadFinder::default();
+            let mut found = None;
+            let mut end = 0;
+            while found.is_none() && end < page.len() {
+                end = (end + step).min(page.len());
+                found = finder.advance(&page[..end]);
+            }
+            assert_eq!(found, Some(whole), "step {step}");
+        }
+        // A `<hea` at the very end waits; `<heap` does not match.
+        let mut finder = HeadFinder::default();
+        assert_eq!(finder.advance(b"<p><hea"), None);
+        assert_eq!(finder.advance(b"<p><head>"), Some(9));
+        assert_eq!(insert_at(b"<heap><head>"), Some(12));
+    }
+
+    #[tokio::test]
+    async fn a_page_sent_a_byte_at_a_time_is_cheap() {
+        // 64 KiB with no <head>, one byte per frame: the search gives up
+        // after SEARCH_FRAMES frames and lets the page through unchanged,
+        // looking at each byte once on the way.
+        let page = vec![b'a'; SEARCH_LIMIT];
+        let stream = futures::stream::iter(
+            page.clone()
+                .into_iter()
+                .map(|c| Ok::<_, std::convert::Infallible>(Frame::data(Bytes::from(vec![c])))),
+        );
+        let (tx, _rx) = oneshot::channel();
+        let started = std::time::Instant::now();
+        let out = Inject::new(StreamBody::new(stream), tx)
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        assert_eq!(&out[..], &page[..]);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn the_tag_is_found_across_tiny_frames() {
+        let (out, _) = run(vec!["<", "h", "E", "a", "d", " ", "x", ">", "<title>t"]).await;
+        assert_eq!(
+            out,
+            "<hEad x><script src=\"/__whk/badge.js\" async></script><title>t"
+        );
     }
 
     #[tokio::test]

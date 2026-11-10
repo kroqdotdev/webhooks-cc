@@ -16,17 +16,24 @@
 //! 502, and a capture past the account's live relays gets 503 with
 //! `Retry-After`.
 //!
-//! What the sender got is then recorded on the row (`record_live_response()`:
-//! status, headers, the first 64 KB of the body as text or base64), in the
-//! background and never changing the answer.
+//! The app's answer streams through to the sender as it arrives; only its
+//! first 64 KB are kept on the side. What the sender got is then recorded on
+//! the row (`record_live_response()`: status, headers, those first 64 KB as
+//! text or base64) once the answer has gone out, in the background and
+//! never changing the answer. Relays in flight are capped per account and
+//! across all accounts, so live traffic cannot take the receiver's memory
+//! or connections from ordinary captures.
 
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
+use bytes::BytesMut;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
-use super::capture_limiter::CaptureLimiter;
+use super::capture_limiter::{CaptureLimiter, CapturePermit};
 use crate::metrics;
 
 /// Request header carrying the shared secret to the edge's relay port.
@@ -35,6 +42,8 @@ pub const RELAY_AUTH_HEADER: &str = "x-whk-relay-auth";
 pub const LIVE_HEADER: &str = "x-whk-live";
 /// How much of an answer's body the row keeps.
 pub const RECORDED_BODY_BYTES: usize = 64 * 1024;
+/// The most of an answer passed on; the edge caps it at the same size.
+const MAX_ANSWER_BYTES: usize = 10 * 1024 * 1024;
 /// The edge gives the app 25 s for the head and caps bodies at 10 MB; this
 /// bounds the whole exchange from the receiver's side.
 const RELAY_TIMEOUT: Duration = Duration::from_secs(60);
@@ -74,6 +83,8 @@ pub struct LiveConfig {
     pub secret: String,
     /// Live relays in flight per billing account; 0 turns the cap off.
     pub max_inflight_per_account: usize,
+    /// Live relays in flight across all accounts; 0 turns the cap off.
+    pub max_inflight_total: usize,
 }
 
 impl std::fmt::Debug for LiveConfig {
@@ -82,6 +93,7 @@ impl std::fmt::Debug for LiveConfig {
             .field("relay_url", &self.relay_url)
             .field("secret", &"[REDACTED]")
             .field("max_inflight_per_account", &self.max_inflight_per_account)
+            .field("max_inflight_total", &self.max_inflight_total)
             .finish()
     }
 }
@@ -96,7 +108,7 @@ pub struct LiveRecord {
     /// `utf8` or `base64`.
     pub body_encoding: &'static str,
     pub ms: u32,
-    /// `answered`, `offline`, `timeout`, `unreachable` or `busy`.
+    /// `answered`, `offline`, `timeout`, `unreachable`, `busy` or `refused`.
     pub outcome: &'static str,
 }
 
@@ -104,7 +116,13 @@ pub struct LiveRelay {
     client: reqwest::Client,
     config: LiveConfig,
     limiter: CaptureLimiter,
+    /// Relays in flight across all accounts.
+    total: Option<Arc<Semaphore>>,
 }
+
+/// What to record for a relayed capture, delivered once the answer has gone
+/// out to the sender (or at once for a stand-in).
+pub type Recorded = oneshot::Receiver<LiveRecord>;
 
 /// One live capture to relay.
 pub struct LiveRequest<'a> {
@@ -132,28 +150,56 @@ impl LiveRelay {
         Self {
             client,
             limiter: CaptureLimiter::new(config.max_inflight_per_account),
+            total: (config.max_inflight_total > 0)
+                .then(|| Arc::new(Semaphore::new(config.max_inflight_total))),
             config,
         }
     }
 
-    /// Relays one capture and returns what the sender gets, with what to
-    /// record on the row.
-    pub async fn relay(&self, request: LiveRequest<'_>) -> (Response, LiveRecord) {
+    /// Relays one capture and returns what the sender gets, and what to
+    /// record on the row once the answer has gone out.
+    pub async fn relay(&self, request: LiveRequest<'_>) -> (Response, Recorded) {
+        let (response, record) = self.relay_inner(request).await;
+        match record {
+            Ok(record) => {
+                let (tx, rx) = oneshot::channel();
+                let _ = tx.send(record);
+                (response, rx)
+            }
+            Err(rx) => (response, rx),
+        }
+    }
+
+    async fn relay_inner(
+        &self,
+        request: LiveRequest<'_>,
+    ) -> (Response, Result<LiveRecord, Recorded>) {
         let started = Instant::now();
-        // No waiting: a sender over the cap is asked to retry, and its
-        // capture is already stored.
-        let Some(_permit) = self
-            .limiter
-            .acquire(request.limit_key, Duration::ZERO)
-            .await
-        else {
+        let busy = || {
             metrics::live("receiver_busy");
             let mut response = (StatusCode::SERVICE_UNAVAILABLE, "retry").into_response();
             response.headers_mut().insert(
                 "retry-after",
                 HeaderValue::from_static(BUSY_RETRY_AFTER_SECS),
             );
-            return (response, stand_in(503, "busy", started));
+            (response, Ok(stand_in(503, "busy", started)))
+        };
+        // No waiting: a sender over either cap is asked to retry, and its
+        // capture is already stored. The permits ride with the answer's
+        // body, so a slow sender keeps its slot until the answer is out.
+        let Some(account_permit) = self
+            .limiter
+            .acquire(request.limit_key, Duration::ZERO)
+            .await
+        else {
+            return busy();
+        };
+        let total_permit = match &self.total {
+            Some(total) => match total.clone().try_acquire_owned() {
+                Ok(permit) => Some(permit),
+                Err(_) => return busy(),
+            },
+            None => None,
         };
 
         let Some(url) = relay_url(
@@ -165,7 +211,7 @@ impl LiveRelay {
             metrics::live("bad_path");
             return (
                 (StatusCode::BAD_REQUEST, "bad path").into_response(),
-                stand_in(400, "refused", started),
+                Ok(stand_in(400, "refused", started)),
             );
         };
         let mut headers = relay_headers(request.headers);
@@ -192,12 +238,12 @@ impl LiveRelay {
                 return if timed_out {
                     (
                         (StatusCode::GATEWAY_TIMEOUT, "live tunnel timed out").into_response(),
-                        stand_in(504, "timeout", started),
+                        Ok(stand_in(504, "timeout", started)),
                     )
                 } else {
                     (
                         (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
-                        stand_in(502, "unreachable", started),
+                        Ok(stand_in(502, "unreachable", started)),
                     )
                 };
             }
@@ -212,49 +258,135 @@ impl LiveRelay {
             tracing::error!("live relay: the edge refused the relay (check EDGE_SECRET)");
             return (
                 (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
-                stand_in(502, "unreachable", started),
+                Ok(stand_in(502, "unreachable", started)),
             );
         }
-        let answer_headers = answer.headers().clone();
-        let body = match answer.bytes().await {
-            Ok(body) => body,
-            Err(e) => {
-                metrics::live("body_failed");
-                tracing::warn!(error = %e, "live relay: the answer's body was cut off");
-                return (
-                    (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
-                    stand_in(502, "unreachable", started),
-                );
-            }
-        };
         metrics::live(outcome);
-
-        let record = LiveRecord {
-            status: status.as_u16(),
-            headers: recorded_headers(&answer_headers),
-            ms: elapsed_ms(started),
-            outcome,
-            ..recorded_body(&body)
-        };
+        let answer_headers = answer.headers().clone();
         let mut builder = axum::http::Response::builder().status(status);
         for (name, value) in answer_headers.iter() {
             if sendable_answer_header(name.as_str()) {
                 builder = builder.header(name, value);
             }
         }
-        let response = builder.body(Body::from(body)).unwrap_or_else(|_| {
-            (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response()
-        });
-        (response, record)
+        // The answer comes from the capture host: the browser must take it
+        // for nothing but what it says, and run nothing in it.
+        builder = builder
+            .header("x-content-type-options", "nosniff")
+            .header("content-security-policy", "sandbox");
+        let (tx, rx) = oneshot::channel();
+        let recorder = Recorder {
+            base: LiveRecord {
+                status: status.as_u16(),
+                headers: recorded_headers(&answer_headers),
+                outcome,
+                ..recorded_body(b"")
+            },
+            started,
+            kept: BytesMut::new(),
+            total: 0,
+            complete: false,
+            tx: Some(tx),
+            _permits: (account_permit, total_permit),
+        };
+        let body = Body::from_stream(answer_stream(answer, recorder));
+        match builder.body(body) {
+            Ok(response) => (response, Err(rx)),
+            Err(_) => (
+                (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
+                Ok(stand_in(502, "unreachable", started)),
+            ),
+        }
     }
 }
 
-/// Records `record` on the request row in the background, twice at most, as
-/// the answer correction does. A failure is logged and counted, never more.
-pub fn record(pool: &sqlx::PgPool, request_id: &str, record: LiveRecord) {
+/// Keeps the start of an answer while it streams to the sender, and hands
+/// over what to record when the stream ends, fails or is dropped (a sender
+/// that went away): then the record says the body was cut.
+struct Recorder {
+    base: LiveRecord,
+    started: Instant,
+    kept: BytesMut,
+    total: usize,
+    complete: bool,
+    tx: Option<oneshot::Sender<LiveRecord>>,
+    _permits: (CapturePermit, Option<OwnedSemaphorePermit>),
+}
+
+impl Recorder {
+    fn take(&mut self, chunk: &[u8]) {
+        self.total += chunk.len();
+        let room = RECORDED_BODY_BYTES.saturating_sub(self.kept.len());
+        self.kept.extend_from_slice(&chunk[..chunk.len().min(room)]);
+    }
+}
+
+impl Drop for Recorder {
+    fn drop(&mut self) {
+        let Some(tx) = self.tx.take() else {
+            return;
+        };
+        if !self.complete {
+            metrics::live("body_failed");
+        }
+        let truncated = !self.complete || self.total > RECORDED_BODY_BYTES;
+        let mut record = LiveRecord {
+            ms: elapsed_ms(self.started),
+            ..std::mem::replace(&mut self.base, recorded_body(b""))
+        };
+        let kept = recorded_body_of(&self.kept, truncated);
+        record.body = kept.body;
+        record.body_truncated = kept.body_truncated;
+        record.body_encoding = kept.body_encoding;
+        let _ = tx.send(record);
+    }
+}
+
+/// The answer's body, chunk by chunk as the edge sends it, ended cleanly
+/// at [`MAX_ANSWER_BYTES`].
+fn answer_stream(
+    answer: reqwest::Response,
+    recorder: Recorder,
+) -> impl futures_util::Stream<Item = Result<Bytes, reqwest::Error>> + Send {
+    futures_util::stream::unfold(Some((answer, recorder)), |state| async move {
+        let (mut answer, mut recorder) = state?;
+        if recorder.total >= MAX_ANSWER_BYTES {
+            // Cut: the record says so (complete stays false).
+            return None;
+        }
+        match answer.chunk().await {
+            Ok(Some(chunk)) => {
+                let room = MAX_ANSWER_BYTES - recorder.total;
+                let chunk = if chunk.len() > room {
+                    chunk.slice(..room)
+                } else {
+                    chunk
+                };
+                recorder.take(&chunk);
+                Some((Ok(chunk), Some((answer, recorder))))
+            }
+            Ok(None) => {
+                recorder.complete = true;
+                None
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "live relay: the answer's body was cut off");
+                Some((Err(e), None))
+            }
+        }
+    })
+}
+
+/// Records what the sender got on the request row in the background, once
+/// the answer has gone out, twice at most, as the answer correction does. A
+/// failure is logged and counted, never more.
+pub fn record(pool: &sqlx::PgPool, request_id: &str, recorded: Recorded) {
     let pool = pool.clone();
     let request_id = request_id.to_string();
     tokio::spawn(async move {
+        let Ok(record) = recorded.await else {
+            return;
+        };
         for attempt in 1..=2 {
             let result = sqlx::query(
                 "SELECT public.record_live_response($1::uuid, $2, $3, $4, $5, $6, $7, $8)",
@@ -369,8 +501,14 @@ fn recorded_headers(headers: &HeaderMap) -> serde_json::Map<String, serde_json::
 /// The first [`RECORDED_BODY_BYTES`] of `body`: as text when they are UTF-8
 /// without NUL (a character cut at the end is dropped), else as base64.
 pub fn recorded_body(body: &[u8]) -> LiveRecord {
-    let truncated = body.len() > RECORDED_BODY_BYTES;
-    let kept = &body[..body.len().min(RECORDED_BODY_BYTES)];
+    recorded_body_of(
+        &body[..body.len().min(RECORDED_BODY_BYTES)],
+        body.len() > RECORDED_BODY_BYTES,
+    )
+}
+
+/// The record of a kept body start, `truncated` when more came (or was cut).
+fn recorded_body_of(kept: &[u8], truncated: bool) -> LiveRecord {
     let text = match std::str::from_utf8(kept) {
         Ok(text) => Some(text),
         // Only a character cut by the limit, at the very end.
@@ -552,11 +690,32 @@ mod tests {
     }
 
     fn relay_to(base: String, per_account: usize) -> LiveRelay {
+        relay_with(base, per_account, 256)
+    }
+
+    fn relay_with(base: String, per_account: usize, total: usize) -> LiveRelay {
         LiveRelay::new(LiveConfig {
             relay_url: base,
             secret: "s3cret".into(),
             max_inflight_per_account: per_account,
+            max_inflight_total: total,
         })
+    }
+
+    /// Sends one capture, reads the whole answer as the sender would, then
+    /// takes what is recorded.
+    async fn exchange(
+        relay: &LiveRelay,
+        headers: &HeaderMap,
+        method: &Method,
+    ) -> (StatusCode, HeaderMap, Bytes, LiveRecord) {
+        let (response, recorded) = relay.relay(live_request(headers, method)).await;
+        let status = response.status();
+        let answer_headers = response.headers().clone();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, answer_headers, body, recorded.await.unwrap())
     }
 
     fn live_request<'a>(headers: &'a HeaderMap, method: &'a Method) -> LiveRequest<'a> {
@@ -593,14 +752,20 @@ mod tests {
         let relay = relay_to(base, 16);
         let headers = HeaderMap::new();
         let method = Method::POST;
-        let (response, record) = relay.relay(live_request(&headers, &method)).await;
-        assert_eq!(response.status(), StatusCode::CREATED);
-        assert!(response.headers().get(LIVE_HEADER).is_none());
-        assert!(response.headers().get("set-cookie").is_none());
-        assert_eq!(response.headers().get("x-app").unwrap(), "yes");
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
+        let (status, answer_headers, body, record) = exchange(&relay, &headers, &method).await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert!(answer_headers.get(LIVE_HEADER).is_none());
+        assert!(answer_headers.get("set-cookie").is_none());
+        assert_eq!(answer_headers.get("x-app").unwrap(), "yes");
+        // The capture host's own guard on whatever the app sent.
+        assert_eq!(
+            answer_headers.get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            answer_headers.get("content-security-policy").unwrap(),
+            "sandbox"
+        );
         assert_eq!(&body[..], br#"{"created":true}"#);
         assert_eq!(record.status, 201);
         assert_eq!(record.outcome, "answered");
@@ -622,9 +787,9 @@ mod tests {
         let relay = relay_to(base, 16);
         let headers = HeaderMap::new();
         let method = Method::POST;
-        let (response, record) = relay.relay(live_request(&headers, &method)).await;
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-        assert!(response.headers().get(LIVE_HEADER).is_none());
+        let (status, answer_headers, _, record) = exchange(&relay, &headers, &method).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(answer_headers.get(LIVE_HEADER).is_none());
         assert_eq!((record.status, record.outcome), (502, "offline"));
     }
 
@@ -640,20 +805,16 @@ mod tests {
         .await;
         let headers = HeaderMap::new();
         let method = Method::GET;
-        let (response, record) = relay_to(base, 16)
-            .relay(live_request(&headers, &method))
-            .await;
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let (status, _, _, record) = exchange(&relay_to(base, 16), &headers, &method).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert_eq!(record.outcome, "unreachable");
 
         // Nothing listens on this port.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let closed = format!("http://{}", listener.local_addr().unwrap());
         drop(listener);
-        let (response, record) = relay_to(closed, 16)
-            .relay(live_request(&headers, &method))
-            .await;
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let (status, _, _, record) = exchange(&relay_to(closed, 16), &headers, &method).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert_eq!((record.status, record.outcome), (502, "unreachable"));
     }
 
@@ -677,24 +838,145 @@ mod tests {
             tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
             format!("http://{addr}")
         };
-        let relay = std::sync::Arc::new(relay_to(base, 1));
+        let relay = std::sync::Arc::new(relay_to(base.clone(), 1));
         let first = {
             let relay = relay.clone();
             tokio::spawn(async move {
                 let headers = HeaderMap::new();
                 let method = Method::POST;
-                relay.relay(live_request(&headers, &method)).await.1
+                exchange(&relay, &headers, &method).await.3
             })
         };
         // Let the first relay take the account's one slot.
         tokio::time::sleep(Duration::from_millis(100)).await;
         let headers = HeaderMap::new();
         let method = Method::POST;
-        let (response, record) = relay.relay(live_request(&headers, &method)).await;
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(response.headers().get("retry-after").unwrap(), "5");
+        let (status, answer_headers, _, record) = exchange(&relay, &headers, &method).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(answer_headers.get("retry-after").unwrap(), "5");
         assert_eq!(record.outcome, "busy");
+
+        // The cap across all accounts: another account is turned away too.
+        let shared = std::sync::Arc::new(relay_with(base, 16, 1));
+        let held = {
+            let shared = shared.clone();
+            tokio::spawn(async move {
+                let headers = HeaderMap::new();
+                let method = Method::POST;
+                exchange(&shared, &headers, &method).await.3
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mut other = live_request(&headers, &method);
+        other.limit_key = "user:2";
+        let (response, recorded) = shared.relay(other).await;
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(recorded.await.unwrap().outcome, "busy");
+
         release_tx.send(true).unwrap();
         assert_eq!(first.await.unwrap().outcome, "answered");
+        assert_eq!(held.await.unwrap().outcome, "answered");
+    }
+
+    #[tokio::test]
+    async fn a_long_answer_streams_whole_and_keeps_its_start() {
+        // 200 KB in many chunks: the sender gets all of it, the row 64 KB.
+        let base = fake_edge(|_req: Request| {
+            let chunks = (0..200).map(|_| Ok::<_, std::io::Error>(Bytes::from(vec![b'x'; 1024])));
+            axum::http::Response::builder()
+                .status(200)
+                .header("content-type", "text/plain")
+                .header(LIVE_HEADER, "answered")
+                .body(Body::from_stream(futures_util::stream::iter(chunks)))
+                .unwrap()
+        })
+        .await;
+        let headers = HeaderMap::new();
+        let method = Method::POST;
+        let (status, _, body, record) = exchange(&relay_to(base, 16), &headers, &method).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.len(), 200 * 1024);
+        assert_eq!(record.body.len(), RECORDED_BODY_BYTES);
+        assert!(record.body_truncated);
+        assert_eq!(record.outcome, "answered");
+    }
+
+    #[tokio::test]
+    async fn the_answer_starts_before_the_app_finishes() {
+        // The app sends its first chunk, then waits: the sender already has
+        // the head and that chunk, and the record waits for the end.
+        let (go_tx, go_rx) = tokio::sync::watch::channel(false);
+        let base = fake_edge(move |_req: Request| {
+            let mut go = go_rx.clone();
+            let rest = futures_util::stream::once(async move {
+                while !*go.borrow() {
+                    if go.changed().await.is_err() {
+                        break;
+                    }
+                }
+                Ok::<_, std::io::Error>(Bytes::from_static(b"second"))
+            });
+            let first = futures_util::stream::once(async {
+                Ok::<_, std::io::Error>(Bytes::from_static(b"first "))
+            });
+            axum::http::Response::builder()
+                .status(200)
+                .header(LIVE_HEADER, "answered")
+                .body(Body::from_stream(futures_util::StreamExt::chain(
+                    first, rest,
+                )))
+                .unwrap()
+        })
+        .await;
+        let relay = relay_to(base, 16);
+        let headers = HeaderMap::new();
+        let method = Method::POST;
+        let (response, mut recorded) = relay.relay(live_request(&headers, &method)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body().into_data_stream();
+        let first = futures_util::StreamExt::next(&mut body)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&first[..], b"first ");
+        assert!(recorded.try_recv().is_err());
+        go_tx.send(true).unwrap();
+        let second = futures_util::StreamExt::next(&mut body)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&second[..], b"second");
+        assert!(futures_util::StreamExt::next(&mut body).await.is_none());
+        drop(body);
+        let record = recorded.await.unwrap();
+        assert_eq!(record.body, "first second");
+        assert!(!record.body_truncated);
+    }
+
+    #[tokio::test]
+    async fn a_sender_that_leaves_early_is_recorded_as_cut() {
+        let base = fake_edge(|_req: Request| {
+            let chunks = (0..100).map(|_| Ok::<_, std::io::Error>(Bytes::from(vec![b'y'; 1024])));
+            axum::http::Response::builder()
+                .status(200)
+                .header(LIVE_HEADER, "answered")
+                .body(Body::from_stream(futures_util::stream::iter(chunks)))
+                .unwrap()
+        })
+        .await;
+        let relay = relay_to(base, 16);
+        let headers = HeaderMap::new();
+        let method = Method::POST;
+        let (response, recorded) = relay.relay(live_request(&headers, &method)).await;
+        let mut body = response.into_body().into_data_stream();
+        let first = futures_util::StreamExt::next(&mut body)
+            .await
+            .unwrap()
+            .unwrap();
+        drop(body);
+        let record = recorded.await.unwrap();
+        assert!(record.body_truncated);
+        assert!(record.body.len() >= first.len());
+        assert!(record.body.chars().all(|c| c == 'y'));
     }
 }

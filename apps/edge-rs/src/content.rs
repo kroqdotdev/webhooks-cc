@@ -109,21 +109,38 @@ fn allowed(kind: &str) -> bool {
         || EXACT.contains(&kind)
 }
 
+/// The statuses a browser follows to their Location.
+fn is_followed_redirect(status: StatusCode) -> bool {
+    matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308)
+}
+
 /// Whether a response from the laptop may go on to the visitor, and how.
 /// `dest` is what the browser asked for it as (`Sec-Fetch-Dest`): "image"
 /// for an `<img>`.
 pub fn check(status: StatusCode, headers: &HeaderMap, dest: Option<&str>) -> Result<Pass, Refusal> {
-    // Nothing to show: informational, no content, not modified, redirects.
-    if status.is_informational() || status.is_redirection() || status == StatusCode::NO_CONTENT {
+    let attachment = header_str(headers, "content-disposition").is_some_and(|d| {
+        d.trim_start()
+            .to_ascii_lowercase()
+            .starts_with("attachment")
+    });
+    // Nothing to show: informational, no content, not modified.
+    if status.is_informational()
+        || status == StatusCode::NO_CONTENT
+        || status == StatusCode::NOT_MODIFIED
+    {
         return Ok(Pass::AsSent);
     }
-    if dest != Some("image")
-        && header_str(headers, "content-disposition").is_some_and(|d| {
-            d.trim_start()
-                .to_ascii_lowercase()
-                .starts_with("attachment")
-        })
-    {
+    // A redirect the browser follows shows nothing of its own. Without a
+    // Location (or as 300, 305 or 306, which browsers do not follow) a 3xx
+    // is shown or saved like any answer, so it gets the full checks below.
+    if is_followed_redirect(status) && headers.contains_key(header::LOCATION) {
+        return if attachment {
+            Err(Refusal::Download)
+        } else {
+            Ok(Pass::AsSent)
+        };
+    }
+    if dest != Some("image") && attachment {
         return Err(Refusal::Download);
     }
     let length = header_str(headers, "content-length").and_then(|l| l.parse::<u64>().ok());
@@ -142,7 +159,8 @@ pub fn check(status: StatusCode, headers: &HeaderMap, dest: Option<&str>) -> Res
         })
         .filter(|v| !v.is_empty())
     else {
-        let error = status.is_client_error() || status.is_server_error();
+        // Errors, and a 3xx that is no redirect, go on as plain text.
+        let error = status.is_client_error() || status.is_server_error() || status.is_redirection();
         return if length == Some(0) {
             Ok(Pass::AsSent)
         } else if error && length.is_none_or(|l| l <= MAX_UNTYPED_ERROR as u64) {
@@ -485,5 +503,63 @@ mod tests {
             "a video (video/mp4)"
         );
         assert_eq!(Refusal::TooLarge.describe(), "a file over 50 MB");
+    }
+
+    #[test]
+    fn only_a_real_redirect_skips_the_checks() {
+        let with = |pairs: &[(&'static str, &'static str)]| {
+            let mut h = HeaderMap::new();
+            for (k, v) in pairs {
+                h.insert(*k, HeaderValue::from_static(v));
+            }
+            h
+        };
+        let exe = [
+            ("content-type", "application/x-msdownload"),
+            ("content-disposition", "attachment; filename=setup.exe"),
+        ];
+        // A 300 (or any 3xx without Location) is shown or saved: checked.
+        assert!(matches!(
+            check(StatusCode::MULTIPLE_CHOICES, &with(&exe), None),
+            Err(Refusal::Download)
+        ));
+        assert!(matches!(
+            check(
+                StatusCode::FOUND,
+                &with(&[("content-type", "video/mp4")]),
+                None
+            ),
+            Err(Refusal::Kind(_))
+        ));
+        // Untyped, it goes on as text, like an error.
+        assert!(matches!(
+            check(StatusCode::FOUND, &with(&[("content-length", "10")]), None),
+            Ok(Pass::AsText)
+        ));
+        // A followed redirect passes, unless it asks to save a file.
+        assert!(matches!(
+            check(StatusCode::FOUND, &with(&[("location", "/next")]), None),
+            Ok(Pass::AsSent)
+        ));
+        let mut exe_redirect = with(&exe);
+        exe_redirect.insert("location", HeaderValue::from_static("/next"));
+        assert!(matches!(
+            check(StatusCode::FOUND, &exe_redirect, None),
+            Err(Refusal::Download)
+        ));
+        // 300 with a Location is not followed by browsers: checked.
+        assert!(matches!(
+            check(StatusCode::MULTIPLE_CHOICES, &exe_redirect, None),
+            Err(Refusal::Download)
+        ));
+        // Not modified and no content stay as they were.
+        assert!(matches!(
+            check(StatusCode::NOT_MODIFIED, &with(&exe), None),
+            Ok(Pass::AsSent)
+        ));
+        assert!(matches!(
+            check(StatusCode::NO_CONTENT, &HeaderMap::new(), None),
+            Ok(Pass::AsSent)
+        ));
     }
 }

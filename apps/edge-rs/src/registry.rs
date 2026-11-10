@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
 use whk_tunnel::EdgeMessage;
@@ -101,7 +102,17 @@ pub struct Registry {
     line: Option<Arc<Line>>,
     /// Where answers waiting for their pace count as held up.
     held: Arc<Held>,
+    /// Shares the web app closed before they were registered here (a stop
+    /// that raced the tunnel opening), with why and when: such a share is
+    /// closed as soon as it would register, instead of serving until the
+    /// next sync. Kept [`EARLY_CLOSE_FOR`]. Locked before the session maps,
+    /// by both sides, so a close cannot fall between the check and the
+    /// insert.
+    closed_early: Arc<Mutex<HashMap<String, (String, Instant)>>>,
 }
+
+/// How long a close for a share not open here is remembered.
+const EARLY_CLOSE_FOR: Duration = Duration::from_secs(120);
 
 /// What an account's shares have in common.
 #[derive(Clone)]
@@ -150,6 +161,20 @@ impl Registry {
     pub fn insert(&self, session: Arc<Session>) -> Option<Arc<Session>> {
         let (map, key) = self.place(&session);
         map.write().unwrap().insert(key, session)
+    }
+
+    /// Adds a session unless the web app already closed it while it was
+    /// opening: then nothing is added, and the reason is returned.
+    pub fn insert_unless_closed(
+        &self,
+        session: Arc<Session>,
+    ) -> Result<Option<Arc<Session>>, String> {
+        let mut early = self.closed_early.lock().unwrap();
+        prune(&mut early, Instant::now());
+        if let Some((reason, _)) = early.remove(&session.id) {
+            return Err(reason);
+        }
+        Ok(self.insert(session))
     }
 
     /// Removes the session, unless a newer one has taken its place.
@@ -213,15 +238,100 @@ impl Registry {
         }
     }
 
-    /// Closes the share with this id, if it is open here.
+    /// Closes the share with this id, if it is open here. One that is not
+    /// is remembered for a while, in case it is still opening.
     pub fn close_share(&self, share_id: &str, reason: &str) -> bool {
+        self.close_share_at(share_id, reason, Instant::now())
+    }
+
+    fn close_share_at(&self, share_id: &str, reason: &str, now: Instant) -> bool {
+        let mut early = self.closed_early.lock().unwrap();
         let found = self.all().into_iter().find(|s| s.id == share_id);
         match found {
             Some(session) => {
                 session.close(reason);
                 true
             }
-            None => false,
+            None => {
+                prune(&mut early, now);
+                early.insert(share_id.to_string(), (reason.to_string(), now));
+                false
+            }
         }
+    }
+}
+
+/// Forgets closes older than [`EARLY_CLOSE_FOR`].
+fn prune(early: &mut HashMap<String, (String, Instant)>, now: Instant) {
+    early.retain(|_, (_, at)| now.saturating_duration_since(*at) < EARLY_CLOSE_FOR);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_tungstenite::WebSocketStream;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use whk_tunnel::{mux, ws};
+
+    async fn session(registry: &Registry, id: &str, name: &str) -> Arc<Session> {
+        let (edge_io, _cli_io) = tokio::io::duplex(1 << 16);
+        std::mem::forget(_cli_io);
+        let (opener, inbound, _task) = mux::spawn(edge_io, yamux::Mode::Client);
+        drop(inbound);
+        let (text_io, _other) = tokio::io::duplex(1 << 16);
+        std::mem::forget(_other);
+        let socket = WebSocketStream::from_raw_socket(text_io, Role::Server, None).await;
+        let (_bytes, text) = ws::split(socket);
+        std::mem::forget(_bytes);
+        let session = Arc::new(Session::new(
+            Opening {
+                share_id: id.into(),
+                user_id: "user-1".into(),
+                name: name.into(),
+                port: 3000,
+                endpoint_id: None,
+                notice: false,
+                gate: None,
+            },
+            opener,
+            text.sender(),
+            registry.account("user-1"),
+        ));
+        std::mem::forget(text);
+        session
+    }
+
+    #[tokio::test]
+    async fn a_close_that_beats_the_opening_still_lands() {
+        let registry = Registry::default();
+        // The web app stops the share before its tunnel registered.
+        assert!(!registry.close_share("share-1", "you stopped it"));
+        let early = session(&registry, "share-1", "acme").await;
+        assert_eq!(
+            registry.insert_unless_closed(early).err().as_deref(),
+            Some("you stopped it")
+        );
+        assert!(registry.get("acme").is_none());
+        // Remembered once: the next run of that id opens.
+        let again = session(&registry, "share-1", "acme").await;
+        assert!(registry.insert_unless_closed(again).is_ok());
+        // Another share is untouched.
+        let other = session(&registry, "share-2", "other").await;
+        assert!(registry.insert_unless_closed(other).is_ok());
+        assert!(registry.get("other").is_some());
+        // An open share is closed directly, not remembered.
+        assert!(registry.close_share("share-2", "stopped"));
+        assert!(registry.closed_early.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_early_close_is_forgotten_after_a_while() {
+        let registry = Registry::default();
+        let long_ago = Instant::now()
+            .checked_sub(EARLY_CLOSE_FOR + Duration::from_secs(1))
+            .unwrap();
+        registry.close_share_at("share-1", "stopped", long_ago);
+        let later = session(&registry, "share-1", "acme").await;
+        assert!(registry.insert_unless_closed(later).is_ok());
     }
 }
