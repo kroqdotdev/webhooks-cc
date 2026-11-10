@@ -96,9 +96,11 @@ pub struct LiveConfig {
     /// Live relays in flight across all accounts; 0 turns the cap off.
     pub max_inflight_total: usize,
     /// The capture host the app is told the sender used
-    /// (`X-Forwarded-Host`), from `WEBHOOK_BASE_URL`; without it, the
+    /// (`X-Forwarded-Host`), from the public capture URL; without it, the
     /// request's own Host.
     pub public_host: Option<String>,
+    /// Whether the public capture URL is https (`X-Forwarded-Proto`).
+    pub public_https: bool,
 }
 
 impl std::fmt::Debug for LiveConfig {
@@ -109,6 +111,7 @@ impl std::fmt::Debug for LiveConfig {
             .field("max_inflight_per_account", &self.max_inflight_per_account)
             .field("max_inflight_total", &self.max_inflight_total)
             .field("public_host", &self.public_host)
+            .field("public_https", &self.public_https)
             .finish()
     }
 }
@@ -234,11 +237,16 @@ impl LiveRelay {
         let mut headers = relay_headers(request.headers);
         forwarded_headers(
             &mut headers,
-            self.config
-                .public_host
-                .as_deref()
-                .or_else(|| request.headers.get("host").and_then(|h| h.to_str().ok())),
-            request.slug,
+            Forwarded {
+                host: self
+                    .config
+                    .public_host
+                    .as_deref()
+                    .or_else(|| request.headers.get("host").and_then(|h| h.to_str().ok())),
+                https: self.config.public_https,
+                slug: request.slug,
+                sender: &super::webhook::real_ip(request.headers),
+            },
         );
         if let Ok(secret) = HeaderValue::from_str(&self.config.secret) {
             headers.insert(HeaderName::from_static(RELAY_AUTH_HEADER), secret);
@@ -293,6 +301,17 @@ impl LiveRelay {
         for (name, value) in sent_headers.iter() {
             builder = builder.header(name, value);
         }
+        // An answer with no body (204, 304, HEAD, or a stated length of 0)
+        // is whole as soon as its head is: the server never reads such a
+        // body, so its end would never be seen.
+        let bodiless = status == StatusCode::NO_CONTENT
+            || status == StatusCode::NOT_MODIFIED
+            || *request.method == Method::HEAD
+            || answer
+                .headers()
+                .get(axum::http::header::CONTENT_LENGTH)
+                .and_then(|l| l.to_str().ok())
+                .is_some_and(|l| l.trim() == "0");
         let (tx, rx) = oneshot::channel();
         let recorder = Recorder {
             base: LiveRecord {
@@ -305,7 +324,7 @@ impl LiveRelay {
             started,
             kept: BytesMut::new(),
             total: 0,
-            complete: false,
+            complete: bodiless,
             too_large: false,
             tx: Some(tx),
             _permits: (account_permit, total_permit),
@@ -523,24 +542,63 @@ fn sent_answer_headers(answer: &HeaderMap) -> HeaderMap {
     out
 }
 
-/// Tells the app where the sender sent it: the capture host, https, and
-/// the `/w/<slug>` the edge took off the path, so it can rebuild the public
-/// URL a provider signed. Whatever the sender put in these headers was
-/// dropped with the proxy headers (relay_headers).
-fn forwarded_headers(headers: &mut HeaderMap, host: Option<&str>, slug: &str) {
-    for name in [
-        "x-forwarded-host",
-        "x-forwarded-proto",
-        "x-forwarded-prefix",
-    ] {
-        headers.remove(name);
+/// Headers a sender may set to steer how an app rebuilds the URL or sees
+/// the client, which our proxies do not add (those go with the proxy
+/// headers, relay_headers): never passed to the app as the sender wrote
+/// them.
+const SENDER_FORWARDING_HEADERS: &[&str] = &[
+    "forwarded",
+    "x-forwarded-port",
+    "x-forwarded-ssl",
+    "x-forwarded-scheme",
+    "x-forwarded-server",
+    "x-forwarded-prefix",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-forwarded-for",
+    "x-original-host",
+    "x-original-url",
+    "x-rewrite-url",
+    "x-client-ip",
+    "x-cluster-client-ip",
+    "x-real-ip",
+    "true-client-ip",
+    "client-ip",
+];
+
+/// Where the sender sent a capture, as the app is told.
+struct Forwarded<'a> {
+    host: Option<&'a str>,
+    https: bool,
+    slug: &'a str,
+    /// The sender's address as the receiver records it (from Cloudflare's
+    /// header), empty when unknown.
+    sender: &'a str,
+}
+
+/// Tells the app where the sender sent it: the capture host, the scheme,
+/// the `/w/<slug>` the edge took off the path, and the sender's address,
+/// so it can rebuild the public URL a provider signed. Whatever the sender
+/// put in these, or in other headers apps read for the same purpose
+/// (`Forwarded`, `X-Forwarded-Port`, ...), is dropped first.
+fn forwarded_headers(headers: &mut HeaderMap, to: Forwarded<'_>) {
+    for name in SENDER_FORWARDING_HEADERS {
+        headers.remove(*name);
     }
-    if let Some(host) = host.and_then(|h| HeaderValue::from_str(h).ok()) {
+    if let Some(host) = to.host.and_then(|h| HeaderValue::from_str(h).ok()) {
         headers.insert("x-forwarded-host", host);
     }
-    headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
-    if let Ok(prefix) = HeaderValue::from_str(&format!("/w/{slug}")) {
+    headers.insert(
+        "x-forwarded-proto",
+        HeaderValue::from_static(if to.https { "https" } else { "http" }),
+    );
+    if let Ok(prefix) = HeaderValue::from_str(&format!("/w/{}", to.slug)) {
         headers.insert("x-forwarded-prefix", prefix);
+    }
+    if !to.sender.is_empty()
+        && let Ok(sender) = HeaderValue::from_str(to.sender)
+    {
+        headers.insert("x-forwarded-for", sender);
     }
 }
 
@@ -770,6 +828,7 @@ mod tests {
             max_inflight_per_account: per_account,
             max_inflight_total: total,
             public_host: Some("go.webhooks.cc".into()),
+            public_https: true,
         })
     }
 
@@ -1117,11 +1176,98 @@ mod tests {
     #[test]
     fn the_app_learns_where_the_sender_sent_it() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-prefix", HeaderValue::from_static("/evil"));
-        forwarded_headers(&mut headers, Some("go.webhooks.cc"), "acme");
+        for (name, value) in [
+            ("x-forwarded-prefix", "/evil"),
+            ("forwarded", "for=6.6.6.6;host=evil.example;proto=http"),
+            ("x-forwarded-port", "8443"),
+            ("x-forwarded-ssl", "off"),
+            ("x-forwarded-for", "6.6.6.6"),
+            ("x-original-host", "evil.example"),
+        ] {
+            headers.insert(
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            );
+        }
+        headers.insert("x-acme", HeaderValue::from_static("kept"));
+        forwarded_headers(
+            &mut headers,
+            Forwarded {
+                host: Some("go.webhooks.cc"),
+                https: true,
+                slug: "acme",
+                sender: "203.0.113.9",
+            },
+        );
         assert_eq!(headers["x-forwarded-host"], "go.webhooks.cc");
         assert_eq!(headers["x-forwarded-proto"], "https");
         assert_eq!(headers["x-forwarded-prefix"], "/w/acme");
+        assert_eq!(headers["x-forwarded-for"], "203.0.113.9");
         assert_eq!(headers.get_all("x-forwarded-prefix").iter().count(), 1);
+        for gone in [
+            "forwarded",
+            "x-forwarded-port",
+            "x-forwarded-ssl",
+            "x-original-host",
+        ] {
+            assert!(headers.get(gone).is_none(), "{gone}");
+        }
+        assert_eq!(headers["x-acme"], "kept");
+
+        // In development the public URL is http, and an unknown sender
+        // gets no X-Forwarded-For at all, never one of its own.
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", HeaderValue::from_static("6.6.6.6"));
+        forwarded_headers(
+            &mut headers,
+            Forwarded {
+                host: Some("localhost:3001"),
+                https: false,
+                slug: "acme",
+                sender: "",
+            },
+        );
+        assert_eq!(headers["x-forwarded-proto"], "http");
+        assert!(headers.get("x-forwarded-for").is_none());
+    }
+
+    #[tokio::test]
+    async fn an_answer_without_a_body_is_recorded_whole() {
+        // A server never reads the body of a 204 (or a 304, or an answer to
+        // HEAD): dropping it unread must not read as an answer cut off.
+        for (status, method) in [(204, Method::POST), (304, Method::GET), (200, Method::HEAD)] {
+            let base = fake_edge(move |_req: Request| {
+                axum::http::Response::builder()
+                    .status(status)
+                    .header(LIVE_HEADER, "answered")
+                    .body(Body::empty())
+                    .unwrap()
+            })
+            .await;
+            let relay = relay_to(base, 16);
+            let headers = HeaderMap::new();
+            let (response, recorded) = relay.relay(live_request(&headers, &method)).await;
+            assert_eq!(response.status().as_u16(), status);
+            drop(response);
+            let record = recorded.await.unwrap();
+            assert!(!record.body_truncated, "{status} {method}");
+            assert_eq!(record.outcome, "answered");
+        }
+        // A stated length of 0 is whole too.
+        let base = fake_edge(|_req: Request| {
+            axum::http::Response::builder()
+                .status(200)
+                .header(LIVE_HEADER, "answered")
+                .header("content-length", "0")
+                .body(Body::empty())
+                .unwrap()
+        })
+        .await;
+        let relay = relay_to(base, 16);
+        let headers = HeaderMap::new();
+        let method = Method::POST;
+        let (response, recorded) = relay.relay(live_request(&headers, &method)).await;
+        drop(response);
+        assert!(!recorded.await.unwrap().body_truncated);
     }
 }

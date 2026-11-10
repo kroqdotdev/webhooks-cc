@@ -42,6 +42,13 @@ pub const MAX_RESPONSE: usize = 50 * 1024 * 1024;
 /// saved, so an error status is no way round [`Refusal::Untyped`].
 pub const MAX_UNTYPED_ERROR: usize = 64 * 1024;
 
+/// The most of a followed redirect's body that goes on. A browser follows
+/// the Location and never shows the body, but a client that does not
+/// follow redirects would get whatever the body holds, past the type
+/// checks a redirect skips; a redirect's own page ("Moved here") fits in
+/// far less.
+pub const MAX_REDIRECT_BODY: usize = 16 * 1024;
+
 /// How a response goes on to the visitor, once [`check`] lets it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pass {
@@ -126,7 +133,7 @@ fn is_followed_redirect(status: StatusCode) -> bool {
 /// redirect status with one Location that names somewhere. An empty
 /// Location, or two, is no redirect to a browser (it shows or saves the
 /// body), so such an answer gets the full checks.
-fn is_redirect(status: StatusCode, headers: &HeaderMap) -> bool {
+pub fn is_redirect(status: StatusCode, headers: &HeaderMap) -> bool {
     if !is_followed_redirect(status) {
         return false;
     }

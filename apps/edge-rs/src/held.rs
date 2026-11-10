@@ -34,6 +34,12 @@
 //! closed: it holds its share's stream, the counts and buffers for
 //! nothing. Tunnels are never counted or closed here.
 //!
+//! Pages decoded on their way to the visitor (decode.rs) hold their
+//! decoder's window on top of this, whether they are held up or not: up to
+//! 4 MiB for Brotli (larger windows are refused), 32 KiB for gzip and
+//! deflate. decode.rs caps them at 8 an account and 64 for the edge, so at
+//! most 256 MiB, and one account at most 32 MiB.
+//!
 //! A connection cut off for either is reset rather than closed: closed,
 //! the kernel would keep sending what its buffer holds (up to 128 KiB) for
 //! as long as the slow visitor takes to read it, and the container's

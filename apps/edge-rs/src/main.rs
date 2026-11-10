@@ -82,6 +82,8 @@ pub struct State {
     meter: Arc<meter::Meter>,
     /// The answers held up for visitors who fell behind (held.rs).
     held: Arc<held::Held>,
+    /// Pages being decoded at once (decode.rs).
+    decodes: Arc<decode::Decodes>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -118,6 +120,7 @@ async fn run() -> anyhow::Result<()> {
         config: Arc::new(config),
         connects: Arc::default(),
         meter: Arc::default(),
+        decodes: Arc::default(),
     };
     // Before listening: the start closes every share the web app had open,
     // which must not include ones opened here.
@@ -864,7 +867,7 @@ async fn proxy(
                 if !page_visit {
                     return Ok((pass, None));
                 }
-                decode::codec(header_str(response.headers(), "content-encoding"))
+                decode::codec_of(response.headers())
                     .map(|codec| (pass, codec))
                     .map_err(content::Refusal::Encoding)
             })
@@ -981,15 +984,36 @@ async fn proxy(
     let has_body =
         !(head || status == StatusCode::NO_CONTENT || status == StatusCode::NOT_MODIFIED);
     let html = matches!(kind.as_str(), "text/html" | "application/xhtml+xml");
-    let svg = kind == "image/svg+xml";
-    let looked_at = page_visit && has_body && (html || svg);
+    // Shown as a page, and able to hold a form, but no place for a script
+    // tag: an SVG, or XML (which a browser draws as XHTML when its root
+    // says so). Looked at for phishing, with no button.
+    let scanned = kind == "image/svg+xml"
+        || matches!(kind.as_str(), "text/xml" | "application/xml")
+        || kind.ends_with("+xml");
+    let looked_at = page_visit && has_body && (html || scanned);
+    let body: Body = body.map_err(Into::into).boxed();
     let body: Body = match codec.filter(|_| looked_at) {
         Some(codec) => {
+            // A decoder holds its window for as long as the page streams:
+            // capped per account and for the edge (decode.rs).
+            let Some(slot) = state.decodes.take(&session.user_id) else {
+                return pages::too_many(&report);
+            };
+            let body = if codec == decode::Codec::Brotli {
+                match decode::brotli_checked(body).await {
+                    Ok(body) => body,
+                    Err(why) => {
+                        return pages::not_served(&content::Refusal::Encoding(why), &report);
+                    }
+                }
+            } else {
+                body
+            };
             parts.headers.remove(header::CONTENT_ENCODING);
             parts.headers.remove(header::CONTENT_LENGTH);
-            decode::decode(body, codec)
+            decode::decode(body, codec, slot)
         }
-        None => body.map_err(Into::into).boxed(),
+        None => body,
     };
     let page_url = format!("{public_origin}{path}");
     let body = if looked_at && html {
@@ -1000,9 +1024,22 @@ async fn proxy(
     } else {
         body
     };
-    // An untyped error ends at its smaller cap, whole (content.rs).
+    // An untyped error ends at its smaller cap, whole (content.rs), and so
+    // does a redirect's body: a browser never shows it, and a client that
+    // does not follow redirects must not get a file through one.
+    let redirect = content::is_redirect(status, &parts.headers);
+    if redirect
+        && header_str(&parts.headers, "content-length")
+            .and_then(|l| l.parse::<usize>().ok())
+            .is_none_or(|l| l > content::MAX_REDIRECT_BODY)
+    {
+        parts.headers.remove(header::CONTENT_LENGTH);
+    }
     let body = match pass {
         content::Pass::AsText => content::Capped::new(body, content::MAX_UNTYPED_ERROR).boxed(),
+        content::Pass::AsSent if redirect => {
+            content::Capped::new(body, content::MAX_REDIRECT_BODY).boxed()
+        }
         content::Pass::AsSent => body,
     };
     // Cut off past the cap when the length was not stated up front, and
@@ -1606,6 +1643,7 @@ mod tests {
             config: Arc::new(config),
             connects: Arc::default(),
             meter: Arc::default(),
+            decodes: Arc::default(),
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -1865,5 +1903,78 @@ mod tests {
         .await;
         assert_eq!(status, 200);
         assert_eq!(headers["content-type"], "text/plain");
+    }
+
+    #[tokio::test]
+    async fn an_empty_encoding_before_gzip_is_refused_not_passed_compressed() {
+        use tokio::io::AsyncWriteExt;
+        let mut encoder = async_compression::tokio::write::GzipEncoder::new(Vec::new());
+        encoder.write_all(PAGE.as_bytes()).await.unwrap();
+        encoder.shutdown().await.unwrap();
+        let (status, _, body) = visit(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-encoding: \r\ncontent-encoding: gzip",
+            &encoder.into_inner(),
+        )
+        .await;
+        assert_eq!(status, 403);
+        assert!(!badged(&body));
+    }
+
+    #[tokio::test]
+    async fn a_16_mib_brotli_window_is_refused_on_a_page_load() {
+        // WBITS 24 in the stream's first byte, then anything: the edge
+        // refuses before a decoder reserves the window.
+        let (status, _, _) = visit(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-encoding: br",
+            &[0x0f, 0x00, 0x00, 0x00],
+        )
+        .await;
+        assert_eq!(status, 403);
+    }
+
+    #[tokio::test]
+    async fn xml_shown_as_a_page_is_looked_at_but_not_changed() {
+        let xml = "<?xml version=\"1.0\"?><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Acme</title></head></html>";
+        for kind in ["text/xml", "application/xml", "application/rss+xml"] {
+            let (status, _, body) = visit(
+                &format!("HTTP/1.1 200 OK\r\ncontent-type: {kind}"),
+                xml.as_bytes(),
+            )
+            .await;
+            assert_eq!(status, 200, "{kind}");
+            assert_eq!(String::from_utf8_lossy(&body), xml, "{kind}");
+        }
+        // Compressed XML on a page load is read back like a page.
+        use tokio::io::AsyncWriteExt;
+        let mut encoder = async_compression::tokio::write::GzipEncoder::new(Vec::new());
+        encoder.write_all(xml.as_bytes()).await.unwrap();
+        encoder.shutdown().await.unwrap();
+        let (status, headers, body) = visit(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/xml\r\ncontent-encoding: gzip",
+            &encoder.into_inner(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(headers.get("content-encoding").is_none());
+        assert_eq!(String::from_utf8_lossy(&body), xml);
+    }
+
+    #[tokio::test]
+    async fn a_redirects_body_is_cut_to_a_few_kilobytes() {
+        let zip = vec![b'P'; 200 * 1024];
+        for head in [
+            "HTTP/1.1 302 Found\r\nlocation: /\r\ncontent-type: application/zip".to_string(),
+            format!(
+                "HTTP/1.1 302 Found\r\nlocation: /\r\ncontent-type: application/zip\r\ncontent-length: {}",
+                zip.len()
+            ),
+        ] {
+            let (status, headers, body) = visit(&head, &zip).await;
+            assert_eq!(status, 302);
+            assert!(body.len() <= content::MAX_REDIRECT_BODY, "{}", body.len());
+            assert!(headers.get("content-length").is_none_or(|l| {
+                l.to_str().unwrap().parse::<usize>().unwrap() <= content::MAX_REDIRECT_BODY
+            }));
+        }
     }
 }

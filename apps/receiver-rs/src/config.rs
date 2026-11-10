@@ -145,7 +145,7 @@ impl Config {
             .unwrap_or(60);
 
         let object_store = object_store_from_env();
-        let live = live_from_env();
+        let live = live_from_env(webhook_base_url.as_deref());
 
         Self {
             database_url,
@@ -172,8 +172,11 @@ impl Config {
 
 /// `EDGE_RELAY_URL` and `EDGE_SECRET` together turn live captures on;
 /// `LIVE_MAX_INFLIGHT_PER_ACCOUNT` (default 16) caps relays per account and
-/// `LIVE_MAX_INFLIGHT_TOTAL` (default 256) across all accounts.
-fn live_from_env() -> Option<crate::handlers::live::LiveConfig> {
+/// `LIVE_MAX_INFLIGHT_TOTAL` (default 256) across all accounts. The public
+/// capture URL (`WEBHOOK_BASE_URL`, or `NEXT_PUBLIC_WEBHOOK_URL`, as read
+/// for the rest of the config) gives the host and scheme the app is told
+/// the sender used.
+fn live_from_env(webhook_base_url: Option<&str>) -> Option<crate::handlers::live::LiveConfig> {
     let get = |name: &str| {
         env::var(name)
             .ok()
@@ -186,20 +189,21 @@ fn live_from_env() -> Option<crate::handlers::live::LiveConfig> {
     }
     let secret = get("EDGE_SECRET")
         .unwrap_or_else(|| panic!("EDGE_RELAY_URL is set but EDGE_SECRET is not"));
+    let public_url = webhook_base_url.and_then(|u| url::Url::parse(u).ok());
     Some(crate::handlers::live::LiveConfig {
         relay_url: relay_url.trim_end_matches('/').to_string(),
         secret,
         max_inflight_per_account: parse_env_or("LIVE_MAX_INFLIGHT_PER_ACCOUNT", 16),
         max_inflight_total: parse_env_or("LIVE_MAX_INFLIGHT_TOTAL", 256),
-        public_host: get("WEBHOOK_BASE_URL")
-            .and_then(|u| url::Url::parse(&u).ok())
-            .and_then(|u| {
-                let host = u.host_str()?.to_string();
-                Some(match u.port() {
-                    Some(port) => format!("{host}:{port}"),
-                    None => host,
-                })
-            }),
+        public_host: public_url.as_ref().and_then(|u| {
+            let host = u.host_str()?.to_string();
+            Some(match u.port() {
+                Some(port) => format!("{host}:{port}"),
+                None => host,
+            })
+        }),
+        // https unless the public URL says otherwise (http in development).
+        public_https: public_url.as_ref().is_none_or(|u| u.scheme() == "https"),
     })
 }
 

@@ -4,6 +4,10 @@
 //! sending a body a byte now and then holds one of the visitor's and the
 //! account's streams for as long as they like (limits.rs), and a few such
 //! visitors would turn every visitor of the account away.
+//!
+//! Only time spent waiting on the visitor counts: an app that reads the
+//! body late (a breakpoint, a slow check before it reads) finds it already
+//! there, and that is no sign of a slow visitor.
 
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
@@ -25,19 +29,22 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 pub struct Steady<B> {
     inner: B,
-    started: Instant,
+    /// Time spent waiting on the visitor so far.
+    waited: Duration,
+    /// Since when the body has been waiting on the visitor, if it is.
+    waiting_since: Option<Instant>,
     bytes: u64,
     idle: Pin<Box<Sleep>>,
 }
 
 impl<B> Steady<B> {
     pub fn new(inner: B) -> Self {
-        let now = Instant::now();
         Self {
             inner,
-            started: now,
+            waited: Duration::ZERO,
+            waiting_since: None,
             bytes: 0,
-            idle: Box::pin(tokio::time::sleep_until(now + BODY_IDLE)),
+            idle: Box::pin(tokio::time::sleep_until(Instant::now() + BODY_IDLE)),
         }
     }
 }
@@ -59,23 +66,31 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
         let this = &mut *self;
+        let now = Instant::now();
         if let Poll::Ready(frame) = Pin::new(&mut this.inner).poll_frame(cx) {
+            if let Some(since) = this.waiting_since.take() {
+                this.waited += now.duration_since(since);
+            }
             return Poll::Ready(match frame {
                 Some(Ok(frame)) => {
-                    let now = Instant::now();
                     if let Some(data) = frame.data_ref() {
                         this.bytes += data.len() as u64;
                     }
-                    let took = now.duration_since(this.started);
-                    if took > BODY_GRACE && this.bytes < BODY_MIN_RATE * took.as_secs() {
+                    let waited = this.waited;
+                    if waited > BODY_GRACE && this.bytes < BODY_MIN_RATE * waited.as_secs() {
                         return Poll::Ready(Some(Err(too_slow())));
                     }
-                    this.idle.as_mut().reset(now + BODY_IDLE);
                     Some(Ok(frame))
                 }
                 Some(Err(e)) => Some(Err(e.into())),
                 None => None,
             });
+        }
+        // Waiting on the visitor from now: the pause is timed from here,
+        // not from when the app last asked.
+        if this.waiting_since.is_none() {
+            this.waiting_since = Some(now);
+            this.idle.as_mut().reset(now + BODY_IDLE);
         }
         ready!(this.idle.as_mut().poll(cx));
         Poll::Ready(Some(Err(too_slow())))
@@ -122,6 +137,23 @@ mod tests {
             (BODY_IDLE + Duration::from_secs(1), 10),
         ]));
         assert!(body.collect().await.is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_app_that_reads_late_does_not_make_the_visitor_slow() {
+        // The whole body arrived at once; the app asks for it two minutes
+        // later, then reads the rest as fast as it comes.
+        let body = Steady::new(pieces(vec![(Duration::ZERO, 10); 3]));
+        tokio::time::sleep(BODY_GRACE * 2).await;
+        assert_eq!(body.collect().await.unwrap().to_bytes().len(), 30);
+        // And a body the visitor is still sending, read late: the pause
+        // counts from when the app started waiting.
+        let body = Steady::new(pieces(vec![
+            (Duration::ZERO, 10),
+            (Duration::from_secs(5), 10),
+        ]));
+        tokio::time::sleep(BODY_IDLE * 3).await;
+        assert_eq!(body.collect().await.unwrap().to_bytes().len(), 20);
     }
 
     #[tokio::test(start_paused = true)]

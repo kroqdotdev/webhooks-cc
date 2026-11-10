@@ -66,7 +66,7 @@ pub fn is_valid_slug(slug: &str) -> bool {
 /// Extract the real client IP from proxy headers.
 /// Sanitizes the value to contain only valid IP characters (digits, dots, colons, hex)
 /// to prevent XSS via spoofed headers stored in the database.
-fn real_ip(headers: &HeaderMap) -> String {
+pub(crate) fn real_ip(headers: &HeaderMap) -> String {
     let raw = if let Some(ip) = headers
         .get("cf-connecting-ip")
         .and_then(|v| v.to_str().ok())

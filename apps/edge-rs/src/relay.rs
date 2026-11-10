@@ -342,7 +342,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     }
     session.notify(&EdgeMessage::Request {
         method,
-        path: rest,
+        path: rest.clone(),
         status: status.as_u16(),
         ms: started.elapsed().as_millis() as u64,
     });
@@ -353,14 +353,22 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     let body = Holding {
         inner: Limited::new(body, STREAM_CUT).boxed(),
         _hold,
+        sent: 0,
+        cut: Some((session.clone(), rest)),
     };
     Response::from_parts(parts, Body::new(body))
 }
 
-/// An answer's body that keeps the account's stream counted until it ends.
+/// An answer's body that keeps the account's stream counted until it ends,
+/// and tells the CLI once it passes [`MAX_ANSWER`]: the receiver breaks the
+/// answer off there, so the sender got a broken one, which the CLI's line
+/// for the request (the app's status) does not show.
 struct Holding {
     inner: Body,
     _hold: crate::limits::StreamGuard,
+    sent: usize,
+    /// Whom to tell, and about which path, until told.
+    cut: Option<(std::sync::Arc<crate::registry::Session>, String)>,
 }
 
 impl hyper::body::Body for Holding {
@@ -371,7 +379,25 @@ impl hyper::body::Body for Holding {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Result<hyper::body::Frame<Bytes>, Self::Error>>> {
-        std::pin::Pin::new(&mut self.inner).poll_frame(cx)
+        let polled = std::pin::Pin::new(&mut self.inner).poll_frame(cx);
+        if let std::task::Poll::Ready(Some(Ok(frame))) = &polled
+            && let Some(data) = frame.data_ref()
+        {
+            self.sent += data.len();
+            if self.sent > MAX_ANSWER
+                && let Some((session, path)) = self.cut.take()
+            {
+                session.notify(&EdgeMessage::Notice {
+                    text: format!(
+                        "Your app's answer to {} passed {} MB, so the sender got a broken answer. A live tunnel passes back up to {} MB.",
+                        path.chars().take(120).collect::<String>(),
+                        MAX_ANSWER / (1024 * 1024),
+                        MAX_ANSWER / (1024 * 1024)
+                    ),
+                });
+            }
+        }
+        polled
     }
 
     fn is_end_stream(&self) -> bool {
@@ -424,6 +450,7 @@ mod tests {
             config: Arc::new(config),
             connects: Arc::default(),
             meter: Arc::default(),
+            decodes: Arc::default(),
         }
     }
 
@@ -692,6 +719,107 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), 502);
         assert_eq!(response.headers()[LIVE_HEADER], "refused");
+    }
+
+    #[tokio::test]
+    async fn an_answer_cut_past_the_cap_is_told_to_the_cli() {
+        use futures::StreamExt;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let state = state();
+        // A local app answering with 1.5 MB, chunked (no stated length).
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let mut got = Vec::new();
+                    while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                        let Ok(n) = stream.read(&mut buf).await else {
+                            return;
+                        };
+                        if n == 0 {
+                            return;
+                        }
+                        got.extend_from_slice(&buf[..n]);
+                    }
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ntransfer-encoding: chunked\r\n\r\n")
+                        .await;
+                    let chunk = vec![b'x'; 64 * 1024];
+                    for _ in 0..24 {
+                        let head = format!("{:x}\r\n", chunk.len());
+                        if stream.write_all(head.as_bytes()).await.is_err()
+                            || stream.write_all(&chunk).await.is_err()
+                            || stream.write_all(b"\r\n").await.is_err()
+                        {
+                            return;
+                        }
+                    }
+                    let _ = stream.write_all(b"0\r\n\r\n").await;
+                });
+            }
+        });
+        // The session, with the CLI's text messages readable.
+        let (edge_io, cli_io) = tokio::io::duplex(1 << 20);
+        let (opener, inbound, _task) = mux::spawn(edge_io, yamux::Mode::Client);
+        drop(inbound);
+        let (_cli_opener, mut streams, _cli_task) = mux::spawn(cli_io, yamux::Mode::Server);
+        tokio::spawn(async move {
+            while let Some(mut stream) = streams.recv().await {
+                tokio::spawn(async move {
+                    if let Ok(mut local) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await
+                    {
+                        let _ = tokio::io::copy_bidirectional(&mut stream, &mut local).await;
+                    }
+                });
+            }
+        });
+        let (text_io, cli_text) = tokio::io::duplex(1 << 16);
+        let socket = WebSocketStream::from_raw_socket(text_io, Role::Server, None).await;
+        let (_bytes, text) = ws::split(socket);
+        std::mem::forget(_bytes);
+        let session = Arc::new(Session::new(
+            Opening {
+                share_id: "share-9".into(),
+                user_id: "user-1".into(),
+                name: "acme-hooks".into(),
+                port,
+                endpoint_id: Some("ep9".into()),
+                notice: false,
+                gate: None,
+                run: "run-9".into(),
+            },
+            opener,
+            text.sender(),
+            state.registry.account("user-1"),
+        ));
+        std::mem::forget(text);
+        state.registry.insert(session);
+        let mut cli = WebSocketStream::from_raw_socket(cli_text, Role::Client, None).await;
+
+        let base = relay(&state).await;
+        let response = reqwest::Client::new()
+            .post(format!("{base}/v1/live/ep9/big"))
+            .header(AUTH_HEADER, "s")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        // The edge breaks it off a little past the cap.
+        assert!(response.bytes().await.is_err());
+        let told = tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(Ok(message)) = cli.next().await {
+                if let Ok(text) = message.into_text()
+                    && text.contains("broken answer")
+                {
+                    return true;
+                }
+            }
+            false
+        })
+        .await;
+        assert_eq!(told, Ok(true));
     }
 
     #[tokio::test]
