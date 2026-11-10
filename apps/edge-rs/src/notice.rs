@@ -137,10 +137,12 @@ pub fn strip_request_cookies(headers: &mut HeaderMap) {
 }
 
 /// Drops any attempt by the laptop to set our cookies, or a cookie for a
-/// host other than this preview's own (`host`, without a port).
+/// host other than this preview's own (`host`, without a port). A value
+/// that is not plain ASCII cannot be read for its domain, so it is dropped
+/// too rather than passed on unread.
 pub fn strip_response_cookies(headers: &mut HeaderMap, host: &str) {
     let refused = |v: &HeaderValue| {
-        let Ok(s) = v.to_str() else { return false };
+        let Ok(s) = v.to_str() else { return true };
         let name = s.split(['=', ';']).next().unwrap_or("").trim();
         let elsewhere = s.split(';').skip(1).any(|attr| {
             let (k, v) = attr.split_once('=').unwrap_or((attr, ""));
@@ -395,5 +397,18 @@ mod tests {
         ]);
         strip_response_cookies(&mut set, "a.sharehooks.cc");
         assert_eq!(set.get_all(header::SET_COOKIE).iter().count(), 1);
+    }
+
+    #[test]
+    fn a_cookie_that_cannot_be_read_is_dropped() {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            header::SET_COOKIE,
+            HeaderValue::from_bytes(b"a=\xff; Domain=sharehooks.cc").unwrap(),
+        );
+        headers.append(header::SET_COOKIE, HeaderValue::from_static("b=1; Path=/"));
+        strip_response_cookies(&mut headers, "calm-otter.sharehooks.cc");
+        let left: Vec<_> = headers.get_all(header::SET_COOKIE).iter().collect();
+        assert_eq!(left, [HeaderValue::from_static("b=1; Path=/")]);
     }
 }

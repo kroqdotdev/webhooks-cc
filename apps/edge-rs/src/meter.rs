@@ -393,13 +393,16 @@ impl Meter {
         self.hasher.hash_one(key)
     }
 
-    /// Bytes sent outside an answer's body: a WebSocket's.
+    /// Bytes counted outside an answer's recording: a WebSocket's either
+    /// way, a request's body, and a long answer on its way.
     pub fn add_bytes(&self, owner: &Owner, visitor: u64, bytes: u64) {
         if bytes == 0 {
             return;
         }
         self.tally(owner, bytes, 0);
         let mut logs = lock(&self.logs);
+        // An upload is counted before its request is recorded.
+        logs.open(&owner.id);
         logs.change(&owner.id, |log| {
             log.bytes += bytes;
             log.visitor(visitor).bytes_today += bytes;
@@ -409,7 +412,11 @@ impl Meter {
 
     /// Whether this visitor took their day's share from this share or site.
     pub fn visitor_spent(&self, id: &str, visitor_key: &str) -> bool {
-        let key = self.visitor_hash(visitor_key);
+        self.visitor_spent_hash(id, self.visitor_hash(visitor_key))
+    }
+
+    /// The same, by the visitor's hash.
+    pub fn visitor_spent_hash(&self, id: &str, key: u64) -> bool {
         lock(&self.logs)
             .map
             .get(id)
@@ -418,10 +425,13 @@ impl Meter {
     }
 
     /// One answered request: kept for the dashboard, and counted unless
-    /// the edge's own page answered it.
-    pub fn record(&self, owner: &Owner, asked: Asked, answer: Answer, bytes: u64) {
+    /// the edge's own page answered it. `already` of its `bytes` were
+    /// counted while it went ([`Metered`], a long answer), so only the rest
+    /// is added now.
+    pub fn record(&self, owner: &Owner, asked: Asked, answer: Answer, bytes: u64, already: u64) {
+        let rest = bytes.saturating_sub(already);
         if answer.edge.is_none() {
-            self.tally(owner, bytes, 1);
+            self.tally(owner, rest, 1);
         }
         let mut logs = lock(&self.logs);
         logs.open(&owner.id);
@@ -429,11 +439,13 @@ impl Meter {
         let recorded = logs.change(&owner.id, |log| {
             log.used = Instant::now();
             let visitor = log.visitor(asked.visitor);
-            visitor.bytes_today += counted;
+            if answer.edge.is_none() {
+                visitor.bytes_today += rest;
+            }
             let number = visitor.number;
             if answer.edge.is_none() {
                 log.requests += 1;
-                log.bytes += bytes;
+                log.bytes += rest;
             }
             if log.seen.len() == RECENT
                 && let Some(gone) = log.seen.pop_back()
@@ -601,7 +613,14 @@ pub struct Metered {
     asked: Option<Asked>,
     answer: Answer,
     bytes: u64,
+    /// Of `bytes`, those counted while the answer went.
+    counted: u64,
 }
+
+/// How much of a long answer goes before it is counted and the account's
+/// month and the visitor's day are looked at again: so a 50 MB download
+/// started just before either ran out stops on the way.
+const ANSWER_STEP: u64 = 8 * 1024 * 1024;
 
 impl Metered {
     /// Counts and records the answer, unless it is the edge's internal one.
@@ -628,6 +647,7 @@ impl Metered {
                 asked: Some(asked),
                 answer,
                 bytes: 0,
+                counted: 0,
             })
         })
     }
@@ -646,6 +666,20 @@ impl HttpBody for Metered {
             && let Some(data) = frame.data_ref()
         {
             self.bytes += data.len() as u64;
+            // The edge's own pages are never counted.
+            if self.answer.edge.is_none() && self.bytes - self.counted >= ANSWER_STEP {
+                let step = self.bytes - self.counted;
+                let visitor = self.asked.as_ref().map_or(0, |a| a.visitor);
+                self.meter.add_bytes(&self.owner, visitor, step);
+                self.counted = self.bytes;
+                if self.meter.is_over(&self.owner.user_id)
+                    || self.meter.visitor_spent_hash(&self.owner.id, visitor)
+                {
+                    return Poll::Ready(Some(Err(
+                        "the data allowance ran out during the answer".into()
+                    )));
+                }
+            }
         }
         polled
     }
@@ -663,12 +697,84 @@ impl Drop for Metered {
     fn drop(&mut self) {
         if let Some(asked) = self.asked.take() {
             self.meter
-                .record(&self.owner, asked, self.answer, self.bytes);
+                .record(&self.owner, asked, self.answer, self.bytes, self.counted);
         }
     }
 }
 
-/// The visitor's side of a WebSocket, counting what it is sent as it goes,
+/// A visitor's request body on its way to the laptop, counted as data as
+/// it goes, like an answer: in steps, with the account's month and the
+/// visitor's day looked at again at each, so an upload stops once either
+/// runs out.
+pub struct CountedBody {
+    inner: Body,
+    meter: Arc<Meter>,
+    owner: Owner,
+    visitor: u64,
+    unsent: u64,
+}
+
+impl CountedBody {
+    pub fn wrap(inner: Body, meter: Arc<Meter>, owner: Owner, visitor_key: &str) -> Body {
+        Body::new(Self {
+            visitor: meter.visitor_hash(visitor_key),
+            inner,
+            meter,
+            owner,
+            unsent: 0,
+        })
+    }
+
+    fn count(&mut self) {
+        let bytes = std::mem::take(&mut self.unsent);
+        self.meter.add_bytes(&self.owner, self.visitor, bytes);
+    }
+}
+
+impl HttpBody for CountedBody {
+    type Data = Bytes;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let polled = Pin::new(&mut self.inner).poll_frame(cx);
+        if let Poll::Ready(Some(Ok(frame))) = &polled
+            && let Some(data) = frame.data_ref()
+        {
+            self.unsent += data.len() as u64;
+            if self.unsent >= WEBSOCKET_STEP {
+                self.count();
+                if self.meter.is_over(&self.owner.user_id)
+                    || self.meter.visitor_spent_hash(&self.owner.id, self.visitor)
+                {
+                    return Poll::Ready(Some(Err(
+                        "the data allowance ran out during the upload".into()
+                    )));
+                }
+            }
+        }
+        polled
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+impl Drop for CountedBody {
+    fn drop(&mut self) {
+        self.count();
+    }
+}
+
+/// The visitor's side of a WebSocket, counting what it is sent and what it
+/// sends as it goes,
 /// so an open socket counts before it closes and one that ends in an error
 /// counts all the same. At every count it looks again at what the front
 /// door checked when the socket opened: once the account's data for the
@@ -751,8 +857,19 @@ impl<T: AsyncRead + Unpin> AsyncRead for CountedSocket<T> {
     ) -> Poll<std::io::Result<()>> {
         let before = buf.filled().len();
         let read = Pin::new(&mut self.inner).poll_read(cx, buf);
-        if matches!(read, Poll::Ready(Ok(()))) && buf.filled().len() > before {
+        let n = buf.filled().len() - before;
+        if matches!(read, Poll::Ready(Ok(()))) && n > 0 {
             self.activity.touch();
+            // What a visitor sends the laptop is data too.
+            self.unsent += n as u64;
+            if self.unsent >= WEBSOCKET_STEP {
+                self.count();
+                if self.spent() {
+                    return Poll::Ready(Err(std::io::Error::other(
+                        "the data allowance ran out while the socket was open",
+                    )));
+                }
+            }
         }
         read
     }
@@ -843,12 +960,14 @@ mod tests {
             asked(&m, "/", "203.0.113.7", LAPTOP),
             answered(200),
             1200,
+            0,
         );
         m.record(
             &owner("s1"),
             asked(&m, "/a.css", "203.0.113.7", LAPTOP),
             answered(200),
             300,
+            0,
         );
         m.add_bytes(&owner("s1"), m.visitor_hash("203.0.113.7"), 50);
         let batches = m.batches();
@@ -873,10 +992,17 @@ mod tests {
             asked(&m, "/", "v", LAPTOP),
             answered(200),
             100,
+            0,
         );
         let first = m.batches();
         // No answer: the same batch, the same id, and the new counts apart.
-        m.record(&owner("s1"), asked(&m, "/", "v", LAPTOP), answered(200), 10);
+        m.record(
+            &owner("s1"),
+            asked(&m, "/", "v", LAPTOP),
+            answered(200),
+            10,
+            0,
+        );
         let again = m.batches();
         assert_eq!(again.len(), 2);
         assert_eq!(again[0], first[0]);
@@ -894,7 +1020,7 @@ mod tests {
             ms: 1,
             edge: Some("notice"),
         };
-        m.record(&owner("s1"), asked(&m, "/", "v", PHONE), notice, 3000);
+        m.record(&owner("s1"), asked(&m, "/", "v", PHONE), notice, 3000, 0);
         assert!(m.batches().is_empty());
         let activity = m.activity("s1");
         assert_eq!(activity.total, Totals::default());
@@ -925,18 +1051,21 @@ mod tests {
             asked(&m, "/", "203.0.113.7", PHONE),
             answered(200),
             10,
+            0,
         );
         m.record(
             &owner("s1"),
             asked(&m, "/about", "198.51.100.2", LAPTOP),
             answered(404),
             20,
+            0,
         );
         m.record(
             &owner("s1"),
             asked(&m, "/?q=1", "203.0.113.7", PHONE),
             answered(200),
             30,
+            0,
         );
         let activity = m.activity("s1");
         let seen = &activity.requests;
@@ -976,6 +1105,7 @@ mod tests {
                 asked(&m, "/", &format!("v{i}"), LAPTOP),
                 answered(200),
                 1,
+                0,
             );
         }
         let activity = m.activity("s1");
@@ -1003,6 +1133,7 @@ mod tests {
                     asked(&m, &format!("/a/{i}?x=y"), &format!("v{i}"), LAPTOP),
                     answered(200),
                     10,
+                    0,
                 );
             }
             m.add_bytes(&owner(&format!("s{share}")), m.visitor_hash("new"), 5);
@@ -1028,6 +1159,7 @@ mod tests {
                     asked(&m, "/", &format!("{share}-{i}"), LAPTOP),
                     answered(200),
                     10,
+                    0,
                 );
             }
         }
@@ -1042,7 +1174,13 @@ mod tests {
             .unwrap();
         assert!(oldest > 20, "some 9 of these fit: {oldest}");
         let used = format!("s{oldest}");
-        m.record(&owner(&used), asked(&m, "/", "x", LAPTOP), answered(200), 1);
+        m.record(
+            &owner(&used),
+            asked(&m, "/", "x", LAPTOP),
+            answered(200),
+            1,
+            0,
+        );
         let next = format!("s{}", oldest + 1);
         for share in 40..50 {
             if m.activity(&next) == Activity::default() {
@@ -1054,6 +1192,7 @@ mod tests {
                     asked(&m, "/", &format!("{share}-{i}"), LAPTOP),
                     answered(200),
                     10,
+                    0,
                 );
             }
         }
@@ -1070,6 +1209,7 @@ mod tests {
             asked(&m, "/big.jpg", "203.0.113.7", LAPTOP),
             answered(200),
             VISITOR_DAILY - 1,
+            0,
         );
         assert!(!m.visitor_spent("s1", "203.0.113.7"));
         m.record(
@@ -1077,6 +1217,7 @@ mod tests {
             asked(&m, "/big.jpg", "203.0.113.7", LAPTOP),
             answered(200),
             1,
+            0,
         );
         assert!(m.visitor_spent("s1", "203.0.113.7"));
         assert!(
@@ -1095,6 +1236,7 @@ mod tests {
                 asked(&m, &format!("/{i}"), "v", LAPTOP),
                 answered(200),
                 1,
+                0,
             );
         }
         let activity = m.activity("s1");
@@ -1110,6 +1252,7 @@ mod tests {
             &owner("s1"),
             asked(&m, "/ws", "v", LAPTOP),
             answered(101),
+            0,
             0,
         );
         let (a, _b) = tokio::io::duplex(1 << 20);
@@ -1221,5 +1364,76 @@ mod tests {
         drop(wrapped);
         assert_eq!(m.activity("s1").requests[0].bytes, 0);
         assert_eq!(usage_of(&m.batches())[0].requests, 1);
+    }
+
+    /// A body of `chunks` pieces of `size` bytes.
+    fn chunked(chunks: usize, size: usize) -> Body {
+        let frames = (0..chunks).map(move |_| {
+            Ok::<_, std::convert::Infallible>(Frame::data(Bytes::from(vec![b'a'; size])))
+        });
+        http_body_util::StreamBody::new(futures::stream::iter(frames))
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { match e {} })
+            .boxed()
+    }
+
+    #[tokio::test]
+    async fn an_upload_is_counted_as_the_accounts_data_and_the_visitors_day() {
+        let m = Arc::new(Meter::default());
+        let body = CountedBody::wrap(chunked(10, 10_000), m.clone(), owner("s1"), "v");
+        let sent = body.collect().await.unwrap().to_bytes();
+        assert_eq!(sent.len(), 100_000);
+        assert_eq!(usage_of(&m.batches())[0].bytes, 100_000);
+        assert_eq!(usage_of(&m.batches())[0].requests, 0);
+        assert_eq!(m.activity("s1").total.bytes, 100_000);
+    }
+
+    #[tokio::test]
+    async fn an_upload_stops_once_the_accounts_month_runs_out() {
+        let m = Arc::new(Meter::default());
+        m.set_over(vec!["user-1".into()]);
+        let body = CountedBody::wrap(chunked(100, 10_000), m.clone(), owner("s1"), "v");
+        assert!(body.collect().await.is_err(), "the upload is cut off");
+        // Counted up to where it stopped, in steps.
+        let counted = usage_of(&m.batches())[0].bytes;
+        assert!((WEBSOCKET_STEP..1_000_000).contains(&counted), "{counted}");
+    }
+
+    #[tokio::test]
+    async fn a_long_answer_stops_once_the_visitors_day_runs_out_on_the_way() {
+        let m = Arc::new(Meter::default());
+        // The visitor took all but a little of their day already.
+        let first = Metered::wrap(
+            m.clone(),
+            owner("s1"),
+            asked(&m, "/a", "v", LAPTOP),
+            Response::new(chunked(1, (VISITOR_DAILY - 1024) as usize)),
+        );
+        first.into_body().collect().await.unwrap();
+        let second = Metered::wrap(
+            m.clone(),
+            owner("s1"),
+            asked(&m, "/b", "v", LAPTOP),
+            Response::new(chunked(4, 4 * 1024 * 1024)),
+        );
+        assert!(second.into_body().collect().await.is_err());
+        // Counted once, not twice: what went before the cut, and no more.
+        let bytes: u64 = usage_of(&m.batches()).iter().map(|u| u.bytes).sum();
+        assert_eq!(bytes, VISITOR_DAILY - 1024 + ANSWER_STEP);
+        assert_eq!(m.activity("s1").requests[0].bytes, ANSWER_STEP);
+    }
+
+    #[tokio::test]
+    async fn what_a_visitor_sends_down_a_websocket_counts_too() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let m = Arc::new(Meter::default());
+        let (mut visitor, edge) = tokio::io::duplex(1 << 20);
+        let mut counted = CountedSocket::new(edge, m.clone(), owner("s1"), "v");
+        visitor.write_all(&vec![b'x'; 100_000]).await.unwrap();
+        drop(visitor);
+        let mut got = Vec::new();
+        counted.read_to_end(&mut got).await.unwrap();
+        drop(counted);
+        assert_eq!(got.len(), 100_000);
+        assert_eq!(usage_of(&m.batches())[0].bytes, 100_000);
     }
 }

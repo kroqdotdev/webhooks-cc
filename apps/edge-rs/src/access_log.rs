@@ -7,6 +7,13 @@
 //! without that setting (development) nothing is written. A thread of its
 //! own writes them, so a slow disk never holds up a visitor: when it falls
 //! behind, lines are dropped and counted rather than queued without end.
+//!
+//! What a case needs is what reached a share. Requests that did not (a
+//! name nothing is shared under, a visitor turned away by the limits) are
+//! anyone's to send without an account, so they are kept one in
+//! [`SAMPLE_EVERY`] and against a small budget of their own: a flood of
+//! them cannot fill the day and leave a phishing share served afterwards
+//! unrecorded.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -23,13 +30,32 @@ use serde_json::json;
 pub const KEEP_DAYS: i64 = 14;
 /// Lines waiting for the disk before new ones are dropped.
 const QUEUE: usize = 10_000;
-/// A day's file stops growing here; a flood fills it, not the box's disk.
-const DAY_LIMIT: u64 = 256 * 1024 * 1024;
+/// A day's lines about requests that reached a share stop here; a flood
+/// fills it, not the box's disk.
+const DAY_LIMIT: u64 = 224 * 1024 * 1024;
+/// The same for the rest ([`Reach::Elsewhere`]), kept apart so they never
+/// eat into [`DAY_LIMIT`].
+const ELSEWHERE_DAY_LIMIT: u64 = 32 * 1024 * 1024;
+/// One request in this many that reached no share is written.
+pub const SAMPLE_EVERY: u64 = 100;
+
+/// Whether a request reached a share.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    /// It reached a share (or was answered at its door, a password or the
+    /// notice): what a case is looked into with.
+    Share,
+    /// A name nothing is shared under, or a visitor turned away by the
+    /// limits.
+    Elsewhere,
+}
 
 #[derive(Clone, Default)]
 pub struct AccessLog {
-    queue: Option<SyncSender<String>>,
+    queue: Option<SyncSender<(Reach, String)>>,
     dropped: Arc<AtomicU64>,
+    /// Requests that reached no share, for the sampling.
+    elsewhere: Arc<AtomicU64>,
 }
 
 impl AccessLog {
@@ -55,12 +81,21 @@ impl AccessLog {
         Self {
             queue: Some(queue),
             dropped,
+            elsewhere: Arc::default(),
         }
     }
 
-    pub fn record(&self, line: String) {
+    pub fn record(&self, line: String, reach: Reach) {
         let Some(queue) = &self.queue else { return };
-        if let Err(TrySendError::Full(_)) = queue.try_send(line) {
+        if reach == Reach::Elsewhere
+            && !self
+                .elsewhere
+                .fetch_add(1, Ordering::Relaxed)
+                .is_multiple_of(SAMPLE_EVERY)
+        {
+            return;
+        }
+        if let Err(TrySendError::Full(_)) = queue.try_send((reach, line)) {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -137,10 +172,13 @@ impl Entry {
     }
 }
 
-fn write_days(dir: &Path, lines: Receiver<String>, dropped: &AtomicU64) {
+fn write_days(dir: &Path, lines: Receiver<(Reach, String)>, dropped: &AtomicU64) {
     let mut day = String::new();
     let mut file: Option<(BufWriter<File>, u64)> = None;
     let mut full_warned = false;
+    // Today's lines about requests that reached no share, apart.
+    let mut elsewhere = 0u64;
+    let mut elsewhere_warned = false;
     loop {
         let next = lines.recv_timeout(Duration::from_secs(1));
         let today = date(SystemTime::now());
@@ -152,12 +190,34 @@ fn write_days(dir: &Path, lines: Receiver<String>, dropped: &AtomicU64) {
             file = open_day(dir, &today);
             day = today;
             full_warned = false;
+            elsewhere = 0;
+            elsewhere_warned = false;
         }
         match next {
-            Ok(line) => {
+            Ok((Reach::Elsewhere, line)) => {
+                let Some((w, _)) = file.as_mut() else {
+                    continue;
+                };
+                if elsewhere >= ELSEWHERE_DAY_LIMIT {
+                    if !elsewhere_warned {
+                        tracing::warn!(
+                            day,
+                            "access log full for the day for requests that reached no share"
+                        );
+                        elsewhere_warned = true;
+                    }
+                    continue;
+                }
+                if writeln!(w, "{line}").is_ok() {
+                    elsewhere += line.len() as u64 + 1;
+                }
+            }
+            Ok((Reach::Share, line)) => {
                 let Some((w, size)) = file.as_mut() else {
                     continue;
                 };
+                // On a restart within the day, what the file holds counts
+                // here.
                 if *size >= DAY_LIMIT {
                     if !full_warned {
                         tracing::warn!(day, "access log full for the day");
@@ -371,8 +431,8 @@ mod tests {
     fn the_writer_puts_lines_in_todays_file() {
         let dir = std::env::temp_dir().join(format!("whk-edge-access-w-{}", std::process::id()));
         let log = AccessLog::open(Some(dir.clone()));
-        log.record("{\"a\":1}".into());
-        log.record("{\"a\":2}".into());
+        log.record("{\"a\":1}".into(), Reach::Share);
+        log.record("{\"a\":2}".into(), Reach::Share);
         drop(log);
         // The writer ends once the last sender is gone.
         let file = dir.join(format!("access-{}.jsonl", date(SystemTime::now())));
@@ -386,6 +446,31 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(fs::read_to_string(&file).unwrap(), "{\"a\":1}\n{\"a\":2}\n");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn requests_that_reached_no_share_are_sampled_and_never_crowd_out_the_rest() {
+        let dir = std::env::temp_dir().join(format!("whk-edge-access-s-{}", std::process::id()));
+        let log = AccessLog::open(Some(dir.clone()));
+        for i in 0..(SAMPLE_EVERY * 3) {
+            log.record(format!("{{\"elsewhere\":{i}}}"), Reach::Elsewhere);
+        }
+        log.record("{\"share\":1}".into(), Reach::Share);
+        drop(log);
+        let file = dir.join(format!("access-{}.jsonl", date(SystemTime::now())));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while fs::read_to_string(&file)
+            .map(|s| s.contains("share"))
+            .unwrap_or(false)
+            .eq(&false)
+        {
+            assert!(Instant::now() < deadline, "lines not written");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let text = fs::read_to_string(&file).unwrap();
+        assert_eq!(text.matches("elsewhere").count(), 3);
+        assert_eq!(text.matches("\"share\"").count(), 1);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

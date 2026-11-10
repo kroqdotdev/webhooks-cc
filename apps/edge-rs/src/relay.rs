@@ -12,14 +12,17 @@
 //! request is already a capture on the account's request quota. The answer
 //! goes out on the capture host (go.webhooks.cc), for free accounts too, so
 //! it has rules of its own ([`check`]): what an API answers with (JSON, XML,
-//! form data, text other than script), no downloads, at most [`MAX_ANSWER`].
+//! form data, the text types in [`TEXT_TYPES`]), no downloads, at most
+//! [`MAX_ANSWER`]. A short answer with no type at all (`res.end('ok')`) goes
+//! back as plain text, as a share passes an untyped error.
 //! What the edge says itself carries `x-whk-live`:
 //!
 //! - `offline` (502): no live session for the endpoint.
 //! - `unreachable` (502): the session is open, but nothing answers on the
 //!   local port, or the tunnel dropped mid-request.
 //! - `timeout` (504): no answer's head within [`HEAD_TIMEOUT`].
-//! - `busy` (503): the account has too many requests in flight.
+//! - `busy` (503, with `Retry-After`): the account has too many live
+//!   requests in flight ([`LIVE_STREAMS`], apart from its previews').
 //! - `refused` (502): the app's answer is not passed back ([`check`]); the
 //!   CLI hears why. (A 404 `refused` is a request without the secret.)
 //! - `answered`: on the app's own answer, whatever its status, so the
@@ -62,6 +65,31 @@ pub const MAX_ANSWER: usize = 1024 * 1024;
 const STREAM_CUT: usize = MAX_ANSWER + 64 * 1024;
 /// A path segment's most, for the endpoint id.
 const ID_MAX: usize = 64;
+/// The most of an answer with no type that goes back, as plain text.
+pub const MAX_UNTYPED: usize = 64 * 1024;
+/// Live requests in flight per account: a pool of their own, so visitors
+/// to the account's previews cannot use it up and turn webhooks away.
+pub const LIVE_STREAMS: usize = 64;
+/// Text types an answer may have: data, never script. Browsers run
+/// `text/jscript`, `text/livescript` and others as JavaScript, so text is
+/// listed, not merely "not script".
+pub const TEXT_TYPES: &[&str] = &[
+    "text/plain",
+    "text/html",
+    "text/xml",
+    "text/csv",
+    "text/tab-separated-values",
+    "text/markdown",
+    "text/x-markdown",
+    "text/calendar",
+    "text/vcard",
+    "text/x-vcard",
+    "text/rtf",
+    "text/richtext",
+    "text/enriched",
+    "text/uri-list",
+    "text/event-stream",
+];
 
 pub async fn serve(state: State, address: SocketAddr) -> anyhow::Result<()> {
     let listener = TcpListener::bind(address).await?;
@@ -132,33 +160,42 @@ impl Refusal {
         match self {
             Refusal::Download => "a download".into(),
             Refusal::Kind(kind) => format!("an answer of type {kind}"),
-            Refusal::Untyped => "an answer with a body but no content type".into(),
+            Refusal::Untyped => format!(
+                "an answer with no content type over {} KB",
+                MAX_UNTYPED / 1024
+            ),
             Refusal::Mixed => "an answer with more than one content type".into(),
             Refusal::TooLarge => format!("an answer over {} MB", MAX_ANSWER / (1024 * 1024)),
         }
     }
 }
 
-/// Types an API answers with. Script is left out, even as `text/*`: the
-/// capture host is no place to serve it from.
+/// Types an API answers with. Script never: the capture host is no place
+/// to serve it from.
 fn api_type(kind: &str) -> bool {
-    let script = kind.contains("javascript") || kind.contains("ecmascript");
-    !script
-        && (kind.starts_with("text/")
-            || kind == "application/json"
-            || kind == "application/xml"
-            || kind == "application/x-www-form-urlencoded"
-            || (kind.starts_with("application/")
-                && (kind.ends_with("+json") || kind.ends_with("+xml"))))
+    TEXT_TYPES.contains(&kind)
+        || kind == "application/json"
+        || kind == "application/xml"
+        || kind == "application/x-www-form-urlencoded"
+        || (kind.starts_with("application/") && (kind.ends_with("+json") || kind.ends_with("+xml")))
+}
+
+/// How an answer that may go back goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pass {
+    /// As the app sent it.
+    AsSent,
+    /// With no type, short: as plain text, cut at [`MAX_UNTYPED`].
+    AsText,
 }
 
 /// Whether an app's answer may go back to the sender on the capture host.
-pub fn check(status: StatusCode, headers: &http::HeaderMap) -> Result<(), Refusal> {
+pub fn check(status: StatusCode, headers: &http::HeaderMap) -> Result<Pass, Refusal> {
     if status.is_informational()
         || status == StatusCode::NO_CONTENT
         || status == StatusCode::NOT_MODIFIED
     {
-        return Ok(());
+        return Ok(Pass::AsSent);
     }
     let attachment = headers.get_all("content-disposition").iter().any(|v| {
         v.to_str().map_or(true, |d| {
@@ -195,9 +232,11 @@ pub fn check(status: StatusCode, headers: &http::HeaderMap) -> Result<(), Refusa
         }
     };
     match kind {
-        None if length == Some(0) => Ok(()),
+        None if length == Some(0) => Ok(Pass::AsSent),
+        // `res.end('ok')` with no type: plain text, if it is short.
+        None if length.is_none_or(|l| l <= MAX_UNTYPED as u64) => Ok(Pass::AsText),
         None => Err(Refusal::Untyped),
-        Some(kind) if api_type(&kind) => Ok(()),
+        Some(kind) if api_type(&kind) => Ok(Pass::AsSent),
         Some(kind) => Err(Refusal::Kind(kind)),
     }
 }
@@ -205,13 +244,16 @@ pub fn check(status: StatusCode, headers: &http::HeaderMap) -> Result<(), Refusa
 /// An answer the edge gives itself, marked with what happened.
 fn said(status: StatusCode, live: &'static str, message: &str) -> Response<Body> {
     let body = serde_json::json!({ "error": message }).to_string();
-    Response::builder()
+    let mut response = Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::CACHE_CONTROL, "no-store")
-        .header(LIVE_HEADER, live)
-        .body(pages::full(body))
-        .unwrap()
+        .header(LIVE_HEADER, live);
+    // A sender told to come back says when.
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        response = response.header(header::RETRY_AFTER, "5");
+    }
+    response.body(pages::full(body)).unwrap()
 }
 
 async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
@@ -232,7 +274,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             "No live tunnel is open for this endpoint.",
         );
     };
-    let Some(_hold) = session.door.streams.enter(crate::limits::ACCOUNT_STREAMS) else {
+    let Some(_hold) = session.door.live_streams.enter(LIVE_STREAMS) else {
         return said(
             StatusCode::SERVICE_UNAVAILABLE,
             "busy",
@@ -322,24 +364,27 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     let (mut parts, body) = response.into_parts();
     parts.version = http::Version::HTTP_11;
     crate::strip_hop_by_hop(&mut parts.headers, false);
-    if let Err(refusal) = check(status, &parts.headers) {
-        unreachable(&session, 502);
-        if session.limits.should_warn_blocked(Instant::now()) {
-            session.notify(&EdgeMessage::Notice {
+    let pass = match check(status, &parts.headers) {
+        Ok(pass) => pass,
+        Err(refusal) => {
+            unreachable(&session, 502);
+            if session.limits.should_warn_blocked(Instant::now()) {
+                session.notify(&EdgeMessage::Notice {
                 text: format!(
-                    "Not passed back to the sender: {} at {}. A live tunnel passes back what an API answers with (JSON, XML, form data or text, not script), up to {} MB, and no downloads.",
+                    "Not passed back to the sender: {} at {}. A live tunnel passes back what an API answers with (JSON, XML, form data or plain text, not script), up to {} MB, and no downloads.",
                     refusal.describe(),
                     rest.chars().take(120).collect::<String>(),
                     MAX_ANSWER / (1024 * 1024)
                 ),
             });
+            }
+            return said(
+                StatusCode::BAD_GATEWAY,
+                "refused",
+                "The app's answer was not passed back.",
+            );
         }
-        return said(
-            StatusCode::BAD_GATEWAY,
-            "refused",
-            "The app's answer was not passed back.",
-        );
-    }
+    };
     session.notify(&EdgeMessage::Request {
         method,
         path: rest.clone(),
@@ -349,9 +394,22 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     parts
         .headers
         .insert(LIVE_HEADER, HeaderValue::from_static("answered"));
+    // An answer with no type goes back as plain text, cut short
+    // (`nosniff` is the receiver's, on every live answer).
+    let body: Body = if pass == Pass::AsText {
+        parts.headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+        crate::content::Capped::new(body, MAX_UNTYPED)
+            .map_err(|e| -> crate::slow::BoxError { Box::new(e) })
+            .boxed()
+    } else {
+        Limited::new(body, STREAM_CUT).boxed()
+    };
     // The hold on the account's streams lasts until the answer is through.
     let body = Holding {
-        inner: Limited::new(body, STREAM_CUT).boxed(),
+        inner: body,
         _hold,
         sent: 0,
         cut: Some((session.clone(), rest)),
@@ -653,11 +711,15 @@ mod tests {
             "text/html",
             "application/x-www-form-urlencoded",
         ] {
-            assert_eq!(ok(&[("content-type", kind)]), Ok(()), "{kind}");
+            assert_eq!(ok(&[("content-type", kind)]), Ok(Pass::AsSent), "{kind}");
         }
         for kind in [
             "application/javascript",
             "text/javascript",
+            "text/jscript",
+            "text/livescript",
+            "text/ecmascript",
+            "text/css",
             "application/octet-stream",
             "video/mp4",
             "image/png",
@@ -693,10 +755,13 @@ mod tests {
             ]),
             Err(Refusal::TooLarge)
         );
-        // No type is fine for nothing at all.
-        assert_eq!(ok(&[("content-length", "0")]), Ok(()));
-        assert_eq!(ok(&[("content-length", "3")]), Err(Refusal::Untyped));
-        assert_eq!(check(StatusCode::NO_CONTENT, &with(&[])), Ok(()));
+        // No type is fine for nothing at all, and a short body goes back
+        // as plain text.
+        assert_eq!(ok(&[("content-length", "0")]), Ok(Pass::AsSent));
+        assert_eq!(ok(&[("content-length", "3")]), Ok(Pass::AsText));
+        assert_eq!(ok(&[]), Ok(Pass::AsText));
+        assert_eq!(ok(&[("content-length", "70000")]), Err(Refusal::Untyped));
+        assert_eq!(check(StatusCode::NO_CONTENT, &with(&[])), Ok(Pass::AsSent));
     }
 
     #[tokio::test]
@@ -719,6 +784,72 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), 502);
         assert_eq!(response.headers()[LIVE_HEADER], "refused");
+    }
+
+    #[tokio::test]
+    async fn a_short_answer_with_no_type_goes_back_as_plain_text() {
+        let state = state();
+        let port = app(|_req: Request<Incoming>| async move {
+            Response::new(Full::new(Bytes::from_static(b"ok")))
+        })
+        .await;
+        live_session(&state, "ep-untyped", port).await;
+        let base = relay(&state).await;
+        let response = reqwest::Client::new()
+            .post(format!("{base}/v1/live/ep-untyped/x"))
+            .header(AUTH_HEADER, "s")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()[LIVE_HEADER], "answered");
+        assert_eq!(
+            response.headers()["content-type"],
+            "text/plain; charset=utf-8"
+        );
+        assert_eq!(response.text().await.unwrap(), "ok");
+    }
+
+    #[tokio::test]
+    async fn previews_cannot_use_up_the_live_pool_and_a_full_one_says_when_to_come_back() {
+        let state = state();
+        let port = app(|_req: Request<Incoming>| async move {
+            Response::builder()
+                .header("content-type", "application/json")
+                .body(Full::new(Bytes::from_static(b"{}")))
+                .unwrap()
+        })
+        .await;
+        let session = live_session(&state, "ep-pool", port).await;
+        let base = relay(&state).await;
+        let send = || {
+            reqwest::Client::new()
+                .post(format!("{base}/v1/live/ep-pool/x"))
+                .header(AUTH_HEADER, "s")
+                .send()
+        };
+        // The account's previews hold every stream they may.
+        let previews: Vec<_> = (0..crate::limits::ACCOUNT_STREAMS)
+            .map(|_| {
+                session
+                    .door
+                    .streams
+                    .enter(crate::limits::ACCOUNT_STREAMS)
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(send().await.unwrap().status(), 200);
+        drop(previews);
+        // Its live requests in flight fill their own pool.
+        let live: Vec<_> = (0..LIVE_STREAMS)
+            .map(|_| session.door.live_streams.enter(LIVE_STREAMS).unwrap())
+            .collect();
+        let busy = send().await.unwrap();
+        assert_eq!(busy.status(), 503);
+        assert_eq!(busy.headers()[LIVE_HEADER], "busy");
+        assert_eq!(busy.headers()["retry-after"], "5");
+        drop(live);
+        assert_eq!(send().await.unwrap().status(), 200);
     }
 
     #[tokio::test]

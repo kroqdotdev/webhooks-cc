@@ -976,22 +976,35 @@ async fn handle_webhook_inner(
                             .billing_key
                             .clone()
                             .unwrap_or_else(|| CaptureLimiter::slug_key(&slug));
-                        let (response, record) = live
-                            .relay(super::live::LiveRequest {
-                                endpoint_id,
-                                slug: &slug,
-                                limit_key: &limit_key,
-                                method: &method,
-                                rest: &raw_rest,
-                                raw_query: raw_query.as_deref(),
-                                headers: &headers,
+                        // In a task of its own, so a sender that hangs up
+                        // does not stop the row getting the app's answer.
+                        let pool = state.pool.clone();
+                        let request_id = capture.request_id.clone();
+                        let relayed = super::live::spawn_relay(
+                            live.clone(),
+                            super::live::OwnedLiveRequest {
+                                endpoint_id: endpoint_id.clone(),
+                                slug: slug.clone(),
+                                limit_key,
+                                method: method.clone(),
+                                rest: raw_rest.clone(),
+                                raw_query: raw_query.clone(),
+                                headers: headers.clone(),
                                 body: body.clone(),
-                            })
-                            .await;
-                        if let Some(ref request_id) = capture.request_id {
-                            super::live::record(&state.pool, request_id, record);
-                        }
-                        return response;
+                            },
+                            move |record| {
+                                if let Some(request_id) = request_id {
+                                    super::live::record(&pool, &request_id, record);
+                                }
+                            },
+                        );
+                        return match relayed.await {
+                            Ok(response) => response,
+                            Err(e) => {
+                                tracing::error!(error = %e, "live relay task failed");
+                                (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response()
+                            }
+                        };
                     }
 
                     if predicted != sent

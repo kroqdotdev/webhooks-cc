@@ -121,6 +121,7 @@ const EARLY_CLOSE_FOR: Duration = Duration::from_secs(120);
 #[derive(Clone)]
 struct Shared {
     streams: Arc<Streams>,
+    live_streams: Arc<Streams>,
     pace: Option<Arc<Pace>>,
 }
 
@@ -129,6 +130,7 @@ struct Shared {
 /// own bucket and the account's.
 pub struct Account {
     pub streams: Arc<Streams>,
+    pub live_streams: Arc<Streams>,
     pub paces: Paces,
 }
 
@@ -180,13 +182,27 @@ impl Registry {
         Ok(self.insert(session))
     }
 
-    /// Removes the session, unless a newer one has taken its place.
+    /// Removes the session, unless a newer one has taken its place. An
+    /// account left with no session here is forgotten, so the map does not
+    /// keep everyone who ever shared; its next share starts it afresh.
     pub fn remove(&self, session: &Arc<Session>) {
         let (map, key) = self.place(session);
-        let mut sessions = map.write().unwrap();
-        if sessions.get(&key).is_some_and(|s| Arc::ptr_eq(s, session)) {
-            sessions.remove(&key);
+        {
+            let mut sessions = map.write().unwrap();
+            if sessions.get(&key).is_some_and(|s| Arc::ptr_eq(s, session)) {
+                sessions.remove(&key);
+            }
         }
+        let mut accounts = self.accounts.lock().unwrap();
+        if self.all().iter().all(|s| s.user_id != session.user_id) {
+            accounts.remove(&session.user_id);
+        }
+    }
+
+    /// Accounts with their part kept here.
+    #[cfg(test)]
+    pub fn accounts_kept(&self) -> usize {
+        self.accounts.lock().unwrap().len()
     }
 
     /// Shares and live sessions open here.
@@ -211,11 +227,13 @@ impl Registry {
             .entry(user_id.to_string())
             .or_insert_with(|| Shared {
                 streams: Arc::default(),
+                live_streams: Arc::default(),
                 pace: Pace::new(self.rates.account),
             })
             .clone();
         Account {
             streams: shared.streams,
+            live_streams: shared.live_streams,
             paces: Paces::new(Pace::new(self.rates.door), shared.pace)
                 .line(self.line.clone())
                 .held(self.held.clone())
@@ -303,6 +321,20 @@ mod tests {
         ));
         std::mem::forget(text);
         session
+    }
+
+    #[tokio::test]
+    async fn an_account_with_nothing_open_is_forgotten() {
+        let registry = Registry::default();
+        let one = session(&registry, "share-1", "calm-otter").await;
+        let two = session(&registry, "share-2", "brisk-heron").await;
+        registry.insert(one.clone());
+        registry.insert(two.clone());
+        assert_eq!(registry.accounts_kept(), 1);
+        registry.remove(&one);
+        assert_eq!(registry.accounts_kept(), 1, "its other share is still open");
+        registry.remove(&two);
+        assert_eq!(registry.accounts_kept(), 0);
     }
 
     #[tokio::test]

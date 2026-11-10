@@ -11,6 +11,26 @@ use crate::config::Config;
 use crate::door::Door;
 use crate::meter::Batch;
 
+/// When to try telling the web app a share closed: at once, then backing
+/// off, about a minute in all.
+const CLOSE_RETRIES: &[Duration] = if cfg!(test) {
+    &[
+        Duration::ZERO,
+        Duration::from_millis(10),
+        Duration::from_millis(20),
+        Duration::from_millis(40),
+    ]
+} else {
+    &[
+        Duration::ZERO,
+        Duration::from_secs(2),
+        Duration::from_secs(4),
+        Duration::from_secs(8),
+        Duration::from_secs(16),
+        Duration::from_secs(30),
+    ]
+};
+
 #[derive(Clone)]
 pub struct Web {
     http: reqwest::Client,
@@ -241,12 +261,114 @@ impl Web {
         }
     }
 
-    /// Records that a share closed. Failures are logged; the next start
-    /// closes whatever was missed.
+    /// Records that a share closed. In the background, tried again a few
+    /// times over about a minute when the web app is not there (a deploy
+    /// recreating it) or answers with an error: a close the web app never
+    /// hears keeps the run open there, holding a slot and, for a live
+    /// tunnel, keeping its endpoint answering 502. Logged once if it never
+    /// lands; the web app's sync also ends runs the edge no longer lists.
     pub async fn closed(&self, share_id: &str, reason: &str) {
+        let web = self.clone();
+        let share_id = share_id.to_string();
         let body = serde_json::json!({ "shareId": share_id, "reason": reason });
-        if let Err(e) = self.post("/api/edge/close").json(&body).send().await {
-            tracing::warn!(error = %e, share_id, "close not recorded");
-        }
+        tokio::spawn(async move {
+            let mut last = String::new();
+            for wait in CLOSE_RETRIES {
+                tokio::time::sleep(*wait).await;
+                match web.post("/api/edge/close").json(&body).send().await {
+                    Ok(r) if r.status().is_success() => return,
+                    // The web app read it and said no (an unknown share):
+                    // asking again changes nothing.
+                    Ok(r) if r.status().is_client_error() && r.status() != 429 => {
+                        tracing::warn!(status = %r.status(), share_id, "close refused");
+                        return;
+                    }
+                    Ok(r) => last = format!("status {}", r.status()),
+                    Err(e) => last = e.to_string(),
+                }
+            }
+            tracing::warn!(share_id, error = %last, "close not recorded after retries");
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::convert::Infallible;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use http::{Response, StatusCode};
+    use hyper::server::conn::http1;
+    use hyper::service::service_fn;
+    use hyper_util::rt::TokioIo;
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    /// A web app that answers `/api/edge/close` with these statuses in turn
+    /// (the last one from then on), counting the calls.
+    async fn web_app(statuses: Vec<u16>) -> (Web, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let calls = counted.clone();
+                let statuses = statuses.clone();
+                tokio::spawn(async move {
+                    let service = service_fn(move |_req| {
+                        let n = calls.fetch_add(1, Ordering::SeqCst);
+                        let status = statuses[n.min(statuses.len() - 1)];
+                        async move {
+                            Ok::<_, Infallible>(
+                                Response::builder()
+                                    .status(StatusCode::from_u16(status).unwrap())
+                                    .body(http_body_util::Full::new(bytes::Bytes::new()))
+                                    .unwrap(),
+                            )
+                        }
+                    });
+                    let _ = http1::Builder::new()
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await;
+                });
+            }
+        });
+        let mut config = Config::testing(&format!("http://{address}"));
+        config.edge_secret = "secret".into();
+        (Web::new(&config), calls)
+    }
+
+    async fn settle() {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+
+    #[tokio::test]
+    async fn a_close_the_web_app_fails_is_tried_again_until_it_lands() {
+        let (web, calls) = web_app(vec![500, 503, 200]).await;
+        web.closed("share-1", "closed").await;
+        settle().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn a_close_the_web_app_refuses_is_not_tried_again() {
+        let (web, calls) = web_app(vec![404]).await;
+        web.closed("share-1", "closed").await;
+        settle().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_close_gives_up_after_its_tries() {
+        let (web, calls) = web_app(vec![500]).await;
+        web.closed("share-1", "closed").await;
+        settle().await;
+        assert_eq!(calls.load(Ordering::SeqCst), CLOSE_RETRIES.len());
     }
 }

@@ -1,10 +1,16 @@
 //! A WebSocket as a byte stream, for yamux. Binary messages are the
 //! bytes; text messages travel beside them as JSON ([`crate::EdgeMessage`]).
 //! A ping goes out every [`PING_EVERY`] so that Cloudflare, which drops
-//! WebSockets idle for 100 seconds, keeps the tunnel open.
+//! WebSockets idle for 100 seconds, keeps the tunnel open. Both ends ping,
+//! so each hears from the other at least that often: after [`SILENT_AFTER`]
+//! with nothing at all from the peer (a laptop that slept, a Wi-Fi change,
+//! a NAT mapping that lapsed, none of which sends a FIN), the WebSocket is
+//! taken as gone and both halves end, instead of waiting the kernel's
+//! quarter of an hour for TCP to give up.
 
 use std::io;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
@@ -18,6 +24,12 @@ use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_util::sync::PollSender;
 
 pub const PING_EVERY: Duration = Duration::from_secs(20);
+/// How long a peer may send nothing at all (not even its ping or a pong)
+/// before the WebSocket is taken as dead: three pings missed.
+pub const SILENT_AFTER: Duration = Duration::from_secs(PING_EVERY.as_secs() * 3);
+/// How long closing a WebSocket may take before it is just dropped: a dead
+/// peer never acknowledges the close.
+const CLOSE_WAIT: Duration = Duration::from_secs(5);
 
 /// Limits for both ends. yamux frames are at most 16 KiB and a header, and
 /// the JSON beside them is small, so a megabyte is a peer misbehaving, not
@@ -78,7 +90,12 @@ where
     let (bytes_tx, bytes_rx) = mpsc::channel::<Bytes>(64);
     let (text_tx, text_rx) = mpsc::channel::<String>(64);
     let (out_tx, mut out_rx) = mpsc::channel::<Outgoing>(64);
+    // When the peer was last heard from, frame of any kind.
+    let heard = Arc::new(Mutex::new(tokio::time::Instant::now()));
+    // Tells the reader to stop when the writer has given the peer up.
+    let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
 
+    let last = heard.clone();
     tokio::spawn(async move {
         let mut ping = tokio::time::interval(PING_EVERY);
         ping.tick().await;
@@ -89,17 +106,31 @@ where
                     Some(Outgoing::Text(t)) => Message::text(t),
                     None => break,
                 },
-                _ = ping.tick() => Message::Ping(Bytes::new()),
+                _ = ping.tick() => {
+                    if silent_for(&last) >= SILENT_AFTER {
+                        break;
+                    }
+                    Message::Ping(Bytes::new())
+                }
             };
             if sink.send(message).await.is_err() {
                 break;
             }
         }
-        let _ = sink.close().await;
+        let _ = stop_tx.send(true);
+        let _ = tokio::time::timeout(CLOSE_WAIT, sink.close()).await;
     });
 
     tokio::spawn(async move {
-        while let Some(Ok(message)) = stream.next().await {
+        loop {
+            let message = tokio::select! {
+                next = stream.next() => match next {
+                    Some(Ok(message)) => message,
+                    _ => break,
+                },
+                _ = stop_rx.changed() => break,
+            };
+            *heard.lock().unwrap_or_else(|e| e.into_inner()) = tokio::time::Instant::now();
             match message {
                 Message::Binary(b) => {
                     if bytes_tx.send(b).await.is_err() {
@@ -175,4 +206,83 @@ impl AsyncWrite for WsBytes {
 
 fn closed() -> io::Error {
     io::Error::new(io::ErrorKind::BrokenPipe, "the tunnel closed")
+}
+
+/// How long since the peer last sent anything.
+fn silent_for(heard: &Mutex<tokio::time::Instant>) -> Duration {
+    heard.lock().unwrap_or_else(|e| e.into_inner()).elapsed()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+    use tokio_tungstenite::tungstenite::protocol::Role;
+
+    use super::*;
+
+    /// Copies one way until `silent` is set, then swallows what comes: a
+    /// network path that stops delivering without closing anything.
+    fn relay(
+        mut from: tokio::io::ReadHalf<DuplexStream>,
+        mut to: tokio::io::WriteHalf<DuplexStream>,
+        silent: Arc<AtomicBool>,
+    ) {
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                let Ok(n) = from.read(&mut buf).await else {
+                    return;
+                };
+                if n == 0 {
+                    return;
+                }
+                if !silent.load(Ordering::Relaxed) && to.write_all(&buf[..n]).await.is_err() {
+                    return;
+                }
+            }
+        });
+    }
+
+    /// Two ends joined through a relay that can go silent.
+    async fn joined(silent: Arc<AtomicBool>) -> ((WsBytes, WsText), (WsBytes, WsText)) {
+        let (a, a_relay) = tokio::io::duplex(64 * 1024);
+        let (b_relay, b) = tokio::io::duplex(64 * 1024);
+        let (ar, aw) = tokio::io::split(a_relay);
+        let (br, bw) = tokio::io::split(b_relay);
+        relay(ar, bw, silent.clone());
+        relay(br, aw, silent);
+        let a = WebSocketStream::from_raw_socket(a, Role::Client, Some(config())).await;
+        let b = WebSocketStream::from_raw_socket(b, Role::Server, Some(config())).await;
+        (split(a), split(b))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_peer_that_goes_silent_ends_the_tunnel_on_both_sides() {
+        let silent = Arc::new(AtomicBool::new(false));
+        let ((mut a, _a_text), (mut b, _b_text)) = joined(silent.clone()).await;
+        // Bytes go through while the path works.
+        a.write_all(b"hello").await.unwrap();
+        let mut got = [0u8; 5];
+        b.read_exact(&mut got).await.unwrap();
+        assert_eq!(&got, b"hello");
+        // A quiet but healthy tunnel stays open: pings keep both alive.
+        tokio::time::sleep(SILENT_AFTER * 3).await;
+        a.write_all(b"still").await.unwrap();
+        let mut got = [0u8; 5];
+        b.read_exact(&mut got).await.unwrap();
+        assert_eq!(&got, b"still");
+        // Then the path goes silent, with nothing closed.
+        silent.store(true, Ordering::Relaxed);
+        let started = tokio::time::Instant::now();
+        let mut rest = Vec::new();
+        let a_end = tokio::time::timeout(Duration::from_secs(300), a.read_to_end(&mut rest)).await;
+        let b_end = tokio::time::timeout(Duration::from_secs(300), b.read_to_end(&mut rest)).await;
+        assert!(matches!(a_end, Ok(Ok(0))), "{a_end:?}");
+        assert!(matches!(b_end, Ok(Ok(0))), "{b_end:?}");
+        let took = started.elapsed();
+        assert!(took >= SILENT_AFTER, "{took:?}");
+        assert!(took <= SILENT_AFTER + PING_EVERY * 2, "{took:?}");
+    }
 }

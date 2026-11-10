@@ -31,6 +31,12 @@ pub struct Door {
     pub limits: ShareLimits,
     /// The account's streams, shared by all its shares.
     pub streams: Arc<Streams>,
+    /// This share's own, so one share cannot take all the account's
+    /// (limits.rs, SHARE_STREAMS).
+    pub share_streams: Arc<Streams>,
+    /// The account's live requests in flight, a pool apart from its
+    /// visitors' (relay.rs, LIVE_STREAMS).
+    pub live_streams: Arc<Streams>,
     /// How fast it may send visitors: its own bucket and its account's
     /// (pace.rs).
     pub paces: Paces,
@@ -61,6 +67,8 @@ impl Door {
             gate: RwLock::new(gate),
             limits: ShareLimits::new(Instant::now()),
             streams: account.streams,
+            share_streams: Arc::default(),
+            live_streams: account.live_streams,
             paces: account.paces,
             flagged: AtomicBool::new(false),
             run,

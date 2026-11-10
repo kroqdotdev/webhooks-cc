@@ -289,10 +289,25 @@ async fn handle(
         let meter = state.meter.clone();
         let mut response = proxy(state, req, name, host, remote, conn).await;
         keep_out_of_search(response.headers_mut());
-        access.record(entry.answered(
-            &response,
-            owner.as_ref().map(|o| (o.id.as_str(), o.user_id.as_str())),
-        ));
+        // What a case needs is what reached a share: a name nothing is
+        // shared under, or a visitor turned away by the limits, is only
+        // sampled (access_log.rs).
+        let turned_away = response
+            .extensions()
+            .get::<meter::OwnPage>()
+            .is_some_and(|p| p.0 == pages::TOO_MANY);
+        let reach = if owner.is_some() && !turned_away {
+            access_log::Reach::Share
+        } else {
+            access_log::Reach::Elsewhere
+        };
+        access.record(
+            entry.answered(
+                &response,
+                owner.as_ref().map(|o| (o.id.as_str(), o.user_id.as_str())),
+            ),
+            reach,
+        );
         return match owner {
             Some(owner) => meter::Metered::wrap(meter, owner, asked, response),
             None => response,
@@ -305,7 +320,9 @@ async fn handle(
     if req.uri().path() == pages::SAMPLE_PATH {
         return pages::notice_sample(&state.config.preview_domain, &state.config.app_url);
     }
-    if req.uri().path() == "/__edge/health" {
+    // For the box's own checks only (a container name, an address,
+    // localhost), never on a public name such as tunnel.webhooks.cc.
+    if req.uri().path() == "/__edge/health" && internal_host(&host) {
         return Response::new(pages::full(format!(
             "ok, {} shares\n",
             state.registry.len()
@@ -315,6 +332,18 @@ async fn handle(
         return connect(state, req, remote).await;
     }
     pages::unknown_host()
+}
+
+/// Whether a Host names the box from inside: an address, `localhost`, or a
+/// bare name with no dot (a container's, `edge:4000`), never a public name.
+fn internal_host(host: &str) -> bool {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|h| h.split_once(']').map(|(ip, _)| ip))
+        .unwrap_or_else(|| host.rsplit_once(':').map_or(host, |(h, _)| h));
+    bare.parse::<std::net::IpAddr>().is_ok()
+        || bare.eq_ignore_ascii_case("localhost")
+        || (!bare.is_empty() && !bare.contains('.'))
 }
 
 fn host_of(headers: &HeaderMap, uri: &http::Uri) -> String {
@@ -802,8 +831,21 @@ async fn proxy(
     }
 
     // A body that stops coming ends the request (slow.rs). A WebSocket's
-    // request has no body; its socket has its own idle timeout.
-    let body = slow::Steady::new(body);
+    // request has no body; its socket has its own idle timeout. What the
+    // visitor sends is data like what they get: counted against the
+    // account's month and the visitor's day, and sent at the share's pace
+    // (meter.rs, pace.rs).
+    let body = meter::CountedBody::wrap(
+        slow::Steady::new(body).boxed(),
+        state.meter.clone(),
+        meter::Owner {
+            kind: door::Kind::Share,
+            id: session.id.clone(),
+            user_id: session.user_id.clone(),
+        },
+        &visitor_key(&visitor),
+    );
+    let body = pace::Paced::wrap(body, paces.for_uploads());
     let response = match sender.send_request(Request::from_parts(parts, body)).await {
         Ok(response) => response,
         // The CLI answers 502 itself when nothing listens on the port, so
@@ -1099,7 +1141,11 @@ pub(crate) struct Entered {
     /// The password version, when the door has one (the visitor had it).
     pub gated: Option<String>,
     /// The visitor's and the account's counts, held until the answer ends.
-    pub guard: Arc<(limits::StreamGuard, limits::StreamGuard)>,
+    pub guard: Arc<(
+        limits::StreamGuard,
+        limits::StreamGuard,
+        limits::StreamGuard,
+    )>,
     /// For a WebSocket, the visitor's count of open sockets, held while it
     /// is open.
     pub socket: Option<limits::StreamGuard>,
@@ -1199,6 +1245,10 @@ pub(crate) async fn front_door(
         on_limited();
         return Admission::Answered(pages::too_many(visit.report));
     };
+    let Some(share_hold) = door.share_streams.enter(limits::SHARE_STREAMS) else {
+        on_limited();
+        return Admission::Answered(pages::too_many(visit.report));
+    };
     // A WebSocket stays open, so one visitor may hold only a few.
     let socket = if upgrading {
         let Some(socket) = door.limits.enter_socket(&key) else {
@@ -1216,7 +1266,7 @@ pub(crate) async fn front_door(
             page_visit,
             upgrading,
             gated,
-            guard: Arc::new((visitor_hold, account_hold)),
+            guard: Arc::new((visitor_hold, account_hold, share_hold)),
             socket,
             paces: door.paces.clone().on(visit.conn.clone()),
         }),
@@ -1543,6 +1593,28 @@ mod tests {
             origin_after(PUBLIC, "/_next/static/chunks/a.js", false),
             LOCAL
         );
+    }
+
+    #[test]
+    fn the_health_check_answers_only_from_inside() {
+        for host in [
+            "127.0.0.1:4000",
+            "edge:4000",
+            "health",
+            "localhost",
+            "[::1]:4000",
+            "10.20.0.4",
+        ] {
+            assert!(internal_host(host), "{host}");
+        }
+        for host in [
+            "tunnel.webhooks.cc",
+            "sharehooks.cc",
+            "acme.sharehooks.cc:443",
+            "",
+        ] {
+            assert!(!internal_host(host), "{host}");
+        }
     }
 
     #[test]

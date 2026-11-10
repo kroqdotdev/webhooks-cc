@@ -198,6 +198,21 @@ impl Paces {
         &self.owner
     }
 
+    /// The same buckets for what a visitor sends the laptop (a request's
+    /// body, a WebSocket's other half): it leaves the box towards the CLI
+    /// on the same line. Never among the answers held up (held.rs): an
+    /// upload waiting its turn is not read yet, so it holds no memory here.
+    pub fn for_uploads(&self) -> Self {
+        Self {
+            door: self.door.clone(),
+            account: self.account.clone(),
+            line: self.line.clone(),
+            held: None,
+            owner: self.owner.clone(),
+            conn: None,
+        }
+    }
+
     /// For an answer on this connection.
     pub fn on(mut self, conn: Arc<Conn>) -> Self {
         self.conn = Some(conn);
@@ -397,9 +412,12 @@ impl Drop for Paced {
     }
 }
 
-/// The visitor's side of a WebSocket, paced: what was written is paid for,
-/// and let go by the line, before the next write goes. Writes are a copy's
-/// few kilobytes, so the first one going unpaid is nothing.
+/// The visitor's side of a WebSocket, paced both ways: what was written is
+/// paid for, and let go by the line, before the next write goes; and what
+/// the visitor sent is paid for before the next read, at the same buckets
+/// ([`Paces::for_uploads`]), so a visitor cannot push data at the laptop
+/// faster than the share may send it. Writes and reads are a copy's few
+/// kilobytes, so the first one going unpaid is nothing.
 pub struct PacedSocket<T> {
     inner: T,
     paces: Paces,
@@ -408,17 +426,26 @@ pub struct PacedSocket<T> {
     owed: usize,
     turn: Option<oneshot::Receiver<()>>,
     behind: Behind,
+    /// The same for what was read from the visitor.
+    uploads: Paces,
+    read_wait: Option<Pin<Box<tokio::time::Sleep>>>,
+    read_owed: usize,
+    read_turn: Option<oneshot::Receiver<()>>,
 }
 
 impl<T> PacedSocket<T> {
     pub fn new(inner: T, paces: Paces) -> Self {
         Self {
             inner,
+            uploads: paces.for_uploads(),
             paces,
             wait: None,
             owed: 0,
             turn: None,
             behind: Behind::default(),
+            read_wait: None,
+            read_owed: 0,
+            read_turn: None,
         }
     }
 }
@@ -429,7 +456,41 @@ impl<T: AsyncRead + Unpin> AsyncRead for PacedSocket<T> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_read(cx, buf)
+        let this = &mut *self;
+        loop {
+            if let Some(wait) = this.read_wait.as_mut() {
+                if wait.as_mut().poll(cx).is_pending() {
+                    return Poll::Pending;
+                }
+                this.read_wait = None;
+                let owed = std::mem::take(&mut this.read_owed);
+                if let Turn::Wait(turn) = this.uploads.turn(owed, Instant::now()) {
+                    this.read_turn = Some(turn);
+                }
+                continue;
+            }
+            if let Some(turn) = this.read_turn.as_mut() {
+                if Pin::new(turn).poll(cx).is_pending() {
+                    return Poll::Pending;
+                }
+                this.read_turn = None;
+            }
+            break;
+        }
+        let before = buf.filled().len();
+        ready!(Pin::new(&mut this.inner).poll_read(cx, buf))?;
+        let n = buf.filled().len() - before;
+        if n > 0 {
+            let now = Instant::now();
+            let wait = this.uploads.take(n, now);
+            if wait >= NO_WAIT {
+                this.read_wait = Some(Box::pin(tokio::time::sleep(wait)));
+                this.read_owed = n;
+            } else if let Turn::Wait(turn) = this.uploads.turn(n, now) {
+                this.read_turn = Some(turn);
+            }
+        }
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -777,5 +838,47 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(all.len(), 200 * KIB);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn what_a_visitor_sends_down_a_websocket_is_paced_too() {
+        let (socket, mut far) = tokio::io::duplex(1 << 20);
+        let paces = Paces::new(Pace::new(rate(100 * KIB, 0)), None);
+        let mut socket = PacedSocket::new(socket, paces);
+        far.write_all(&[0u8; 200 * KIB]).await.unwrap();
+        drop(far);
+        let started = tokio::time::Instant::now();
+        let mut all = Vec::new();
+        let mut chunk = vec![0u8; 50 * KIB];
+        loop {
+            let n = tokio::io::AsyncReadExt::read(&mut socket, &mut chunk)
+                .await
+                .unwrap();
+            if n == 0 {
+                break;
+            }
+            all.extend_from_slice(&chunk[..n]);
+        }
+        assert_eq!(all.len(), 200 * KIB);
+        // Each read is paid before the next one: about two seconds for
+        // 200 KiB at 100 KiB/s, the last read's debt unpaid.
+        let took = started.elapsed().as_secs_f64();
+        assert!((1.4..2.1).contains(&took), "{took}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_upload_draws_on_the_same_buckets_and_is_never_cut_off() {
+        let paces = Paces::new(Pace::new(rate(100 * KIB, 0)), None);
+        // An answer took a second's worth of the share's bucket.
+        paces.take(100 * KIB, tokio::time::Instant::now());
+        let started = tokio::time::Instant::now();
+        let body = Paced::wrap(chunks(1, 50 * KIB), paces.for_uploads())
+            .collect()
+            .await
+            .unwrap();
+        assert_eq!(body.to_bytes().len(), 50 * KIB);
+        // Behind the answer's second, then its own half second.
+        let took = started.elapsed().as_secs_f64();
+        assert!((1.4..1.6).contains(&took), "{took}");
     }
 }

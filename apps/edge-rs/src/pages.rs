@@ -415,8 +415,11 @@ pub fn debugger_refused(report: &str) -> Response<Body> {
     own_page(debugger_refused_page(report), "debugger")
 }
 
+/// What the edge's "too many requests" page is marked as (meter.rs).
+pub const TOO_MANY: &str = "too many requests";
+
 pub fn too_many(report: &str) -> Response<Body> {
-    own_page(too_many_page(report), "too many requests")
+    own_page(too_many_page(report), TOO_MANY)
 }
 
 pub fn over_allowance(report: &str) -> Response<Body> {

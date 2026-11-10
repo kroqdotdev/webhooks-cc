@@ -158,6 +158,50 @@ pub struct LiveRequest<'a> {
     pub body: Bytes,
 }
 
+/// A [`LiveRequest`] that owns its parts, to relay in a task of its own.
+pub struct OwnedLiveRequest {
+    pub endpoint_id: String,
+    pub slug: String,
+    pub limit_key: String,
+    pub method: Method,
+    pub rest: String,
+    pub raw_query: Option<String>,
+    pub headers: HeaderMap,
+    pub body: Bytes,
+}
+
+impl OwnedLiveRequest {
+    fn borrowed(&self) -> LiveRequest<'_> {
+        LiveRequest {
+            endpoint_id: &self.endpoint_id,
+            slug: &self.slug,
+            limit_key: &self.limit_key,
+            method: &self.method,
+            rest: &self.rest,
+            raw_query: self.raw_query.as_deref(),
+            headers: &self.headers,
+            body: self.body.clone(),
+        }
+    }
+}
+
+/// Relays a capture in a task of its own and hands what to record to
+/// `on_record`, from that task. A sender that hangs up while the app is
+/// still answering (Slack gives up after 3 seconds) drops the handler, not
+/// the relay: the row still gets the app's answer and the status it gave,
+/// and an answer cut short by the hang-up is recorded as cut.
+pub fn spawn_relay(
+    relay: Arc<LiveRelay>,
+    request: OwnedLiveRequest,
+    on_record: impl FnOnce(Recorded) + Send + 'static,
+) -> tokio::task::JoinHandle<Response> {
+    tokio::spawn(async move {
+        let (response, recorded) = relay.relay(request.borrowed()).await;
+        on_record(recorded);
+        response
+    })
+}
+
 impl LiveRelay {
     pub fn new(config: LiveConfig) -> Self {
         let client = reqwest::Client::builder()
@@ -245,6 +289,12 @@ impl LiveRelay {
                     .or_else(|| request.headers.get("host").and_then(|h| h.to_str().ok())),
                 https: self.config.public_https,
                 slug: request.slug,
+                // After the prefix, as the docs and the CLI define it: the
+                // signed URL is proto://host + X-Forwarded-Prefix + this.
+                uri: &match request.raw_query.filter(|q| !q.is_empty()) {
+                    Some(query) => format!("{}?{query}", request.rest),
+                    None => request.rest.to_string(),
+                },
                 sender: &super::webhook::real_ip(request.headers),
             },
         );
@@ -553,6 +603,7 @@ const SENDER_FORWARDING_HEADERS: &[&str] = &[
     "x-forwarded-scheme",
     "x-forwarded-server",
     "x-forwarded-prefix",
+    "x-forwarded-uri",
     "x-forwarded-host",
     "x-forwarded-proto",
     "x-forwarded-for",
@@ -571,13 +622,19 @@ struct Forwarded<'a> {
     host: Option<&'a str>,
     https: bool,
     slug: &'a str,
+    /// The path and query as the sender sent them (`/w/<slug>/...?...`).
+    uri: &'a str,
     /// The sender's address as the receiver records it (from Cloudflare's
     /// header), empty when unknown.
     sender: &'a str,
 }
 
 /// Tells the app where the sender sent it: the capture host, the scheme,
-/// the `/w/<slug>` the edge took off the path, and the sender's address,
+/// the `/w/<slug>` the edge took off the path (`X-Forwarded-Prefix`), the
+/// path and query as sent after that prefix (`X-Forwarded-Uri`, for an app
+/// behind a base path: `whk tunnel 8080/api --live` puts `/api` in front,
+/// which the signed URL never had),
+/// and the sender's address,
 /// so it can rebuild the public URL a provider signed. Whatever the sender
 /// put in these, or in other headers apps read for the same purpose
 /// (`Forwarded`, `X-Forwarded-Port`, ...), is dropped first.
@@ -594,6 +651,9 @@ fn forwarded_headers(headers: &mut HeaderMap, to: Forwarded<'_>) {
     );
     if let Ok(prefix) = HeaderValue::from_str(&format!("/w/{}", to.slug)) {
         headers.insert("x-forwarded-prefix", prefix);
+    }
+    if let Ok(uri) = HeaderValue::from_str(to.uri) {
+        headers.insert("x-forwarded-uri", uri);
     }
     if !to.sender.is_empty()
         && let Ok(sender) = HeaderValue::from_str(to.sender)
@@ -862,6 +922,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_sender_that_hangs_up_mid_relay_still_leaves_the_answer_on_the_row() {
+        // An edge (and app) that takes a while to answer.
+        let app = Router::new().fallback(any(|_req: Request| async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            axum::http::Response::builder()
+                .status(202)
+                .header("content-type", "application/json")
+                .header(LIVE_HEADER, "answered")
+                .body(Body::from(r#"{"ok":true}"#))
+                .unwrap()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let relay = Arc::new(relay_to(format!("http://{addr}"), 16));
+        let (tx, rx) = oneshot::channel();
+        let handle = spawn_relay(
+            relay,
+            OwnedLiveRequest {
+                endpoint_id: "ep_1".into(),
+                slug: "acme-hooks".into(),
+                limit_key: "user:1".into(),
+                method: Method::POST,
+                rest: "/orders".into(),
+                raw_query: None,
+                headers: HeaderMap::new(),
+                body: Bytes::from_static(b"{}"),
+            },
+            move |recorded| {
+                let _ = tx.send(recorded);
+            },
+        );
+        // The sender gives up at once: its handler, and the handle, go.
+        drop(handle);
+        let recorded = tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .expect("the relay went on without the sender")
+            .unwrap();
+        let record = tokio::time::timeout(Duration::from_secs(5), recorded)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.status, 202);
+        assert_eq!(record.outcome, "answered");
+    }
+
+    #[tokio::test]
     async fn the_apps_answer_reaches_the_sender_and_the_row() {
         let base = fake_edge(|req: Request| {
             // The edge sees the endpoint, the rest of the path, the query and
@@ -880,6 +989,7 @@ mod tests {
                 req.headers().get("x-forwarded-prefix").unwrap(),
                 "/w/acme-hooks"
             );
+            assert_eq!(req.headers().get("x-forwarded-uri").unwrap(), "/orders?x=1");
             axum::http::Response::builder()
                 .status(201)
                 .header("content-type", "application/json")
@@ -1183,6 +1293,7 @@ mod tests {
             ("x-forwarded-ssl", "off"),
             ("x-forwarded-for", "6.6.6.6"),
             ("x-original-host", "evil.example"),
+            ("x-forwarded-uri", "/evil"),
         ] {
             headers.insert(
                 HeaderName::from_static(name),
@@ -1196,10 +1307,13 @@ mod tests {
                 host: Some("go.webhooks.cc"),
                 https: true,
                 slug: "acme",
+                uri: "/slack/events?team=1",
                 sender: "203.0.113.9",
             },
         );
         assert_eq!(headers["x-forwarded-host"], "go.webhooks.cc");
+        assert_eq!(headers["x-forwarded-uri"], "/slack/events?team=1");
+        assert_eq!(headers.get_all("x-forwarded-uri").iter().count(), 1);
         assert_eq!(headers["x-forwarded-proto"], "https");
         assert_eq!(headers["x-forwarded-prefix"], "/w/acme");
         assert_eq!(headers["x-forwarded-for"], "203.0.113.9");
@@ -1224,6 +1338,7 @@ mod tests {
                 host: Some("localhost:3001"),
                 https: false,
                 slug: "acme",
+                uri: "/",
                 sender: "",
             },
         );

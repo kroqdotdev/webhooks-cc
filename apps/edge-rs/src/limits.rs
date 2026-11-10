@@ -18,6 +18,9 @@ const VISITOR_RATE: f64 = 25.0;
 const VISITOR_BURST: f64 = 300.0;
 /// Requests in flight and open WebSockets, across an account's shares.
 pub const ACCOUNT_STREAMS: usize = 256;
+/// The same for one share, below the account's, so the visitors of one
+/// share (or someone holding its sockets open) leave room for the rest.
+pub const SHARE_STREAMS: usize = 192;
 /// The same for one visitor on one share, so a single visitor holding
 /// idle connections cannot use up the account's.
 const VISITOR_STREAMS: usize = 64;
@@ -280,6 +283,12 @@ impl Drop for StreamGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_share_leaves_room_for_the_accounts_others() {
+        const { assert!(SHARE_STREAMS < ACCOUNT_STREAMS) };
+        const { assert!(VISITOR_STREAMS < SHARE_STREAMS) };
+    }
 
     #[test]
     fn a_page_load_burst_fits() {
