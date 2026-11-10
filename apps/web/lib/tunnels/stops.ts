@@ -124,31 +124,84 @@ export interface Stopped {
   edgeReached: boolean;
 }
 
-/** Ends the live runs chosen, records why, and closes them at the edge. */
+/** Endings a run reconnects from: its tunnel dropped, or the edge restarted. */
+const DROPPED_ENDINGS = ["closed", "edge restart"];
+
+/** How long after a drop a stop still reaches the run as it reconnects. */
+const RECONNECT_GAP_MS = 5 * 60_000;
+
+/**
+ * Ends the live runs chosen, records why, and closes them at the edge. A run
+ * caught between a dropped tunnel and its CLI's reconnect has no open row to
+ * end, so its last row, when it dropped in the last few minutes, gets the
+ * stop as its ending instead: the reconnect is then refused (a final ending
+ * on the CLI's run, tunnel_open_share()), and a run that already reconnected
+ * under the same CLI run ends with it.
+ */
 export async function stopShares(which: StopWhich, kind: StopKind): Promise<Stopped> {
   const admin = createAdminClient();
-  let query = admin.from("tunnel_shares").select("id").is("ended_at", null);
-  if ("shareId" in which) {
-    query = query.eq("id", which.shareId);
-    if (which.userId) query = query.eq("user_id", which.userId);
-  } else if ("keyId" in which) query = query.eq("key_id", which.keyId).eq("user_id", which.userId);
-  else if ("userId" in which) query = query.eq("user_id", which.userId);
-  else if ("ids" in which) {
-    if (which.ids.length === 0) return { stopped: 0, edgeReached: true };
-    query = query.in("id", which.ids);
-  } else query = query.eq("name", which.name).eq("kind", "share");
-  const { data: open, error } = await query;
-  if (error) throw error;
-  const ids = (open ?? []).map((s) => s.id);
-  if (ids.length === 0) return { stopped: 0, edgeReached: true };
-
+  if ("ids" in which && which.ids.length === 0) return { stopped: 0, edgeReached: true };
+  const chosen = <Q extends { eq: (c: string, v: string) => Q; in: (c: string, v: string[]) => Q }>(
+    query: Q
+  ): Q => {
+    if ("shareId" in which) {
+      const q = query.eq("id", which.shareId);
+      return which.userId ? q.eq("user_id", which.userId) : q;
+    }
+    if ("keyId" in which) return query.eq("key_id", which.keyId).eq("user_id", which.userId);
+    if ("userId" in which) return query.eq("user_id", which.userId);
+    if ("ids" in which) return query.in("id", which.ids);
+    return query.eq("name", which.name).eq("kind", "share");
+  };
   const stop = STOPS[kind];
+
+  // Runs that dropped a moment ago and may be reconnecting: the stop becomes
+  // their ending, and runs of the same CLI run that reconnected already end.
+  const { data: dropped, error: droppedError } = await chosen(
+    admin.from("tunnel_shares").select("id, user_id, instance")
+  )
+    .not("ended_at", "is", null)
+    .gt("ended_at", new Date(Date.now() - RECONNECT_GAP_MS).toISOString())
+    .in("end_reason", DROPPED_ENDINGS);
+  if (droppedError) throw droppedError;
+  const caught = dropped ?? [];
+  if (caught.length > 0) {
+    const { error: markError } = await admin
+      .from("tunnel_shares")
+      .update({ end_reason: stop.record })
+      .in(
+        "id",
+        caught.map((r) => r.id)
+      )
+      .in("end_reason", DROPPED_ENDINGS);
+    if (markError) throw markError;
+  }
+
+  const { data: open, error } = await chosen(admin.from("tunnel_shares").select("id")).is(
+    "ended_at",
+    null
+  );
+  if (error) throw error;
+  const ids = new Set((open ?? []).map((s) => s.id));
+  for (const r of caught) {
+    if (!r.user_id || !r.instance) continue;
+    const { data: again, error: againError } = await admin
+      .from("tunnel_shares")
+      .select("id")
+      .eq("user_id", r.user_id)
+      .eq("instance", r.instance)
+      .is("ended_at", null);
+    if (againError) throw againError;
+    for (const a of again ?? []) ids.add(a.id);
+  }
+  if (ids.size === 0) return { stopped: caught.length > 0 ? 1 : 0, edgeReached: true };
+
   const { data: ended, error: endError } = await admin.rpc("tunnel_end_shares", {
-    p_ids: ids,
+    p_ids: [...ids],
     p_reason: stop.record,
   });
   if (endError) throw endError;
   const closed = (ended ?? []).map((s) => ({ shareId: s.id, reason: stop.tell }));
   const edgeReached = await closeOnEdge(closed);
-  return { stopped: closed.length, edgeReached };
+  return { stopped: Math.max(closed.length, caught.length > 0 ? 1 : 0), edgeReached };
 }

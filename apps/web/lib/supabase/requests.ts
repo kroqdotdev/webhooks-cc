@@ -172,7 +172,10 @@ function isAsciiHex(bytes: Buffer): boolean {
  * answer. `outcome` is "answered" when the app answered, else "offline" (no
  * live session, 502), "timeout" (no answer within 25 s, 504), "unreachable"
  * (nothing on the port, or the edge out of reach, 502), "busy" (503) or
- * "refused" (400, a path that would have left the endpoint).
+ * "refused": 400 for a path that would have left the endpoint, 502 for an
+ * answer not passed back (a download, a script or another non-API type, a
+ * stated size over 1 MB), or the app's own status when the answer streamed
+ * past 1 MB and was cut off.
  * `status` is what the sender got; `body` holds the first 64 KB as UTF-8
  * text or base64.
  */

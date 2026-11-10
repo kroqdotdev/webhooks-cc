@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { FINAL_ENDINGS } from "./stops";
+import { FINAL_ENDINGS, tellFor } from "./stops";
 import type { TunnelPlan } from "./plan";
 
 /*
@@ -74,9 +74,22 @@ export async function openShare(input: {
     p_agent_registration_id: input.agentRegistrationId ?? null,
     // Live sessions have no visitors, so no notice.
     p_notice: input.kind === "share" && input.plan.notice,
+    // A reconnect of a run stopped for good is refused under the account's
+    // lock, so a stop racing the reconnect cannot let it back.
+    p_final_endings: FINAL_ENDINGS,
   });
   if (error) throw error;
-  const answer = data as { shareId?: string; expiresAt?: string | null; error?: string };
+  const answer = data as {
+    shareId?: string;
+    expiresAt?: string | null;
+    error?: string;
+    reason?: string;
+  };
+  if (answer.error === "stopped")
+    return {
+      error: `This share was stopped: ${tellFor(answer.reason ?? null)}. Start a new one.`,
+      status: 410,
+    };
   if (answer.error === "taken") return { error: "That name is taken.", status: 409, taken: true };
   if (answer.error === "slots")
     return { error: slotsMessage(input.plan, input.kind, slots), status: 429 };

@@ -51,8 +51,15 @@ async function change(
       const problem = passwordProblem(password);
       if (problem) return refuse(problem, 400);
     }
-    const changed = await setNamePassword(auth.userId, plan.activeTeamIds, name, password);
-    if (changed === false) return refuse("Name not found", 404);
+    const changed = await setNamePassword(
+      auth.userId,
+      plan.teamIds,
+      plan.activeTeamIds,
+      name,
+      password
+    );
+    if (changed && "refused" in changed)
+      return refuse(changed.refused.error, changed.refused.status);
     // A live preview under the name follows at once; the 30-second sync
     // catches it if the edge did not answer.
     if (changed) await gatesOnEdge([changed]);

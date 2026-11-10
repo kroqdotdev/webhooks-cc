@@ -7,10 +7,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * Pro's numbers, Team Business gives Business's). Limits count per person.
  *
  * The visitor notice shows on Free previews, and on a paid account's previews
- * for 7 days after that plan's account (or team) first paid, unless staff
- * lifted it (users.tunnel_notice_lifted). A stolen card buys a phisher a
- * working link at once; behind the notice it is worth much less, while a real
- * customer barely notices it.
+ * for 7 days after it first paid, unless staff lifted it
+ * (users.tunnel_notice_lifted). Any paid plan the account holds counts: a
+ * customer paying for months who joins a team that paid yesterday is not
+ * new. A stolen card buys a phisher a working link at once; behind the
+ * notice it is worth much less, while a real customer barely notices it.
  */
 
 export const NEW_PAID_NOTICE_DAYS = 7;
@@ -59,13 +60,18 @@ export function chooseTunnelPlan(
     return e.shareDataGb * 1_000 + e.shareSlots;
   };
   const best = candidates.reduce((a, b) => (rank(b) > rank(a) ? b : a));
-  const paidAt = best.paidSince ? Date.parse(best.paidSince) : NaN;
-  const fresh = Number.isNaN(paidAt) || now - paidAt < NEW_PAID_NOTICE_DAYS * 86_400_000;
+  // Settled: some paid plan of the account (its own or a team's) first paid
+  // more than the notice's days ago.
+  const settled = candidates.some((c) => {
+    if (c.key === "free" || !c.paidSince) return false;
+    const paidAt = Date.parse(c.paidSince);
+    return !Number.isNaN(paidAt) && now - paidAt >= NEW_PAID_NOTICE_DAYS * 86_400_000;
+  });
   return {
     key: best.key,
     label: LABELS[best.key],
     limits: ENTITLEMENTS[best.key],
-    notice: best.key === "free" ? true : !lifted && fresh,
+    notice: best.key === "free" ? true : !lifted && !settled,
     teamId: best.teamId,
     teamIds,
     activeTeamIds,

@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { mayManageName } from "./names";
+import { nameManageRefusal, NAME_NOT_FOUND, type NameRefusal } from "./names";
 import { hashPassword, newPasswordVersion, verifyPassword } from "./password-hash";
 
 /*
@@ -126,17 +126,18 @@ export async function passwordMatches(gate: Gate, password: string): Promise<boo
 
 /**
  * Sets (or with null, removes) the password on a kept name. Who may: as for
- * releasing it (mayManageName: its keeper, or a team's owner, while in the
- * team), and for a team's name only while the team's subscription is live.
- * Returns the live preview under the name whose gate changed, for the edge
- * (null when none follows the name), or false when the account may not.
+ * releasing it (nameManageRefusal: its keeper, or a team's owner, while in
+ * the team), and for a team's name only while the team's subscription is
+ * live. Returns the live preview under the name whose gate changed, for the
+ * edge (null when none follows the name), or why the account may not.
  */
 export async function setNamePassword(
   userId: string,
+  teamIds: string[],
   activeTeamIds: string[],
   name: string,
   password: string | null
-): Promise<false | { shareId: string; gate: string | null } | null> {
+): Promise<{ refused: NameRefusal } | { shareId: string; gate: string | null } | null> {
   const admin = createAdminClient();
   const { data: row, error } = await admin
     .from("tunnel_names")
@@ -144,8 +145,9 @@ export async function setNamePassword(
     .eq("name", name)
     .maybeSingle();
   if (error) throw error;
-  if (!row) return false;
-  if (!(await mayManageName(userId, row, activeTeamIds))) return false;
+  if (!row) return { refused: { error: NAME_NOT_FOUND, status: 404 } };
+  const refusal = await nameManageRefusal(userId, row, teamIds, activeTeamIds);
+  if (refusal) return { refused: refusal };
   const version = password ? newPasswordVersion() : null;
   const { error: updateError } = await admin
     .from("tunnel_names")

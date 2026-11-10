@@ -53,12 +53,26 @@
 --   tunnel_apply_usage_batch(id, usage, month) adds one batch, once
 --   tunnel_reserve_name(...)   keeps a name under the plan's or team's count
 --   tunnel_runs_without_access()   open runs whose access has ended since
+--   tunnel_end_unheld(held, age)    open runs the edge no longer holds
+--   tunnel_move_name_to_team(...)   one's own name into one's team
+--
+-- Locks: the transaction takes the hot tables first, endpoints before the
+-- rest, in the order a capture touches them (capture_webhook() reads the
+-- endpoint, then updates users, teams and requests). Once it holds endpoints
+-- no capture is part way through, so the ALTERs on users, teams and requests
+-- cannot deadlock with one; with lock_timeout set as AGENTS.md shows, a busy
+-- moment fails the file cleanly instead of stalling captures. The locks are
+-- held for the few statements below, all catalog changes or small updates.
 --
 -- The index on endpoints(live_session_id) is built concurrently after the
 -- transaction, so apply this file in autocommit mode as AGENTS.md shows.
 -- ============================================================================
 
 begin;
+
+lock table public.endpoints in access exclusive mode;
+lock table public.plan_entitlements, public.teams, public.users, public.requests
+  in access exclusive mode;
 
 -- ---------------------------------------------------------------------------
 -- Entitlements
@@ -158,7 +172,10 @@ create trigger teams_note_paid_since
 create table if not exists public.tunnel_names (
   name             text primary key,
   user_id          uuid not null references public.users(id) on delete cascade,
-  team_id          uuid references public.teams(id) on delete set null,
+  -- A team's names go with the team: they were never anyone's own, and
+  -- turning them into a member's would push that member's own names past
+  -- their plan.
+  team_id          uuid references public.teams(id) on delete cascade,
   password_hash    text,
   password_version text,
   created_at       timestamptz not null default now(),
@@ -175,6 +192,36 @@ create index if not exists tunnel_names_team on public.tunnel_names (team_id) wh
 
 alter table public.tunnel_names enable row level security;
 revoke all on table public.tunnel_names from anon, authenticated;
+
+-- A member deleting their account hands the names they kept in a team to the
+-- team's owner, as leaving the team does (handOverTeamNames in the web app),
+-- so the team keeps its names whatever deletes the row. The owner's own
+-- deletion takes the team, and its names, with it.
+create or replace function public.users_hand_over_team_names()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  update public.tunnel_names n
+     set user_id = o.user_id
+    from public.team_members o
+   where n.user_id = old.id
+     and n.team_id is not null
+     and o.team_id = n.team_id
+     and o.role = 'owner'
+     and o.user_id <> old.id;
+  return old;
+end;
+$$;
+
+revoke all on function public.users_hand_over_team_names() from public, anon, authenticated;
+
+drop trigger if exists users_hand_over_team_names on public.users;
+create trigger users_hand_over_team_names
+  before delete on public.users
+  for each row
+  execute function public.users_hand_over_team_names();
 
 create table if not exists public.tunnel_blocked_names (
   name       text primary key,
@@ -254,9 +301,11 @@ create index if not exists tunnel_shares_user_open
 -- A reconnecting run, by its id.
 create index if not exists tunnel_shares_user_instance
   on public.tunnel_shares (user_id, instance) where instance is not null;
--- Stopping the runs of a revoked key.
-create index if not exists tunnel_shares_key_open
-  on public.tunnel_shares (key_id) where ended_at is null and key_id is not null;
+-- Stopping the runs of a revoked key, and the foreign key's set-null when
+-- any api_keys row is deleted (agent tokens expire and go every day), which
+-- would otherwise scan every run.
+create index if not exists tunnel_shares_key
+  on public.tunnel_shares (key_id) where key_id is not null;
 -- The address clean-up.
 create index if not exists tunnel_shares_address_ended
   on public.tunnel_shares (ended_at) where client_address is not null;
@@ -347,8 +396,11 @@ revoke all on table public.abuse_reports from anon, authenticated;
 -- Opens a run. A preview under a name the same account already runs replaces
 -- that run (the newest connection wins); a live session replaces the
 -- account's open one on the same endpoint. Otherwise the account's open runs
--- of the kind must stay under p_slots. Answers {"shareId", "startedAt",
--- "expiresAt"} or {"error": "slots" | "taken"}.
+-- of the kind must stay under p_slots. A reconnect (p_instance) of a run that
+-- ended for good (one of p_final_endings: a stop, the time limit) is refused
+-- here, under the account's lock, so a stop racing the reconnect cannot let
+-- it back. Answers {"shareId", "startedAt", "expiresAt"} or {"error":
+-- "slots" | "taken" | "gone" | "stopped", "reason"}.
 create or replace function public.tunnel_open_share(
   p_user_id uuid,
   p_kind text,
@@ -364,7 +416,8 @@ create or replace function public.tunnel_open_share(
   p_password_hash text,
   p_password_version text,
   p_agent_registration_id uuid default null,
-  p_notice boolean default false
+  p_notice boolean default false,
+  p_final_endings text[] default null
 )
 returns jsonb
 language plpgsql
@@ -373,6 +426,7 @@ as $$
 declare
   v_open integer;
   v_row public.tunnel_shares;
+  v_final text;
 begin
   if p_kind not in ('share', 'live') then
     raise exception 'tunnel_open_share: bad kind %', p_kind using errcode = '22023';
@@ -382,6 +436,18 @@ begin
   perform 1 from public.users where id = p_user_id for update;
   if not found then
     return jsonb_build_object('error', 'gone');
+  end if;
+
+  if p_instance is not null and p_final_endings is not null then
+    select s.end_reason into v_final
+      from public.tunnel_shares s
+     where s.user_id = p_user_id
+       and s.instance = left(p_instance, 64)
+       and s.end_reason = any(p_final_endings)
+     limit 1;
+    if v_final is not null then
+      return jsonb_build_object('error', 'stopped', 'reason', v_final);
+    end if;
   end if;
 
   select count(*) into v_open
@@ -445,9 +511,9 @@ begin
 end;
 $$;
 
-revoke all on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid, boolean)
+revoke all on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid, boolean, text[])
   from public, anon, authenticated;
-grant execute on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid, boolean)
+grant execute on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid, boolean, text[])
   to service_role;
 
 -- Ends the open runs among p_ids with p_reason and clears the live session
@@ -513,6 +579,35 @@ $$;
 revoke all on function public.tunnel_close_all_open(text) from public, anon, authenticated;
 grant execute on function public.tunnel_close_all_open(text) to service_role;
 
+-- Runs open here that the edge no longer holds: their close never arrived
+-- (the web app was being redeployed, the call failed, or the open's answer
+-- reached the edge after it had given up). p_held is every run the edge
+-- holds; runs younger than p_min_age_seconds are left alone, as the edge may
+-- not have listed them yet. They end as 'closed', so a live endpoint gets
+-- its two minutes of 502 and then answers as usual. Answers the runs ended.
+create or replace function public.tunnel_end_unheld(p_held uuid[], p_min_age_seconds integer default 60)
+returns table (id uuid)
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_ids uuid[];
+begin
+  select coalesce(array_agg(s.id), '{}') into v_ids
+    from public.tunnel_shares s
+   where s.ended_at is null
+     and s.started_at < now() - make_interval(secs => greatest(p_min_age_seconds, 0))
+     and not (s.id = any(coalesce(p_held, '{}')));
+  if cardinality(v_ids) = 0 then
+    return;
+  end if;
+  return query select e.id from public.tunnel_end_shares(v_ids, 'closed') e;
+end;
+$$;
+
+revoke all on function public.tunnel_end_unheld(uuid[], integer) from public, anon, authenticated;
+grant execute on function public.tunnel_end_unheld(uuid[], integer) to service_role;
+
 -- The open runs whose access has ended since they opened, with why. Access is
 -- checked once, at open; this is what the web app runs on every edge sync and
 -- right after anything that takes access away (a member leaving or removed,
@@ -525,6 +620,9 @@ grant execute on function public.tunnel_close_all_open(text) to service_role;
 --                        tokens are judged by their registration instead:
 --                        expired ones are deleted while it lives on)
 --   'endpoint deleted'   a live run's endpoint is gone
+--   'name blocked'       staff blocked the name a preview runs under (the
+--                        block stops it at once; this catches a preview that
+--                        opened while the block was being made)
 --   'access ended'       the agent registration that opened it is revoked or
 --                        gone; a live run's endpoint is neither the account's
 --                        own nor shared with a subscribed team it belongs to;
@@ -544,6 +642,9 @@ as $$
            when u.tunnels_suspended then 'sharing suspended'
            when s.key_id is null and s.agent_registration_id is null then 'key revoked'
            when s.kind = 'live' and s.endpoint_id is null then 'endpoint deleted'
+           when s.kind = 'share' and exists (
+                  select 1 from public.tunnel_blocked_names b where b.name = s.name)
+             then 'name blocked'
            else 'access ended'
          end
     from public.tunnel_shares s
@@ -553,6 +654,8 @@ as $$
        s.user_id is null
        or u.tunnels_suspended
        or (s.key_id is null and s.agent_registration_id is null)
+       or (s.kind = 'share' and exists (
+             select 1 from public.tunnel_blocked_names b where b.name = s.name))
        or (s.agent_registration_id is not null and not exists (
              select 1 from public.agent_registrations r
               where r.id = s.agent_registration_id and r.revoked_at is null))
@@ -686,6 +789,49 @@ $$;
 
 revoke all on function public.tunnel_reserve_name(uuid, uuid, text, integer) from public, anon, authenticated;
 grant execute on function public.tunnel_reserve_name(uuid, uuid, text, integer) to service_role;
+
+-- Moves one of the account's own names into one of its teams, under the
+-- team's cap (as tunnel_reserve_name counts it). The caller checked the
+-- account is in the team and the team is subscribed. Answers 'ok',
+-- 'team_limit' or 'gone' (no such own name).
+create or replace function public.tunnel_move_name_to_team(
+  p_user_id uuid,
+  p_team_id uuid,
+  p_name text
+)
+returns text
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_held integer;
+  v_cap integer;
+begin
+  select pe.reserved_names * greatest(t.seats, 1) into v_cap
+    from public.teams t
+    join public.plan_entitlements pe
+      on pe.key = case when t.business then 'team_business' else 'team' end
+   where t.id = p_team_id
+     for update of t;
+  if v_cap is null then
+    return 'team_limit';
+  end if;
+  select count(*) into v_held from public.tunnel_names where team_id = p_team_id;
+  if v_held >= v_cap then
+    return 'team_limit';
+  end if;
+  update public.tunnel_names
+     set team_id = p_team_id
+   where name = p_name and user_id = p_user_id and team_id is null;
+  if not found then
+    return 'gone';
+  end if;
+  return 'ok';
+end;
+$$;
+
+revoke all on function public.tunnel_move_name_to_team(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.tunnel_move_name_to_team(uuid, uuid, text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Jobs

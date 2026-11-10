@@ -36,6 +36,18 @@ describe("preview names", () => {
     expect(hasWord("groups", "ups")).toBe(true);
   });
 
+  it("refuses every preview name the docs and READMEs use as an example", () => {
+    for (const name of [
+      "acme-demo",
+      "acme-shop",
+      "acme-team",
+      "calm-river-7f2a",
+      "calm-otter",
+      "sample-preview-1234",
+    ])
+      expect(nameProblem(name)).toBe(UNAVAILABLE);
+  });
+
   it("draws names it recognises, with the suffix only for free previews", () => {
     for (let i = 0; i < 50; i++) {
       const paid = drawName(false);

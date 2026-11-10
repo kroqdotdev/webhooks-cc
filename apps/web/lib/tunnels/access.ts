@@ -8,8 +8,8 @@ import { STOPS } from "./stops";
  * tunnel_runs_without_access() (migration 00091) finds the open runs whose
  * account is gone or suspended, whose key or agent registration was revoked,
  * whose live endpoint is gone or no longer reachable (unshared, a team left
- * or lapsed), or whose team name the account may no longer use (a team left
- * or lapsed). The edge's sync runs it every
+ * or lapsed), whose team name the account may no longer use (a team left
+ * or lapsed), or whose name staff blocked. The edge's sync runs it every
  * 30 seconds; the places that take access away run it at once, so the tunnel
  * closes without waiting for the next sync.
  */
@@ -19,6 +19,7 @@ const REASONS: Record<string, { record: string; tell: string }> = {
   "sharing suspended": STOPS.suspended,
   "key revoked": STOPS.revoked,
   "endpoint deleted": STOPS.endpoint,
+  "name blocked": STOPS.blocked,
   "access ended": STOPS.access,
 };
 

@@ -64,4 +64,31 @@ describe("chooseTunnelPlan", () => {
     expect(plan.key).toBe("team");
     expect(plan.notice).toBe(true);
   });
+
+  it("shows no notice when any paid plan of the account is past its first week", () => {
+    const plan = chooseTunnelPlan(
+      [
+        { key: "pro", teamId: null, paidSince: daysAgo(200) },
+        { key: "team_business", teamId: "t1", paidSince: daysAgo(1) },
+      ],
+      false,
+      ["t1"],
+      NOW
+    );
+    expect(plan.key).toBe("team_business");
+    expect(plan.notice).toBe(false);
+  });
+
+  it("does not count a Free plan as settled", () => {
+    const plan = chooseTunnelPlan(
+      [
+        { key: "free", teamId: null, paidSince: daysAgo(400) },
+        { key: "team", teamId: "t1", paidSince: daysAgo(1) },
+      ],
+      false,
+      ["t1"],
+      NOW
+    );
+    expect(plan.notice).toBe(true);
+  });
 });

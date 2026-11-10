@@ -2,6 +2,7 @@ import { createAdminClient } from "./admin";
 import { createPolarClient, isEndedSubscriptionError } from "@/lib/polar";
 import { revokeAllAddons } from "./capacity-billing";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
+import { stopSharesUnderTeamNames } from "@/lib/tunnels/names";
 import { revokeTeamSubscription } from "./team-billing";
 
 /**
@@ -133,7 +134,17 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
     }
   }
 
-  // 3. Data, then the auth user (cascades to users, endpoints, api_keys, teams).
+  // 3. Teams this account created go with it, and their preview names with
+  // them: previews under those names stop first. (Names this account kept in
+  // other teams pass to those teams' owners, by a trigger on users.)
+  const { data: ownTeams, error: ownTeamsError } = await admin
+    .from("teams")
+    .select("id")
+    .eq("created_by", userId);
+  if (ownTeamsError) throw ownTeamsError;
+  await stopSharesUnderTeamNames((ownTeams ?? []).map((t) => t.id));
+
+  // Data, then the auth user (cascades to users, endpoints, api_keys, teams).
   const { error: requestsError } = await admin.from("requests").delete().eq("user_id", userId);
   if (requestsError) {
     throw requestsError;

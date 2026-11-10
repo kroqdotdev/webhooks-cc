@@ -36,8 +36,10 @@ const SERVICE_NAMES = `www api app edge tunnel relay admin root mail smtp imap p
  * Names our own pages, guides and READMEs show as examples. Whoever kept one
  * would be behind every example link, so no one does.
  */
-const EXAMPLE_NAMES = `acme acme-preview acme-staging studio demo example preview name other
-  my-app myapp calm-otter-4821 quiet-otter-1234 amber-badger-0042`.split(/\s+/);
+const EXAMPLE_NAMES = `acme acme-preview acme-staging acme-demo acme-shop acme-team studio demo
+  example preview name other my-app myapp calm-otter calm-otter-4821
+  quiet-otter-1234 amber-badger-0042 amber-otter-0042 calm-river-7f2a
+  sample-preview sample-preview-1234`.split(/\s+/);
 
 const BLOCKED_NAMES = new Set([...SERVICE_NAMES, ...EXAMPLE_NAMES]);
 

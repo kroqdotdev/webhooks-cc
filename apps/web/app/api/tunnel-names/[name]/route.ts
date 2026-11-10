@@ -4,6 +4,7 @@ import { reportError } from "@/lib/observability";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { sharingOff, tunnelConfig } from "@/lib/tunnels/config";
 import { releaseName } from "@/lib/tunnels/names";
+import { tunnelPlanOf } from "@/lib/tunnels/plan";
 
 const LIMIT = 30;
 const WINDOW_MS = 10 * 60_000;
@@ -26,15 +27,19 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ n
   if (rateLimit.response) return rateLimit.response;
 
   try {
-    const released = await releaseName(auth.userId, name.toLowerCase());
+    const plan = await tunnelPlanOf(auth.userId);
+    if (!plan) return Response.json({ error: "Account not found" }, { status: 404 });
+    const released = await releaseName(auth.userId, plan.teamIds, name.toLowerCase());
+    const status = "error" in released ? released.status : 200;
     await auditUserAction(request, auth.userId, {
       action: "tunnel.name_released",
-      status: released ? 200 : 404,
+      status,
+      ...("error" in released ? { reason: released.error } : {}),
       targetId: name.slice(0, 40),
     });
-    if (!released)
+    if ("error" in released)
       return applyRateLimitHeaders(
-        Response.json({ error: "Name not found" }, { status: 404 }),
+        Response.json({ error: released.error }, { status: released.status }),
         rateLimit
       );
     return applyRateLimitHeaders(Response.json({ ok: true }), rateLimit);

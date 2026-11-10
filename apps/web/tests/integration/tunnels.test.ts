@@ -537,10 +537,10 @@ describe("edge routes", () => {
       .single();
     expect(row?.end_reason).toBe("stopped by the team");
 
-    // A member may not release a team name; the owner may.
-    expect(
-      (await api("/api/tunnel-names/name", "DELETE", member.key, { params: { name } })).status
-    ).toBe(404);
+    // A member may not release a team name (told who may); the owner may.
+    const refused = await api("/api/tunnel-names/name", "DELETE", member.key, { params: { name } });
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: string }).error).toMatch(/team's owner/);
     expect(
       (await api("/api/tunnel-names/name", "DELETE", owner.key, { params: { name } })).status
     ).toBe(200);
@@ -1079,7 +1079,7 @@ describe("round two: limits, names and access while runs are open", () => {
           body: { password: "correct-horse-1" },
         })
       ).status
-    ).toBe(404);
+    ).toBe(403);
     // Releasing still works, so a lapsed team's names are never stuck.
     expect(
       (await api("/api/tunnel-names/name", "DELETE", owner.key, { params: { name } })).status
@@ -1257,5 +1257,240 @@ describe("round two: limits, names and access while runs are open", () => {
     });
     expect(await graceOf()).toBeNull();
     expect(await capture()).toBe(false);
+  });
+});
+
+describe("round four: lost closes, team names on deletion, errors and races", () => {
+  async function row(id: unknown) {
+    const { data } = await admin
+      .from("tunnel_shares")
+      .select("ended_at, end_reason")
+      .eq("id", id as string)
+      .single();
+    return data;
+  }
+
+  async function team(owner: string, members: string[]) {
+    const { data, error } = await admin
+      .from("teams")
+      .insert({
+        name: "Round four team",
+        created_by: owner,
+        subscription_status: "active",
+        seats: 2,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    createdTeamIds.push(data.id);
+    await admin
+      .from("team_members")
+      .insert([
+        { team_id: data.id, user_id: owner, role: "owner" },
+        ...members.map((m) => ({ team_id: data.id, user_id: m, role: "member" })),
+      ]);
+    return data.id as string;
+  }
+
+  const age = (id: unknown, seconds: number) =>
+    admin
+      .from("tunnel_shares")
+      .update({ started_at: new Date(Date.now() - seconds * 1000).toISOString() })
+      .eq("id", id as string);
+
+  it("ends runs the edge no longer holds, so a lost close frees the slot and the endpoint", async () => {
+    const free = await createUser();
+    const lost = await open(free.key);
+    expect(lost.status).toBe(200);
+    // Its close never arrived: the edge lists nothing.
+    expect((await open(free.key)).status).toBe(429);
+    await age(lost.body.shareId, 120);
+
+    const pro = await createUser({ plan: "pro" });
+    const slug = `unheld${ts % 1_000_000}`;
+    const { data: endpoint, error } = await admin
+      .from("endpoints")
+      .insert({ user_id: pro.id, slug, name: "unheld" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const live = await open(pro.key, { kind: "live", endpoint: slug });
+    expect(live.status).toBe(200);
+    await age(live.body.shareId, 120);
+    // A run the edge has not listed yet is left alone.
+    const young = await open(pro.key);
+    expect(young.status).toBe(200);
+
+    const synced = await edge("sync", { shareIds: [], batches: [] });
+    expect(synced.status).toBe(200);
+    expect((await row(lost.body.shareId))?.end_reason).toBe("closed");
+    expect((await row(live.body.shareId))?.end_reason).toBe("closed");
+    expect((await row(young.body.shareId))?.ended_at).toBeNull();
+    const { data: ep } = await admin
+      .from("endpoints")
+      .select("live_session_id, live_grace_until")
+      .eq("id", endpoint.id)
+      .single();
+    expect(ep?.live_session_id).toBeNull();
+    expect(ep?.live_grace_until).not.toBeNull();
+    // The Free slot is free again.
+    expect((await open(free.key)).status).toBe(200);
+  });
+
+  it("hands a deleted member's team names to the owner, and a deleted team's names go with it", async () => {
+    const owner = await createUser({ plan: "pro" });
+    const member = await createUser();
+    const teamId = await team(owner.id, [member.id]);
+    const name = `tn4-${ts % 1_000_000}`;
+    const kept = await api("/api/tunnel-names", "POST", member.key, {
+      body: { name, team: teamId },
+    });
+    expect(kept.status).toBe(201);
+
+    await admin.auth.admin.deleteUser(member.id);
+    const { data: after } = await admin
+      .from("tunnel_names")
+      .select("user_id, team_id")
+      .eq("name", name)
+      .single();
+    expect(after).toEqual({ user_id: owner.id, team_id: teamId });
+
+    // A preview under the team's name stops before the team goes; the name goes too.
+    const run = await open(owner.key, { name });
+    expect(run.status).toBe(200);
+    const { stopSharesUnderTeamNames } = await import("@/lib/tunnels/names");
+    await stopSharesUnderTeamNames([teamId]);
+    expect((await row(run.body.shareId))?.end_reason).toBe("access ended");
+    await admin.from("teams").delete().eq("id", teamId);
+    const { data: gone } = await admin.from("tunnel_names").select("name").eq("name", name);
+    expect(gone).toEqual([]);
+  });
+
+  it("answers name changes an agent can act on", async () => {
+    const owner = await createUser({ plan: "pro" });
+    const tooLong = await api("/api/tunnel-names", "POST", owner.key, {
+      body: { name: "a".repeat(101) },
+    });
+    expect(tooLong.status).toBe(400);
+    expect(((await tooLong.json()) as { error: string }).error).toMatch(/3 to 40 characters/);
+
+    const unknown = await api("/api/tunnel-names/name", "DELETE", owner.key, {
+      params: { name: `nobody-${ts % 1_000_000}` },
+    });
+    expect(unknown.status).toBe(404);
+    expect(((await unknown.json()) as { error: string }).error).toMatch(/whk names ls/);
+
+    // Reserving one's own name with a team moves it into the team.
+    const teamId = await team(owner.id, []);
+    const name = `move-${ts % 1_000_000}`;
+    expect((await api("/api/tunnel-names", "POST", owner.key, { body: { name } })).status).toBe(
+      201
+    );
+    const moved = await api("/api/tunnel-names", "POST", owner.key, {
+      body: { name, team: teamId },
+    });
+    expect(moved.status).toBe(201);
+    const { data: nameRow } = await admin
+      .from("tunnel_names")
+      .select("team_id")
+      .eq("name", name)
+      .single();
+    expect(nameRow?.team_id).toBe(teamId);
+    // Asking again is a no-op.
+    expect(
+      (await api("/api/tunnel-names", "POST", owner.key, { body: { name, team: teamId } })).status
+    ).toBe(200);
+
+    // One's own runs carry no startedBy.
+    const run = await open(owner.key);
+    expect(run.status).toBe(200);
+    const listed = (await (
+      await api("/api/shares", "GET", owner.key, { url: "http://localhost/api/shares?state=live" })
+    ).json()) as { shares: { id: string; startedBy: unknown }[] };
+    expect(listed.shares.find((s) => s.id === run.body.shareId)?.startedBy).toBeNull();
+  });
+
+  it("ends previews under a blocked name, and refuses a reconnect of a stopped run under the lock", async () => {
+    const user = await createUser({ plan: "pro" });
+    const name = `blk-${ts % 1_000_000}`;
+    const run = await open(user.key, { name });
+    expect(run.status).toBe(200);
+    // Blocked while the run was opening: the access check catches it.
+    await admin.from("tunnel_blocked_names").insert({ name, reason: "test" });
+    await edge("sync", { shareIds: [run.body.shareId], batches: [] });
+    expect((await row(run.body.shareId))?.end_reason).toBe("name blocked");
+    await admin.from("tunnel_blocked_names").delete().eq("name", name);
+
+    const { FINAL_ENDINGS } = await import("@/lib/tunnels/stops");
+    const { data, error } = await admin.rpc("tunnel_open_share", {
+      p_user_id: user.id,
+      p_kind: "share",
+      p_name: `other-${ts % 1_000_000}`,
+      p_endpoint_id: null,
+      p_slots: 3,
+      p_session_minutes: null,
+      p_free: false,
+      p_client: "",
+      p_key_id: null,
+      p_instance: "stopped-run",
+      p_client_address: null,
+      p_password_hash: null,
+      p_password_version: null,
+      p_final_endings: FINAL_ENDINGS,
+    });
+    if (error) throw error;
+    expect((data as { shareId?: string }).shareId).toBeTruthy();
+    await admin
+      .from("tunnel_shares")
+      .update({ ended_at: new Date().toISOString(), end_reason: "stopped" })
+      .eq("id", (data as { shareId: string }).shareId);
+    const { data: again } = await admin.rpc("tunnel_open_share", {
+      p_user_id: user.id,
+      p_kind: "share",
+      p_name: `other-${ts % 1_000_000}`,
+      p_endpoint_id: null,
+      p_slots: 3,
+      p_session_minutes: null,
+      p_free: false,
+      p_client: "",
+      p_key_id: null,
+      p_instance: "stopped-run",
+      p_client_address: null,
+      p_password_hash: null,
+      p_password_version: null,
+      p_final_endings: FINAL_ENDINGS,
+    });
+    expect(again).toEqual({ error: "stopped", reason: "stopped" });
+  });
+
+  it("makes a stop stick while the CLI is between reconnects", async () => {
+    const user = await createUser();
+    const instance = `gap-${Math.random().toString(36).slice(2)}`;
+    const first = await open(user.key, { instance });
+    expect(first.status).toBe(200);
+    // The tunnel dropped; the CLI has not reconnected yet.
+    await edge("close", { shareId: first.body.shareId, reason: "closed" });
+    const stop = await api("/api/shares/stop", "POST", user.key, {
+      params: { id: first.body.shareId as string },
+    });
+    expect(stop.status).toBe(200);
+    expect(((await stop.json()) as { stopped: boolean }).stopped).toBe(true);
+    expect((await row(first.body.shareId))?.end_reason).toBe("stopped through the API");
+    // The reconnect is refused.
+    expect((await open(user.key, { instance })).status).toBe(410);
+  });
+
+  it("stops a run that already reconnected when the stop names its earlier row", async () => {
+    const user = await createUser();
+    const instance = `gap2-${Math.random().toString(36).slice(2)}`;
+    const first = await open(user.key, { instance });
+    await edge("close", { shareId: first.body.shareId, reason: "closed" });
+    const second = await open(user.key, { instance });
+    expect(second.status).toBe(200);
+    await api("/api/shares/stop", "POST", user.key, {
+      params: { id: first.body.shareId as string },
+    });
+    expect((await row(second.body.shareId))?.ended_at).not.toBeNull();
+    expect((await open(user.key, { instance })).status).toBe(410);
   });
 });

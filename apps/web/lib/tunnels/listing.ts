@@ -261,8 +261,9 @@ export async function describe(rows: ShareRow[], userId: string): Promise<ApiSha
       password: r.password_version !== null || (r.name !== null && namePassword.has(r.name)),
       notice: r.notice,
       mine: r.user_id === userId,
+      // Who started it, for a teammate's run; null for one's own.
       startedBy:
-        r.user_id && emailOf.has(r.user_id)
+        r.user_id && r.user_id !== userId && emailOf.has(r.user_id)
           ? { id: r.user_id, email: emailOf.get(r.user_id)! }
           : null,
     };

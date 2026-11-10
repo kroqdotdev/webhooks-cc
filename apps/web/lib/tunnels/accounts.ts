@@ -32,6 +32,10 @@ export async function accountForKey(apiKey: unknown): Promise<EdgeAccount> {
       status: 403,
     };
   const { data, error } = await createAdminClient().auth.admin.getUserById(found.userId);
+  // Only a missing user is a gone account; anything else (GoTrue restarting,
+  // a timeout) throws, so the edge answers 500 and the CLI retries instead of
+  // ending a share for good.
+  if (error && error.status !== 404) throw error;
   if (error || !data.user) return { error: "That account is gone.", status: 401 };
   if (!data.user.email_confirmed_at)
     return { error: "Confirm your email address first.", status: 403 };

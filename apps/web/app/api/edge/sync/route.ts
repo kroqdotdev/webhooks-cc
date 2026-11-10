@@ -10,6 +10,9 @@ import { overAllowance, recordUsage, tellPaused } from "@/lib/tunnels/usage";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A run open this long that the edge does not list has lost its close. */
+const UNHELD_AFTER_SECONDS = 60;
+
 /**
  * Every 30 seconds the edge lists the runs it holds and hands over what
  * visitors took, in batches it numbers (lib/tunnels/usage.ts). The answer is
@@ -18,7 +21,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * or without the access they were opened with), with the words for the CLI;
  * the password version each live preview is behind, in case a change missed
  * it; and the accounts past their plan's data for the month, whose previews
- * the edge pauses.
+ * the edge pauses. Runs open here that the edge no longer lists end too.
  */
 export async function POST(request: Request) {
   if (!fromEdge(request)) return notEdge();
@@ -37,9 +40,20 @@ export async function POST(request: Request) {
       ? body.shareIds.filter((id): id is string => typeof id === "string" && UUID.test(id))
       : []
   ).slice(0, 5_000);
-  if (ids.length === 0) return Response.json({ close: [], gates: [], over });
 
   const admin = createAdminClient();
+  // Runs open here that the edge no longer holds: a close that never arrived
+  // (a redeploy, a failed call, an open answered after the edge gave up).
+  // Left open they would hold a slot, and a live endpoint would answer 502
+  // for good. They end as 'closed', so a live one gets its usual grace.
+  // Runs younger than a minute may not be in the edge's list yet.
+  const { error: unheldError } = await admin.rpc("tunnel_end_unheld", {
+    p_held: ids,
+    p_min_age_seconds: UNHELD_AFTER_SECONDS,
+  });
+  if (unheldError) throw unheldError;
+  if (ids.length === 0) return Response.json({ close: [], gates: [], over });
+
   // Runs whose access ended since they opened (a team left or lapsed, an
   // endpoint unshared, an agent disconnected, an account deleted), in case
   // the change itself could not reach the edge. First, so a run that lost

@@ -1,5 +1,6 @@
 import { ENTITLEMENTS } from "@/lib/entitlements";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { reportError } from "@/lib/observability";
 import {
   drawName,
   hasWord,
@@ -277,7 +278,10 @@ export async function reserveName(
   const standing = await nameStanding(userId, plan, requested);
   if ("error" in standing) return standing;
   const { name } = standing;
-  if (standing.yours) return { name, reserved: false };
+  if (standing.yours) {
+    if (teamId === null) return { name, reserved: false };
+    return moveIntoTeam(userId, name, teamId);
+  }
   const { data, error } = await createAdminClient().rpc("tunnel_reserve_name", {
     p_user_id: userId,
     p_team_id: teamId,
@@ -297,6 +301,44 @@ export async function reserveName(
       status: 403,
     };
   if (data === "taken") return { error: "That name is taken.", status: 409 };
+  return { name, reserved: true };
+}
+
+/**
+ * A reserve with a team for a name the account has already: one's own name
+ * moves into the team (the team's cap allowing), a name already in that team
+ * stays, and a name of another team is refused rather than left silently
+ * where it was.
+ */
+async function moveIntoTeam(userId: string, name: string, teamId: string): Promise<ReserveResult> {
+  const admin = createAdminClient();
+  const { data: row, error } = await admin
+    .from("tunnel_names")
+    .select("user_id, team_id")
+    .eq("name", name)
+    .maybeSingle();
+  if (error) throw error;
+  if (!row) return { error: NAME_NOT_FOUND, status: 404 };
+  if (row.team_id === teamId) return { name, reserved: false };
+  if (row.team_id !== null)
+    return {
+      error:
+        "That name already belongs to another of your teams. Release it there with whk names release <name> first, or pick another name.",
+      status: 409,
+    };
+  const { data, error: moveError } = await admin.rpc("tunnel_move_name_to_team", {
+    p_user_id: userId,
+    p_team_id: teamId,
+    p_name: name,
+  });
+  if (moveError) throw moveError;
+  if (data === "team_limit")
+    return {
+      error:
+        "That team keeps as many names as its seats cover. Release a team name with whk names release <name>, or add seats, first.",
+      status: 409,
+    };
+  if (data !== "ok") return { error: NAME_NOT_FOUND, status: 404 };
   return { name, reserved: true };
 }
 
@@ -410,20 +452,38 @@ export async function namesView(userId: string, plan: TunnelPlan): Promise<Names
   };
 }
 
+/** What an account is told about a name it neither keeps nor shares a team with. */
+export const NAME_NOT_FOUND =
+  "No name like that is yours or your team's. List them with whk names ls.";
+
+export type NameRefusal = { error: string; status: number };
+
 /**
  * Who may release a name or change its password: its keeper for an own name;
  * for a team's name, its keeper or the team's owner, and only while they are
  * in the team. `activeTeamIds` set also asks for the team's subscription to be
  * live (password changes); releasing works after a lapse too, so names are
- * never stuck.
+ * never stuck. Null when the account may; otherwise why not, as an answer an
+ * agent can act on: 404 only when the name is not one the account can see
+ * (its own or a team's it is in), 403 with who may when it can see it.
  */
-export async function mayManageName(
+export async function nameManageRefusal(
   userId: string,
-  row: { user_id: string; team_id: string | null },
+  row: { user_id: string | null; team_id: string | null },
+  teamIds: string[],
   activeTeamIds: string[] | null
-): Promise<boolean> {
-  if (row.team_id === null) return row.user_id === userId;
-  if (activeTeamIds !== null && !activeTeamIds.includes(row.team_id)) return false;
+): Promise<NameRefusal | null> {
+  const visible =
+    (row.team_id === null && row.user_id === userId) ||
+    (row.team_id !== null && teamIds.includes(row.team_id));
+  if (!visible) return { error: NAME_NOT_FOUND, status: 404 };
+  if (row.team_id === null) return null;
+  if (activeTeamIds !== null && !activeTeamIds.includes(row.team_id))
+    return {
+      error:
+        "That name belongs to a team whose subscription has ended, so it can't be changed until the team subscribes again. Releasing it still works: whk names release <name>.",
+      status: 403,
+    };
   const { data: member, error } = await createAdminClient()
     .from("team_members")
     .select("role")
@@ -431,16 +491,24 @@ export async function mayManageName(
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
-  if (!member) return false;
-  return row.user_id === userId || member.role === "owner";
+  if (!member) return { error: NAME_NOT_FOUND, status: 404 };
+  if (row.user_id === userId || member.role === "owner") return null;
+  return {
+    error:
+      "Only the person who reserved this team name or the team's owner can change or release it.",
+    status: 403,
+  };
 }
 
 /**
- * Lets a name go (see mayManageName). A preview running under it stops, so
- * the name's password never comes off a live link. False when the account
- * may not.
+ * Lets a name go (see nameManageRefusal). A preview running under it stops,
+ * so the name's password never comes off a live link.
  */
-export async function releaseName(userId: string, name: string): Promise<boolean> {
+export async function releaseName(
+  userId: string,
+  teamIds: string[],
+  name: string
+): Promise<{ ok: true } | NameRefusal> {
   const admin = createAdminClient();
   const { data: row, error } = await admin
     .from("tunnel_names")
@@ -448,12 +516,45 @@ export async function releaseName(userId: string, name: string): Promise<boolean
     .eq("name", name)
     .maybeSingle();
   if (error) throw error;
-  if (!row) return false;
-  if (!(await mayManageName(userId, row, null))) return false;
+  if (!row) return { error: NAME_NOT_FOUND, status: 404 };
+  const refusal = await nameManageRefusal(userId, row, teamIds, null);
+  if (refusal) return refusal;
   const { error: deleteError } = await admin.from("tunnel_names").delete().eq("name", name);
   if (deleteError) throw deleteError;
   await stopShares({ name }, "released");
-  return true;
+  return { ok: true };
+}
+
+/**
+ * Before a team goes (deleted, or with its owner's account): its names go with
+ * it, so previews running under them stop first, rather than carry on under
+ * a name no one keeps any more, without its password. Never throws; the
+ * caller is deleting the team either way.
+ */
+export async function stopSharesUnderTeamNames(teamIds: string[]): Promise<void> {
+  if (teamIds.length === 0) return;
+  try {
+    const admin = createAdminClient();
+    const { data: names, error } = await admin
+      .from("tunnel_names")
+      .select("name")
+      .in("team_id", teamIds);
+    if (error) throw error;
+    if (!names || names.length === 0) return;
+    const { data: open, error: openError } = await admin
+      .from("tunnel_shares")
+      .select("id")
+      .eq("kind", "share")
+      .is("ended_at", null)
+      .in(
+        "name",
+        names.map((n) => n.name)
+      );
+    if (openError) throw openError;
+    await stopShares({ ids: (open ?? []).map((s) => s.id) }, "access");
+  } catch (err) {
+    reportError("Failed to stop previews under a deleted team's names", err);
+  }
 }
 
 /**

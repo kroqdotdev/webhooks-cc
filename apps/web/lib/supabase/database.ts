@@ -2313,8 +2313,17 @@ export interface Database {
           p_password_version: string | null;
           p_agent_registration_id?: string | null;
           p_notice?: boolean;
+          p_final_endings?: string[] | null;
         };
         Returns: Json;
+      };
+      tunnel_end_unheld: {
+        Args: { p_held: string[]; p_min_age_seconds?: number };
+        Returns: { id: string }[];
+      };
+      tunnel_move_name_to_team: {
+        Args: { p_user_id: string; p_team_id: string; p_name: string };
+        Returns: "ok" | "team_limit" | "gone";
       };
       tunnel_runs_without_access: {
         Args: Record<string, never>;
@@ -2352,7 +2361,7 @@ export interface Database {
           p_body_truncated: boolean;
           p_ms: number;
           p_body_encoding?: "utf8" | "base64";
-          p_outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy";
+          p_outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
         };
         Returns: boolean;
       };

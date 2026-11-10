@@ -66,7 +66,9 @@ export async function GET(request: Request) {
 
 /**
  * Keeps a preview name: `{name}`, and `{team}` (a team id) to keep it inside
- * one of the account's teams so every member may share under it.
+ * one of the account's teams so every member may share under it. With
+ * `{team}`, one's own name moves into the team (201); a name in that team
+ * already answers 200.
  */
 export async function POST(request: Request) {
   if (!tunnelConfig()) return sharingOff();
@@ -86,8 +88,13 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  if (typeof body.name !== "string" || body.name.length > 100)
+  if (typeof body.name !== "string" || !body.name.trim())
     return Response.json({ error: "name is required" }, { status: 400 });
+  if (body.name.length > 100)
+    return Response.json(
+      { error: "That name is too long: names are 3 to 40 characters." },
+      { status: 400 }
+    );
   const teamId = typeof body.team === "string" && body.team ? body.team : null;
 
   try {
