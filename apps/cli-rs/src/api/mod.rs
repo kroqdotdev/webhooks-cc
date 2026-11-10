@@ -115,6 +115,19 @@ fn auth_mode() -> AuthMode {
     }
 }
 
+/// What to tell someone who is not logged in but has `WHK_API_KEY` set
+/// without `WHK_AUTH=key`: the key is there, and ignored on purpose.
+pub const IGNORED_KEY_HINT: &str = "WHK_API_KEY is set, but whk uses it only with WHK_AUTH=key (so a key kept for the SDKs never changes which account whk acts as). Run with WHK_AUTH=key to use it, or log in with `whk auth login`.";
+
+fn ignored_key_hint_for(mode: AuthMode, has_key: bool) -> Option<&'static str> {
+    (has_key && mode != AuthMode::Key).then_some(IGNORED_KEY_HINT)
+}
+
+/// [`IGNORED_KEY_HINT`] when it applies to this process's environment.
+pub fn ignored_key_hint() -> Option<&'static str> {
+    ignored_key_hint_for(auth_mode(), env_api_key().is_some())
+}
+
 /// `WHK_API_KEY`, trimmed; unset or blank is none.
 fn env_api_key() -> Option<String> {
     std::env::var("WHK_API_KEY")
@@ -285,9 +298,12 @@ impl ApiClient {
     /// Require auth or return a friendly error.
     pub fn require_auth(&self) -> Result<()> {
         if matches!(self.bearer, Bearer::None) {
-            anyhow::bail!(
-                "Not logged in. Run `whk auth login` first, or connect an agent with `whk sandbox connect --email <address>`."
-            );
+            match ignored_key_hint() {
+                Some(hint) => anyhow::bail!("Not logged in. {hint}"),
+                None => anyhow::bail!(
+                    "Not logged in. Run `whk auth login` first, or connect an agent with `whk sandbox connect --email <address>`."
+                ),
+            }
         }
         Ok(())
     }
@@ -330,6 +346,21 @@ pub fn extract_error(status: reqwest::StatusCode, body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_ignored_api_key_is_explained() {
+        assert_eq!(
+            ignored_key_hint_for(AuthMode::Default, true),
+            Some(IGNORED_KEY_HINT)
+        );
+        assert_eq!(
+            ignored_key_hint_for(AuthMode::Agent, true),
+            Some(IGNORED_KEY_HINT)
+        );
+        assert_eq!(ignored_key_hint_for(AuthMode::Key, true), None);
+        assert_eq!(ignored_key_hint_for(AuthMode::Default, false), None);
+        assert!(IGNORED_KEY_HINT.contains("WHK_AUTH=key"));
+    }
+
     use super::*;
 
     #[test]

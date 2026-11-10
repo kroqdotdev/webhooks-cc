@@ -310,7 +310,10 @@ async fn once(
         .map_err(|e| Failure::Transient(format!("Could not get a token ({e:#}).")))?
         .ok_or_else(|| Failure::Refused {
             status: 401,
-            message: "Not logged in. Run `whk auth login` first.".to_string(),
+            message: match crate::api::ignored_key_hint() {
+                Some(hint) => format!("Not logged in. {hint}"),
+                None => "Not logged in. Run `whk auth login` first.".to_string(),
+            },
         })?;
     let url = format!("{}{CONNECT_PATH}", session.tunnel_url);
     let mut request = url

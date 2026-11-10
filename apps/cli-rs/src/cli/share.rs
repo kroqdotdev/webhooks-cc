@@ -481,10 +481,66 @@ pub fn resolve_share<'a>(shares: &'a [Share], needle: &str) -> Result<&'a Share>
     }
 }
 
-/// `whk shares stop <id|name>`.
+/// How long after its tunnel dropped a run can still be stopped for good:
+/// the server gives a stop to a run that dropped in the last 5 minutes, so a
+/// CLI reconnecting then is refused.
+const RECONNECT_GAP: chrono::Duration = chrono::Duration::minutes(5);
+
+/// An ended run that is only waiting to reconnect: it dropped (no reason
+/// recorded, which is how the API shows a dropped tunnel) or the edge
+/// restarted, within [`RECONNECT_GAP`]. Final endings (stopped, time limit,
+/// plan changed...) carry their reason and are left alone.
+fn reconnecting(share: &Share, now: chrono::DateTime<chrono::Utc>) -> bool {
+    let dropped = match share.end_reason.as_deref() {
+        None => true,
+        Some(reason) => reason.starts_with("webhooks.cc restarted"),
+    };
+    let recent = share
+        .ended_at
+        .as_ref()
+        .and_then(|t| t.utc())
+        .is_some_and(|ended| now - ended <= RECONNECT_GAP);
+    share.mine && dropped && recent
+}
+
+/// The run `whk shares stop` means when it is not in the live list because
+/// its CLI is reconnecting: the most recent such run with that id, name or
+/// live endpoint.
+pub fn resolve_reconnecting<'a>(
+    ended: &'a [Share],
+    needle: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<&'a Share> {
+    let needle = needle.trim();
+    ended
+        .iter()
+        .filter(|s| {
+            s.id == needle
+                || s.name.as_deref() == Some(needle)
+                || s.endpoint_slug.as_deref() == Some(needle)
+        })
+        .filter(|s| reconnecting(s, now))
+        .max_by_key(|s| s.ended_at.as_ref().and_then(|t| t.utc()))
+}
+
+/// `whk shares stop <id|name>`. A share whose CLI is reconnecting is not in
+/// the live list; the stop goes to its last run, which the server makes
+/// stick, so the reconnect is refused.
 pub async fn stop(client: &ApiClient, needle: &str, json: bool) -> Result<()> {
     let live = client.list_shares(false).await?;
-    let share = resolve_share(&live.shares, needle)?;
+    let found = resolve_share(&live.shares, needle);
+    let ended;
+    let share = match found {
+        Ok(share) => share,
+        Err(err) if err.to_string().starts_with("No live share") => {
+            ended = client.list_shares(true).await?;
+            match resolve_reconnecting(&ended.shares, needle, chrono::Utc::now()) {
+                Some(share) => share,
+                None => return Err(err),
+            }
+        }
+        Err(err) => return Err(err),
+    };
     client.stop_share(&share.id).await?;
     if json {
         println!(
@@ -800,6 +856,102 @@ mod tests {
         assert!(resolve_share(&shares, "gamma").is_err());
         let twice = vec![share("sh_1", "acme"), share("sh_3", "acme")];
         assert!(resolve_share(&twice, "acme").is_err());
+    }
+
+    fn ended(id: &str, name: &str, ago_secs: i64, reason: Option<&str>) -> Share {
+        let at = chrono::Utc::now() - chrono::Duration::seconds(ago_secs);
+        serde_json::from_value(serde_json::json!({
+            "id": id, "name": name, "endedAt": at.to_rfc3339(), "endReason": reason
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_share_reconnecting_is_found_among_recently_ended_runs() {
+        let now = chrono::Utc::now();
+        let runs = vec![
+            ended("sh_old", "acme", 600, None),
+            ended("sh_drop", "acme", 30, None),
+            ended(
+                "sh_restart",
+                "beta",
+                60,
+                Some("webhooks.cc restarted and the CLI did not reconnect"),
+            ),
+            ended(
+                "sh_final",
+                "gamma",
+                10,
+                Some("you stopped it (whk shares stop, the Shares page or the API)"),
+            ),
+        ];
+        assert_eq!(
+            resolve_reconnecting(&runs, "acme", now).unwrap().id,
+            "sh_drop"
+        );
+        assert_eq!(
+            resolve_reconnecting(&runs, "sh_drop", now).unwrap().id,
+            "sh_drop"
+        );
+        assert_eq!(
+            resolve_reconnecting(&runs, "beta", now).unwrap().id,
+            "sh_restart"
+        );
+        // Stopped for good, or dropped too long ago: nothing to stop.
+        assert!(resolve_reconnecting(&runs, "gamma", now).is_none());
+        assert!(resolve_reconnecting(&runs, "sh_old", now).is_none());
+        assert!(resolve_reconnecting(&runs, "delta", now).is_none());
+    }
+
+    #[tokio::test]
+    async fn stop_reaches_a_share_whose_cli_is_reconnecting() {
+        use axum::{
+            Json, Router,
+            extract::{Path, Query},
+            routing::{get, post},
+        };
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+        let stopped: Arc<Mutex<Vec<String>>> = Arc::default();
+        let at = (chrono::Utc::now() - chrono::Duration::seconds(20)).to_rfc3339();
+        let seen = stopped.clone();
+        let app = Router::new()
+            .route(
+                "/api/shares",
+                get(move |Query(q): Query<HashMap<String, String>>| {
+                    let at = at.clone();
+                    async move {
+                        if q.get("state").map(String::as_str) == Some("ended") {
+                            Json(serde_json::json!({ "shares": [
+                                { "id": "sh_gap", "name": "acme-demo", "endedAt": at, "endReason": null }
+                            ]}))
+                        } else {
+                            Json(serde_json::json!({ "shares": [] }))
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/shares/{id}/stop",
+                post(move |Path(id): Path<String>| {
+                    let seen = seen.clone();
+                    async move {
+                        seen.lock().unwrap().push(id);
+                        Json(serde_json::json!({ "ok": true, "stopped": 1, "edgeReached": true }))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client =
+            ApiClient::with_credentials(Some(&base), Some(&base), Some("whcc_test".into()), None)
+                .unwrap();
+        stop(&client, "acme-demo", true).await.unwrap();
+        assert_eq!(*stopped.lock().unwrap(), vec!["sh_gap".to_string()]);
+        // A name that matches nothing keeps the usual message.
+        let err = stop(&client, "nothing-here", true).await.unwrap_err();
+        assert!(err.to_string().starts_with("No live share"), "{err}");
     }
 
     #[test]

@@ -485,6 +485,61 @@ impl Drop for Recorder {
     }
 }
 
+/// How long the rest of an answer is read for the row once its sender has
+/// hung up.
+const DRAIN_AFTER_HANGUP: Duration = Duration::from_secs(10);
+
+/// The answer and its recorder while the answer streams. Dropped with the
+/// answer unfinished (the sender hung up, so the server dropped the body),
+/// it reads the rest of the app's answer in the background, up to what the
+/// row keeps and for [`DRAIN_AFTER_HANGUP`] at most, so the row still holds
+/// the body the app sent rather than an empty one marked cut.
+struct Streaming {
+    inner: Option<(reqwest::Response, Recorder)>,
+}
+
+impl Drop for Streaming {
+    fn drop(&mut self) {
+        let Some((answer, recorder)) = self.inner.take() else {
+            return;
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn(drain(answer, recorder));
+            }
+            Err(_) => drop(recorder),
+        }
+    }
+}
+
+/// Reads what is left of an answer nobody is waiting for, for the row only.
+/// Stops once the row's share is full (the record then says the body was
+/// longer), at the end, on an error, or at the deadline; the recorder hands
+/// over the record when it drops.
+async fn drain(mut answer: reqwest::Response, mut recorder: Recorder) {
+    let _ = tokio::time::timeout(DRAIN_AFTER_HANGUP, async {
+        loop {
+            match answer.chunk().await {
+                Ok(Some(chunk)) => {
+                    recorder.take(&chunk);
+                    if recorder.total > RECORDED_BODY_BYTES {
+                        // Longer than the row keeps: that much is known, and
+                        // the record says so (truncated by size, not cut).
+                        recorder.complete = true;
+                        return;
+                    }
+                }
+                Ok(None) => {
+                    recorder.complete = true;
+                    return;
+                }
+                Err(_) => return,
+            }
+        }
+    })
+    .await;
+}
+
 /// The answer's body, chunk by chunk as the edge sends it. Past
 /// [`MAX_ANSWER_BYTES`] it is broken off with an error, so the sender sees
 /// an answer that failed, never a clean one that was cut short.
@@ -492,8 +547,12 @@ fn answer_stream(
     answer: reqwest::Response,
     recorder: Recorder,
 ) -> impl futures_util::Stream<Item = Result<Bytes, std::io::Error>> + Send {
-    futures_util::stream::unfold(Some((answer, recorder)), |state| async move {
-        let (mut answer, mut recorder) = state?;
+    let start = Streaming {
+        inner: Some((answer, recorder)),
+    };
+    futures_util::stream::unfold(Some(start), |state| async move {
+        let mut state = state?;
+        let (answer, recorder) = state.inner.as_mut()?;
         match answer.chunk().await {
             Ok(Some(chunk)) => {
                 let room = MAX_ANSWER_BYTES - recorder.total;
@@ -502,17 +561,20 @@ fn answer_stream(
                     // error in place of the rest.
                     recorder.take(&chunk[..room]);
                     recorder.too_large = true;
+                    let _ = state.inner.take();
                     return Some((Err(std::io::Error::other("live answer too large")), None));
                 }
                 recorder.take(&chunk);
-                Some((Ok(chunk), Some((answer, recorder))))
+                Some((Ok(chunk), Some(state)))
             }
             Ok(None) => {
                 recorder.complete = true;
+                let _ = state.inner.take();
                 None
             }
             Err(e) => {
                 tracing::warn!(error = %e, "live relay: the answer's body was cut off");
+                let _ = state.inner.take();
                 Some((Err(std::io::Error::other(e)), None))
             }
         }
@@ -1024,6 +1086,71 @@ mod tests {
             .unwrap();
         assert_eq!(record.status, 202);
         assert_eq!(record.outcome, "answered");
+        // Nobody read the body, yet the row holds what the app sent.
+        assert_eq!(record.body, r#"{"ok":true}"#);
+        assert!(!record.body_truncated);
+    }
+
+    #[tokio::test]
+    async fn a_sender_that_hangs_up_before_the_body_still_leaves_the_body_on_the_row() {
+        // The app answers at once with its head, and its body 4 s later.
+        let base = fake_edge(|_req: Request| {
+            let body = futures_util::stream::once(async {
+                tokio::time::sleep(Duration::from_secs(4)).await;
+                Ok::<_, std::io::Error>(Bytes::from_static(br#"{"slow":true}"#))
+            });
+            axum::http::Response::builder()
+                .status(200)
+                .header("content-type", "application/json")
+                .header(LIVE_HEADER, "answered")
+                .body(Body::from_stream(body))
+                .unwrap()
+        })
+        .await;
+        // A server in front of the relay, as the capture route is, and a
+        // sender that gives up after 1 s.
+        let relay = Arc::new(relay_to(base, 16));
+        let (tx, rx) = oneshot::channel::<Recorded>();
+        let tx = Arc::new(std::sync::Mutex::new(Some(tx)));
+        let front = Router::new().fallback(any(move |_req: Request| {
+            let relay = relay.clone();
+            let tx = tx.clone();
+            async move {
+                let headers = HeaderMap::new();
+                let method = Method::POST;
+                let (response, recorded) = relay.relay(live_request(&headers, &method)).await;
+                if let Some(tx) = tx.lock().unwrap().take() {
+                    let _ = tx.send(recorded);
+                }
+                response
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, front).await.unwrap();
+        });
+        let sent = reqwest::Client::new()
+            .post(format!("http://{addr}/w/acme-hooks/orders"))
+            .timeout(Duration::from_secs(1))
+            .send()
+            .await;
+        if let Ok(answer) = sent {
+            // The head came back; the body is what times out.
+            assert!(answer.bytes().await.is_err());
+        }
+        let recorded = tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .unwrap()
+            .unwrap();
+        let record = tokio::time::timeout(Duration::from_secs(10), recorded)
+            .await
+            .expect("the rest of the answer was read for the row")
+            .unwrap();
+        assert_eq!(record.status, 200);
+        assert_eq!(record.outcome, "answered");
+        assert_eq!(record.body, r#"{"slow":true}"#);
+        assert!(!record.body_truncated);
     }
 
     #[test]
@@ -1284,7 +1411,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_sender_that_leaves_early_is_recorded_as_cut() {
+    async fn a_sender_that_leaves_early_keeps_the_start_of_a_long_answer() {
         let base = fake_edge(|_req: Request| {
             let chunks = (0..100).map(|_| Ok::<_, std::io::Error>(Bytes::from(vec![b'y'; 1024])));
             axum::http::Response::builder()

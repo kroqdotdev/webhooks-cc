@@ -279,6 +279,11 @@ pub async fn run(
             }
             _ = crate::cli::share::shutdown_signal() => {
                 interrupted = true;
+                // Ctrl-C or SIGTERM ends a live relay as cleanly as the edge
+                // ending it: say so, the way `whk share` prints `stopped`.
+                if live_task.is_some() {
+                    live_stopped(json, STOPPED_HERE);
+                }
                 break;
             }
         }
@@ -533,18 +538,22 @@ fn show_live_update(update: Update, json: bool) {
     }
 }
 
+/// Why a live relay ended when its user stopped `whk`.
+const STOPPED_HERE: &str = "you stopped it on this computer";
+
 fn live_stopped(json: bool, reason: &str) {
+    println!("{}", live_stopped_line(json, reason));
+}
+
+fn live_stopped_line(json: bool, reason: &str) -> String {
     if json {
-        println!(
-            "{}",
-            serde_json::json!({ "event": "live_stopped", "reason": reason })
-        );
+        serde_json::json!({ "event": "live_stopped", "reason": reason }).to_string()
     } else {
-        println!(
+        format!(
             "\n  {} Live relay stopped: {}",
             red("●"),
             sanitize_line(reason)
-        );
+        )
     }
 }
 
@@ -611,6 +620,14 @@ fn forwarded_event(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_live_relay_stopped_here_says_so_in_json() {
+        let line = live_stopped_line(true, STOPPED_HERE);
+        let event: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(event["event"], "live_stopped");
+        assert_eq!(event["reason"], "you stopped it on this computer");
+    }
+
     use super::*;
     use std::time::Duration;
 

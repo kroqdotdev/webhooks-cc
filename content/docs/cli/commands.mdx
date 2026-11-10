@@ -206,6 +206,8 @@ whk shares ls --ended      # earlier shares
 whk shares stop <id|name>
 ```
 
+`whk shares stop` also stops a share whose CLI is reconnecting after a dropped connection (within 5 minutes), so it does not come back.
+
 ## names
 
 Names to share under (Pro, Business and teams). A name reserved inside a team belongs to the team.

@@ -13,6 +13,17 @@ pub enum ApiTime {
 }
 
 impl ApiTime {
+    /// The time in UTC, when it reads as one.
+    pub fn utc(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        use chrono::{DateTime, TimeZone, Utc};
+        match self {
+            ApiTime::Millis(ms) => Utc.timestamp_millis_opt(*ms).single(),
+            ApiTime::Text(text) => DateTime::parse_from_rfc3339(text)
+                .ok()
+                .map(|t| t.with_timezone(&Utc)),
+        }
+    }
+
     /// The time for a table: "2026-11-10 14:03", in the local zone.
     pub fn display(&self) -> String {
         use chrono::{DateTime, Local, TimeZone, Utc};

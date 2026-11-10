@@ -154,7 +154,7 @@ whk shares log acme      # the last requests visitors made (no addresses)
 whk shares stop acme     # by name or id
 ```
 
-Revoking the API key a share was started with stops it too, even while the CLI is reconnecting, and a stopped share stays stopped: the CLI does not reconnect it.
+`whk shares stop` also reaches a share whose CLI is reconnecting (its connection dropped in the last 5 minutes), so the reconnect is refused. Revoking the API key a share was started with stops it too, even while the CLI is reconnecting, and a stopped share stays stopped: the CLI does not reconnect it.
 
 ## Scripts and agents
 

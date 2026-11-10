@@ -163,11 +163,18 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
                 }
             }
             _ => {
+                let hint = crate::api::ignored_key_hint();
                 if json {
-                    println!("{}", serde_json::json!({ "logged_in": false }));
+                    println!(
+                        "{}",
+                        serde_json::json!({ "logged_in": false, "hint": hint })
+                    );
                 } else {
                     println!("  {} Not logged in", red("●"));
-                    println!("  Run {} to authenticate.", bold("whk auth login"));
+                    match hint {
+                        Some(hint) => println!("  {}", dim(hint)),
+                        None => println!("  Run {} to authenticate.", bold("whk auth login")),
+                    }
                 }
             }
         },
