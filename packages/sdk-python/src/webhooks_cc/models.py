@@ -585,23 +585,27 @@ class LiveResponse:
     ``body_encoding`` is ``"base64"``.
     """
 
-    status: int
+    status: int | None
     headers: dict[str, str]
     body: str
     body_truncated: bool
     body_encoding: str
-    ms: int
+    ms: int | None
+    #: ``"answered"``, or what the sender got instead: ``"offline"``,
+    #: ``"timeout"``, ``"unreachable"``, ``"busy"`` or ``"refused"``.
+    outcome: str = "answered"
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> LiveResponse:
         encoding = data.get("bodyEncoding")
         return cls(
-            status=int(_number(data.get("status"))),
+            status=None if data.get("status") is None else int(_number(data.get("status"))),
             headers=_str_map(data.get("headers")),
             body=data["body"] if isinstance(data.get("body"), str) else "",
             body_truncated=data.get("bodyTruncated") is True,
             body_encoding=encoding if encoding in ("utf8", "base64") else "utf8",
-            ms=int(_number(data.get("ms"))),
+            ms=None if data.get("ms") is None else int(_number(data.get("ms"))),
+            outcome=data["outcome"] if isinstance(data.get("outcome"), str) else "answered",
         )
 
 

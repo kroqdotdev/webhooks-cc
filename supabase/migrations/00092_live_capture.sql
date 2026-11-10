@@ -461,7 +461,7 @@ begin
            'bodyTruncated', coalesce(p_body_truncated, false),
            'bodyEncoding', case when p_body_encoding = 'base64' then 'base64' else 'utf8' end,
            'ms', case when p_ms >= 0 then p_ms end,
-           'outcome', case when p_outcome in ('answered', 'offline', 'timeout', 'unreachable', 'busy')
+           'outcome', case when p_outcome in ('answered', 'offline', 'timeout', 'unreachable', 'busy', 'refused')
                            then p_outcome else 'unreachable' end
          ),
          response_status = case when p_status between 100 and 599 then p_status::smallint end,

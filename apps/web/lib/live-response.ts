@@ -19,7 +19,7 @@ export interface LiveResponse {
   bodyTruncated: boolean;
   bodyEncoding: "utf8" | "base64";
   ms: number | null;
-  outcome: "answered" | "offline" | "timeout" | "unreachable" | "busy";
+  outcome: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
 }
 
 const OUTCOMES = new Set<LiveResponse["outcome"]>([
@@ -28,6 +28,7 @@ const OUTCOMES = new Set<LiveResponse["outcome"]>([
   "timeout",
   "unreachable",
   "busy",
+  "refused",
 ]);
 
 /** The response from an API value, or null when there is none or it is malformed. */
@@ -100,6 +101,8 @@ export function liveResponseSummary(response: LiveResponse): string {
       return `Nothing answered on your local port${sent}`;
     case "busy":
       return `Too many requests were waiting for your app${sent}`;
+    case "refused":
+      return `The request's path was not relayed${sent}`;
     default:
       return `Your app answered ${response.status ?? ""}${took}`.replace(/ {2,}/g, " ");
   }

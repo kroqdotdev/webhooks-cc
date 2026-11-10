@@ -236,8 +236,8 @@ export interface Request {
 
 /** The answer a local app gave a request relayed through `whk tunnel --live`. */
 export interface LiveResponse {
-  /** The HTTP status the app answered with. */
-  status: number;
+  /** The HTTP status the sender got: the app's, or the stand-in's (see `outcome`). */
+  status: number | null;
   /** The response headers. */
   headers: Record<string, string>;
   /** The start of the body (up to 64 KB). */
@@ -247,7 +247,14 @@ export interface LiveResponse {
   /** "utf8" for text, "base64" for bytes that are not UTF-8. */
   bodyEncoding: "utf8" | "base64";
   /** How long the app took, in milliseconds. */
-  ms: number;
+  ms: number | null;
+  /**
+   * "answered" when the app answered; otherwise what the sender got instead:
+   * "offline" (502, whk tunnel --live not connected), "timeout" (504),
+   * "unreachable" (502, nothing on the local port), "busy" (503) or
+   * "refused" (400, a path that could not be relayed).
+   */
+  outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
 }
 
 /** A `whk share` preview or a `whk tunnel --live` session (GET /api/shares). */

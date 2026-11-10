@@ -156,12 +156,18 @@ impl LiveRelay {
             return (response, stand_in(503, "busy", started));
         };
 
-        let url = relay_url(
+        let Some(url) = relay_url(
             &self.config.relay_url,
             request.endpoint_id,
             request.rest,
             request.raw_query,
-        );
+        ) else {
+            metrics::live("bad_path");
+            return (
+                (StatusCode::BAD_REQUEST, "bad path").into_response(),
+                stand_in(400, "refused", started),
+            );
+        };
         let mut headers = relay_headers(request.headers);
         if let Ok(secret) = HeaderValue::from_str(&self.config.secret) {
             headers.insert(HeaderName::from_static(RELAY_AUTH_HEADER), secret);
@@ -276,14 +282,33 @@ pub fn record(pool: &sqlx::PgPool, request_id: &str, record: LiveRecord) {
 }
 
 /// `<relay>/v1/live/<endpoint id><rest>[?query]`.
-pub fn relay_url(base: &str, endpoint_id: &str, rest: &str, raw_query: Option<&str>) -> String {
+pub fn relay_url(
+    base: &str,
+    endpoint_id: &str,
+    rest: &str,
+    raw_query: Option<&str>,
+) -> Option<reqwest::Url> {
     let rest = if rest.starts_with('/') { rest } else { "/" };
     let mut url = format!("{}/v1/live/{endpoint_id}{rest}", base.trim_end_matches('/'));
     if let Some(query) = raw_query.filter(|q| !q.is_empty()) {
         url.push('?');
         url.push_str(query);
     }
-    url
+    // The sender writes `rest`. Parsing resolves `..` and `%2e%2e` segments,
+    // so a path such as `/../<other id>/x` would otherwise reach another
+    // endpoint's live session with our relay secret. Whatever the parse made
+    // of it must still sit under this endpoint.
+    let parsed = reqwest::Url::parse(&url).ok()?;
+    let own = format!("/v1/live/{endpoint_id}");
+    let path = parsed.path();
+    let base_path = reqwest::Url::parse(base)
+        .ok()
+        .map(|b| b.path().trim_end_matches('/').to_string())
+        .unwrap_or_default();
+    let within = path
+        .strip_prefix(base_path.as_str())
+        .is_some_and(|p| p == own || p.starts_with(&format!("{own}/")));
+    within.then_some(parsed)
 }
 
 /// The part of the original path after `/w/<slug>`, still encoded: `/` when
@@ -415,14 +440,40 @@ mod tests {
 
     #[test]
     fn the_relay_url_names_the_endpoint_and_keeps_the_query() {
+        let url = |base, rest, query| relay_url(base, "ep_1", rest, query).map(|u| u.to_string());
         assert_eq!(
-            relay_url("http://10.0.0.4:4002/", "ep_1", "/hooks", Some("a=1&b=2")),
-            "http://10.0.0.4:4002/v1/live/ep_1/hooks?a=1&b=2"
+            url("http://10.0.0.4:4002/", "/hooks", Some("a=1&b=2")).as_deref(),
+            Some("http://10.0.0.4:4002/v1/live/ep_1/hooks?a=1&b=2")
         );
         assert_eq!(
-            relay_url("http://e", "ep_1", "", Some("")),
-            "http://e/v1/live/ep_1/"
+            url("http://e", "", Some("")).as_deref(),
+            Some("http://e/v1/live/ep_1/")
         );
+        // Dot segments that stay inside the endpoint resolve as usual.
+        assert_eq!(
+            url("http://e", "/a/../b", None).as_deref(),
+            Some("http://e/v1/live/ep_1/b")
+        );
+    }
+
+    #[test]
+    fn the_relay_url_never_leaves_its_endpoint() {
+        for rest in [
+            "/../ep_2/hooks",
+            "/%2e%2e/ep_2/hooks",
+            "/%2E%2E/ep_2",
+            "/.%2e/ep_2",
+            "/../../other",
+            "/..",
+            "/a/../../ep_2",
+        ] {
+            assert!(
+                relay_url("http://e", "ep_1", rest, None).is_none(),
+                "{rest} left the endpoint"
+            );
+        }
+        // A prefix of another id is not this endpoint either.
+        assert!(relay_url("http://e", "ep", "/../ep_1x", None).is_none());
     }
 
     #[test]

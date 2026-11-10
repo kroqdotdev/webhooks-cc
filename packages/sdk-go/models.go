@@ -101,6 +101,8 @@ type Request struct {
 // `whk tunnel --live`. Body holds the start of the body (up to 64 KB),
 // base64-encoded when BodyEncoding is "base64".
 type LiveResponse struct {
+	// Status is what the sender got: the app's status, or the stand-in's
+	// (see Outcome). Zero when none was recorded.
 	Status        int               `json:"status"`
 	Headers       map[string]string `json:"headers"`
 	Body          string            `json:"body"`
@@ -109,6 +111,9 @@ type LiveResponse struct {
 	BodyEncoding string `json:"bodyEncoding"`
 	// MS is how long the app took, in milliseconds.
 	MS int64 `json:"ms"`
+	// Outcome is "answered", or what the sender got instead: "offline",
+	// "timeout", "unreachable", "busy" or "refused".
+	Outcome string `json:"outcome,omitempty"`
 }
 
 // UnmarshalJSON reads a request as the API returns it.
