@@ -33,6 +33,8 @@ export function switchNextPath(
   const inApp = APP_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
+  // Both sites have a pricing page; any other page is one site's own.
+  if (pathname === "/pricing") return pathname;
   if (!inApp) return "/";
   const params = new URLSearchParams(search);
   const slug = params.get("endpoint");

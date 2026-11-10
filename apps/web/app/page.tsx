@@ -18,7 +18,9 @@ import {
 } from "lucide-react";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
-import { PaidPlanCTA, PricingCTA } from "@/components/landing/pricing-cta";
+import { PricingCTA } from "@/components/landing/pricing-cta";
+import { PricingPlans } from "@/components/landing/pricing-plans";
+import { IS_IT_FREE_FAQ, TEAM_QUOTA_FAQ } from "@/lib/pricing-faq";
 import { LandingDashboard } from "@/components/landing/landing-dashboard";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
@@ -185,16 +187,8 @@ const LANDING_FAQ: FAQItem[] = [
     answer:
       "Send a webhook to your endpoint URL and open the dashboard. Each request shows method, headers, body (auto-formatted JSON and XML), query parameters, IP, and timestamp. Export as JSON or CSV.",
   },
-  {
-    question: "Is webhooks.cc free?",
-    answer:
-      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access, with every Pro feature. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Business ($29/month or $290/year) gives 250,000 requests a month, 90-day retention, 2,000 parsed attachment pages a month, up to 50 layouts per endpoint, a custom inbound domain and file drops to SFTP, FTP or S3. Teams are billed separately, from 2 seats: Teams at $12/seat/mo, or Team Business at $35/seat/mo ($350/seat/yr) with Business's limits per seat.",
-  },
-  {
-    question: "Whose quota is used for shared team endpoints?",
-    answer:
-      "The team's. Once an endpoint is shared with a team that has an active Teams subscription, its incoming webhooks draw from the team's pooled quota (100,000 requests per seat per period on Teams, 250,000 on Team Business) instead of the owner's personal quota, and they are kept for 31 days, or 90 on Team Business, no matter which plan the owner is on. Endpoints that are not shared with an active team still count against the owner's own limit.",
-  },
+  IS_IT_FREE_FAQ,
+  TEAM_QUOTA_FAQ,
   {
     question: "How do I connect an AI coding agent?",
     answer:
@@ -665,130 +659,16 @@ export default async function Home() {
             </p>
           </div>
 
-          {/* Personal plans */}
-          {/* Equal-height cards: the buttons line up along the bottom. */}
-          <div className="grid md:grid-cols-3 gap-6">
-            {/* Free Plan */}
-            <div className="ui-card flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Free</h3>
-                <p className="text-5xl font-bold">
-                  $0
-                  <span className="text-lg font-normal text-muted-foreground"> forever</span>
-                </p>
-              </div>
-              <ul className="space-y-3 mb-8 flex-1">
-                {[
-                  "50 requests/day",
-                  "7-day data retention",
-                  "Unlimited endpoints",
-                  "20 parsed attachment pages/month",
-                  "Email capture & destinations",
-                  "CLI, SDK & MCP access",
-                  "Mock responses & replay",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto">
-                <PricingCTA quietWhenSignedIn />
-              </div>
-            </div>
-
-            {/* Pro Plan */}
-            <div className="ui-card border-primary relative flex flex-col">
-              <div className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
-                Popular
-              </div>
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Pro</h3>
-                <p className="text-5xl font-bold">
-                  $8
-                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
-                </p>
-              </div>
-              <p className="text-sm font-semibold mb-3">Everything in Free, plus:</p>
-              <ul className="space-y-3 mb-8 flex-1">
-                {[
-                  "100,000 requests/month",
-                  "31-day data retention",
-                  "100 parsed attachment pages/month",
-                  "Extra requests in 25,000 blocks",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              {/* One action per paid plan: everyone starts free and upgrades under Account. */}
-              <PaidPlanCTA plan="Pro" primary />
-            </div>
-
-            {/* Business Plan */}
-            <div className="ui-card flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Business</h3>
-                <p className="text-5xl font-bold">
-                  $29
-                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">or $290 a year</p>
-              </div>
-              <p className="text-sm font-semibold mb-3">Everything in Pro, plus:</p>
-              <ul className="space-y-3 mb-8 flex-1">
-                {[
-                  "250,000 requests/month",
-                  "90-day data retention",
-                  "2,000 parsed attachment pages/month",
-                  "Up to 50 layouts, 250 AI assists/30 days",
-                  "1 custom inbound domain, extra ones $3/mo",
-                  "File drops to SFTP, FTP/FTPS & S3",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              {/* One action per paid plan: everyone starts free and upgrades under Account. */}
-              <PaidPlanCTA plan="Business" />
-            </div>
-          </div>
-
-          {/* Teams: one strip with both team plans; the details live on /for-teams. */}
-          <div className="ui-card ui-card-static mt-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-            <div>
-              <h3 className="font-bold text-2xl mb-2">Teams</h3>
-              <p className="text-muted-foreground mb-4">
-                Share endpoints with the people you work with: everyone sees the same webhooks the
-                moment they arrive. A team has its own subscription, billed per seat from 2 seats.
-              </p>
-              <ul className="grid gap-2 sm:grid-cols-2">
-                <li className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
-                  <span>
-                    <span className="font-bold">Teams, $12 a seat a month:</span> 100,000 pooled
-                    requests per seat, 31-day retention
-                  </span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
-                  <span>
-                    <span className="font-bold">Team Business, $35 a seat a month:</span>{" "}
-                    Business&apos;s limits per seat, 90-day retention
-                  </span>
-                </li>
-              </ul>
-            </div>
-            <Link href="/for-teams" className="ui-btn-outline text-center block">
-              How Teams works
-              <ArrowRight className="inline-block ml-2 h-5 w-5" />
+          <PricingPlans />
+          <p className="mt-6">
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+            >
+              Extra requests, annual billing and pricing questions
+              <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
-          </div>
+          </p>
         </div>
       </section>
 
@@ -932,6 +812,14 @@ export default async function Home() {
                     className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Email to webhook
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/pricing"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    Pricing
                   </Link>
                 </li>
                 <li>

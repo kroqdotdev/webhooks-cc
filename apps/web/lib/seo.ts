@@ -20,6 +20,8 @@ const PRIVACY_UPDATED = new Date("2026-11-04T00:00:00.000Z");
 const MARKETING_PASS_UPDATED = new Date("2026-11-03T00:00:00.000Z");
 // Compare pages and their checklist, rechecked against each tool's own site.
 const COMPARE_UPDATED = new Date("2026-11-03T00:00:00.000Z");
+// /pricing, its own page since it stopped redirecting to the landing page.
+const PRICING_PAGE_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;
@@ -50,6 +52,12 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     changeFrequency: "monthly",
     priority: 0.8,
     lastModified: MARKETING_PASS_UPDATED,
+  },
+  {
+    path: "/pricing",
+    changeFrequency: "monthly",
+    priority: 0.9,
+    lastModified: PRICING_PAGE_UPDATED,
   },
   // Docs pages are auto-generated from content/docs/ in app/sitemap.xml/route.ts
   { path: "/compare", changeFrequency: "monthly", priority: 0.7, lastModified: COMPARE_UPDATED },

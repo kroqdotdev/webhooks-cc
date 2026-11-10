@@ -28,8 +28,7 @@ interface NavLink {
 const NAV_LINKS: NavLink[] = [
   { href: "/docs", label: "Docs" },
   { href: "/installation", label: "Install" },
-  // Pricing is a section of the landing page, reachable from every page.
-  { href: "/#pricing", label: "Pricing" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/blog", label: "Blog" },
 ];
 
@@ -127,9 +126,7 @@ export function SiteHeader({
   // so the header does not change as people move around the app.
   const links =
     compact || (isAuthenticated && inApp)
-      ? siteLinks.filter(
-          (link) => !["/blog", "/integrations", "/#pricing", "/pricing"].includes(link.href)
-        )
+      ? siteLinks.filter((link) => !["/blog", "/integrations", "/pricing"].includes(link.href))
       : siteLinks;
 
   const handleSignOut = async () => {
