@@ -167,11 +167,11 @@ export async function proxy(request: NextRequest) {
   // on mailhooks.cc /mailhooks/pricing is /pricing, so an unknown page under
   // it ends at mailhooks.cc's 404 like any other instead of the root one.
   if (site === "mailhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
-    const own = pathname.slice("/mailhooks".length) || "/";
-    return NextResponse.redirect(
-      new URL(`${own}${request.nextUrl.search}`, mailhooksOrigin()!),
-      307
-    );
+    // One leading slash: "//evil.com" or "/\\evil.com" would resolve to another host.
+    const own = pathname.slice("/mailhooks".length).replace(/^[/\\]+/, "/") || "/";
+    const origin = new URL(mailhooksOrigin()!).origin;
+    const target = new URL(`${own}${request.nextUrl.search}`, origin);
+    return NextResponse.redirect(target.origin === origin ? target : new URL("/", origin), 307);
   }
   // Under mailhooks.cc's own pages only the catalogue's senders exist.
   if (site === "mailhooks" && unknownMailhooksPage(pathname)) missingOnMailhooks = true;

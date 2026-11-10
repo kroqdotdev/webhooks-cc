@@ -272,6 +272,19 @@ describe("proxy: two sites", () => {
     }
   });
 
+  it("never sends a /mailhooks path to another host", async () => {
+    for (const path of [
+      "/mailhooks//evil.example/x",
+      "/mailhooks/%2F%2Fevil.example",
+      "/mailhooks/\\evil.example",
+      "/mailhooks///evil.example?q=1",
+    ]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(307);
+      expect(new URL(res.headers.get("location")!).origin, path).toBe("https://mailhooks.cc");
+    }
+  });
+
   it("drops a missing marker a client sends, on either site", async () => {
     for (const url of ["https://mailhooks.cc/pricing", "https://webhooks.cc/docs"]) {
       const res = await proxy(new NextRequest(url, { headers: { "x-whk-missing": "1" } }));
