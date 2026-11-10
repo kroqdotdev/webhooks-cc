@@ -1,8 +1,8 @@
-import { ArrowUpRight } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
-import { webhooksOrigin } from "@/lib/site";
 
 export const metadata = mailhooksMetadata({
   title: "Guides",
@@ -48,7 +48,6 @@ const GUIDES = [
 ];
 
 export default function MailhooksGuides() {
-  const docs = webhooksOrigin();
   return (
     <>
       <SiteHeader />
@@ -56,20 +55,20 @@ export default function MailhooksGuides() {
         <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">Guides</h1>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl">
-            Start here. The full articles live in the docs on webhooks.cc, which covers both sites
-            with one account.
+            Start here. Each guide opens the full article in the docs, which cover mailhooks.cc and
+            webhooks.cc with one account.
           </p>
           <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {GUIDES.map((guide) => (
               <li key={guide.path}>
-                <a href={`${docs}${guide.path}`} className="ui-card block h-full">
+                <Link href={guide.path} className="ui-card block h-full">
                   <p className="font-bold text-lg mb-2">{guide.title}</p>
                   <p className="text-muted-foreground mb-4">{guide.summary}</p>
                   <span className="inline-flex items-center gap-1 text-sm font-bold text-primary-ink">
-                    Read on webhooks.cc
-                    <ArrowUpRight aria-hidden className="h-4 w-4" />
+                    Read the guide
+                    <ArrowRight aria-hidden className="h-4 w-4" />
                   </span>
-                </a>
+                </Link>
               </li>
             ))}
           </ul>

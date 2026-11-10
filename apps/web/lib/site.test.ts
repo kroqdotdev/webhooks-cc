@@ -87,12 +87,15 @@ describe("servedOnMailhooks", () => {
       "/api/endpoints",
       "/s/token",
       "/icon-192.png",
+      // The docs, served from app/mailhooks/docs and canonical on webhooks.cc.
+      "/docs",
+      "/docs/layouts",
     ]) {
       expect(servedOnMailhooks(path), path).toBe(true);
     }
     for (const path of [
-      "/docs",
-      "/docs/layouts",
+      "/docs.md",
+      "/docsx",
       "/blog",
       "/compare",
       "/privacy",

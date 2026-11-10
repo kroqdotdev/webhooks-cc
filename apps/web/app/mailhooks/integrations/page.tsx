@@ -2,7 +2,6 @@ import Link from "next/link";
 import { FeaturePage, FeatureTable } from "@/components/mailhooks/feature-page";
 import { mailhooksFeature } from "@/lib/mailhooks-features";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
-import { webhooksOrigin } from "@/lib/site";
 
 const feature = mailhooksFeature("/integrations");
 
@@ -85,7 +84,7 @@ export default function IntegrationsPage() {
           Shortened. The full JSON also carries the recipients, the text and HTML, the attachments
           (as signed links by default), the sender checks and the headers; see{" "}
           <Link
-            href={`${webhooksOrigin()}/docs/forwarding#signed-json`}
+            href="/docs/forwarding#signed-json"
             className="text-primary-ink font-bold hover:underline"
           >
             Signed JSON

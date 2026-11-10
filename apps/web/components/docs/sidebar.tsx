@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useSitePathname } from "@/lib/site-pathname";
 import { cn } from "@/lib/utils";
 import { BookOpen, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS, type NavSection } from "@/lib/docs-nav";
@@ -38,7 +38,7 @@ function SidebarContent({
   onNavigate?: () => void;
   onSearchClick?: () => void;
 }) {
-  const pathname = usePathname();
+  const pathname = useSitePathname();
   const isApple = useIsApple();
   const [toggled, setToggled] = useState<{ path: string; open: Record<string, boolean> }>({
     path: pathname,

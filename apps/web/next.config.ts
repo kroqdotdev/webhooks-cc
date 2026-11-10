@@ -59,6 +59,14 @@ const missingOnMailhooks = [
 ];
 const proxiedPaths =
   "/:path((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.(?:xml|txt|rss)).*)";
+// The docs on mailhooks.cc: the same pages as webhooks.cc's, under its own
+// header and footer (app/mailhooks/docs), canonical on webhooks.cc.
+const mailhooksDocsRewrites = mailhooksHost
+  ? [
+      { source: "/docs", has: onMailhooks, destination: "/mailhooks/docs" },
+      { source: "/docs/:path+", has: onMailhooks, destination: "/mailhooks/docs/:path+" },
+    ]
+  : [];
 const mailhooksRewrites = mailhooksHost
   ? [
       { source: proxiedPaths, has: missingOnMailhooks, destination: "/mailhooks/missing" },
@@ -167,6 +175,9 @@ const nextConfig: NextConfig = {
         { source: "/", has: prefersMarkdown, destination: "/index.md" },
         { source: "/docs", has: prefersMarkdown, destination: "/docs.md" },
         { source: "/docs/:path(.+)", has: prefersMarkdown, destination: "/docs.md/:path" },
+        // mailhooks.cc's docs come after the twins, so an agent asking it for
+        // markdown gets the same twin as on webhooks.cc.
+        ...mailhooksDocsRewrites,
       ],
     };
   },

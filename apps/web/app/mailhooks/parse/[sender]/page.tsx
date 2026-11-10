@@ -7,7 +7,6 @@ import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { UseTemplateButton } from "@/components/mailhooks/use-template-button";
 import { LAYOUT_TEMPLATES, layoutTemplate } from "@/lib/layout-templates";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
-import { webhooksOrigin } from "@/lib/site";
 
 // Only the senders in the catalogue are pages. An unknown one is never
 // rendered here: rendered on demand, each made-up slug was written to the
@@ -136,7 +135,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                 ))}
               </ul>
               <p className="text-sm mt-6">
-                <Link href={`${webhooksOrigin()}/docs/layouts`} className="underline">
+                <Link href="/docs/layouts" className="underline">
                   How layouts work
                 </Link>
               </p>

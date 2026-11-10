@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useSitePathname } from "@/lib/site-pathname";
 import { SITE_URL } from "@/lib/seo";
 import { getBreadcrumbLabels } from "@/lib/docs-nav";
 
 const BREADCRUMB_LABELS = getBreadcrumbLabels();
 
 export function DocsBreadcrumbs() {
-  const pathname = usePathname();
+  const pathname = useSitePathname();
   if (!pathname) return null;
 
   const segments = pathname.split("/").filter(Boolean);
@@ -39,10 +39,7 @@ export function DocsBreadcrumbs() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: breadcrumbJson }} />
-      <nav
-        aria-label="Breadcrumb"
-        className="mb-6 flex items-center justify-between pl-28 md:pl-0"
-      >
+      <nav aria-label="Breadcrumb" className="mb-6 flex items-center justify-between pl-28 md:pl-0">
         <ol className="flex items-center gap-1.5 text-sm text-muted-foreground">
           {crumbs.map((crumb, i) => {
             const isLast = i === crumbs.length - 1;

@@ -6,7 +6,6 @@ import { PricingCTA } from "@/components/landing/pricing-cta";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { MAILHOOKS_FEATURES, type MailhooksFeature } from "@/lib/mailhooks-features";
 import { JsonLd, faqSchema, howToSchema } from "@/lib/schemas";
-import { webhooksOrigin } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 /** A small table for a feature page's examples; `note` is a mono line under a header. */
@@ -110,10 +109,7 @@ export function FeaturePage({
             </ol>
             <p className="text-sm text-muted-foreground mt-6">
               Every setting, in full:{" "}
-              <Link
-                href={`${webhooksOrigin()}${feature.docs.path}`}
-                className="text-primary-ink font-bold hover:underline"
-              >
+              <Link href={feature.docs.path} className="text-primary-ink font-bold hover:underline">
                 {feature.docs.label}
                 <ArrowRight className="inline-block ml-1 h-4 w-4" aria-hidden />
               </Link>
