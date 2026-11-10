@@ -16,7 +16,7 @@ RUN corepack enable
 # The attachment parser (apps/parser-rs), run by the parse worker as a child
 # process that sandboxes itself. Built on Debian bookworm, so its glibc is no
 # newer than the runner's.
-FROM rust:1.98-slim-bookworm AS parser
+FROM rust:1.99-slim-bookworm AS parser
 WORKDIR /parser
 # Dependencies first, against stub sources, so that layer survives source changes.
 COPY apps/parser-rs/Cargo.toml apps/parser-rs/Cargo.lock ./
