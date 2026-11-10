@@ -12,7 +12,7 @@ const FAQ_ITEMS = [
   {
     question: "webhooks.cc vs Svix Play and Svix Ingest: how do they compare for webhook testing?",
     answer:
-      "Svix Play is Svix's free browser-based request bin for viewing incoming HTTP requests, while Svix Ingest is production ingestion infrastructure that receives third-party webhooks (such as Stripe or GitHub) and forwards them into your backend. webhooks.cc focuses on developer and CI testing: it combines an instant capture URL with CLI tunneling to localhost (whk tunnel), 32-provider signature generation and verification, inbound email capture (@mailhooks.cc), SDKs with waitFor() matchers for Vitest, Jest, Playwright, pytest and go test, and an MCP server for AI coding agents (remote with OAuth, or the local package with 48 tools).",
+      "Svix Play is Svix's free browser-based request bin for viewing incoming HTTP requests, while Svix Ingest is production ingestion infrastructure that receives third-party webhooks (such as Stripe or GitHub) and forwards them into your backend. webhooks.cc focuses on developer and CI testing: it combines an instant capture URL with CLI tunneling to localhost (whk tunnel), 32-provider signature generation and verification, inbound email capture (@mailhooks.cc), SDKs with waitFor() matchers for Vitest, Jest, Playwright, pytest and go test, and an MCP server for AI coding agents (remote with OAuth, or the local package with 51 tools).",
   },
   {
     question: "Can webhooks.cc verify Svix and Standard Webhooks signatures?",
@@ -63,7 +63,7 @@ const ROWS = [
   ["Inbound email capture", "Yes ({slug}@mailhooks.cc + OTP extraction)", "No"],
   [
     "MCP server for AI agents",
-    "Yes, for testing: remote (OAuth) or local (48 tools)",
+    "Yes, for testing: remote (OAuth) or local (51 tools)",
     "App Portal MCP for your customers' endpoints",
   ],
   ["Outbound customer portal", "No", "Yes (core Svix feature)"],

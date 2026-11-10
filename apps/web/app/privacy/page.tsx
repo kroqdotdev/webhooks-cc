@@ -125,6 +125,25 @@ export default function PrivacyPage() {
               .
             </p>
             <p>
+              <span className="font-bold text-foreground">Shared previews.</span> When you share a
+              local site with <code>whk share</code>, we record the share: its name, when it started
+              and ended and why, the computer name and operating system the CLI reports, the address
+              it connected from, and how many requests and bytes visitors took. The pages themselves
+              pass through to visitors and are not stored. For each request a visitor makes, our
+              servers write a line to an access log: the time, the visitor&apos;s IP address and
+              country, the method, address and path, the answer&apos;s status, type and size, the
+              browser&apos;s user agent and referrer, and which share and account served it. We use
+              it to look into reports of abuse, such as phishing. For the request list you see, our
+              servers keep a share&apos;s last 50 requests in memory, with a number per visitor
+              instead of their address.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Live tunnels.</span> With{" "}
+              <code>whk tunnel --live</code>, each captured request is also sent to your own
+              computer, and we store your app&apos;s answer with the request: its status, headers
+              and the first 64 KB of its body.
+            </p>
+            <p>
               <span className="font-bold text-foreground">Forwarding and notifications.</span> If
               you add a destination to an endpoint, each captured request or email it takes is sent
               to the URL you chose: as received, as a JSON document, as a JSON body built from the
@@ -418,6 +437,18 @@ export default function PrivacyPage() {
               endpoint. Anyone with the link can view that copy.
             </p>
             <p>
+              <span className="font-bold text-foreground">Live tunnel answers:</span> Kept with
+              their request, for the same time.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Shared previews:</span> The access log of
+              requests to previews is deleted after 14 days. The address a share&apos;s CLI
+              connected from is deleted 90 days after the share ends, or a year after it ends when
+              the share was reported for child sexual abuse material, so the police can follow it
+              up. The rest of a share&apos;s record (its name, times and counts) is kept until you
+              delete your account.
+            </p>
+            <p>
               <span className="font-bold text-foreground">Account data:</span> Your account,
               endpoints, teams, and API keys are kept until you delete them or your account.
             </p>
@@ -457,7 +488,11 @@ export default function PrivacyPage() {
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               <span className="font-bold text-foreground">Cookies.</span> Supabase sets the cookies
-              that keep you signed in. We do not use tracking cookies.
+              that keep you signed in. We do not use tracking cookies. On a shared preview
+              (sharehooks.cc), our servers set a cookie when a visitor continues past the preview
+              notice or enters a preview&apos;s password, so they are not asked again for 7 days;
+              each holds only which preview it is for and when it was set, signed so it cannot be
+              forged.
             </p>
             <p>
               <span className="font-bold text-foreground">localStorage.</span> Your theme and visual

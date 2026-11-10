@@ -11,15 +11,18 @@ export const DEFAULT_OG_IMAGE_PATH = "/og-image.jpg";
 export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
 
 // Privacy policy, terms, and the subprocessor list usually change together.
-const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
-// The privacy policy alone: retention on Business and Team Business.
-const PRIVACY_UPDATED = new Date("2026-11-04T00:00:00.000Z");
+const LEGAL_PAGES_UPDATED = new Date("2026-11-10T00:00:00.000Z");
+// The privacy policy alone: shared previews and live tunnel answers.
+const PRIVACY_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 
 // The staleness pass over the marketing pages: Python and Go SDKs, destinations,
 // stored attachments, mailhooks.cc links, Devin Desktop in the MCP setup.
 const MARKETING_PASS_UPDATED = new Date("2026-11-03T00:00:00.000Z");
 // Compare pages and their checklist, rechecked against each tool's own site.
 const COMPARE_UPDATED = new Date("2026-11-03T00:00:00.000Z");
+// The ngrok page alone: whk share and live tunnels, checked against ngrok's
+// pricing and free plan limits pages on 2026-11-10.
+const COMPARE_NGROK_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 // /pricing, its own page since it stopped redirecting to the landing page.
 const PRICING_PAGE_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 
@@ -71,7 +74,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare/ngrok",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: COMPARE_UPDATED,
+    lastModified: COMPARE_NGROK_UPDATED,
   },
   {
     path: "/compare/beeceptor",

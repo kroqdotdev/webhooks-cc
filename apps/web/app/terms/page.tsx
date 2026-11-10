@@ -17,7 +17,7 @@ export default function TermsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Terms of Service</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 5, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 10, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -63,6 +63,43 @@ export default function TermsPage() {
               <li>Use the service to harm, harass, or impersonate others</li>
             </ul>
             <p>We may suspend or terminate accounts that violate these rules.</p>
+          </div>
+        </section>
+
+        {/* Shared previews */}
+        <section className="border-t-strong border-line pt-8 mt-8">
+          <h2 className="text-xl font-bold mb-3">Shared Previews</h2>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              <code>whk share</code> makes a site on your computer reachable by anyone with its link
+              on sharehooks.cc. You are responsible for what your previews serve. You agree not to
+              use them for:
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                Phishing, or pages that imitate another site or brand to collect sign-ins or payment
+                details
+              </li>
+              <li>Malware, or files meant to harm the computers of people who open them</li>
+              <li>Child sexual abuse material, or any other illegal content</li>
+              <li>Infringing other people&apos;s copyright or trademarks</li>
+              <li>
+                Hosting files or media for download: previews serve web pages, and the rest is
+                refused
+              </li>
+            </ul>
+            <p>
+              Anyone can report a preview, without an account, through the Report button on every
+              preview or at{" "}
+              <Link href="/report" className="text-primary-ink hover:underline font-bold">
+                webhooks.cc/report
+              </Link>
+              . We review each report and may stop a preview, block its name, or suspend sharing or
+              the account, without notice when the content is clearly unlawful or harmful. When we
+              take a preview down, we send its owner a statement of the reasons and how to contest
+              the decision, and we tell the person who reported it what we decided. We report child
+              sexual abuse material to the authorities.
+            </p>
           </div>
         </section>
 

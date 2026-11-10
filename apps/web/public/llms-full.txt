@@ -621,7 +621,7 @@ codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
 ### MCP Tools
 
-The local server has 48 tools once it is connected to an account; the remote server has the same tools except `send_to` and `replay_request` (46). In the keyless sandbox the local server offers a smaller set, with `connect_account` and `wait_for_connection` to connect a human's account. `describe` returns every tool's parameters.
+The local server has 51 tools once it is connected to an account; the remote server has the same tools except `send_to`, `replay_request` and `share_port` (48). In the keyless sandbox the local server offers a smaller set, with `connect_account` and `wait_for_connection` to connect a human's account. `describe` returns every tool's parameters.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
@@ -741,8 +741,18 @@ whk tunnel <port>[/path]               # Forward webhooks to localhost
   -H, --header KEY:VALUE              # Custom forwarding headers
   --email-format <format>              # json (default), postmark, sendgrid, mailgun or cloudmailin
   --email-path <path> / --no-email     # Where emails go, or skip them
+  --live                               # Relay each webhook while the sender waits; the sender gets your app's answer
+                                       # (502 when whk is not connected, 504 after 25 s), stored with the request
 
 whk listen <slug>                      # Stream requests to terminal
+
+# Sharing localhost (https://webhooks.cc/docs/share)
+whk share <port>                       # Public link https://<name>.sharehooks.cc to a local site
+  --name <name>                        # A name you reserved (paid plans); random otherwise (Free: ends in -free)
+  --password                           # Visitors need a password (prompted or WHK_SHARE_PASSWORD; paid plans)
+  --no-qr / --json                     # No QR code / one JSON event per line
+whk shares ls [--ended] | stop <id|name>
+whk names ls | reserve <name> | release <name> | password <name> [--clear]
 
 # Sending and replaying
 whk send <slug>                        # Send test webhook

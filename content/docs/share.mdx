@@ -1,0 +1,179 @@
+---
+title: "Share localhost"
+description: "Share the site running on your machine at a public HTTPS link with whk share: random or reserved names on sharehooks.cc, passwords, plan limits, and what previews refuse to serve."
+section: cli
+order: 4
+lastUpdated: 2026-11-10
+schema: howto
+keywords:
+  [
+    "share localhost",
+    "localhost tunnel",
+    "expose localhost",
+    "ngrok alternative",
+    "public url for localhost",
+    "share dev server",
+    "preview link",
+    "whk share",
+  ]
+seo:
+  ogTitle: "whk share: Share Localhost at a Public Link"
+  ogDescription: "Share a local port at https://<name>.sharehooks.cc with one command: reserved names, passwords, live reload and WebSockets, and the limits on each plan."
+---
+
+`whk share` puts the site running on your machine at a public HTTPS link, so you can show work in progress to a client, a teammate or your phone without deploying it:
+
+```bash
+whk share 3000
+```
+
+```
+  ● Sharing
+  Link:          https://calm-river-7f2a.sharehooks.cc
+  Forwarding to: localhost:3000
+```
+
+Visitors' requests travel down one outbound connection from the CLI to your local port, and the answers come back the same way. Live reload and WebSockets work, so you can keep editing while someone watches. Nothing is opened on your machine: no port forwarding, firewall changes or public IP.
+
+This is a different tool from [`whk tunnel`](/docs/cli/tunnel): a tunnel delivers webhooks captured at an endpoint to your server, while a share serves your whole site to people with a browser. To answer webhook senders with your local app's real response, see [live tunnels](/docs/live-tunnel).
+
+## Get started
+
+1. [Install the CLI](/installation) and log in once:
+
+   ```bash
+   whk auth login
+   ```
+
+2. Start your dev server, then share its port:
+
+   ```bash
+   whk share 3000
+   ```
+
+The CLI prints the link and, in a terminal, draws it as a QR code for opening on a phone (`--no-qr` leaves it out). Press Ctrl-C to stop sharing. If the connection drops (a laptop waking up, a network change), the CLI reconnects on its own and the link stays the same.
+
+You need an account with a confirmed email address. Guest and unclaimed agent sessions cannot share.
+
+## Names
+
+Every share gets a random name unless you pick one:
+
+| Plan                | Link                                                         |
+| ------------------- | ------------------------------------------------------------ |
+| Free                | A random name ending in `-free`: `calm-river-7f2a-free.sharehooks.cc` |
+| Pro, Business, teams | A random name, or a name you reserved: `acme.sharehooks.cc` |
+
+Reserve names once and share under them as often as you like, so a link you sent last week still works next time:
+
+```bash
+whk names reserve acme
+whk share 3000 --name acme
+whk names ls
+whk names release acme
+```
+
+Names use lowercase letters, digits and hyphens. Names that imitate well-known brands or sign-in pages are refused, and names ending in `-free` are kept for free previews, so a paid link can never pass for a free one or the other way round.
+
+A name reserved inside a team belongs to the team: every member can share under it, one share at a time. If a teammate is already sharing under the name, the CLI says who; stop that share first or pick another name.
+
+## Passwords
+
+On Pro, Business and team plans, put a share behind a password:
+
+```bash
+whk share 3000 --password
+```
+
+The CLI asks for the password, or reads `WHK_SHARE_PASSWORD`. Visitors get a password page first; after the right password their browser keeps a cookie for 7 days. Requests that are not page loads (an API call, a script) get `401` until the browser has unlocked the link.
+
+A reserved name can carry its own password, which holds for every share under it:
+
+```bash
+whk names password acme          # prompted, or WHK_SHARE_PASSWORD
+whk names password acme --clear
+```
+
+A password given to `whk share --password` wins over the name's for that run.
+
+## Limits
+
+| Plan          | Shares at once  | Reserved names  | Session length | Data a month    | Passwords |
+| ------------- | --------------- | --------------- | -------------- | --------------- | --------- |
+| Free          | 1               | none            | 2 hours        | 1 GB            | No        |
+| Pro           | 3               | 3               | No limit       | 25 GB           | Yes       |
+| Business      | 10              | 20              | No limit       | 150 GB          | Yes       |
+| Teams         | 3 per member    | 3 per member    | No limit       | 25 GB per member  | Yes       |
+| Team Business | 10 per member   | 20 per member   | No limit       | 150 GB per member | Yes       |
+
+Data is what visitors download from your shares, counted per calendar month in UTC. Your plan is the best of your own plan and any subscribed team you belong to. When the month's data runs out, your previews show "This preview is paused" until the month turns (or you move to a bigger plan), and `whk share` says so. One visitor can take at most 250 MB a day from a share, so a stranger cannot use up your month.
+
+A Free share ends after 2 hours; run `whk share` again for a new one. Each share also has a request rate limit (50 requests a second, with room for a burst of a few hundred for a page load), and each visitor 25 a second.
+
+## What visitors see
+
+**On Free**, and **for the first 7 days of a paid plan**, a browser opening the link gets a short page first saying it is a preview shared through webhooks.cc, with a **Continue** button. It shows once a week per browser and never to API clients. The first week on a paid plan is there because phishers pay with stolen cards: a real customer barely notices it, and a phishing link loses most of its value behind it.
+
+Every page also carries a small **Report** button, which leads to [our report form](/report). Reports go to webhooks.cc, not to the person sharing.
+
+## What previews refuse
+
+A share serves web pages, not files. To keep previews from being used to hand out downloads or stream media, the edge passes only the media types pages are made of (HTML, CSS, JavaScript, JSON, XML, images, fonts, WebAssembly, text) and refuses with a page of its own:
+
+- videos, audio, documents, archives, installers and other binaries
+- any response sent as a download (`Content-Disposition: attachment`), except images a page loads
+- responses with no `Content-Type` (an untyped error page, such as SvelteKit's `403`, still shows as plain text, up to 64 KB)
+- responses over 50 MB
+
+The CLI tells you once when something was kept back.
+
+**Werkzeug's debugger.** `flask run --debug` turns on a console that runs Python on your machine, and it trusts requests that come through a share. The edge refuses the debugger's console and its commands, so visitors never get a prompt on your computer. Its traceback pages still show, with your code in them: share without `--debug`, or behind `--password`.
+
+## Stopping shares
+
+Ctrl-C stops a share. You can also stop one from another terminal, or a teammate's under a team name:
+
+```bash
+whk shares ls            # live shares and this month's data
+whk shares ls --ended    # earlier ones
+whk shares stop acme     # by name or id
+```
+
+Revoking the API key a share was started with stops it too, and a stopped share stays stopped: the CLI does not reconnect it.
+
+## Scripts and agents
+
+`--json` prints one JSON object per line instead of the banner, for scripts and test runners:
+
+```json
+{"event":"live","url":"https://calm-river-7f2a.sharehooks.cc","name":"calm-river-7f2a","expiresAt":null,"notice":false,"password":false}
+{"event":"request","method":"GET","path":"/","status":200,"ms":12}
+{"event":"stopped","reason":"you stopped it on webhooks.cc"}
+```
+
+Other events are `reconnected`, `retrying`, `notice` (something the edge wants you to know) and `error`, after which the CLI exits with status 1.
+
+Coding agents can share through the local [MCP server](/docs/mcp)'s `share_port` tool, which runs `whk share` for them and hands back the link. It needs `whk` installed on the same machine; the hosted MCP server cannot reach your computer, so it can list and stop shares but not start them.
+
+<FAQ>
+<FAQItem question="How do I share localhost with a public URL?">
+
+Run `whk share 3000` (or any port). The CLI prints an HTTPS link on sharehooks.cc that forwards every visitor to your local port until you press Ctrl-C.
+
+</FAQItem>
+<FAQItem question="Does live reload work through the link?">
+
+Yes. WebSockets and the requests dev servers make for hot reload pass through, so a page someone has open updates as you edit.
+
+</FAQItem>
+<FAQItem question="Can I keep the same link between sessions?">
+
+On Pro, Business and team plans, reserve a name with `whk names reserve acme` and share with `whk share 3000 --name acme`. Free shares get a new random name each time.
+
+</FAQItem>
+<FAQItem question="Is sharing included in my plan?">
+
+Yes, on every plan, Free included, within the limits above. There is no separate subscription for sharing.
+
+</FAQItem>
+</FAQ>

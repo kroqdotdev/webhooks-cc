@@ -1,0 +1,91 @@
+---
+title: "Live tunnels"
+description: "whk tunnel --live relays each webhook to your local server while the sender waits, so the sender gets your app's real answer. The request is captured either way, with your app's response stored next to it."
+section: cli
+order: 5
+lastUpdated: 2026-11-10
+schema: howto
+keywords:
+  [
+    "live webhook tunnel",
+    "webhook response localhost",
+    "slack slash command localhost",
+    "twilio webhook localhost",
+    "synchronous webhook testing",
+    "whk tunnel --live",
+  ]
+seo:
+  ogTitle: "whk tunnel --live: Answer Webhooks From Localhost"
+  ogDescription: "Relay webhooks to your local app while the sender waits, so Slack, Twilio and other senders get your app's real response, with every request and response captured."
+---
+
+A plain [`whk tunnel`](/docs/cli/tunnel) captures each webhook, answers the sender at once with the endpoint's mock response (or `200`), and then replays the request to your local server. That suits most webhooks, but not the ones where **the response matters**: a Slack slash command shows your answer in the channel, Twilio reads TwiML from it, and some providers check a handshake answer before they turn a webhook on. With `--live`, the sender waits while your local app answers, and gets that answer:
+
+```bash
+whk tunnel 3000 --live
+```
+
+The tunnel creates an endpoint (or uses `--endpoint <slug>`), prints its URL, and says **Live relay connected** once the sender's requests can reach your app. Each relayed request is listed with your app's status and how long it took.
+
+Every request is still captured first, so the dashboard, CLI, SDKs and MCP server show it as usual, now with **your app's response** next to it.
+
+## What changes with --live
+
+|                           | `whk tunnel`                                   | `whk tunnel --live`                                         |
+| ------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| The sender gets           | The endpoint's mock response, or `200`, at once | Your local app's response                                   |
+| Your app gets the request | Replayed after the capture                     | While the sender waits                                      |
+| Request to your app       | Sensitive headers filtered, `-H` added          | The sender's request: method, path, headers and exact body, with `-H` added |
+| Mock responses and rules  | Answer the sender                              | Not used: your app answers                                  |
+| Stored with the request   | The answer the sender got                      | Your app's status, headers and the first 64 KB of its body  |
+| Emails                    | Posted to your server                          | Posted to your server, the same way                         |
+
+Because the request reaches your app as the sender sent it, your handler can check the provider's signature with your real signing secret, as it would in production.
+
+Emails have no sender waiting for an answer, so they keep arriving through the stream exactly as with a plain tunnel ([emails](/docs/cli/tunnel#emails)), with the same `--email-format`, `--email-path` and `--no-email` flags.
+
+## When your app does not answer
+
+The request is captured whatever happens. What the sender gets:
+
+| Situation                                      | The sender gets |
+| ---------------------------------------------- | --------------- |
+| `whk` is not running for the endpoint           | `502`           |
+| Nothing listens on the local port              | `502`           |
+| Your app sends no response within 25 seconds   | `504`           |
+| Your app answers, with any status              | That answer     |
+
+Senders that retry on `5xx` will try again later, the way they would if your real server were down, and you see each failure in the request list. Answers up to 10 MB pass through to the sender; only the first 64 KB of the body is stored.
+
+## Limits
+
+- Live requests count against your request quota like any capture. They do not count against the [shared data](/docs/share#limits) of `whk share`.
+- An account can have up to 5 live tunnels open at once, one per endpoint.
+- An account's live requests waiting for an answer at the same time are capped, so one slow local app cannot hold up the rest of the account's captures. Past the cap, the sender gets `503` with `Retry-After`.
+- Your local app has 25 seconds to start answering. Slack, for one, gives a slash command 3 seconds, so answer fast and do slow work afterwards, as you would in production.
+
+## Paths and headers
+
+The path after the endpoint's URL goes to your app: a request to `https://go.webhooks.cc/w/acme-7f2a/slack/commands` arrives at `localhost:3000/slack/commands`. A target with a path puts requests under it (`whk tunnel 8080/api --live` sends `/slack/commands` to `/api/slack/commands`), and `-H` headers replace any of the same name on the way.
+
+## JSON events
+
+With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`), `live_reconnected` and `live_retrying` around network trouble, `notice`, and `live_stopped` when it ends. Emails keep the plain tunnel's `forwarded` events.
+
+<FAQ>
+<FAQItem question="How do I test a Slack slash command on localhost?">
+
+Point the command's request URL at a webhooks.cc endpoint and run `whk tunnel 3000 --endpoint <slug> --live`. Slack's request goes to your local app while Slack waits, and your app's answer is what shows in the channel.
+
+</FAQItem>
+<FAQItem question="Is the request still captured if my app is down?">
+
+Yes. Every request is captured before it is relayed. The sender gets `502` or `504`, and the request shows in the dashboard with no response from your app.
+
+</FAQItem>
+<FAQItem question="Do mock responses still work with --live?">
+
+No. While a live tunnel is open, your local app answers. Close the tunnel and the endpoint's mock response and response rules answer again.
+
+</FAQItem>
+</FAQ>

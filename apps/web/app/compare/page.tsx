@@ -36,7 +36,7 @@ const COMPARISONS = [
     href: "/compare/ngrok",
     title: "webhooks.cc vs ngrok",
     summary:
-      "ngrok is a general-purpose tunnel. webhooks.cc is a webhook testing platform with capture, replay, SDK, and MCP built in.",
+      "ngrok is a general-purpose tunnel. webhooks.cc is a webhook testing platform with capture, replay, SDK, and MCP built in, and its CLI shares a local site too.",
   },
   {
     href: "/compare/hookdeck",

@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -161,6 +161,7 @@ whk tunnel <port>
 | `--email-path`          | Path to post emails to, appended to the target like a webhook's path (default: the target itself)                                   |
 | `--mailgun-signing-key` | Your Mailgun HTTP webhook signing key, to sign the form with `--email-format mailgun` (also: `WHK_MAILGUN_SIGNING_KEY`)             |
 | `--no-email`            | Skip captured emails instead of posting them                                                                                        |
+| `--live`                | Relay each webhook to the local server while the sender waits, so it gets your app's answer ([live tunnels](/docs/live-tunnel))       |
 
 When signature verification is configured on the endpoint, tunnel injects verification headers into forwarded requests:
 
@@ -171,6 +172,43 @@ When signature verification is configured on the endpoint, tunnel injects verifi
 Your local server can use these headers to skip its own verification during development.
 
 > **Warning:** These headers are injected by the local tunnel client and are **not authenticated**. Never trust them in production: any HTTP client can send arbitrary `X-Signature-*` headers. Always perform your own signature verification in production environments.
+
+## share
+
+Share a local port at a public link, `https://<name>.sharehooks.cc`, until you press Ctrl-C. See [Share localhost](/docs/share).
+
+```bash
+whk share <port>
+```
+
+| Flag         | Description                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| `--name`     | Share under a name you reserved (`whk names reserve`); a random name otherwise                |
+| `--password` | Ask visitors for a password (prompted, or from `WHK_SHARE_PASSWORD`; Pro, Business and teams) |
+| `--no-qr`    | Do not draw the link as a QR code                                                            |
+| `--json`     | One JSON event per line (`live`, `request`, `reconnected`, `retrying`, `notice`, `stopped`, `error`) |
+
+## shares
+
+List and stop your shares, and a teammate's under a team name.
+
+```bash
+whk shares ls              # live shares and this month's data
+whk shares ls --ended      # earlier shares
+whk shares stop <id|name>
+```
+
+## names
+
+Names to share under (Pro, Business and teams). A name reserved inside a team belongs to the team.
+
+```bash
+whk names ls
+whk names reserve <name>
+whk names release <name>
+whk names password <name>           # prompted, or WHK_SHARE_PASSWORD
+whk names password <name> --clear
+```
 
 ## listen
 

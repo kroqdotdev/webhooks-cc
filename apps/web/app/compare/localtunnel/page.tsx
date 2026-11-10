@@ -39,6 +39,7 @@ const FAQ_ITEMS = [
 const ROWS = [
   ["Primary purpose", "Webhook testing platform", "Free localhost tunnel"],
   ["Tunnel to localhost", "Yes (whk tunnel)", "Yes (lt --port)"],
+  ["Share a local site at a public link", "Yes (whk share, on sharehooks.cc)", "Yes (lt --port)"],
   ["Webhook capture & history", "Yes, persistent, searchable", "No"],
   ["Request inspection", "Yes, dashboard + CLI + SDK", "No"],
   ["Mock responses", "Yes, rule-based per endpoint", "No"],

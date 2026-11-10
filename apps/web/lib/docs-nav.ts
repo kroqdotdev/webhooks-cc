@@ -60,6 +60,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Overview", href: "/docs/cli" },
       { title: "Commands", href: "/docs/cli/commands" },
       { title: "Tunneling", href: "/docs/cli/tunnel" },
+      { title: "Live tunnels", href: "/docs/live-tunnel", depth: 1, isNew: true },
+      { title: "Share localhost", href: "/docs/share", isNew: true },
     ],
   },
   {

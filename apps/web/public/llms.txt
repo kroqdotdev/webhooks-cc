@@ -18,7 +18,8 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Layouts: read named fields and line items out of each email and parse CSV, TSV, Excel, OpenDocument and PDF text attachments before it is delivered; AI setup proposes the patterns from emails you pick, with your consent per request
 - Zapier and Make: apps that add a destination to an endpoint when a Zap or scenario turns on
 - Mock responses: Configure status codes, headers, and response bodies per endpoint, with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins), and `{{ placeholders }}` filled in from the request
-- CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>`, no port forwarding or ngrok needed
+- CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>`, no port forwarding or ngrok needed; `whk tunnel <port> --live` relays each webhook while the sender waits, so it gets your local app's answer, which is stored with the request
+- Share localhost: `whk share <port>` puts a local site at a public link, `https://<name>.sharehooks.cc` (random names ending in `-free` on Free; reserved names and passwords on paid plans)
 - TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming; `client.emails.waitFor()` and `extractCode()` for email tests, `client.destinations` (and `client.forwarding` for the primary destination) and `verifyForwardedEmail()` for forwarding
 - Python and Go SDKs: `webhooks-cc` on PyPI and `webhooks.cc/go`, with the same waits, signed sends and signature checks, plus pytest fixtures and Go test helpers
 - MCP server: the remote server at https://webhooks.cc/mcp connects coding agents (Claude Code, Cursor, VS Code, Codex) and hosted agents (claude.ai, ChatGPT) with one OAuth approval in the browser; the local `@webhooks-cc/mcp` adds sends to localhost and a keyless sandbox
@@ -38,6 +39,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Teams ($12/seat/month, from 2 seats): a separate per-team subscription; each seat adds 100,000 requests a month to a pooled team quota, and requests on endpoints shared with the team are kept 31 days
 - Team Business ($35/seat/month or $350/seat/year, from 2 seats): the team plan with Business per seat: 250,000 requests, 2,000 parsed pages and 250 AI assists per seat, pooled, up to 50 layouts per shared endpoint, one custom inbound domain, file drops and 90-day retention for team-billed requests
 - Emails count against the same quota as webhooks: one request per email per endpoint
+- Sharing localhost (whk share) on every plan: Free 1 share at a time for 2 hours and 1 GB a month; Pro 3 shares, 3 reserved names, 25 GB; Business 10 shares, 20 names, 150 GB; team plans the same per member
 
 ## Links
 
@@ -47,6 +49,8 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Installation: https://webhooks.cc/installation
 - CLI docs: https://webhooks.cc/docs/cli
 - CLI tunneling: https://webhooks.cc/docs/cli/tunnel
+- Live tunnels: https://webhooks.cc/docs/live-tunnel
+- Share localhost: https://webhooks.cc/docs/share
 - CLI commands: https://webhooks.cc/docs/cli/commands
 - SDK docs: https://webhooks.cc/docs/sdk
 - SDK API reference: https://webhooks.cc/docs/sdk/api
@@ -144,7 +148,10 @@ whk                  # Interactive TUI
 whk auth login       # Authenticate via browser
 whk auth status      # Show login status
 whk auth logout      # Clear stored token
-whk tunnel <port>    # Forward webhooks to localhost
+whk tunnel <port>    # Forward webhooks to localhost (--live: the sender gets your app's answer)
+whk share <port>     # Share a local site at https://<name>.sharehooks.cc
+whk shares ls|stop   # See and stop shares
+whk names ls|reserve|release|password   # Names to share under (paid plans)
 whk listen <slug>    # Stream requests to terminal
 whk create [name]    # Create endpoint
 whk list             # List endpoints
