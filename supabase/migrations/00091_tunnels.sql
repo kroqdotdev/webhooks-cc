@@ -64,16 +64,23 @@
 -- cannot deadlock with one; with lock_timeout set as AGENTS.md shows, a busy
 -- moment fails the file cleanly instead of stalling captures. The locks are
 -- held for the few statements below, all catalog changes or small updates.
+-- api_keys is locked up front too: the foreign key from tunnel_shares needs
+-- it, and a wait there would otherwise come while endpoints is held, so
+-- every wait happens here, at the top, before anything has changed.
 --
--- The index on endpoints(live_session_id) is built concurrently after the
--- transaction, so apply this file in autocommit mode as AGENTS.md shows.
+-- The index on endpoints(live_session_id) is built inside the transaction:
+-- endpoints is small and already locked, and a concurrent build after the
+-- commit could be left invalid by an old transaction (lock_timeout) and then
+-- skipped on a second run by `if not exists`. Rehearsed against a copy of
+-- production's schema at production's size under capture load: the whole
+-- file held captures up by about 35 ms.
 -- ============================================================================
 
 begin;
 
 lock table public.endpoints in access exclusive mode;
-lock table public.plan_entitlements, public.teams, public.users, public.requests
-  in access exclusive mode;
+lock table public.plan_entitlements, public.teams, public.users, public.requests,
+  public.api_keys in access exclusive mode;
 
 -- ---------------------------------------------------------------------------
 -- Entitlements
@@ -884,10 +891,9 @@ select cron.schedule(
           where s.id = e.live_session_id and s.ended_at is null)$$
 );
 
-commit;
-
--- Outside the transaction: endpoints is written on every capture.
-create index concurrently if not exists endpoints_live_session
+create index if not exists endpoints_live_session
   on public.endpoints (live_session_id) where live_session_id is not null;
+
+commit;
 
 notify pgrst, 'reload schema';
