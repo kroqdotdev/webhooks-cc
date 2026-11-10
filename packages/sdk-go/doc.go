@@ -30,6 +30,10 @@
 // Connected find it when there is no API key. The agent package runs the
 // registration steps one by one.
 //
+// Share (and client.Shares.Start) puts a local port at a public link on
+// sharehooks.cc by running the whk CLI; client.Shares and client.Names read
+// and manage previews, live tunnels and reserved names.
+//
 // The package passes the TypeScript SDK's conformance vectors for signing,
 // verification and matchers, so it behaves like the other webhooks.cc SDKs.
 package webhookscc

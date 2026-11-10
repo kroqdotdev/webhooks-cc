@@ -128,6 +128,25 @@ preview, err := client.Destinations.Preview(ctx, endpoint.Slug, webhookscc.Previ
 
 Filters take the conditions of response rules, plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`. `Format` may also be an inbound mail provider's shape (`FormatPostmark`, `FormatSendGrid`, `FormatMailgun` or `FormatCloudMailin`): emails go out as that provider posts them and HTTP requests as received. `MailgunSigningKey` signs the Mailgun form; it is never returned, and `HasMailgunSigningKey` says whether one is saved. `Preview` is a dry run: whether the filter lets a captured request through and the exact request the destination would send. `Update` changes only the fields set with `Value` or `Null`, `Test` sends one delivery now, and `List`, `Get`, `Delete`, `Reorder`, `Secret` and `RotateSecret` do what they say.
 
+## Share a local port
+
+`Share` puts a port on this computer at a public link on sharehooks.cc by running the [whk CLI](https://webhooks.cc/docs/share) (`whk share`), and returns once the link works. `client.Shares.Start` does the same as the client's account:
+
+```go
+live, err := client.Shares.Start(ctx, webhookscc.ShareOptions{Port: 3000})
+if err != nil {
+	return err // whk's own words, or ErrWhkNotInstalled with how to install it
+}
+defer live.Stop(context.Background())
+fmt.Println(live.URL) // https://calm-river-7f2a-free.sharehooks.cc
+
+for event := range live.Events() { // visitor requests, notices, the ending
+	fmt.Println(event.Event, event.Method, event.Path, event.Status)
+}
+```
+
+The share runs until `Stop`, the context ends, the plan's time limit, or a stop from webhooks.cc, and never outlives the program. A `Password` goes to whk through the environment, never the command line. `client.Shares.List` returns your previews and live tunnels with the plan's limits, this month's data, where you stand on names and `Hints`: the next step as a whk command. `client.Shares.Stop` and `client.Shares.Requests` (the last visitor requests) take a share's ID, and `client.Names` lists, reserves (optionally inside a team), releases and puts passwords on reserved names. Requests relayed by `whk tunnel --live` carry the app's answer in `Request.LiveResponse`.
+
 ## No account: the agent sandbox
 
 An AI agent can capture webhooks before anyone signs up. `NewSandbox` registers through [auth.md](https://webhooks.cc/auth.md) with a few seconds of proof of work and gives it up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours:

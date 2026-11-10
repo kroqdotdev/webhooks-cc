@@ -76,6 +76,11 @@ type Client struct {
 	Forwarding *ForwardingService
 	// Destinations manages where an endpoint's captures go.
 	Destinations *DestinationsService
+	// Shares reads, stops and starts previews of local ports (whk share)
+	// and live tunnels (whk tunnel --live).
+	Shares *SharesService
+	// Names manages reserved preview names.
+	Names *NamesService
 }
 
 // RetryOptions controls how API calls are retried. By default they are not
@@ -209,6 +214,8 @@ func configure(opts []Option) (*Client, error) {
 	c.Emails = &EmailsService{c: c}
 	c.Forwarding = &ForwardingService{c: c}
 	c.Destinations = &DestinationsService{c: c}
+	c.Shares = &SharesService{c: c}
+	c.Names = &NamesService{c: c}
 	return c, nil
 }
 
