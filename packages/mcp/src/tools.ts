@@ -1096,10 +1096,16 @@ function toolTarget(
 function shareSummary(live: LiveShare): Record<string, unknown> {
   const notes: string[] = [];
   if (live.notice) {
-    notes.push("Visitors see a short notice from webhooks.cc before the site.");
+    notes.push(
+      "The first time each browser opens the link, it sees a short notice from webhooks.cc and clicks Open the preview (Free, and paid accounts in their first 7 days)."
+    );
   }
   if (live.password) notes.push("Visitors need the password.");
-  if (live.expiresAt) notes.push(`The plan stops this share at ${live.expiresAt}.`);
+  if (live.expiresAt) {
+    notes.push(
+      `The plan stops this share at ${live.expiresAt}; reconnecting does not extend it, and starting it again gives a new link.`
+    );
+  }
   notes.push("It runs until stop_share or the end of this MCP server.");
   return {
     url: live.url,

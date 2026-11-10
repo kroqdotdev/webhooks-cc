@@ -130,14 +130,15 @@ pub async fn run(
     // --live: the edge relays each HTTP capture down this session while the
     // sender waits; the SSE stream below then only brings emails.
     let (live_tx, mut live_rx) = mpsc::channel::<Update>(256);
-    let mut live_task = live_target.map(|(port, base_path)| {
+    let mut live_task = live_target.map(|(local, base_path)| {
         let session = Session {
             tunnel_url: share::tunnel_url(),
             api: client.clone(),
             kind: Kind::Live {
                 endpoint: slug.clone(),
             },
-            port,
+            host: local.host,
+            port: local.port,
             rewrite: Some(Rewrite {
                 base_path,
                 headers: extra_headers
@@ -170,6 +171,9 @@ pub async fn run(
 
     let mut reconnecting = false;
     let mut interrupted = false;
+    // --live refused before it was ever up (another relay, a limit, no
+    // access): the tunnel ends with that as its error.
+    let mut live_refused: Option<String> = None;
 
     // Process events until Ctrl+C, endpoint deletion, or a terminal stream error
     loop {
@@ -248,12 +252,12 @@ pub async fn run(
                 }
                 match ended {
                     Ok(Ok(reason)) => live_stopped(json, &reason),
-                    Ok(Err(e)) => live_stopped(json, &format!("{e:#}")),
+                    Ok(Err(e)) => live_refused = Some(format!("{e:#}")),
                     Err(e) => live_stopped(json, &format!("{e}")),
                 }
                 break;
             }
-            _ = tokio::signal::ctrl_c() => {
+            _ = crate::cli::share::shutdown_signal() => {
                 interrupted = true;
                 break;
             }
@@ -288,20 +292,18 @@ pub async fn run(
         }
     }
 
+    if let Some(message) = live_refused {
+        anyhow::bail!(message);
+    }
     stream_result
 }
 
-/// The port and base path of a `--live` target ("8080" or
-/// "8080/api/webhooks"): relayed requests go to that port, under that path.
-pub fn live_target(target: &str) -> Result<(u16, String)> {
-    let (port, path) = match target.find('/') {
-        Some(pos) => (&target[..pos], &target[pos..]),
-        None => (target, ""),
-    };
-    let port: u16 = port.parse().ok().filter(|p| *p != 0).ok_or_else(|| {
-        anyhow::anyhow!("--live needs a local port, such as `whk tunnel 3000 --live`")
-    })?;
-    Ok((port, path.trim_end_matches('/').to_string()))
+/// The local server and base path of a `--live` target: the same forms as
+/// plain `whk tunnel` ("8080", "8080/api/webhooks", "localhost:8080",
+/// "127.0.0.1:8080/api"). Relayed requests go there, under that path.
+pub fn live_target(target: &str) -> Result<(share::LocalTarget, String)> {
+    let (local, path) = share::parse_local_target(target)?;
+    Ok((local, path.trim_end_matches('/').to_string()))
 }
 
 /// What the live session said, as the tunnel shows it.
@@ -468,14 +470,28 @@ mod tests {
     }
 
     #[test]
-    fn live_targets_are_a_port_and_a_base_path() {
-        assert_eq!(live_target("3000").unwrap(), (3000, String::new()));
+    fn live_targets_are_a_local_server_and_a_base_path() {
+        use share::{LocalHost, LocalTarget};
+        let at = |host, port| LocalTarget { host, port };
+        assert_eq!(
+            live_target("3000").unwrap(),
+            (at(LocalHost::Localhost, 3000), String::new())
+        );
         assert_eq!(
             live_target("8080/api/webhooks/").unwrap(),
-            (8080, "/api/webhooks".to_string())
+            (at(LocalHost::Localhost, 8080), "/api/webhooks".to_string())
+        );
+        assert_eq!(
+            live_target("localhost:3000").unwrap(),
+            (at(LocalHost::Localhost, 3000), String::new())
+        );
+        assert_eq!(
+            live_target("127.0.0.1:5173/hooks").unwrap(),
+            (at(LocalHost::V4, 5173), "/hooks".to_string())
         );
         assert!(live_target("0").is_err());
         assert!(live_target("abc").is_err());
+        assert!(live_target("https://localhost:3000").is_err());
     }
 
     #[test]

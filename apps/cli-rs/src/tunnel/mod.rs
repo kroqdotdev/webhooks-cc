@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -297,28 +297,12 @@ pub fn join_path(base: &str, path: &str) -> String {
     }
 }
 
-/// Parse a target string like "8080" or "8080/api/webhooks" into (url, base_path).
+/// Parse a target ("8080", "8080/api/webhooks", "localhost:8080",
+/// "127.0.0.1:8080/api" or "http://localhost:8080/api") into the URL that
+/// captures are posted to.
 pub fn parse_target(target: &str) -> Result<String> {
-    let (port_str, path) = match target.find('/') {
-        Some(pos) => (&target[..pos], &target[pos..]),
-        None => (target, ""),
-    };
-
-    let port: u16 = port_str
-        .parse()
-        .context("invalid port number (must be 1-65535)")?;
-
-    if port == 0 {
-        anyhow::bail!("port must be between 1 and 65535");
-    }
-
-    let base = if path.is_empty() {
-        format!("http://localhost:{port}")
-    } else {
-        format!("http://localhost:{port}{path}")
-    };
-
-    Ok(base)
+    let (local, path) = crate::share::parse_local_target(target)?;
+    Ok(format!("{}{path}", local.http_base()))
 }
 
 #[cfg(test)]
@@ -336,6 +320,25 @@ mod tests {
             parse_target("3000/api/webhooks").unwrap(),
             "http://localhost:3000/api/webhooks"
         );
+    }
+
+    #[test]
+    fn test_parse_target_takes_hosts_on_this_machine() {
+        assert_eq!(
+            parse_target("localhost:3000").unwrap(),
+            "http://localhost:3000"
+        );
+        assert_eq!(
+            parse_target("127.0.0.1:3000/api").unwrap(),
+            "http://127.0.0.1:3000/api"
+        );
+        assert_eq!(
+            parse_target("http://localhost:3000/hooks").unwrap(),
+            "http://localhost:3000/hooks"
+        );
+        assert_eq!(parse_target("[::1]:3000").unwrap(), "http://[::1]:3000");
+        assert!(parse_target("https://localhost:3000").is_err());
+        assert!(parse_target("example.com:80").is_err());
     }
 
     #[test]

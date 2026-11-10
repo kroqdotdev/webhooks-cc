@@ -38,7 +38,13 @@ import {
   type CredentialSlot,
   type CredentialSlotName,
 } from "./agent-credentials";
-import { collectMatchingRequests, validatePathSegment, waitListLimit, WebhooksCC } from "./client";
+import {
+  collectMatchingRequests,
+  markAgentClient,
+  validatePathSegment,
+  waitListLimit,
+  WebhooksCC,
+} from "./client";
 import { apiUserAgent } from "./user-agent";
 import { RateLimitError, WebhooksCCError } from "./errors";
 import type { Endpoint, Request, WaitForAllOptions, WaitForOptions } from "./types";
@@ -705,13 +711,15 @@ export function savedConnection(options: ConnectedOptions = {}): WebhooksCC | nu
     options.onRevoked,
     options.userAgent
   );
-  return new WebhooksCC({
+  const client = new WebhooksCC({
     baseUrl,
     webhookUrl: options.webhookUrl,
     timeout: options.timeout,
     userAgent: options.userAgent,
     getAccessToken: (refresh) => tokens.get(refresh?.forceRefresh ?? false),
   });
+  if (store.path) markAgentClient(client, store.path);
+  return client;
 }
 
 /**

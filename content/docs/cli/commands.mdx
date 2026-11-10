@@ -146,7 +146,7 @@ whk delete <slug>
 
 ## tunnel
 
-Forward webhooks to a local port, optionally with a path (`whk tunnel 8080/api/webhooks`). Creates a new endpoint unless `--endpoint` is set. Captured emails are posted too, as webhooks.cc's email JSON or in a mail provider's shape ([emails](/docs/cli/tunnel#emails)).
+Forward webhooks to a local port, optionally with a path (`whk tunnel 8080/api/webhooks`). The target can also name the host on this machine: `localhost:8080`, `127.0.0.1:8080/api` or `http://localhost:8080/api` (plain HTTP only). Creates a new endpoint unless `--endpoint` is set. Captured emails are posted too, as webhooks.cc's email JSON or in a mail provider's shape ([emails](/docs/cli/tunnel#emails)).
 
 ```bash
 whk tunnel <port>
@@ -175,7 +175,7 @@ Your local server can use these headers to skip its own verification during deve
 
 ## share
 
-Share a local port at a public link, `https://<name>.sharehooks.cc`, until you press Ctrl-C. See [Share localhost](/docs/share).
+Share a local port at a public link, `https://<name>.sharehooks.cc`, until you press Ctrl-C (or the process gets `SIGTERM`). The target is a port on this machine: `3000`, `localhost:3000`, `127.0.0.1:3000` or `http://localhost:3000`; paths and local HTTPS servers are refused. See [Share localhost](/docs/share).
 
 ```bash
 whk share <port>
@@ -183,10 +183,10 @@ whk share <port>
 
 | Flag         | Description                                                                                  |
 | ------------ | -------------------------------------------------------------------------------------------- |
-| `--name`     | Share under a name you reserved (`whk names reserve`); a random name otherwise                |
+| `--name`     | Share under a name you reserved, or reserve it now if nobody holds it (it counts against your plan's names); a random name otherwise |
 | `--password` | Ask visitors for a password (prompted, or from `WHK_SHARE_PASSWORD`; Pro, Business and teams) |
 | `--no-qr`    | Do not draw the link as a QR code                                                            |
-| `--json`     | One JSON event per line (`live`, `request`, `reconnected`, `retrying`, `notice`, `stopped`, `error`) |
+| `--json`     | One JSON event per line (`live`, `request`, `reconnected`, `retrying`, `notice`, `stopped`, `error`); `stopped` exits 0, `error` (refused before it opened) exits 1 |
 
 ## shares
 

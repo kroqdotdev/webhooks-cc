@@ -81,6 +81,8 @@ pub struct Session {
     pub tunnel_url: String,
     pub api: ApiClient,
     pub kind: Kind,
+    /// Which address streams go to: `localhost` tries IPv4, then IPv6.
+    pub host: LocalHost,
     pub port: u16,
     pub rewrite: Option<Rewrite>,
     /// What the CLI runs on, for the dashboard: "laptop, Linux".
@@ -222,8 +224,17 @@ fn doubled(wait: Duration) -> Duration {
     (wait * 2).min(MAX_WAIT)
 }
 
-/// Runs the session until the edge closes it (the reason, as the edge
-/// gave it) or refuses it (an error with the edge's words).
+/// Whether a refusal ends the share as a stop rather than an error: once it
+/// has been live, a refusal on reconnecting means it was ended meanwhile
+/// (stopped on webhooks.cc, the time limit, a plan change), and 410 always
+/// means it was stopped.
+fn refusal_is_a_stop(status: u16, was_live: bool) -> bool {
+    status == 410 || (was_live && status != 401)
+}
+
+/// Runs the session until the edge closes it or a refusal ends a share
+/// that was live (the reason, as given), or refuses it before it was ever
+/// live (an error with the edge's words).
 pub async fn run(session: &Session, on: &mut (dyn FnMut(Update) + Send)) -> Result<String> {
     let instance = instance_id();
     let mut wait = Duration::from_secs(1);
@@ -249,6 +260,11 @@ pub async fn run(session: &Session, on: &mut (dyn FnMut(Update) + Send)) -> Resu
                 if !refreshed && session.api.bearer_refreshes() =>
             {
                 refreshed = true;
+            }
+            Err(Failure::Refused { status, message })
+                if refusal_is_a_stop(status, last_url.is_some()) =>
+            {
+                return Ok(message);
             }
             Err(Failure::Refused { message, .. }) => bail!(message),
             Err(Failure::Transient(message)) => {
@@ -338,7 +354,10 @@ async fn once(
     loop {
         tokio::select! {
             stream = inbound.recv() => match stream {
-                Some(stream) => { tokio::spawn(pipe(stream, session.port, rewrite.clone())); }
+                Some(stream) => {
+                    let target = LocalTarget { host: session.host, port: session.port };
+                    tokio::spawn(pipe(stream, target, rewrite.clone()));
+                }
                 None => return Ok(Ended::Dropped),
             },
             message = text.incoming.recv() => {
@@ -370,17 +389,34 @@ fn ensure_crypto() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
-/// Connects one stream from the edge to the local port and copies both
+/// Connects to the local server: the address given, or for `localhost`
+/// IPv4 then IPv6.
+async fn connect_local(target: LocalTarget) -> std::io::Result<TcpStream> {
+    match target.host {
+        LocalHost::V4 => TcpStream::connect(("127.0.0.1", target.port)).await,
+        LocalHost::V6 => TcpStream::connect(("::1", target.port)).await,
+        LocalHost::Localhost => match TcpStream::connect(("127.0.0.1", target.port)).await {
+            Ok(s) => Ok(s),
+            Err(_) => TcpStream::connect(("::1", target.port)).await,
+        },
+    }
+}
+
+/// Whether anything answers on the local target now, within a second.
+pub async fn local_answers(target: LocalTarget) -> bool {
+    matches!(
+        tokio::time::timeout(Duration::from_secs(1), connect_local(target)).await,
+        Ok(Ok(_))
+    )
+}
+
+/// Connects one stream from the edge to the local server and copies both
 /// ways until soon after either side ends (`splice`). With nothing
 /// listening there, it answers 502 itself, marked so the edge can show
 /// visitors its own page.
-async fn pipe(mut stream: MuxStream, port: u16, rewrite: Option<Rewrite>) {
-    let local = match TcpStream::connect(("127.0.0.1", port)).await {
-        Ok(s) => Ok(s),
-        Err(_) => TcpStream::connect(("::1", port)).await,
-    };
-    let Ok(mut local) = local else {
-        let _ = stream.write_all(&nothing_listening(port)).await;
+async fn pipe(mut stream: MuxStream, target: LocalTarget, rewrite: Option<Rewrite>) {
+    let Ok(mut local) = connect_local(target).await else {
+        let _ = stream.write_all(&nothing_listening(target)).await;
         let _ = stream.shutdown().await;
         return;
     };
@@ -399,8 +435,8 @@ async fn pipe(mut stream: MuxStream, port: u16, rewrite: Option<Rewrite>) {
 }
 
 /// The CLI's own 502 when nothing listens on the port.
-pub fn nothing_listening(port: u16) -> Vec<u8> {
-    let body = format!("Nothing is running on localhost:{port}.\n");
+pub fn nothing_listening(target: LocalTarget) -> Vec<u8> {
+    let body = format!("Nothing is running on {}.\n", target.display());
     format!(
         "HTTP/1.1 502 Bad Gateway\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\n{HEADER_NOTHING_LISTENING}: 1\r\nconnection: close\r\n\r\n{body}",
         body.len()
@@ -514,28 +550,99 @@ pub fn printable(text: &str, max: usize) -> String {
     out
 }
 
-/// The port of a `whk share` target: "3000", "localhost:3000" or
-/// "http://localhost:3000". Only this machine can be shared.
-pub fn parse_share_target(target: &str) -> Result<u16> {
-    let rest = target
-        .trim()
-        .trim_start_matches("http://")
-        .trim_start_matches("https://");
-    let rest = rest.trim_end_matches('/');
-    let port = match rest.rsplit_once(':') {
-        Some((host, port)) => {
-            let host = host.trim_start_matches('[').trim_end_matches(']');
-            if !matches!(host, "localhost" | "127.0.0.1" | "::1" | "0.0.0.0") {
-                bail!("Only this machine can be shared: give a port, such as `whk share 3000`.");
-            }
-            port
+/// Which local address a target names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalHost {
+    /// `localhost` (or a bare port, or 0.0.0.0): IPv4, then IPv6.
+    Localhost,
+    /// `127.0.0.1`.
+    V4,
+    /// `[::1]`.
+    V6,
+}
+
+/// The local server a share or live tunnel connects to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalTarget {
+    pub host: LocalHost,
+    pub port: u16,
+}
+
+impl LocalTarget {
+    /// "localhost:3000", "127.0.0.1:3000" or "[::1]:3000".
+    pub fn display(&self) -> String {
+        match self.host {
+            LocalHost::Localhost => format!("localhost:{}", self.port),
+            LocalHost::V4 => format!("127.0.0.1:{}", self.port),
+            LocalHost::V6 => format!("[::1]:{}", self.port),
         }
-        None => rest,
+    }
+
+    /// The target as an http:// base URL.
+    pub fn http_base(&self) -> String {
+        format!("http://{}", self.display())
+    }
+}
+
+/// Reads a local target: "3000", "3000/api", "localhost:3000",
+/// "127.0.0.1:3000/api", "[::1]:3000" or "http://localhost:3000/api". The
+/// path comes back as written ("" when there is none). Only this machine,
+/// and only plain HTTP: the tunnel copies bytes to the port, so it cannot
+/// speak TLS to a local HTTPS server.
+pub fn parse_local_target(target: &str) -> Result<(LocalTarget, String)> {
+    let target = target.trim();
+    let lower = target.to_ascii_lowercase();
+    if lower.starts_with("https://") {
+        bail!(
+            "Local HTTPS servers aren't supported: whk talks plain HTTP to your app. Serve it over HTTP (most dev servers do by default) and give that port, such as 3000."
+        );
+    }
+    let rest = if lower.starts_with("http://") {
+        &target["http://".len()..]
+    } else {
+        target
+    };
+    let (authority, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, ""),
+    };
+    let (host, port) = if let Some(after) = authority.strip_prefix('[') {
+        match after.split_once("]:") {
+            Some((host, port)) => (host, port),
+            None => (after.trim_end_matches(']'), ""),
+        }
+    } else {
+        match authority.rsplit_once(':') {
+            Some((host, port)) => (host, port),
+            None if authority.bytes().all(|b| b.is_ascii_digit()) => ("", authority),
+            None => (authority, ""),
+        }
+    };
+    let host = match host.to_ascii_lowercase().as_str() {
+        "" | "localhost" | "0.0.0.0" => LocalHost::Localhost,
+        "127.0.0.1" => LocalHost::V4,
+        "::1" => LocalHost::V6,
+        _ => bail!("Only this machine can be reached: give a local port, such as 3000."),
     };
     match port.parse::<u16>() {
-        Ok(0) | Err(_) => bail!("Give the local port to share, such as `whk share 3000`."),
-        Ok(port) => Ok(port),
+        Ok(0) | Err(_) => bail!("Give the local port, such as 3000 or localhost:3000."),
+        Ok(port) => Ok((LocalTarget { host, port }, path.to_string())),
     }
+}
+
+/// The local server of a `whk share` target: "3000", "localhost:3000",
+/// "127.0.0.1:3000" or "http://localhost:3000". A share is a whole port, so
+/// a path is refused rather than dropped.
+pub fn parse_share_target(target: &str) -> Result<LocalTarget> {
+    let (local, path) = parse_local_target(target)?;
+    let path = path.trim_end_matches('/');
+    if !path.is_empty() {
+        bail!(
+            "whk share shares a whole port, not a path: run `whk share {}` and open {path} on the link.",
+            local.port
+        );
+    }
+    Ok(local)
 }
 
 #[cfg(test)]

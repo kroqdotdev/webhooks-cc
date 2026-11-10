@@ -156,7 +156,7 @@ pub enum Command {
 
     /// Forward webhooks to a local server
     Tunnel {
-        /// Target port and optional path (e.g. "8080" or "8080/api/webhooks")
+        /// Local target: a port and optional path ("8080", "8080/api/webhooks", "localhost:8080", "127.0.0.1:8080/api"); plain HTTP only
         target: String,
 
         /// Reuse an existing endpoint

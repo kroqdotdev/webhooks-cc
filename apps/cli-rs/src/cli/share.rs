@@ -37,7 +37,7 @@ pub async fn run(client: &ApiClient, options: ShareOptions) -> Result<()> {
 
 async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
     client.require_auth()?;
-    let port = share::parse_share_target(&options.target)?;
+    let target = share::parse_share_target(&options.target)?;
     let password = if options.password {
         Some(share::read_password()?)
     } else {
@@ -50,12 +50,24 @@ async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
             name: options.name.clone(),
             password,
         },
-        port,
+        host: target.host,
+        port: target.port,
         rewrite: None,
         client: share::client_name(),
     };
     let json = options.json;
     let qr = !json && !options.no_qr && share::qr::wanted(std::io::stdout().is_terminal());
+
+    // Said once, at the start: the share still opens, and visitors see a
+    // waiting page until the local server answers.
+    if !share::local_answers(target).await {
+        let text = nothing_yet(target);
+        if json {
+            Event::Notice { text: &text }.print();
+        } else {
+            println!("  {} {}", dim("●"), dim(&text));
+        }
+    }
 
     if options.until_stdin_closes {
         std::thread::spawn(move || {
@@ -65,15 +77,48 @@ async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
         });
     }
 
-    let mut show = |update: Update| show_share_update(update, port, json, qr);
+    let shown = target.display();
+    let mut show = |update: Update| show_share_update(update, &shown, json, qr);
     tokio::select! {
         result = share::run(&session, &mut show) => {
             let reason = result?;
             stopped(json, &reason);
         }
-        _ = tokio::signal::ctrl_c() => stopped(json, "you stopped it on this computer"),
+        _ = shutdown_signal() => stopped(json, "you stopped it on this computer"),
     }
     Ok(())
+}
+
+/// The warning when nothing answers on the local port at the start.
+pub fn nothing_yet(target: share::LocalTarget) -> String {
+    format!(
+        "Nothing answers on {} yet; visitors see a waiting page until it does.",
+        target.display()
+    )
+}
+
+/// Ctrl-C, or on Unix SIGTERM too (what `kill` and process managers send),
+/// so either ends a share the same way.
+pub async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// The last line of a share. Written without println!, which panics when
@@ -92,7 +137,7 @@ fn stopped(json: bool, reason: &str) {
     }
 }
 
-fn show_share_update(update: Update, port: u16, json: bool, qr: bool) {
+fn show_share_update(update: Update, local: &str, json: bool, qr: bool) {
     match update {
         Update::Ready {
             name,
@@ -115,7 +160,7 @@ fn show_share_update(update: Update, port: u16, json: bool, qr: bool) {
             }
             println!("\n  {} Sharing", green("●"));
             println!("  {} {}", dim("Link:         "), bold(&sanitize_line(&url)));
-            println!("  {} localhost:{port}", dim("Forwarding to:"));
+            println!("  {} {local}", dim("Forwarding to:"));
             if let Some(seconds) = expires_in {
                 println!(
                     "  {}",
@@ -373,10 +418,14 @@ pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
         return Ok(());
     }
     if result.names.is_empty() {
-        println!(
-            "  No names yet. Keep one with {}",
-            bold("whk names reserve <name>")
-        );
+        if result.limit == Some(0) {
+            println!("  Reserved names come with Pro and Business. Free shares get a random name.");
+        } else {
+            println!(
+                "  No names yet. Keep one with {}",
+                bold("whk names reserve <name>")
+            );
+        }
     } else {
         println!(
             "  {}",
@@ -400,7 +449,9 @@ pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
             );
         }
     }
-    if let (Some(used), Some(limit)) = (result.used, result.limit) {
+    if let (Some(used), Some(limit)) = (result.used, result.limit)
+        && limit > 0
+    {
         println!(
             "\n  {}",
             dim(&format!("{used} of {limit} names on your plan"))

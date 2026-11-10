@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use reqwest::{Method, Response, StatusCode};
 
-use super::{ApiClient, extract_error};
+use super::{ApiClient, api_error_message};
 
 /// HTTP response with body pre-read.
 pub struct ApiResponse {
@@ -107,7 +107,7 @@ async fn read_response(resp: Response) -> Result<ApiResponse> {
     let body = resp.text().await.context("failed to read response body")?;
 
     if status.is_client_error() || status.is_server_error() {
-        anyhow::bail!("{}", extract_error(status, &body));
+        anyhow::bail!("{}", api_error_message(status, &body));
     }
 
     Ok(ApiResponse { body })

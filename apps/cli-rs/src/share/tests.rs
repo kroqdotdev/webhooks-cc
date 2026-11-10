@@ -29,15 +29,67 @@ fn passwords_go_as_hex_and_are_checked() {
     assert!(password_problem("long enough").is_none());
 }
 
+fn at(host: LocalHost, port: u16) -> LocalTarget {
+    LocalTarget { host, port }
+}
+
 #[test]
 fn share_targets_are_local_ports() {
-    assert_eq!(parse_share_target("3000").unwrap(), 3000);
-    assert_eq!(parse_share_target("localhost:5173").unwrap(), 5173);
-    assert_eq!(parse_share_target("http://localhost:8080/").unwrap(), 8080);
-    assert_eq!(parse_share_target("127.0.0.1:4321").unwrap(), 4321);
+    assert_eq!(
+        parse_share_target("3000").unwrap(),
+        at(LocalHost::Localhost, 3000)
+    );
+    assert_eq!(
+        parse_share_target("localhost:5173").unwrap(),
+        at(LocalHost::Localhost, 5173)
+    );
+    assert_eq!(
+        parse_share_target("http://localhost:8080/").unwrap(),
+        at(LocalHost::Localhost, 8080)
+    );
+    assert_eq!(
+        parse_share_target("127.0.0.1:4321").unwrap(),
+        at(LocalHost::V4, 4321)
+    );
+    assert_eq!(
+        parse_share_target("[::1]:5173").unwrap(),
+        at(LocalHost::V6, 5173)
+    );
+    assert_eq!(
+        parse_share_target("HTTP://LOCALHOST:3000").unwrap(),
+        at(LocalHost::Localhost, 3000)
+    );
     assert!(parse_share_target("0").is_err());
+    assert!(parse_share_target("65536").is_err());
     assert!(parse_share_target("example.com:80").is_err());
     assert!(parse_share_target("abc").is_err());
+}
+
+#[test]
+fn share_targets_say_what_is_not_supported() {
+    let https = parse_share_target("https://localhost:3000").unwrap_err();
+    assert!(https.to_string().contains("HTTPS"), "{https}");
+    let path = parse_share_target("http://127.0.0.1:3000/app").unwrap_err();
+    assert!(path.to_string().contains("whole port"), "{path}");
+    assert!(path.to_string().contains("whk share 3000"), "{path}");
+    let port = parse_share_target("65536").unwrap_err();
+    assert!(port.to_string().contains("local port"), "{port}");
+}
+
+#[test]
+fn targets_print_the_address_they_reach() {
+    assert_eq!(at(LocalHost::Localhost, 3000).display(), "localhost:3000");
+    assert_eq!(at(LocalHost::V4, 5173).display(), "127.0.0.1:5173");
+    assert_eq!(at(LocalHost::V6, 5173).display(), "[::1]:5173");
+}
+
+#[test]
+fn a_refusal_after_the_share_was_live_is_a_stop() {
+    assert!(refusal_is_a_stop(410, false));
+    assert!(refusal_is_a_stop(403, true));
+    assert!(refusal_is_a_stop(409, true));
+    assert!(!refusal_is_a_stop(403, false));
+    assert!(!refusal_is_a_stop(401, true));
 }
 
 #[test]
@@ -136,10 +188,12 @@ async fn the_head_is_read_whole_and_the_body_follows() {
 
 #[test]
 fn nothing_listening_is_marked_for_the_edge() {
-    let text = String::from_utf8(nothing_listening(3000)).unwrap();
+    let text = String::from_utf8(nothing_listening(at(LocalHost::Localhost, 3000))).unwrap();
     assert!(text.starts_with("HTTP/1.1 502 "));
     assert!(text.contains("x-whk-nothing-listening: 1\r\n"));
     assert!(text.ends_with("Nothing is running on localhost:3000.\n"));
+    let v4 = String::from_utf8(nothing_listening(at(LocalHost::V4, 5173))).unwrap();
+    assert!(v4.ends_with("Nothing is running on 127.0.0.1:5173.\n"));
 }
 
 /// A local server that answers every request with "hello".
@@ -263,6 +317,7 @@ async fn a_share_opens_pipes_a_visitor_and_stops_when_the_edge_says() {
             name: Some("acme".into()),
             password: Some("open sesame".into()),
         },
+        host: LocalHost::Localhost,
         port,
         rewrite: None,
         client: "laptop, Linux".into(),
@@ -319,6 +374,7 @@ async fn a_live_session_names_its_endpoint_and_rewrites_the_path() {
         kind: Kind::Live {
             endpoint: "abc123".into(),
         },
+        host: LocalHost::Localhost,
         port,
         rewrite: Some(Rewrite {
             base_path: "/api/webhooks".into(),
@@ -368,6 +424,7 @@ async fn a_refusal_ends_the_session_with_the_edges_words() {
             name: Some("taken".into()),
             password: None,
         },
+        host: LocalHost::Localhost,
         port: 1,
         rewrite: None,
         client: "test".into(),
@@ -392,7 +449,7 @@ async fn nothing_listening_gets_the_clis_own_502() {
     let mut stream = opener.open().await.unwrap();
     stream.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
     let local = inbound.recv().await.unwrap();
-    tokio::spawn(pipe(local, port, None));
+    tokio::spawn(pipe(local, at(LocalHost::Localhost, port), None));
     let mut got = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut got)).await;
     let text = String::from_utf8_lossy(&got);

@@ -8,12 +8,24 @@ import type { ChildProcess } from "node:child_process";
 import type { Interface } from "node:readline";
 import { WebhooksCCError } from "./errors";
 
-/** How to install the CLI (macOS and Linux; Homebrew: `brew install kroqdotdev/tap/whk`). */
+/** How to install the CLI on macOS and Linux (Homebrew: `brew install kroqdotdev/tap/whk`). */
 export const WHK_INSTALL_COMMAND = "curl -fsSL https://webhooks.cc/install.sh | sh";
+
+/** How to get the CLI on Windows, which has no install script: a release download. */
+export const WHK_INSTALL_WINDOWS =
+  "download whk for Windows from https://github.com/kroqdotdev/webhooks-cc/releases and put it on your PATH";
+
+/** How to install the CLI on this platform (Node's `process.platform`). */
+export function whkInstallHint(platform: string | undefined = nodeProcess()?.platform): string {
+  return platform === "win32" ? WHK_INSTALL_WINDOWS : WHK_INSTALL_COMMAND;
+}
 
 /** How long share() waits for the link before giving up. */
 const OPEN_TIMEOUT_MS = 60_000;
-/** How long stop() waits for the CLI before killing it. */
+/**
+ * How long stop() waits after closing the CLI's stdin before it sends a
+ * signal, and then again before it kills it.
+ */
 const STOP_TIMEOUT_MS = 5_000;
 
 /** One visitor request, as the CLI reports it once answered. */
@@ -51,10 +63,20 @@ export interface ShareOptions {
   /** The whk binary to run (default: `whk` on the PATH). */
   whkPath?: string;
   /**
-   * The API key whk uses. Without it, whk uses its own login or the shared
-   * agent credential file, as it does on its own.
+   * The API key whk uses. Without it (and without `auth: "agent"`), whk
+   * uses its own login or the shared agent credential file, as it does on
+   * its own.
    */
   apiKey?: string;
+  /**
+   * `"agent"`: whk uses the agent credential file and never this machine's
+   * own login, so the share belongs to the account an agent connection
+   * names. `client.shares.start()` sets it for a client from
+   * `WebhooksCC.connected()`.
+   */
+  auth?: "agent";
+  /** The agent credential file whk reads with `auth: "agent"` (default: its own). */
+  agentFile?: string;
   /** The API base URL whk talks to (default: whk's own, https://webhooks.cc). */
   baseUrl?: string;
   /** The tunnel to connect to (default: whk's own, wss://tunnel.webhooks.cc). */
@@ -90,6 +112,7 @@ export interface LiveShare {
 
 interface NodeProcess {
   env: Record<string, string | undefined>;
+  platform?: string;
   getBuiltinModule?: (id: string) => unknown;
   on(event: "exit", listener: () => void): unknown;
 }
@@ -136,10 +159,16 @@ function watch(proc: NodeProcess, child: ChildProcess): void {
   }
 }
 
+/** The install instructions for the platform this runs on, as a clause. */
+function installHint(proc: NodeProcess): string {
+  const hint = whkInstallHint(proc.platform);
+  return hint === WHK_INSTALL_COMMAND ? `run: ${hint}` : `${hint}.`;
+}
+
 /** The words for a CLI that is missing or too old to share. */
-function cliProblem(bin: string, stderr: string): string | null {
+function cliProblem(bin: string, stderr: string, proc: NodeProcess): string | null {
   if (/unrecognized subcommand|unexpected argument/i.test(stderr)) {
-    return `Sharing a port needs a newer whk than the one at ${bin}. Update it with \`whk update\`, or install it again: ${WHK_INSTALL_COMMAND}`;
+    return `Sharing a port needs a newer whk than the one at ${bin}. Update it with \`whk update\`; to install it again, ${installHint(proc)}`;
   }
   return null;
 }
@@ -191,7 +220,18 @@ export async function share(options: ShareOptions): Promise<LiveShare> {
     args.push("--password");
     env.WHK_SHARE_PASSWORD = options.password;
   }
-  if (options.apiKey) env.WHK_API_KEY = options.apiKey;
+  // Whose share it is: the key given, else the agent connection when asked,
+  // never whatever this machine's environment happened to hold.
+  delete env.WHK_API_KEY;
+  delete env.WHK_AUTH;
+  if (options.apiKey) {
+    env.WHK_API_KEY = options.apiKey;
+  } else if (options.auth === "agent") {
+    env.WHK_AUTH = "agent";
+    if (options.agentFile) env.WHK_AGENT_FILE = options.agentFile;
+  } else if (proc.env.WHK_API_KEY) {
+    env.WHK_API_KEY = proc.env.WHK_API_KEY;
+  }
   if (options.baseUrl) env.WHK_API_URL = options.baseUrl;
   if (options.tunnelUrl) env.WHK_TUNNEL_URL = options.tunnelUrl;
 
@@ -313,8 +353,8 @@ export async function share(options: ShareOptions): Promise<LiveShare> {
       const message =
         err.code === "ENOENT"
           ? bin === "whk"
-            ? `Sharing a port needs the webhooks.cc CLI (whk), which is not installed. Install it with: ${WHK_INSTALL_COMMAND}`
-            : `Sharing a port needs the webhooks.cc CLI (whk), and there is none at ${bin}. Install it with: ${WHK_INSTALL_COMMAND}`
+            ? `Sharing a port needs the webhooks.cc CLI (whk), which is not installed. To install it, ${installHint(proc)}`
+            : `Sharing a port needs the webhooks.cc CLI (whk), and there is none at ${bin}. To install it, ${installHint(proc)}`
           : `Could not run ${bin}: ${err.message}`;
       fail(new WebhooksCCError(0, message));
       ended({ reason: message });
@@ -322,7 +362,7 @@ export async function share(options: ShareOptions): Promise<LiveShare> {
     void Promise.all([exited, read]).then(() => {
       running.delete(child);
       clearTimeout(timer);
-      const said = words ?? cliProblem(bin, stderr) ?? (stderr.trim() || undefined);
+      const said = words ?? cliProblem(bin, stderr, proc) ?? (stderr.trim() || undefined);
       fail(
         new WebhooksCCError(
           0,
@@ -330,20 +370,26 @@ export async function share(options: ShareOptions): Promise<LiveShare> {
         )
       );
       ended({
-        reason:
-          said ??
-          (stopping
-            ? "you stopped it on this computer"
-            : `whk share exited with code ${String(exitCode)}`),
+        reason: stopping
+          ? "you stopped it on this computer"
+          : (said ?? `whk share exited with code ${String(exitCode)}`),
       });
     });
 
+    /**
+     * Closes the CLI's stdin, which ends it cleanly on every platform
+     * (`--until-stdin-closes`); a signal follows only if it has not exited
+     * in time, then a kill. Windows has no SIGINT for a child, so the stdin
+     * path is the one that matters there.
+     */
     async function stop(): Promise<void> {
       if (exitCode === null && child.exitCode === null) {
         stopping = true;
-        child.kill("SIGINT");
-        const force = setTimeout(() => child.kill("SIGKILL"), STOP_TIMEOUT_MS);
+        child.stdin?.end();
+        const signal = setTimeout(() => child.kill("SIGTERM"), STOP_TIMEOUT_MS);
+        const force = setTimeout(() => child.kill("SIGKILL"), STOP_TIMEOUT_MS * 2);
         await closed;
+        clearTimeout(signal);
         clearTimeout(force);
       }
       await closed;

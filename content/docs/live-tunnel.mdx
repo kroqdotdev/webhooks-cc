@@ -35,12 +35,14 @@ Every request is still captured first, so the dashboard, CLI, SDKs and MCP serve
 | ------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
 | The sender gets           | The endpoint's mock response, or `200`, at once | Your local app's response                                   |
 | Your app gets the request | Replayed after the capture                     | While the sender waits                                      |
-| Request to your app       | Sensitive headers filtered, `-H` added          | The sender's request: method, path, headers and exact body, with `-H` added |
+| Request to your app       | Sensitive headers filtered, `-H` added          | The sender's request: method, path, headers and exact body, with `-H` added, plus `X-Forwarded-Host`, `X-Forwarded-Proto` and `X-Forwarded-Prefix` |
 | Mock responses and rules  | Answer the sender                              | Not used: your app answers                                  |
 | Stored with the request   | The answer the sender got                      | Your app's status, headers and the first 64 KB of its body  |
 | Emails                    | Posted to your server                          | Posted to your server, the same way                         |
 
 Because the request reaches your app as the sender sent it, your handler can check the provider's signature with your real signing secret, as it would in production.
+
+**Signatures over the URL.** Some providers sign the public URL they called, not just the body: Twilio, for one. Your app receives the request at `localhost`, without the `/w/<slug>` prefix, so it cannot see that URL directly. Rebuild it from the forwarded headers: `X-Forwarded-Proto` (`https`), `X-Forwarded-Host` (`go.webhooks.cc`) and `X-Forwarded-Prefix` (`/w/<slug>`), followed by the path and query your app received. For Twilio, validate against `https://go.webhooks.cc/w/<slug>/...`, the URL you gave Twilio. Many frameworks read these headers when you tell them to trust the proxy in front of them.
 
 Emails have no sender waiting for an answer, so they keep arriving through the stream exactly as with a plain tunnel ([emails](/docs/cli/tunnel#emails)), with the same `--email-format`, `--email-path` and `--no-email` flags.
 
@@ -48,14 +50,25 @@ Emails have no sender waiting for an answer, so they keep arriving through the s
 
 The request is captured whatever happens. What the sender gets:
 
-| Situation                                      | The sender gets |
-| ---------------------------------------------- | --------------- |
-| `whk` is not running for the endpoint           | `502`           |
-| Nothing listens on the local port              | `502`           |
-| Your app sends no response within 25 seconds   | `504`           |
-| Your app answers, with any status              | That answer     |
+| Situation                                                    | The sender gets                        |
+| ------------------------------------------------------------ | -------------------------------------- |
+| `whk` stopped or lost its connection less than 2 minutes ago | `502`                                  |
+| `whk` stopped more than 2 minutes ago, or never started      | The endpoint's mock response, or `200` |
+| Nothing listens on the local port                            | `502`                                  |
+| Your app sends no response within 25 seconds                 | `504`                                  |
+| Your app answers, with any status                            | That answer                            |
 
-Senders that retry on `5xx` will try again later, the way they would if your real server were down, and you see each failure in the request list. Answers up to 10 MB pass through to the sender; only the first 64 KB of the body is stored.
+Senders that retry on `5xx` will try again later, the way they would if your real server were down, and you see each failure in the request list. The 2-minute grace covers reconnects: a sender that hits the gap gets an error and retries, instead of a success your app never saw. Once the grace is over, the endpoint answers as a plain endpoint again.
+
+## What reaches the sender
+
+A live tunnel answers webhook senders, not browsers, so the answer is kept to what an API returns:
+
+- **Up to 1 MB.** A larger answer does not reach the sender, which gets an error instead.
+- **API-shaped types only:** JSON, XML, plain text and form data. Other types (HTML pages, images, files) and anything sent as a download (`Content-Disposition: attachment`) are refused the same way.
+- **No cookies or browser security headers.** `Set-Cookie`, `Strict-Transport-Security`, `Content-Security-Policy` and `X-Frame-Options` from your app are not passed on; the sender's copy carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` instead. The stored response shows your app's headers as it sent them.
+
+Only the first 64 KB of the body is stored with the request.
 
 ## Limits
 
@@ -64,13 +77,17 @@ Senders that retry on `5xx` will try again later, the way they would if your rea
 - An account's live requests waiting for an answer at the same time are capped, so one slow local app cannot hold up the rest of the account's captures. Past the cap, the sender gets `503` with `Retry-After`.
 - Your local app has 25 seconds to start answering. Slack, for one, gives a slash command 3 seconds, so answer fast and do slow work afterwards, as you would in production.
 
-## Paths and headers
+## Targets, paths and headers
+
+The target is a port on this machine, written as for a plain tunnel: `3000`, `3000/api`, `localhost:3000`, `127.0.0.1:3000` or `http://localhost:3000/api`. `localhost` tries IPv4, then IPv6; `127.0.0.1` and `[::1]` connect to exactly that address. Your app must speak plain HTTP: a local HTTPS server is refused when the tunnel starts, since the relay copies bytes to the port and cannot speak TLS to it.
 
 The path after the endpoint's URL goes to your app: a request to `https://go.webhooks.cc/w/acme-7f2a/slack/commands` arrives at `localhost:3000/slack/commands`. A target with a path puts requests under it (`whk tunnel 8080/api --live` sends `/slack/commands` to `/api/slack/commands`), and `-H` headers replace any of the same name on the way.
 
 ## JSON events
 
 With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`), `live_reconnected` and `live_retrying` around network trouble, `notice`, and `live_stopped` when it ends. Emails keep the plain tunnel's `forwarded` events.
+
+When the live session is refused before it ever opens (another tunnel is already relaying the endpoint, the account's live tunnels are all in use, or the endpoint is not yours), `whk` prints why and exits with status 1. A session that was live and is then ended (stopped on webhooks.cc, the endpoint unshared) ends with `live_stopped` and status 0.
 
 <FAQ>
 <FAQItem question="How do I test a Slack slash command on localhost?">
@@ -80,7 +97,7 @@ Point the command's request URL at a webhooks.cc endpoint and run `whk tunnel 30
 </FAQItem>
 <FAQItem question="Is the request still captured if my app is down?">
 
-Yes. Every request is captured before it is relayed. The sender gets `502` or `504`, and the request shows in the dashboard with no response from your app.
+Yes. Every request is captured before it is relayed. The sender gets `502` or `504` (or, more than 2 minutes after `whk` stopped, the endpoint's mock response), and the request shows in the dashboard with no response from your app.
 
 </FAQItem>
 <FAQItem question="Do mock responses still work with --live?">

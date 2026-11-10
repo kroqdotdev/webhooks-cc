@@ -67,6 +67,32 @@ impl std::fmt::Debug for ApiClient {
     }
 }
 
+/// Where a client's bearer comes from.
+#[derive(Debug, PartialEq)]
+enum TokenSource {
+    /// `WHK_API_KEY`.
+    Key(String),
+    /// The agent credential file only (`WHK_AUTH=agent`).
+    Agent,
+    /// This machine's login (`token.json`), else the agent file.
+    Login,
+}
+
+fn token_source(key: Option<String>, agent_only: bool) -> TokenSource {
+    match (key, agent_only) {
+        (Some(key), _) => TokenSource::Key(key),
+        (None, true) => TokenSource::Agent,
+        (None, false) => TokenSource::Login,
+    }
+}
+
+/// `WHK_AUTH=agent`: use the agent credential file, not `token.json`.
+fn agent_only() -> bool {
+    std::env::var("WHK_AUTH")
+        .map(|v| v.trim().eq_ignore_ascii_case("agent"))
+        .unwrap_or(false)
+}
+
 /// `WHK_API_KEY`, trimmed; unset or blank is none.
 fn env_api_key() -> Option<String> {
     std::env::var("WHK_API_KEY")
@@ -80,14 +106,18 @@ impl ApiClient {
     /// `share()` and the MCP server's `share_port` pass theirs that way);
     /// otherwise the token comes from disk, and without one a live
     /// `claimed` slot in the agent credential file (`WHK_AGENT_FILE` or the
-    /// default path) supplies the bearer. URLs come from env.
+    /// default path) supplies the bearer. `WHK_AUTH=agent` skips the token
+    /// on disk, so a program running on an agent's connection starts `whk`
+    /// on the same account rather than this machine's login. URLs come
+    /// from env.
     pub fn new(
         base_url_override: Option<&str>,
         webhook_url_override: Option<&str>,
     ) -> Result<Self> {
-        let token = match env_api_key() {
-            Some(key) => Some(key),
-            None => auth::load_token()?.map(|t| t.access_token),
+        let token = match token_source(env_api_key(), agent_only()) {
+            TokenSource::Key(key) => Some(key),
+            TokenSource::Agent => None,
+            TokenSource::Login => auth::load_token()?.map(|t| t.access_token),
         };
         let base = base_url_override
             .map(String::from)
@@ -243,7 +273,21 @@ impl ApiClient {
     }
 }
 
-/// Extract an error message from an API error response body.
+/// The message to show for an API error: the server's own words when it
+/// gave some (they are written for people, so no status code is added),
+/// else the status and the start of the body.
+pub fn api_error_message(status: reqwest::StatusCode, body: &str) -> String {
+    if let Ok(err) = serde_json::from_str::<ApiErrorBody>(body)
+        && !err.error.is_empty()
+    {
+        return err.error;
+    }
+    let preview: String = body.chars().take(200).collect();
+    format!("HTTP {status}: {preview}")
+}
+
+/// Extract an error message from an API error response body, with the
+/// status (the event stream reports it alongside).
 pub fn extract_error(status: reqwest::StatusCode, body: &str) -> String {
     if let Ok(err) = serde_json::from_str::<ApiErrorBody>(body)
         && !err.error.is_empty()
@@ -252,4 +296,40 @@ pub fn extract_error(status: reqwest::StatusCode, body: &str) -> String {
     }
     let preview: String = body.chars().take(200).collect();
     format!("HTTP {status}: {preview}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_api_key_wins_then_agent_only_then_the_login() {
+        assert_eq!(
+            token_source(Some("whcc_k".into()), true),
+            TokenSource::Key("whcc_k".into())
+        );
+        assert_eq!(
+            token_source(Some("whcc_k".into()), false),
+            TokenSource::Key("whcc_k".into())
+        );
+        assert_eq!(token_source(None, true), TokenSource::Agent);
+        assert_eq!(token_source(None, false), TokenSource::Login);
+    }
+
+    #[test]
+    fn api_errors_read_as_the_servers_words() {
+        let status = reqwest::StatusCode::FORBIDDEN;
+        assert_eq!(
+            api_error_message(status, r#"{"error":"Names come with Pro."}"#),
+            "Names come with Pro."
+        );
+        assert_eq!(
+            api_error_message(status, "<html>nope</html>"),
+            "HTTP 403 Forbidden: <html>nope</html>"
+        );
+        assert_eq!(
+            extract_error(status, r#"{"error":"x"}"#),
+            "x (403 Forbidden)"
+        );
+    }
 }

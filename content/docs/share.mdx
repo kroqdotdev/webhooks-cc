@@ -53,6 +53,8 @@ This is a different tool from [`whk tunnel`](/docs/cli/tunnel): a tunnel deliver
 
 The CLI prints the link and, in a terminal, draws it as a QR code for opening on a phone (`--no-qr` leaves it out). Press Ctrl-C to stop sharing. If the connection drops (a laptop waking up, a network change), the CLI reconnects on its own and the link stays the same.
 
+The target is a port on this machine: `3000`, `localhost:3000`, `127.0.0.1:3000`, `[::1]:3000` or `http://localhost:3000`. `localhost` tries IPv4, then IPv6; `127.0.0.1` and `[::1]` connect to exactly that address. A share is a whole port, so a path is refused: share the port and add the path to the link. Your dev server must speak plain HTTP; a local HTTPS server (`https://localhost:3000`) is refused, because the tunnel copies bytes to the port and cannot speak TLS to it. If nothing answers on the port when you start, the CLI says so once and keeps running; visitors see a waiting page until your server is up.
+
 You need an account with a confirmed email address. Guest and unclaimed agent sessions cannot share.
 
 ## Names
@@ -64,7 +66,7 @@ Every share gets a random name unless you pick one:
 | Free                | A random name ending in `-free`: `calm-river-7f2a-free.sharehooks.cc` |
 | Pro, Business, teams | A random name, or a name you reserved: `acme.sharehooks.cc` |
 
-Reserve names once and share under them as often as you like, so a link you sent last week still works next time:
+Reserve names once and share under them as often as you like, so a link you sent last week still works next time. `whk share --name acme` reserves `acme` for you if nobody holds it yet, and it counts against your plan's names like one reserved with `whk names reserve`:
 
 ```bash
 whk names reserve acme
@@ -96,6 +98,10 @@ whk names password acme --clear
 
 A password given to `whk share --password` wins over the name's for that run.
 
+## Plan changes
+
+Limits apply to shares that are already running, not only to new ones. When your plan no longer includes something a running share uses (a password, a reserved name, a slot, no time limit), that share ends and the CLI says why. In `--json` output it is a `stopped` event and the CLI exits with status 0, like any other stop.
+
 ## Limits
 
 | Plan          | Shares at once  | Reserved names  | Session length | Data a month    | Passwords |
@@ -112,7 +118,7 @@ A Free share ends after 2 hours; run `whk share` again for a new one. Each share
 
 ## What visitors see
 
-**On Free**, and **for the first 7 days of a paid plan**, a browser opening the link gets a short page first saying it is a preview shared through webhooks.cc, with a **Continue** button. It shows once a week per browser and never to API clients. The first week on a paid plan is there because phishers pay with stolen cards: a real customer barely notices it, and a phishing link loses most of its value behind it.
+**On Free**, and **for the first 7 days of a paid plan**, a browser opening the link gets a short page first saying it is a preview shared through webhooks.cc, with an **Open the preview** button. It shows once a week per browser and never to API clients. The first week on a paid plan is there because phishers pay with stolen cards: a real customer barely notices it, and a phishing link loses most of its value behind it.
 
 Every page also carries a small **Report** button, which leads to [our report form](/report). Reports go to webhooks.cc, not to the person sharing.
 
@@ -151,7 +157,9 @@ Revoking the API key a share was started with stops it too, and a stopped share 
 {"event":"stopped","reason":"you stopped it on webhooks.cc"}
 ```
 
-Other events are `reconnected`, `retrying`, `notice` (something the edge wants you to know) and `error`, after which the CLI exits with status 1.
+Other events are `reconnected`, `retrying` and `notice` (something the edge wants you to know). A share that ends for any reason after it was live (Ctrl-C, `SIGTERM`, a stop on webhooks.cc, the plan's time limit, a plan change) prints `stopped` and exits with status 0. A share refused before it ever opened (a name that is taken, the plan's limit, a bad key) prints `error` and exits with status 1.
+
+The `--until-stdin-closes` flag stops the share when its standard input closes, which is how the SDK and the MCP server stop the shares they start on every platform.
 
 Coding agents can share through the local [MCP server](/docs/mcp)'s `share_port` tool, which runs `whk share` for them and hands back the link. It needs `whk` installed on the same machine; the hosted MCP server cannot reach your computer, so it can list and stop shares but not start them.
 

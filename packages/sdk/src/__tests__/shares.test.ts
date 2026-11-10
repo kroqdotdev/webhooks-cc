@@ -3,7 +3,13 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebhooksCC } from "../client";
-import { share, WHK_INSTALL_COMMAND, type ShareEvent } from "../share";
+import {
+  share,
+  WHK_INSTALL_COMMAND,
+  WHK_INSTALL_WINDOWS,
+  whkInstallHint,
+  type ShareEvent,
+} from "../share";
 import { WebhooksCCError } from "../errors";
 
 const API_KEY = "whcc_testkey123";
@@ -102,6 +108,8 @@ fs.writeFileSync(process.env.FAKE_WHK_LOG, JSON.stringify({
   password: process.env.WHK_SHARE_PASSWORD ?? null,
   apiKey: process.env.WHK_API_KEY ?? null,
   apiUrl: process.env.WHK_API_URL ?? null,
+  auth: process.env.WHK_AUTH ?? null,
+  agentFile: process.env.WHK_AGENT_FILE ?? null,
 }));
 const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n");
 const scenario = process.env.FAKE_WHK_SCENARIO;
@@ -116,7 +124,8 @@ if (scenario === "old") {
 out({ event: "live", url: "https://calm-river-7f2a-free.sharehooks.cc", name: "calm-river-7f2a-free", expiresAt: "2026-11-10T20:00:00Z", notice: true, password: false });
 out({ event: "request", method: "GET", path: "/", status: 200, ms: 4 });
 process.on("SIGINT", () => { out({ event: "stopped", reason: "you stopped it on this computer" }); process.exit(0); });
-process.stdin.on("end", () => process.exit(0));
+// --until-stdin-closes: what share().stop() relies on, on every platform.
+process.stdin.on("end", () => { out({ event: "stopped", reason: "the program that started it ended" }); process.exit(0); });
 process.stdin.resume();
 setInterval(() => {}, 1000);
 `;
@@ -174,9 +183,50 @@ describe("share()", () => {
     expect(seen.apiUrl).toBe(BASE_URL);
 
     await vi.waitFor(() => expect(requests).toEqual(["GET / 200"]));
+    const before = Date.now();
     await live.stop();
+    // Closing stdin ends it at once: no wait for the signal fallback.
+    expect(Date.now() - before).toBeLessThan(4000);
     expect((await live.closed).reason).toBe("you stopped it on this computer");
     expect(events.map((e) => e.event)).toEqual(["live", "request", "stopped"]);
+  });
+
+  it("shares as the agent connection when asked, never with a stray key", async () => {
+    const previous = process.env.WHK_API_KEY;
+    process.env.WHK_API_KEY = "whcc_from_the_environment";
+    try {
+      const live = await share({
+        port: 3000,
+        whkPath: bin,
+        auth: "agent",
+        agentFile: join(dir, "agent.json"),
+      });
+      const seen = JSON.parse(readFileSync(log, "utf8"));
+      expect(seen.auth).toBe("agent");
+      expect(seen.agentFile).toBe(join(dir, "agent.json"));
+      expect(seen.apiKey).toBeNull();
+      await live.stop();
+    } finally {
+      if (previous === undefined) delete process.env.WHK_API_KEY;
+      else process.env.WHK_API_KEY = previous;
+    }
+  });
+
+  it("refuses shares.start() for a client whk cannot share as", async () => {
+    const tokenClient = new WebhooksCC({
+      baseUrl: BASE_URL,
+      getAccessToken: () => Promise.resolve("token"),
+    });
+    await expect(tokenClient.shares.start({ port: 3000, whkPath: bin })).rejects.toThrow(
+      "WebhooksCC.connected()"
+    );
+  });
+
+  it("gives install instructions for the platform", () => {
+    expect(whkInstallHint("linux")).toBe(WHK_INSTALL_COMMAND);
+    expect(whkInstallHint("darwin")).toBe(WHK_INSTALL_COMMAND);
+    expect(whkInstallHint("win32")).toBe(WHK_INSTALL_WINDOWS);
+    expect(WHK_INSTALL_WINDOWS).toContain("github.com/kroqdotdev/webhooks-cc/releases");
   });
 
   it("rejects with the CLI's words when the share is refused", async () => {

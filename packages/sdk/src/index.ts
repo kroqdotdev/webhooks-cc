@@ -1,5 +1,5 @@
 export { WebhooksCC, ApiError } from "./client";
-export { share, WHK_INSTALL_COMMAND } from "./share";
+export { share, WHK_INSTALL_COMMAND, WHK_INSTALL_WINDOWS, whkInstallHint } from "./share";
 export type { ShareOptions, LiveShare, ShareEvent, ShareRequestEvent } from "./share";
 export {
   registerAnonymous,

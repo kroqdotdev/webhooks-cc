@@ -302,6 +302,10 @@ describe("WebhooksCC.connected", () => {
     expect(client).toBeInstanceOf(WebhooksCC);
     // The cached token from the claim is still good: no exchange needed.
     expect(state.exchanges).toBe(0);
+    // shares.start() runs whk on this same connection, not the machine's login.
+    expect((client as unknown as { agentShare: { file: string } | null }).agentShare).toEqual({
+      file,
+    });
 
     // The human disconnects the agent: its tokens die and the assertion is refused.
     state.revokedTokens.add("whcc_account1");

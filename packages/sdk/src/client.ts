@@ -698,6 +698,15 @@ export async function collectMatchingRequests(
 }
 
 /**
+ * Marks a client as reading its tokens from the agent credential file at
+ * `file`, so `shares.start()` runs whk on that same connection. Internal:
+ * set by `WebhooksCC.connected()`.
+ */
+export function markAgentClient(client: WebhooksCC, file: string): void {
+  (client as unknown as { agentShare: { file: string } | null }).agentShare = { file };
+}
+
+/**
  * Client for the webhooks.cc API.
  *
  * Provides methods to create endpoints, list captured requests, and wait
@@ -715,6 +724,8 @@ export class WebhooksCC {
   private readonly emailDomain: string;
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly userAgent: string | undefined;
+  /** For a client from the agent credential file: that file, so whk shares as the same account. */
+  private agentShare: { file: string } | null = null;
 
   constructor(options: ClientOptions) {
     if (typeof options.getAccessToken !== "function") {
@@ -1930,12 +1941,26 @@ export class WebhooksCC {
      * Share a local port at a public link with this client's account, by
      * running the whk CLI (Node.js only; see `share()`).
      */
-    start: async (options: Omit<ShareOptions, "apiKey" | "baseUrl">): Promise<LiveShare> => {
-      return runShare({
-        ...options,
-        apiKey: this.apiKey,
-        baseUrl: this.baseUrl,
-      });
+    start: async (
+      options: Omit<ShareOptions, "apiKey" | "baseUrl" | "auth" | "agentFile">
+    ): Promise<LiveShare> => {
+      if (this.apiKey) {
+        return runShare({ ...options, apiKey: this.apiKey, baseUrl: this.baseUrl });
+      }
+      // An agent connection: whk reads the same credential file, so the
+      // share belongs to the account this client sees, not this machine's
+      // own whk login.
+      if (this.agentShare) {
+        return runShare({
+          ...options,
+          auth: "agent",
+          agentFile: this.agentShare.file,
+          baseUrl: this.baseUrl,
+        });
+      }
+      throw new Error(
+        "shares.start() needs a client with an API key or one from WebhooksCC.connected(): whk must share as the same account."
+      );
     },
   };
 
