@@ -81,6 +81,23 @@ describe("audit", () => {
     });
   });
 
+  it("names the user's channel and client when the request is the edge's", async () => {
+    await auditUserAction(
+      request({ Authorization: "Bearer edge-secret", "User-Agent": "webhooks-edge" }),
+      "user-1",
+      {
+        action: "tunnel.name_reserved",
+        status: 201,
+        targetId: "acme-demo",
+        via: "agent_token",
+        userAgent: "whk-cli/edge",
+      }
+    );
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ via: "agent_token", user_agent: "whk-cli/edge" })
+    );
+  });
+
   it("never throws when the insert fails", async () => {
     insert.mockResolvedValueOnce({ error: { message: "boom" } });
     await expect(

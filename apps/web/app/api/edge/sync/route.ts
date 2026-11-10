@@ -13,6 +13,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A run open this long that the edge does not list has lost its close. */
 const UNHELD_AFTER_SECONDS = 60;
 
+/** One box holds far fewer; past this the list is refused, never cut. */
+const MAX_SYNC_SHARES = 5_000;
+
 /**
  * Every 30 seconds the edge lists the runs it holds and hands over what
  * visitors took, in batches it numbers (lib/tunnels/usage.ts). The answer is
@@ -30,16 +33,22 @@ export async function POST(request: Request) {
     shareIds?: unknown;
     batches?: unknown;
   };
+  // The list of runs the edge holds decides which runs end here, so a sync
+  // without one (a broken or older edge) is refused, never read as "none":
+  // that would end every open run. A list over the cap is refused too, since
+  // cutting it would end the runs left off.
+  if (!Array.isArray(body.shareIds))
+    return Response.json({ error: "shareIds must be an array" }, { status: 400 });
+  if (body.shareIds.length > MAX_SYNC_SHARES)
+    return Response.json(
+      { error: `shareIds holds more than ${MAX_SYNC_SHARES} runs` },
+      { status: 400 }
+    );
+  const ids = body.shareIds.filter((id): id is string => typeof id === "string" && UUID.test(id));
+
   await recordUsage(body.batches);
   const over = await overAllowance();
   later(() => tellPaused(over).catch((err) => reportError("Failed to tell paused previews", err)));
-
-  // One box holds far fewer; the cap keeps the query bounded.
-  const ids = (
-    Array.isArray(body.shareIds)
-      ? body.shareIds.filter((id): id is string => typeof id === "string" && UUID.test(id))
-      : []
-  ).slice(0, 5_000);
 
   const admin = createAdminClient();
   // Runs open here that the edge no longer holds: a close that never arrived

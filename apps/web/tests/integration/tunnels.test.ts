@@ -1495,3 +1495,66 @@ describe("round four: lost closes, team names on deletion, errors and races", ()
     expect((await open(user.key, { instance })).status).toBe(410);
   });
 });
+
+describe("pre-merge: sync input, refused shares and audit rows", () => {
+  it("refuses a sync without a list of held runs instead of ending them all", async () => {
+    const user = await createUser();
+    const opened = await open(user.key);
+    expect(opened.status).toBe(200);
+    // Old enough that an empty list would end it.
+    await admin
+      .from("tunnel_shares")
+      .update({ started_at: new Date(Date.now() - 600_000).toISOString() })
+      .eq("id", opened.body.shareId as string);
+    expect((await edge("sync", {})).status).toBe(400);
+    expect((await edge("sync", { shareIds: "nope" })).status).toBe(400);
+    const tooMany = Array.from({ length: 5_001 }, () => opened.body.shareId);
+    expect((await edge("sync", { shareIds: tooMany })).status).toBe(400);
+    const { data } = await admin
+      .from("tunnel_shares")
+      .select("ended_at")
+      .eq("id", opened.body.shareId as string)
+      .single();
+    expect(data?.ended_at).toBeNull();
+    await edge("close", { shareId: opened.body.shareId, reason: "closed" });
+  });
+
+  it("gives back a name whk share reserved when the share itself is refused", async () => {
+    const pro = await createUser({ plan: "pro", request_limit: 100_000 });
+    const running: unknown[] = [];
+    for (let i = 0; i < 3; i++) {
+      const one = await open(pro.key);
+      expect(one.status).toBe(200);
+      running.push(one.body.shareId);
+    }
+    const name = `premerge-${counterName()}`;
+    const refused = await open(pro.key, { name });
+    expect(refused.status).toBe(429);
+    const { data: kept } = await admin.from("tunnel_names").select("name").eq("name", name);
+    expect(kept).toEqual([]);
+    for (const id of running) await edge("close", { shareId: id, reason: "closed" });
+  });
+
+  it("audits a name whk share reserved as the user's key and the CLI, not the edge", async () => {
+    const pro = await createUser({ plan: "pro", request_limit: 100_000 });
+    const name = `premerge-${counterName()}`;
+    const opened = await open(pro.key, { name });
+    expect(opened.status).toBe(200);
+    const { data } = await admin
+      .from("audit_events")
+      .select("via, user_agent, actor_user_id, metadata")
+      .eq("action", "tunnel.name_reserved")
+      .eq("target_id", name);
+    expect(data).toHaveLength(1);
+    expect(data?.[0]).toMatchObject({
+      via: "api_key",
+      user_agent: "whk-cli/edge",
+      actor_user_id: pro.id,
+    });
+    await edge("close", { shareId: opened.body.shareId, reason: "closed" });
+  });
+});
+
+function counterName(): string {
+  return Math.random().toString(36).slice(2, 10);
+}

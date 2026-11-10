@@ -215,6 +215,8 @@ describe("share()", () => {
     expect(seen.args.join(" ")).not.toContain("correct-horse");
     expect(seen.password).toBe("correct-horse");
     expect(seen.apiKey).toBe(API_KEY);
+    // whk reads a key from the environment only with WHK_AUTH=key.
+    expect(seen.auth).toBe("key");
     expect(seen.apiUrl).toBe(BASE_URL);
 
     await vi.waitFor(() => expect(requests).toEqual(["GET / 200"]));

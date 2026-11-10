@@ -143,6 +143,14 @@ export interface AuditUserActionInput {
   targetUserId?: string | null;
   targetId?: string | null;
   metadata?: Record<string, unknown>;
+  /**
+   * The channel and client, when the request at hand is not the user's own:
+   * a call the tunnel edge makes for a CLI (/api/edge/open) carries the
+   * edge's secret and user agent, so the route names the user's key and
+   * the CLI instead.
+   */
+  via?: "session" | "api_key" | "agent_token";
+  userAgent?: string | null;
 }
 
 const MAX_USER_AGENT = 256;
@@ -213,8 +221,11 @@ export async function auditUserAction(
   await recordAuditEvent({
     actor_type: "user",
     actor_user_id: actorUserId,
-    via: requestVia(request),
-    user_agent: truncate(request.headers.get("user-agent"), MAX_USER_AGENT),
+    via: input.via ?? requestVia(request),
+    user_agent: truncate(
+      input.userAgent !== undefined ? input.userAgent : request.headers.get("user-agent"),
+      MAX_USER_AGENT
+    ),
     action: input.action,
     outcome: outcomeForStatus(input.status),
     team_id: input.teamId ?? null,

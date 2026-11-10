@@ -13,7 +13,7 @@ import {
   type Request,
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
-import { registerTools } from "../tools";
+import { registerTools, toolWords } from "../tools";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -2580,5 +2580,19 @@ describe("createServer", () => {
         delete process.env.WHK_API_KEY;
       }
     }
+  });
+});
+
+describe("toolWords", () => {
+  it("names the tool for each whk command a hint gives", () => {
+    expect(toolWords("Run whk names password <name> --clear to open it.")).toBe(
+      "Run clear_name_password to open it."
+    );
+    expect(toolWords("Run whk names password <name> to set one.")).toBe(
+      "Run set_name_password to set one."
+    );
+    expect(toolWords("Stop one with whk shares stop <id or name>.")).toBe(
+      "Stop one with stop_share."
+    );
   });
 });

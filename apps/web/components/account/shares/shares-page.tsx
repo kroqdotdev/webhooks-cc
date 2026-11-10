@@ -184,7 +184,11 @@ export function SharesPage({ accessToken }: { accessToken: string | null }) {
           </Link>
         </Notice>
       )}
-      {message && <InlineMessage tone={message.tone}>{message.text}</InlineMessage>}
+      {message && (
+        <div className="ph-no-capture">
+          <InlineMessage tone={message.tone}>{message.text}</InlineMessage>
+        </div>
+      )}
 
       <Panel
         id="live-shares"
@@ -327,7 +331,7 @@ export function SharesPage({ accessToken }: { accessToken: string | null }) {
       )}
 
       <AlertDialog open={stopping !== null} onOpenChange={(open) => !open && setStopping(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="ph-no-capture">
           <AlertDialogHeader>
             <AlertDialogTitle>
               Stop {stopping?.kind === "live" ? "the live tunnel" : stopping?.name}?

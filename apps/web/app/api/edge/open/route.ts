@@ -4,7 +4,12 @@ import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { accountForKey } from "@/lib/tunnels/accounts";
 import { previewUrlFor, tunnelConfig } from "@/lib/tunnels/config";
 import { fromEdge, notEdge } from "@/lib/tunnels/edge-auth";
-import { nameForShare, randomName, randomNameFree } from "@/lib/tunnels/names";
+import {
+  nameForShare,
+  randomName,
+  randomNameFree,
+  undoShareReservation,
+} from "@/lib/tunnels/names";
 import { hashPassword, passwordProblem, runPasswordVersion } from "@/lib/tunnels/password-hash";
 import { gateOf } from "@/lib/tunnels/passwords";
 import { tunnelPlanOf, type TunnelPlan } from "@/lib/tunnels/plan";
@@ -20,6 +25,12 @@ import { overMessage, usageOf } from "@/lib/tunnels/usage";
  * must close (Free previews last two hours), whether visitors see the notice
  * first, and the version of the password visitors need, if any.
  */
+/**
+ * Who opens a share through the edge: always `whk` (the SDKs and MCP server
+ * run it too), so the audit row names the CLI rather than the edge.
+ */
+const EDGE_CLIENT_AGENT = "whk-cli/edge";
+
 export async function POST(request: Request) {
   if (!fromEdge(request)) return notEdge();
   const config = tunnelConfig();
@@ -92,23 +103,19 @@ export async function POST(request: Request) {
     ? { name: kept, reserved: false }
     : await nameForShare(userId, plan, requested);
   if ("error" in named) return Response.json({ error: named.error }, { status: named.status });
-  // `whk share --name` keeps a new name like the reserve route does: audit it the same way.
-  if (named.reserved)
-    await auditUserAction(request, userId, {
-      action: "tunnel.name_reserved",
-      status: 201,
-      targetId: named.name,
-      metadata: { via: "share" },
-    });
+  // A name `whk share --name` reserved just now is kept only if the share
+  // opens: a refused share must not use up one of the plan's names.
+  const refuse = async (error: string, status: number) => {
+    if (named.reserved) await undoShareReservation(userId, named.name);
+    return Response.json({ error }, { status });
+  };
 
   // One preview runs under a name at a time: a teammate's is theirs until stopped.
   const other = requested ? await someoneElseSharing(named.name, userId) : null;
   if (other)
-    return Response.json(
-      {
-        error: `${other} is sharing under ${named.name} right now. Stop that share first, or use another name.`,
-      },
-      { status: 409 }
+    return refuse(
+      `${other} is sharing under ${named.name} right now. Stop that share first, or use another name.`,
+      409
     );
 
   const open = async (name: string) => {
@@ -131,7 +138,19 @@ export async function POST(request: Request) {
   // A random name drawn by two runs at once: draw again.
   if ("taken" in opened.result && !requested) opened = await open(await randomName(free));
   const { result, name, runPassword } = opened;
-  if ("error" in result) return Response.json({ error: result.error }, { status: result.status });
+  if ("error" in result) return refuse(result.error, result.status);
+
+  // `whk share --name` kept a new name like the reserve route does: audit it
+  // the same way, as the user's key and the CLI (this request is the edge's).
+  if (named.reserved)
+    await auditUserAction(request, userId, {
+      action: "tunnel.name_reserved",
+      status: 201,
+      targetId: named.name,
+      metadata: { via: "share" },
+      via: account.agentRegistrationId ? "agent_token" : "api_key",
+      userAgent: EDGE_CLIENT_AGENT,
+    });
 
   const gate = await gateOf({
     id: result.shareId,

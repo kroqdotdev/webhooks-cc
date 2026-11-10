@@ -342,7 +342,7 @@ defer live.Stop(context.Background())
 fmt.Println(live.URL) // https://sample-preview-1234-free.sharehooks.cc
 ```
 
-`client.Shares.Start` shares as the client's own account: an API-key client passes its key, and a connected agent client has `whk` read the same agent credential file (a sandbox client gets an error: connect it first). `webhookscc.Share(ctx, opts)` does the same without a client, with `ShareOptions.APIKey` or the CLI's own login. `ShareOptions` takes `Port`, `Name` (a name you reserved, Pro and Business), `Password` (8 to 200 characters, passed through the environment, never the command line), `WhkPath`, `TunnelURL` and `OpenTimeout`. The `*LiveShare` it returns has:
+`client.Shares.Start` shares as the client's own account: an API-key client passes its key, and a connected agent client has `whk` read the same agent credential file (a sandbox client gets an error: connect it first). `webhookscc.Share(ctx, opts)` does the same without a client, with `ShareOptions.APIKey`, else `WHK_API_KEY` from the environment, else the CLI's own login; a key goes to `whk` as `WHK_API_KEY` with `WHK_AUTH=key`, the only way `whk` reads one. `ShareOptions` takes `Port`, `Name` (a name you reserved, Pro and Business), `Password` (8 to 200 characters, passed through the environment, never the command line), `WhkPath`, `TunnelURL` and `OpenTimeout`. The `*LiveShare` it returns has:
 
 | Member | What it is |
 | --- | --- |

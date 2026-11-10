@@ -128,9 +128,9 @@ func TestShareOpensAndStops(t *testing.T) {
 	if got["password"] != "correct-horse" || got["apiUrl"] != "http://localhost:3000" || got["tunnel"] != "ws://localhost:4000" {
 		t.Errorf("env = %v", got)
 	}
-	// No key or agent auth given: the environment's key is passed on, a
-	// stray WHK_AUTH is not.
-	if got["apiKey"] != "whcc_from_the_environment" || got["auth"] != "" {
+	// No key or agent auth given: the environment's key is passed on with
+	// WHK_AUTH=key (whk reads a key only with it), a stray WHK_AUTH is not.
+	if got["apiKey"] != "whcc_from_the_environment" || got["auth"] != "key" {
 		t.Errorf("auth env = %v", got)
 	}
 
@@ -158,7 +158,7 @@ func TestShareWithAnAPIKeyOrAnAgentConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := seen(t, live); got["apiKey"] != "whcc_given" || got["auth"] != "" || got["password"] != "" {
+	if got := seen(t, live); got["apiKey"] != "whcc_given" || got["auth"] != "key" || got["password"] != "" {
 		t.Errorf("env = %v", got)
 	}
 	_ = live.Stop(context.Background())
@@ -259,7 +259,7 @@ func TestSharesStartPicksTheClientsAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := seen(t, live)
-	if got["apiKey"] != "whcc_test" || got["auth"] != "" || !strings.HasPrefix(fmt.Sprint(got["apiUrl"]), "http://127.0.0.1") {
+	if got["apiKey"] != "whcc_test" || got["auth"] != "key" || !strings.HasPrefix(fmt.Sprint(got["apiUrl"]), "http://127.0.0.1") {
 		t.Errorf("env = %v", got)
 	}
 	_ = live.Stop(context.Background())

@@ -1163,7 +1163,8 @@ export function toolWords(hint: string): string {
     .replace(/whk shares log(?: <[^>]*>)?/g, "share_requests")
     .replace(/whk names reserve(?: <[^>]*>)?(?: --team <[^>]*>)?/g, "reserve_name")
     .replace(/whk names release(?: <[^>]*>)?/g, "release_name")
-    .replace(/whk names password(?: <[^>]*>)?(?: --clear)?/g, "set_name_password")
+    .replace(/whk names password(?: <[^>]*>)? --clear/g, "clear_name_password")
+    .replace(/whk names password(?: <[^>]*>)?/g, "set_name_password")
     .replace(/whk names ls/g, "list_names")
     .replace(/whk share <port> --password/g, "share_port with a password")
     .replace(/whk share <port>/g, "share_port");

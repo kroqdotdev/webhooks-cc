@@ -374,11 +374,12 @@ def test_share_returns_once_live_and_stops_cleanly(fake_whk: tuple[Path, Path]) 
         "--password",
     ]
     # The password never rides on the command line; the given key wins over the
-    # environment's, and an inherited WHK_AUTH is not passed on.
+    # environment's, with WHK_AUTH=key (whk reads a key only with it), and an
+    # inherited WHK_AUTH is not passed on.
     assert "correct-horse" not in " ".join(sent["argv"])
     assert sent["env"]["WHK_SHARE_PASSWORD"] == "correct-horse"
     assert sent["env"]["WHK_API_KEY"] == "whcc_given"
-    assert "WHK_AUTH" not in sent["env"]
+    assert sent["env"]["WHK_AUTH"] == "key"
     assert sent["env"]["WHK_TUNNEL_URL"] == "ws://localhost:4000"
 
 
@@ -473,6 +474,7 @@ def test_shares_start_passes_the_clients_key_and_base_url(fake_whk: tuple[Path, 
         assert live.url.endswith(".sharehooks.cc")
     sent = json.loads(record.read_text())["env"]
     assert sent["WHK_API_KEY"] == "whcc_test"
+    assert sent["WHK_AUTH"] == "key"
     assert sent["WHK_API_URL"] == "https://api.test"
 
 

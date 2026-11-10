@@ -1177,7 +1177,7 @@ await preview.stop();
 
 <ApiMethod method="RUN" path="whk share" title="share">
 
-The same, without a client: `whk` uses the key you pass, or its own login.
+The same, without a client: `whk` uses the key you pass (handed over as `WHK_API_KEY` with `WHK_AUTH=key`), else `WHK_API_KEY` from your environment, else its own login.
 
 ```ts
 import { share } from "@webhooks-cc/sdk";

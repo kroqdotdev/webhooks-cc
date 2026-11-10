@@ -224,13 +224,17 @@ export async function share(options: ShareOptions): Promise<LiveShare> {
   // never whatever this machine's environment happened to hold.
   delete env.WHK_API_KEY;
   delete env.WHK_AUTH;
+  // whk reads WHK_API_KEY only with WHK_AUTH=key, so a key in someone's
+  // shell never changes which account their own whk commands act as.
   if (options.apiKey) {
     env.WHK_API_KEY = options.apiKey;
+    env.WHK_AUTH = "key";
   } else if (options.auth === "agent") {
     env.WHK_AUTH = "agent";
     if (options.agentFile) env.WHK_AGENT_FILE = options.agentFile;
   } else if (proc.env.WHK_API_KEY) {
     env.WHK_API_KEY = proc.env.WHK_API_KEY;
+    env.WHK_AUTH = "key";
   }
   if (options.baseUrl) env.WHK_API_URL = options.baseUrl;
   if (options.tunnelUrl) env.WHK_TUNNEL_URL = options.tunnelUrl;

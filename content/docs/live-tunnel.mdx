@@ -88,7 +88,7 @@ The path after the endpoint's URL goes to your app: a request to `https://go.web
 
 ## JSON events
 
-With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`), `live_reconnected` and `live_retrying` around network trouble, `live_fallback` once when it starts forwarding captures from the stream while the relay is down (those arrive as `forwarded` events), `notice`, and `live_stopped` when it ends. Emails keep the plain tunnel's `forwarded` events.
+With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`, and `request_id`, the capture's id, as in the dashboard and the API), `live_reconnected` and `live_retrying` around network trouble, `live_fallback` once when it starts forwarding captures from the stream while the relay is down (those arrive as `forwarded` events; a capture the relay already carried, matched by its id, is never sent twice), `notice`, and `live_stopped` when it ends. Emails keep the plain tunnel's `forwarded` events.
 
 When the live session is refused before it ever opens (the account's live tunnels are all in use, or the endpoint is not yours), `whk` prints why and exits with status 1. Starting a second `whk tunnel --live` on the same endpoint takes the relay over: the first one is told it was replaced and ends. A session that was live and is then ended (stopped on webhooks.cc, replaced, the endpoint unshared) ends with `live_stopped` and status 0. Refusals that do not come from webhooks.cc itself (a proxy or firewall page, a rate limit) are retried, not taken as the end.
 

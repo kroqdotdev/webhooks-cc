@@ -40,7 +40,7 @@ type SelectedRequestRow = Pick<
   signing_provider?: string | null;
   response_status?: number | null;
   response_rule?: string | null;
-  /** What the app answered a live capture (migration 00092). */
+  /** What the app answered a live capture (column from migration 00091, written by 00092's record_live_response()). */
   live_response?: Json | null;
 };
 type OwnedEndpointRow = Pick<Database["public"]["Tables"]["endpoints"]["Row"], "id" | "slug">;
@@ -89,7 +89,7 @@ export interface RequestRecord {
   responseStatus?: number | null;
   /** The response rule that chose the answer, by name or "Rule N"; null when no rule did. */
   responseRule?: string | null;
-  /** What the local app answered, for a live capture (`whk tunnel --live`, migration 00092). */
+  /** What the local app answered, for a live capture (`whk tunnel --live`; column from migration 00091, written by 00092's record_live_response()). */
   liveResponse?: LiveResponseRecord | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
@@ -168,8 +168,9 @@ function isAsciiHex(bytes: Buffer): boolean {
 
 /**
  * The API's `liveResponse` on a request: what the local app answered a live
- * capture (`whk tunnel --live`, migration 00092), or what stood in for an
- * answer. `outcome` is "answered" when the app answered, else "offline" (no
+ * capture (`whk tunnel --live`; the column is from migration 00091, written
+ * by 00092's record_live_response()), or what stood in for an answer.
+ * `outcome` is "answered" when the app answered, else "offline" (no
  * live session, 502), "timeout" (no answer within 25 s, 504), "unreachable"
  * (nothing on the port, or the edge out of reach, 502), "busy" (503) or
  * "refused": 400 for a path that would have left the endpoint, 502 for an

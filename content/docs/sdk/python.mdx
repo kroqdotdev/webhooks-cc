@@ -273,7 +273,7 @@ with client.shares.start(3000) as live:
 # leaving the block stops the share
 ```
 
-`client.shares.start()` shares as the client's own account: a client with an API key passes it to `whk`, and one from `WebhooksCC.connected()` has `whk` read the same agent credential file. `share(port, ...)` (from `webhooks_cc`) does the same without a client, with `api_key=` or the CLI's own login. Both take `name=` (a name you reserved, Pro and Business), `password=` (8 to 200 characters, passed through the environment, never the command line), `on_request=`, `on_notice=`, `on_event=` and `timeout=`, and return a `LiveShare`:
+`client.shares.start()` shares as the client's own account: a client with an API key passes it to `whk`, and one from `WebhooksCC.connected()` has `whk` read the same agent credential file. `share(port, ...)` (from `webhooks_cc`) does the same without a client, with `api_key=`, else `WHK_API_KEY` from the environment, else the CLI's own login; a key goes to `whk` as `WHK_API_KEY` with `WHK_AUTH=key`, the only way `whk` reads one. Both take `name=` (a name you reserved, Pro and Business), `password=` (8 to 200 characters, passed through the environment, never the command line), `on_request=`, `on_notice=`, `on_event=` and `timeout=`, and return a `LiveShare`:
 
 | Member | What it is |
 | --- | --- |

@@ -478,15 +478,17 @@ func shareEnv(base []string, opts ShareOptions) []string {
 		env = append(env, kv)
 	}
 	switch {
+	// whk reads WHK_API_KEY only with WHK_AUTH=key, so a key in someone's
+	// shell never changes which account their own whk commands act as.
 	case opts.APIKey != "":
-		env = append(env, "WHK_API_KEY="+opts.APIKey)
+		env = append(env, "WHK_API_KEY="+opts.APIKey, "WHK_AUTH=key")
 	case opts.AgentAuth:
 		env = append(env, "WHK_AUTH=agent")
 		if opts.AgentFile != "" {
 			env = append(env, "WHK_AGENT_FILE="+opts.AgentFile)
 		}
 	case inherited != "":
-		env = append(env, "WHK_API_KEY="+inherited)
+		env = append(env, "WHK_API_KEY="+inherited, "WHK_AUTH=key")
 	}
 	if opts.Password != "" {
 		env = append(env, "WHK_SHARE_PASSWORD="+opts.Password)

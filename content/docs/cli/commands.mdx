@@ -62,6 +62,14 @@ Show current authentication status and email. When you are not logged in but an 
 whk auth status
 ```
 
+### Which account whk acts as
+
+In order: an API key in `WHK_API_KEY`, but only together with `WHK_AUTH=key`; your login (`token.json`); then a saved agent connection. `WHK_AUTH=agent` uses the agent connection and ignores the login. A `WHK_API_KEY` alone, the variable the SDKs read, never changes which account `whk` acts as, so a key in your shell for another account or a CI job leaves your own commands alone. The SDKs' `share()` and the MCP server's `share_port` set both variables when they run `whk` with a key.
+
+```bash
+WHK_AUTH=key WHK_API_KEY=whcc_... whk shares ls
+```
+
 ## create
 
 Create a new endpoint. An optional name can be provided; the slug is auto-generated. It prints the endpoint's webhook URL and its email address (`{slug}@mailhooks.cc`, see [Email Capture](/docs/email-capture)).

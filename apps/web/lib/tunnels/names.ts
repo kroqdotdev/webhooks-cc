@@ -347,6 +347,21 @@ async function moveIntoTeam(userId: string, name: string, teamId: string): Promi
  * the name as reserveName keeps it (`reserved` when this kept it just now,
  * which the caller audits like the reserve route).
  */
+/**
+ * Takes back a name `whk share --name` reserved moments ago when the share
+ * itself was refused (no free slot, say), so a refused share never uses up
+ * one of the plan's names. Only the account's own, team-less row goes.
+ */
+export async function undoShareReservation(userId: string, name: string): Promise<void> {
+  const { error } = await createAdminClient()
+    .from("tunnel_names")
+    .delete()
+    .eq("name", name)
+    .eq("user_id", userId)
+    .is("team_id", null);
+  if (error) throw error;
+}
+
 export async function nameForShare(
   userId: string,
   plan: TunnelPlan,

@@ -282,16 +282,20 @@ export function NamesPanel({
           </p>
         )}
         {listing.names.length > 0 && (
-          <div className="space-y-1">
+          <div className="ph-no-capture space-y-1">
             <p className="text-xs text-muted-foreground">Share under a name:</p>
             <CommandBlock command={`whk share 3000 --name ${listing.names[0].name}`} />
           </div>
         )}
-        {message && <InlineMessage tone={message.tone}>{message.text}</InlineMessage>}
+        {message && (
+          <div className="ph-no-capture">
+            <InlineMessage tone={message.tone}>{message.text}</InlineMessage>
+          </div>
+        )}
       </div>
 
       <AlertDialog open={releasing !== null} onOpenChange={(open) => !open && setReleasing(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="ph-no-capture">
           <AlertDialogHeader>
             <AlertDialogTitle>Release {releasing?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -320,7 +324,7 @@ export function NamesPanel({
       </AlertDialog>
 
       <Dialog open={passwordFor !== null} onOpenChange={(open) => !open && setPasswordFor(null)}>
-        <DialogContent className="max-w-md border-strong border-line shadow-raised">
+        <DialogContent className="ph-no-capture max-w-md border-strong border-line shadow-raised">
           <form onSubmit={(event) => void savePassword(event)} className="space-y-4">
             <DialogHeader>
               <DialogTitle>Password for {passwordFor?.name}</DialogTitle>

@@ -368,14 +368,18 @@ def share(
     # never whatever this machine's environment happened to hold.
     inherited = env.pop("WHK_API_KEY", None)
     env.pop("WHK_AUTH", None)
+    # whk reads WHK_API_KEY only with WHK_AUTH=key, so a key in someone's
+    # shell never changes which account their own whk commands act as.
     if api_key:
         env["WHK_API_KEY"] = api_key
+        env["WHK_AUTH"] = "key"
     elif auth == "agent":
         env["WHK_AUTH"] = "agent"
         if agent_file is not None:
             env["WHK_AGENT_FILE"] = os.fspath(agent_file)
     elif inherited:
         env["WHK_API_KEY"] = inherited
+        env["WHK_AUTH"] = "key"
     if base_url:
         env["WHK_API_URL"] = base_url
     if tunnel_url:

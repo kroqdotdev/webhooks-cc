@@ -21,8 +21,8 @@
 --   after the relay. Sets requests.live_response (status, headers, the first
 --   64 KB of the body as UTF-8 text or base64, whether it was cut, how long the
 --   app took, and the outcome: answered, or what stood in for an answer:
---   offline, timeout, unreachable, busy) and response_status to the status
---   the sender got, and clears response_rule, since no rule chose a live
+--   offline, timeout, unreachable, busy, refused) and response_status to the
+--   status the sender got, and clears response_rule, since no rule chose a live
 --   answer. Values out of range are dropped, never refused.
 --
 -- requests_broadcast_signature (00043, 00090) also fires when live_response

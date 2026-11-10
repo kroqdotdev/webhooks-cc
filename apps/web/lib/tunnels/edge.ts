@@ -50,10 +50,21 @@ async function post(path: string, body: unknown): Promise<boolean> {
   return true;
 }
 
-/** Closes shares at the edge now. False when the edge did not answer. */
+/**
+ * Closes per request to the control port. Its body limit is 64 KiB, and a
+ * close carries up to about 250 characters of words for the CLI, so a bulk
+ * stop (a team's subscription lapsing) goes in parts that each fit.
+ */
+export const CLOSES_PER_REQUEST = 100;
+
+/** Closes shares at the edge now. False when the edge did not answer every part. */
 export async function closeOnEdge(closes: EdgeClose[]): Promise<boolean> {
-  if (closes.length === 0) return true;
-  return post("/close", { closes });
+  let reached = true;
+  for (let i = 0; i < closes.length; i += CLOSES_PER_REQUEST) {
+    const part = closes.slice(i, i + CLOSES_PER_REQUEST);
+    if (!(await post("/close", { closes: part }))) reached = false;
+  }
+  return reached;
 }
 
 /** Puts live shares behind a new password, or none, at the edge now. */

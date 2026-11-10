@@ -39,11 +39,12 @@
 --   a report); its runs are stopped and new ones refused.
 --
 -- endpoints.live_session_id: the open live session of the endpoint, for the
---   receiver (phase 3). Set and cleared by tunnel_open_share and
+--   receiver's live relay. Set and cleared by tunnel_open_share and
 --   tunnel_end_shares; a job clears any left behind.
 --
 -- requests.live_response: what the app answered a live capture (status,
---   headers, the first 64 KB of the body), written by the receiver (phase 3).
+--   headers, the first 64 KB of the body), written by the receiver through
+--   record_live_response() (00092).
 --   Nullable without a default, so adding it only changes the catalog.
 --
 -- Functions, all service-role only:
