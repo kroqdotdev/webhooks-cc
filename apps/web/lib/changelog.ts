@@ -1,3 +1,5 @@
+import release from "./changelog-release.json";
+
 export type ChangelogTrack = "web" | "cli" | "sdk" | "python" | "go" | "mcp";
 
 export interface ChangelogEntry {
@@ -17,7 +19,17 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.65.1";
+/**
+ * The web app's version and its newest changelog entries are given when a
+ * release is deployed: apps/web/scripts/release.mjs reads the release labels of
+ * the pull requests merged since the last `web-v*` tag and the changelog files
+ * in apps/web/changelog/web/, and writes changelog-release.json for the build.
+ * In the repository that file holds no version, so a local or CI build reports
+ * "dev". The web entries below were numbered by hand, up to 0.65.1.
+ */
+const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
+
+export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -25,6 +37,7 @@ export const GO_SDK_VERSION = "0.5.0";
 export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
+  ...RELEASE.entries,
   // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.65.1",

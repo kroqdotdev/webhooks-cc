@@ -1,0 +1,43 @@
+name: Release label
+
+# Every pull request says what it does to the web release: one label of
+# release: patch, release: minor, release: major or release: none. Unless it
+# is none, it adds its own changelog file to apps/web/changelog/web/. The
+# version itself is given when a release is deployed (apps/web/scripts/release.mjs),
+# so no pull request edits a shared version line.
+#
+# pull_request runs with a read-only token and never sees secrets, so it is
+# safe for pull requests from forks.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-label:
+    name: Release label
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check the label and changelog files
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node apps/web/scripts/release.mjs check-pr --base "$BASE" --head "$HEAD"

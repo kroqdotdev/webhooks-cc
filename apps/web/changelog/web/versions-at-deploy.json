@@ -1,0 +1,6 @@
+{
+  "title": "Versions follow releases",
+  "items": [
+    "The web version is now given when a release goes live, and the changelog lists each change under the release that shipped it"
+  ]
+}

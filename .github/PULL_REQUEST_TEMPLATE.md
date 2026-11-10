@@ -22,3 +22,4 @@ How you tested it, and which suites you ran (see the commands in AGENTS.md).
 - [ ] CI passes (lint, typecheck, build, unit tests, Rust jobs)
 - [ ] Tests cover the changed behaviour
 - [ ] Docs updated if behaviour changed
+- [ ] One `release:` label (patch, minor, major or none) and, unless none, a changelog file in `apps/web/changelog/web/`
