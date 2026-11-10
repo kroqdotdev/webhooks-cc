@@ -31,7 +31,8 @@ export interface OpsShare {
   url: string | null;
   endpointId: string | null;
   free: boolean;
-  user: { id: string; email: string | null };
+  /** Null when the account was deleted: the run stays for the address retention. */
+  user: { id: string; email: string | null } | null;
   client: string;
   /** Where the CLI connected from (kept 90 days after a run ends). */
   clientAddress: string | null;
@@ -61,7 +62,7 @@ type ShareSelect = {
   name: string | null;
   endpoint_id: string | null;
   free: boolean;
-  user_id: string;
+  user_id: string | null;
   client: string;
   client_address: string | null;
   key_id: string | null;
@@ -77,7 +78,7 @@ const SHARE_COLUMNS =
   "id, kind, name, endpoint_id, free, user_id, client, client_address, key_id, started_at, expires_at, ended_at, end_reason, bytes, requests";
 
 async function opsShares(rows: ShareSelect[]): Promise<OpsShare[]> {
-  const emails = await emailsOf(rows.map((r) => r.user_id));
+  const emails = await emailsOf(rows.flatMap((r) => (r.user_id ? [r.user_id] : [])));
   return rows.map((r) => ({
     id: r.id,
     kind: r.kind,
@@ -85,7 +86,7 @@ async function opsShares(rows: ShareSelect[]): Promise<OpsShare[]> {
     url: r.name ? previewUrl(r.name) : null,
     endpointId: r.endpoint_id,
     free: r.free,
-    user: { id: r.user_id, email: emails.get(r.user_id) ?? null },
+    user: r.user_id ? { id: r.user_id, email: emails.get(r.user_id) ?? null } : null,
     client: r.client,
     clientAddress: r.client_address,
     keyId: r.key_id,

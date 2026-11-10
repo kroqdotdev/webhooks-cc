@@ -11,7 +11,8 @@ import type { TunnelPlan } from "./plan";
 export type ShareRow = {
   id: string;
   kind: "share" | "live";
-  user_id: string;
+  /** Null once the account is deleted; the row stays for the address retention. */
+  user_id: string | null;
   name: string | null;
   endpoint_id: string | null;
   free: boolean;
@@ -48,6 +49,8 @@ export async function openShare(input: {
   endpointId: string | null;
   client: string;
   keyId: string | null;
+  /** Set when an agent's access token opened the run: it ends with the registration. */
+  agentRegistrationId?: string | null;
   instance: string | null;
   clientAddress: string | null;
   password: { hash: string; version: string } | null;
@@ -67,6 +70,7 @@ export async function openShare(input: {
     p_client_address: input.clientAddress,
     p_password_hash: input.password?.hash ?? null,
     p_password_version: input.password?.version ?? null,
+    p_agent_registration_id: input.agentRegistrationId ?? null,
   });
   if (error) throw error;
   const answer = data as { shareId?: string; expiresAt?: string | null; error?: string };
@@ -150,6 +154,7 @@ export async function someoneElseSharing(name: string, userId: string): Promise<
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
+  if (!data.user_id) return "A deleted account";
   const { data: user } = await admin
     .from("users")
     .select("email")

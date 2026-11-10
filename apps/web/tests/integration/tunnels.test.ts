@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 
 /*
@@ -542,6 +542,213 @@ describe("edge routes", () => {
     expect(
       (await api("/api/tunnel-names/name", "DELETE", owner.key, { params: { name } })).status
     ).toBe(200);
+  });
+
+  it("never lets a run outlive the access it was opened with", async () => {
+    const { unshareEndpointFromTeam } = await import("@/lib/supabase/teams-endpoints");
+    const { revokeConnectedAgent } = await import("@/lib/agent/claims");
+    const owner = await createUser({ plan: "pro", request_limit: 100_000 });
+    const member = await createUser();
+    const { data: team, error } = await admin
+      .from("teams")
+      .insert({ name: "Access team", created_by: owner.id, subscription_status: null, seats: 2 })
+      .select("id")
+      .single();
+    if (error) throw error;
+    createdTeamIds.push(team.id);
+    await admin.from("team_members").insert([
+      { team_id: team.id, user_id: owner.id, role: "owner" },
+      { team_id: team.id, user_id: member.id, role: "member" },
+    ]);
+    const slug = `acc${ts % 1_000_000}`;
+    const { data: endpoint, error: epError } = await admin
+      .from("endpoints")
+      .insert({ user_id: owner.id, slug, name: "shared" })
+      .select("id")
+      .single();
+    if (epError) throw epError;
+    await admin
+      .from("team_endpoints")
+      .insert({ team_id: team.id, endpoint_id: endpoint.id, shared_by: owner.id });
+
+    // A lapsed team gives its members none of its shared endpoints.
+    expect((await open(member.key, { kind: "live", endpoint: slug })).status).toBe(404);
+
+    // Subscribed again: the member may relay it, until the owner unshares it.
+    await admin.from("teams").update({ subscription_status: "active" }).eq("id", team.id);
+    const live = await open(member.key, { kind: "live", endpoint: slug });
+    expect(live.status).toBe(200);
+    edgeCalls = [];
+    expect(await unshareEndpointFromTeam(owner.id, team.id, endpoint.id)).toBe(true);
+    const { data: unshared } = await admin
+      .from("tunnel_shares")
+      .select("ended_at, end_reason")
+      .eq("id", live.body.shareId as string)
+      .single();
+    expect(unshared?.end_reason).toBe("access ended");
+    // Other suites' runs may close in the same call: look for this one.
+    const closed = edgeCalls
+      .filter((c) => c.path === "/close")
+      .flatMap((c) => (c.body as { closes: { shareId: string; reason: string }[] }).closes);
+    expect(closed).toContainEqual({
+      shareId: live.body.shareId,
+      reason: expect.stringMatching(/access it was opened with has ended/),
+    });
+
+    // A preview under the team's name ends at the next sync once the member is
+    // gone, even when the removal never reached the edge itself.
+    const name = `acme-crew-${ts % 100_000}`;
+    expect(
+      (await api("/api/tunnel-names", "POST", owner.key, { body: { name, team: team.id } })).status
+    ).toBe(201);
+    const preview = await open(member.key, { name });
+    expect(preview.status).toBe(200);
+    await admin.from("team_members").delete().eq("team_id", team.id).eq("user_id", member.id);
+    const synced = (await (
+      await edge("sync", { shareIds: [preview.body.shareId], batches: [] })
+    ).json()) as { close: { shareId: string; reason: string }[] };
+    expect(synced.close).toContainEqual({
+      shareId: preview.body.shareId,
+      reason: expect.stringMatching(/access it was opened with has ended/),
+    });
+
+    // An agent's run lives while its registration does, through token expiry,
+    // and ends when the human disconnects the agent.
+    const { data: registration, error: regError } = await admin
+      .from("agent_registrations")
+      .insert({
+        kind: "service_auth",
+        user_id: member.id,
+        claimed_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      })
+      .select("id")
+      .single();
+    if (regError) throw regError;
+    const agentKey = `whcc_agent_access_${ts}_${Math.random().toString(36).slice(2, 10)}`;
+    const { data: keyRow, error: keyError } = await admin
+      .from("api_keys")
+      .insert({
+        user_id: member.id,
+        key_hash: hashApiKey(agentKey),
+        key_prefix: agentKey.slice(0, 12),
+        name: "agent access token",
+        is_agent_issued: true,
+        agent_registration_id: registration.id,
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      })
+      .select("id")
+      .single();
+    if (keyError) throw keyError;
+    const agentRun = await open(agentKey);
+    expect(agentRun.status).toBe(200);
+    // The access token expires and is cleaned up: the run carries on.
+    await admin.from("api_keys").delete().eq("id", keyRow.id);
+    await edge("sync", { shareIds: [agentRun.body.shareId], batches: [] });
+    const { data: still } = await admin
+      .from("tunnel_shares")
+      .select("ended_at")
+      .eq("id", agentRun.body.shareId as string)
+      .single();
+    expect(still?.ended_at).toBeNull();
+    expect(await revokeConnectedAgent(member.id, registration.id)).toBe(true);
+    const { data: revoked } = await admin
+      .from("tunnel_shares")
+      .select("end_reason")
+      .eq("id", agentRun.body.shareId as string)
+      .single();
+    expect(revoked?.end_reason).toBe("access ended");
+  });
+
+  it("keeps a deleted account's runs for the evidence, and ends them", async () => {
+    const user = await createUser();
+    const opened = await open(user.key);
+    expect(opened.status).toBe(200);
+    await admin.auth.admin.deleteUser(user.id);
+    const { data: kept } = await admin
+      .from("tunnel_shares")
+      .select("user_id, client_address, ended_at")
+      .eq("id", opened.body.shareId as string)
+      .single();
+    expect(kept).toMatchObject({ user_id: null, client_address: "192.0.2.10", ended_at: null });
+    const synced = (await (
+      await edge("sync", { shareIds: [opened.body.shareId], batches: [] })
+    ).json()) as { close: { shareId: string; reason: string }[] };
+    expect(synced.close).toContainEqual({
+      shareId: opened.body.shareId,
+      reason: "the account was deleted",
+    });
+    const { data: ended } = await admin
+      .from("tunnel_shares")
+      .select("end_reason, client_address")
+      .eq("id", opened.body.shareId as string)
+      .single();
+    expect(ended).toMatchObject({ end_reason: "account deleted", client_address: "192.0.2.10" });
+    await admin
+      .from("tunnel_shares")
+      .delete()
+      .eq("id", opened.body.shareId as string);
+  });
+
+  it("refuses names shaped like random ones, and name changes while suspended", async () => {
+    const pro = await createUser({ plan: "pro", request_limit: 100_000 });
+    for (const drawn of ["amber-badger-0042", "amber-badger-0042-free"]) {
+      const res = await api("/api/tunnel-names", "POST", pro.key, { body: { name: drawn } });
+      expect(res.status).toBeGreaterThanOrEqual(400);
+    }
+    const drawnRes = await api("/api/tunnel-names", "POST", pro.key, {
+      body: { name: "amber-badger-0042" },
+    });
+    expect(((await drawnRes.json()) as { error: string }).error).toMatch(/drawn at random/);
+
+    const name = `kept-before-${ts % 100_000}`;
+    expect((await api("/api/tunnel-names", "POST", pro.key, { body: { name } })).status).toBe(201);
+    await admin.from("users").update({ tunnels_suspended: true }).eq("id", pro.id);
+    const reserve = await api("/api/tunnel-names", "POST", pro.key, {
+      body: { name: `kept-after-${ts % 100_000}` },
+    });
+    expect(reserve.status).toBe(403);
+    expect(((await reserve.json()) as { error: string }).error).toMatch(/suspended/);
+    const password = await api("/api/tunnel-names/password", "PUT", pro.key, {
+      body: { password: "correct-horse" },
+      params: { name },
+    });
+    expect(password.status).toBe(403);
+    // Letting a name go is still allowed.
+    expect(
+      (await api("/api/tunnel-names/name", "DELETE", pro.key, { params: { name } })).status
+    ).toBe(200);
+  });
+
+  it("never hands back a blocked free name on a reconnect", async () => {
+    const { randomNameFree } = await import("@/lib/tunnels/names");
+    const user = await createUser();
+    const name = `amber-badger-${String(ts % 10_000).padStart(4, "0")}-free`;
+    expect(await randomNameFree(user.id, name, true)).toBe(true);
+    await admin.from("tunnel_blocked_names").insert({ name });
+    try {
+      expect(await randomNameFree(user.id, name, true)).toBe(false);
+    } finally {
+      await admin.from("tunnel_blocked_names").delete().eq("name", name);
+    }
+  });
+
+  it("closes the report form in production when a Turnstile key is missing", async () => {
+    const report = await import("@/app/api/report/route");
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const res = await report.POST(
+        new Request("http://localhost/api/report", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "http://acme.sharehooks.localhost:4000/" }),
+        })
+      );
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as { error: string }).error).toMatch(/support@webhooks.cc/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("closes every open run when the edge restarts", async () => {

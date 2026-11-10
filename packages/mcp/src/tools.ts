@@ -2511,7 +2511,7 @@ export function registerTools(
 
   server.tool(
     "share_port",
-    "Share a port on this computer at a public link (https://<name>.sharehooks.cc) by running the webhooks.cc CLI (whk share), so a person can open the site you are building. Returns the link. It keeps running until stop_share, the plan's session limit, or the end of this MCP server. Free accounts get a random name ending in -free, a 2-hour limit and a notice page before the site; Pro and Business can use a reserved name and a password. Needs whk installed on this computer. For a webhook provider that must get your local app's real answer, use `whk tunnel <port> --live` instead.",
+    "Share a port on this computer at a public link (https://<name>.sharehooks.cc) by running the webhooks.cc CLI (whk share), so a person can open the site you are building. Returns the link. It keeps running until stop_share, the plan's session limit, or the end of this MCP server. Asking again for the same port without a name or password returns the running link; with a name or password, the running share on that port stops and a new one starts. Free accounts get a random name ending in -free, a 2-hour limit and a notice page before the site; Pro and Business can use a reserved name and a password. Needs whk installed on this computer. For a webhook provider that must get your local app's real answer, use `whk tunnel <port> --live` instead.",
     {
       port: z.number().int().min(1).max(65535).describe("The local port the site runs on"),
       name: z
@@ -2529,6 +2529,12 @@ export function registerTools(
       const running = started.get(port);
       if (running && !name && !password) {
         return jsonContent({ ...shareSummary(running), alreadyRunning: true });
+      }
+      // New options for a port already shared: the running share stops first,
+      // so no whk run is left behind that this server no longer tracks.
+      if (running) {
+        started.delete(port);
+        await running.stop();
       }
       const live = await client.shares.start({
         port,

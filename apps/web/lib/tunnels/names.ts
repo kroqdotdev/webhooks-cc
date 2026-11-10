@@ -45,6 +45,10 @@ export async function nameHeldBy(
   return null;
 }
 
+/** Why a name shaped like a random one cannot be kept. */
+export const DRAWN_NAME =
+  "Names like that are drawn at random for previews, so they can't be kept. Pick another.";
+
 export async function isBlocked(name: string): Promise<boolean> {
   const { data, error } = await createAdminClient()
     .from("tunnel_blocked_names")
@@ -73,7 +77,7 @@ export async function nameRefusal(name: string): Promise<string | null> {
 }
 
 /** Whether a preview runs under the name right now, and whose. */
-async function openUnder(name: string): Promise<{ user_id: string } | null> {
+async function openUnder(name: string): Promise<{ user_id: string | null } | null> {
   const { data, error } = await createAdminClient()
     .from("tunnel_shares")
     .select("user_id")
@@ -102,6 +106,8 @@ export async function randomName(free: boolean): Promise<string> {
     // The suffix is ours; the rest must pass the lists like any name.
     const bare = free ? name.slice(0, -"-free".length) : name;
     if (await isKept(name)) continue;
+    // Staff block the whole name, -free included; the lists judge the rest.
+    if (await isBlocked(name)) continue;
     if (await nameRefusal(bare)) continue;
     if (await openUnder(name)) continue;
     return name;
@@ -121,7 +127,7 @@ export async function randomNameFree(
 ): Promise<boolean> {
   if (!isDrawnName(name, free)) return false;
   const bare = free ? name.slice(0, -"-free".length) : name;
-  if ((await isKept(name)) || (await nameRefusal(bare))) return false;
+  if ((await isKept(name)) || (await isBlocked(name)) || (await nameRefusal(bare))) return false;
   const open = await openUnder(name);
   return !open || open.user_id === userId;
 }
@@ -154,6 +160,10 @@ export async function nameStanding(
       return { name, yours: true };
     return { error: "That name is taken.", status: 409 };
   }
+  // Random names are drawn for previews and handed back on reconnects; one
+  // kept by someone else would take over a link its preview had sent out.
+  if (isDrawnName(name, false) || isDrawnName(name, true))
+    return { error: DRAWN_NAME, status: 403 };
   if (await nameRefusal(name)) return { error: UNAVAILABLE, status: 403 };
   // A random name in use right now cannot be kept from under its preview.
   const open = await openUnder(name);

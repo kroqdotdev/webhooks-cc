@@ -1260,6 +1260,37 @@ describe("registerTools", () => {
     });
   });
 
+  it("stops the running share on a port before starting one with new options", async () => {
+    const running = {
+      url: "https://amber-otter-0042.sharehooks.cc",
+      name: "amber-otter-0042",
+      expiresAt: null,
+      notice: false,
+      password: false,
+      port: 4000,
+      stop: vi.fn(async () => undefined),
+      closed: new Promise<{ reason: string }>(() => undefined),
+    };
+    const named = { ...running, name: "acme-demo", url: "https://acme-demo.sharehooks.cc" };
+    const start = vi.fn().mockResolvedValueOnce(running).mockResolvedValueOnce(named);
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { start } as unknown as WebhooksCC["shares"] })
+    );
+
+    await tools.share_port.handler({ port: 4000 });
+    const second = parseJsonResult(
+      await tools.share_port.handler({ port: 4000, name: "acme-demo" })
+    );
+    expect(running.stop).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(second.name).toBe("acme-demo");
+    expect(second.alreadyRunning).toBeUndefined();
+    // The new share is the one tracked now.
+    const third = parseJsonResult(await tools.share_port.handler({ port: 4000 }));
+    expect(third.alreadyRunning).toBe(true);
+    expect(third.name).toBe("acme-demo");
+  });
+
   it("lists and stops shares through the API", async () => {
     const list = vi.fn(async () => ({ shares: [], usage: {}, limits: {} }));
     const stop = vi.fn(async () => undefined);

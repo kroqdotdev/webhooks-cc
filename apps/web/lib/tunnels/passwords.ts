@@ -20,7 +20,8 @@ export interface Gate {
 interface ShareGateColumns {
   id: string;
   name: string | null;
-  user_id: string;
+  /** Null once the account is deleted: such a run has no gate of its name. */
+  user_id: string | null;
   password_hash: string | null;
   password_version: string | null;
 }
@@ -46,7 +47,7 @@ async function nameServes(
 export async function gateOf(share: ShareGateColumns): Promise<Gate | null> {
   if (share.password_hash && share.password_version)
     return { hash: share.password_hash, version: share.password_version };
-  if (!share.name) return null;
+  if (!share.name || !share.user_id) return null;
   const { data, error } = await createAdminClient()
     .from("tunnel_names")
     .select("user_id, team_id, password_hash, password_version")
@@ -58,21 +59,64 @@ export async function gateOf(share: ShareGateColumns): Promise<Gate | null> {
   return { hash: data.password_hash, version: data.password_version };
 }
 
-/** The versions the edge should hold for these live previews (sync). */
+/**
+ * The versions the edge should hold for these live previews (sync, every 30
+ * seconds): three queries whatever the number of previews, the same answer
+ * gateOf() gives for each.
+ */
 export async function gateVersions(
   shareIds: string[]
 ): Promise<{ shareId: string; gate: string | null }[]> {
   if (shareIds.length === 0) return [];
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("tunnel_shares")
     .select("id, name, user_id, password_hash, password_version")
     .in("id", shareIds)
     .eq("kind", "share")
     .is("ended_at", null);
   if (error) throw error;
-  const out: { shareId: string; gate: string | null }[] = [];
-  for (const s of data ?? []) out.push({ shareId: s.id, gate: (await gateOf(s))?.version ?? null });
-  return out;
+  const shares = data ?? [];
+  // Previews without a password of their own follow their name's.
+  const followers = shares.filter((s) => !s.password_version && s.name && s.user_id);
+  const names = [...new Set(followers.map((s) => s.name as string))];
+  const kept = new Map<
+    string,
+    { user_id: string; team_id: string | null; password_version: string | null }
+  >();
+  if (names.length > 0) {
+    const { data: rows, error: namesError } = await admin
+      .from("tunnel_names")
+      .select("name, user_id, team_id, password_version")
+      .in("name", names)
+      .not("password_version", "is", null);
+    if (namesError) throw namesError;
+    for (const r of rows ?? []) kept.set(r.name, r);
+  }
+  // Teammates under a team's name: one membership query for all of them.
+  const teamAsks = followers.filter((s) => {
+    const k = kept.get(s.name as string);
+    return k && k.user_id !== s.user_id && k.team_id;
+  });
+  const member = new Set<string>();
+  if (teamAsks.length > 0) {
+    const teamIds = [...new Set(teamAsks.map((s) => kept.get(s.name as string)!.team_id!))];
+    const userIds = [...new Set(teamAsks.map((s) => s.user_id as string))];
+    const { data: rows, error: membersError } = await admin
+      .from("team_members")
+      .select("team_id, user_id")
+      .in("team_id", teamIds)
+      .in("user_id", userIds);
+    if (membersError) throw membersError;
+    for (const r of rows ?? []) member.add(`${r.team_id}:${r.user_id}`);
+  }
+  return shares.map((s) => {
+    if (s.password_version && s.password_hash) return { shareId: s.id, gate: s.password_version };
+    const k = s.name && s.user_id ? kept.get(s.name) : undefined;
+    const serves =
+      !!k && (k.user_id === s.user_id || (!!k.team_id && member.has(`${k.team_id}:${s.user_id}`)));
+    return { shareId: s.id, gate: serves ? k!.password_version : null };
+  });
 }
 
 export async function passwordMatches(gate: Gate, password: string): Promise<boolean> {

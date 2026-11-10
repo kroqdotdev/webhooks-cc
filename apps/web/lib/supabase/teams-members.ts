@@ -3,6 +3,7 @@ import { revokeTeamSeat } from "./team-billing";
 import { removeMemberShares } from "./teams-endpoints";
 import type { TeamMember, TeamMemberRow } from "./teams-types";
 import { reportError } from "@/lib/observability";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -160,6 +161,8 @@ export async function removeTeamMember(
   if (!data) return false;
 
   await releaseMemberSeat(teamId, targetUserId, data.polar_seat_id);
+  // Tunnels opened on this access end with it (lib/tunnels/access.ts).
+  await closeRunsWithoutAccess();
   return true;
 }
 
@@ -197,5 +200,7 @@ export async function leaveTeam(userId: string, teamId: string): Promise<boolean
   if (!data) return false;
 
   await releaseMemberSeat(teamId, userId, data.polar_seat_id);
+  // Tunnels opened on this access end with it (lib/tunnels/access.ts).
+  await closeRunsWithoutAccess();
   return true;
 }

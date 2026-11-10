@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const env: Record<string, string | undefined> = {};
 vi.mock("@/lib/env", () => ({ serverEnv: () => env }));
 
-const { passedTurnstile, turnstileSiteKey } = await import("./turnstile");
+const { passedTurnstile, turnstileMissingInProduction, turnstileSiteKey } =
+  await import("./turnstile");
 
 function answer(success: boolean): typeof fetch {
   return vi.fn(async () => Response.json({ success })) as unknown as typeof fetch;
@@ -47,5 +48,15 @@ describe("turnstile", () => {
       throw new Error("offline");
     }) as unknown as typeof fetch;
     expect(await passedTurnstile("token", null, broken)).toBe(false);
+  });
+
+  it("counts as missing only in production, and only without both keys", () => {
+    expect(turnstileMissingInProduction("development")).toBe(false);
+    expect(turnstileMissingInProduction("test")).toBe(false);
+    expect(turnstileMissingInProduction("production")).toBe(true);
+    env.TURNSTILE_SITE_KEY = "1x00000000000000000000AA";
+    expect(turnstileMissingInProduction("production")).toBe(true);
+    env.TURNSTILE_SECRET_KEY = "1x0000000000000000000000000000000AA";
+    expect(turnstileMissingInProduction("production")).toBe(false);
   });
 });

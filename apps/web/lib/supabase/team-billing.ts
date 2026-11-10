@@ -31,6 +31,7 @@ import type { Database } from "./database";
 import { removeMemberShares } from "./teams-endpoints";
 import { recordRefund } from "@/lib/billing/refunds";
 import { reportError } from "@/lib/observability";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
 /** Pooled request allowance granted per Teams seat, per period. */
 export const TEAM_SEAT_REQUEST_LIMIT = ENTITLEMENTS.team.requestLimit;
@@ -2026,6 +2027,8 @@ export async function applyTeamPolarWebhookEvent(
         block_requests: 0,
         overage_active: false,
       });
+      // Members' tunnels on the team's shared endpoints end with it.
+      await closeRunsWithoutAccess();
       return;
     }
 

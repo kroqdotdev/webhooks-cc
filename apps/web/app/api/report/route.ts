@@ -9,7 +9,7 @@ import {
   reportedNameOf,
   tellStaffOfReport,
 } from "@/lib/tunnels/reports";
-import { passedTurnstile } from "@/lib/turnstile";
+import { passedTurnstile, turnstileMissingInProduction } from "@/lib/turnstile";
 
 /*
  * What the EU Digital Services Act (article 16) asks of a notice: why the
@@ -40,6 +40,9 @@ const input = z
     else if (!v.email) ctx.addIssue({ code: "custom", message: "Add your email." });
   });
 
+/** Reported once per process, not once per refused report. */
+const globalForReports = globalThis as { turnstileReported?: boolean };
+
 const fail = (error: string, status = 400) => Response.json({ error }, { status });
 
 /**
@@ -50,6 +53,17 @@ const fail = (error: string, status = 400) => Response.json({ error }, { status 
  */
 export async function POST(request: Request) {
   if (!tunnelConfig()) return fail("Reports are not taken here.", 404);
+  if (turnstileMissingInProduction()) {
+    // Fail closed: without the browser check the form is open to scripts.
+    if (!globalForReports.turnstileReported) {
+      globalForReports.turnstileReported = true;
+      reportError("Report form is closed: TURNSTILE_SITE_KEY or TURNSTILE_SECRET_KEY is missing");
+    }
+    return fail(
+      "Reports can't be taken here right now. Write to support@webhooks.cc with the preview's address.",
+      503
+    );
+  }
   let body: unknown;
   try {
     body = await request.json();

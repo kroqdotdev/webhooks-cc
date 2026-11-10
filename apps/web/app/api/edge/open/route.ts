@@ -1,5 +1,5 @@
 import { getWebhookUrl } from "@/lib/constants";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { accountForKey } from "@/lib/tunnels/accounts";
 import { previewUrlFor, tunnelConfig } from "@/lib/tunnels/config";
 import { fromEdge, notEdge } from "@/lib/tunnels/edge-auth";
@@ -57,6 +57,7 @@ export async function POST(request: Request) {
     plan,
     client: cleanClient(body.client),
     keyId: account.keyId,
+    agentRegistrationId: account.agentRegistrationId,
     instance,
     clientAddress: typeof body.address === "string" ? body.address.slice(0, 64) : null,
   };
@@ -160,7 +161,7 @@ function cleanClient(raw: unknown): string {
 
 /**
  * `whk tunnel --live`: the endpoint must be the account's own or shared with
- * one of its teams. Live sessions are not previews: no name, no notice, no
+ * one of its teams that has a live subscription. Live sessions are not previews: no name, no notice, no
  * password, and their traffic counts as captures, not data.
  */
 async function openLive(
@@ -169,6 +170,7 @@ async function openLive(
     plan: TunnelPlan;
     client: string;
     keyId: string | null;
+    agentRegistrationId: string | null;
     instance: string | null;
     clientAddress: string | null;
   },
@@ -176,27 +178,15 @@ async function openLive(
 ): Promise<Response> {
   if (typeof endpoint !== "string" || !/^[a-zA-Z0-9_-]{1,50}$/.test(endpoint))
     return Response.json({ error: "Name the endpoint to relay." }, { status: 400 });
-  const admin = createAdminClient();
-  const { data: row, error } = await admin
-    .from("endpoints")
-    .select("id, slug, user_id")
-    .eq("slug", endpoint)
-    .maybeSingle();
-  if (error) throw error;
-  let allowed = row !== null && row.user_id === common.userId;
-  if (row && !allowed && common.plan.teamIds.length > 0) {
-    const { data: shared, error: sharedError } = await admin
-      .from("team_endpoints")
-      .select("id")
-      .eq("endpoint_id", row.id)
-      .in("team_id", common.plan.teamIds)
-      .limit(1)
-      .maybeSingle();
-    if (sharedError) throw sharedError;
-    allowed = shared !== null;
-  }
-  if (!row || !allowed)
+  // The same rule as every other endpoint read: the owner, or a member of a
+  // team with a live subscription the endpoint is shared with
+  // (resolveEndpointAccess, can_view_team_endpoint()). A lapsed team's
+  // members lose its shared endpoints here too.
+  const slug = endpoint.toLowerCase();
+  const access = await resolveEndpointAccess(common.userId, slug);
+  if (!access)
     return Response.json({ error: "No endpoint with that slug in your account." }, { status: 404 });
+  const row = { id: access.endpointId, slug };
 
   const result = await openShare({
     ...common,

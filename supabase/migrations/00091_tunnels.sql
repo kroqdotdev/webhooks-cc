@@ -51,6 +51,7 @@
 --   tunnel_close_all_open(reason)  the edge restarted
 --   tunnel_apply_usage_batch(id, usage, month) adds one batch, once
 --   tunnel_reserve_name(...)   keeps a name under the plan's count
+--   tunnel_runs_without_access()   open runs whose access has ended since
 --
 -- The index on endpoints(live_session_id) is built concurrently after the
 -- transaction, so apply this file in autocommit mode as AGENTS.md shows.
@@ -201,12 +202,22 @@ revoke all on table public.tunnel_blocked_words from anon, authenticated;
 create table if not exists public.tunnel_shares (
   id               uuid primary key default gen_random_uuid(),
   kind             text not null check (kind in ('share', 'live')),
-  user_id          uuid not null references public.users(id) on delete cascade,
+  -- Set null, not cascaded, when the account is deleted: a run's address and
+  -- times are the evidence an abuse report needs, and an abuser deleting the
+  -- account must not take them along. tunnel_runs_without_access() ends such
+  -- a run at once; the address clean-up deletes the row after the retention.
+  user_id          uuid references public.users(id) on delete set null,
   name             text,
   endpoint_id      uuid references public.endpoints(id) on delete cascade,
   free             boolean not null default false,
   client           text not null default '' check (char_length(client) <= 100),
   key_id           uuid references public.api_keys(id) on delete set null,
+  -- The agent registration whose access token opened the run, if one did. No
+  -- foreign key: once the registration is revoked or gone, the run must end
+  -- (tunnel_runs_without_access()), and a set-null would hide that. Expired
+  -- access tokens are deleted while the registration lives on, so the key
+  -- alone cannot tell revocation from expiry.
+  agent_registration_id uuid,
   instance         text check (instance is null or char_length(instance) <= 64),
   client_address   text check (client_address is null or char_length(client_address) <= 64),
   started_at       timestamptz not null default now(),
@@ -339,7 +350,8 @@ create or replace function public.tunnel_open_share(
   p_instance text,
   p_client_address text,
   p_password_hash text,
-  p_password_version text
+  p_password_version text,
+  p_agent_registration_id uuid default null
 )
 returns jsonb
 language plpgsql
@@ -381,7 +393,8 @@ begin
   begin
     insert into public.tunnel_shares (
       kind, user_id, name, endpoint_id, free, client, key_id, instance,
-      client_address, expires_at, password_hash, password_version
+      client_address, expires_at, password_hash, password_version,
+      agent_registration_id
     ) values (
       p_kind, p_user_id,
       case when p_kind = 'share' then p_name end,
@@ -390,7 +403,7 @@ begin
       left(p_client_address, 64),
       case when p_session_minutes is null then null
            else now() + make_interval(mins => p_session_minutes) end,
-      p_password_hash, p_password_version
+      p_password_hash, p_password_version, p_agent_registration_id
     )
     returning * into v_row;
   exception when unique_violation then
@@ -409,9 +422,9 @@ begin
 end;
 $$;
 
-revoke all on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text)
+revoke all on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid)
   from public, anon, authenticated;
-grant execute on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text)
+grant execute on function public.tunnel_open_share(uuid, text, text, uuid, integer, integer, boolean, text, uuid, text, text, text, text, uuid)
   to service_role;
 
 -- Ends the open runs among p_ids with p_reason and clears the live session
@@ -468,6 +481,57 @@ $$;
 
 revoke all on function public.tunnel_close_all_open(text) from public, anon, authenticated;
 grant execute on function public.tunnel_close_all_open(text) to service_role;
+
+-- The open runs whose access has ended since they opened, with why. Access is
+-- checked once, at open; this is what the web app runs on every edge sync and
+-- right after anything that takes access away (a member leaving or removed,
+-- an endpoint unshared, a team's subscription ending, an agent disconnected,
+-- an account deleted), so a run never outlives the grant it was opened on:
+--   'account deleted'  the account is gone (user_id was set null)
+--   'access ended'     the agent registration that opened it is revoked or
+--                      gone; a live run's endpoint is neither the account's
+--                      own nor shared with a subscribed team it belongs to;
+--                      a preview under a team's name whose team the account
+--                      has left
+-- One statement over the open runs, which are few.
+create or replace function public.tunnel_runs_without_access()
+returns table (id uuid, reason text)
+language sql
+stable
+set search_path = ''
+as $$
+  select s.id,
+         case when s.user_id is null then 'account deleted' else 'access ended' end
+    from public.tunnel_shares s
+   where s.ended_at is null
+     and (
+       s.user_id is null
+       or (s.agent_registration_id is not null and not exists (
+             select 1 from public.agent_registrations r
+              where r.id = s.agent_registration_id and r.revoked_at is null))
+       or (s.kind = 'live' and not exists (
+             select 1 from public.endpoints e
+              where e.id = s.endpoint_id
+                and (e.user_id = s.user_id or exists (
+                      select 1
+                        from public.team_endpoints te
+                        join public.team_members tm
+                          on tm.team_id = te.team_id and tm.user_id = s.user_id
+                        join public.teams t
+                          on t.id = te.team_id and t.subscription_status is not null
+                       where te.endpoint_id = e.id))))
+       or (s.kind = 'share' and exists (
+             select 1 from public.tunnel_names n
+              where n.name = s.name
+                and n.user_id <> s.user_id
+                and (n.team_id is null or not exists (
+                      select 1 from public.team_members tm
+                       where tm.team_id = n.team_id and tm.user_id = s.user_id))))
+     );
+$$;
+
+revoke all on function public.tunnel_runs_without_access() from public, anon, authenticated;
+grant execute on function public.tunnel_runs_without_access() to service_role;
 
 -- Adds one batch of counts from the edge, once: p_usage is
 -- [{"id": <share id>, "bytes": n, "requests": n}, ...]. Counts for runs that
@@ -550,7 +614,8 @@ grant execute on function public.tunnel_reserve_name(uuid, uuid, text, integer) 
 -- ---------------------------------------------------------------------------
 
 -- Where a CLI connected from, 90 days after its run ended (a year when the run
--- was reported for child sexual abuse).
+-- was reported for child sexual abuse). The runs of deleted accounts, kept
+-- for that evidence, go with it.
 select cron.unschedule(jobid) from cron.job where jobname = 'tunnel-addresses-cleanup';
 select cron.schedule(
   'tunnel-addresses-cleanup',
@@ -558,6 +623,13 @@ select cron.schedule(
   $$update public.tunnel_shares s
        set client_address = null
      where s.client_address is not null
+       and s.ended_at < now() - interval '90 days'
+       and not exists (
+         select 1 from public.abuse_reports r
+          where r.share_id = s.id and r.kind = 'csam'
+            and r.created_at > now() - interval '365 days');
+    delete from public.tunnel_shares s
+     where s.user_id is null
        and s.ended_at < now() - interval '90 days'
        and not exists (
          select 1 from public.abuse_reports r

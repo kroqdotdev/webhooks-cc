@@ -2,6 +2,7 @@ import { createAdminClient } from "./admin";
 import { revokeAllAddons } from "./capacity-billing";
 import { revokeTeamSubscription } from "./team-billing";
 import type { Team, TeamRow } from "./teams-types";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -228,6 +229,8 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
 
   if (error) throw error;
   if (!data) return false;
+  // Tunnels opened on this access end with it (lib/tunnels/access.ts).
+  await closeRunsWithoutAccess();
 
   return true;
 }

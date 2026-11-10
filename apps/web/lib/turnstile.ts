@@ -15,7 +15,18 @@ export function turnstileSiteKey(): string | null {
   return env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY ? env.TURNSTILE_SITE_KEY : null;
 }
 
-/** Whether a form's token passed. True when the check is off. */
+/**
+ * True in production when either key is missing. The check is only allowed
+ * off in development and tests; in production a missing key must close the
+ * form rather than open it to scripts (the report route answers 503).
+ */
+export function turnstileMissingInProduction(nodeEnv = process.env.NODE_ENV): boolean {
+  if (nodeEnv !== "production") return false;
+  const env = serverEnv();
+  return !env.TURNSTILE_SITE_KEY || !env.TURNSTILE_SECRET_KEY;
+}
+
+/** Whether a form's token passed. True when the check is off (development and tests only). */
 export async function passedTurnstile(
   token: string | null,
   address: string | null,

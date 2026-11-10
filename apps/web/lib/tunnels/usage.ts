@@ -1,7 +1,7 @@
 import { sendEmail } from "@/lib/email/mailer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
-import { tunnelPlanOf, type TunnelPlan } from "./plan";
+import { tunnelPlanOf, tunnelPlansOf, type TunnelPlan } from "./plan";
 
 /*
  * What visitors take from an account's previews, by the UTC month. The edge
@@ -160,12 +160,17 @@ export async function overAllowance(now = Date.now()): Promise<string[]> {
     .gte("bytes", GB)
     .limit(5_000);
   if (error) throw error;
-  const over: string[] = [];
-  for (const row of data ?? []) {
-    const plan = await tunnelPlanOf(row.user_id, now);
-    if (plan && Number(row.bytes) >= allowanceOf(plan)) over.push(row.user_id);
-  }
-  return over;
+  const rows = data ?? [];
+  const plans = await tunnelPlansOf(
+    rows.map((r) => r.user_id),
+    now
+  );
+  return rows
+    .filter((row) => {
+      const plan = plans.get(row.user_id);
+      return plan !== undefined && Number(row.bytes) >= allowanceOf(plan);
+    })
+    .map((row) => row.user_id);
 }
 
 /**

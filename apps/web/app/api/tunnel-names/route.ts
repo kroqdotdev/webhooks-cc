@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { reportError } from "@/lib/observability";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
+import { SUSPENDED, sharingSuspended } from "@/lib/tunnels/accounts";
 import { sharingOff, tunnelConfig } from "@/lib/tunnels/config";
 import { apiNames } from "@/lib/tunnels/name-api";
 import { namesOf, reserveName } from "@/lib/tunnels/names";
@@ -70,6 +71,8 @@ export async function POST(request: Request) {
   const teamId = typeof body.team === "string" && body.team ? body.team : null;
 
   try {
+    if (await sharingSuspended(auth.userId))
+      return applyRateLimitHeaders(Response.json({ error: SUSPENDED }, { status: 403 }), rateLimit);
     const plan = await tunnelPlanOf(auth.userId);
     if (!plan) return Response.json({ error: "Account not found" }, { status: 404 });
     const result = await reserveName(auth.userId, plan, body.name, teamId);

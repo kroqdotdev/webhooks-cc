@@ -51,6 +51,11 @@ export const STOPS = {
     tell: "someone in your team stopped it on webhooks.cc",
     ending: "stopped by someone in your team",
   },
+  access: {
+    record: "access ended",
+    tell: "the access it was opened with has ended (a team, a shared endpoint or an agent connection). Start it again if you still have access",
+    ending: "the access it was opened with ended",
+  },
 } as const;
 
 export type StopKind = keyof typeof STOPS;

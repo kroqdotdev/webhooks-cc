@@ -1551,12 +1551,13 @@ export interface Database {
         Row: {
           id: string;
           kind: "share" | "live";
-          user_id: string;
+          user_id: string | null;
           name: string | null;
           endpoint_id: string | null;
           free: boolean;
           client: string;
           key_id: string | null;
+          agent_registration_id: string | null;
           instance: string | null;
           client_address: string | null;
           started_at: string;
@@ -2305,8 +2306,13 @@ export interface Database {
           p_client_address: string | null;
           p_password_hash: string | null;
           p_password_version: string | null;
+          p_agent_registration_id?: string | null;
         };
         Returns: Json;
+      };
+      tunnel_runs_without_access: {
+        Args: Record<string, never>;
+        Returns: { id: string; reason: string }[];
       };
       tunnel_end_shares: {
         Args: { p_ids: string[]; p_reason: string };

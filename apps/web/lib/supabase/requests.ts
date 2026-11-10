@@ -171,7 +171,8 @@ function isAsciiHex(bytes: Buffer): boolean {
  * capture (`whk tunnel --live`, migration 00092), or what stood in for an
  * answer. `outcome` is "answered" when the app answered, else "offline" (no
  * live session, 502), "timeout" (no answer within 25 s, 504), "unreachable"
- * (nothing on the port, or the edge out of reach, 502) or "busy" (503).
+ * (nothing on the port, or the edge out of reach, 502), "busy" (503) or
+ * "refused" (400, a path that would have left the endpoint).
  * `status` is what the sender got; `body` holds the first 64 KB as UTF-8
  * text or base64.
  */
@@ -182,7 +183,7 @@ export interface LiveResponseRecord {
   bodyTruncated: boolean;
   bodyEncoding: "utf8" | "base64";
   ms: number | null;
-  outcome: "answered" | "offline" | "timeout" | "unreachable" | "busy";
+  outcome: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
 }
 
 const LIVE_OUTCOMES = new Set<LiveResponseRecord["outcome"]>([
@@ -191,6 +192,7 @@ const LIVE_OUTCOMES = new Set<LiveResponseRecord["outcome"]>([
   "timeout",
   "unreachable",
   "busy",
+  "refused",
 ]);
 
 /** `requests.live_response` as the API returns it; null when there is none. */

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
+import { endRunsWithoutAccess } from "@/lib/tunnels/access";
 import { fromEdge, notEdge } from "@/lib/tunnels/edge-auth";
 import { later } from "@/lib/tunnels/later";
 import { gateVersions } from "@/lib/tunnels/passwords";
@@ -12,7 +13,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Every 30 seconds the edge lists the runs it holds and hands over what
  * visitors took, in batches it numbers (lib/tunnels/usage.ts). The answer is
  * the runs that have ended here (stopped while the edge was not told, past
- * their plan's time, or gone with their account), with the words for the CLI;
+ * their plan's time, gone with their account, or without the access they
+ * were opened with), with the words for the CLI;
  * the password version each live preview is behind, in case a change missed
  * it; and the accounts past their plan's data for the month, whose previews
  * the edge pauses.
@@ -52,6 +54,11 @@ export async function POST(request: Request) {
     });
     if (error) throw error;
   }
+
+  // Runs whose access ended since they opened (a team left or lapsed, an
+  // endpoint unshared, an agent disconnected, an account deleted), in case
+  // the change itself could not reach the edge.
+  await endRunsWithoutAccess();
 
   const { data: rows, error } = await admin
     .from("tunnel_shares")

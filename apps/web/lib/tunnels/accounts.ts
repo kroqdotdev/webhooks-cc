@@ -12,7 +12,14 @@ export const SUSPENDED =
   "Sharing is suspended on this account. Write to support@webhooks.cc if this is a mistake.";
 
 export type EdgeAccount =
-  { userId: string; keyId: string | null; email: string } | { error: string; status: number };
+  | {
+      userId: string;
+      keyId: string | null;
+      /** The agent registration whose access token this is, if any. */
+      agentRegistrationId: string | null;
+      email: string;
+    }
+  | { error: string; status: number };
 
 export async function accountForKey(apiKey: unknown): Promise<EdgeAccount> {
   if (typeof apiKey !== "string" || !apiKey.startsWith("whcc_") || apiKey.length > 200)
@@ -36,5 +43,25 @@ export async function accountForKey(apiKey: unknown): Promise<EdgeAccount> {
   if (rowError) throw rowError;
   if (!row) return { error: "That account is gone.", status: 401 };
   if (row.tunnels_suspended) return { error: SUSPENDED, status: 403 };
-  return { userId: found.userId, keyId: found.keyId ?? null, email: data.user.email ?? "" };
+  return {
+    userId: found.userId,
+    keyId: found.keyId ?? null,
+    agentRegistrationId: found.agentRegistrationId ?? null,
+    email: data.user.email ?? "",
+  };
+}
+
+/**
+ * Whether staff suspended sharing on the account (after a report). Such an
+ * account may still release its names, but not keep new ones or change their
+ * passwords: a suspension must not leave it squatting names meanwhile.
+ */
+export async function sharingSuspended(userId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("users")
+    .select("tunnels_suspended")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.tunnels_suspended === true;
 }

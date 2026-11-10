@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       action: "ops.share_stopped",
       status: 200,
       targetId: id,
-      targetUserId: share.user.id,
+      targetUserId: share.user?.id ?? null,
       metadata: { stopped: result.stopped },
     });
     return opsJson({

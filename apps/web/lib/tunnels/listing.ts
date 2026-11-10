@@ -140,7 +140,7 @@ export async function sharesFor(
 export async function describe(rows: ShareRow[], userId: string): Promise<ApiShare[]> {
   if (rows.length === 0) return [];
   const admin = createAdminClient();
-  const userIds = [...new Set(rows.map((r) => r.user_id))];
+  const userIds = [...new Set(rows.map((r) => r.user_id).filter((x): x is string => !!x))];
   const endpointIds = [...new Set(rows.map((r) => r.endpoint_id).filter((x): x is string => !!x))];
   const names = [...new Set(rows.map((r) => r.name).filter((x): x is string => !!x))];
   const [users, endpoints, kept] = await Promise.all([
@@ -180,7 +180,10 @@ export async function describe(rows: ShareRow[], userId: string): Promise<ApiSha
       requests: Number(r.requests),
       password: r.password_version !== null || (r.name !== null && namePassword.has(r.name)),
       mine: r.user_id === userId,
-      startedBy: emailOf.has(r.user_id) ? { id: r.user_id, email: emailOf.get(r.user_id)! } : null,
+      startedBy:
+        r.user_id && emailOf.has(r.user_id)
+          ? { id: r.user_id, email: emailOf.get(r.user_id)! }
+          : null,
     };
   });
 }

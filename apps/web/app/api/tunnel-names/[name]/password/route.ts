@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { reportError } from "@/lib/observability";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
+import { SUSPENDED, sharingSuspended } from "@/lib/tunnels/accounts";
 import { sharingOff, tunnelConfig } from "@/lib/tunnels/config";
 import { gatesOnEdge } from "@/lib/tunnels/edge";
 import { passwordProblem } from "@/lib/tunnels/password-hash";
@@ -38,6 +39,7 @@ async function change(
     });
     return applyRateLimitHeaders(Response.json({ error }, { status }), rateLimit);
   };
+  if (await sharingSuspended(auth.userId)) return refuse(SUSPENDED, 403);
 
   if (password === undefined) return refuse("password is required", 400);
   try {

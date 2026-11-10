@@ -1,6 +1,7 @@
 import { createAdminClient } from "./admin";
 import { createPolarClient, isEndedSubscriptionError } from "@/lib/polar";
 import { revokeAllAddons } from "./capacity-billing";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { revokeTeamSubscription } from "./team-billing";
 
 /**
@@ -142,4 +143,9 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
   if (deleteUserError) {
     throw deleteUserError;
   }
+
+  // 4. Tunnels: the runs stay (user_id set null) for the address retention an
+  // abuse report needs; end the open ones and close them at the edge now.
+  // Teammates' runs on this account's endpoints and team names end too.
+  await closeRunsWithoutAccess();
 }

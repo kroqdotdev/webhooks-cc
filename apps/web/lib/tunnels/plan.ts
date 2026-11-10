@@ -67,43 +67,61 @@ export function chooseTunnelPlan(
 
 /** The tunnel plan of an account, or null when it is gone. */
 export async function tunnelPlanOf(userId: string, now = Date.now()): Promise<TunnelPlan | null> {
+  return (await tunnelPlansOf([userId], now)).get(userId) ?? null;
+}
+
+type Membership = {
+  user_id: string;
+  team_id: string;
+  teams: {
+    subscription_status: string | null;
+    business: boolean;
+    paid_since: string | null;
+  } | null;
+};
+
+/**
+ * The tunnel plans of many accounts in two queries (the edge's sync asks for
+ * every account past 1 GB at once). Accounts that are gone are left out.
+ */
+export async function tunnelPlansOf(
+  userIds: string[],
+  now = Date.now()
+): Promise<Map<string, TunnelPlan>> {
+  const plans = new Map<string, TunnelPlan>();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return plans;
   const admin = createAdminClient();
-  const [{ data: user, error: userError }, { data: memberships, error: teamError }] =
+  const [{ data: users, error: userError }, { data: memberships, error: teamError }] =
     await Promise.all([
-      admin
-        .from("users")
-        .select("plan, paid_since, tunnel_notice_lifted")
-        .eq("id", userId)
-        .maybeSingle(),
+      admin.from("users").select("id, plan, paid_since, tunnel_notice_lifted").in("id", ids),
       admin
         .from("team_members")
-        .select("team_id, teams(subscription_status, business, paid_since)")
-        .eq("user_id", userId),
+        .select("user_id, team_id, teams(subscription_status, business, paid_since)")
+        .in("user_id", ids),
     ]);
   if (userError) throw userError;
   if (teamError) throw teamError;
-  if (!user) return null;
+  const teamsOf = new Map<string, Membership[]>();
+  for (const m of (memberships ?? []) as unknown as Membership[])
+    teamsOf.set(m.user_id, [...(teamsOf.get(m.user_id) ?? []), m]);
 
-  const own = (user.plan === "pro" || user.plan === "business" ? user.plan : "free") as PlanKey;
-  const candidates: Candidate[] = [{ key: own, teamId: null, paidSince: user.paid_since }];
-  const teamIds: string[] = [];
-  for (const m of (memberships ?? []) as unknown as {
-    team_id: string;
-    teams: {
-      subscription_status: string | null;
-      business: boolean;
-      paid_since: string | null;
-    } | null;
-  }[]) {
-    teamIds.push(m.team_id);
-    if (m.teams?.subscription_status)
-      candidates.push({
-        key: m.teams.business ? "team_business" : "team",
-        teamId: m.team_id,
-        paidSince: m.teams.paid_since,
-      });
+  for (const user of users ?? []) {
+    const own = (user.plan === "pro" || user.plan === "business" ? user.plan : "free") as PlanKey;
+    const candidates: Candidate[] = [{ key: own, teamId: null, paidSince: user.paid_since }];
+    const teamIds: string[] = [];
+    for (const m of teamsOf.get(user.id) ?? []) {
+      teamIds.push(m.team_id);
+      if (m.teams?.subscription_status)
+        candidates.push({
+          key: m.teams.business ? "team_business" : "team",
+          teamId: m.team_id,
+          paidSince: m.teams.paid_since,
+        });
+    }
+    plans.set(user.id, chooseTunnelPlan(candidates, user.tunnel_notice_lifted, teamIds, now));
   }
-  return chooseTunnelPlan(candidates, user.tunnel_notice_lifted, teamIds, now);
+  return plans;
 }
 
 /** What a plan without reserved names says when one is asked for. */

@@ -411,6 +411,7 @@ function LiveShares() {
   };
 
   const stopAll = async (share: OpsShare) => {
+    if (!share.user) return;
     if (!window.confirm(`Stop every live share of ${share.user.email ?? share.user.id}?`)) return;
     try {
       const data = await apiFetch<{ message: string }>(
@@ -445,9 +446,13 @@ function LiveShares() {
                   {share.free && <span className="ml-2 text-muted-foreground">free</span>}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  <Link href={`/ops/accounts/${share.user.id}`} className="hover:underline">
-                    {share.user.email ?? share.user.id}
-                  </Link>
+                  {share.user ? (
+                    <Link href={`/ops/accounts/${share.user.id}`} className="hover:underline">
+                      {share.user.email ?? share.user.id}
+                    </Link>
+                  ) : (
+                    "a deleted account"
+                  )}
                   , since {timeAgo(share.startedAt)}, {bytes(share.bytes)}, {share.requests}{" "}
                   requests, from {share.clientAddress ?? "unknown"}
                 </p>
@@ -456,9 +461,11 @@ function LiveShares() {
                 <Button size="sm" variant="outline" onClick={() => void stop(share)}>
                   Stop
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => void stopAll(share)}>
-                  Stop all of the account&rsquo;s
-                </Button>
+                {share.user && (
+                  <Button size="sm" variant="outline" onClick={() => void stopAll(share)}>
+                    Stop all of the account&rsquo;s
+                  </Button>
+                )}
               </div>
             </li>
           ))}

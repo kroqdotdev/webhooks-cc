@@ -26,6 +26,7 @@ import {
   type AccessToken,
   type RegistrationRow,
 } from "./registrations";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
 /**
  * The claim ceremony (auth.md v0.6, Step 4). The agent starts an attempt and
@@ -611,5 +612,7 @@ export async function revokeConnectedAgent(
     p_user_id: userId,
   });
   if (error) throw error;
+  // Its tunnels end with it: they were opened with its tokens.
+  if (data === true) await closeRunsWithoutAccess();
   return data === true;
 }
