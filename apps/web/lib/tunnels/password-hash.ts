@@ -60,18 +60,22 @@ export async function verifyPassword(stored: string, password: string): Promise<
 
 /**
  * The version a run's own password gets: an HMAC of the account, the name and
- * the password under the server's secret, so a reconnect with the same
- * password is the same version (visitors stay let in) and the version says
- * nothing about the password.
+ * the CLI's run id under the server's secret. A run cannot change its
+ * password between reconnects (the CLI sends the same one each time), so the
+ * run id is enough to keep the version, and so visitors stay let in, across
+ * reconnects; a new run gets a new version and asks again. The password
+ * itself never goes into it: only scrypt (hashPassword) ever sees a password.
+ * Without a run id (never from a current CLI) the version is fresh.
  */
 export function runPasswordVersion(
   secret: string,
   userId: string,
   name: string,
-  password: string
+  instance: string | null
 ): string {
+  if (!instance) return newPasswordVersion();
   return createHmac("sha256", secret)
-    .update(`share-password|${userId}|${name}|${password}`)
+    .update(`share-password|${userId}|${name}|${instance}`)
     .digest("hex")
     .slice(0, 32);
 }

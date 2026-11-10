@@ -260,7 +260,8 @@ describe("edge routes", () => {
       .from("users")
       .update({ paid_since: new Date(Date.now() - 8 * 86_400_000).toISOString() })
       .eq("id", pro.id);
-    const settled = await open(pro.key, { name, password: "visitors-only-1" });
+    const run = "run-pro-password";
+    const settled = await open(pro.key, { name, password: "visitors-only-1", instance: run });
     expect(settled.body.notice).toBe(false);
     expect(typeof settled.body.gate).toBe("string");
 
@@ -272,9 +273,9 @@ describe("edge routes", () => {
     });
     expect(await right.json()).toEqual({ ok: true, version: settled.body.gate });
 
-    // The same password on a reconnect keeps the version, so visitors stay in.
+    // A reconnect of the same run keeps the version, so visitors stay in.
     await edge("close", { shareId: settled.body.shareId, reason: "closed" });
-    const reconnect = await open(pro.key, { name, password: "visitors-only-1" });
+    const reconnect = await open(pro.key, { name, password: "visitors-only-1", instance: run });
     expect(reconnect.body.gate).toBe(settled.body.gate);
     await edge("close", { shareId: reconnect.body.shareId, reason: "closed" });
 

@@ -115,7 +115,7 @@ export async function POST(request: Request) {
     const runPassword = password
       ? {
           hash: await hashPassword(password),
-          version: runPasswordVersion(config.edgeSecret, userId, name, password),
+          version: runPasswordVersion(config.edgeSecret, userId, name, instance),
         }
       : null;
     const result = await openShare({

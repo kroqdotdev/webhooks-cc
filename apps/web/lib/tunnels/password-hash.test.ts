@@ -31,11 +31,15 @@ describe("passwords on preview links", () => {
     expect(passwordProblem("long enough")).toBeNull();
   });
 
-  it("gives a run the same version for the same password, name and account", () => {
-    const a = runPasswordVersion("secret", "user-1", "acme", "pw-12345678");
-    expect(a).toBe(runPasswordVersion("secret", "user-1", "acme", "pw-12345678"));
-    expect(a).not.toBe(runPasswordVersion("secret", "user-1", "acme", "pw-87654321"));
-    expect(a).not.toBe(runPasswordVersion("secret", "user-2", "acme", "pw-12345678"));
+  it("gives a run the same version across reconnects, a new run a new one", () => {
+    const a = runPasswordVersion("secret", "user-1", "acme", "run-1");
+    expect(a).toBe(runPasswordVersion("secret", "user-1", "acme", "run-1"));
+    expect(a).not.toBe(runPasswordVersion("secret", "user-1", "acme", "run-2"));
+    expect(a).not.toBe(runPasswordVersion("secret", "user-2", "acme", "run-1"));
+    expect(a).not.toBe(runPasswordVersion("secret", "user-1", "other", "run-1"));
+    expect(runPasswordVersion("secret", "user-1", "acme", null)).not.toBe(
+      runPasswordVersion("secret", "user-1", "acme", null)
+    );
     expect(a).toHaveLength(32);
     expect(newPasswordVersion()).not.toBe(newPasswordVersion());
   });
