@@ -86,7 +86,7 @@ const ROWS = [
   [
     "Email client screenshots",
     "No; desktop and mobile width preview",
-    "Device Previews, on request on paid plans (100+ configurations)",
+    "Device Previews, an add-on on Business and Enterprise, on request (100+ configurations)",
   ],
   ["Forward test mail to a real inbox", "No", "Yes, Basic and up"],
   ["Webhook capture on the same endpoint", "Yes", "No"],
@@ -203,9 +203,9 @@ export default function CompareMailtrapPage() {
               the TypeScript, Python and Go SDKs, and the code or the link already picked out.
               Mailtrap is stronger on the message itself: HTML Check lists the email clients that
               lack support for each element, the spam report runs SpamAssassin and a blacklist
-              lookup, and Device Previews (on request on paid plans) screenshots the email in more
-              than 100 client configurations. webhooks.cc has a spam score and a deliverability
-              report, but no client support check and no screenshots.
+              lookup, and Device Previews (an add-on on Business and Enterprise) screenshots the
+              email in more than 100 client configurations. webhooks.cc has a spam score and a
+              deliverability report, but no client support check and no screenshots.
             </p>
           </div>
 

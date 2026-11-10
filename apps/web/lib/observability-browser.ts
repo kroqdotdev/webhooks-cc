@@ -68,6 +68,9 @@ export function isHydrationMismatch(event: Event): boolean {
 const LAZY_RESOLVED_TO_NOTHING =
   /Minified React error #306\b|Lazy element type must resolve to a class or function/;
 
+/** How long a #306 reload waits so the error report can be sent first. */
+const REPORT_GRACE_MS = 2000;
+
 /**
  * True if an error says the tab holds code from more than one build, or could
  * not load a chunk: a tab left open across a deploy, or a previous build's
@@ -101,7 +104,14 @@ export function tryReloadOnChunkError(error: unknown): boolean {
     const now = Date.now();
     if (Number.isNaN(lastTs) || now - lastTs > 15_000) {
       window.sessionStorage?.setItem(key, String(now));
-      window.location.reload();
+      // #306 can also be a real bug within one build, so give its report a
+      // moment to leave before the page goes; a failed chunk reloads at once.
+      const message = (error as { message?: string }).message ?? "";
+      if (LAZY_RESOLVED_TO_NOTHING.test(message)) {
+        window.setTimeout(() => window.location.reload(), REPORT_GRACE_MS);
+      } else {
+        window.location.reload();
+      }
       return true;
     }
   } catch {

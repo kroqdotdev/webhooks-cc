@@ -15,7 +15,8 @@ export function generateStaticParams() {
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const post = await getPublishedBlogPostBySlug(slug);
+  // A failed lookup throws, and a thrown error is not cached, unlike a 404.
+  const post = await getPublishedBlogPostBySlug(slug, { throwOnError: true });
   if (!post) return ogImageNotFound();
 
   return ogImageResponse({

@@ -20,7 +20,7 @@ const claimed = [
 
 function claimReturns(rows: unknown) {
   rpc.mockImplementation(async (fn: string) =>
-    fn === "claim_welcome_email_users" ? { data: rows, error: null } : { error: null }
+    fn === "claim_welcome_email_users" ? { data: rows, error: null } : { data: true, error: null }
   );
 }
 
@@ -68,7 +68,7 @@ describe("sendWelcomeEmails", () => {
       order.push(fn);
       return fn === "claim_welcome_email_users"
         ? { data: [claimed[0]], error: null }
-        : { error: null };
+        : { data: true, error: null };
     });
     sendEmail.mockImplementation(async () => {
       order.push("send");
@@ -78,24 +78,32 @@ describe("sendWelcomeEmails", () => {
     expect(order).toEqual(["claim_welcome_email_users", "mark_welcome_email_sent", "send"]);
   });
 
-  it("clears the record and the lease when a send fails, so a later poll retries", async () => {
+  it("reports a failed send and does not retry it", async () => {
     claimReturns(claimed);
     sendEmail.mockRejectedValueOnce(new Error("smtp down")).mockResolvedValueOnce(undefined);
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(sendWelcomeEmails()).resolves.toEqual({ sent: 1, failed: 1 });
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledWith({
-      welcome_email_sent_at: null,
-      welcome_email_claimed_at: null,
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("does not send when another poller already recorded the account", async () => {
+    rpc.mockImplementation(async (fn: string, args?: { p_user_id?: string }) => {
+      if (fn === "claim_welcome_email_users") return { data: claimed, error: null };
+      return { data: args?.p_user_id !== "u1", error: null };
     });
-    expect(eq).toHaveBeenCalledWith("id", "u1");
+
+    await expect(sendWelcomeEmails()).resolves.toEqual({ sent: 1, failed: 0 });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].to).toBe("b@example.com");
   });
 
   it("skips an account it could not record, without sending", async () => {
     rpc.mockImplementation(async (fn: string, args?: { p_user_id?: string }) => {
       if (fn === "claim_welcome_email_users") return { data: claimed, error: null };
-      return args?.p_user_id === "u1" ? { error: { message: "blip" } } : { error: null };
+      return args?.p_user_id === "u1"
+        ? { data: null, error: { message: "blip" } }
+        : { data: true, error: null };
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
 

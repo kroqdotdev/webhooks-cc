@@ -153,15 +153,20 @@ describe("tryReloadOnChunkError", () => {
     expect(reloadMock).toHaveBeenCalledTimes(1);
   });
 
-  it("reloads when a lazy component resolved to nothing", () => {
+  it("reloads when a lazy component resolved to nothing, after its report can leave", () => {
+    vi.useFakeTimers();
     const reloadMock = vi.fn();
     vi.stubGlobal("window", {
       location: { reload: reloadMock },
       sessionStorage: { getItem: () => null, setItem: () => {} },
+      setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
     });
 
     expect(tryReloadOnChunkError(new Error("Minified React error #306; visit ..."))).toBe(true);
+    expect(reloadMock).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2000);
     expect(reloadMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });
 

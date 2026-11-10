@@ -985,10 +985,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
             "Passing rule",
             "A hash computed with one of your keys must exactly match its header; one match is enough, and with no match the message should not be trusted",
           ],
-          [
-            "Comparison",
-            "DocuSign's own samples compare in constant time (crypto.timingSafeEqual, hash_equals, FixedTimeEquals)",
-          ],
+          ["Comparison", "Use a constant-time comparison, as for any HMAC"],
           [
             "When it fails",
             "Read the body with the right string encoding, and remove any double quote characters from the secret before computing",
@@ -1019,7 +1016,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "What are the DocuSign webhook listener best practices?",
         answer:
-          "DocuSign's guidance: always answer with a 200, even for messages you do not need; respond within five seconds; put each message on a durable queue before answering and process it asynchronously with workers; keep the listener available 99% of the time or put a cloud queue in front of it; use the JSON SIM format; and do not include documents on every event, since most apps only need the final completed document. For production, DocuSign recommends securing messages with both HMAC and OAuth for Connect. Because a failed delivery is retried, make your handler idempotent, for example by keying on the envelopeId, event and generatedDateTime of each message.",
+          "DocuSign's guidance: always answer with a 200, even for messages you do not need; respond within five seconds; queue each message and process it asynchronously rather than inside the request; keep the listener available 99% of the time or put a cloud queue in front of it; use the JSON SIM format; and do not include documents on every event, since most apps only need the final completed document. For production, DocuSign recommends securing messages with both HMAC and OAuth for Connect. Because a failed delivery is retried, make your handler idempotent, for example by keying on the envelopeId, event and generatedDateTime of each message.",
       },
       {
         question: "What is the DocuSign Connect retry schedule?",
@@ -1030,7 +1027,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
         question:
           "What is the difference between account-level Connect and envelope-level eventNotification?",
         answer:
-          "An account-level Connect configuration, made in DocuSign Admin or through the API, notifies your listener about the subscribed events for every envelope in the account or for chosen users, including envelopes sent from the DocuSign web and mobile apps; it is only available on specific DocuSign plans. Envelope-level Connect is set per envelope by adding an eventNotification object when your app creates the envelope through the eSignature API, so each envelope can ask for different events and data; it is available on all plans. HMAC works with every kind of Connect configuration.",
+          "An account-level Connect configuration, made in DocuSign Admin or through the API, notifies your listener about the subscribed events for every envelope in the account or for chosen users, including envelopes sent from the DocuSign web and mobile apps; it is only available on specific DocuSign plans. Envelope-level Connect is set per envelope by adding an eventNotification object when your app creates the envelope through the eSignature API, so each envelope can ask for different events and data; it is available on all plans. DocuSign offers HMAC for every Connect configuration type; for envelope-level messages, Connect must be enabled on the account.",
       },
       {
         question: "Does DocuSign Connect support mutual TLS?",

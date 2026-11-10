@@ -103,7 +103,7 @@ const EMAIL_COMPARISONS = [
     href: "/compare/mailslurp",
     title: "webhooks.cc vs MailSlurp",
     summary:
-      "MailSlurp is an email and SMS API whose inboxes send as well as receive. webhooks.cc only receives: one endpoint, a tag per test run, no inboxes to create, and 100,000 emails or webhooks a month for $8.",
+      "MailSlurp is an email and SMS API whose inboxes send as well as receive. webhooks.cc only receives, on one endpoint that also catches webhooks, with 100,000 emails or webhooks a month for $8.",
   },
 ] as const;
 
@@ -282,12 +282,12 @@ const EMAIL_MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Yes, with retries",
     "Not for sandboxes",
     "Not documented",
-    "Yes, with retries",
+    "Yes, signed, with retries",
   ],
   [
     "Email client screenshots",
     "No",
-    "On request, paid plans",
+    "Business and Enterprise add-on, on request",
     "Add-on on Core",
     "1 to 200 a month by plan",
   ],

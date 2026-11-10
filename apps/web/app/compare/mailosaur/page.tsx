@@ -12,7 +12,7 @@ const FAQ_ITEMS = [
   {
     question: "What is the difference between webhooks.cc and Mailosaur?",
     answer:
-      "Both give tests real email addresses, wait for the message and pick out its codes and links. Mailosaur is a wider, paid testing suite: SMS testing on dedicated phone numbers, email previews on real devices, TOTP authenticator codes, SMTP, POP3 and IMAP access, and client libraries in seven languages. webhooks.cc is smaller and cheaper: email and webhooks on the same endpoint, a webhook or Slack message when mail arrives, a CLI, open-source code, a free plan, and Pro at $8 a month.",
+      "Both give tests real email addresses, wait for the message and pick out its codes and links. Mailosaur is a wider, paid testing suite: SMS testing on dedicated phone numbers, email previews on real devices, TOTP authenticator codes, SMTP, POP3 and IMAP access, and client libraries in seven documented languages. webhooks.cc is smaller and cheaper: email and webhooks on the same endpoint, a webhook or Slack message when mail arrives, a CLI, open-source code, a free plan, and Pro at $8 a month.",
   },
   {
     question: "How does pricing compare?",
@@ -85,7 +85,7 @@ const ROWS = [
     "No; desktop and mobile width preview",
     "Add-on on Core, from $25/mo",
   ],
-  ["Authenticator (TOTP) codes", "No", "Yes, Core and up"],
+  ["Authenticator (TOTP) codes", "No", "Yes, requires Core or above"],
   ["Send or reply from the inbox", "No, receive only", "Yes, Core and up, to verified addresses"],
   ["Your own domain", "Business", "Enterprise"],
   ["Webhook capture on the same endpoint", "Yes", "No"],

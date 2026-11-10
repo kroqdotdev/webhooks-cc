@@ -12,14 +12,12 @@ const BATCH_SIZE = 50;
  * Sends each new account one getting-started email (migration 00093).
  * claim_welcome_email_users() returns accounts between 30 minutes and 7 days
  * old with a confirmed email that were never sent one, and takes a 15-minute
- * lease on each, so concurrent polls never email the same account. Each
- * account is recorded as sent before the send (mark_welcome_email_sent), so a
- * database blip after a successful send can never email it twice: a second
- * "we send this once" email is worse than a missing one. When the mark fails
- * the account is skipped and its lease expires; when the send fails the
- * record and the lease are cleared so a later poll tries again. Accounts that
- * existed before the migration are marked as handled by it and are never
- * claimed.
+ * lease on each. Each account is then recorded as sent before the send
+ * (mark_welcome_email_sent answers true only for the first caller), so the
+ * email goes out at most once: a database error after the send, a slow batch
+ * whose lease ran out, or a second web process can never repeat it. A send
+ * that fails is reported and not retried. Accounts that existed before the
+ * migration are marked as handled by it and are never claimed.
  */
 export async function sendWelcomeEmails(): Promise<{ sent: number; failed: number }> {
   const admin = createAdminClient();
@@ -32,7 +30,9 @@ export async function sendWelcomeEmails(): Promise<{ sent: number; failed: numbe
   let failed = 0;
 
   for (const user of data ?? []) {
-    const { error: markError } = await admin.rpc("mark_welcome_email_sent", {
+    // Only the process whose mark moves the row from unsent to sent goes on
+    // to send, so two pollers can never both email one account.
+    const { data: marked, error: markError } = await admin.rpc("mark_welcome_email_sent", {
       p_user_id: user.id,
     });
     if (markError) {
@@ -40,6 +40,7 @@ export async function sendWelcomeEmails(): Promise<{ sent: number; failed: numbe
       reportError("[welcome-emails] mark sent failed", markError.message);
       continue;
     }
+    if (!marked) continue;
 
     try {
       await sendEmail(
@@ -52,13 +53,10 @@ export async function sendWelcomeEmails(): Promise<{ sent: number; failed: numbe
       );
       sent++;
     } catch (sendError) {
+      // Not retried: the transport cannot say whether the server took the
+      // message before the error, and a missing welcome beats a second one.
       failed++;
       reportError("[welcome-emails] send failed", sendError);
-      const { error: undoError } = await admin
-        .from("users")
-        .update({ welcome_email_sent_at: null, welcome_email_claimed_at: null })
-        .eq("id", user.id);
-      if (undoError) reportError("[welcome-emails] undo after failed send", undoError.message);
     }
   }
 

@@ -177,7 +177,7 @@ const ALTERNATIVES = [
   {
     href: "/compare/mailslurp",
     name: "MailSlurp",
-    text: "An email and SMS API whose inboxes also send, against one endpoint with a tag per test.",
+    text: "An email and SMS API whose inboxes also send, against a receive-only endpoint that catches webhooks too.",
   },
 ];
 

@@ -7,11 +7,13 @@
 -- the same way as the quota email of migration 00040.
 --
 --  1. Two columns on users. welcome_email_claimed_at is a short lease taken
---     by the poll; welcome_email_sent_at is written just before the send
---     (mark_welcome_email_sent), so a database error after a successful send
---     can never email the account twice. A failed send clears both columns so
---     a later poll tries again; a poll that dies between the mark and the
---     send loses that one email, which is the better failure for a welcome.
+--     by the poll; welcome_email_sent_at is written just before the send by
+--     mark_welcome_email_sent(), which answers true only for the caller that
+--     set it. The email therefore goes out at most once: not after a database
+--     error, not when a slow batch outlives its lease and another poller
+--     claims the account. A failed send is not retried, since the transport
+--     cannot tell whether the server took the message first; a missing
+--     welcome is the better failure.
 --
 --  2. Accounts that exist when this runs never get the email. The column is
 --     added with DEFAULT now() and the default is dropped in the same
@@ -84,16 +86,25 @@ as $$
   returning u.id, u.email, u.home_site;
 $$;
 
--- Called just before the send: records it for good and releases the lease.
+-- Called just before the send. Answers true only for the call that moves the
+-- account from unsent to sent, so of two pollers that hold the same account
+-- (a lease that ran out under a slow batch) exactly one sends.
+-- An earlier draft returned void; replacing a function cannot change that.
+drop function if exists public.mark_welcome_email_sent(uuid);
 create or replace function public.mark_welcome_email_sent(p_user_id uuid)
-returns void
+returns boolean
 language sql
 set search_path = ''
 as $$
-  update public.users
-     set welcome_email_sent_at = coalesce(welcome_email_sent_at, now()),
-         welcome_email_claimed_at = null
-   where id = p_user_id;
+  with marked as (
+    update public.users
+       set welcome_email_sent_at = now(),
+           welcome_email_claimed_at = null
+     where id = p_user_id
+       and welcome_email_sent_at is null
+    returning 1
+  )
+  select exists (select 1 from marked);
 $$;
 
 revoke all on function public.claim_welcome_email_users(integer) from public, anon, authenticated;

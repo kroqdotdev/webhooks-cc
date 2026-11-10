@@ -12,7 +12,7 @@ const FAQ_ITEMS = [
   {
     question: "What is the difference between webhooks.cc and MailSlurp?",
     answer:
-      "MailSlurp is an email and SMS API: tests create inboxes through the API, each with its own address, and can send, receive, forward and auto-reply from them, with SMTP and IMAP access. webhooks.cc only receives. One endpoint has one address and any number of +tag addresses, so tests do not create and clean up inboxes, and the same endpoint captures the webhooks your app sends.",
+      "MailSlurp is an email and SMS API: tests create inboxes through the API, each with its own address, and can send, receive, forward and auto-reply from them, with SMTP and IMAP access. webhooks.cc only receives. Both accept plus addresses, so a test can give each run its own address on either; webhooks.cc counts requests rather than inboxes, and the same endpoint captures the webhooks your app sends.",
   },
   {
     question: "How do the free plans compare?",
@@ -61,9 +61,9 @@ const ROWS = [
   [
     "One address per test run",
     "Yes, any +tag on the endpoint's address",
-    "Yes, a new inbox (100 a month on Free)",
+    "Yes, plus addresses on an inbox, or a new inbox (100 a month on Free)",
   ],
-  ["Codes and links picked out", "Yes: dashboard, API, SDKs and MCP", "Yes, through the API"],
+  ["Codes and links picked out", "Yes: dashboard, API, SDKs and MCP", "Yes, in the API and SDKs"],
   ["Wait for an email in a test", "Yes (emails.waitFor)", "Yes (waitForLatestEmail)"],
   ["SDKs", "TypeScript, Python and Go", "JavaScript, Python, Java, C#, PHP, Ruby, Go and more"],
   ["Cypress", "Through the SDK or the REST API", "Official plugin (cypress-mailslurp)"],
@@ -76,15 +76,19 @@ const ROWS = [
   [
     "Webhook when an email arrives",
     "Yes, signed JSON with retries, up to 10 destinations",
-    "Yes, with retries",
+    "Yes, signed, with retries",
   ],
   [
     "Deliverability checks",
     "SPF, DKIM, DMARC, spam score and a report on every email",
     "Inbox placement tests, email audits and warmup, metered",
   ],
-  ["Send email from the inbox", "No, receive only", "Pro and up (500 a month)"],
-  ["SMS and phone numbers", "No", "Paid plans, billed separately"],
+  [
+    "Send email from the inbox",
+    "No, receive only",
+    "Between its own inboxes on every plan; to outside addresses from Pro (500 a month)",
+  ],
+  ["SMS and phone numbers", "No", "Pro and up, billed separately"],
   [
     "Email client screenshots",
     "No; desktop and mobile width preview",
@@ -188,12 +192,11 @@ export default function CompareMailSlurpPage() {
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
           <div className="ui-card ui-card-static">
-            <h3 className="text-lg font-bold mb-2">An inbox per test, or a tag per test</h3>
+            <h3 className="text-lg font-bold mb-2">What each plan counts</h3>
             <p className="text-muted-foreground">
-              A MailSlurp test usually creates an inbox, uses its address, waits for the email and
-              leaves the inbox to expire or deletes it; plans count the inboxes created each month.
-              On webhooks.cc there is nothing to create: an endpoint&apos;s address takes any tag
-              after a plus sign, so{" "}
+              Both tools give each test run its own address without new setup: MailSlurp inboxes
+              accept plus addresses and its waits can match on them, and a webhooks.cc
+              endpoint&apos;s address takes any tag after a plus sign, so{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
                 my-app+run-42@mailhooks.cc
               </code>{" "}
@@ -201,7 +204,10 @@ export default function CompareMailSlurpPage() {
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
                 emails.waitFor(slug, {"{ tag }"})
               </code>{" "}
-              only matches mail sent to that tag. Parallel tests stay apart without any setup.
+              only matches mail sent to that tag. They differ in what is counted: MailSlurp&apos;s
+              plans count inboxes created and emails received each month (100 inboxes and 250 emails
+              on Free), while webhooks.cc counts requests (50 a day on Free, 100,000 a month on
+              Pro), email and webhooks alike.
             </p>
           </div>
 

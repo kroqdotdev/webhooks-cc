@@ -2764,7 +2764,7 @@ export interface Database {
       };
       mark_welcome_email_sent: {
         Args: { p_user_id: string };
-        Returns: undefined;
+        Returns: boolean;
       };
       cleanup_expired_request_shares: {
         Args: Record<string, never>;

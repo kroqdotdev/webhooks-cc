@@ -64,6 +64,8 @@ class Whk < Formula
     elsif Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
       url "${base}/whk-v${version}-x86_64-unknown-linux-gnu.tar.gz"
       sha256 "${linux_intel}"
+    else
+      odie "whk has builds for 64-bit Intel and ARM Linux only; see https://webhooks.cc/installation"
     end
   end
 

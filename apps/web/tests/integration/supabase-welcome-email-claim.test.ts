@@ -190,15 +190,19 @@ describe("claim_welcome_email_users", () => {
   });
 
   it("is never claimed again once marked sent, even with the lease gone", async () => {
-    const { error } = await admin.rpc("mark_welcome_email_sent", { p_user_id: ids.due });
+    const { data: first, error } = await admin.rpc("mark_welcome_email_sent", {
+      p_user_id: ids.due,
+    });
     if (error) throw error;
+    expect(first).toBe(true);
     const state = await stateOf(ids.due);
     expect(state.welcome_email_sent_at).not.toBeNull();
     expect(state.welcome_email_claimed_at).toBeNull();
     expect((await claimAll()).has(ids.due)).toBe(false);
 
-    // A second mark keeps the first time.
-    await admin.rpc("mark_welcome_email_sent", { p_user_id: ids.due });
+    // A second mark answers false, so its caller does not send, and keeps the first time.
+    const { data: second } = await admin.rpc("mark_welcome_email_sent", { p_user_id: ids.due });
+    expect(second).toBe(false);
     expect((await stateOf(ids.due)).welcome_email_sent_at).toBe(state.welcome_email_sent_at);
   });
 

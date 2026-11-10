@@ -175,6 +175,12 @@ jobs:
         env:
           VERSION: ${{ steps.decide.outputs.version }}
         run: |
+          # A patch release on an older line must not move the tap backwards.
+          current="$(sed -n 's/^  version "\(.*\)"$/\1/p' tap/whk.rb)"
+          if [ -n "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]; then
+            echo "The tap has whk $current, newer than $VERSION; it stays as it is."
+            exit 0
+          fi
           .github/scripts/homebrew-formula.sh "$VERSION" checksums.txt > tap/whk.rb
           cd tap
           if git diff --quiet; then

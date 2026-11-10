@@ -185,9 +185,20 @@ export async function listPublishedBlogPosts(): Promise<Array<Omit<BlogPostRecor
   }
 }
 
-export async function getPublishedBlogPostBySlug(slug: string): Promise<BlogPostRecord | null> {
+/**
+ * The published post with this slug, or null. A failed query also reads as
+ * null unless `throwOnError` is set: a caller whose answer is cached (the
+ * share image) must not keep a database blip as "no such post".
+ */
+export async function getPublishedBlogPostBySlug(
+  slug: string,
+  { throwOnError = false }: { throwOnError?: boolean } = {}
+): Promise<BlogPostRecord | null> {
   const client = createPublicClient();
-  if (!client) return null;
+  if (!client) {
+    if (throwOnError) throw new Error("blog posts are not reachable: no Supabase client");
+    return null;
+  }
 
   try {
     const { data, error } = await client
@@ -200,7 +211,8 @@ export async function getPublishedBlogPostBySlug(slug: string): Promise<BlogPost
 
     if (error) throw error;
     return data ? normalizeBlogPost(data) : null;
-  } catch {
+  } catch (error) {
+    if (throwOnError) throw error;
     return null;
   }
 }
