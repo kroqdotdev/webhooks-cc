@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
-import Link from "next/link";
+import { SiteLink } from "@/components/nav/site-link";
 import { useSitePathname } from "@/lib/site-pathname";
 import { cn } from "@/lib/utils";
 import { BookOpen, X, ChevronDown, Search } from "lucide-react";
@@ -96,7 +96,7 @@ function SidebarContent({
 
                   return (
                     <li key={item.href}>
-                      <Link
+                      <SiteLink
                         href={item.href}
                         onClick={onNavigate}
                         aria-current={isActive ? "page" : undefined}
@@ -114,7 +114,7 @@ function SidebarContent({
                             New
                           </span>
                         )}
-                      </Link>
+                      </SiteLink>
                     </li>
                   );
                 })}

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SiteLink } from "@/components/nav/site-link";
 import { ArrowRight } from "lucide-react";
 
 export function LinkCard({
@@ -11,7 +11,7 @@ export function LinkCard({
   description: string;
 }) {
   return (
-    <Link
+    <SiteLink
       href={href}
       className="block my-3 p-4 rounded-lg border-strong border-line bg-card shadow-raised-sm hover:shadow-raised hover:-translate-x-(--press) hover:-translate-y-(--press) transition-all no-underline"
     >
@@ -22,6 +22,6 @@ export function LinkCard({
         </div>
         <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground" />
       </div>
-    </Link>
+    </SiteLink>
   );
 }

@@ -229,6 +229,19 @@ describe("proxy: two sites", () => {
     }
   });
 
+  it("marks a doc that does not exist for mailhooks.cc's own 404, not webhooks.cc's", async () => {
+    for (const path of ["/docs/no-such-doc", "/docs/sdk/no-such-doc", "/docs/layouts/extra"]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBe("1");
+    }
+    // Markdown twins have their own route; webhooks.cc answers its own 404.
+    for (const url of ["https://mailhooks.cc/docs/layouts.md", "https://webhooks.cc/docs/nope"]) {
+      const res = await proxy(new NextRequest(url));
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), url).toBeNull();
+    }
+  });
+
   it("marks a path neither site serves for mailhooks.cc's own 404, without a rewrite of its own", async () => {
     const res = await proxy(new NextRequest("https://mailhooks.cc/no-such-page/deeper"));
     expect(res.status).toBe(200);
