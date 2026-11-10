@@ -182,3 +182,13 @@ describe("next.config.ts mailhooks.cc rewrites", () => {
     expect(rule?.source).toBe(`/:path(${lookahead!.replaceAll("\\\\", "\\")}.*)`);
   });
 });
+
+describe("next.config.ts redirects", () => {
+  it("serves /pricing as a page of its own, not a redirect to the landing page", async () => {
+    const redirects = (await nextConfig.redirects?.()) ?? [];
+    const matching = redirects.filter((rule) =>
+      getPathMatch(rule.source, { strict: true, removeUnnamedParams: true })("/pricing")
+    );
+    expect(matching).toEqual([]);
+  });
+});

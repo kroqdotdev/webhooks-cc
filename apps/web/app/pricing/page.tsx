@@ -14,7 +14,7 @@ const PATH = "/pricing";
 export const metadata = createPageMetadata({
   title: "Pricing: Free Webhook Testing, Pro $8, Business $29",
   description:
-    "Start free with 50 requests a day and every feature. Pro is $8 a month for 100,000 requests. Business is $29 a month or $290 a year with attachment parsing, custom domains and file drops. Teams from $12 a seat.",
+    "Start free with 50 requests a day and the full toolset. Pro is $8 a month for 100,000 requests; Business is $29 a month with parsing, custom domains and file drops.",
   path: PATH,
   keywords: [
     "webhooks.cc pricing",
@@ -113,7 +113,7 @@ export default function PricingPage() {
               Start free, upgrade when you need to
             </h2>
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
-              Your endpoints, requests and settings stay with you on every plan.
+              Your endpoints, requests and settings stay with you when you upgrade.
             </p>
             <div className="flex justify-center">
               <PricingCTA inverted />
