@@ -268,7 +268,7 @@ Put the site on this computer at a public link, for a teammate, a client, or a c
 
 ```python
 with client.shares.start(3000) as live:
-    print(live.url)  # https://calm-river-7f2a-free.sharehooks.cc
+    print(live.url)  # https://sample-preview-1234-free.sharehooks.cc
     run_checks_against(live.url)
 # leaving the block stops the share
 ```
@@ -293,7 +293,7 @@ listing = client.shares.list(state="live")  # shares, usage, limits, names, susp
 for share in listing.shares:
     print(share.kind, share.url, share.bytes)
 visits = client.shares.requests(listing.shares[0].id)  # a preview's visitor log, no addresses
-client.shares.stop(listing.shares[0].id)
+result = client.shares.stop(listing.shares[0].id)  # result.stopped is False if it had already ended
 
 client.names.reserve("acme-demo")  # team="Payments" keeps it inside a team
 client.names.set_password("acme-demo", "a long passphrase")

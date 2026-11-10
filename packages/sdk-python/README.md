@@ -200,12 +200,12 @@ for request in client.requests.subscribe(endpoint.slug, timeout="10m", reconnect
 
 ```python
 with client.shares.start(3000) as live:
-    print(live.url)  # https://calm-river-7f2a-free.sharehooks.cc on Free
+    print(live.url)  # https://sample-preview-1234-free.sharehooks.cc on Free
     for event in live.events():  # visitor requests, notices, reconnects
         print(event.event, event.data)
 ```
 
-`webhooks_cc.share(3000)` does the same with whk's own login or `WHK_API_KEY`. A password (Pro and Business) goes to whk through the environment, never the command line. `client.shares.list()` gives your previews and live tunnels with this month's data, your plan's limits and `hints` (next steps as `whk` commands); `client.shares.stop(id)` and `client.shares.requests(id)` stop one and read its visitor log. `client.names` reserves names (`reserve("acme-demo")`, or `team=` for a team's), releases them and sets their passwords. A request relayed by `whk tunnel --live` carries the app's answer in `request.live_response`.
+`webhooks_cc.share(3000)` does the same with whk's own login or `WHK_API_KEY`. A password (Pro and Business) goes to whk through the environment, never the command line. `client.shares.list()` gives your previews and live tunnels with this month's data, your plan's limits and `hints` (next steps as `whk` commands); `client.shares.stop(id)` and `client.shares.requests(id)` stop one (its result says whether it had already ended) and read its visitor log. `client.names` reserves names (`reserve("acme-demo")`, or `team=` for a team's), releases them and sets their passwords. A request relayed by `whk tunnel --live` carries the app's answer in `request.live_response`.
 
 ## No account: the agent sandbox
 

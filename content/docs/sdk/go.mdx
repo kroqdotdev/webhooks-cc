@@ -339,7 +339,7 @@ if err != nil {
 	return err
 }
 defer live.Stop(context.Background())
-fmt.Println(live.URL) // https://calm-river-7f2a-free.sharehooks.cc
+fmt.Println(live.URL) // https://sample-preview-1234-free.sharehooks.cc
 ```
 
 `client.Shares.Start` shares as the client's own account: an API-key client passes its key, and a connected agent client has `whk` read the same agent credential file (a sandbox client gets an error: connect it first). `webhookscc.Share(ctx, opts)` does the same without a client, with `ShareOptions.APIKey` or the CLI's own login. `ShareOptions` takes `Port`, `Name` (a name you reserved, Pro and Business), `Password` (8 to 200 characters, passed through the environment, never the command line), `WhkPath`, `TunnelURL` and `OpenTimeout`. The `*LiveShare` it returns has:
@@ -361,9 +361,9 @@ The rest of the [Shares page](/docs/share#for-agents) is on the client:
 list, err := client.Shares.List(ctx, webhookscc.ListSharesOptions{State: webhookscc.ShareStateLive})
 // list.Shares, list.Usage, list.Limits, list.Names, list.Suspended, list.Hints
 visits, err := client.Shares.Requests(ctx, list.Shares[0].ID) // a preview's visitor log, no addresses
-err = client.Shares.Stop(ctx, list.Shares[0].ID)
+stopped, err := client.Shares.Stop(ctx, list.Shares[0].ID) // Stopped false: it had already ended
 
-name, err := client.Names.Reserve(ctx, "acme-demo", "") // a team ID keeps it inside a team
+name, err := client.Names.Reserve(ctx, "acme-demo", "") // a team's ID or name keeps it inside the team
 err = client.Names.SetPassword(ctx, "acme-demo", "a long passphrase")
 err = client.Names.ClearPassword(ctx, "acme-demo")
 names, err := client.Names.List(ctx) // Names, Limit and Used (your own), Teams (each team's count)

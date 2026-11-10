@@ -1140,10 +1140,11 @@ list(options?: { state?: "live" | "ended" }): Promise<TunnelShareList>
 
 <ApiMethod method="POST" path="/shares/:id/stop" title="client.shares.stop">
 
-Stop a preview or live tunnel. The CLI running it is told why and exits.
+Stop a preview or live tunnel. The CLI running it is told why and exits. `stopped` is `false` when it had already ended; `edgeReached` is `false` when the edge could not be told at once, and it ends at the next sync (within half a minute).
 
 ```ts
-stop(id: string): Promise<void>
+stop(id: string): Promise<TunnelStopResult>
+// Returns: { ok: true, stopped: boolean, edgeReached: boolean }
 ```
 
 </ApiMethod>
@@ -1168,7 +1169,7 @@ start(options: { port: number; name?: string; password?: string; whkPath?: strin
   tunnelUrl?: string; onRequest?; onNotice?; onEvent?; timeout?: number }): Promise<LiveShare>
 
 const preview = await client.shares.start({ port: 3000 });
-console.log(preview.url); // https://calm-river-7f2a-free.sharehooks.cc
+console.log(preview.url); // https://sample-preview-1234-free.sharehooks.cc
 await preview.stop();
 ```
 
@@ -1637,6 +1638,8 @@ interface LiveResponse {
   bodyTruncated: boolean;
   bodyEncoding: "utf8" | "base64";
   ms: number | null;
+  // "refused": not passed back as it was (400 a path outside the endpoint,
+  // 502 a refused answer, or the app's status when cut off past 1 MB)
   outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
 }
 

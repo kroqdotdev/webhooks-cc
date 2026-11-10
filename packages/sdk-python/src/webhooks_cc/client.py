@@ -80,6 +80,7 @@ from .models import (
     TunnelName,
     TunnelNameList,
     TunnelShareList,
+    TunnelStopResult,
     TunnelVisits,
     UsageInfo,
 )
@@ -197,7 +198,19 @@ def _int_header(headers: httpx.Headers, name: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _map_error(status: int, message: str, headers: httpx.Headers) -> WebhooksCCError:
+def _not_found_hint(path: str) -> str:
+    """What to try after a short 404, by the route that answered: shares and
+    names have their own lists, everything else is about endpoints."""
+    if "/api/shares" in path:
+        return "use client.shares.list() to see your shares"
+    if "/api/tunnel-names" in path:
+        return "use client.names.list() to see the names you can use"
+    return "use client.endpoints.list() to see your endpoints"
+
+
+def _map_error(
+    status: int, message: str, headers: httpx.Headers, path: str = ""
+) -> WebhooksCCError:
     generic = len(message) < 30
     if status == 401:
         return UnauthorizedError(
@@ -206,9 +219,7 @@ def _map_error(status: int, message: str, headers: httpx.Headers) -> WebhooksCCE
             else message
         )
     if status == 404:
-        return NotFoundError(
-            f"{message}: use client.endpoints.list() to see your endpoints" if generic else message
-        )
+        return NotFoundError(f"{message}: {_not_found_hint(path)}" if generic else message)
     if status == 429:
         limit = _int_header(headers, "x-ratelimit-limit")
         remaining = _int_header(headers, "x-ratelimit-remaining")
@@ -225,8 +236,15 @@ def _map_error(status: int, message: str, headers: httpx.Headers) -> WebhooksCCE
 
 def _error_from_response(response: httpx.Response) -> WebhooksCCError:
     text = response.text
+    try:
+        path = response.request.url.path
+    except RuntimeError:  # a response built without its request
+        path = ""
     return _map_error(
-        response.status_code, text[:200] + "..." if len(text) > 200 else text, response.headers
+        response.status_code,
+        text[:200] + "..." if len(text) > 200 else text,
+        response.headers,
+        path,
     )
 
 
@@ -1596,10 +1614,15 @@ class Shares:
         params = {"state": state} if state else None
         return TunnelShareList.from_dict(self._client._api("GET", "/shares", params=params))
 
-    def stop(self, share_id: str) -> None:
-        """Stop a preview or live tunnel. Its CLI is told why and exits."""
+    def stop(self, share_id: str) -> TunnelStopResult:
+        """Stop a preview or live tunnel. Its CLI is told why and exits.
+
+        ``stopped`` is False when it had already ended; ``edge_reached`` is
+        False when the edge could not be told at once (it ends at the next
+        sync)."""
         _validate_segment(share_id, "share id")
-        self._client._api("POST", f"/shares/{share_id}/stop", body={})
+        answer = self._client._api("POST", f"/shares/{share_id}/stop", body={})
+        return TunnelStopResult.from_dict(answer if isinstance(answer, Mapping) else {})
 
     def requests(self, share_id: str) -> TunnelVisits:
         """The last visitor requests to a preview (no addresses, a number per

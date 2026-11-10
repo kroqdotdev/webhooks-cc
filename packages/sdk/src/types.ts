@@ -252,7 +252,11 @@ export interface LiveResponse {
    * "answered" when the app answered; otherwise what the sender got instead:
    * "offline" (502, whk tunnel --live not connected), "timeout" (504),
    * "unreachable" (502, nothing on the local port), "busy" (503) or
-   * "refused" (400, a path that could not be relayed).
+   * "refused": the app's answer was not passed back as it was. 400 when
+   * the path left the endpoint; 502 when the answer was refused (a
+   * download, a script or another type an API does not answer with, or a
+   * stated size over 1 MB); or the app's own status when the answer
+   * streamed past 1 MB and was cut off, so the sender got a broken stream.
    */
   outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
 }
@@ -340,6 +344,15 @@ export interface TunnelShareList {
   suspended?: boolean;
   /** What to do next, as whk commands an agent can run. */
   hints?: string[];
+}
+
+/** What `client.shares.stop()` reports (POST /api/shares/{id}/stop). */
+export interface TunnelStopResult {
+  ok: boolean;
+  /** False when it had already ended. */
+  stopped: boolean;
+  /** False when the edge could not be told at once; it ends at the next sync. */
+  edgeReached: boolean;
 }
 
 /** One visitor request to a preview, from the edge's memory (no addresses). */

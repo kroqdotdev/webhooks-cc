@@ -128,13 +128,22 @@ func TestSharesStopAndRequests(t *testing.T) {
 	})
 	client := api.client()
 	ctx := context.Background()
-	if err := client.Shares.Stop(ctx, shareID); err != nil {
+	stopped, err := client.Shares.Stop(ctx, shareID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.Shares.Stop(ctx, "missing"); !errors.Is(err, webhookscc.ErrNotFound) {
+	if !stopped.Stopped || !stopped.EdgeReached {
+		t.Errorf("Stop = %+v", stopped)
+	}
+	_, err = client.Shares.Stop(ctx, "missing")
+	if !errors.Is(err, webhookscc.ErrNotFound) {
 		t.Errorf("Stop(missing) = %v, want ErrNotFound", err)
 	}
-	if err := client.Shares.Stop(ctx, "../x"); err == nil {
+	// A short 404 points at the share list, not at endpoints.
+	if err == nil || !strings.Contains(err.Error(), "Shares.List") || strings.Contains(err.Error(), "Endpoints.List") {
+		t.Errorf("Stop(missing) hint = %v", err)
+	}
+	if _, err := client.Shares.Stop(ctx, "../x"); err == nil {
 		t.Error("a bad id should be refused before any call")
 	}
 	visits, err := client.Shares.Requests(ctx, shareID)
@@ -167,6 +176,13 @@ func TestNamesCallTheirRoutes(t *testing.T) {
 	})
 	api.handle("POST /api/tunnel-names", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 201, map[string]any{"name": nameJSON})
+	})
+	api.handle("GET /api/teams", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, []any{
+			map[string]any{"id": "team_1", "name": "Acme"},
+			map[string]any{"id": "team_2", "name": "Twin"},
+			map[string]any{"id": "team_3", "name": "twin"},
+		})
 	})
 	api.handle("DELETE /api/tunnel-names/{name}", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true})
@@ -204,6 +220,19 @@ func TestNamesCallTheirRoutes(t *testing.T) {
 	}
 	if _, body := api.last(); body != `{"name":"acme-demo","team":"team_1"}` {
 		t.Errorf("reserve body = %s", body)
+	}
+	// A team's name works as well as its ID.
+	if _, err := client.Names.Reserve(ctx, "acme-demo", "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"name":"acme-demo","team":"team_1"}` {
+		t.Errorf("reserve body by team name = %s", body)
+	}
+	if _, err := client.Names.Reserve(ctx, "acme-demo", "twin"); err == nil || !strings.Contains(err.Error(), "several") {
+		t.Errorf("an ambiguous team name = %v", err)
+	}
+	if _, err := client.Names.Reserve(ctx, "acme-demo", "nobody"); err == nil {
+		t.Error("an unknown team name should be refused")
 	}
 	if _, err := client.Names.Reserve(ctx, "acme-demo", ""); err != nil {
 		t.Fatal(err)

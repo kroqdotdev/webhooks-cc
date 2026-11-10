@@ -585,7 +585,7 @@ Share a local port at `https://<name>.sharehooks.cc` by running `whk share` on y
 
 ### list_shares
 
-List your shares and live tunnels: running ones first, then the latest that ended, with this month's shared data, your plan's sharing limits, and `hints` with the next step when the plan's slots or data run out (stop a share with `stop_share`, or wait for the month).
+List your shares and live tunnels: running ones first, then the latest that ended, with this month's shared data, your plan's sharing limits, and `hints` with the next step: the server's own (a suspension, why data is paused) in tool names, and this server's when the plan's slots or data run out (stop a share with `stop_share`, or wait for the month). Only your own previews count against your slots, not a teammate's under a team name.
 
 | Parameter | Type     | Required | Description                                 |
 | --------- | -------- | -------- | ------------------------------------------- |
@@ -593,7 +593,7 @@ List your shares and live tunnels: running ones first, then the latest that ende
 
 ### stop_share
 
-Stop a share or live tunnel by its id (from `list_shares`). The CLI running it is told why and exits.
+Stop a share or live tunnel by its id (from `list_shares`). The CLI running it is told why and exits. The result says `stopped: false` when it had already ended, and `edgeReached: false` when the edge could not be told at once (it ends within half a minute).
 
 | Parameter | Type     | Required | Description                        |
 | --------- | -------- | -------- | ---------------------------------- |

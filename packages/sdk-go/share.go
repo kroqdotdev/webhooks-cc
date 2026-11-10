@@ -275,7 +275,7 @@ func (s *LiveShare) escalate() {
 //		return err
 //	}
 //	defer live.Stop(context.Background())
-//	fmt.Println(live.URL) // https://calm-river-7f2a-free.sharehooks.cc
+//	fmt.Println(live.URL) // https://sample-preview-1234-free.sharehooks.cc
 //
 // Use client.Shares.Start to share as a client's account.
 func Share(ctx context.Context, opts ShareOptions) (*LiveShare, error) {

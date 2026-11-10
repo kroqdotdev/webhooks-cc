@@ -1128,7 +1128,9 @@ export function shareHints(list: TunnelShareList): string[] {
   const hints: string[] = [];
   const limits = list.limits;
   const usage = list.usage;
-  const previews = list.shares.filter((s) => s.kind !== "live" && !s.endedAt);
+  // Only your own previews take your slots: a teammate's under a team name
+  // counts against theirs.
+  const previews = list.shares.filter((s) => s.kind !== "live" && !s.endedAt && s.mine !== false);
   if (usage?.over) {
     hints.push(
       `This month's shared data is used up, so previews are paused until ${usage.resetsAt}. A larger plan (Pro 25 GB, Business 150 GB) raises it; the person upgrades on webhooks.cc.`
@@ -1150,9 +1152,37 @@ export function shareHints(list: TunnelShareList): string[] {
   return hints;
 }
 
-/** A share list with the hints added, for list_shares and share_port. */
-function withShareHints(list: TunnelShareList): Record<string, unknown> {
-  const hints = shareHints(list);
+/**
+ * A server hint in this server's words: the whk commands it names become
+ * the tools that do the same, so an agent does not reach for a CLI.
+ */
+export function toolWords(hint: string): string {
+  return hint
+    .replace(/whk shares stop(?: <[^>]*>)?/g, "stop_share")
+    .replace(/whk shares (?:ls|list)/g, "list_shares")
+    .replace(/whk shares log(?: <[^>]*>)?/g, "share_requests")
+    .replace(/whk names reserve(?: <[^>]*>)?(?: --team <[^>]*>)?/g, "reserve_name")
+    .replace(/whk names release(?: <[^>]*>)?/g, "release_name")
+    .replace(/whk names password(?: <[^>]*>)?(?: --clear)?/g, "set_name_password")
+    .replace(/whk names ls/g, "list_names")
+    .replace(/whk share <port> --password/g, "share_port with a password")
+    .replace(/whk share <port>/g, "share_port");
+}
+
+/**
+ * A share list with hints for an agent, for list_shares and share_port: the
+ * server's own (in tool words) and this server's, without repeats, so
+ * nothing the server says (a suspension, a pause) is lost.
+ */
+export function withShareHints(list: TunnelShareList): Record<string, unknown> {
+  const server = (list.hints ?? []).map(toolWords);
+  const ours = shareHints(list);
+  if (list.suspended && !server.some((h) => /suspended/i.test(h))) {
+    ours.unshift(
+      "Sharing is suspended on this account: share_port is refused. The person can write to support@webhooks.cc."
+    );
+  }
+  const hints = [...new Set([...server, ...ours])];
   return hints.length > 0 ? { ...list, hints } : { ...list };
 }
 
@@ -2637,8 +2667,17 @@ export function registerTools(
       id: z.string().describe("The share's id, from list_shares"),
     },
     withErrorHandling(async ({ id }) => {
-      await client.shares.stop(id);
-      return jsonContent({ stopped: id });
+      const result = await client.shares.stop(id);
+      return jsonContent({
+        id,
+        stopped: result.stopped,
+        edgeReached: result.edgeReached,
+        note: result.stopped
+          ? result.edgeReached
+            ? "Stopped; its CLI was told and exits."
+            : "Stopped; the edge could not be told at once, so it ends within half a minute."
+          : "It had already ended.",
+      });
     })
   );
 

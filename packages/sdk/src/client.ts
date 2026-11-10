@@ -75,6 +75,7 @@ import type {
   TunnelName,
   TunnelNameList,
   TunnelShareList,
+  TunnelStopResult,
   TunnelVisits,
 } from "./types";
 import { share as runShare, type LiveShare, type ShareOptions } from "./share";
@@ -198,8 +199,24 @@ const PROXY_HEADERS = new Set([
  */
 export const ApiError = WebhooksCCError;
 
+/**
+ * What to try after a short 404, by the route that answered: shares and
+ * names have their own lists, everything else is about endpoints.
+ */
+export function notFoundHint(path: string | undefined): string {
+  if (path?.startsWith("/shares")) return "Use client.shares.list() to see your shares.";
+  if (path?.startsWith("/tunnel-names"))
+    return "Use client.names.list() to see the names you can use.";
+  return "Use client.endpoints.list() to see available endpoints.";
+}
+
 /** Map HTTP status codes to typed errors with actionable recovery hints. */
-function mapStatusToError(status: number, message: string, response: Response): WebhooksCCError {
+function mapStatusToError(
+  status: number,
+  message: string,
+  response: Response,
+  path?: string
+): WebhooksCCError {
   // Append recovery hints when server message is generic (< 30 chars)
   const isGeneric = message.length < 30;
 
@@ -211,9 +228,7 @@ function mapStatusToError(status: number, message: string, response: Response): 
       return new UnauthorizedError(hint);
     }
     case 404: {
-      const hint = isGeneric
-        ? `${message} — Use client.endpoints.list() to see available endpoints.`
-        : message;
+      const hint = isGeneric ? `${message}: ${notFoundHint(path)}` : message;
       return new NotFoundError(hint);
     }
     case 429: {
@@ -896,7 +911,8 @@ export class WebhooksCC {
         throw mapStatusToError(
           response.status,
           text.length > 200 ? text.slice(0, 200) + "..." : text,
-          response
+          response,
+          path
         );
       }
       const disposition = response.headers.get("content-disposition") ?? "";
@@ -968,7 +984,7 @@ export class WebhooksCC {
           const errorText = await response.text();
           const sanitizedError =
             errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
-          const error = mapStatusToError(response.status, sanitizedError, response);
+          const error = mapStatusToError(response.status, sanitizedError, response, path);
           try {
             this.hooks.onError?.({ method, url, error, durationMs });
           } catch {
@@ -1925,10 +1941,23 @@ export class WebhooksCC {
       return this.request<TunnelShareList>("GET", state ? `/shares?state=${state}` : "/shares");
     },
 
-    /** Stop a preview or live tunnel. Its CLI is told why and exits. */
-    stop: async (id: string): Promise<void> => {
+    /**
+     * Stop a preview or live tunnel. Its CLI is told why and exits.
+     * `stopped` is false when it had already ended; `edgeReached` is false
+     * when the edge could not be told at once (it ends at the next sync).
+     */
+    stop: async (id: string): Promise<TunnelStopResult> => {
       validatePathSegment(id, "id");
-      await this.request("POST", `/shares/${id}/stop`, {});
+      const answer = await this.request<Partial<TunnelStopResult> | undefined>(
+        "POST",
+        `/shares/${id}/stop`,
+        {}
+      );
+      return {
+        ok: answer?.ok ?? true,
+        stopped: answer?.stopped ?? true,
+        edgeReached: answer?.edgeReached ?? true,
+      };
     },
 
     /** The last visitor requests to a preview (no addresses, a number per visitor), newest first. */

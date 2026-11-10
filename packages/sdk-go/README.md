@@ -138,14 +138,14 @@ if err != nil {
 	return err // whk's own words, or ErrWhkNotInstalled with how to install it
 }
 defer live.Stop(context.Background())
-fmt.Println(live.URL) // https://calm-river-7f2a-free.sharehooks.cc
+fmt.Println(live.URL) // https://sample-preview-1234-free.sharehooks.cc
 
 for event := range live.Events() { // visitor requests, notices, the ending
 	fmt.Println(event.Event, event.Method, event.Path, event.Status)
 }
 ```
 
-The share runs until `Stop`, the context ends, the plan's time limit, or a stop from webhooks.cc, and never outlives the program. A `Password` goes to whk through the environment, never the command line. `client.Shares.List` returns your previews and live tunnels with the plan's limits, this month's data, where you stand on names and `Hints`: the next step as a whk command. `client.Shares.Stop` and `client.Shares.Requests` (the last visitor requests) take a share's ID, and `client.Names` lists, reserves (optionally inside a team), releases and puts passwords on reserved names. Requests relayed by `whk tunnel --live` carry the app's answer in `Request.LiveResponse`.
+The share runs until `Stop`, the context ends, the plan's time limit, or a stop from webhooks.cc, and never outlives the program. A `Password` goes to whk through the environment, never the command line. `client.Shares.List` returns your previews and live tunnels with the plan's limits, this month's data, where you stand on names and `Hints`: the next step as a whk command. `client.Shares.Stop` (its `StopResult` says whether it had already ended) and `client.Shares.Requests` (the last visitor requests) take a share's ID, and `client.Names` lists, reserves (optionally inside a team, by its ID or name), releases and puts passwords on reserved names. Requests relayed by `whk tunnel --live` carry the app's answer in `Request.LiveResponse`.
 
 ## No account: the agent sandbox
 

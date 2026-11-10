@@ -3664,9 +3664,11 @@ components:
           description: |
             `answered` when the app answered; otherwise what stood in: `offline` (502, whk not
             connected), `timeout` (504, no answer within 25 seconds), `unreachable` (502, nothing on
-            the local port), `busy` (503, too many relays waiting), `refused` (502, an answer that is
-            not passed back: a download, a type an API does not answer with, over 1 MB, or a path
-            outside the endpoint)
+            the local port), `busy` (503 with `Retry-After`, too many relays waiting) or `refused`:
+            the answer was not passed back as it was. 400 when the path left the endpoint; 502 when
+            the answer was refused (a download, a script or another type an API does not answer
+            with, or a stated size over 1 MB); or the app's own status when the answer streamed past
+            1 MB and was cut off, so the sender got a broken stream
 
     TunnelShare:
       type: object

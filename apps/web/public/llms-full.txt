@@ -417,7 +417,7 @@ const { requests } = await client.shares.requests(shares[0].id); // visitor log,
 
 // Share a local port by running the whk CLI (Node.js; whk on the PATH)
 const preview = await client.shares.start({ port: 3000 });
-console.log(preview.url); // https://calm-river-7f2a-free.sharehooks.cc
+console.log(preview.url); // https://sample-preview-1234-free.sharehooks.cc
 await preview.stop();
 
 // Reserved names (Pro and Business): <name>.sharehooks.cc

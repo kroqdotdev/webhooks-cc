@@ -180,7 +180,10 @@ def test_shares_list_tolerates_an_older_server() -> None:
 def test_shares_stop_and_requests() -> None:
     api = Api(
         {
-            ("POST", "/api/shares/abc/stop"): (200, {"ok": True, "stopped": True}),
+            ("POST", "/api/shares/abc/stop"): (
+                200,
+                {"ok": True, "stopped": False, "edgeReached": True},
+            ),
             ("GET", "/api/shares/abc/requests"): (
                 200,
                 {
@@ -203,7 +206,9 @@ def test_shares_stop_and_requests() -> None:
         }
     )
     client = client_for(api)
-    client.shares.stop("abc")
+    result = client.shares.stop("abc")
+    # "Already ended" is told apart from "stopped".
+    assert result.stopped is False and result.edge_reached is True
     assert api.calls[-1] == ("POST", "/api/shares/abc/stop", {})
     visits = client.shares.requests("abc")
     assert visits.available and visits.requests[0].device == "phone"
@@ -213,8 +218,18 @@ def test_shares_stop_and_requests() -> None:
 
 def test_shares_errors_carry_the_servers_words() -> None:
     api = Api({("POST", "/api/shares/abc/stop"): (404, {"error": "Share not found"})})
-    with pytest.raises(WebhooksCCError, match="Share not found"):
+    with pytest.raises(WebhooksCCError, match="Share not found") as caught:
         client_for(api).shares.stop("abc")
+    # A short 404 points at the share list, not at endpoints.
+    assert "client.shares.list()" in str(caught.value)
+    assert "endpoints" not in str(caught.value)
+
+
+def test_a_short_404_on_a_name_points_at_the_name_list() -> None:
+    api = Api({("DELETE", "/api/tunnel-names/acme-demo"): (404, {"error": "Name not found"})})
+    with pytest.raises(WebhooksCCError) as caught:
+        client_for(api).names.release("acme-demo")
+    assert "client.names.list()" in str(caught.value)
 
 
 # --- client.names -------------------------------------------------------------------

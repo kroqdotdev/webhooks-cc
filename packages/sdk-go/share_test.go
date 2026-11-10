@@ -40,7 +40,7 @@ func fakeWhk(mode string) int {
 		return 1
 	}
 	_ = out.Encode(map[string]any{
-		"event": "live", "url": "https://calm-river-7f2a-free.sharehooks.cc", "name": "calm-river-7f2a-free",
+		"event": "live", "url": "https://sample-preview-1234-free.sharehooks.cc", "name": "sample-preview-1234-free",
 		"expiresAt": "2026-11-10T20:00:00.000Z", "notice": true, "password": os.Getenv("WHK_SHARE_PASSWORD") != "",
 	})
 	seen := map[string]any{
@@ -113,7 +113,7 @@ func TestShareOpensAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if live.URL != "https://calm-river-7f2a-free.sharehooks.cc" || live.Name != "calm-river-7f2a-free" ||
+	if live.URL != "https://sample-preview-1234-free.sharehooks.cc" || live.Name != "sample-preview-1234-free" ||
 		!live.Notice || !live.Password || live.ExpiresAt.IsZero() || live.Port != 3000 {
 		t.Errorf("live = %+v", live)
 	}

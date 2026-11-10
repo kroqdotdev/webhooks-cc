@@ -9,7 +9,7 @@ starts it, listens and stops it.
     from webhooks_cc import share
 
     with share(3000) as live:
-        print(live.url)  # https://calm-river-7f2a-free.sharehooks.cc
+        print(live.url)  # https://sample-preview-1234-free.sharehooks.cc
         ...
     # leaving the block stops the share
 

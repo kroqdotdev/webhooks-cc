@@ -1251,8 +1251,8 @@ describe("registerTools", () => {
   it("shares a port once per port and returns the link with its notes", async () => {
     let closeShare!: (value: { reason: string }) => void;
     const live = {
-      url: "https://calm-river-7f2a-free.sharehooks.cc",
-      name: "calm-river-7f2a-free",
+      url: "https://sample-preview-1234-free.sharehooks.cc",
+      name: "sample-preview-1234-free",
       expiresAt: "2026-11-10T20:00:00Z",
       notice: true,
       password: false,
@@ -1359,8 +1359,8 @@ describe("registerTools", () => {
 
   it("returns the plan's limits with a new share, and next steps when whk refuses", async () => {
     const live = {
-      url: "https://calm-river-7f2a-free.sharehooks.cc",
-      name: "calm-river-7f2a-free",
+      url: "https://sample-preview-1234-free.sharehooks.cc",
+      name: "sample-preview-1234-free",
       expiresAt: null,
       notice: true,
       password: false,
@@ -1430,7 +1430,10 @@ describe("registerTools", () => {
 
   it("lists and stops shares through the API", async () => {
     const list = vi.fn(async () => ({ shares: [], usage: {}, limits: {} }));
-    const stop = vi.fn(async () => undefined);
+    const stop = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, stopped: true, edgeReached: true })
+      .mockResolvedValueOnce({ ok: true, stopped: false, edgeReached: true });
     const tools = getRegisteredTools(
       createMockClient({ shares: { list, stop } as unknown as WebhooksCC["shares"] })
     );
@@ -1439,8 +1442,36 @@ describe("registerTools", () => {
     parseJsonResult(await tools.list_shares.handler({}));
     expect(list).toHaveBeenLastCalledWith({});
     const stopped = parseJsonResult(await tools.stop_share.handler({ id: "s1" }));
-    expect(stopped).toEqual({ stopped: "s1" });
+    expect(stopped).toMatchObject({ id: "s1", stopped: true, edgeReached: true });
     expect(stop).toHaveBeenCalledWith("s1");
+    // "Already ended" is told apart from "stopped".
+    const again = parseJsonResult(await tools.stop_share.handler({ id: "s1" }));
+    expect(again).toMatchObject({ id: "s1", stopped: false });
+    expect(again.note).toContain("already ended");
+  });
+
+  it("counts only your own previews towards slots and keeps the server's hints", async () => {
+    const list = vi.fn(async () => ({
+      shares: [{ id: "t1", kind: "share", endedAt: null, mine: false }],
+      usage: { over: false },
+      limits: { plan: "pro", shares: 1, sessionMinutes: null, passwords: true },
+      suspended: true,
+      hints: [
+        "Sharing is suspended on this account. Write to support@webhooks.cc if this is a mistake.",
+        "Stop one with whk shares stop <id or name> to start another.",
+      ],
+    }));
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { list } as unknown as WebhooksCC["shares"] })
+    );
+    const listed = parseJsonResult(await tools.list_shares.handler({}));
+    const hints = listed.hints as string[];
+    // A teammate's preview does not fill your slot.
+    expect(hints.join(" ")).not.toContain("preview slots are in use");
+    // The server's suspension hint stays, in tool words.
+    expect(hints.join(" ")).toContain("suspended");
+    expect(hints.join(" ")).toContain("stop_share");
+    expect(hints.join(" ")).not.toContain("whk shares stop");
   });
 
   it("passes a live tunnel's answer through get_request", async () => {

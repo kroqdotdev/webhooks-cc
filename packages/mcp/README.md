@@ -158,8 +158,8 @@ Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) a
 ### Sharing tools
 
 - `share_port`: shares a local port at a `https://<name>.sharehooks.cc` link by running `whk share` (local server only; needs [whk](https://webhooks.cc/installation) installed, or `WHK_PATH` naming it). The share runs until `stop_share`, the plan's session limit, or the end of the server. Free shares get a random name ending in `-free`, two hours, and a notice page before the site; Pro and Business can pass a reserved `name` and a `password`.
-- `list_shares`: running and recent previews and live tunnels, this month's shared data, the plan's sharing limits, and `hints` with the next step when slots or data run out.
-- `stop_share`
+- `list_shares`: running and recent previews and live tunnels, this month's shared data, the plan's sharing limits, and `hints` with the next step (the server's own in tool names, plus slots or data running out).
+- `stop_share`: stops a preview or live tunnel, and says whether it had already ended.
 - `share_requests`: the last requests visitors made to a running preview (no addresses).
 - `list_names`, `reserve_name` (optionally inside a team), `release_name`: reserved preview names (Pro and Business).
 - `set_name_password`, `clear_name_password`: the password visitors need for every preview under a name. The password is never echoed back.

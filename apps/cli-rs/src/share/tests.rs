@@ -130,17 +130,43 @@ fn refusals_and_the_edges_trouble_are_told_apart() {
             message: "Passwords on links come with Pro.".to_string()
         }
     );
+    // Without the edge's own body it never came from the edge: a
+    // Cloudflare page or a proxy, so try again.
     assert_eq!(
         refusal(409, Some(b"not json")),
-        Failure::Refused {
-            status: 409,
-            message: "The tunnel answered 409.".to_string()
-        }
+        Failure::Transient("The tunnel answered 409.".to_string())
+    );
+    assert_eq!(
+        refusal(403, Some(b"<html>Access denied</html>")),
+        Failure::Transient("The tunnel answered 403.".to_string())
     );
     assert_eq!(
         refusal(502, None),
         Failure::Transient("The tunnel answered 502.".to_string())
     );
+    // 429 is passing trouble even in the edge's words.
+    assert_eq!(
+        refusal(429, Some(br#"{"error":"Slow down."}"#)),
+        Failure::Transient("Slow down.".to_string())
+    );
+    assert_eq!(
+        refusal(410, Some(br#"{"error":"This share was stopped."}"#)),
+        Failure::Refused {
+            status: 410,
+            message: "This share was stopped.".to_string()
+        }
+    );
+}
+
+#[test]
+fn reconnect_waits_get_up_to_half_again_at_random() {
+    for _ in 0..50 {
+        let got = jittered(Duration::from_secs(4));
+        assert!(
+            got >= Duration::from_secs(4) && got <= Duration::from_secs(6),
+            "{got:?}"
+        );
+    }
 }
 
 #[test]
@@ -164,11 +190,13 @@ fn a_relayed_request_goes_under_the_base_path_with_the_headers() {
         base_path: "/api/webhooks".to_string(),
         headers: vec![("X-Test".to_string(), "1".to_string())],
     };
-    let head = b"POST /stripe?x=1 HTTP/1.1\r\nhost: localhost:3000\r\nx-test: old\r\ncontent-length: 2\r\n\r\n";
+    let head = b"POST /stripe?x=1 HTTP/1.1\r\nhost: localhost:3000\r\nx-test: old\r\nx-forwarded-uri: /forged\r\ncontent-length: 2\r\n\r\n";
     let out = String::from_utf8(rewrite_head(head, &rewrite).unwrap()).unwrap();
+    // The original path rides along (the sender's own copy dropped), so the
+    // app can rebuild the URL the sender signed.
     assert_eq!(
         out,
-        "POST /api/webhooks/stripe?x=1 HTTP/1.1\r\nhost: localhost:3000\r\ncontent-length: 2\r\nX-Test: 1\r\n\r\n"
+        "POST /api/webhooks/stripe?x=1 HTTP/1.1\r\nhost: localhost:3000\r\ncontent-length: 2\r\nX-Test: 1\r\nX-Forwarded-Uri: /stripe?x=1\r\n\r\n"
     );
     // A header that would start a new line is left out.
     let sneaky = Rewrite {
@@ -176,7 +204,7 @@ fn a_relayed_request_goes_under_the_base_path_with_the_headers() {
         headers: vec![("X-A".to_string(), "1\r\nX-B: 2".to_string())],
     };
     let out = String::from_utf8(rewrite_head(b"GET / HTTP/1.1\r\n\r\n", &sneaky).unwrap()).unwrap();
-    assert_eq!(out, "GET / HTTP/1.1\r\n\r\n");
+    assert_eq!(out, "GET / HTTP/1.1\r\nX-Forwarded-Uri: /\r\n\r\n");
     assert!(rewrite_head(b"not http\r\n\r\n", &rewrite).is_none());
 }
 
@@ -200,7 +228,7 @@ async fn the_head_is_read_whole_and_the_body_follows() {
     let out = rewritten_head(&mut b, &rewrite).await.unwrap();
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "POST /hooks/x HTTP/1.1\r\ncontent-length: 2\r\n\r\nhi"
+        "POST /hooks/x HTTP/1.1\r\ncontent-length: 2\r\nX-Forwarded-Uri: /x\r\n\r\nhi"
     );
 }
 

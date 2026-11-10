@@ -94,6 +94,12 @@ pub struct Share {
     pub mine: bool,
     #[serde(default)]
     pub started_by: Option<Person>,
+    /// Whether visitors see the notice page first.
+    #[serde(default)]
+    pub notice: Option<bool>,
+    /// Whatever else the API sends, kept for `--json`.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 fn share_kind() -> String {
@@ -117,6 +123,11 @@ pub struct TunnelUsage {
     pub over: bool,
     #[serde(default)]
     pub resets_at: Option<ApiTime>,
+    /// Why previews are paused and until when, while `over`.
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -137,6 +148,11 @@ pub struct TunnelLimits {
     pub passwords: bool,
     #[serde(default)]
     pub notice: bool,
+    /// The plan's name for people: "Pro", "Team Business".
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// `GET /api/shares`.
@@ -148,6 +164,18 @@ pub struct SharesResponse {
     pub usage: Option<TunnelUsage>,
     #[serde(default)]
     pub limits: Option<TunnelLimits>,
+    /// Reserved names against the plan: `{limit, used, usable}`.
+    #[serde(default)]
+    pub names: Option<serde_json::Value>,
+    /// Sharing is suspended on this account.
+    #[serde(default)]
+    pub suspended: bool,
+    /// What to do next, as whk commands.
+    #[serde(default)]
+    pub hints: Vec<String>,
+    /// Whatever else the API sends, kept for `--json`.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One request a share answered, from the edge's memory.

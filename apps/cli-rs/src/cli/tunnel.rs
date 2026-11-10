@@ -171,6 +171,8 @@ pub async fn run(
 
     let mut reconnecting = false;
     let mut interrupted = false;
+    // --live: whether the relay is up, and which captures it carried.
+    let mut relay = LiveRelay::default();
     // --live refused before it was ever up (another relay, a limit, no
     // access): the tunnel ends with that as its error.
     let mut live_refused: Option<String> = None;
@@ -181,9 +183,25 @@ pub async fn run(
             event = rx.recv() => {
                 let Some(event) = event else { break };
                 match event {
-                    // --live: HTTP captures came through the edge already.
-                    SseEvent::Request(req) if live && !req.is_email() => {}
+                    // --live: HTTP captures come through the edge while the
+                    // relay is up; while it is not, they are forwarded from
+                    // the stream like a plain tunnel's.
+                    SseEvent::Request(req) if live && !req.is_email() && !relay.forward(&req.method, &req.path) => {}
                     SseEvent::Request(req) => {
+                        if live && !req.is_email() && relay.announce() {
+                            if json {
+                                println!(
+                                    "{}",
+                                    serde_json::json!({ "event": "live_fallback" })
+                                );
+                            } else {
+                                println!(
+                                    "  {} {}",
+                                    dim("●"),
+                                    dim(LIVE_FALLBACK)
+                                );
+                            }
+                        }
                         // --no-email: the email is listed, not posted.
                         if req.is_email() && email_format.is_none() {
                             if json {
@@ -241,6 +259,7 @@ pub async fn run(
             }
             update = live_rx.recv(), if live_task.is_some() => {
                 if let Some(update) = update {
+                    relay.on_update(&update);
                     show_live_update(update, json);
                 }
             }
@@ -307,6 +326,78 @@ pub fn live_target(target: &str) -> Result<(share::LocalTarget, String)> {
 }
 
 /// What the live session said, as the tunnel shows it.
+/// What `whk tunnel --live` says when the relay is down and captures come
+/// from the stream instead.
+const LIVE_FALLBACK: &str = "The live relay is not connected: forwarding captures from the stream like a plain tunnel until it is back (senders get 502 for 2 minutes, then the endpoint's mock).";
+
+/// How long a capture the edge relayed is remembered, so it is not
+/// forwarded again from the stream when the relay drops just after.
+const RELAYED_KEPT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// `whk tunnel --live`'s view of its relay: whether it is up, and the
+/// captures it carried lately.
+#[derive(Default)]
+struct LiveRelay {
+    connected: bool,
+    announced: bool,
+    relayed: std::collections::VecDeque<(String, String, std::time::Instant)>,
+}
+
+impl LiveRelay {
+    fn on_update(&mut self, update: &Update) {
+        match update {
+            Update::Ready { .. } | Update::Reconnected => {
+                self.connected = true;
+                self.announced = false;
+            }
+            Update::Retrying { .. } => self.connected = false,
+            Update::Request { method, path, .. } => {
+                self.relayed.push_back((
+                    method.clone(),
+                    path_only(path).to_string(),
+                    std::time::Instant::now(),
+                ));
+                while self.relayed.len() > 512 {
+                    self.relayed.pop_front();
+                }
+            }
+            Update::Notice(_) => {}
+        }
+    }
+
+    /// Whether a capture from the stream goes to the local app: not while
+    /// the relay is up, nor when the relay already carried it.
+    fn forward(&mut self, method: &str, path: &str) -> bool {
+        let now = std::time::Instant::now();
+        self.relayed
+            .retain(|(_, _, at)| now.duration_since(*at) < RELAYED_KEPT);
+        if self.connected {
+            return false;
+        }
+        let path = path_only(path);
+        if let Some(i) = self
+            .relayed
+            .iter()
+            .position(|(m, p, _)| m.eq_ignore_ascii_case(method) && p == path)
+        {
+            self.relayed.remove(i);
+            return false;
+        }
+        true
+    }
+
+    /// True the first time a capture is forwarded from the stream since the
+    /// relay went down, to say so once.
+    fn announce(&mut self) -> bool {
+        !std::mem::replace(&mut self.announced, true)
+    }
+}
+
+/// A path without its query.
+fn path_only(path: &str) -> &str {
+    path.split('?').next().unwrap_or(path)
+}
+
 fn show_live_update(update: Update, json: bool) {
     match update {
         Update::Ready { .. } => {
@@ -534,5 +625,32 @@ mod tests {
         assert_eq!(event["path"], "/hooks/stripe");
         assert!(event.get("kind").is_none() && event.get("format").is_none());
         assert!(event["error"].is_null());
+    }
+    #[test]
+    fn the_live_relay_skips_what_it_carried_and_forwards_the_rest() {
+        let mut relay = LiveRelay::default();
+        // Before it is up, captures go from the stream.
+        assert!(relay.forward("POST", "/hooks"));
+        assert!(relay.announce());
+        assert!(!relay.announce());
+        relay.on_update(&Update::Reconnected);
+        // Up: the edge carries them.
+        assert!(!relay.forward("POST", "/hooks"));
+        relay.on_update(&Update::Request {
+            method: "POST".into(),
+            path: "/hooks?x=1".into(),
+            status: 200,
+            ms: 3,
+        });
+        relay.on_update(&Update::Retrying {
+            message: "The connection dropped.".into(),
+            seconds: 1,
+        });
+        // Down: the one it carried just before is not sent again, others are.
+        assert!(!relay.forward("POST", "/hooks"));
+        assert!(relay.forward("POST", "/hooks"));
+        assert!(relay.forward("GET", "/other"));
+        // It says so again after the next drop.
+        assert!(relay.announce());
     }
 }

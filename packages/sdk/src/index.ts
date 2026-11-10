@@ -280,6 +280,7 @@ export type {
   TunnelLimits,
   TunnelShareList,
   TunnelNamesSummary,
+  TunnelStopResult,
   TunnelVisit,
   TunnelVisits,
   TunnelName,

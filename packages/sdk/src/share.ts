@@ -201,7 +201,7 @@ function checkOptions(options: ShareOptions): void {
  * ```ts
  * import { share } from "@webhooks-cc/sdk";
  * const live = await share({ port: 3000 });
- * console.log(live.url); // https://calm-river-7f2a-free.sharehooks.cc
+ * console.log(live.url); // https://sample-preview-1234-free.sharehooks.cc
  * await live.stop();
  * ```
  */

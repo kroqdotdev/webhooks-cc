@@ -243,7 +243,7 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
 | `body`          | The first 64 KB of the answer: text when `bodyEncoding` is `utf8`, base64 when it is `base64`. |
 | `bodyTruncated` | `true` when the answer was longer than what is kept, or was cut off past 1 MB. |
 | `ms`            | How long the app took, in milliseconds. |
-| `outcome`       | `answered` when the app answered. Otherwise what stood in: `offline` (502, `whk` not connected), `timeout` (504, no answer within 25 seconds), `unreachable` (502, nothing on the local port), `busy` (503, too many relays waiting) or `refused` (502, an answer that is not passed back: a download, a type an API does not answer with, over 1 MB, or a path outside the endpoint). |
+| `outcome`       | `answered` when the app answered. Otherwise what stood in: `offline` (502, `whk` not connected), `timeout` (504, no answer within 25 seconds), `unreachable` (502, nothing on the local port), `busy` (503 with `Retry-After`, too many relays waiting) or `refused`: the answer was not passed back as it was. `400` when the path left the endpoint; `502` when the answer was refused (a download, a script or another type an API does not answer with, or a stated size over 1 MB); or the app's own status when the answer streamed past 1 MB and was cut off, so the sender got a broken stream. |
 
 `detectedProvider` and `detectedEvent` are best-effort metadata derived from headers and body shape. They power the provider icon and event badge in the dashboard. Signature fields are present when endpoint-level verification is configured.
 
@@ -814,7 +814,7 @@ curl "https://webhooks.cc/api/shares?state=live" \
 
 | Field       | Description |
 | ----------- | ----------- |
-| `shares`    | Previews (`kind: "share"`, with `name` and the preview `url`) and live tunnels (`kind: "live"`, with `endpointSlug` and the capture `url`). `endedAt` and `endReason` are `null` while one runs; `expiresAt` is when a Free preview's 2 hours run out. `bytes` and `requests` are what visitors took. `mine` is `false` for a teammate's run, with `startedBy` naming them. |
+| `shares`    | Previews (`kind: "share"`, with `name` and the preview `url`) and live tunnels (`kind: "live"`, with `endpointSlug` and the capture `url`). `endedAt` and `endReason` are `null` while one runs; `expiresAt` is when a Free preview's 2 hours run out. `bytes` (both ways, downloads and uploads) and `requests` are what visitors moved through it. `mine` is `false` for a teammate's run, with `startedBy` naming them. |
 | `usage`     | This UTC month's shared data against the plan. While `over`, previews are paused until `resetsAt` and `message` says so. Live tunnels count against requests, not data. |
 | `limits`    | The plan sharing follows: the best of your own plan and your subscribed teams'. `shares` at once, `reservedNames`, `sessionMinutes` (`null`: no time limit), `dataGb` a month, whether `passwords` are allowed and whether visitors see the `notice` page. |
 | `names`     | Your own reserved names against the plan (`limit`, `used`), and how many names, yours and your teams', you can share under now (`usable`). |

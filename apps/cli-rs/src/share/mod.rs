@@ -194,20 +194,33 @@ enum Failure {
     Transient(String),
 }
 
-/// An answer to the upgrade: 5xx is the edge's trouble and worth another
-/// try; anything else is a refusal (bad key, name taken, plan limit,
-/// stopped run).
+/// Statuses the edge refuses with on purpose: a bad request, the key, the
+/// plan or the account, a missing name or endpoint, a name in use, a run
+/// that was stopped, an old CLI.
+const FINAL_STATUSES: [u16; 7] = [400, 401, 403, 404, 409, 410, 426];
+
+/// An answer to the upgrade. Only the edge's own refusal ends the share:
+/// one of its final statuses with its `ErrorBody` JSON. Everything else is
+/// worth another try: 5xx and 429 are passing trouble, and an answer
+/// without the edge's body (a Cloudflare page, a proxy in between) never
+/// came from the edge at all.
 fn refusal(status: u16, body: Option<&[u8]>) -> Failure {
-    let message = body
+    let edge_said = body
         .and_then(|b| serde_json::from_slice::<ErrorBody>(b).ok())
         .map(|b| b.error)
-        .filter(|e| !e.is_empty())
-        .unwrap_or_else(|| format!("The tunnel answered {status}."));
-    if status >= 500 {
-        Failure::Transient(message)
-    } else {
-        Failure::Refused { status, message }
+        .filter(|e| !e.is_empty());
+    match edge_said {
+        Some(message) if FINAL_STATUSES.contains(&status) => Failure::Refused { status, message },
+        Some(message) => Failure::Transient(message),
+        None => Failure::Transient(format!("The tunnel answered {status}.")),
     }
+}
+
+/// A wait with up to half of it again added at random, so CLIs that lost
+/// the edge together (a deploy, a restart) do not all come back at once.
+fn jittered(wait: Duration) -> Duration {
+    let half = (wait.as_millis() / 2) as u64;
+    wait + Duration::from_millis(rand::random_range(0..=half))
 }
 
 /// The next wait after a drop: back to a second when the connection had
@@ -253,7 +266,7 @@ pub async fn run(session: &Session, on: &mut (dyn FnMut(Update) + Send)) -> Resu
                     message: "The connection dropped.".to_string(),
                     seconds: wait.as_secs(),
                 });
-                tokio::time::sleep(wait).await;
+                tokio::time::sleep(jittered(wait)).await;
                 wait = doubled(wait);
             }
             // An agent's access token may have run out: one more try with
@@ -274,7 +287,7 @@ pub async fn run(session: &Session, on: &mut (dyn FnMut(Update) + Send)) -> Resu
                     message,
                     seconds: wait.as_secs(),
                 });
-                tokio::time::sleep(wait).await;
+                tokio::time::sleep(jittered(wait)).await;
                 wait = doubled(wait);
             }
         }
@@ -351,7 +364,12 @@ async fn once(
 
     let (bytes, mut text) = ws::split(socket);
     let (_opener, mut inbound, mut mux_task) = mux::spawn(bytes, yamux::Mode::Server);
-    let rewrite = session.rewrite.clone().filter(|r| !r.is_empty());
+    // A live session always reads the head, to say where the request was
+    // sent (X-Forwarded-Uri); a share only when there is something to change.
+    let rewrite = match session.kind {
+        Kind::Live { .. } => session.rewrite.clone(),
+        Kind::Share { .. } => session.rewrite.clone().filter(|r| !r.is_empty()),
+    };
 
     loop {
         tokio::select! {
@@ -479,8 +497,15 @@ fn find_head_end(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
 }
 
+/// The header that carries a relayed request's original path and query, as
+/// the sender sent it after `/w/<slug>`, so an app behind a base path can
+/// rebuild the public URL it was signed for.
+pub const FORWARDED_URI: &str = "X-Forwarded-Uri";
+
 /// The head (ending in its blank line) with the path joined to the base
-/// path and the headers replaced; `None` when it is not an HTTP/1 request.
+/// path, the headers replaced and [`FORWARDED_URI`] set to the path as it
+/// came (any the sender sent dropped); `None` when it is not an HTTP/1
+/// request.
 pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(head).ok()?;
     let mut lines = text.split("\r\n");
@@ -490,6 +515,7 @@ pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
     if !version.starts_with("HTTP/") {
         return None;
     }
+    let original = target;
     let target = if rewrite.base_path.is_empty() || rewrite.base_path == "/" {
         target.to_string()
     } else {
@@ -498,10 +524,12 @@ pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
     let mut out = format!("{method} {target} {version}\r\n");
     let replaced = |line: &str| {
         line.split_once(':').is_some_and(|(name, _)| {
-            rewrite
-                .headers
-                .iter()
-                .any(|(extra, _)| extra.eq_ignore_ascii_case(name.trim()))
+            let name = name.trim();
+            name.eq_ignore_ascii_case(FORWARDED_URI)
+                || rewrite
+                    .headers
+                    .iter()
+                    .any(|(extra, _)| extra.eq_ignore_ascii_case(name))
         })
     };
     for line in lines.filter(|l| !l.is_empty()) {
@@ -517,6 +545,7 @@ pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
         }
         out.push_str(&format!("{name}: {value}\r\n"));
     }
+    out.push_str(&format!("{FORWARDED_URI}: {original}\r\n"));
     out.push_str("\r\n");
     Some(out.into_bytes())
 }

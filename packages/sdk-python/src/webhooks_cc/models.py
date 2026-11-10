@@ -591,8 +591,13 @@ class LiveResponse:
     body_truncated: bool
     body_encoding: str
     ms: int | None
-    #: ``"answered"``, or what the sender got instead: ``"offline"``,
-    #: ``"timeout"``, ``"unreachable"``, ``"busy"`` or ``"refused"``.
+    #: ``"answered"``, or what the sender got instead: ``"offline"`` (502),
+    #: ``"timeout"`` (504), ``"unreachable"`` (502), ``"busy"`` (503) or
+    #: ``"refused"``: the answer was not passed back as it was. 400 when the
+    #: path left the endpoint; 502 when the answer was refused (a download, a
+    #: script or another type an API does not answer with, or a stated size
+    #: over 1 MB); or the app's own status when the answer streamed past
+    #: 1 MB and was cut off, so the sender got a broken stream.
     outcome: str = "answered"
 
     @classmethod
@@ -1591,6 +1596,25 @@ class TunnelShareList:
             suspended=data.get("suspended") is True,
             hints=_str_list(data.get("hints")),
             raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelStopResult:
+    """What ``client.shares.stop()`` reports: ``stopped`` is False when it had
+    already ended, ``edge_reached`` False when the edge could not be told at
+    once (it ends at the next sync)."""
+
+    ok: bool = True
+    stopped: bool = True
+    edge_reached: bool = True
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelStopResult:
+        return cls(
+            ok=data.get("ok") is not False,
+            stopped=data.get("stopped") is not False,
+            edge_reached=data.get("edgeReached") is not False,
         )
 
 

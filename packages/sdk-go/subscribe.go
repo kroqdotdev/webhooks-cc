@@ -261,7 +261,7 @@ func (s *subscription) connect(ctx context.Context, yield func(*Request, error) 
 	}
 	if response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return false, errorFromResponse(&apiResponse{status: response.StatusCode, header: response.Header, body: body})
+		return false, errorFromResponse(&apiResponse{status: response.StatusCode, header: response.Header, body: body}, "/stream")
 	}
 	s.refreshed = false
 	connectedAt := time.Now()

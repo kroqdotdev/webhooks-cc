@@ -48,9 +48,14 @@ describe("shares and names", () => {
   });
 
   it("stops a share and reads its visitor requests", async () => {
-    const fetchMock = mockFetch({ ok: true });
+    const fetchMock = mockFetch({ ok: true, stopped: false, edgeReached: true });
     globalThis.fetch = fetchMock;
-    await client().shares.stop("e1d30211-a47f-4f23-a502-e0931e462d2d");
+    // "Already ended" is told apart from "stopped".
+    expect(await client().shares.stop("e1d30211-a47f-4f23-a502-e0931e462d2d")).toEqual({
+      ok: true,
+      stopped: false,
+      edgeReached: true,
+    });
     expect(fetchMock.mock.calls[0][0]).toBe(
       `${BASE_URL}/api/shares/e1d30211-a47f-4f23-a502-e0931e462d2d/stop`
     );
@@ -60,6 +65,20 @@ describe("shares and names", () => {
     globalThis.fetch = mockFetch(visits);
     expect(await client().shares.requests("s1")).toEqual(visits);
     await expect(client().shares.stop("../x")).rejects.toThrow("Invalid id");
+  });
+
+  it("points a short 404 at the right list", async () => {
+    globalThis.fetch = mockFetch({ error: "Share not found" }, 404);
+    const share = await client()
+      .shares.stop("missing")
+      .catch((e: Error) => e);
+    expect(String(share)).toContain("client.shares.list()");
+    expect(String(share)).not.toContain("client.endpoints.list()");
+    globalThis.fetch = mockFetch({ error: "Name not found" }, 404);
+    const name = await client()
+      .names.release("missing-name")
+      .catch((e: Error) => e);
+    expect(String(name)).toContain("client.names.list()");
   });
 
   it("reserves, releases and protects names", async () => {
@@ -137,7 +156,7 @@ if (scenario === "old") {
   process.stderr.write("error: unrecognized subcommand 'share'\\n");
   process.exit(2);
 }
-out({ event: "live", url: "https://calm-river-7f2a-free.sharehooks.cc", name: "calm-river-7f2a-free", expiresAt: "2026-11-10T20:00:00Z", notice: true, password: false });
+out({ event: "live", url: "https://sample-preview-1234-free.sharehooks.cc", name: "sample-preview-1234-free", expiresAt: "2026-11-10T20:00:00Z", notice: true, password: false });
 out({ event: "request", method: "GET", path: "/", status: 200, ms: 4 });
 process.on("SIGINT", () => { out({ event: "stopped", reason: "you stopped it on this computer" }); process.exit(0); });
 // --until-stdin-closes: what share().stop() relies on, on every platform.
@@ -177,7 +196,7 @@ describe("share()", () => {
       onEvent: (e) => events.push(e),
       onRequest: (r) => requests.push(`${r.method} ${r.path} ${r.status}`),
     });
-    expect(live.url).toBe("https://calm-river-7f2a-free.sharehooks.cc");
+    expect(live.url).toBe("https://sample-preview-1234-free.sharehooks.cc");
     expect(live.notice).toBe(true);
     expect(live.expiresAt).toBe("2026-11-10T20:00:00Z");
     expect(live.port).toBe(3000);

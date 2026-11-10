@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// teamUUID is the shape of a team ID, taken as given without a lookup.
+var teamUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // SharesService reads and stops previews of local ports (`whk share`) and
 // live tunnels (`whk tunnel --live`), and starts previews by running the
@@ -54,13 +58,35 @@ func (s *SharesService) List(ctx context.Context, opts ListSharesOptions) (*Shar
 	return &list, nil
 }
 
+// StopResult is what Stop reports. Stopped is false when the share had
+// already ended; EdgeReached is false when the edge could not be told at
+// once (it ends at the next sync).
+type StopResult struct {
+	Stopped     bool
+	EdgeReached bool
+}
+
 // Stop stops a preview or live tunnel by its ID. Its CLI is told why and
 // exits.
-func (s *SharesService) Stop(ctx context.Context, id string) error {
+func (s *SharesService) Stop(ctx context.Context, id string) (*StopResult, error) {
 	if err := validateSegment(id, "share id"); err != nil {
-		return err
+		return nil, err
 	}
-	return s.c.apiRetrying(ctx, http.MethodPost, "/shares/"+id+"/stop", nil, map[string]any{}, nil, true)
+	var out struct {
+		Stopped     *bool `json:"stopped"`
+		EdgeReached *bool `json:"edgeReached"`
+	}
+	if err := s.c.apiRetrying(ctx, http.MethodPost, "/shares/"+id+"/stop", nil, map[string]any{}, &out, true); err != nil {
+		return nil, err
+	}
+	result := &StopResult{Stopped: true, EdgeReached: true}
+	if out.Stopped != nil {
+		result.Stopped = *out.Stopped
+	}
+	if out.EdgeReached != nil {
+		result.EdgeReached = *out.EdgeReached
+	}
+	return result, nil
 }
 
 // Requests returns the last visitor requests to a preview, newest first,
@@ -116,16 +142,18 @@ func (s *NamesService) List(ctx context.Context) (*NameList, error) {
 	return &list, nil
 }
 
-// Reserve keeps a name. With a team ID (see NameList.Teams) the name belongs
-// to that team, counts against the team's names, and every member may
-// share under it; an empty teamID keeps it as the account's own.
-func (s *NamesService) Reserve(ctx context.Context, name, teamID string) (*TunnelName, error) {
+// Reserve keeps a name. With a team (its ID, see NameList.Teams, or the
+// name of one of your teams) the name belongs to that team, counts against
+// the team's names, and every member may share under it; an empty team
+// keeps it as the account's own.
+func (s *NamesService) Reserve(ctx context.Context, name, team string) (*TunnelName, error) {
 	if err := validateSegment(name, "name"); err != nil {
 		return nil, err
 	}
 	body := map[string]string{"name": name}
-	if teamID != "" {
-		if err := validateSegment(teamID, "team id"); err != nil {
+	if team != "" {
+		teamID, err := s.teamID(ctx, team)
+		if err != nil {
 			return nil, err
 		}
 		body["team"] = teamID
@@ -561,4 +589,39 @@ func (o rawObject) person(key string) *TunnelPerson {
 		return &TunnelPerson{ID: p.str("id"), Email: p.str("email")}
 	}
 	return nil
+}
+
+// teamID is a team ID as given, or the ID of the one team of yours with
+// that name (case-insensitive).
+func (s *NamesService) teamID(ctx context.Context, team string) (string, error) {
+	if teamUUID.MatchString(team) {
+		return team, nil
+	}
+	var teams []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := s.c.api(ctx, http.MethodGet, "/teams", nil, nil, &teams); err != nil {
+		return "", err
+	}
+	var found []string
+	for _, t := range teams {
+		if t.ID == team {
+			return t.ID, nil
+		}
+		if strings.EqualFold(t.Name, team) {
+			found = append(found, t.ID)
+		}
+	}
+	switch len(found) {
+	case 1:
+		if err := validateSegment(found[0], "team id"); err != nil {
+			return "", err
+		}
+		return found[0], nil
+	case 0:
+		return "", fmt.Errorf("webhookscc: no team of yours is called %q", team)
+	default:
+		return "", fmt.Errorf("webhookscc: several of your teams are called %q: pass the team ID", team)
+	}
 }

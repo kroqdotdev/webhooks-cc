@@ -318,12 +318,24 @@ pub async fn list(client: &ApiClient, ended: bool, json: bool) -> Result<()> {
         client.list_names().await.ok()
     };
     if json {
+        // Everything the API sent, as it sent it, and the names one may
+        // share under beside it (`nameList`, the GET /api/tunnel-names
+        // answer; `names` stays the API's own summary).
         let mut value = serde_json::to_value(&result)?;
         if let (Some(names), Some(object)) = (&names, value.as_object_mut()) {
-            object.insert("names".to_string(), serde_json::to_value(names)?);
+            object.insert("nameList".to_string(), serde_json::to_value(names)?);
         }
         println!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(());
+    }
+    if result.suspended {
+        println!(
+            "  {} Sharing is suspended on this account.",
+            crate::cli::output::red("●")
+        );
+    }
+    if let Some(message) = result.usage.as_ref().and_then(|u| u.message.as_deref()) {
+        println!("  {} {}", dim("●"), sanitize_line(message));
     }
     print_shares(&result, ended);
     if let Some(limits) = &result.limits {
@@ -334,6 +346,9 @@ pub async fn list(client: &ApiClient, ended: bool, json: bool) -> Result<()> {
         && let Some(line) = names_line(names)
     {
         println!("  {}", dim(&line));
+    }
+    for hint in &result.hints {
+        println!("  {}", dim(&sanitize_line(hint)));
     }
     Ok(())
 }
@@ -732,6 +747,40 @@ mod tests {
 
     fn share(id: &str, name: &str) -> Share {
         serde_json::from_value(serde_json::json!({ "id": id, "name": name })).unwrap()
+    }
+
+    #[test]
+    fn the_share_list_keeps_everything_the_api_sent() {
+        let api = serde_json::json!({
+            "shares": [{ "id": "sh_1", "name": "acme", "notice": true, "startedBy": null, "future": 1 }],
+            "usage": { "month": "2026-11", "bytes": 5, "limitBytes": 10, "over": true,
+                       "resetsAt": "2026-12-01T00:00:00Z", "message": "Paused until 1 December." },
+            "limits": { "plan": "free", "label": "Free", "shares": 1, "reservedNames": 0,
+                        "sessionMinutes": 120, "dataGb": 1, "passwords": false, "notice": true },
+            "names": { "limit": 0, "used": 0, "usable": 0 },
+            "suspended": true,
+            "hints": ["Stop one with whk shares stop <id or name>."],
+            "somethingNew": { "a": 1 }
+        });
+        let parsed: SharesResponse = serde_json::from_value(api.clone()).unwrap();
+        assert!(parsed.suspended);
+        assert_eq!(parsed.hints.len(), 1);
+        assert_eq!(
+            parsed.usage.as_ref().unwrap().message.as_deref(),
+            Some("Paused until 1 December.")
+        );
+        assert_eq!(
+            parsed.limits.as_ref().unwrap().label.as_deref(),
+            Some("Free")
+        );
+        let back = serde_json::to_value(&parsed).unwrap();
+        for key in ["suspended", "hints", "names", "somethingNew"] {
+            assert_eq!(back[key], api[key], "{key}");
+        }
+        assert_eq!(back["usage"]["message"], api["usage"]["message"]);
+        assert_eq!(back["limits"]["label"], api["limits"]["label"]);
+        assert_eq!(back["shares"][0]["notice"], true);
+        assert_eq!(back["shares"][0]["future"], 1);
     }
 
     #[test]

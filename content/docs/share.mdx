@@ -29,7 +29,7 @@ whk share 3000
 
 ```
   ● Sharing
-  Link:          https://calm-river-7f2a.sharehooks.cc
+  Link:          https://sample-preview-1234.sharehooks.cc
   Forwarding to: localhost:3000
 ```
 
@@ -63,7 +63,7 @@ Every share gets a random name unless you pick one:
 
 | Plan                | Link                                                         |
 | ------------------- | ------------------------------------------------------------ |
-| Free                | A random name ending in `-free`: `calm-river-7f2a-free.sharehooks.cc` |
+| Free                | A random name ending in `-free`: `sample-preview-1234-free.sharehooks.cc` |
 | Pro, Business, teams | A random name, or a name you reserved: `acme.sharehooks.cc` |
 
 Reserve names once and share under them as often as you like, so a link you sent last week still works next time. `whk share --name acme` reserves `acme` for you if nobody holds it yet, and it counts against your plan's names like one reserved with `whk names reserve`:
@@ -120,7 +120,7 @@ Names past your plan's count are kept, oldest first counted, but nothing can be 
 | Teams         | 3 per member   | 3 per seat, the team's  | No limit       | 25 GB per member  | Yes       |
 | Team Business | 10 per member  | 20 per seat, the team's | No limit       | 150 GB per member | Yes       |
 
-Data is what visitors download from your shares, counted per calendar month in UTC. Your plan is the best of your own plan and any subscribed team you belong to. When the month's data runs out, your previews show "This preview is paused" until the month turns (or you move to a bigger plan), and `whk share` says so. One visitor can take at most 250 MB a day from a share, so a stranger cannot use up your month.
+Data is what passes through your shares both ways (what visitors download and what they upload, WebSockets included), counted per calendar month in UTC. Your plan is the best of your own plan and any subscribed team you belong to. When the month's data runs out, your previews show "This preview is paused" until the month turns (or you move to a bigger plan), and `whk share` says so. One visitor can move at most 250 MB a day through a share, so a stranger cannot use up your month.
 
 A Free share ends after 2 hours; run `whk share` again for a new one. Each share also has a request rate limit (50 requests a second, with room for a burst of a few hundred for a page load), and each visitor 25 a second.
 
@@ -161,7 +161,7 @@ Revoking the API key a share was started with stops it too, even while the CLI i
 `--json` prints one JSON object per line instead of the banner, for scripts and test runners:
 
 ```json
-{"event":"live","url":"https://calm-river-7f2a.sharehooks.cc","name":"calm-river-7f2a","expiresAt":null,"notice":false,"password":false}
+{"event":"live","url":"https://sample-preview-1234.sharehooks.cc","name":"sample-preview-1234","expiresAt":null,"notice":false,"password":false}
 {"event":"request","method":"GET","path":"/","status":200,"ms":12}
 {"event":"stopped","reason":"you stopped it on webhooks.cc"}
 ```
