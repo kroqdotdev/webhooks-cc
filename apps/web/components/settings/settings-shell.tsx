@@ -36,6 +36,7 @@ const ACCOUNT_ITEMS: NavItem[] = [
   { href: "/account/plan", label: "Plan and usage" },
   { href: "/account/api-keys", label: "API keys" },
   { href: "/account/agents", label: "Connected agents" },
+  { href: "/account/shares", label: "Shares" },
   { href: "/account/share-links", label: "Share links" },
   { href: "/account/domains", label: "Domains" },
   { href: "/account/security", label: "Security" },
@@ -144,7 +145,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
           ref={keepTitleFirst}
         >{`${titleLabel} | ${onAccount ? "Account" : "Teams"} | ${site.name}`}</title>
       )}
-      {/* Nine account pages and the teams do not fit a phone's width, so
+      {/* Ten account pages and the teams do not fit a phone's width, so
           narrow screens pick the page from a list. */}
       <nav aria-label="Settings" className="lg:hidden mb-6">
         <Select value={activeHref} onValueChange={(href) => router.push(href)}>
