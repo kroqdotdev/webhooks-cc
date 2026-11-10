@@ -1393,3 +1393,353 @@ class BuiltRequest:
     url: str
     headers: dict[str, str]
     body: str | bytes | None
+
+
+# --- sharing: whk share previews and whk tunnel --live sessions -------------------------
+
+
+def _str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+@dataclass(frozen=True)
+class TunnelPerson:
+    """Who started a teammate's share, or reserved a name: ``id`` and ``email``."""
+
+    id: str
+    email: str
+
+    @classmethod
+    def from_value(cls, value: Any) -> TunnelPerson | None:
+        if isinstance(value, Mapping):
+            return cls(id=str(value.get("id") or ""), email=str(value.get("email") or ""))
+        if isinstance(value, str) and value:
+            return cls(id="", email=value)
+        return None
+
+
+@dataclass(frozen=True)
+class TunnelShare:
+    """A ``whk share`` preview, or a ``whk tunnel --live`` session (``kind`` ``"live"``).
+
+    Times are ISO 8601 strings, as the API sends them.
+    """
+
+    id: str
+    kind: Literal["share", "live"]
+    name: str | None
+    """The preview's name, or ``None`` for a live session."""
+    url: str | None
+    """The preview's link, or the capture URL for a live session."""
+    endpoint_slug: str | None
+    """The endpoint, for a live session."""
+    client: str
+    """What it runs on: ``"laptop, macOS"``."""
+    started_at: str
+    ended_at: str | None
+    """``None`` while it runs."""
+    end_reason: str | None
+    """Why it ended, in words."""
+    expires_at: str | None
+    """When the plan's session time runs out, or ``None`` without a limit."""
+    bytes: int
+    """Data sent to visitors."""
+    requests: int
+    password: bool
+    """Whether visitors need a password."""
+    notice: bool
+    """Whether visitors see a short notice before the page."""
+    mine: bool
+    """``False`` for a teammate's share under a team name, or a teammate's live
+    tunnel on your endpoint."""
+    started_by: TunnelPerson | None
+    """Who started it, for a teammate's share."""
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelShare:
+        return cls(
+            id=str(data.get("id") or ""),
+            kind="live" if data.get("kind") == "live" else "share",
+            name=_str_or_none(data.get("name")),
+            url=_str_or_none(data.get("url")),
+            endpoint_slug=_str_or_none(data.get("endpointSlug")),
+            client=str(data.get("client") or ""),
+            started_at=str(data.get("startedAt") or ""),
+            ended_at=_str_or_none(data.get("endedAt")),
+            end_reason=_str_or_none(data.get("endReason")),
+            expires_at=_str_or_none(data.get("expiresAt")),
+            bytes=int(_number(data.get("bytes"))),
+            requests=int(_number(data.get("requests"))),
+            password=data.get("password") is True,
+            notice=data.get("notice") is True,
+            mine=data.get("mine") is not False,
+            started_by=TunnelPerson.from_value(data.get("startedBy")),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelUsage:
+    """This month's shared data (UTC month)."""
+
+    month: str
+    """``"2026-11"``."""
+    bytes: int
+    limit_bytes: int
+    over: bool
+    """``True`` once the month's data is used: previews pause until ``resets_at``."""
+    resets_at: str
+    message: str | None = None
+    """Why previews are paused and when they open again, while ``over``."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelUsage:
+        return cls(
+            month=str(data.get("month") or ""),
+            bytes=int(_number(data.get("bytes"))),
+            limit_bytes=int(_number(data.get("limitBytes"))),
+            over=data.get("over") is True,
+            resets_at=str(data.get("resetsAt") or ""),
+            message=_str_or_none(data.get("message")),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelLimits:
+    """What the account's plan allows for sharing."""
+
+    plan: str
+    shares: int
+    """Previews at once."""
+    reserved_names: int
+    session_minutes: int | None
+    """Minutes a preview may run, or ``None`` without a limit."""
+    data_gb: int
+    """Data a month, in GB."""
+    passwords: bool
+    notice: bool
+    """Whether visitors see a short notice before the page."""
+    label: str | None = None
+    """The plan as people read it: ``"Pro"``, ``"Team Business"``."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelLimits:
+        return cls(
+            plan=str(data.get("plan") or ""),
+            shares=int(_number(data.get("shares"))),
+            reserved_names=int(_number(data.get("reservedNames"))),
+            session_minutes=_int_or_none(data.get("sessionMinutes")),
+            data_gb=int(_number(data.get("dataGb"))),
+            passwords=data.get("passwords") is True,
+            notice=data.get("notice") is True,
+            label=_str_or_none(data.get("label")),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelNamesSummary:
+    """Where the account stands on reserved names."""
+
+    limit: int
+    """Your own names (outside teams) the plan allows."""
+    used: int
+    """Your own names."""
+    usable: int
+    """Names you may share under now, your own and your teams'."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelNamesSummary:
+        return cls(
+            limit=int(_number(data.get("limit"))),
+            used=int(_number(data.get("used"))),
+            usable=int(_number(data.get("usable"))),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelShareList:
+    """``shares.list()``: previews and live tunnels with the month's data and the limits.
+
+    ``hints`` are next steps as ``whk`` commands, so an agent never needs the
+    dashboard; ``suspended`` is set when staff suspended sharing on the account.
+    """
+
+    shares: list[TunnelShare]
+    usage: TunnelUsage
+    limits: TunnelLimits
+    names: TunnelNamesSummary | None = None
+    suspended: bool = False
+    hints: list[str] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelShareList:
+        shares = data.get("shares")
+        usage = data.get("usage")
+        limits = data.get("limits")
+        names = data.get("names")
+        return cls(
+            shares=[TunnelShare.from_dict(s) for s in shares if isinstance(s, Mapping)]
+            if isinstance(shares, list)
+            else [],
+            usage=TunnelUsage.from_dict(usage if isinstance(usage, Mapping) else {}),
+            limits=TunnelLimits.from_dict(limits if isinstance(limits, Mapping) else {}),
+            names=TunnelNamesSummary.from_dict(names) if isinstance(names, Mapping) else None,
+            suspended=data.get("suspended") is True,
+            hints=_str_list(data.get("hints")),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelVisit:
+    """One visitor request to a preview, from the edge's memory (no addresses)."""
+
+    method: str
+    path: str
+    status: int
+    ms: int
+    bytes: int
+    at: str
+    country: str | None
+    device: str
+    """``"phone"``, ``"tablet"``, ``"computer"``, ``"bot"`` or ``"unknown"``."""
+    visitor: int
+    """1 for the first visitor seen, 2 for the next."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelVisit:
+        return cls(
+            method=str(data.get("method") or ""),
+            path=str(data.get("path") or ""),
+            status=int(_number(data.get("status"))),
+            ms=int(_number(data.get("ms"))),
+            bytes=int(_number(data.get("bytes"))),
+            at=str(data.get("at") or ""),
+            country=_str_or_none(data.get("country")),
+            device=str(data.get("device") or "unknown"),
+            visitor=int(_number(data.get("visitor"))),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelVisits:
+    """``shares.requests()``: the last visitor requests, newest first.
+
+    ``available`` is ``False`` when the edge could not be asked just now.
+    """
+
+    available: bool
+    requests: list[TunnelVisit]
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelVisits:
+        requests = data.get("requests")
+        return cls(
+            available=data.get("available") is not False,
+            requests=[TunnelVisit.from_dict(r) for r in requests if isinstance(r, Mapping)]
+            if isinstance(requests, list)
+            else [],
+        )
+
+
+@dataclass(frozen=True)
+class TunnelTeamRef:
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class TunnelName:
+    """A reserved preview name: ``<name>.sharehooks.cc``."""
+
+    name: str
+    url: str | None
+    team: TunnelTeamRef | None
+    """The team it belongs to, so every member may share under it."""
+    reserved_by: TunnelPerson | None
+    mine: bool
+    password: bool
+    """Whether previews under it need a password."""
+    live: bool
+    """Whether a preview runs under it now."""
+    usable: bool
+    """Whether it can be shared under now: ``False`` for names past the plan's (or
+    the team's) count and for names of a team whose subscription ended."""
+    created_at: str
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelName:
+        team = data.get("team")
+        return cls(
+            name=str(data.get("name") or ""),
+            url=_str_or_none(data.get("url")),
+            team=TunnelTeamRef(id=str(team.get("id") or ""), name=str(team.get("name") or ""))
+            if isinstance(team, Mapping)
+            else None,
+            reserved_by=TunnelPerson.from_value(data.get("reservedBy")),
+            mine=data.get("mine") is not False,
+            password=data.get("password") is True,
+            live=data.get("live") is True,
+            usable=data.get("usable") is not False,
+            created_at=str(data.get("createdAt") or ""),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelTeamNameCount:
+    """One team's names against its cap (the plan's names per seat times its seats)."""
+
+    id: str
+    name: str
+    active: bool
+    """Whether the team's subscription is live; a lapsed team's names cannot be used."""
+    limit: int
+    used: int
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelTeamNameCount:
+        return cls(
+            id=str(data.get("id") or ""),
+            name=str(data.get("name") or ""),
+            active=data.get("active") is not False,
+            limit=int(_number(data.get("limit"))),
+            used=int(_number(data.get("used"))),
+        )
+
+
+@dataclass(frozen=True)
+class TunnelNameList:
+    """``names.list()``: your names and your teams' names, with the counts."""
+
+    names: list[TunnelName]
+    limit: int
+    """Your own names (outside teams) the plan allows."""
+    used: int
+    """Your own names."""
+    plan: str | None = None
+    """The plan your sharing limits come from (``"pro"``, ``"team_business"``)."""
+    teams: list[TunnelTeamNameCount] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> TunnelNameList:
+        names = data.get("names")
+        teams = data.get("teams")
+        return cls(
+            names=[TunnelName.from_dict(n) for n in names if isinstance(n, Mapping)]
+            if isinstance(names, list)
+            else [],
+            limit=int(_number(data.get("limit"))),
+            used=int(_number(data.get("used"))),
+            plan=_str_or_none(data.get("plan")),
+            teams=[TunnelTeamNameCount.from_dict(t) for t in teams if isinstance(t, Mapping)]
+            if isinstance(teams, list)
+            else [],
+            raw=dict(data),
+        )

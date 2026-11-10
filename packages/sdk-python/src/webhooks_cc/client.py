@@ -77,8 +77,13 @@ from .models import (
     RequestPage,
     ResponsePreview,
     SendTestEmailResult,
+    TunnelName,
+    TunnelNameList,
+    TunnelShareList,
+    TunnelVisits,
     UsageInfo,
 )
+from .share import LiveShare, ShareEvent, ShareRequestEvent, share
 from .templates import TEMPLATE_METADATA, build_template_request
 
 if TYPE_CHECKING:
@@ -375,6 +380,8 @@ class WebhooksCC:
         self.emails = Emails(self)
         self.forwarding = Forwarding(self)
         self.destinations = Destinations(self)
+        self.shares = Shares(self)
+        self.names = Names(self)
 
     @classmethod
     def _for_agent(
@@ -565,6 +572,14 @@ class WebhooksCC:
 
     def _auth(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._bearer()}"}
+
+    def _agent_file(self) -> str | None:
+        """The credential file of the connected agent this client acts for, if any, so
+        ``shares.start()`` runs whk on that same connection."""
+        binding = self._tokens._binding if self._tokens is not None else None
+        if binding is None or binding.name != "claimed":
+            return None
+        return str(binding.store.path)
 
     def _api(
         self,
@@ -1556,6 +1571,148 @@ class Forwarding:
         """
         _validate_segment(slug, "endpoint slug")
         return str(self._client._api("POST", f"/endpoints/{slug}/forwarding")["secret"])
+
+
+_UUID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
+
+
+class Shares:
+    """Previews of local sites (``whk share``) and live tunnels (``whk tunnel --live``).
+
+    Previews are served at ``<name>.sharehooks.cc``; Free previews get a random
+    name ending in ``-free`` and a time limit. Everything here works with an API
+    key or a connected agent, so an agent never needs the dashboard.
+    """
+
+    def __init__(self, client: WebhooksCC) -> None:
+        self._client = client
+
+    def list(self, state: Literal["live", "ended"] | None = None) -> TunnelShareList:
+        """Your previews and live tunnels (live first, then the latest that ended),
+        with this month's data, your limits, where you stand on names, and ``hints``:
+        next steps as ``whk`` commands."""
+        if state is not None and state not in ("live", "ended"):
+            raise ValueError('state must be "live" or "ended"')
+        params = {"state": state} if state else None
+        return TunnelShareList.from_dict(self._client._api("GET", "/shares", params=params))
+
+    def stop(self, share_id: str) -> None:
+        """Stop a preview or live tunnel. Its CLI is told why and exits."""
+        _validate_segment(share_id, "share id")
+        self._client._api("POST", f"/shares/{share_id}/stop", body={})
+
+    def requests(self, share_id: str) -> TunnelVisits:
+        """The last visitor requests to a preview (no addresses, a number per
+        visitor), newest first."""
+        _validate_segment(share_id, "share id")
+        return TunnelVisits.from_dict(self._client._api("GET", f"/shares/{share_id}/requests"))
+
+    def start(
+        self,
+        port: int,
+        *,
+        name: str | None = None,
+        password: str | None = None,
+        whk_path: str | None = None,
+        tunnel_url: str | None = None,
+        on_event: Callable[[ShareEvent], None] | None = None,
+        on_request: Callable[[ShareRequestEvent], None] | None = None,
+        on_notice: Callable[[str], None] | None = None,
+        timeout: float = 60.0,
+    ) -> LiveShare:
+        """Share a local port at a public link with this client's account, by running
+        the whk CLI (see :func:`webhooks_cc.share`). Returns once the link works.
+
+        A client with an API key passes it to whk; one acting for a connected agent
+        has whk read the same agent credential file, so the share belongs to the
+        account this client sees, never this machine's own whk login.
+        """
+        client = self._client
+        common: dict[str, Any] = {
+            "name": name,
+            "password": password,
+            "whk_path": whk_path,
+            "base_url": client._base_url,
+            "tunnel_url": tunnel_url,
+            "on_event": on_event,
+            "on_request": on_request,
+            "on_notice": on_notice,
+            "timeout": timeout,
+        }
+        if client._api_key:
+            return share(port, api_key=client._api_key, **common)
+        agent_file = client._agent_file()
+        if agent_file is not None:
+            return share(port, auth="agent", agent_file=agent_file, **common)
+        raise WebhooksCCError(
+            0,
+            "shares.start() needs a client with an API key or one from "
+            "WebhooksCC.connected(): whk must share as the same account.",
+        )
+
+
+class Names:
+    """Reserved preview names (Pro and Business): ``<name>.sharehooks.cc``.
+
+    Your own names count against your plan; a team's names count against the team
+    (the plan's names per seat times its seats).
+    """
+
+    def __init__(self, client: WebhooksCC) -> None:
+        self._client = client
+
+    def list(self) -> TunnelNameList:
+        """Your names and your teams' names, with how many each may keep."""
+        return TunnelNameList.from_dict(self._client._api("GET", "/tunnel-names"))
+
+    def reserve(self, name: str, *, team: str | None = None) -> TunnelName:
+        """Reserve a name. With ``team`` (a team id, or the name of one of your teams)
+        it belongs to that team and every member may share under it."""
+        _validate_segment(name, "name")
+        body: dict[str, Any] = {"name": name}
+        if team:
+            body["team"] = self._team_id(team)
+        data = self._client._api("POST", "/tunnel-names", body=body)
+        shown = data.get("name") if isinstance(data, Mapping) else None
+        return TunnelName.from_dict(shown if isinstance(shown, Mapping) else {"name": name})
+
+    def release(self, name: str) -> None:
+        """Release a name you reserved (or, for a team name, as the team's owner).
+        Previews running under it stop."""
+        _validate_segment(name, "name")
+        self._client._api("DELETE", f"/tunnel-names/{name}")
+
+    def set_password(self, name: str, password: str) -> None:
+        """Put a password on every preview under this name (8 to 200 characters)."""
+        _validate_segment(name, "name")
+        if not isinstance(password, str) or not 8 <= len(password) <= 200:
+            raise ValueError("password must be 8 to 200 characters")
+        self._client._api("PUT", f"/tunnel-names/{name}/password", body={"password": password})
+
+    def clear_password(self, name: str) -> None:
+        """Remove the name's password."""
+        _validate_segment(name, "name")
+        self._client._api("DELETE", f"/tunnel-names/{name}/password")
+
+    def _team_id(self, team: str) -> str:
+        """A team id as given, or the id of the one team of yours with that name."""
+        if _UUID.match(team):
+            return team
+        teams = self._client._api("GET", "/teams")
+        rows = teams if isinstance(teams, builtins.list) else []
+        exact = [t for t in rows if isinstance(t, Mapping) and t.get("id") == team]
+        if exact:
+            return str(exact[0]["id"])
+        named = [
+            t
+            for t in rows
+            if isinstance(t, Mapping) and str(t.get("name") or "").lower() == team.lower()
+        ]
+        if len(named) == 1:
+            return str(named[0]["id"])
+        if not named:
+            raise ValueError(f"No team of yours is called {team!r}")
+        raise ValueError(f"Several of your teams are called {team!r}: pass the team id")
 
 
 def _layouts_body(layouts: Sequence[Mapping[str, Any] | Layout]) -> list[dict[str, Any]]:

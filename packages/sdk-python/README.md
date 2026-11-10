@@ -194,6 +194,19 @@ for request in client.requests.subscribe(endpoint.slug, timeout="10m", reconnect
     print(request.method, request.path)
 ```
 
+## Share a local site
+
+`client.shares.start()` puts a port on this computer at a public link on sharehooks.cc by running the `whk` CLI ([install it](https://webhooks.cc/docs/cli)), as the client's own account (its API key, or the connected agent's credential file). It returns once the link works; leaving the `with` block stops the share.
+
+```python
+with client.shares.start(3000) as live:
+    print(live.url)  # https://calm-river-7f2a-free.sharehooks.cc on Free
+    for event in live.events():  # visitor requests, notices, reconnects
+        print(event.event, event.data)
+```
+
+`webhooks_cc.share(3000)` does the same with whk's own login or `WHK_API_KEY`. A password (Pro and Business) goes to whk through the environment, never the command line. `client.shares.list()` gives your previews and live tunnels with this month's data, your plan's limits and `hints` (next steps as `whk` commands); `client.shares.stop(id)` and `client.shares.requests(id)` stop one and read its visitor log. `client.names` reserves names (`reserve("acme-demo")`, or `team=` for a team's), releases them and sets their passwords. A request relayed by `whk tunnel --live` carries the app's answer in `request.live_response`.
+
 ## No account: the agent sandbox
 
 An AI agent can capture webhooks before anyone signs up. `WebhooksCC.sandbox()` registers through [auth.md](https://webhooks.cc/auth.md), solves a short proof of work (a few seconds of CPU) and returns a sandbox: up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. Sandbox endpoints only capture: no mock responses, forwarding or email.
