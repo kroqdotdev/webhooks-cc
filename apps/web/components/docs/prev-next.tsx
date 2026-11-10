@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SiteLink } from "@/components/nav/site-link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
 interface NavLink {
@@ -14,7 +14,7 @@ export function PrevNextNav({ prev, next }: { prev: NavLink | null; next: NavLin
     <nav aria-label="Page navigation" className="mt-16 pt-8 border-t-strong border-line">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {prev ? (
-          <Link
+          <SiteLink
             href={prev.href}
             className="group flex items-center gap-3 p-4 rounded-lg border-strong border-line bg-card shadow-raised-sm hover:shadow-raised hover:-translate-x-(--press) hover:-translate-y-(--press) transition-all no-underline"
           >
@@ -23,12 +23,12 @@ export function PrevNextNav({ prev, next }: { prev: NavLink | null; next: NavLin
               <p className="text-xs text-muted-foreground mb-0.5">{prev.section}</p>
               <p className="font-bold text-foreground">{prev.title}</p>
             </div>
-          </Link>
+          </SiteLink>
         ) : (
           <div />
         )}
         {next ? (
-          <Link
+          <SiteLink
             href={next.href}
             className="group flex items-center gap-3 p-4 rounded-lg border-strong border-line bg-card shadow-raised-sm hover:shadow-raised hover:-translate-x-(--press) hover:-translate-y-(--press) transition-all no-underline"
           >
@@ -37,7 +37,7 @@ export function PrevNextNav({ prev, next }: { prev: NavLink | null; next: NavLin
               <p className="font-bold text-foreground">{next.title}</p>
             </div>
             <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors ml-auto" />
-          </Link>
+          </SiteLink>
         ) : (
           <div />
         )}

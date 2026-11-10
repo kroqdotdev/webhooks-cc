@@ -30,7 +30,7 @@ export interface MailhooksFeature {
   steps: HowToStep[];
   limits: string[];
   faq: FAQItem[];
-  /** The docs page (on webhooks.cc) that covers it in full. */
+  /** The docs page that covers it in full (served on both sites). */
   docs: { path: string; label: string };
   /** When the page last changed, for the sitemap. */
   updated: string;

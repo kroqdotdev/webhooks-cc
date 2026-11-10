@@ -3,7 +3,7 @@ import { CookieSettingsLink } from "@/components/providers/cookie-consent";
 import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { webhooksOrigin } from "@/lib/site";
 
-/** mailhooks.cc's footer: its own pages, and webhooks.cc's docs and legal pages. */
+/** mailhooks.cc's footer: its own pages and the docs, and webhooks.cc's legal pages. */
 export function MailhooksFooter() {
   const webhooks = webhooksOrigin();
   const columns = [
@@ -21,12 +21,12 @@ export function MailhooksFooter() {
       links: MAILHOOKS_FEATURES.map((feature) => ({ href: feature.path, label: feature.name })),
     },
     {
-      title: "Docs on webhooks.cc",
+      title: "Docs",
       links: [
-        { href: `${webhooks}/docs/layouts`, label: "Layout docs" },
-        { href: `${webhooks}/docs/email-capture`, label: "Email capture" },
-        { href: `${webhooks}/docs/forwarding`, label: "Destinations" },
-        { href: `${webhooks}/docs/plans-limits`, label: "Plans and limits" },
+        { href: "/docs/layouts", label: "Layout docs" },
+        { href: "/docs/email-capture", label: "Email capture" },
+        { href: "/docs/forwarding", label: "Destinations" },
+        { href: "/docs/plans-limits", label: "Plans and limits" },
       ],
     },
     {

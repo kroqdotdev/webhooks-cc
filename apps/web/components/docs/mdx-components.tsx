@@ -1,5 +1,6 @@
 import type { MDXComponents } from "mdx/types";
 import Link from "next/link";
+import { SiteLink } from "@/components/nav/site-link";
 import { CodeBlock } from "./mdx/code-block";
 import { Callout } from "./mdx/callout";
 import { Steps, Step } from "./mdx/steps";
@@ -16,11 +17,19 @@ export const mdxComponents: MDXComponents = {
   pre: (props: React.ComponentProps<"pre">) => <CodeBlock {...props} />,
 
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
-    if (href?.startsWith("/") || href?.startsWith("#")) {
+    if (href?.startsWith("#")) {
       return (
         <Link href={href} className="text-primary-ink hover:underline font-bold" {...props}>
           {children}
         </Link>
+      );
+    }
+    if (href?.startsWith("/")) {
+      // On mailhooks.cc, pages only webhooks.cc has are linked there directly.
+      return (
+        <SiteLink href={href} className="text-primary-ink hover:underline font-bold" {...props}>
+          {children}
+        </SiteLink>
       );
     }
     return (

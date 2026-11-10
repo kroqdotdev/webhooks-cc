@@ -4,7 +4,7 @@ import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { leaveThrough } from "@/lib/leave-guard";
-import { usePathname } from "next/navigation";
+import { useSitePathname } from "@/lib/site-pathname";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
@@ -14,7 +14,6 @@ import { siteHeaderTop } from "@/lib/announcements";
 import { resetUser, trackSignOut } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { webhooksOrigin } from "@/lib/site";
 
 interface NavLink {
   href: string;
@@ -23,6 +22,8 @@ interface NavLink {
   external?: boolean;
   /** Left out of the desktop nav below lg, where the row runs out of room (the footer keeps it). */
   wideOnly?: boolean;
+  /** Marked as the current page anywhere under this path, not only at `href`. */
+  activeFor?: string;
 }
 
 const NAV_LINKS: NavLink[] = [
@@ -32,16 +33,15 @@ const NAV_LINKS: NavLink[] = [
   { href: "/blog", label: "Blog" },
 ];
 
-// mailhooks.cc keeps its docs on webhooks.cc (one copy, one canonical URL).
+// mailhooks.cc serves the docs too (app/mailhooks/docs), canonical on webhooks.cc.
 const MAILHOOKS_LINKS: NavLink[] = [
   // One name for the catalogue everywhere: the dashboard section is Layouts too.
   { href: "/parse", label: "Layout gallery" },
   { href: "/integrations", label: "Integrations", wideOnly: true },
   { href: "/pricing", label: "Pricing" },
-  // The guides page stays on this site and points into the docs on webhooks.cc;
-  // Docs goes straight there and says so.
   { href: "/guides", label: "Guides" },
-  { href: `${webhooksOrigin()}/docs/email-capture`, label: "Docs", external: true },
+  // Mail-first visitors start the docs at email capture rather than the webhook quick start.
+  { href: "/docs/email-capture", label: "Docs", activeFor: "/docs" },
 ];
 
 interface SiteHeaderProps {
@@ -97,7 +97,7 @@ export function SiteHeader({
   notFound = false,
   mobileLinks = [],
 }: SiteHeaderProps) {
-  const pathname = usePathname();
+  const pathname = useSitePathname();
   const router = useAnnouncedRouter();
   const isAuthenticated = useIsAuthenticated();
   const site = useSite();
@@ -200,12 +200,14 @@ export function SiteHeader({
               <Link
                 key={link.href}
                 href={link.href}
-                aria-current={isActive(navPath, link.href) ? "page" : undefined}
+                aria-current={isActive(navPath, link.activeFor ?? link.href) ? "page" : undefined}
                 className={cn(
                   // py-1 -my-1: a 24px hit area without moving the layout.
                   "text-sm font-medium py-1 -my-1 transition-colors hover:text-foreground",
                   link.wideOnly && "max-lg:hidden",
-                  isActive(navPath, link.href) ? "text-foreground" : "text-muted-foreground"
+                  isActive(navPath, link.activeFor ?? link.href)
+                    ? "text-foreground"
+                    : "text-muted-foreground"
                 )}
               >
                 {link.label}
@@ -263,7 +265,7 @@ export function SiteHeader({
                 <Link
                   key={link.href}
                   href={link.href}
-                  aria-current={isActive(navPath, link.href) ? "page" : undefined}
+                  aria-current={isActive(navPath, link.activeFor ?? link.href) ? "page" : undefined}
                   className="text-foreground font-medium text-lg"
                   onClick={() => setOpen(false)}
                 >

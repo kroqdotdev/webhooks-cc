@@ -18,10 +18,18 @@ export function openEndpointSite(slug: string): { site: EndpointSite | undefined
 }
 
 /**
- * Public pages both sites have: switching from one opens the same page on the
- * other site, signed in or not. Every other public page is one site's own.
+ * Public pages both sites have (the home and pricing pages, and the docs):
+ * switching from one opens the same page on the other site, signed in or
+ * not. Every other public page is one site's own.
  */
-export const SHARED_PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/pricing"]);
+export function sharedPublicPath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname === "/pricing" ||
+    pathname === "/docs" ||
+    pathname.startsWith("/docs/")
+  );
+}
 
 /**
  * One switch at a time per page: a second click would make a new ticket,
@@ -50,7 +58,7 @@ export async function switchSite(
   };
   if (!accessToken) {
     // Signed out: the same public page there, or its sign-in page on the way to an app page.
-    if (SHARED_PUBLIC_PATHS.has(nextPath)) window.location.assign(`${origin}${nextPath}`);
+    if (sharedPublicPath(nextPath)) window.location.assign(`${origin}${nextPath}`);
     else signIn();
     return;
   }

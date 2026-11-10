@@ -149,12 +149,15 @@ export const MAILHOOKS_PAGES = [
 
 /**
  * Paths mailhooks.cc answers itself: its own pages (served from
- * app/mailhooks), signing in, the app, the API and share links. Anything
- * else there is webhooks.cc's (docs, blog, comparisons, legal pages, the CLI
- * and agent flows) and redirects to it.
+ * app/mailhooks), the docs (the same pages as webhooks.cc's, canonical
+ * there), signing in, the app, the API and share links. Anything else there
+ * is webhooks.cc's (blog, comparisons, legal pages, the CLI and agent flows)
+ * and redirects to it.
  */
 const MAILHOOKS_PREFIXES = [
   ...MAILHOOKS_PAGES,
+  // app/mailhooks/docs, through next.config.ts's host rewrites.
+  "/docs",
   "/login",
   "/signup",
   "/auth",

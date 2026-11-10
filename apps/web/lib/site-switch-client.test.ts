@@ -21,6 +21,8 @@ describe("switchSite, signed out", () => {
     expect(assign).toHaveBeenCalledWith("https://mailhooks.cc/pricing");
     await switchSite("webhooks", "/", null);
     expect(assign).toHaveBeenLastCalledWith("https://webhooks.cc/");
+    await switchSite("webhooks", "/docs/layouts", null);
+    expect(assign).toHaveBeenLastCalledWith("https://webhooks.cc/docs/layouts");
   });
 
   it("goes through sign-in on the way to an app page", async () => {

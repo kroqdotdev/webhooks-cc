@@ -43,7 +43,9 @@ test.afterAll(async () => {
   if (user) await deleteTestUser(user.id);
 });
 
-test("mailhooks.cc has its own pages, and sends webhooks.cc's elsewhere", async ({ page }) => {
+test("mailhooks.cc has its own pages and the docs, and sends webhooks.cc's elsewhere", async ({
+  page,
+}) => {
   await page.goto(`${MAIL}/`);
   await expect(page).toHaveTitle(/^mailhooks\.cc: /);
   const header = page.getByRole("banner");
@@ -61,10 +63,23 @@ test("mailhooks.cc has its own pages, and sends webhooks.cc's elsewhere", async 
   await expect(page.getByRole("heading", { name: "Parse Shopify order emails" })).toBeVisible();
   await expect(page.getByText('"customer": "Jane Doe"')).toBeVisible();
 
-  // Docs live on webhooks.cc.
+  // The docs are served here too, under this site's header, canonical on webhooks.cc.
   const response = await page.goto(`${MAIL}/docs/layouts`);
-  expect(new URL(page.url()).host).not.toBe(new URL(MAIL!).host);
+  expect(new URL(page.url()).host).toBe(new URL(MAIL!).host);
   expect(response?.ok()).toBe(true);
+  await expect(page.getByRole("heading", { name: "Layouts", level: 1 })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Docs" })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    /^https?:\/\/[^/]+\/docs\/layouts$/
+  );
+  expect(
+    new URL((await page.locator('link[rel="canonical"]').getAttribute("href"))!).host
+  ).not.toBe(new URL(MAIL!).host);
+
+  // Pages only webhooks.cc has still go there.
+  await page.goto(`${MAIL}/blog`);
+  expect(new URL(page.url()).host).not.toBe(new URL(MAIL!).host);
 });
 
 test("an unknown path on mailhooks.cc answers 404 with its own page", async ({ page }) => {

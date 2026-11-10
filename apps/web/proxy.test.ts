@@ -214,9 +214,32 @@ describe("proxy: two sites", () => {
   });
 
   it("sends webhooks.cc's pages from mailhooks.cc to webhooks.cc", async () => {
-    const res = await proxy(new NextRequest("https://mailhooks.cc/docs/layouts?x=1"));
+    const res = await proxy(new NextRequest("https://mailhooks.cc/blog/some-post?x=1"));
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toBe("https://webhooks.cc/docs/layouts?x=1");
+    expect(res.headers.get("location")).toBe("https://webhooks.cc/blog/some-post?x=1");
+  });
+
+  it("serves the docs on mailhooks.cc itself", async () => {
+    for (const path of ["/docs", "/docs/layouts", "/docs/sdk/testing"]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("location"), path).toBeNull();
+      expect(res.headers.get("x-middleware-request-x-whk-site"), path).toBe("mailhooks");
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBeNull();
+    }
+  });
+
+  it("marks a doc that does not exist for mailhooks.cc's own 404, not webhooks.cc's", async () => {
+    for (const path of ["/docs/no-such-doc", "/docs/sdk/no-such-doc", "/docs/layouts/extra"]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBe("1");
+    }
+    // Markdown twins have their own route; webhooks.cc answers its own 404.
+    for (const url of ["https://mailhooks.cc/docs/layouts.md", "https://webhooks.cc/docs/nope"]) {
+      const res = await proxy(new NextRequest(url));
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), url).toBeNull();
+    }
   });
 
   it("marks a path neither site serves for mailhooks.cc's own 404, without a rewrite of its own", async () => {

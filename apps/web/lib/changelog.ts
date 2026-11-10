@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.63.2";
+export const APP_VERSION = "0.64.0";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.64.0",
+    date: "2026-11-10",
+    title: "Docs on mailhooks.cc",
+    track: "web",
+    items: [
+      "mailhooks.cc serves the docs itself, under its own header and footer, so mail-first readers stay on the site they came to; each page's canonical address stays on webhooks.cc",
+      "On mailhooks.cc the header's Docs link, the footer, the Guides page and the feature pages open the docs there, and the docs' sign-up box speaks to email",
+    ],
+  },
   {
     version: "0.63.2",
     date: "2026-11-10",

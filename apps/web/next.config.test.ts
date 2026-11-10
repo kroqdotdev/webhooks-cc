@@ -144,6 +144,30 @@ describe("next.config.ts mailhooks.cc rewrites", () => {
     expect(await rewriteFor("/", { host: "mailhooks.cc" }, config)).toBe("/mailhooks");
   });
 
+  it("serves the docs on the mail host from app/mailhooks/docs", async () => {
+    const config = await mailConfig();
+    const mail = { host: "mailhooks.cc" };
+    expect(await rewriteFor("/docs", mail, config)).toBe("/mailhooks/docs");
+    expect(await rewriteFor("/docs/layouts", mail, config)).toBe("/mailhooks/docs/layouts");
+    expect(await rewriteFor("/docs/sdk/testing/stripe-vitest", mail, config)).toBe(
+      "/mailhooks/docs/sdk/testing/stripe-vitest"
+    );
+    // webhooks.cc's docs are app/docs itself.
+    expect(await rewriteFor("/docs/layouts", { host: "webhooks.cc" }, config)).toBeNull();
+  });
+
+  it("gives an agent on the mail host the same markdown twin as on webhooks.cc", async () => {
+    const config = await mailConfig();
+    const mail = { host: "mailhooks.cc" };
+    expect(await rewriteFor("/docs/layouts.md", mail, config)).toBe("/docs.md/layouts");
+    expect(
+      await rewriteFor("/docs/layouts", { ...mail, [MARKDOWN_TWIN_HEADER]: "1" }, config)
+    ).toBe("/docs.md/layouts");
+    expect(await rewriteFor("/docs", { ...mail, [MARKDOWN_TWIN_HEADER]: "1" }, config)).toBe(
+      "/docs.md"
+    );
+  });
+
   it("serves mailhooks.cc's own 404 only for a path the proxy marked on the mail host", async () => {
     const config = await mailConfig();
     const marked = { host: "mailhooks.cc", "x-whk-missing": "1" };

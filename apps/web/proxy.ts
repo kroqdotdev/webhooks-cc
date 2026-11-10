@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { NAV_SECTIONS } from "@/lib/docs-nav";
 import { layoutTemplate } from "@/lib/layout-templates";
 import { imgSrcDirective } from "@/lib/csp-img-src";
 import {
@@ -67,6 +68,24 @@ function shouldNoIndexPath(pathname: string): boolean {
 }
 
 const MAILHOOKS_PAGE_SET: ReadonlySet<string> = new Set(MAILHOOKS_PAGES);
+
+/** Every doc's path, from the docs nav (lib/docs-nav.test.ts keeps it equal to content/docs). */
+const DOC_PATHS: ReadonlySet<string> = new Set(
+  NAV_SECTIONS.flatMap((section) => section.items.map((item) => item.href)).filter(
+    (href) => href === "/docs" || href.startsWith("/docs/")
+  )
+);
+
+/**
+ * A path under /docs that is no doc. mailhooks.cc's docs are prerendered
+ * under app/mailhooks, and Next answers a slug it did not prerender with the
+ * root 404 (webhooks.cc's), so the proxy marks these for mailhooks.cc's own.
+ * Markdown twins (/docs/<slug>.md) are left to their own route.
+ */
+function unknownDoc(pathname: string): boolean {
+  if (!pathname.startsWith("/docs/") || isMarkdownTwinPath(pathname)) return false;
+  return !DOC_PATHS.has(pathname.replace(/\/+$/, ""));
+}
 
 /**
  * A path below one of mailhooks.cc's own pages that is no page: /parse/<sender>
@@ -174,7 +193,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(target.origin === origin ? target : new URL("/", origin), 307);
   }
   // Under mailhooks.cc's own pages only the catalogue's senders exist.
-  if (site === "mailhooks" && unknownMailhooksPage(pathname)) missingOnMailhooks = true;
+  if (site === "mailhooks" && (unknownMailhooksPage(pathname) || unknownDoc(pathname))) {
+    missingOnMailhooks = true;
+  }
   if (site === "webhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
     const mail = mailhooksOrigin();
     if (!mail) {
