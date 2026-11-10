@@ -82,7 +82,7 @@ export function StatusCodePicker({
   id,
   value,
   onChange,
-  label = "Status Code",
+  label = "Status code",
 }: StatusCodePickerProps) {
   const isPreset = ALL_PRESET_VALUES.includes(value);
   const [isCustom, setIsCustom] = useState(!isPreset);
@@ -180,7 +180,9 @@ export function StatusCodePicker({
           const num = parseInt(customValue);
           if (num < 100 || num > 599) {
             return (
-              <p className="text-xs text-destructive">Status code must be between 100 and 599</p>
+              <p className="text-xs text-destructive-ink">
+                Status code must be between 100 and 599
+              </p>
             );
           }
           return null;

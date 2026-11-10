@@ -124,7 +124,7 @@ export default function ApiKeysPage() {
           </div>
         ) : loadError ? (
           <div className="flex flex-wrap items-center justify-between gap-3 p-5">
-            <p className="text-sm text-destructive">Your keys could not be loaded.</p>
+            <p className="text-sm text-destructive-ink">Your keys could not be loaded.</p>
             <Button variant="outline" size="sm" onClick={() => void refresh()}>
               Try again
             </Button>
@@ -181,7 +181,7 @@ export default function ApiKeysPage() {
                         )}
                       </td>
                       <td
-                        className={`px-3 py-3 whitespace-nowrap ${expired ? "text-destructive" : ""}`}
+                        className={`px-3 py-3 whitespace-nowrap ${expired ? "text-destructive-ink" : ""}`}
                       >
                         {key.expires_at ? (
                           expired ? (
@@ -203,7 +203,7 @@ export default function ApiKeysPage() {
                               title="Delete key"
                               aria-label={`Delete key ${key.name}`}
                             >
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                              <Trash2 className="h-4 w-4 text-destructive-ink" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>

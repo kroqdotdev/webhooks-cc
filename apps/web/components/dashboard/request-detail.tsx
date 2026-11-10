@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
   Copy,
   Check,
   ChevronDown,
+  Download,
   Send,
   Settings,
   Link as LinkIcon,
@@ -14,7 +15,8 @@ import {
 } from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatBytes } from "@/types/request";
+import { formatBytes, formatFullTimestamp } from "@/types/request";
+import { hexDump, requestBodyBytes } from "@/lib/body-bytes";
 import type { Request, ClickHouseRequest } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
@@ -46,7 +48,7 @@ interface RequestDetailProps {
   note?: string | null;
   /** Callback when note changes. */
   onNoteChange?: (note: string) => void;
-  /** Callback to open endpoint settings (for "Save to Endpoint Settings" link). */
+  /** Callback to open endpoint settings (for the "Save to endpoint settings" link). */
   onOpenSettings?: () => void;
   /** Slug of the endpoint this request belongs to (used to prefill the manual-verify URL). */
   endpointSlug?: string;
@@ -72,6 +74,32 @@ interface RequestDetailProps {
  * as control characters. For exact reproduction of bodies with newlines,
  * users should use the Replay feature instead.
  */
+/**
+ * Whether a horizontally scrolling element has more content past its right
+ * edge: a tab strip fades there only then, at any width.
+ */
+export function useMoreToRight<T extends HTMLElement>() {
+  const [more, setMore] = useState(false);
+  const cleanup = useRef<(() => void) | null>(null);
+  const ref = useCallback((element: T | null) => {
+    cleanup.current?.();
+    cleanup.current = null;
+    if (!element) return;
+    const update = () =>
+      setMore(element.scrollWidth - element.clientWidth - element.scrollLeft > 1);
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    element.addEventListener("scroll", update, { passive: true });
+    update();
+    cleanup.current = () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", update);
+    };
+  }, []);
+  return [ref, more] as const;
+}
+
 function escapeForShellDoubleQuotes(str: string): string {
   return str
     .replace(/\\/g, "\\\\")
@@ -181,9 +209,21 @@ export function RequestDetail({
     }
   }, []);
 
+  const tabCounts = {
+    headers: Object.keys(request.headers).length,
+    query: Object.keys(request.queryParams).length,
+  };
   const curlCommand = useMemo(() => generateCurlCommand(request), [request]);
-  const fullTime = new Date(request.receivedAt).toLocaleString();
-  const bodyFormat = detectFormat(request.contentType, request.body);
+  const fullTime = formatFullTimestamp(request.receivedAt);
+  // The exact bytes when the body was not UTF-8 (body_raw); shown as hex and replayed as is.
+  // An octet-stream body that was valid UTF-8 is kept as text, so it reads as text.
+  const isBinary = !!request.bodyRaw;
+  const declaredFormat = detectFormat(request.contentType, request.body);
+  const bodyFormat = declaredFormat === "binary" && !isBinary ? "text" : declaredFormat;
+  const bodyBytes = useMemo(
+    () => (isBinary ? requestBodyBytes(request) : null),
+    [isBinary, request]
+  );
   const formattedBody = useMemo(
     () => (request.body ? formatBody(request.body, bodyFormat) : "(empty body)"),
     [request.body, bodyFormat]
@@ -216,19 +256,48 @@ export function RequestDetail({
   );
   const bodyView = bodyViews.includes(bodyViewChoice) ? bodyViewChoice : "formatted";
 
+  // On a phone the tab strip scrolls; keep the active tab in view (clear of the
+  // fade) without moving the page itself, which scrollIntoView could do.
+  // The desktop and phone panes can both render this view, so ids are per instance.
+  const tabIds = useId();
+  const tablistRef = useRef<HTMLDivElement>(null);
+  const [tabStripMoreRef, tabStripMore] = useMoreToRight<HTMLDivElement>();
+  const tabStripRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      tablistRef.current = element;
+      tabStripMoreRef(element);
+    },
+    [tabStripMoreRef]
+  );
+  useEffect(() => {
+    const list = tablistRef.current;
+    const active = list?.querySelector<HTMLElement>(`[role="tab"][data-tab="${tab}"]`);
+    if (!list || !active || list.scrollWidth <= list.clientWidth) return;
+    const listBox = list.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    const fade = 32;
+    if (box.left < listBox.left) list.scrollLeft += box.left - listBox.left;
+    else if (box.right > listBox.right - fade) {
+      list.scrollLeft += Math.min(box.right - listBox.right + fade, box.left - listBox.left);
+    }
+  }, [tab]);
+
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Summary bar */}
-      <div className="border-b-strong border-line px-4 py-3 shrink-0">
-        <div className="flex items-center justify-between gap-4">
+      {/* Sized by the pane, not the window: beside the list the pane can be narrow. */}
+      <div className="@container border-b-strong border-line px-4 py-3 shrink-0">
+        <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-4">
           <div className="min-w-0">
-            <div className="font-mono font-bold text-sm truncate">
+            <div className="font-mono font-bold text-sm break-all @xl:truncate">
               {request.method} {request.path}
             </div>
             <div className="text-xs text-muted-foreground font-mono mt-0.5 flex items-center gap-3 flex-wrap">
               {request.detectedProvider && <ProviderBadge provider={request.detectedProvider} />}
-              {request.detectedEvent && <span>{request.detectedEvent}</span>}
-              <span>{request.ip}</span>
+              {request.detectedEvent && (
+                <span className="min-w-0 max-w-full truncate">{request.detectedEvent}</span>
+              )}
+              {request.ip && <span>{request.ip}</span>}
               <span>{formatBytes(request.size)}</span>
               <span>{fullTime}</span>
               {request.signatureVerified != null && (
@@ -241,7 +310,8 @@ export function RequestDetail({
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          {/* On phones every action is at least 36px tall (Share and Replay render their own buttons). */}
+          <div className="flex items-center gap-2 shrink-0 max-md:[&_button]:min-h-9">
             <button
               ref={curlBtnRef}
               onClick={() => handleCopy(curlCommand, "curl")}
@@ -267,7 +337,12 @@ export function RequestDetail({
                 accessToken={share.accessToken}
               />
             )}
-            <ReplayDialog method={request.method} headers={request.headers} body={request.body} />
+            <ReplayDialog
+              method={request.method}
+              headers={request.headers}
+              body={request.body}
+              bodyBytes={bodyBytes ?? undefined}
+            />
           </div>
         </div>
       </div>
@@ -275,32 +350,76 @@ export function RequestDetail({
       {/* Note bar */}
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
-      {/* Tabs */}
-      <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => {
-              if (tab === t) return;
-              setTab(t);
-              trackRequestDetailTabChanged(t);
-            }}
-            className={cn(
-              "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line last:border-r-0 cursor-pointer transition-colors",
-              tab === t ? "bg-selected text-selected-foreground" : "bg-background hover:bg-muted"
-            )}
-          >
-            {t}
-          </button>
-        ))}
+      {/* Tabs. The strip scrolls when the tabs do not fit; a fade on the right says there is more. */}
+      <div className="shrink-0 border-b-strong border-line">
+        <div
+          ref={tabStripRef}
+          className={cn(
+            "flex overflow-x-auto [scrollbar-width:none]",
+            tabStripMore &&
+              "[mask-image:linear-gradient(to_right,#000_calc(100%-3rem),transparent)]"
+          )}
+        >
+          <div role="tablist" aria-label="Request sections" className="flex shrink-0">
+            {tabs.map((t, index) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                id={`${tabIds}-tab-${t}`}
+                data-tab={t}
+                aria-selected={tab === t}
+                aria-controls={`${tabIds}-panel`}
+                tabIndex={tab === t ? 0 : -1}
+                onClick={() => {
+                  if (tab === t) return;
+                  setTab(t);
+                  trackRequestDetailTabChanged(t);
+                }}
+                onKeyDown={(event) => {
+                  // Arrow keys move between tabs, as in any tab list.
+                  const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                  if (!step) return;
+                  event.preventDefault();
+                  const next = tabs[(index + step + tabs.length) % tabs.length];
+                  setTab(next);
+                  trackRequestDetailTabChanged(next);
+                  event.currentTarget.parentElement
+                    ?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)
+                    ?.focus();
+                }}
+                className={cn(
+                  "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line last:border-r-0 cursor-pointer transition-colors whitespace-nowrap",
+                  // Clean's tint alone is too faint, so the active tab also gets a primary underline.
+                  tab === t
+                    ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                    : "bg-background hover:bg-muted"
+                )}
+              >
+                {t}
+                {(t === "headers" || t === "query") && (
+                  <>
+                    <span className="sr-only">, </span>
+                    <span className="ml-1.5 font-mono opacity-70">{tabCounts[t]}</span>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div
+        role="tabpanel"
+        id={`${tabIds}-panel`}
+        aria-labelledby={`${tabIds}-tab-${tab}`}
+        className="flex-1 overflow-auto p-4"
+      >
         {tab === "body" && (
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2 py-0.5 text-[10px] font-bold caps rounded-sm border-strong border-line bg-muted">
+              <span className="text-[11px] font-mono font-bold caps text-muted-foreground">
                 {getFormatLabel(bodyFormat)}
               </span>
               {bodyViews.length > 1 && (
@@ -308,12 +427,14 @@ export function RequestDetail({
                   {bodyViews.map((view, i) => (
                     <button
                       key={view}
+                      type="button"
+                      aria-pressed={bodyView === view}
                       onClick={() => setBodyView(view)}
                       className={cn(
-                        "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
+                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold caps cursor-pointer transition-colors",
                         i > 0 && "border-l-strong border-line",
                         bodyView === view
-                          ? "bg-selected text-selected-foreground"
+                          ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                           : "hover:bg-muted"
                       )}
                     >
@@ -323,7 +444,7 @@ export function RequestDetail({
                 </div>
               )}
             </div>
-            {request.body && bodyView !== "schema" && (
+            {request.body && bodyView !== "schema" && !bodyBytes && (
               <BodyCopyDropdown
                 body={request.body}
                 formattedBody={formattedBody}
@@ -332,7 +453,9 @@ export function RequestDetail({
                 copied={copied}
               />
             )}
-            {bodyView === "schema" ? (
+            {bodyBytes ? (
+              <BinaryBody bytes={bodyBytes} id={requestId} />
+            ) : bodyView === "schema" ? (
               <PayloadSchemaView
                 request={request}
                 candidates={schemaCandidates}
@@ -361,7 +484,7 @@ export function RequestDetail({
               <tbody>
                 {Object.entries(request.headers).map(([key, value]) => (
                   <tr key={key} className="border-b border-foreground/20 last:border-0">
-                    <td className="pr-4 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
+                    <td className="w-px pr-6 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
                       {key}
                     </td>
                     <td className="py-1.5 break-all">{value}</td>
@@ -373,30 +496,53 @@ export function RequestDetail({
         )}
 
         {tab === "query" && (
-          <div className="ui-code overflow-x-auto">
+          <div>
             {Object.keys(request.queryParams).length > 0 ? (
-              <table className="text-sm font-mono w-full">
-                <tbody>
-                  {Object.entries(request.queryParams).map(([key, value]) => (
-                    <tr key={key} className="border-b border-foreground/20 last:border-0">
-                      <td className="pr-4 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
-                        {key}
-                      </td>
-                      <td className="py-1.5 break-all">{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="ui-code overflow-x-auto">
+                <table className="text-sm font-mono w-full">
+                  <tbody>
+                    {Object.entries(request.queryParams).map(([key, value]) => (
+                      <tr key={key} className="border-b border-foreground/20 last:border-0">
+                        <td className="w-px pr-6 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
+                          {key}
+                        </td>
+                        <td className="py-1.5 break-all">{value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
-              <span className="text-muted-foreground">(no query params)</span>
+              <p className="text-sm text-muted-foreground">This request had no query string.</p>
             )}
           </div>
         )}
 
         {tab === "raw" && (
-          <pre className="ui-code overflow-x-auto text-sm whitespace-pre-wrap break-all">
-            {request.body || "(empty body)"}
-          </pre>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-muted-foreground">
+                Raw body, {formatBytes(request.size)}
+              </span>
+              {request.body && (
+                <button
+                  type="button"
+                  onClick={() => handleCopy(request.body ?? "", "raw")}
+                  className="ui-btn-outline py-1! max-md:min-h-9 px-2.5! text-xs flex items-center gap-1.5"
+                >
+                  {copied === "raw" ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  {copied === "raw" ? "Copied" : "Copy"}
+                </button>
+              )}
+            </div>
+            <pre className="ui-code overflow-x-auto text-sm whitespace-pre-wrap break-all">
+              {request.body || "(empty body)"}
+            </pre>
+          </div>
         )}
 
         {tab === "signature" && (
@@ -521,7 +667,7 @@ function BodyCopyDropdown({
     <div className="absolute top-0 right-0" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1"
+        className="ui-btn-outline py-1! max-md:min-h-9 px-2! text-xs flex items-center gap-1"
       >
         {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         {isCopied ? "Copied!" : "Copy"}
@@ -583,7 +729,7 @@ export function NoteBar({
     return (
       <button
         onClick={() => setEditing(true)}
-        className="border-b-strong border-line px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
+        className="border-b-strong border-line px-4 py-1.5 max-md:py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
       >
         <StickyNote className="h-3 w-3" />
         Add note...
@@ -593,7 +739,7 @@ export function NoteBar({
 
   if (editing) {
     return (
-      <div className="border-b-strong border-line px-4 py-1.5 flex items-center gap-2 shrink-0">
+      <div className="border-b-strong border-line px-4 py-1.5 max-md:min-h-9 flex items-center gap-2 shrink-0">
         <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
         <input
           ref={inputRef}
@@ -610,6 +756,7 @@ export function NoteBar({
             }
           }}
           onBlur={save}
+          aria-label="Request note"
           className="flex-1 text-xs bg-transparent outline-none font-mono placeholder:text-muted-foreground min-w-0"
           placeholder="Type a note..."
         />
@@ -618,11 +765,11 @@ export function NoteBar({
   }
 
   return (
-    <div className="border-b-strong border-line px-4 py-1.5 flex items-center gap-2 shrink-0 group">
+    <div className="border-b-strong border-line px-4 py-1.5 max-md:py-0 flex items-center gap-2 shrink-0 group">
       <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
       <button
         type="button"
-        className="flex-1 text-xs font-mono truncate cursor-pointer text-left bg-transparent border-0 p-0"
+        className="flex-1 text-xs font-mono truncate cursor-pointer text-left bg-transparent border-0 p-0 max-md:min-h-9"
         onClick={() => setEditing(true)}
         aria-label="Edit request note"
       >
@@ -632,7 +779,7 @@ export function NoteBar({
         type="button"
         onClick={() => onChange("")}
         aria-label="Delete request note"
-        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 max-md:size-9 max-md:-mr-2 max-md:inline-flex max-md:items-center max-md:justify-center text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
       >
         <X className="h-3 w-3" />
       </button>
@@ -707,14 +854,49 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
         </div>
 
         {/* Keyboard hint */}
-        <p className="text-[10px] text-muted-foreground caps">
+        <p className="text-[11px] text-muted-foreground caps">
           Press{" "}
-          <kbd className="px-1 py-0.5 rounded-sm border border-foreground/30 bg-muted font-mono text-[10px]">
+          <kbd className="px-1 py-0.5 rounded-sm border border-foreground/30 bg-muted font-mono text-[11px]">
             ?
           </kbd>{" "}
           for keyboard shortcuts
         </p>
       </div>
+    </div>
+  );
+}
+
+const HEX_PREVIEW_BYTES = 512;
+
+/** A binary body: a hex preview of its first bytes and a download of all of them. */
+function BinaryBody({ bytes, id }: { bytes: Uint8Array<ArrayBuffer>; id: string }) {
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `body-${id.slice(0, 8)}.bin`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>
+          Binary body, {formatBytes(bytes.length)}.
+          {bytes.length > HEX_PREVIEW_BYTES ? ` Showing the first ${HEX_PREVIEW_BYTES} bytes.` : ""}
+        </span>
+        <button
+          type="button"
+          onClick={download}
+          className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Download body
+        </button>
+      </div>
+      <pre className="ui-code overflow-x-auto text-xs leading-relaxed">
+        {hexDump(bytes, HEX_PREVIEW_BYTES)}
+      </pre>
     </div>
   );
 }

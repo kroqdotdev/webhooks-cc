@@ -75,7 +75,7 @@ export function SupportAccess({ token }: { token: string | null }) {
     return (
       <Panel>
         {error ? (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-destructive-ink">{error}</p>
         ) : (
           <div role="status" aria-label="Loading" className="space-y-2">
             <Skeleton className="h-4 w-1/2 rounded-md" />

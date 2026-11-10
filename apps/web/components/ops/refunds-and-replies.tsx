@@ -91,7 +91,7 @@ export function OpsRefunds() {
         Approving hands a refund to the refund worker, which refunds exactly the orders listed,
         before tax. Refunds move money and cannot be undone.
       </p>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {!data ? (
         <Skeleton className="h-32 w-full rounded-md" />
       ) : !data.installed ? (
@@ -144,7 +144,7 @@ export function OpsRefunds() {
                 {refund.lastError && (
                   <>
                     <dt className="text-muted-foreground">Last error</dt>
-                    <dd className="font-mono text-xs text-destructive">{refund.lastError}</dd>
+                    <dd className="font-mono text-xs text-destructive-ink">{refund.lastError}</dd>
                   </>
                 )}
                 <dt className="text-muted-foreground">Orders</dt>
@@ -267,7 +267,7 @@ export function SavedReplies() {
         <code className="font-mono">{"{{name}}"}</code> for the person&rsquo;s first name and{" "}
         <code className="font-mono">{"{{plan}}"}</code> for their plan.
       </p>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {editing && (
         <div className="ui-card ui-card-static space-y-3">
           <label htmlFor="reply-title" className="text-sm font-medium">

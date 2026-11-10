@@ -205,6 +205,10 @@ test("an endpoint made on mailhooks.cc is listed there, not on webhooks.cc", asy
   await page.goto(`${MAIL}/dashboard?endpoint=${slugs.mailhooks}`);
   await page.getByRole("button", { name: "New Endpoint" }).click();
   const dialog = page.getByRole("dialog");
+  // Where it is listed waits behind More options, closed by default.
+  const more = dialog.getByRole("button", { name: "More options" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
   await expect(dialog.getByRole("radio", { name: "mailhooks.cc" })).toHaveAttribute(
     "aria-checked",
     "true"
@@ -223,7 +227,7 @@ test("an endpoint made on mailhooks.cc is listed there, not on webhooks.cc", asy
   // Opened on webhooks.cc by its link: shown, with where it is listed.
   await signInTestUser(page, user, "/dashboard");
   await page.goto(`/dashboard?endpoint=${slug}`);
-  await expect(page.getByText("This endpoint is listed on mailhooks.cc, not here.")).toBeVisible();
+  await expect(page.getByText("Listed on mailhooks.cc.")).toBeVisible();
 
   // Its notice opens it on mailhooks.cc, signed in there through the switch.
   await page.getByRole("button", { name: "Open it on mailhooks.cc" }).click();
@@ -241,7 +245,7 @@ test("an endpoint made on mailhooks.cc is listed there, not on webhooks.cc", asy
   expect(new URL(page.url()).searchParams.get("endpoint")).toBeNull();
   await expect(page.getByRole("banner").getByRole("combobox")).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole("banner").getByRole("combobox")).not.toContainText("Made on mail");
-  await expect(page.getByText("This endpoint is listed on mailhooks.cc, not here.")).toBeHidden();
+  await expect(page.getByText("Listed on mailhooks.cc.")).toBeHidden();
 });
 
 test("the switcher carries the cookie banner answer to the other site", async ({ browser }) => {

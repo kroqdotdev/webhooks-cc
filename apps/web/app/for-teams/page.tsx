@@ -11,7 +11,15 @@ import {
   UserPlus,
 } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
-import { JsonLd, breadcrumbSchema, faqSchema, howToSchema, type FAQItem } from "@/lib/schemas";
+import {
+  JsonLd,
+  breadcrumbSchema,
+  faqSchema,
+  howToSchema,
+  videoObjectSchema,
+  type FAQItem,
+} from "@/lib/schemas";
+import { TeamsVideo } from "@/components/landing/teams-video";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { TeamsCTA } from "@/components/landing/teams-cta";
 
@@ -164,6 +172,7 @@ export default function ForTeamsPage() {
         ])}
       />
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
+      <JsonLd data={videoObjectSchema()} />
       <JsonLd
         data={howToSchema({
           name: "How to share webhook endpoints with your team",
@@ -187,11 +196,15 @@ export default function ForTeamsPage() {
           <TeamsCTA />
           <p className="text-sm text-muted-foreground mt-4">
             Any account can create a team. Read the{" "}
-            <Link href="/docs/teams" className="text-primary font-bold hover:underline">
+            <Link href="/docs/teams" className="text-primary-ink font-bold hover:underline">
               Teams docs
             </Link>{" "}
             for every detail.
           </p>
+        </div>
+
+        <div className="ui-card ui-card-static p-0! overflow-hidden mb-12">
+          <TeamsVideo />
         </div>
 
         <section className="mb-12">
@@ -199,7 +212,7 @@ export default function ForTeamsPage() {
           <div className="grid sm:grid-cols-2 gap-4">
             {USE_CASES.map((item) => (
               <div key={item.title} className="ui-card ui-card-static">
-                <item.icon className="h-5 w-5 text-primary mb-3" aria-hidden="true" />
+                <item.icon className="h-5 w-5 text-primary-ink mb-3" aria-hidden="true" />
                 <h3 className="font-bold mb-1.5">{item.title}</h3>
                 <p className="text-sm text-muted-foreground">{item.text}</p>
               </div>
@@ -212,7 +225,7 @@ export default function ForTeamsPage() {
           <ul className="grid sm:grid-cols-2 gap-3">
             {CHECKLIST.map((item) => (
               <li key={item} className="flex items-start gap-3">
-                <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" />
                 <span className="text-sm">{item}</span>
               </li>
             ))}
@@ -297,7 +310,7 @@ export default function ForTeamsPage() {
             their own plan.{" "}
             <Link
               href="/docs/plans-limits#teams-and-shared-endpoints"
-              className="text-primary font-bold hover:underline"
+              className="text-primary-ink font-bold hover:underline"
             >
               Plans and limits
             </Link>
@@ -310,7 +323,7 @@ export default function ForTeamsPage() {
                   <tr key={row.tool} className="border-b border-foreground/10 last:border-0">
                     <th scope="row" className="text-left py-2 pr-6 font-bold whitespace-nowrap">
                       {row.href ? (
-                        <Link href={row.href} className="hover:text-primary transition-colors">
+                        <Link href={row.href} className="hover:text-primary-ink transition-colors">
                           {row.tool}
                         </Link>
                       ) : (
@@ -326,7 +339,7 @@ export default function ForTeamsPage() {
           <p className="text-sm text-muted-foreground mt-3">
             Other tools&apos; prices as listed on their sites when we compared; check them before
             you buy.{" "}
-            <Link href="/compare" className="text-primary font-bold hover:underline">
+            <Link href="/compare" className="text-primary-ink font-bold hover:underline">
               All comparisons
             </Link>
           </p>
@@ -334,7 +347,7 @@ export default function ForTeamsPage() {
 
         <section className="mb-12">
           <div className="ui-card ui-card-static">
-            <Radio className="h-5 w-5 text-primary mb-3" aria-hidden="true" />
+            <Radio className="h-5 w-5 text-primary-ink mb-3" aria-hidden="true" />
             <h2 className="text-xl md:text-2xl font-bold mb-2">Shared endpoints from the CLI</h2>
             <p className="text-muted-foreground mb-4">
               An API key carries the team access of its account, so shared endpoints work like your

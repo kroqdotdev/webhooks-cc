@@ -17,6 +17,7 @@ import {
   GitCompareArrows,
   BarChart3,
   Copy,
+  Clock,
   Play,
   MousePointer,
   GripVertical,
@@ -103,7 +104,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "keyboard",
-    title: "Keyboard Shortcuts",
+    title: "Keyboard shortcuts",
     icon: <Keyboard className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-2">
@@ -111,6 +112,7 @@ const SECTIONS: Section[] = [
         <ShortcutTable
           shortcuts={[
             ["j / k", "Navigate request list down / up"],
+            ["Up / Down, Home / End", "Move through the request list while it has focus"],
             ["1 / 2 / 3 / 4 / 5", "Switch to Body / Headers / Query / Raw / Signature tab"],
             ["c", "Copy cURL command for selected request"],
             ["r", "Open replay dialog"],
@@ -127,7 +129,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "context-menu",
-    title: "Context Menu",
+    title: "Context menu",
     icon: <MousePointer className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -136,16 +138,20 @@ const SECTIONS: Section[] = [
         </p>
         <ul className="space-y-1.5 text-sm">
           <li className="flex items-center gap-2">
-            <Star className="h-3 w-3 shrink-0" /> <strong>Pin / Unpin</strong> — pinned requests
+            <Star className="h-3 w-3 shrink-0" /> <strong>Pin / Unpin</strong>: pinned requests
             float to the top of the list
           </li>
           <li className="flex items-center gap-2">
-            <GitCompareArrows className="h-3 w-3 shrink-0" /> <strong>Compare with selected</strong>{" "}
-            — opens side-by-side diff view
+            <GitCompareArrows className="h-3 w-3 shrink-0" /> <strong>Compare with selected</strong>
+            : opens side-by-side diff view
           </li>
           <li className="flex items-center gap-2">
-            <Copy className="h-3 w-3 shrink-0" /> <strong>Copy request ID</strong> — copies the full
+            <Copy className="h-3 w-3 shrink-0" /> <strong>Copy request ID</strong>: copies the full
             ID to clipboard
+          </li>
+          <li className="flex items-center gap-2">
+            <Clock className="h-3 w-3 shrink-0" /> <strong>Show relative times</strong>: switches
+            the list between clock times and how long ago
           </li>
         </ul>
       </div>
@@ -153,7 +159,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "pinning",
-    title: "Pinning Requests",
+    title: "Pinning requests",
     icon: <Star className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -172,12 +178,12 @@ const SECTIONS: Section[] = [
   },
   {
     id: "notes",
-    title: "Request Notes",
+    title: "Request notes",
     icon: <StickyNote className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
         <p>
-          Attach short notes to any request — useful for debugging breadcrumbs or labeling payloads.
+          Attach short notes to any request, useful for debugging breadcrumbs or labeling payloads.
         </p>
         <ul className="space-y-1 text-sm">
           <li>
@@ -196,7 +202,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "compare",
-    title: "Comparing Requests",
+    title: "Comparing requests",
     icon: <GitCompareArrows className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -222,7 +228,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "timeline",
-    title: "Timeline View",
+    title: "Timeline view",
     icon: <BarChart3 className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -244,7 +250,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "resizable",
-    title: "Resizable Pane",
+    title: "Resizable pane",
     icon: <GripVertical className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -266,17 +272,17 @@ const SECTIONS: Section[] = [
   },
   {
     id: "copy",
-    title: "Copy & Export",
+    title: "Copy and export",
     icon: <Copy className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
         <p>Multiple ways to copy and export request data.</p>
         <ul className="space-y-1 text-sm">
           <li>
-            <strong>cURL</strong> button — copies a curl command that reproduces the request
+            <strong>cURL</strong> button: copies a curl command that reproduces the request
           </li>
           <li>
-            <strong>Copy dropdown</strong> in the body tab — copy as raw, formatted, TypeScript
+            <strong>Copy dropdown</strong> in the body tab: copy as raw, formatted, TypeScript
             interface, or CSV
           </li>
           <li>
@@ -292,14 +298,14 @@ const SECTIONS: Section[] = [
   },
   {
     id: "replay",
-    title: "Replay & Send",
+    title: "Replay and send",
     icon: <Play className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
         <p>Re-send captured requests or send test webhooks.</p>
         <ul className="space-y-1 text-sm">
           <li>
-            <strong>Replay</strong> button — sends the captured request to any URL from your browser
+            <strong>Replay</strong> button: sends the captured request to any URL from your browser
           </li>
           <li>
             <strong>Send</strong> menu next to the endpoint name: a test webhook with provider
@@ -314,7 +320,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "settings",
-    title: "Endpoint Settings",
+    title: "Endpoint settings",
     icon: <Settings className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -345,7 +351,7 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             <strong>Signature verification</strong>: pick a provider and signing secret to verify
-            every incoming webhook (see Signature Verification)
+            every incoming webhook (see Signature verification)
           </li>
           <li>Changes take effect immediately</li>
         </ul>
@@ -354,14 +360,14 @@ const SECTIONS: Section[] = [
   },
   {
     id: "signature-verification",
-    title: "Signature Verification",
+    title: "Signature verification",
     icon: <ShieldCheck className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
-        <p>Verify webhook signatures directly in the dashboard — no code required.</p>
+        <p>Verify webhook signatures directly in the dashboard, no code required.</p>
         <ul className="space-y-1.5 text-sm">
           <li>
-            <strong>Signature tab</strong> (press <Kbd>5</Kbd>) — paste your signing secret and
+            <strong>Signature tab</strong> (press <Kbd>5</Kbd>): paste your signing secret and
             verify any captured request in your browser. The secret never leaves your machine.
           </li>
           <li>
@@ -369,12 +375,12 @@ const SECTIONS: Section[] = [
             <code className="text-xs">stripe-signature</code>)
           </li>
           <li>
-            <strong>Server-side verification</strong> — configure a signing secret in endpoint
+            <strong>Server-side verification</strong>: configure a signing secret in endpoint
             settings for automatic verification on every request
           </li>
           <li>
-            <strong>Verification badges</strong> —{" "}
-            <ShieldCheck className="inline h-3 w-3 text-primary" /> (valid) and shield-alert
+            <strong>Verification badges</strong>:{" "}
+            <ShieldCheck className="inline h-3 w-3 text-primary-ink" /> (valid) and shield-alert
             (invalid) icons appear in the request list
           </li>
           <li>
@@ -389,7 +395,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "response-rules",
-    title: "Response Rules",
+    title: "Response rules",
     icon: <ListOrdered className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
@@ -422,7 +428,7 @@ const SECTIONS: Section[] = [
         </ul>
         <p className="text-xs text-muted-foreground">
           Example: Route Stripe webhooks to a 201 response and GitHub webhooks to a 200 response,
-          with a 500 fallback for anything else — all from one endpoint.
+          with a 500 fallback for anything else, all from one endpoint.
         </p>
       </div>
     ),
@@ -444,7 +450,7 @@ const SECTIONS: Section[] = [
             <strong>&quot;slug (Shared with TeamName)&quot;</strong>
           </li>
           <li>Team members can view requests, edit mock responses, and rename endpoints</li>
-          <li>Real-time updates work — new requests appear instantly for all team members</li>
+          <li>Real-time updates work: new requests appear instantly for all team members</li>
           <li>
             Manage teams from the <strong>Teams</strong> page (avatar dropdown → Teams)
           </li>
@@ -464,7 +470,7 @@ const SECTIONS: Section[] = [
       <div className="space-y-3">
         <p>
           The{" "}
-          <Link href="/api-explorer" className="text-primary hover:underline font-bold">
+          <Link href="/api-explorer" className="text-primary-ink hover:underline font-bold">
             API Explorer
           </Link>{" "}
           is an interactive reference for the webhooks.cc REST API. Try endpoints directly from your
@@ -476,7 +482,7 @@ const SECTIONS: Section[] = [
           <li>Browse all available endpoints, request parameters, and response schemas</li>
           <li>
             API keys can be created from{" "}
-            <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
+            <Link href="/account/api-keys" className="text-primary-ink hover:underline font-bold">
               your API keys page
             </Link>
           </li>
@@ -488,7 +494,7 @@ const SECTIONS: Section[] = [
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold border-strong border-line rounded-sm bg-muted inline-block">
+    <kbd className="px-1.5 py-0.5 text-[11px] font-mono font-bold border-strong border-line rounded-sm bg-muted inline-block">
       {children}
     </kbd>
   );
@@ -532,12 +538,13 @@ export function DashboardGuideDialog({
           </button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-4xl h-[640px] max-h-[85vh] p-0 overflow-hidden">
-        <div className="flex h-full">
+      {/* As tall as the longer of the two columns, up to 85vh; each column scrolls past that. */}
+      <DialogContent className="max-w-3xl max-h-[85vh] p-0 overflow-hidden">
+        <div className="flex max-h-[85vh] min-h-0">
           {/* Sidebar */}
           <nav className="w-52 shrink-0 border-r-strong border-line overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
-              <DialogTitle className="text-sm caps">Dashboard Guide</DialogTitle>
+              <DialogTitle className="text-sm caps">Dashboard guide</DialogTitle>
             </DialogHeader>
             <div className="space-y-0.5">
               {SECTIONS.map((section) => (

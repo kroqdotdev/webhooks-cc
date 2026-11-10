@@ -18,6 +18,7 @@ import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   emitDashboardEndpointsChanged,
   fetchDestinations,
+  fetchGoogleConnections,
   reorderDestinations,
   updateDestination,
   type DashboardDestination,
@@ -98,6 +99,24 @@ function hostOf(url: string): string {
   }
 }
 
+/** The row's name: the one given, else the channel or host it goes to. */
+function titleOf(destination: DashboardDestination): string {
+  if (destination.name) return destination.name;
+  if (formatName(destination) === "Chat message" && isChatUrl(destination.url)) {
+    return `${chatServiceName(destination.url)} channel`;
+  }
+  return hostOf(destination.url);
+}
+
+/** Where a capture goes, for the confirmation after adding one. */
+function whereTo(destination: DashboardDestination): string {
+  if (destination.format === "sheets") return "your spreadsheet";
+  if (formatName(destination) === "Chat message" && isChatUrl(destination.url)) {
+    return `the ${chatServiceName(destination.url)} channel`;
+  }
+  return hostOf(destination.url);
+}
+
 function formatName(destination: DashboardDestination): string {
   if (destination.format !== "auto") return FORMAT_NAMES[destination.format];
   if (isChatUrl(destination.url)) return "Chat message";
@@ -157,6 +176,26 @@ function Health({ destination }: { destination: DashboardDestination }) {
   );
 }
 
+/**
+ * Whether Google Sheets is set up on this server, as the Sheets editor learns
+ * it; null until known. Asked once the picker shows.
+ */
+function useSheetsAvailable(accessToken: string | undefined): boolean | null {
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!accessToken) return;
+    let current = true;
+    fetchGoogleConnections(accessToken)
+      .then((info) => current && setAvailable(info.available))
+      // Unknown stays offered; the editor says what is wrong.
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [accessToken]);
+  return available;
+}
+
 function PresetPicker({
   onPick,
   email,
@@ -165,23 +204,34 @@ function PresetPicker({
   /** Whether the endpoint receives email (the inbound handler preset is for that). */
   email: boolean;
 }) {
+  const { session } = useAuth();
+  const sheetsAvailable = useSheetsAvailable(session?.access_token);
   const presets = email ? PRESETS : PRESETS.filter((preset) => preset.id !== "inbound");
   return (
     <div className={cn("grid gap-2", presets.length === 4 ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
       {presets.map((preset) => {
         const Icon = preset.icon;
+        // A server without the Google integration offers no dead end.
+        const unavailable = preset.id === "sheets" && sheetsAvailable === false;
         return (
           <button
             key={preset.id}
             type="button"
             onClick={() => onPick(preset.id)}
-            className="text-left border-strong border-line rounded-md p-3 bg-card hover:bg-muted/60 transition-colors motion-reduce:transition-none cursor-pointer space-y-1"
+            disabled={unavailable}
+            data-destination-preset=""
+            className={cn(
+              "text-left border-strong border-line rounded-md p-3 bg-card transition-colors motion-reduce:transition-none space-y-1",
+              unavailable ? "opacity-60 cursor-not-allowed" : "hover:bg-muted/60 cursor-pointer"
+            )}
           >
             <span className="flex items-center gap-2 text-sm font-semibold">
               <Icon className="h-4 w-4" />
               {preset.label}
             </span>
-            <span className="block text-xs text-muted-foreground">{preset.detail}</span>
+            <span className="block text-xs text-muted-foreground">
+              {unavailable ? "Not set up on this server yet." : preset.detail}
+            </span>
           </button>
         );
       })}
@@ -206,6 +256,34 @@ export function DestinationsSection({
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const [adding, setAdding] = useState<DestinationPreset | null>(null);
   const [picking, setPicking] = useState(false);
+  // After a save: the row to bring into view once the list has it, and the
+  // confirmation under the list.
+  const [revealId, setRevealId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ id: string; text: string; added: boolean } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (noticeTimer.current && clearTimeout(noticeTimer.current)), []);
+
+  // Picking a preset (or opening the picker) unmounts the button that had
+  // focus. Focus moves on to what replaced it rather than falling to the page:
+  // the new editor's first field ("Send to" for most), or the first preset.
+  const addingRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!adding) return;
+    const box = addingRef.current;
+    if (!box) return;
+    const field = box.querySelector<HTMLElement>(
+      "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])"
+    );
+    const target = field ?? box.querySelector<HTMLElement>("[data-new-destination-title]");
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: "nearest" });
+  }, [adding]);
+  useEffect(() => {
+    if (!picking) return;
+    sectionRef.current
+      ?.querySelector<HTMLButtonElement>("[data-destination-preset]:not([disabled])")
+      ?.focus({ preventScroll: true });
+  }, [picking]);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -240,6 +318,34 @@ export function DestinationsSection({
     void load();
     emitDashboardEndpointsChanged();
   };
+
+  const confirmSaved = (saved: DashboardDestination, added: boolean) => {
+    // An edit stays where it is, with the editor's own "Saved."; a new row is
+    // brought into view, since the form it was made in has gone.
+    if (added) setRevealId(saved.id);
+    setNotice({
+      id: saved.id,
+      added,
+      text: !added
+        ? "Destination saved."
+        : saved.enabled
+          ? `Destination added. The next capture is sent to ${whereTo(saved)}.`
+          : "Destination added. It is off, so nothing is sent yet.",
+    });
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
+  };
+
+  // A saved row comes into view and takes focus, so the save lands somewhere
+  // visible rather than wherever the closed editor left the page.
+  useEffect(() => {
+    if (!revealId || !destinations?.some((d) => d.id === revealId)) return;
+    const row = document.getElementById(`destination-${revealId}`);
+    setRevealId(null);
+    if (!row) return;
+    (row.firstElementChild ?? row).scrollIntoView({ block: "nearest" });
+    row.focus({ preventScroll: true });
+  }, [revealId, destinations]);
 
   const setEnabled = async (destination: DashboardDestination, enabled: boolean) => {
     if (!accessToken) return;
@@ -284,7 +390,13 @@ export function DestinationsSection({
       title="Forwarding"
       description="Send what this endpoint captures to your servers and chat channels. Each destination chooses what it gets and how it is sent; every delivery is queued, retried if it is not accepted, and logged."
     >
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {/* What a save did, announced. Fixed rather than sr-only's absolute:
+          nothing positioned holds it, and an absolute one would stretch the
+          page below the settings pane. */}
+      <p role="status" aria-live="polite" className="sr-only fixed!">
+        {notice?.text}
+      </p>
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {destinations === null && !error && (
         <p className="text-sm text-muted-foreground">Loading destinations...</p>
       )}
@@ -304,14 +416,14 @@ export function DestinationsSection({
           {destinations!.map((destination, index) => {
             const isOpen = open.has(destination.id);
             const panelId = `destination-panel-${destination.id}`;
-            const chat = formatName(destination) === "Chat message";
-            const title =
-              destination.name ??
-              (chat && isChatUrl(destination.url)
-                ? `${chatServiceName(destination.url)} channel`
-                : hostOf(destination.url));
+            const title = titleOf(destination);
             return (
-              <li key={destination.id} className="bg-card">
+              <li
+                key={destination.id}
+                id={`destination-${destination.id}`}
+                tabIndex={-1}
+                className="bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              >
                 <div className="flex items-start gap-3 px-3 py-3">
                   <div className="pt-0.5">
                     <Switch
@@ -344,6 +456,12 @@ export function DestinationsSection({
                       {destination.enabled ? describe(destination) : "Off. Nothing is sent."}
                     </span>
                     <Health destination={destination} />
+                    {notice?.added && notice.id === destination.id && (
+                      // Shown where the eye lands; the status line under the list announces it.
+                      <span aria-hidden className="block text-xs font-semibold text-primary-ink">
+                        {notice.text}
+                      </span>
+                    )}
                   </button>
                   <div className="flex flex-col items-center gap-1 pt-0.5">
                     <button
@@ -375,6 +493,7 @@ export function DestinationsSection({
                               d.id === saved.id ? { ...saved, summary: d.summary } : d
                             ) ?? prev
                         );
+                        confirmSaved(saved, false);
                         changed();
                       }}
                       onDeleted={() => {
@@ -416,8 +535,12 @@ export function DestinationsSection({
       )}
 
       {adding && (
-        <div className="border-strong border-line rounded-md p-3 bg-card space-y-3">
-          <p className="text-sm font-semibold">
+        <div ref={addingRef} className="border-strong border-line rounded-md p-3 bg-card space-y-3">
+          <p
+            data-new-destination-title
+            tabIndex={-1}
+            className="text-sm font-semibold outline-none"
+          >
             New destination: {PRESETS.find((p) => p.id === adding)?.label}
           </p>
           <DestinationEditor
@@ -429,6 +552,7 @@ export function DestinationsSection({
             onSaved={(saved) => {
               setAdding(null);
               setOpen((prev) => new Set(prev).add(saved.id));
+              confirmSaved(saved, true);
               changed();
             }}
             onCancel={() => setAdding(null)}

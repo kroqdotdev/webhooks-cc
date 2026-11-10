@@ -66,13 +66,19 @@ function StartFreeCTAInner({
           layout="horizontal"
           buttonClassName={buttonClass}
         />
+        <Link
+          href="/login?mode=sign-up"
+          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          or sign up with email
+        </Link>
       </div>
       {goCta ? (
         <p className="text-sm text-muted-foreground">
           No credit card &middot; 50 requests/day free &middot; or{" "}
           <Link
             href="/"
-            className="text-foreground font-bold hover:text-primary transition-colors"
+            className="text-foreground font-bold hover:text-primary-ink transition-colors"
             onClick={() => trackCTAClick("try_live")}
           >
             {goCta}

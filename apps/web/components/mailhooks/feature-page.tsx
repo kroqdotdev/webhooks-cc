@@ -86,11 +86,11 @@ export function FeaturePage({
           <p className="text-xs font-bold caps text-muted-foreground mb-3">{feature.plans}</p>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">{feature.heading}</h1>
           <p className="text-xl text-muted-foreground mb-8">{feature.intro}</p>
-          <div className="flex flex-wrap items-center gap-4 mb-14">
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-2 mb-14">
             <div className="w-full sm:w-auto sm:min-w-80">
-              <PricingCTA />
+              <PricingCTA primary emailAlign="start" />
             </div>
-            <span className="text-sm text-muted-foreground">{feature.planNote}</span>
+            <span className="text-sm text-muted-foreground sm:pt-2.5">{feature.planNote}</span>
           </div>
 
           <section className="mb-12">
@@ -112,7 +112,7 @@ export function FeaturePage({
               Every setting, in full:{" "}
               <Link
                 href={`${webhooksOrigin()}${feature.docs.path}`}
-                className="text-primary font-bold hover:underline"
+                className="text-primary-ink font-bold hover:underline"
               >
                 {feature.docs.label}
                 <ArrowRight className="inline-block ml-1 h-4 w-4" aria-hidden />
@@ -127,14 +127,14 @@ export function FeaturePage({
             <ul className="grid sm:grid-cols-2 gap-3">
               {feature.limits.map((item) => (
                 <li key={item} className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
+                  <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
                   <span className="text-sm">{item}</span>
                 </li>
               ))}
             </ul>
             <p className="text-sm text-muted-foreground mt-4">
               Plans, prices and limits:{" "}
-              <Link href="/pricing" className="text-primary font-bold hover:underline">
+              <Link href="/pricing" className="text-primary-ink font-bold hover:underline">
                 Pricing
               </Link>
             </p>

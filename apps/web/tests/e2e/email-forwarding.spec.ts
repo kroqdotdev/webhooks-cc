@@ -188,13 +188,13 @@ test("a captured email is forwarded, shown as delivered, and can be sent again",
   ).toBe(true);
 
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await page.getByRole("button", { name: /^EMAIL Forward me/ }).click();
+  await page.getByRole("option", { name: /^EMAIL Forward me/ }).click();
   await expect(shown(page.getByText(/^Destinations set to signed JSON get this JSON/))).toBeVisible(
     {
       timeout: 15000,
     }
   );
-  await shown(page.getByRole("button", { name: /^Deliveries$/i })).click();
+  await shown(page.getByRole("tab", { name: /^Deliveries$/i })).click();
   await expect(shown(page.getByText(/^Forwarded as signed JSON to /))).toBeVisible();
   const cards = shown(page.getByRole("region", { name: /^(Delivery|Redelivery)$/ }));
   await expect(cards.first()).toContainText("Delivered");

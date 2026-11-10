@@ -1,7 +1,8 @@
 "use client";
 
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Star } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
@@ -31,7 +32,7 @@ import { listedOn, type EndpointSite } from "@/lib/site";
 export function EndpointSwitcher() {
   const { session } = useAuth();
   const [data, setData] = useState<DashboardEndpointsResponse | null>(null);
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const searchParams = useSearchParams();
   const currentSlug = searchParams.get("endpoint");
   const site = useSite();
@@ -122,7 +123,12 @@ export function EndpointSwitcher() {
     // Keep the open endpoint open: when the URL names no endpoint, or one
     // that is gone, the dashboard shows the first favourite, which this
     // change may move.
-    if (current.slug !== currentSlug) router.replace(`/dashboard?endpoint=${current.slug}`);
+    // Only the endpoint is added: the view, section and open request stay.
+    if (current.slug !== currentSlug) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("endpoint", current.slug);
+      router.replace(`/dashboard?${params.toString()}`);
+    }
     setData((prev) =>
       prev
         ? { owned: prev.owned.map(mark(favorite)), shared: prev.shared.map(mark(favorite)) }
@@ -181,7 +187,10 @@ export function EndpointSwitcher() {
   return (
     <div className="ph-no-capture flex min-w-0 flex-1 items-center gap-1 md:flex-initial">
       <Select value={defaultSlug} onValueChange={handleChange}>
-        <SelectTrigger className="min-w-0 flex-1 md:w-[260px] md:flex-initial">
+        <SelectTrigger
+          aria-label="Endpoint"
+          className="min-w-0 flex-1 md:w-[260px] md:flex-initial"
+        >
           <SelectValue placeholder="Select endpoint" />
         </SelectTrigger>
         {/* Rendered in a portal, so it needs its own: endpoint names stay out of autocapture. */}

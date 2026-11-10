@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { ChevronRight, ChevronDown, Check, ChevronsUpDown } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 
-/** Valid JS identifier — hoisted to avoid recreation in render loops (js-hoist-regexp) */
+/** Valid JS identifier, hoisted to avoid recreation in render loops (js-hoist-regexp) */
 const JS_IDENT = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
 
 interface JsonTreeProps {
@@ -12,10 +12,32 @@ interface JsonTreeProps {
   defaultExpandDepth?: number;
 }
 
-export function JsonTree({ data, defaultExpandDepth = 2 }: JsonTreeProps) {
+/** Nodes in a JSON value, counted up to a limit (enough to decide whether to open it all). */
+function countNodes(value: unknown, limit: number): number {
+  let count = 0;
+  const stack: unknown[] = [value];
+  while (stack.length > 0 && count <= limit) {
+    const next = stack.pop();
+    count += 1;
+    if (next && typeof next === "object") stack.push(...Object.values(next as object));
+  }
+  return count;
+}
+
+/** A payload this small opens fully; a bigger one opens three levels deep. */
+const OPEN_ALL_BELOW_NODES = 150;
+
+export function JsonTree({ data, defaultExpandDepth }: JsonTreeProps) {
+  const depth = useMemo(
+    () =>
+      defaultExpandDepth ??
+      (countNodes(data, OPEN_ALL_BELOW_NODES) < OPEN_ALL_BELOW_NODES ? Infinity : 3),
+    [data, defaultExpandDepth]
+  );
   // expandAll uses a version counter: when bumped, every node syncs its
-  // localOpen to expandTarget, then resumes independent control.
-  const [expandTarget, setExpandTarget] = useState(true);
+  // localOpen to expandTarget, then resumes independent control. It starts
+  // true only when everything is open, so the button names what it will do.
+  const [expandTarget, setExpandTarget] = useState(depth === Infinity);
   const [expandVersion, setExpandVersion] = useState(0);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -45,7 +67,7 @@ export function JsonTree({ data, defaultExpandDepth = 2 }: JsonTreeProps) {
       <div className="flex items-center justify-end mb-2">
         <button
           onClick={toggleAll}
-          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors caps font-bold font-sans"
+          className="text-[11px] text-muted-foreground hover:text-foreground inline-flex min-h-6 items-center gap-1 px-1.5 -mr-1.5 cursor-pointer transition-colors caps font-bold font-sans max-md:py-1.5"
         >
           <ChevronsUpDown className="h-3 w-3" />
           {expandTarget ? "Collapse all" : "Expand all"}
@@ -56,7 +78,7 @@ export function JsonTree({ data, defaultExpandDepth = 2 }: JsonTreeProps) {
         value={data}
         path=""
         depth={0}
-        defaultExpandDepth={defaultExpandDepth}
+        defaultExpandDepth={depth}
         expandTarget={expandTarget}
         expandVersion={expandVersion}
         onCopyPath={handleCopyPath}
@@ -93,7 +115,7 @@ function JsonNode({
   const defaultOpen = depth < defaultExpandDepth;
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
-  // Sync to expand/collapse all — only fires when version bumps (not on mount)
+  // Sync to expand/collapse all; only fires when version bumps (not on mount)
   const prevVersion = useRef(expandVersion);
   useEffect(() => {
     if (expandVersion !== prevVersion.current) {
@@ -123,7 +145,7 @@ function JsonNode({
             title={`Copy: ${currentPath}`}
           >
             {copiedPath === currentPath ? (
-              <Check className="inline h-3 w-3 mr-1 text-primary" />
+              <Check className="inline h-3 w-3 mr-1 text-primary-ink" />
             ) : null}
             {keyName}
             <span className="syntax-punctuation">: </span>
@@ -169,7 +191,7 @@ function JsonNode({
             title={`Copy: ${currentPath}`}
           >
             {copiedPath === currentPath ? (
-              <Check className="inline h-3 w-3 mr-1 text-primary" />
+              <Check className="inline h-3 w-3 mr-1 text-primary-ink" />
             ) : null}
             {keyName}
             <span className="syntax-punctuation">: </span>
@@ -223,7 +245,7 @@ function PrimitiveValue({ value }: { value: unknown }) {
   if (typeof value === "number") return <span className="syntax-number">{String(value)}</span>;
   if (typeof value === "string") {
     const truncated = value.length > 120 ? `${value.slice(0, 120)}...` : value;
-    return <span className="syntax-string break-all">&quot;{truncated}&quot;</span>;
+    return <span className="syntax-string [overflow-wrap:anywhere]">&quot;{truncated}&quot;</span>;
   }
   return <span className="text-muted-foreground">{String(value)}</span>;
 }
@@ -235,7 +257,5 @@ function TypeAnnotation({ value }: { value: unknown }) {
   else if (typeof value === "object") label = `object(${Object.keys(value as object).length})`;
   else label = typeof value;
 
-  return (
-    <span className="text-[10px] text-muted-foreground/60 ml-2 shrink-0 select-none">{label}</span>
-  );
+  return <span className="text-xs text-muted-foreground ml-2 shrink-0 select-none">{label}</span>;
 }

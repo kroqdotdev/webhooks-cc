@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { layoutTemplate } from "@/lib/layout-templates";
 import { imgSrcDirective } from "@/lib/csp-img-src";
 import {
   MARKDOWN_TWIN_HEADER,
@@ -7,7 +8,10 @@ import {
   negotiatesMarkdown,
 } from "@/lib/markdown-negotiation";
 import {
+  MAILHOOKS_MISSING_HEADER,
+  MAILHOOKS_PAGES,
   SITE_HEADER,
+  existsOnWebhooks,
   mailhooksOrigin,
   servedOnMailhooks,
   siteForHost,
@@ -60,6 +64,28 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/ops",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+const MAILHOOKS_PAGE_SET: ReadonlySet<string> = new Set(MAILHOOKS_PAGES);
+
+/**
+ * A path below one of mailhooks.cc's own pages that is no page: /parse/<sender>
+ * for a sender the catalogue does not have, or anything below the pages that
+ * have nothing below them. Those get mailhooks.cc's 404 from the missing
+ * rewrite (uncacheable) instead of being rendered or answered by the root 404.
+ */
+function unknownMailhooksPage(pathname: string): boolean {
+  const [, first, ...rest] = pathname.split("/");
+  if (rest.length === 0 || !MAILHOOKS_PAGE_SET.has(`/${first}`)) return false;
+  if (first !== "parse") return true;
+  if (rest.length > 1) return true;
+  let sender = rest[0];
+  try {
+    sender = decodeURIComponent(sender);
+  } catch {
+    return true;
+  }
+  return layoutTemplate(sender) === null;
 }
 
 /** Refreshes the Supabase session so server components get fresh cookies. */
@@ -126,10 +152,29 @@ export async function proxy(request: NextRequest) {
   // change: a permanent one would stay cached in browsers.
   // The header is ours to set, like the markdown marker below.
   request.headers.delete(SITE_HEADER);
+  request.headers.delete(MAILHOOKS_MISSING_HEADER);
   const site = siteForHost(request.headers.get("host") ?? request.nextUrl.host);
+  // A path mailhooks.cc does not serve goes to webhooks.cc only when webhooks.cc
+  // has it; anything else is mailhooks.cc's own 404 (app/mailhooks/not-found.tsx).
+  let missingOnMailhooks = false;
   if (site === "mailhooks" && !servedOnMailhooks(pathname)) {
-    return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 307);
+    if (existsOnWebhooks(pathname)) {
+      return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 307);
+    }
+    missingOnMailhooks = true;
   }
+  // app/mailhooks is where the host rewrites lead, not an address of its own:
+  // on mailhooks.cc /mailhooks/pricing is /pricing, so an unknown page under
+  // it ends at mailhooks.cc's 404 like any other instead of the root one.
+  if (site === "mailhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
+    // One leading slash: "//evil.com" or "/\\evil.com" would resolve to another host.
+    const own = pathname.slice("/mailhooks".length).replace(/^[/\\]+/, "/") || "/";
+    const origin = new URL(mailhooksOrigin()!).origin;
+    const target = new URL(`${own}${request.nextUrl.search}`, origin);
+    return NextResponse.redirect(target.origin === origin ? target : new URL("/", origin), 307);
+  }
+  // Under mailhooks.cc's own pages only the catalogue's senders exist.
+  if (site === "mailhooks" && unknownMailhooksPage(pathname)) missingOnMailhooks = true;
   if (site === "webhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
     const mail = mailhooksOrigin();
     if (!mail) {
@@ -157,7 +202,12 @@ export async function proxy(request: NextRequest) {
 
   let response: NextResponse;
   const isRead = request.method === "GET" || request.method === "HEAD";
-  if (isRead && negotiatesMarkdown(pathname, request.headers.get("accept"))) {
+  if (missingOnMailhooks) {
+    // Marked for the next.config.ts rewrite to mailhooks.cc's own 404.
+    const headers = new Headers(request.headers);
+    headers.set(MAILHOOKS_MISSING_HEADER, "1");
+    response = NextResponse.next({ request: { headers } });
+  } else if (isRead && negotiatesMarkdown(pathname, request.headers.get("accept"))) {
     const headers = new Headers(request.headers);
     headers.set(MARKDOWN_TWIN_HEADER, "1");
     response = NextResponse.next({ request: { headers } });

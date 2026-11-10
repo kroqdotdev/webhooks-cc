@@ -33,9 +33,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (stored) {
       setTheme(stored);
     }
-    // The inline script in app/layout.tsx already applied the style before
-    // paint, so only the settings page's control needs to catch up here.
-    setUiStyleState(readUiStyle());
+    // The inline script in app/layout.tsx applies the style before paint. A
+    // page rendered on the client without it (a not-found from a dynamic
+    // route) would fall back to classic, so the style is applied here too.
+    const style = readUiStyle();
+    document.documentElement.dataset.style = style;
+    setUiStyleState(style);
   }, []);
 
   useEffect(() => {

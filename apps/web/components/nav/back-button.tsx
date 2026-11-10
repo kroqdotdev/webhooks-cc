@@ -1,10 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { ArrowLeft } from "lucide-react";
 
 export function BackButton({ fallbackHref = "/" }: { fallbackHref?: string }) {
-  const router = useRouter();
+  const router = useAnnouncedRouter();
 
   const handleBack = () => {
     if (window.history.length > 1 && document.referrer.includes(window.location.host)) {

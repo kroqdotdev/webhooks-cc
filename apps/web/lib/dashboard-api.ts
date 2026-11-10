@@ -196,17 +196,21 @@ function toDashboardRequest(record: {
   };
 }
 
-/** Delivers a sample email to the endpoint (see app/api/send-test-email). */
+/**
+ * Delivers a sample email to the endpoint (see app/api/send-test-email); with
+ * `template` (a layout template's id), that template's sample email.
+ */
 export async function sendTestEmail(
   accessToken: string,
-  slug: string
+  slug: string,
+  template?: string
 ): Promise<{ status: "captured"; requestId: string | null }> {
   const response = await fetch(
     "/api/send-test-email",
     withAuthHeaders(accessToken, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ slug }),
+      body: JSON.stringify(template ? { slug, template } : { slug }),
     })
   );
   return readJson<{ status: "captured"; requestId: string | null }>(response);

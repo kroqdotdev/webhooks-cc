@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { conditionIssues, type Condition } from "@webhooks-cc/sdk";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { useSite } from "@/components/providers/site-provider";
 import { describeConditions } from "@/lib/condition-labels";
 import { trackEndpointSaved } from "@/lib/analytics";
 import {
@@ -25,6 +26,14 @@ import {
 } from "./response-editor";
 import { SaveFooter, Section, Switch, useSave } from "./settings-primitives";
 import { statusLine } from "./status-code-picker";
+import { stableStringify } from "@/lib/stable-json";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * What senders get back. The rules and the default response are one list
@@ -36,6 +45,8 @@ import { statusLine } from "./status-code-picker";
  */
 
 const MAX_RULES = 50;
+/** The "Preview with" choice that means the newest request (Radix items need a value). */
+const NEWEST_REQUEST = "__newest__";
 
 interface RuleDraft {
   key: string;
@@ -262,23 +273,30 @@ function PreviewPanel({
         <label htmlFor={`responses-preview-${slug}`} className="text-sm font-semibold">
           Preview with
         </label>
-        <select
-          id={`responses-preview-${slug}`}
-          value={requestId}
-          onChange={(e) => setRequestId(e.target.value)}
-          className="ui-input text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[28rem]"
+        {/* Radix items cannot carry an empty value, so the newest request has its own. */}
+        <Select
+          value={requestId || NEWEST_REQUEST}
+          onValueChange={(value) => setRequestId(value === NEWEST_REQUEST ? "" : value)}
         >
-          <option value="">
-            {requests && requests.length === 0
-              ? "A sample request (none captured yet)"
-              : "The newest request"}
-          </option>
-          {(requests ?? []).map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.method} {row.path} at {time(row.receivedAt)}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id={`responses-preview-${slug}`}
+            className="ui-input h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[28rem]"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value={NEWEST_REQUEST} className="text-[13px] font-mono">
+              {requests && requests.length === 0
+                ? "A sample request (none captured yet)"
+                : "The newest request"}
+            </SelectItem>
+            {(requests ?? []).map((row) => (
+              <SelectItem key={row.id} value={row.id} className="text-[13px] font-mono">
+                {row.method} {row.path} at {time(row.receivedAt)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div
         role="status"
@@ -289,7 +307,7 @@ function PreviewPanel({
         {blocked ? (
           <p className="text-muted-foreground">{blocked}</p>
         ) : error ? (
-          <p className="text-destructive">{error}</p>
+          <p className="text-destructive-ink">{error}</p>
         ) : result ? (
           <>
             <p>
@@ -332,9 +350,11 @@ function PreviewPanel({
 }
 
 export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) {
+  // mailhooks.cc names the HTTP-only sections as such, here and in the nav.
+  const mailFirst = useSite().key === "mailhooks";
   // Keyed on values, not object identity: every endpoints refetch (another
   // section saving) hands back new objects, which must not discard edits here.
-  const savedJson = JSON.stringify({
+  const savedJson = stableStringify({
     mock: endpoint.mockResponse ?? null,
     rules: endpoint.responseRules ?? [],
   });
@@ -345,13 +365,15 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
     };
     const fallback = toDraft(saved.mock ?? null);
     const rules = saved.rules.map(toRuleDraft);
-    return { fallback, rules, settings: JSON.stringify(settingsOf(fallback, rules)) };
+    return { fallback, rules, settings: stableStringify(settingsOf(fallback, rules)) };
   }, [savedJson]);
 
   const [fallback, setFallback] = useState<ResponseDraft>(initial.fallback);
   const [rules, setRules] = useState<RuleDraft[]>(initial.rules);
+  // On mailhooks.cc the HTTP answer is secondary, and its header row already
+  // summarises it, so the editor starts collapsed there.
   const [open, setOpen] = useState<Set<string>>(() =>
-    initial.rules.length === 0 ? new Set(["fallback"]) : new Set()
+    initial.rules.length === 0 && !mailFirst ? new Set(["fallback"]) : new Set()
   );
   const [submitted, setSubmitted] = useState(false);
   const [answering, setAnswering] = useState<number | "fallback" | null>(null);
@@ -366,7 +388,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
   useEffect(reset, [reset]);
 
   const settings = settingsOf(fallback, rules);
-  const dirty = JSON.stringify(settings) !== initial.settings;
+  const dirty = stableStringify(settings) !== initial.settings;
 
   // Problems, per row, that keep the list from saving (and the preview from running).
   const ruleProblems = rules.map((rule) => [
@@ -399,6 +421,8 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
       return next;
     });
 
+  // A rule just added opens with its name field focused and in view.
+  const focusRule = useRef<string | null>(null);
   const addRule = () => {
     const rule: RuleDraft = {
       key: randomId(),
@@ -411,7 +435,17 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
     };
     setRules((prev) => [...prev, rule]);
     setOpen((prev) => new Set(prev).add(rule.key));
+    focusRule.current = rule.key;
   };
+
+  useEffect(() => {
+    const key = focusRule.current;
+    if (!key) return;
+    focusRule.current = null;
+    const input = document.getElementById(`responses-rule-${key}-name`);
+    input?.focus({ preventScroll: true });
+    input?.scrollIntoView({ block: "nearest" });
+  }, [rules]);
 
   const onResult = useCallback((result: ResponsePreviewResult | null) => {
     if (!result || result.email) setAnswering(null);
@@ -446,9 +480,9 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
   const hint = (() => {
     const before = JSON.parse(initial.settings) as ReturnType<typeof settingsOf>;
     const rulesChanged =
-      JSON.stringify(before.responseRules) !== JSON.stringify(settings.responseRules);
+      stableStringify(before.responseRules) !== stableStringify(settings.responseRules);
     const fallbackChanged =
-      JSON.stringify(before.mockResponse) !== JSON.stringify(settings.mockResponse);
+      stableStringify(before.mockResponse) !== stableStringify(settings.mockResponse);
     if (rulesChanged && fallbackChanged) return "Rules and the default response changed.";
     if (rulesChanged) return "Rules changed.";
     return "Default response changed.";
@@ -462,7 +496,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
   return (
     <Section
       id="responses"
-      title="Responses"
+      title={mailFirst ? "HTTP responses" : "Responses"}
       description="What senders get back. Rules are checked from the top and the first that matches answers; everything else gets Otherwise. Emails always get a standard mail-server reply."
       footer={
         <SaveFooter
@@ -566,7 +600,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                       idPrefix={panelId}
                     />
                   </div>
-                  {showProblems && <p className="text-xs text-destructive">{problems[0]}</p>}
+                  {showProblems && <p className="text-xs text-destructive-ink">{problems[0]}</p>}
                   <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-line/20">
                     {rules.length > 1 && (
                       <>
@@ -591,7 +625,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                     <button
                       type="button"
                       onClick={() => setRules((prev) => prev.filter((r) => r.key !== rule.key))}
-                      className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive"
+                      className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive-ink"
                     >
                       <Trash2 className="h-3 w-3" /> Delete rule
                     </button>
@@ -615,7 +649,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
             marker={rules.length > 0 ? "Otherwise" : "Always"}
             summary={
               isPlainOk(fallback) ? (
-                <span className="text-muted-foreground">200 OK with an empty body</span>
+                <span className="text-muted-foreground">200 OK with the body &quot;OK&quot;</span>
               ) : (
                 <span className="font-mono text-[13px] text-muted-foreground">
                   {fallback.body.trim().slice(0, 120) || "(empty body)"}

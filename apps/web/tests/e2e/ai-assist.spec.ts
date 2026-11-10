@@ -157,7 +157,8 @@ async function openLayouts(page: Page, user: TestUser, endpointSlug: string) {
 async function draftAndFind(page: Page) {
   const { user, endpointId, endpointSlug } = await setup();
   const section = await openLayouts(page, user, endpointSlug);
-  const draft = section.getByRole("button", { name: "Draft a layout with AI" });
+  await section.getByRole("button", { name: "Add layout" }).click();
+  const draft = page.getByRole("menuitem", { name: "Draft with AI" });
   const offered = await draft.waitFor({ timeout: 15000 }).then(
     () => true,
     () => false

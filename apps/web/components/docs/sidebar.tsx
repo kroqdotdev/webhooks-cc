@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Menu, X, ChevronDown, Search } from "lucide-react";
+import { BookOpen, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS, type NavSection } from "@/lib/docs-nav";
 import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
 
@@ -21,6 +21,16 @@ function sectionHasPage(section: NavSection, pathname: string): boolean {
  * short enough to scan. A section the reader opens or closes by hand keeps
  * that state until they navigate; the next page starts tidy again.
  */
+const noSubscribe = () => () => {};
+/** Whether the search shortcut is Cmd (Apple devices) or Ctrl; the server renders Cmd. */
+function useIsApple(): boolean {
+  return useSyncExternalStore(
+    noSubscribe,
+    () => /Mac|iPhone|iPad/.test(navigator.platform),
+    () => true
+  );
+}
+
 function SidebarContent({
   onNavigate,
   onSearchClick,
@@ -29,6 +39,7 @@ function SidebarContent({
   onSearchClick?: () => void;
 }) {
   const pathname = usePathname();
+  const isApple = useIsApple();
   const [toggled, setToggled] = useState<{ path: string; open: Record<string, boolean> }>({
     path: pathname,
     open: {},
@@ -56,7 +67,7 @@ function SidebarContent({
         <Search className="h-4 w-4" />
         <span>Search</span>
         <kbd className="ml-auto text-xs rounded-sm border border-foreground/30 px-1.5 py-0.5 font-mono hidden sm:inline">
-          ⌘K
+          {isApple ? "⌘K" : "Ctrl K"}
         </kbd>
       </button>
 
@@ -150,11 +161,14 @@ export function DocsSidebar() {
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="md:hidden fixed left-4 z-40 p-2 rounded-md border-strong border-line bg-background shadow-raised-sm cursor-pointer"
+        className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border-strong border-line bg-background shadow-raised-sm cursor-pointer"
         style={{ top: s.toggle }}
-        aria-label="Toggle docs navigation"
+        aria-expanded={mobileOpen}
+        aria-label={mobileOpen ? "Close docs contents" : "Open docs contents"}
       >
-        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        {/* A word, not a second hamburger under the site menu's. */}
+        {mobileOpen ? <X className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+        Contents
       </button>
 
       {/* Mobile overlay */}
@@ -173,7 +187,7 @@ export function DocsSidebar() {
         aria-label="Documentation navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r-strong border-line bg-background clean:bg-card shadow-raised overflow-y-auto py-6 px-2 transition-transform",
+          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r-strong border-line bg-background clean:bg-card shadow-raised overflow-y-auto pt-16 pb-6 px-2 transition-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ top: s.panel }}

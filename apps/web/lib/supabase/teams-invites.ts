@@ -11,7 +11,7 @@ import type { TeamInvite, TeamInviteRow } from "./teams-types";
 import { reportError } from "@/lib/observability";
 
 /** Every purchased seat is occupied — membership is capped by seats, not plan. */
-const NO_SEATS_MESSAGE = "Team has no available seats — ask the owner to add seats";
+const NO_SEATS_MESSAGE = "Team has no available seats. Ask the owner to add seats";
 const SCHEDULED_REDUCTION_MESSAGE =
   "A seat reduction is scheduled for the next renewal. Keep your current seats on the team page to invite more members.";
 

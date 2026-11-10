@@ -224,11 +224,11 @@ function shown(locator: Locator) {
 }
 
 function httpRow(page: Page) {
-  return page.getByRole("button", { name: /^POST \/hooks\/orders/ });
+  return page.getByRole("option", { name: /^POST \/hooks\/orders/ });
 }
 
 function emailRow(page: Page) {
-  return page.getByRole("button", { name: new RegExp(`EMAIL ${SUBJECT}`) });
+  return page.getByRole("option", { name: new RegExp(`EMAIL ${SUBJECT}`) });
 }
 
 for (const style of ["classic", "clean"] as const) {
@@ -258,7 +258,7 @@ for (const style of ["classic", "clean"] as const) {
       await expect(shown(page.getByText("Forwarding can POST this JSON"))).toBeVisible();
 
       // The preview is sandboxed without scripts, and remote images wait for a click
-      await shown(page.getByRole("button", { name: /^Preview$/i })).click();
+      await shown(page.getByRole("tab", { name: /^Preview$/i })).click();
       const frame = shown(page.locator('iframe[title="Email preview"]'));
       await expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
       await expect(shown(page.getByText("2 remote images are blocked"))).toBeVisible();
@@ -268,7 +268,7 @@ for (const style of ["classic", "clean"] as const) {
 
       // The spam verdict: a chip in the header, the score and rules in the tab
       await expect(shown(page.getByText("Looks spammy 7.5"))).toBeVisible();
-      await shown(page.getByRole("button", { name: /^Authentication$/i })).click();
+      await shown(page.getByRole("tab", { name: /^Authentication$/i })).click();
       await expect(shown(page.getByText("SPF", { exact: true })).first()).toBeVisible();
       await expect(shown(page.getByText("Spam score", { exact: true }))).toBeVisible();
       await expect(shown(page.getByText("SUBJ_ALL_CAPS"))).toBeVisible();
@@ -282,7 +282,7 @@ for (const style of ["classic", "clean"] as const) {
       await expect(shown(page.getByText("1 image with text"))).toBeVisible();
       await expect(shown(page.getByText("SPF record ends in ~all"))).toBeVisible();
 
-      await shown(page.getByRole("button", { name: /^Raw$/i })).click();
+      await shown(page.getByRole("tab", { name: /^Raw$/i })).click();
       await expect(shown(page.getByText(`Subject: ${SUBJECT}`))).toBeVisible();
     });
   }
@@ -320,8 +320,8 @@ test("the preview disarms links, redirects and SVG in a hostile email", async ({
   if (error) throw error;
 
   await openDashboard(page);
-  await page.getByRole("button", { name: new RegExp(`EMAIL ${subject}`) }).click();
-  await shown(page.getByRole("button", { name: /^Preview$/i })).click();
+  await page.getByRole("option", { name: new RegExp(`EMAIL ${subject}`) }).click();
+  await shown(page.getByRole("tab", { name: /^Preview$/i })).click();
   const frameElement = shown(page.locator('iframe[title="Email preview"]'));
   const frame = frameElement.contentFrame();
   await expect(frame.getByText("Self link")).toBeVisible();
@@ -374,6 +374,11 @@ test("codes and links can be turned off for the endpoint", async ({ page }) => {
     .click();
 
   const receiving = page.getByRole("region", { name: "Receiving" });
+  // On webhooks.cc the email settings start folded under "Email options".
+  const emailOptions = receiving.locator("details", { hasText: "Email options" });
+  if ((await emailOptions.getAttribute("open")) === null) {
+    await emailOptions.locator("summary").click();
+  }
   await receiving.getByRole("switch", { name: "Codes and links" }).click();
   await receiving.getByRole("button", { name: "Save changes" }).click();
   await expect(receiving.getByText("Saved.")).toBeVisible({ timeout: 10000 });
@@ -420,11 +425,15 @@ test("the email switch reaches emails older than the newest page", async ({ page
 
   await openDashboard(page);
   // A method picked for HTTP must not hide every email once Email is chosen.
-  await shown(page.getByRole("combobox", { name: "Method" })).selectOption("POST");
+  await shown(page.getByRole("combobox", { name: "Method" })).click();
+  await page
+    .locator('[role="listbox"][data-state="open"]')
+    .getByRole("option", { name: "POST", exact: true })
+    .click();
   const show = shown(page.getByRole("radiogroup", { name: "Show" }));
   await show.getByRole("radio", { name: /^Email/ }).click();
 
-  await expect(shown(page.getByText("None in the newest requests"))).toBeVisible();
+  await expect(shown(page.getByText("None in the newest emails"))).toBeVisible();
   // The timeline pages too.
   await shown(page.getByRole("button", { name: "Switch to timeline view" })).click();
   await expect(shown(page.getByRole("button", { name: "Load More" }))).toBeVisible();

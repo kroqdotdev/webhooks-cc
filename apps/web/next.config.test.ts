@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 // Next's own matcher, `has` check and value interpolation, so this test sees
 // the rules the way the router applies them: for headers() every matching
@@ -9,7 +10,7 @@ import {
   matchHas,
   prepareDestination,
 } from "next/dist/shared/lib/router/utils/prepare-destination";
-import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
+import { MAILHOOKS_PAGES } from "./lib/site";
 import { MARKDOWN_TWIN_HEADER } from "./lib/markdown-negotiation";
 import nextConfig from "./next.config";
 
@@ -132,12 +133,8 @@ describe("next.config.ts mailhooks.cc rewrites", () => {
 
   it("serves every mailhooks.cc page from app/mailhooks on the mail host only", async () => {
     const config = await mailConfig();
-    const paths = [
-      "/pricing",
-      "/parse",
-      "/parse/shopify-orders",
-      ...MAILHOOKS_FEATURES.map((f) => f.path),
-    ];
+    // lib/site.ts's list is what proxy.ts goes by; every page on it has a rewrite here.
+    const paths = [...MAILHOOKS_PAGES, "/parse/shopify-orders"];
     for (const path of paths) {
       expect(await rewriteFor(path, { host: "mailhooks.cc" }, config), path).toBe(
         `/mailhooks${path}`
@@ -145,5 +142,43 @@ describe("next.config.ts mailhooks.cc rewrites", () => {
       expect(await rewriteFor(path, { host: "webhooks.cc" }, config), path).toBeNull();
     }
     expect(await rewriteFor("/", { host: "mailhooks.cc" }, config)).toBe("/mailhooks");
+  });
+
+  it("serves mailhooks.cc's own 404 only for a path the proxy marked on the mail host", async () => {
+    const config = await mailConfig();
+    const marked = { host: "mailhooks.cc", "x-whk-missing": "1" };
+    expect(await rewriteFor("/no-such-page", marked, config)).toBe("/mailhooks/missing");
+    expect(await rewriteFor("/no/such/page", marked, config)).toBe("/mailhooks/missing");
+    // Not without the marker, and never on webhooks.cc.
+    expect(await rewriteFor("/no-such-page", { host: "mailhooks.cc" }, config)).toBeNull();
+    expect(
+      await rewriteFor("/no-such-page", { host: "webhooks.cc", "x-whk-missing": "1" }, config)
+    ).toBeNull();
+    // Not on the paths proxy.ts never runs for: a marker there is the client's own.
+    for (const path of [
+      "/_next/static/chunks/app.js",
+      "/_next/image",
+      "/favicon.ico",
+      "/robots.txt",
+      "/sitemap.xml",
+      "/sitemap.txt",
+      "/sitemap.rss",
+    ]) {
+      const to = await rewriteFor(path, marked, config);
+      expect(to, path).not.toBe("/mailhooks/missing");
+    }
+  });
+
+  it("leaves out exactly the paths the proxy's matcher leaves out", async () => {
+    const config = await mailConfig();
+    const rewrites = await config.rewrites?.();
+    const beforeFiles = rewrites && !Array.isArray(rewrites) ? (rewrites.beforeFiles ?? []) : [];
+    const rule = beforeFiles.find((entry) => entry.destination === "/mailhooks/missing");
+    // proxy.ts's matcher has to be a literal there, so it is read as text
+    // (written as in the source, with its doubled backslashes).
+    const proxySource = readFileSync(new URL("./proxy.ts", import.meta.url), "utf8");
+    const lookahead = /"\/\((\(\?!.*\))\.\*\)"/.exec(proxySource)?.[1];
+    expect(lookahead).toBeTruthy();
+    expect(rule?.source).toBe(`/:path(${lookahead!.replaceAll("\\\\", "\\")}.*)`);
   });
 });

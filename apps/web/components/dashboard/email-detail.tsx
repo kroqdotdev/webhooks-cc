@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -9,13 +9,17 @@ import {
   FileDown,
   ImageOff,
   Info,
+  Loader2,
   Paperclip,
+  RotateCcw,
   Send,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatBytes } from "@/types/request";
+import { formatBytes, formatFullTimestamp } from "@/types/request";
+import { useSite } from "@/components/providers/site-provider";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
 import {
   buildEmailJson,
@@ -25,7 +29,12 @@ import {
   type ParsedEmail,
 } from "@webhooks-cc/sdk/email";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { fetchAttachment, fetchEmailDetails, fetchRawEmail } from "@/lib/dashboard-api";
+import {
+  fetchAttachment,
+  fetchEmailDetails,
+  fetchRawEmail,
+  replayRequest,
+} from "@/lib/dashboard-api";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { highlightBody } from "@/lib/highlight";
 import {
@@ -36,7 +45,7 @@ import {
   type FindingStatus,
 } from "@/lib/deliverability";
 import { JsonTree } from "./json-tree";
-import { NoteBar, type DisplayableRequest } from "./request-detail";
+import { NoteBar, useMoreToRight, type DisplayableRequest } from "./request-detail";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 import { ParsedResult } from "./layouts-section";
 
@@ -57,15 +66,43 @@ interface EmailDetailProps {
   /** The endpoint's "Show codes and links found in emails" setting. */
   showExtracts: boolean;
   /** For the JSON (it names the endpoint), the forwarding line above it and the Deliveries tab. */
-  endpoint: DeliveryEndpoint & { name?: string | null; emailFields?: unknown[] };
-  /** The owner can redeliver and is pointed at the Forwarding settings. */
+  endpoint: DeliveryEndpoint & {
+    name?: string | null;
+    emailFields?: unknown[];
+    layouts?: unknown[];
+    destinationCount?: number;
+  };
+  /**
+   * The owner can redeliver, read the email again (replay) and is pointed at
+   * the Forwarding settings.
+   */
   canManageForwarding: boolean;
   onOpenForwarding?: () => void;
+  /** Opens Settings at Layouts (the owner's). */
+  onOpenLayouts?: () => void;
   note?: string | null;
   onNoteChange?: (note: string) => void;
   /** The tab to open with, for a delivery opened from the log. */
   initialTab?: EmailTab;
+  /** A parse finished while the email was open (the list only has what it loaded). */
+  onParsed?: (requestId: string, parsed: ParsedEmail) => void;
+  /** When the page saw the layouts saved, if it did: email from before was never queued for them. */
+  parseSince?: number | null;
 }
+
+/**
+ * No event says a parse finished, so an open email the layouts are still
+ * reading is asked for again: one that arrived in the last two minutes (or was
+ * just read again), every two seconds for up to a minute.
+ */
+const PARSE_FRESH_MS = 2 * 60 * 1000;
+const PARSE_POLL_MS = 2000;
+const PARSE_WATCH_MS = 60 * 1000;
+
+type ParseWatch =
+  | { id: string; state: "reading"; mode: "new" | "again"; until: number }
+  /** `layout`: the name of the layout that read it, null when none did (or no answer came). */
+  | { id: string; state: "done"; mode: "new" | "again"; layout: string | null };
 
 function useCopy() {
   const [copied, setCopied] = useState<string | null>(null);
@@ -78,17 +115,6 @@ function useCopy() {
     timer.current = setTimeout(() => setCopied(null), 2000);
   }, []);
   return { copied, copy };
-}
-
-function formatReceived(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
 }
 
 /** The Raw tab shows at most this much of a stored message; the download has all of it. */
@@ -181,24 +207,16 @@ function tlsLabel(smtp: EmailSmtp | null): string | null {
   return version.replace(/^TLSv1_(\d)$/, "TLS 1.$1").replace(/^TLSv1$/, "TLS 1.0");
 }
 
+/** Sender check verdicts; a test email from the dashboard shows a Test badge instead. */
 function Verdicts({
   email,
-  isTest,
   report,
   onOpen,
 }: {
   email: EmailCapture;
-  isTest: boolean;
   report: DeliverabilityReport | null;
   onOpen: () => void;
 }) {
-  if (isTest) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Test email from the dashboard: sender checks do not apply.
-      </p>
-    );
-  }
   const auth = email.auth;
   const spam = spamChip(email);
   const issues = report ? issuesChip(report) : null;
@@ -347,7 +365,7 @@ function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
         if (findings.length === 0) return null;
         return (
           <div key={group} className="mt-3">
-            <h4 className="text-[10px] font-bold caps text-muted-foreground mb-1">{title}</h4>
+            <h4 className="text-[11px] font-bold caps text-muted-foreground mb-1">{title}</h4>
             <ul>
               {findings.map((finding: Finding) => (
                 <li
@@ -395,14 +413,14 @@ function Pick({
     >
       <span
         className={cn(
-          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[140px]",
+          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[220px] max-sm:max-w-[120px] max-sm:px-2",
           exactLabel ? "font-mono" : "caps"
         )}
         title={label}
       >
         <span className="truncate">{label}</span>
       </span>
-      <span className="flex items-center px-2.5 min-w-0">{children}</span>
+      <span className="flex items-center px-2.5 max-sm:px-2 min-w-0">{children}</span>
       {actions}
     </span>
   );
@@ -442,6 +460,36 @@ function PickButton({
   );
 }
 
+/** Keeps both ends of a long piece of a link: "abcdefgh...uvwxyz". */
+function middle(text: string, keep: number): string {
+  if (text.length <= keep) return text;
+  const head = Math.ceil((keep - 3) / 2);
+  return `${text.slice(0, head)}...${text.slice(text.length - (keep - 3 - head))}`;
+}
+
+/**
+ * A link as a chip shows it: its host and its last path segment, cut in the
+ * middle ("acme.example/.../confirm"), since what sits between is rarely read.
+ * The chip's title, copy and open keep the whole URL.
+ */
+function shortLink(url: string): string {
+  let host: string;
+  let segments: string[];
+  let search: string;
+  try {
+    const parsed = new URL(url);
+    host = parsed.host;
+    segments = parsed.pathname.split("/").filter(Boolean);
+    search = parsed.search;
+  } catch {
+    return middle(url.replace(/^https?:\/\//, ""), 48);
+  }
+  const query = search ? "?..." : "";
+  if (segments.length === 0) return `${host}${query}`;
+  const last = middle(segments[segments.length - 1], 24);
+  return segments.length === 1 ? `${host}/${last}${query}` : `${host}/.../${last}${query}`;
+}
+
 function FoundInEmail({
   code,
   link,
@@ -458,68 +506,73 @@ function FoundInEmail({
 }) {
   if (!code && !link && fields.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-line/20 text-sm">
-      <span className="text-muted-foreground mr-1">Found in this email</span>
-      {fields.map(([name, value]) => (
-        <Pick
-          key={name}
-          label={name}
-          exactLabel
-          actions={
-            <PickButton label={`Copy ${name}`} onClick={() => onCopy(value, `field:${name}`)}>
-              {copied === `field:${name}` ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </PickButton>
-          }
-        >
-          <span className="font-mono text-[13px] truncate max-w-[260px]" title={value}>
-            {value}
-          </span>
-        </Pick>
-      ))}
-      {code && (
-        <Pick
-          label="Code"
-          actions={
-            <PickButton label="Copy code" onClick={() => onCopy(code, "code")}>
-              {copied === "code" ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </PickButton>
-          }
-        >
-          <span className="font-mono text-base font-semibold tracking-[0.12em]">{code}</span>
-        </Pick>
-      )}
-      {link && (
-        <Pick
-          wide
-          label={link.label ?? "Link"}
-          actions={
-            <>
-              <PickButton label="Copy link" onClick={() => onCopy(link.url, "link")}>
-                {copied === "link" ? (
+    // At phone width: the label in one column, the chips stacked in the other.
+    <div className="mt-2 text-sm max-sm:grid max-sm:grid-cols-[auto_minmax(0,1fr)] max-sm:gap-x-3 max-sm:items-start sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+      <span className="text-muted-foreground mr-1 max-sm:mr-0 max-sm:w-16 max-sm:text-xs max-sm:leading-snug max-sm:pt-1">
+        Found in this email
+      </span>
+      <div className="flex flex-col items-start gap-2 min-w-0 sm:contents">
+        {fields.map(([name, value]) => (
+          <Pick
+            key={name}
+            label={name}
+            exactLabel
+            actions={
+              <PickButton label={`Copy ${name}`} onClick={() => onCopy(value, `field:${name}`)}>
+                {copied === `field:${name}` ? (
                   <Check className="h-3.5 w-3.5" />
                 ) : (
                   <Copy className="h-3.5 w-3.5" />
                 )}
               </PickButton>
-              <PickButton label="Open link in a new tab" href={link.url}>
-                <ExternalLink className="h-3.5 w-3.5" />
+            }
+          >
+            <span className="font-mono text-[13px] truncate max-w-[260px]" title={value}>
+              {value}
+            </span>
+          </Pick>
+        ))}
+        {code && (
+          <Pick
+            label="Code"
+            actions={
+              <PickButton label="Copy code" onClick={() => onCopy(code, "code")}>
+                {copied === "code" ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
               </PickButton>
-            </>
-          }
-        >
-          <span className="font-mono text-[13px] truncate">
-            {link.url.replace(/^https?:\/\//, "")}
-          </span>
-        </Pick>
-      )}
+            }
+          >
+            <span className="font-mono text-base font-semibold tracking-[0.12em]">{code}</span>
+          </Pick>
+        )}
+        {link && (
+          <Pick
+            wide
+            label={link.label ?? "Link"}
+            actions={
+              <>
+                <PickButton label="Copy link" onClick={() => onCopy(link.url, "link")}>
+                  {copied === "link" ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </PickButton>
+                <PickButton label="Open link in a new tab" href={link.url}>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </PickButton>
+              </>
+            }
+          >
+            <span className="font-mono text-[13px] truncate" title={link.url}>
+              {shortLink(link.url)}
+            </span>
+          </Pick>
+        )}
+      </div>
     </div>
   );
 }
@@ -646,7 +699,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
           {spam.symbols.length > 0 && (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[10px] font-bold caps text-muted-foreground">
+                <tr className="text-left text-[11px] font-bold caps text-muted-foreground">
                   <th className="py-1.5 pr-3 font-bold">Rule</th>
                   <th className="py-1.5 pr-3 font-bold text-right">Score</th>
                   <th className="py-1.5 font-bold">Matched</th>
@@ -661,8 +714,8 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
                     <td
                       className={cn(
                         "py-1.5 pr-3 font-mono text-xs text-right whitespace-nowrap",
-                        symbol.score > 0 && "text-destructive",
-                        symbol.score < 0 && "text-primary"
+                        symbol.score > 0 && "text-destructive-ink",
+                        symbol.score < 0 && "text-primary-ink"
                       )}
                     >
                       {symbol.score > 0 ? "+" : ""}
@@ -686,10 +739,13 @@ function AuthenticationPane({
   email,
   ip,
   report,
+  isTest,
 }: {
   email: EmailCapture;
   ip: string;
   report: DeliverabilityReport | null;
+  /** A test email sent from the dashboard, which no sender checks apply to. */
+  isTest: boolean;
 }) {
   const auth = email.auth;
   const arc = auth?.arc;
@@ -706,7 +762,12 @@ function AuthenticationPane({
     <div className="grid gap-4 max-w-[860px]">
       <section className="ui-card ui-card-static p-4!">
         <h3 className="text-sm font-bold caps mb-1">Sender checks</h3>
-        {!auth || auth.error ? (
+        {isTest ? (
+          <p className="text-sm text-muted-foreground py-2">
+            This is a test email sent from the dashboard, so SPF, DKIM and DMARC do not apply. Mail
+            from a real sender shows its results here.
+          </p>
+        ) : !auth || auth.error ? (
           <p className="text-sm text-muted-foreground py-2">
             The checks could not run for this email{auth?.error ? ` (${auth.error})` : ""}.
           </p>
@@ -793,7 +854,8 @@ function AuthenticationPane({
       {email.spam && <SpamSection spam={email.spam} />}
       <section className="ui-card ui-card-static p-4!">
         <h3 className="text-sm font-bold caps mb-1">Delivery</h3>
-        <dl className="grid grid-cols-[minmax(120px,200px)_1fr] text-sm">
+        {/* Two columns from sm up; on a phone each value goes under its label. */}
+        <dl className="grid grid-cols-1 sm:grid-cols-[minmax(120px,200px)_1fr] text-sm">
           {[
             [
               "Sending server",
@@ -823,7 +885,7 @@ function AuthenticationPane({
               <div key={label as string} className="contents">
                 <dt
                   className={cn(
-                    "py-2 pr-3 text-muted-foreground",
+                    "pt-2 sm:py-2 pr-3 text-muted-foreground",
                     index > 0 && "border-t border-line/15"
                   )}
                 >
@@ -831,8 +893,8 @@ function AuthenticationPane({
                 </dt>
                 <dd
                   className={cn(
-                    "py-2 break-all",
-                    index > 0 && "border-t border-line/15",
+                    "pb-2 sm:py-2 [overflow-wrap:anywhere]",
+                    index > 0 && "sm:border-t sm:border-line/15",
                     mono && "font-mono text-[13px]"
                   )}
                 >
@@ -912,9 +974,11 @@ function EmailJsonPane({
               type="button"
               onClick={() => setView(mode)}
               className={cn(
-                "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
+                "px-2 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors",
                 mode === "tree" && "border-l-strong border-line",
-                view === mode ? "bg-selected text-selected-foreground" : "hover:bg-muted"
+                view === mode
+                  ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                  : "hover:bg-muted"
               )}
             >
               {mode === "formatted" ? "Formatted" : "Tree"}
@@ -950,14 +1014,39 @@ export function EmailDetail({
   endpoint,
   canManageForwarding,
   onOpenForwarding,
+  onOpenLayouts,
   note,
   onNoteChange,
   initialTab,
+  onParsed,
+  parseSince = null,
 }: EmailDetailProps) {
   const email = request.email ?? null;
   const requestId = "id" in request ? request.id : request._id;
-  // JSON first: it is what forwarding sends and what a handler is written against.
-  const [tab, setTab] = useState<EmailTab>(initialTab ?? (request.parsed ? "parsed" : "json"));
+  // webhooks.cc leads with JSON: it is what forwarding sends and what a handler is
+  // written against. mailhooks.cc leads with the email as people read it.
+  const mailFirst = useSite().key === "mailhooks";
+  // The page can show this view twice (desktop and phone), so ids are per instance.
+  const tabIds = useId();
+  const [tabStripRef, tabStripMore] = useMoreToRight<HTMLDivElement>();
+  const hasLayouts = (endpoint.layouts?.length ?? 0) > 0;
+  // A tab the person picked stays: a parse that finishes later does not move them.
+  const tabPicked = useRef(initialTab !== undefined);
+  const [tab, setTab] = useState<EmailTab>(
+    initialTab ??
+      // Opens on Parsed when a layout read it; mail no layout reads opens as usual.
+      (request.parsed?.status === "matched"
+        ? "parsed"
+        : mailFirst
+          ? email?.html
+            ? "preview"
+            : "text"
+          : "json")
+  );
+  const pickTab = useCallback((id: EmailTab) => {
+    tabPicked.current = true;
+    setTab(id);
+  }, []);
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
   const raw = useMemo(() => rawMessage(request), [request]);
@@ -1008,12 +1097,65 @@ export function EmailDetail({
       cancelled = true;
     };
   }, [accessToken, isEmail, requestId, fieldsKnownEmpty, partialParse]);
+  // A new email the layouts may still be reading.
+  const [watch, setWatch] = useState<ParseWatch | null>(() =>
+    email &&
+    hasLayouts &&
+    !request.parsed &&
+    Date.now() - request.receivedAt < PARSE_FRESH_MS &&
+    (parseSince === null || request.receivedAt >= parseSince)
+      ? { id: requestId, state: "reading", mode: "new", until: Date.now() + PARSE_WATCH_MS }
+      : null
+  );
+  const watchHere = watch?.id === requestId ? watch : null;
+  const onParsedRef = useRef(onParsed);
+  useEffect(() => {
+    onParsedRef.current = onParsed;
+  }, [onParsed]);
+  useEffect(() => {
+    if (watchHere?.state !== "reading" || !accessToken) return;
+    const { mode, until } = watchHere;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        const found = await fetchEmailDetails(accessToken, requestId);
+        if (cancelled) return;
+        setDetails({ id: requestId, values: found.emailFields, parsed: found.parsed });
+        if (found.parsed) {
+          const layout =
+            found.parsed.status === "matched" ? (found.parsed.layout?.name ?? "a layout") : null;
+          setWatch({ id: requestId, state: "done", mode, layout });
+          if (layout && !tabPicked.current) setTab("parsed");
+          onParsedRef.current?.(requestId, found.parsed);
+          return;
+        }
+      } catch {
+        // Asked again on the next tick.
+      }
+      if (cancelled) return;
+      if (Date.now() >= until) {
+        setWatch({ id: requestId, state: "done", mode, layout: null });
+        return;
+      }
+      timer = setTimeout(() => void tick(), PARSE_POLL_MS);
+    };
+    timer = setTimeout(() => void tick(), PARSE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [watchHere, accessToken, requestId]);
+  const readingAgain = watchHere?.mode === "again";
   const fields = details?.id === requestId ? details.values : null;
   const fetchFailed = details?.id === requestId && details.failed === true;
-  // The list's summary stands in when the whole result cannot be fetched.
+  // The list's summary stands in when the whole result cannot be fetched; once
+  // the email is read again, it is the old result and no longer counts.
+  const listParsed = readingAgain ? null : (request.parsed ?? null);
   const parsed =
     (details?.id === requestId ? details.parsed : null) ??
-    (partialParse && !fetchFailed ? null : (request.parsed ?? null));
+    (partialParse && !fetchFailed ? null : listParsed);
+  const reading = watchHere?.state === "reading" && (watchHere.mode === "again" || parsed === null);
   // With object storage the exact message is fetched when it is wanted (the
   // Raw tab or a download), whatever its size.
   const stored = email?.stored === true;
@@ -1078,6 +1220,74 @@ export function EmailDetail({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [raw, requestId, stored, storedRawHere, loadStoredRaw]);
 
+  // Read again: the email is parsed with the current layouts (when there are
+  // any) and sent to its destinations again (lib/replay). Its status shows
+  // beside the button that asked for it.
+  const hasDestinations = endpoint.forwardEnabled === true || (endpoint.destinationCount ?? 0) > 0;
+  const [replay, setReplay] = useState<{
+    id: string;
+    from: "header" | "parsed";
+    state:
+      { kind: "sending" } | { kind: "done"; queued: boolean } | { kind: "error"; message: string };
+  } | null>(null);
+  const replayHere = replay?.id === requestId ? replay : null;
+  const readAgain = useCallback(
+    async (from: "header" | "parsed") => {
+      if (replayHere?.state.kind === "sending") return;
+      if (!accessToken) {
+        setReplay({
+          id: requestId,
+          from,
+          state: { kind: "error", message: "Sign in again to read it again." },
+        });
+        return;
+      }
+      setReplay({ id: requestId, from, state: { kind: "sending" } });
+      try {
+        const queued = await replayRequest(accessToken, requestId);
+        setReplay({ id: requestId, from, state: { kind: "done", queued } });
+        if (queued && hasLayouts) {
+          // The parse is pending again: the result shown so far is the old one.
+          setDetails((current) =>
+            current?.id === requestId ? { ...current, parsed: null } : current
+          );
+          setWatch({
+            id: requestId,
+            state: "reading",
+            mode: "again",
+            until: Date.now() + PARSE_WATCH_MS,
+          });
+        }
+      } catch (error) {
+        setReplay({
+          id: requestId,
+          from,
+          state: {
+            kind: "error",
+            message: error instanceof Error ? error.message : "It could not be queued.",
+          },
+        });
+      }
+    },
+    [accessToken, requestId, replayHere?.state.kind, hasLayouts]
+  );
+  const replayMessage = (from: "header" | "parsed") => {
+    if (replayHere?.from !== from) return null;
+    const { state } = replayHere;
+    if (state.kind === "sending") return "Queueing...";
+    if (state.kind === "error") return state.message;
+    if (!state.queued) return "Nothing was queued: no layout or destination takes this email.";
+    if (!hasLayouts) return "Queued. It is sent to destinations again.";
+    if (watchHere?.mode !== "again" || watchHere.state === "reading") return "Reading again...";
+    const sent = hasDestinations ? " It is sent to destinations again." : "";
+    return watchHere.layout
+      ? `Read by ${watchHere.layout} just now.${sent}`
+      : `Still no layout applies.${sent}`;
+  };
+  const replayFailed = replayHere?.state.kind === "error";
+  // Offered when reading it again would do something: a layout or a destination.
+  const canReadAgain = canManageForwarding && (hasLayouts || hasDestinations);
+
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const downloadAttachment = useCallback(
     async (index: number) => {
@@ -1123,10 +1333,15 @@ export function EmailDetail({
   const attachments = email.attachments;
   const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
-    ...(request.parsed ? [{ id: "parsed" as const, label: "Parsed" }] : []),
-    { id: "json", label: "JSON" },
+    // Also without a result while the endpoint has layouts, to say why and offer a fix,
+    // and always on mailhooks.cc, where reading mail into values is the point.
+    ...(request.parsed || parsed || hasLayouts || mailFirst
+      ? [{ id: "parsed" as const, label: "Parsed" }]
+      : []),
+    ...(mailFirst ? [] : [{ id: "json" as const, label: "JSON" }]),
     ...(email.html ? [{ id: "preview" as const, label: "Preview" }] : []),
     { id: "text", label: "Text" },
+    ...(mailFirst ? [{ id: "json" as const, label: "JSON" }] : []),
     { id: "headers", label: "Headers", count: headerCount },
     ...(attachments.length > 0
       ? [{ id: "attachments" as const, label: "Attachments", count: attachments.length }]
@@ -1139,36 +1354,87 @@ export function EmailDetail({
       : []),
   ];
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : tabs[0].id;
+  const openTab = (id: EmailTab) => {
+    // A failed load of the stored message is tried again.
+    if (id === "raw" && storedRawHere && "error" in storedRawHere) setStoredRaw(null);
+    pickTab(id);
+  };
   const rawAvailable = stored || (!!raw && !email.truncated.raw);
 
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Envelope */}
-      <div className="border-b-strong border-line px-4 md:px-5 pt-4 pb-3.5 shrink-0 bg-card">
-        <div className="flex items-start gap-3">
-          <h1
-            className={cn(
-              "flex-1 min-w-0 text-lg md:text-[21px] font-bold clean:font-semibold leading-tight break-words",
-              !email.subject && "text-muted-foreground"
-            )}
-          >
-            {email.subject || "(no subject)"}
-          </h1>
-          {rawAvailable && (
-            <button
-              type="button"
-              onClick={downloadEml}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
+      <div className="@container border-b-strong border-line px-4 pt-3 pb-3 shrink-0 bg-card">
+        {/* In a narrow pane the buttons go under the subject, which keeps the full width. */}
+        <div className="flex flex-col gap-2 @xl:flex-row @xl:items-start @xl:gap-3">
+          <div className="@xl:flex-1 min-w-0 flex items-start gap-2">
+            <h2
+              className={cn(
+                "min-w-0 text-lg font-bold clean:font-semibold leading-tight break-words",
+                !email.subject && "text-muted-foreground"
+              )}
             >
-              <FileDown className="h-3 w-3" />
-              Download .eml
-            </button>
+              {email.subject || "(no subject)"}
+            </h2>
+            {/* The Authentication tab says why sender checks do not apply. */}
+            {isTest && (
+              <span
+                title="Test email sent from the dashboard"
+                className="mt-0.5 shrink-0 px-1.5 py-0.5 text-xs font-bold caps leading-none rounded-sm border-strong border-line bg-muted text-muted-foreground"
+              >
+                Test
+              </span>
+            )}
+          </div>
+          {(canReadAgain || rawAvailable) && (
+            <div className="flex flex-wrap gap-2 @xl:justify-end @xl:shrink-0">
+              {canReadAgain && (
+                <button
+                  type="button"
+                  onClick={() => void readAgain("header")}
+                  disabled={replayHere?.state.kind === "sending"}
+                  className="ui-btn-outline py-1! px-3! text-xs flex items-center gap-1.5"
+                >
+                  <RotateCcw className="h-3 w-3" aria-hidden />
+                  Read again
+                </button>
+              )}
+              {rawAvailable && (
+                <button
+                  type="button"
+                  onClick={downloadEml}
+                  className="ui-btn-outline py-1! px-3! text-xs flex items-center gap-1.5"
+                >
+                  <FileDown className="h-3 w-3" aria-hidden />
+                  Download .eml
+                </button>
+              )}
+            </div>
           )}
         </div>
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+        {canReadAgain && (
+          <p
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "text-xs empty:hidden mt-1.5",
+              replayFailed ? "text-destructive-ink" : "text-muted-foreground"
+            )}
+          >
+            {replayMessage("header")}
+          </p>
+        )}
+        <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
           <dt className="text-muted-foreground">From</dt>
-          <dd className="min-w-0">
+          {/* Received and the size share the From row, which keeps the envelope short. */}
+          <dd className="min-w-0 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
             <AddressLine addresses={email.from.length > 0 ? email.from : email.sender} />
+            <span className="text-xs text-muted-foreground">
+              <span className="sr-only">Received </span>
+              {formatFullTimestamp(request.receivedAt)}
+              {", "}
+              {formatBytes(email.smtp?.size ?? request.size)}
+            </span>
           </dd>
           <dt className="text-muted-foreground">To</dt>
           <dd className="min-w-0">
@@ -1188,22 +1454,12 @@ export function EmailDetail({
               </dd>
             </>
           )}
-          <dt className="text-muted-foreground">Received</dt>
-          <dd>
-            {formatReceived(request.receivedAt)}
-            <span className="text-muted-foreground">
-              , {formatBytes(email.smtp?.size ?? request.size)}
-            </span>
-          </dd>
         </dl>
-        <div className="mt-3">
-          <Verdicts
-            email={email}
-            isTest={isTest}
-            report={report}
-            onOpen={() => setTab("authentication")}
-          />
-        </div>
+        {!isTest && (
+          <div className="mt-3">
+            <Verdicts email={email} report={report} onOpen={() => pickTab("authentication")} />
+          </div>
+        )}
         {(showExtracts || fields) && (
           <FoundInEmail
             code={showExtracts ? (extracts.codes[0] ?? null) : null}
@@ -1220,100 +1476,157 @@ export function EmailDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs: the same bar as the HTTP view */}
-      <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]">
-        {tabs.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            onClick={() => {
-              // A failed load of the stored message is tried again.
-              if (entry.id === "raw" && storedRawHere && "error" in storedRawHere) {
-                setStoredRaw(null);
-              }
-              setTab(entry.id);
-            }}
-            className={cn(
-              "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
-              activeTab === entry.id
-                ? "bg-selected text-selected-foreground"
-                : "bg-background hover:bg-muted"
-            )}
-          >
-            {entry.label}
-            {entry.count !== undefined && (
-              <span className="ml-1.5 font-mono opacity-70">{entry.count}</span>
-            )}
-          </button>
-        ))}
-        {activeTab === "text" && reply && (
-          <div className="flex ml-auto items-center pr-3 pl-3">
-            <div
-              className="flex overflow-hidden rounded-sm border-strong border-line"
-              role="group"
-              aria-label="Text to show"
+      {/* The strip scrolls when the tabs do not fit; a fade on the right says there is more. */}
+      <div
+        ref={tabStripRef}
+        className={cn(
+          "border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]",
+          tabStripMore && "[mask-image:linear-gradient(to_right,#000_calc(100%-3rem),transparent)]"
+        )}
+      >
+        <div role="tablist" aria-label="Email sections" className="flex shrink-0">
+          {tabs.map((entry, index) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              id={`${tabIds}-tab-${entry.id}`}
+              data-tab={entry.id}
+              aria-selected={activeTab === entry.id}
+              aria-controls={`${tabIds}-panel`}
+              tabIndex={activeTab === entry.id ? 0 : -1}
+              onClick={() => openTab(entry.id)}
+              onKeyDown={(event) => {
+                // Arrow keys move between tabs, as in any tab list.
+                const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                if (!step) return;
+                event.preventDefault();
+                const next = tabs[(index + step + tabs.length) % tabs.length];
+                openTab(next.id);
+                event.currentTarget.parentElement
+                  ?.querySelector<HTMLButtonElement>(`[data-tab="${next.id}"]`)
+                  ?.focus();
+              }}
+              className={cn(
+                "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
+                activeTab === entry.id
+                  ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                  : "bg-background hover:bg-muted"
+              )}
             >
-              {(
-                [
-                  ["whole", "Whole text"],
-                  ["reply", "Reply only"],
-                ] as const
-              ).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setTextView(mode)}
-                  aria-pressed={textView === mode}
-                  className={cn(
-                    "px-2.5 py-0.5 text-[11px] font-bold caps clean:capitalize cursor-pointer transition-colors whitespace-nowrap",
-                    mode === "reply" && "border-l-strong border-line",
-                    textView === mode
-                      ? "bg-selected text-selected-foreground"
-                      : "bg-background hover:bg-muted"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {activeTab === "preview" && (
-          <div className="hidden md:flex ml-auto items-center pr-3 pl-3">
-            <div className="flex overflow-hidden rounded-sm border-strong border-line">
-              {(["desktop", "mobile"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setWidth(mode)}
-                  className={cn(
-                    "px-2.5 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors capitalize",
-                    mode === "mobile" && "border-l-strong border-line",
-                    width === mode
-                      ? "bg-selected text-selected-foreground"
-                      : "bg-background hover:bg-muted"
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+              {entry.label}
+              {entry.count !== undefined && (
+                <>
+                  <span className="sr-only">, </span>
+                  <span className="ml-1.5 font-mono opacity-70">{entry.count}</span>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 md:p-5">
+      <div
+        role="tabpanel"
+        id={`${tabIds}-panel`}
+        aria-labelledby={`${tabIds}-tab-${activeTab}`}
+        className="flex-1 overflow-auto p-4 md:p-5"
+      >
         {activeTab === "parsed" &&
-          (parsed ? (
+          (reading ? (
+            <p
+              // Read again from the header: its own status line already says so.
+              {...(readingAgain && replayHere?.from === "header"
+                ? {}
+                : { role: "status", "aria-live": "polite" as const })}
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+            >
+              <Loader2
+                className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+                aria-hidden
+              />
+              {readingAgain ? "Reading again..." : "Reading with your layouts..."}
+            </p>
+          ) : parsed && (parsed.status === "matched" || !hasLayouts) ? (
             <>
+              {replayHere?.from === "parsed" && (
+                <p role="status" aria-live="polite" className="text-xs text-muted-foreground mb-2">
+                  {replayMessage("parsed")}
+                </p>
+              )}
               {parsed.partial && (
                 <p className="text-xs text-muted-foreground mb-2">
                   The line items and attachments could not be loaded; reopen the email to try again.
                 </p>
               )}
-              <ParsedResult parsed={parsed} />
+              <ParsedResult parsed={parsed} layouts={endpoint.layouts} />
             </>
-          ) : (
+          ) : !parsed && listParsed ? (
             <p className="text-sm text-muted-foreground">Loading the parsed result...</p>
+          ) : !hasLayouts ? (
+            <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
+              <h3 className="text-sm font-semibold">No layout reads this sender yet.</h3>
+              <p className="text-sm text-muted-foreground">
+                A layout picks out the values you need and sends them on as JSON.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {onOpenLayouts && (
+                  <button
+                    type="button"
+                    onClick={onOpenLayouts}
+                    className="ui-btn-primary py-1.5! px-3! text-xs"
+                  >
+                    Add a layout
+                  </button>
+                )}
+                <Link href="/parse" className="ui-btn-outline py-1.5! px-3! text-xs">
+                  Browse ready-made layouts
+                </Link>
+              </div>
+            </section>
+          ) : (
+            <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
+              <h3 className="text-sm font-semibold">No layout applied to this email.</h3>
+              <p className="text-sm text-muted-foreground">
+                {canManageForwarding
+                  ? "It arrived before the current layouts, or none of them applies to it. Read it again to try the current layouts, or open Layouts to adjust one."
+                  : "It arrived before the current layouts, or none of them applies to it."}
+              </p>
+              {canManageForwarding && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void readAgain("parsed")}
+                    disabled={replayHere?.state.kind === "sending"}
+                    className="ui-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="h-3 w-3" aria-hidden />
+                    Read again
+                  </button>
+                  {onOpenLayouts && (
+                    <button
+                      type="button"
+                      onClick={onOpenLayouts}
+                      className="ui-btn-outline py-1.5! px-3! text-xs"
+                    >
+                      Open Layouts
+                    </button>
+                  )}
+                </div>
+              )}
+              {canManageForwarding && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={cn(
+                    "text-xs empty:hidden",
+                    replayFailed ? "text-destructive-ink" : "text-muted-foreground"
+                  )}
+                >
+                  {replayMessage("parsed")}
+                </p>
+              )}
+            </section>
           ))}
 
         {activeTab === "json" && json && (
@@ -1323,7 +1636,7 @@ export function EmailDetail({
             forwardUrl={endpoint.forwardUrl}
             canManageForwarding={canManageForwarding}
             onOpenForwarding={onOpenForwarding}
-            onOpenDeliveries={() => setTab("deliveries")}
+            onOpenDeliveries={() => pickTab("deliveries")}
           />
         )}
 
@@ -1339,6 +1652,32 @@ export function EmailDetail({
 
         {activeTab === "preview" && email.html && (
           <>
+            {/* The width toggle; a phone shows the mobile width anyway. */}
+            <div className="hidden md:flex items-center justify-end gap-2 mb-3">
+              <div
+                role="group"
+                aria-label="Preview width"
+                className="flex overflow-hidden rounded-sm border-strong border-line"
+              >
+                {(["desktop", "mobile"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={width === mode}
+                    onClick={() => setWidth(mode)}
+                    className={cn(
+                      "px-2.5 py-1 text-[11px] font-bold caps cursor-pointer transition-colors capitalize",
+                      mode === "mobile" && "border-l-strong border-line",
+                      width === mode
+                        ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                        : "bg-background hover:bg-muted"
+                    )}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
             {email.truncated.html && (
               <p className="text-xs text-muted-foreground mb-3">
                 The HTML was too large to keep in full; the end is cut off.
@@ -1353,14 +1692,46 @@ export function EmailDetail({
         )}
 
         {activeTab === "text" && (
-          <div className="max-w-[760px]">
+          <div>
+            {reply && (
+              <div className="flex items-center justify-end gap-2 mb-3">
+                <div
+                  className="flex overflow-hidden rounded-sm border-strong border-line"
+                  role="group"
+                  aria-label="Text to show"
+                >
+                  {(
+                    [
+                      ["whole", "Whole text"],
+                      ["reply", "Reply only"],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setTextView(mode)}
+                      aria-pressed={textView === mode}
+                      className={cn(
+                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold caps clean:capitalize cursor-pointer transition-colors whitespace-nowrap",
+                        mode === "reply" && "border-l-strong border-line",
+                        textView === mode
+                          ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                          : "bg-background hover:bg-muted"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {email.textFromHtml && (
-              <p className="text-xs text-muted-foreground mb-3">
+              <p className="text-xs text-muted-foreground mb-3 max-w-[760px]">
                 This email has no text part; the text below was taken from its HTML.
               </p>
             )}
             {reply && textView === "reply" && (
-              <p className="text-xs text-muted-foreground mb-3">
+              <p className="text-xs text-muted-foreground mb-3 max-w-[760px]">
                 What the sender wrote above the quoted message, without the signature: the{" "}
                 <code className="font-mono">replyText</code> field of the JSON.
               </p>
@@ -1377,7 +1748,9 @@ export function EmailDetail({
                 >
                   {copied === "text" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </button>
-                {reply && textView === "reply" ? reply : email.text}
+                <div className="max-w-[760px]">
+                  {reply && textView === "reply" ? reply : email.text}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">This email has no text.</p>
@@ -1447,7 +1820,9 @@ export function EmailDetail({
                 </li>
               ))}
             </ul>
-            {attachmentError && <p className="text-xs text-destructive mt-3">{attachmentError}</p>}
+            {attachmentError && (
+              <p className="text-xs text-destructive-ink mt-3">{attachmentError}</p>
+            )}
             <p className="text-xs text-muted-foreground mt-3">
               {stored
                 ? "Attachments are kept with the email and deleted with it."
@@ -1458,7 +1833,7 @@ export function EmailDetail({
         )}
 
         {activeTab === "authentication" && (
-          <AuthenticationPane email={email} ip={request.ip} report={report} />
+          <AuthenticationPane email={email} ip={request.ip} report={report} isTest={isTest} />
         )}
 
         {activeTab === "raw" &&
@@ -1466,7 +1841,7 @@ export function EmailDetail({
             storedRawHere === null ? (
               <p className="text-sm text-muted-foreground">Loading the message...</p>
             ) : "error" in storedRawHere ? (
-              <p className="text-sm text-destructive">{storedRawHere.error}</p>
+              <p className="text-sm text-destructive-ink">{storedRawHere.error}</p>
             ) : (
               <>
                 {storedRawHere.bytes.length > RAW_DISPLAY_BYTES && (

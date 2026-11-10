@@ -147,7 +147,7 @@ export default function RootLayout({
         {ANNOUNCEMENTS.length > 0 && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){${MAILHOOKS_HOST ? `if(location.hostname===${scriptLiteral(MAILHOOKS_HOST)})return;` : ""}var d=null;try{d=localStorage.getItem(${scriptLiteral(ANNOUNCEMENTS[0].id)})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
+              __html: `(function(){${MAILHOOKS_HOST ? `if(location.hostname===${scriptLiteral(MAILHOOKS_HOST)})return;` : ""}if(/^\\/(dashboard|account|teams|support|login|auth)(\\/|$)/.test(location.pathname)||matchMedia('(max-width: 639px)').matches)return;var d=null;try{d=localStorage.getItem(${scriptLiteral(ANNOUNCEMENTS[0].id)})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
             }}
           />
         )}
@@ -180,7 +180,7 @@ export default function RootLayout({
             </noscript>
             <MaintenanceBanner />
             <AnnouncementBanner />
-            <div id="main-content" tabIndex={-1} />
+            {/* The skip link's target is rendered right after the site header (SiteHeader). */}
             {children}
           </ThemeProvider>
         </PostHogProvider>

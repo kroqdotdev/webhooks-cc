@@ -11,7 +11,7 @@ export const metadata: Metadata = createPageMetadata({
   path: "/privacy",
 });
 
-const linkClass = "text-primary hover:underline font-bold";
+const linkClass = "text-primary-ink hover:underline font-bold";
 
 function SupportEmail() {
   return (

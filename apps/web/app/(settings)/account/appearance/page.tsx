@@ -111,7 +111,7 @@ export default function AppearancePage() {
         <Panel
           id="theme"
           title="Theme"
-          description="System follows your operating system and changes with it."
+          description="Light and Dark stay as picked; System follows your operating system and changes with it."
         >
           <div
             role="radiogroup"

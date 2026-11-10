@@ -1,5 +1,5 @@
 export interface Announcement {
-  /** Unique id — also used as the localStorage dismissal key. */
+  /** Unique id, also used as the localStorage dismissal key. */
   id: string;
   /** Short text shown in the banner. */
   text: string;
@@ -17,9 +17,10 @@ export interface Announcement {
 export const ANNOUNCEMENTS: Announcement[] = [
   {
     id: "teams-launch",
-    text: "Team collaboration — invite members, share endpoints.",
+    text: "Teams: share endpoints with your team.",
     cta: { label: "Try Teams", href: "/for-teams" },
-    dashboard: true,
+    // Signed-in accounts already reach Teams from the account menu and Team sharing.
+    dashboard: false,
   },
 ];
 

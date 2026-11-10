@@ -205,7 +205,7 @@ export default function ProfilePage() {
               className="max-w-sm"
             />
             {tooLong && (
-              <p className="mt-2 text-xs text-destructive">
+              <p className="mt-2 text-xs text-destructive-ink">
                 Use {NAME_MAX_LENGTH} characters or fewer.
               </p>
             )}

@@ -18,7 +18,7 @@ export const mdxComponents: MDXComponents = {
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
     if (href?.startsWith("/") || href?.startsWith("#")) {
       return (
-        <Link href={href} className="text-primary hover:underline font-bold" {...props}>
+        <Link href={href} className="text-primary-ink hover:underline font-bold" {...props}>
           {children}
         </Link>
       );
@@ -28,7 +28,7 @@ export const mdxComponents: MDXComponents = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-primary hover:underline font-bold"
+        className="text-primary-ink hover:underline font-bold"
         {...props}
       >
         {children}

@@ -10,7 +10,7 @@ import {
   type TestUser,
 } from "./helpers/auth";
 
-// Tests must run serially — they share an endpoint
+// Tests must run serially: they share an endpoint
 test.describe.configure({ mode: "serial" });
 
 let testUser: TestUser;
@@ -62,6 +62,19 @@ test.afterAll(async () => {
     await deleteTestUser(testUser.id);
   }
 });
+
+/** Picks an option from a dropdown (a Radix Select): opens the trigger, then clicks the option. */
+async function pickOption(
+  page: import("@playwright/test").Page,
+  trigger: import("@playwright/test").Locator,
+  name: string
+) {
+  await trigger.click();
+  await page
+    .locator('[role="listbox"][data-state="open"]')
+    .getByRole("option", { name, exact: true })
+    .click();
+}
 
 async function openDashboard(page: import("@playwright/test").Page) {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
@@ -268,14 +281,14 @@ test("SendGrid IP allowlisting info is shown", async ({ page }) => {
 test("selecting Discord changes label to Public Key", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
-  await page.selectOption("#settings-signing-provider", "discord");
+  await pickOption(page, page.locator("#settings-signing-provider"), "Discord");
   await expect(page.locator("text=Public Key")).toBeVisible();
 });
 
 test("selecting PayPal changes label to Webhook ID", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
-  await page.selectOption("#settings-signing-provider", "paypal");
+  await pickOption(page, page.locator("#settings-signing-provider"), "PayPal");
   await expect(page.locator("text=Webhook ID")).toBeVisible();
 });
 
@@ -283,7 +296,7 @@ test("configure signing secret and save", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
 
-  await page.selectOption("#settings-signing-provider", "standard-webhooks");
+  await pickOption(page, page.locator("#settings-signing-provider"), "Standard Webhooks");
   await page.fill("#settings-signing-secret", TEST_SECRET);
   await verificationSection(page).getByRole("button", { name: "Save changes" }).click();
   // "Saved." shows once the endpoint list has been read again, which is slow under load.
@@ -570,7 +583,7 @@ test("Square manual verification (client-side) verifies with the prefilled URL",
 
   // Manual-verify form is shown (no server-side config).
   await expect(page.locator("text=Verify Signature").first()).toBeVisible({ timeout: 5000 });
-  await page.locator("#sig-provider").first().selectOption("square");
+  await pickOption(page, page.locator("#sig-provider").first(), "Square");
 
   // The URL field should be present and prefilled to the receiver's capture URL.
   await expect(page.locator("#sig-url").first()).toBeVisible();
@@ -598,7 +611,7 @@ test("HubSpot manual verification (client-side) verifies with the URL + method",
   await signatureTabButton(page).click();
 
   await expect(page.locator("text=Verify Signature").first()).toBeVisible({ timeout: 5000 });
-  await page.locator("#sig-provider").first().selectOption("hubspot");
+  await pickOption(page, page.locator("#sig-provider").first(), "HubSpot");
 
   // HubSpot exposes both a URL field (prefilled) and a method field (default POST).
   await expect(page.locator("#sig-url").first()).toHaveValue(signingUrl);

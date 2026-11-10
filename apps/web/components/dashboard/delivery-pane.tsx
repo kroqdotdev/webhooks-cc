@@ -61,7 +61,7 @@ export type ChipStatus = "succeeded" | "pending" | "failed" | "queued" | "skippe
 const CHIP: Record<ChipStatus, { label: string; className: string }> = {
   succeeded: {
     label: "Delivered",
-    className: "bg-primary text-primary-foreground clean:bg-primary/12 clean:text-primary",
+    className: "bg-primary text-primary-foreground clean:bg-primary/12 clean:text-primary-ink",
   },
   pending: {
     label: "Retrying",
@@ -70,7 +70,7 @@ const CHIP: Record<ChipStatus, { label: string; className: string }> = {
   },
   failed: {
     label: "Failed",
-    className: "bg-destructive text-white clean:bg-destructive/12 clean:text-destructive",
+    className: "bg-destructive text-white clean:bg-destructive/12 clean:text-destructive-ink",
   },
   queued: {
     label: "Queued",
@@ -124,7 +124,7 @@ export function useUtcPreference(): [boolean, (next: boolean) => void] {
 
 function Code({ bad, children }: { bad?: boolean; children: React.ReactNode }) {
   return (
-    <span className={cn("font-mono", bad ? "text-destructive" : "text-foreground")}>
+    <span className={cn("font-mono", bad ? "text-destructive-ink" : "text-foreground")}>
       {children}
     </span>
   );
@@ -205,7 +205,7 @@ function journeyFor(
       tone: "hollow",
       segment: {
         label: behind ? (
-          <span className="text-destructive">{lag}</span>
+          <span className="text-destructive-ink">{lag}</span>
         ) : (
           <b className="font-semibold text-foreground">{lag}</b>
         ),
@@ -280,7 +280,7 @@ function journeyFor(
             {duration ? ` in ${duration}` : ""}
           </>
         ) : (
-          <span className="text-destructive">{answer.label}</span>
+          <span className="text-destructive-ink">{answer.label}</span>
         ),
     });
     const what =
@@ -364,7 +364,7 @@ function journeyFor(
               <Code bad>{answer.label}</Code> in {formatDuration(latest.durationMs)}
             </>
           ) : (
-            <span className="text-destructive">{answer.label}</span>
+            <span className="text-destructive-ink">{answer.label}</span>
           ),
         segment: {
           label: next ? `next try ${formatIn(next, now)}` : "next try soon",
@@ -416,7 +416,7 @@ function TriesList({
   const shown = all ? tries : tries.slice(0, TRIES_SHOWN);
   return (
     <div className="mt-3.5 border-t border-line/20">
-      <p className="pt-2.5 pb-0.5 text-[10px] font-bold caps text-muted-foreground">Tries</p>
+      <p className="pt-2.5 pb-0.5 text-[11px] font-bold caps text-muted-foreground">Tries</p>
       <ol className="text-[13px]">
         {shown.map((attempt, index) => {
           const number = tries.length - index;
@@ -434,14 +434,14 @@ function TriesList({
               <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                 {formatClock(attempt.attemptedAt - attempt.durationMs, { utc, now })}
               </span>
-              <span className={cn("font-mono whitespace-nowrap", bad && "text-destructive")}>
+              <span className={cn("font-mono whitespace-nowrap", bad && "text-destructive-ink")}>
                 {answer.label}
               </span>
               <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                 {formatDuration(attempt.durationMs)}
               </span>
               {attempt.error ? (
-                <span className="basis-full md:basis-auto md:flex-1 min-w-0 text-xs text-destructive">
+                <span className="basis-full md:basis-auto md:flex-1 min-w-0 text-xs text-destructive-ink">
                   {attempt.error}
                 </span>
               ) : attempt.responseExcerpt ? (
@@ -709,12 +709,12 @@ export function DeliveriesPane({
         <p
           role="status"
           aria-live="polite"
-          className={cn("text-[13px]", status.error ? "text-destructive" : "text-foreground")}
+          className={cn("text-[13px]", status.error ? "text-destructive-ink" : "text-foreground")}
         >
           {status.text}
         </p>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {deliveries === null && !error && <p className="text-sm text-muted-foreground">Loading...</p>}
       {groups.map((group) => {
         const settings = group.destination

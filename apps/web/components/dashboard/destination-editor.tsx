@@ -13,6 +13,13 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   createDestination,
   deleteDestination,
   fetchDashboardRequests,
@@ -43,7 +50,8 @@ import {
   type HeaderRow,
 } from "./forwarding-parts";
 import { PlaceholderMenu, forwardingPlaceholders, insertAtCursor } from "./placeholder-menu";
-import { Field, Segmented, Switch, SwitchRow } from "./settings-primitives";
+import { Field, Segmented, Switch, SwitchRow, useConfirmStep } from "./settings-primitives";
+import { useReportDirty } from "./dirty-sections";
 import { SheetsDestinationEditor } from "./sheets-destination-editor";
 import { FileDropDestinationEditor } from "./file-drop-destination-editor";
 
@@ -61,6 +69,9 @@ export type DestinationPreset = "server" | "chat" | "template" | "inbound" | "sh
 
 /** "provider" stands for the four inbound shapes, chosen below it. */
 type FormatChoice = Exclude<DestinationFormatSetting, InboundEmailFormat> | "provider";
+
+/** The preview choice that means the newest request (Radix items need a value). */
+const NEWEST_REQUEST = "__newest__";
 
 const FORMAT_OPTIONS: { value: FormatChoice; label: string }[] = [
   { value: "auto", label: "Pick from the URL" },
@@ -335,7 +346,7 @@ function DeliveryPreview({
         </p>
       );
     } else if (result.error) {
-      verdict = <p className="text-destructive">Not sent: {result.error}</p>;
+      verdict = <p className="text-destructive-ink">Not sent: {result.error}</p>;
     } else {
       verdict = (
         <p>
@@ -353,29 +364,36 @@ function DeliveryPreview({
         <label htmlFor={`preview-${destinationId ?? "new"}`} className="text-sm font-semibold">
           Preview with
         </label>
-        <select
-          id={`preview-${destinationId ?? "new"}`}
-          value={requestId}
-          onChange={(e) => setRequestId(e.target.value)}
-          className="ui-input text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[30rem]"
+        {/* Radix items cannot carry an empty value, so the newest has its own. */}
+        <Select
+          value={requestId || NEWEST_REQUEST}
+          onValueChange={(value) => setRequestId(value === NEWEST_REQUEST ? "" : value)}
         >
-          <option value="">
-            {options.length === 0 && requests !== null
-              ? "A sample (nothing captured yet)"
-              : "The newest it would get"}
-          </option>
-          {options.map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id={`preview-${destinationId ?? "new"}`}
+            className="ui-input h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[30rem]"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value={NEWEST_REQUEST} className="text-[13px] font-mono">
+              {options.length === 0 && requests !== null
+                ? "A sample (nothing captured yet)"
+                : "The newest it would get"}
+            </SelectItem>
+            {options.map((row) => (
+              <SelectItem key={row.id} value={row.id} className="text-[13px] font-mono">
+                {row.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div role="status" aria-live="polite" className="space-y-2 text-sm">
         {blocked ? (
           <p className="text-muted-foreground">{blocked}</p>
         ) : error ? (
-          <p className="text-destructive">{error}</p>
+          <p className="text-destructive-ink">{error}</p>
         ) : result ? (
           <>
             {verdict}
@@ -405,6 +423,86 @@ function DeliveryPreview({
 }
 
 type EditorProps = Parameters<typeof GenericDestinationEditor>[0];
+
+const FULL_URL_MESSAGE = "Enter a full URL, such as https://api.example.com/hooks.";
+/** Why a local or private target cannot work, and what reaches one instead. */
+function publicHostMessage(slug: string): string {
+  return `Forwarding runs on our servers, so it cannot reach localhost, private networks or IP addresses. To send captures to your machine, run whk tunnel ${slug || "<slug>"} or use Replay on a request.`;
+}
+
+/**
+ * The host a typed URL names, also when it was typed without a scheme
+ * ("localhost:4000/hook" parses with "localhost:" as its scheme).
+ */
+function typedHost(url: string): string | null {
+  for (const candidate of [url, `http://${url}`]) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") return parsed.hostname;
+    } catch {
+      // Try the next reading.
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether a host is localhost or an IP address, which production refuses
+ * (lib/forwarding/target.ts). Development can allow them, so this only blocks
+ * in a production build and the server has the last word everywhere else.
+ */
+function isLocalOrIpHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host.startsWith("[")) return true;
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+}
+
+/**
+ * Whether a host is this machine or a private network: what someone types to
+ * reach a server on their own computer. Checked in every build, so outside
+ * production (which may allow such targets) it still says how to reach one.
+ */
+function isLocalNetworkHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".home.arpa")) {
+    return true;
+  }
+  if (host.startsWith("[")) {
+    const v6 = host.slice(1, -1);
+    return v6 === "::1" || v6 === "::" || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6);
+  }
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+  if (!ipv4) return false;
+  const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
+
+/**
+ * The server's reasons for refusing a destination URL (checkForwardUrl), so
+ * one is shown under the field it is about rather than only in the footer.
+ */
+function urlFieldMessage(serverMessage: string, slug: string): string | null {
+  if (serverMessage.startsWith("Use a public host name")) return publicHostMessage(slug);
+  if (serverMessage.startsWith("Enter a full URL")) return FULL_URL_MESSAGE;
+  const urlReasons = [
+    "Enter the URL to send to",
+    "Put credentials in",
+    "The URL must use https",
+    "Port ",
+    "That is a webhooks.cc capture URL",
+  ];
+  return urlReasons.some((reason) => serverMessage.startsWith(reason)) ? serverMessage : null;
+}
 
 /** The editor for a destination: Google Sheets and file drops have their own, every other kind shares one. */
 export function DestinationEditor(props: EditorProps) {
@@ -442,19 +540,39 @@ function GenericDestinationEditor({
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
-  const initial = useMemo(() => draftFrom(destination, preset), [destination, preset]);
+  // The saved values, replaced only when they change or after a save here. The
+  // list is read again every few seconds, which hands this editor a new
+  // destination object with the same values; resetting on that would throw
+  // away what is being typed.
+  const fresh = useMemo(() => draftFrom(destination, preset), [destination, preset]);
+  const [savedCount, setSavedCount] = useState(0);
+  const freshKey = `${savedCount}:${JSON.stringify({ ...fresh, rows: serializeRows(fresh.rows) })}`;
+  const [initialState, setInitialState] = useState({ key: freshKey, draft: fresh });
+  if (initialState.key !== freshKey) setInitialState({ key: freshKey, draft: fresh });
+  const initial = initialState.draft;
   const [draft, setDraft] = useState<Draft>(initial);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // A URL the server refused, with its reason, shown under the field until the URL changes.
+  const [refusedUrl, setRefusedUrl] = useState<{ url: string; message: string } | null>(null);
+  const {
+    armed: confirmArmed,
+    arm: armConfirm,
+    cancel: cancelConfirm,
+    settled: confirmSettled,
+    cancelRef: keepRef,
+  } = useConfirmStep();
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<
     (ForwardTestResult & { filterPasses: boolean }) | { error: string } | null
   >(null);
   const templateRef = useRef<HTMLTextAreaElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
+  // The URL field can sit far above the save button: focusing it scrolls it into view.
+  const focusUrl = () => requestAnimationFrame(() => urlRef.current?.focus());
   const idPrefix = `destination-${destination?.id ?? "new"}`;
 
   useEffect(() => {
@@ -483,15 +601,26 @@ function GenericDestinationEditor({
     headersChanged;
 
   // Problems that keep it from saving.
+  // A server on this machine or a private network: production refuses it, and
+  // everywhere the field says what reaches one instead.
+  const host = url ? typedHost(url) : null;
+  const localTarget = host !== null && isLocalNetworkHost(host);
+  const production = process.env.NODE_ENV === "production";
   const urlError = (() => {
     if (!url) return "Enter the URL to send to.";
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("scheme");
-      return null;
-    } catch {
-      return "Use an https URL on a public host. localhost, private networks and IP addresses cannot be reached from here.";
+    if (production && host !== null && (localTarget || isLocalOrIpHost(host))) {
+      return publicHostMessage(slug);
     }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return FULL_URL_MESSAGE;
+    }
+    // "localhost:3000" parses with "localhost:" as its scheme: not a full URL either.
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return FULL_URL_MESSAGE;
+    if (refusedUrl && refusedUrl.url === draft.url) return refusedUrl.message;
+    return null;
   })();
   const kindsError = !draft.http && !draft.email ? "Pick at least one." : null;
   const filterIssue = draft.conditions
@@ -534,21 +663,23 @@ function GenericDestinationEditor({
       ? "The preview runs once the URL, what it gets and the template are filled in."
       : null;
 
-  const save = async () => {
+  // Resolves true once it saved, for a save started from outside the editor.
+  const runSave = async (): Promise<boolean> => {
     setSubmitted(true);
-    if (!accessToken) return;
+    if (!accessToken) return false;
     if (problemCount > 0) {
       setError(
         problemCount === 1
           ? "Fix the field marked above."
           : `Fix the ${problemCount} fields marked above.`
       );
-      return;
+      if (urlError) focusUrl();
+      return false;
     }
     const value = inputOf(draft, headersChanged);
     if ("error" in value) {
       setError(value.error);
-      return;
+      return false;
     }
     setSaving(true);
     setError(null);
@@ -558,13 +689,41 @@ function GenericDestinationEditor({
         : await createDestination(accessToken, slug, { ...value, url: value.url! });
       setSaved(true);
       setSubmitted(false);
+      // The draft starts over from what was saved, even when nothing the
+      // list returns differs (a new signing key is never sent back).
+      setSavedCount((count) => count + 1);
       onSaved(result);
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The destination could not be saved.");
+      const message = err instanceof Error ? err.message : "The destination could not be saved.";
+      const fieldMessage = urlFieldMessage(message, slug);
+      if (fieldMessage) {
+        // The reason shows under Send to; the footer only points there.
+        setRefusedUrl({ url: draft.url, message: fieldMessage });
+        setSubmitted(true);
+        setError("Fix the field marked above.");
+        focusUrl();
+      } else {
+        setError(message);
+      }
+      return false;
     } finally {
       setSaving(false);
     }
   };
+
+  // A save asked for while one runs (Save and leave right after Save) is the
+  // same save, not a second request that would add the destination twice.
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const save = (): Promise<boolean> => {
+    savingRef.current ??= runSave().finally(() => {
+      savingRef.current = null;
+    });
+    return savingRef.current;
+  };
+
+  // An edited destination counts as unsaved settings, like a section's own form.
+  useReportDirty(dirty, save);
 
   const remove = async () => {
     if (!accessToken || !destination) return;
@@ -630,6 +789,7 @@ function GenericDestinationEditor({
     ...(draft.sentField.trim() ? [`sent time from ${draft.sentField.trim()}`] : []),
   ];
   const placeholders = forwardingPlaceholders(draft.http, draft.email, emailFieldNames);
+  const showUrlError = submitted || !!draft.url;
 
   return (
     <div className="space-y-5">
@@ -638,14 +798,30 @@ function GenericDestinationEditor({
         <Field
           id={`${idPrefix}-url`}
           label="Send to"
-          help="An https URL on a public host, or a Slack or Discord incoming webhook."
-          error={submitted || draft.url ? urlError : null}
+          help={
+            // Outside production a local target may save, so the reach note is a hint.
+            localTarget && urlError !== publicHostMessage(slug)
+              ? publicHostMessage(slug)
+              : "An https URL on a public host, or a Slack or Discord incoming webhook."
+          }
+          error={showUrlError ? urlError : null}
+          errorId={`${idPrefix}-url-error`}
         >
           <input
+            ref={urlRef}
             id={`${idPrefix}-url`}
             type="url"
             value={draft.url}
-            onChange={(e) => set({ url: e.target.value })}
+            aria-invalid={showUrlError && urlError ? true : undefined}
+            aria-describedby={showUrlError && urlError ? `${idPrefix}-url-error` : undefined}
+            onChange={(e) => {
+              set({ url: e.target.value });
+              // The footer's pointer to a refused URL goes with the URL it was about.
+              if (refusedUrl) {
+                setRefusedUrl(null);
+                setError(null);
+              }
+            }}
             placeholder="https://api.example.com/hooks/inbound"
             spellCheck={false}
             className="ui-input w-full text-sm font-mono py-2!"
@@ -689,7 +865,7 @@ function GenericDestinationEditor({
             />
             Emails
           </label>
-          {kindsError && <span className="text-xs text-destructive">{kindsError}</span>}
+          {kindsError && <span className="text-xs text-destructive-ink">{kindsError}</span>}
         </div>
         <ConditionList
           conditions={draft.conditions}
@@ -734,18 +910,24 @@ function GenericDestinationEditor({
               <label htmlFor={`${idPrefix}-provider`} className="text-xs text-muted-foreground">
                 Shaped like
               </label>
-              <select
-                id={`${idPrefix}-provider`}
+              <Select
                 value={provider}
-                onChange={(e) => set({ format: e.target.value as InboundEmailFormat })}
-                className="ui-input text-[13px] py-1.5! px-2! w-56"
+                onValueChange={(value) => set({ format: value as InboundEmailFormat })}
               >
-                {INBOUND_EMAIL_FORMATS.map((format) => (
-                  <option key={format} value={format}>
-                    {INBOUND_EMAIL_FORMAT_NAMES[format]}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  id={`${idPrefix}-provider`}
+                  className="ui-input h-auto text-[13px] py-1.5! px-2! w-56"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INBOUND_EMAIL_FORMATS.map((format) => (
+                    <SelectItem key={format} value={format} className="text-[13px]">
+                      {INBOUND_EMAIL_FORMAT_NAMES[format]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
           <div className="text-xs text-muted-foreground space-y-1">
@@ -755,7 +937,7 @@ function GenericDestinationEditor({
                 : ""}
               {formatDescription}
             </p>
-            {formatWarning && <p className="text-destructive">{formatWarning}</p>}
+            {formatWarning && <p className="text-destructive-ink">{formatWarning}</p>}
           </div>
         </div>
 
@@ -802,7 +984,7 @@ function GenericDestinationEditor({
               className="border-strong border-line text-[13px] font-mono"
             />
             {templateError ? (
-              <p className="text-xs text-destructive">{templateError}</p>
+              <p className="text-xs text-destructive-ink">{templateError}</p>
             ) : (
               <p className="text-xs text-muted-foreground max-w-[62ch]">
                 {
@@ -1049,7 +1231,7 @@ function GenericDestinationEditor({
                 )}
               </>
             ) : test ? (
-              <p className="text-destructive">{test.error}</p>
+              <p className="text-destructive-ink">{test.error}</p>
             ) : null}
           </div>
         </div>
@@ -1073,33 +1255,42 @@ function GenericDestinationEditor({
           aria-live="polite"
           className={cn(
             "text-xs flex-1 min-w-[160px]",
-            error ? "text-destructive" : "text-muted-foreground"
+            error ? "text-destructive-ink" : "text-muted-foreground"
           )}
         >
           {error ?? (saved && !dirty ? "Saved." : dirty ? "Not saved yet." : "")}
         </p>
+        {/* Armed, "Keep it" takes Remove's place (and focus) and the
+            confirmation is a new button before it, so a second press where
+            the first one landed keeps the destination. */}
         {destination &&
-          (confirmDelete ? (
+          (confirmArmed ? (
             <>
               <button
+                key="confirm"
                 type="button"
-                onClick={() => void remove()}
-                className="ui-btn-outline py-1.5! px-3! text-xs text-destructive"
+                onClick={() => {
+                  if (confirmSettled()) void remove();
+                }}
+                className="ui-btn-outline py-1.5! px-3! text-xs text-destructive-ink"
               >
                 Remove destination
               </button>
               <button
+                key="cancel"
+                ref={keepRef}
                 type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="ui-btn-outline py-1.5! px-3! text-xs"
+                onClick={cancelConfirm}
+                className="ui-btn-outline py-1.5! px-3! text-xs min-w-24 classic:min-w-26"
               >
                 Keep it
               </button>
             </>
           ) : (
             <button
+              key="arm"
               type="button"
-              onClick={() => setConfirmDelete(true)}
+              onClick={armConfirm}
               className="ui-btn-outline py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
             >
               <Trash2 className="h-3 w-3" /> Remove
@@ -1133,7 +1324,7 @@ function GenericDestinationEditor({
           {saving ? "Saving..." : destination ? "Save destination" : "Add destination"}
         </button>
       </div>
-      {confirmDelete && (
+      {confirmArmed && (
         <p className="text-xs text-muted-foreground -mt-2">
           Deliveries still waiting for it are marked failed; its log stays.
         </p>

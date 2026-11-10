@@ -10,7 +10,7 @@ export const metadata: Metadata = createPageMetadata({
   path: "/subprocessors",
 });
 
-const linkClass = "text-primary hover:underline font-bold";
+const linkClass = "text-primary-ink hover:underline font-bold";
 
 interface Subprocessor {
   name: string;

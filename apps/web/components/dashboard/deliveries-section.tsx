@@ -327,13 +327,13 @@ export function DeliveriesSection({
         <p
           role="status"
           aria-live="polite"
-          className={cn("text-[13px]", result.error ? "text-destructive" : "text-foreground")}
+          className={cn("text-[13px]", result.error ? "text-destructive-ink" : "text-foreground")}
         >
           {result.text}
         </p>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {rows === null && !error && <p className="text-sm text-muted-foreground">Loading...</p>}
       {rows?.length === 0 && <p className="text-sm text-muted-foreground max-w-[62ch]">{empty}</p>}
 
@@ -342,7 +342,7 @@ export function DeliveriesSection({
           <div className="overflow-x-auto -mx-1 px-1">
             <table className="w-full text-[13px] border-collapse">
               <thead>
-                <tr className="text-left text-[10px] font-bold caps text-muted-foreground">
+                <tr className="text-left text-[11px] font-bold caps text-muted-foreground">
                   <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
                     Status
                   </th>
@@ -419,7 +419,7 @@ export function DeliveriesSection({
                       <td className={cn(cell, "min-w-0 whitespace-nowrap")}>
                         <span
                           className={cn(
-                            "inline-block px-1.5 py-0.5 text-[10px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent w-14 text-center align-middle",
+                            "inline-block px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent w-14 text-center align-middle",
                             getMethodColor(method)
                           )}
                         >
@@ -447,7 +447,7 @@ export function DeliveriesSection({
                       )}
                       {showSentColumn && (
                         <td
-                          className={cn(num, behind && "text-destructive")}
+                          className={cn(num, behind && "text-destructive-ink")}
                           title={
                             behind
                               ? "The sender's clock is ahead of ours."
@@ -460,11 +460,13 @@ export function DeliveriesSection({
                       <td
                         className={cn(
                           num,
-                          answer.kind !== "status" && answer.kind !== "none" && "text-destructive",
+                          answer.kind !== "status" &&
+                            answer.kind !== "none" &&
+                            "text-destructive-ink",
                           answer.kind === "status" &&
                             row.lastStatus !== null &&
                             (row.lastStatus < 200 || row.lastStatus >= 300) &&
-                            "text-destructive"
+                            "text-destructive-ink"
                         )}
                       >
                         {answer.label}

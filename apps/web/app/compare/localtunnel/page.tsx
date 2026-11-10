@@ -206,23 +206,26 @@ export default function CompareLocalTunnelPage() {
           See also:{" "}
           <Link
             href="/compare/ngrok"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs ngrok
           </Link>
           {" · "}
-          <Link href="/compare/smee" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/smee"
+            className="font-semibold hover:text-primary-ink transition-colors"
+          >
             vs Smee.io
           </Link>
           {" · "}
           <Link
             href="/compare/webhook-site"
-            className="font-semibold hover:text-primary transition-colors"
+            className="font-semibold hover:text-primary-ink transition-colors"
           >
             vs Webhook.site
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
             All comparisons
           </Link>
         </p>

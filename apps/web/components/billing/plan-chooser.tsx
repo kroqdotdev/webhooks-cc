@@ -31,32 +31,61 @@ import { longDate } from "@/components/settings/format";
  * extra capacity comes in the same proportion. Every other change (another
  * interval, a lower tier) waits for the renewal, and a waiting change can be
  * dropped. Each change says which before it happens.
+ *
+ * The plan page shows each change under the plan it leads to (PlanActions)
+ * and what is happening (a waiting change, a notice, the confirmation) once,
+ * under the plans (PlanChooserStatus); both read one usePlanChooser().
  */
 
 type Option = {
   plan: PaidPlan;
   interval: BillingInterval;
-  label: string;
   /** Applies now (charged pro rata) or at the renewal. */
   when: "now" | "renewal";
+  /** A button, or the quieter alternative beneath it. */
+  kind: "button" | "link";
+  /** The one primary action on the page. */
+  primary?: boolean;
+  /** What the control says, under its plan's column. */
+  label: React.ReactNode;
 };
+
+/** "Upgrade, $8 a month" under Pro, read as "Upgrade to Pro, $8 a month". */
+function named(verb: string, plan: PaidPlan, price?: string): React.ReactNode {
+  return (
+    <>
+      {verb}
+      <span className="sr-only"> to {planName(plan)}</span>
+      {price ? `, ${price}` : ""}
+    </>
+  );
+}
 
 function optionsFor(profile: AccountProfile): Option[] {
   const interval: BillingInterval = profile.billing_interval === "year" ? "year" : "month";
   if (profile.plan === "free") {
     return [
-      { plan: "pro", interval: "month", label: "Upgrade to Pro, $8 a month", when: "now" },
+      {
+        plan: "pro",
+        interval: "month",
+        when: "now",
+        kind: "button",
+        label: named("Upgrade", "pro", "$8 a month"),
+      },
       {
         plan: "business",
         interval: "month",
-        label: "Upgrade to Business, $29 a month",
         when: "now",
+        kind: "button",
+        primary: true,
+        label: named("Upgrade", "business", "$29 a month"),
       },
       {
         plan: "business",
         interval: "year",
-        label: "Business, $290 a year",
         when: "now",
+        kind: "link",
+        label: "or $290 a year",
       },
     ];
   }
@@ -65,30 +94,54 @@ function optionsFor(profile: AccountProfile): Option[] {
       {
         plan: "business",
         interval: "month",
-        label: "Switch to Business, $29 a month",
         when: "now",
+        kind: "button",
+        primary: true,
+        label: named("Switch", "business", "$29 a month"),
       },
       {
         plan: "business",
         interval: "year",
-        label: "Business, $290 a year, from the renewal",
         when: "renewal",
+        kind: "link",
+        label: "or $290 a year, from the renewal",
       },
     ];
   }
   // Business.
+  const change: Option = {
+    plan: "pro",
+    interval: "month",
+    when: "renewal",
+    kind: "button",
+    label: "Change to Pro",
+  };
   return interval === "month"
     ? [
-        { plan: "business", interval: "year", label: "Pay yearly, $290", when: "renewal" },
-        { plan: "pro", interval: "month", label: "Change to Pro", when: "renewal" },
+        {
+          plan: "business",
+          interval: "year",
+          when: "renewal",
+          kind: "link",
+          label: "Pay yearly, $290",
+        },
+        change,
       ]
     : [
-        { plan: "business", interval: "month", label: "Pay monthly", when: "renewal" },
-        { plan: "pro", interval: "month", label: "Change to Pro", when: "renewal" },
+        {
+          plan: "business",
+          interval: "month",
+          when: "renewal",
+          kind: "link",
+          label: "Pay monthly",
+        },
+        change,
       ];
 }
 
-export function PlanChooser({
+export type PlanChooserState = ReturnType<typeof usePlanChooser>;
+
+export function usePlanChooser({
   accessToken,
   profile,
   onChanged,
@@ -103,7 +156,7 @@ export function PlanChooser({
   const [notice, setNotice] = useState<string | null>(null);
   const free = profile.plan === "free";
   // A plan set to end has to be kept before it can change.
-  if (!free && profile.cancel_at_period_end) return null;
+  const ending = !free && profile.cancel_at_period_end;
   const renewal = profile.billing_period_end ?? profile.period_end;
   const pending =
     !free && (profile.pending_plan === "pro" || profile.pending_plan === "business")
@@ -112,6 +165,8 @@ export function PlanChooser({
           interval: profile.pending_interval === "year" ? "year" : "month",
         }
       : null;
+  // A waiting change is kept or left first; the options come back after.
+  const options = ending || pending ? [] : optionsFor(profile);
 
   const keep = async () => {
     if (!accessToken) return setError("Your session expired. Please sign in again.");
@@ -157,9 +212,82 @@ export function PlanChooser({
     }
   };
 
+  // A checkout leaves at once; a plan change asks first.
+  const choose = (option: Option) => (free ? void run(option) : setConfirm(option));
+
+  return {
+    profile,
+    accessToken,
+    options,
+    ending,
+    pending,
+    renewal,
+    busy,
+    error,
+    notice,
+    confirm,
+    setConfirm,
+    keep,
+    run,
+    choose,
+  };
+}
+
+/**
+ * What can be done with one plan, for the bottom of its column: "Current
+ * plan", or the change to it, with the other interval as a link beneath.
+ */
+export function PlanActions({
+  chooser,
+  plan,
+  current,
+}: {
+  /** Null when nothing can be changed here (a staff account). */
+  chooser: PlanChooserState | null;
+  plan: "free" | PaidPlan;
+  current: "free" | PaidPlan;
+}) {
+  const options = chooser?.options.filter((option) => option.plan === plan) ?? [];
+  const disabled = !chooser || chooser.busy || !chooser.accessToken;
+  if (plan !== current && options.length === 0) return null;
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      {plan === current && <p className="text-sm font-medium">Current plan</p>}
+      {options.map((option) =>
+        option.kind === "button" ? (
+          <Button
+            key={`${option.plan}-${option.interval}`}
+            variant={option.primary ? "default" : "outline"}
+            size="sm"
+            disabled={disabled}
+            onClick={() => chooser?.choose(option)}
+          >
+            {option.label}
+          </Button>
+        ) : (
+          <button
+            key={`${option.plan}-${option.interval}`}
+            type="button"
+            disabled={disabled}
+            onClick={() => chooser?.choose(option)}
+            className="text-left text-xs underline underline-offset-2 text-muted-foreground hover:text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {option.label}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+/** A change waiting for the renewal, the last change's outcome, and the confirmation. */
+export function PlanChooserStatus({ chooser }: { chooser: PlanChooserState }) {
+  const { profile, pending, renewal, busy, notice, error, confirm, setConfirm, keep, run } =
+    chooser;
+  if (chooser.ending) return null;
   return (
     <div className="space-y-2">
-      {pending ? (
+      {pending && (
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm">
             Changes to {planName(pending.plan)}
@@ -168,22 +296,13 @@ export function PlanChooser({
               : ""}
             {renewal ? ` on ${longDate(renewal)}` : " at the renewal"}.
           </p>
-          <Button variant="outline" disabled={busy || !accessToken} onClick={() => void keep()}>
+          <Button
+            variant="outline"
+            disabled={busy || !chooser.accessToken}
+            onClick={() => void keep()}
+          >
             {busy ? "Keeping..." : `Keep ${planName(profile.plan)}`}
           </Button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {optionsFor(profile).map((option) => (
-            <Button
-              key={`${option.plan}-${option.interval}`}
-              variant={option.plan === "business" && option.when === "now" ? "default" : "outline"}
-              disabled={busy || !accessToken}
-              onClick={() => (free ? void run(option) : setConfirm(option))}
-            >
-              {option.label}
-            </Button>
-          ))}
         </div>
       )}
       {notice && (
@@ -192,7 +311,7 @@ export function PlanChooser({
         </p>
       )}
       {error && (
-        <p className="text-sm text-destructive" role="alert" aria-live="polite">
+        <p className="text-sm text-destructive-ink" role="alert" aria-live="polite">
           {error}
         </p>
       )}

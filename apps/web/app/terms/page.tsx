@@ -75,7 +75,7 @@ export default function TermsPage() {
               information such as passwords, payment card numbers, or personal health data through
               the service. Where captured requests contain personal data, we process it on your
               behalf and only to provide the service. See our{" "}
-              <Link href="/privacy" className="text-primary hover:underline font-bold">
+              <Link href="/privacy" className="text-primary-ink hover:underline font-bold">
                 Privacy Policy
               </Link>{" "}
               for details on data handling.
@@ -127,7 +127,7 @@ export default function TermsPage() {
               Questions about these terms? Email{" "}
               <a
                 href="mailto:support@webhooks.cc"
-                className="text-primary hover:underline font-bold"
+                className="text-primary-ink hover:underline font-bold"
               >
                 support@webhooks.cc
               </a>

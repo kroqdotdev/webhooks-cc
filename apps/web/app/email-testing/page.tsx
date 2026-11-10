@@ -185,7 +185,7 @@ export default function EmailTestingPage() {
           <StartFreeCTA goCta={null} />
           <p className="text-sm text-muted-foreground mt-4">
             No credit card. Read the{" "}
-            <Link href="/docs/email-capture" className="text-primary font-bold hover:underline">
+            <Link href="/docs/email-capture" className="text-primary-ink font-bold hover:underline">
               email capture docs
             </Link>{" "}
             for every detail.
@@ -214,7 +214,7 @@ export default function EmailTestingPage() {
           <div className="grid sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
               <div key={feature.title} className="ui-card ui-card-static">
-                <feature.icon className="h-5 w-5 text-primary mb-3" aria-hidden="true" />
+                <feature.icon className="h-5 w-5 text-primary-ink mb-3" aria-hidden="true" />
                 <h3 className="font-bold mb-1.5">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground">{feature.text}</p>
               </div>
@@ -236,15 +236,15 @@ export default function EmailTestingPage() {
           </div>
           <p className="text-sm text-muted-foreground mt-3">
             Create the API key on your account page. The{" "}
-            <Link href="/docs/sdk/python" className="text-primary font-bold hover:underline">
+            <Link href="/docs/sdk/python" className="text-primary-ink font-bold hover:underline">
               Python
             </Link>{" "}
             and{" "}
-            <Link href="/docs/sdk/go" className="text-primary font-bold hover:underline">
+            <Link href="/docs/sdk/go" className="text-primary-ink font-bold hover:underline">
               Go
             </Link>{" "}
             SDKs have the same waits and code finder, and the{" "}
-            <Link href="/docs/api" className="text-primary font-bold hover:underline">
+            <Link href="/docs/api" className="text-primary-ink font-bold hover:underline">
               REST API
             </Link>{" "}
             returns the same emails with <code className="font-mono">kind=email</code>, so Cypress,
@@ -254,7 +254,7 @@ export default function EmailTestingPage() {
             Step by step:{" "}
             <Link
               href="/docs/guides/test-signup-emails-playwright"
-              className="text-primary font-bold hover:underline"
+              className="text-primary-ink font-bold hover:underline"
             >
               test signup and login emails in Playwright
             </Link>
@@ -270,7 +270,7 @@ export default function EmailTestingPage() {
               signed JSON, retried until your server accepts it. No mail server to run and no MIME
               to parse.
             </p>
-            <Link href="/email-to-webhook" className="text-primary font-bold hover:underline">
+            <Link href="/email-to-webhook" className="text-primary-ink font-bold hover:underline">
               Email to webhook
               <ArrowRight className="inline-block ml-1 h-4 w-4" />
             </Link>
@@ -289,7 +289,7 @@ export default function EmailTestingPage() {
               "Same retention as your HTTP requests",
             ].map((item) => (
               <li key={item} className="flex items-start gap-3">
-                <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" />
                 <span className="text-sm">{item}</span>
               </li>
             ))}
@@ -308,8 +308,8 @@ export default function EmailTestingPage() {
           <p className="opacity-80 mb-6 max-w-md mx-auto">
             Sign up free, create an endpoint, and send your first email to it.
           </p>
-          <div className="flex justify-center text-foreground">
-            <PricingCTA />
+          <div className="flex justify-center">
+            <PricingCTA inverted />
           </div>
           <p className="text-sm opacity-80 mt-6">No credit card</p>
         </div>

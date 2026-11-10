@@ -187,7 +187,7 @@ test("dashboard renders hostile request payloads inertly", async ({ page }) => {
   });
 
   await test.step("headers tab keeps the hostile header inert", async () => {
-    await page.getByRole("button", { name: /^headers$/i }).click();
+    await page.getByRole("tab", { name: /^headers\s*,?\s*\d+$/i }).click();
 
     const headersTable = page.locator("table").first();
     await expect(headersTable).toBeVisible();
@@ -225,7 +225,7 @@ test("dashboard renders hostile request payloads inertly", async ({ page }) => {
   });
 
   await test.step("raw tab keeps the hostile body inert", async () => {
-    await page.getByRole("button", { name: /^raw$/i }).click();
+    await page.getByRole("tab", { name: /^raw$/i }).click();
 
     const rawBody = page.locator("pre.ui-code").first();
     await expect(rawBody).toBeVisible();

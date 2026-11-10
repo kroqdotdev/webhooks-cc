@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { SiteHeader } from "@/components/nav/site-header";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
-import { PricingCTA } from "@/components/landing/pricing-cta";
+import { PaidPlanCTA, PricingCTA } from "@/components/landing/pricing-cta";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
@@ -112,12 +112,18 @@ export default function MailhooksPricing() {
             parsed pages, more layouts, custom domains, file drops and longer retention.
           </p>
 
+          {/* Equal-height cards: the buttons line up along the bottom. */}
           <div className="grid md:grid-cols-3 gap-6">
             {PLANS.map((plan) => (
               <div
                 key={plan.name}
-                className={`ui-card flex flex-col ${plan.name === "Business" ? "border-primary" : ""}`}
+                className={`ui-card relative flex flex-col ${plan.name === "Business" ? "border-primary" : ""}`}
               >
+                {plan.name === "Business" && (
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
+                    Best for parsing
+                  </span>
+                )}
                 <h2 className="font-bold text-2xl mb-2">{plan.name}</h2>
                 <p className="text-5xl font-bold">
                   {plan.price}
@@ -126,32 +132,57 @@ export default function MailhooksPricing() {
                 <ul className="space-y-3 my-8 flex-1">
                   {plan.lines.map((line) => (
                     <li key={line} className="flex items-start gap-3">
-                      <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
+                      <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
                       <span>{line}</span>
                     </li>
                   ))}
                 </ul>
-                <PricingCTA />
+                {/* Sign-up buttons once, on Free; the paid plans start free and upgrade later. */}
+                {plan.name === "Free" ? (
+                  <div className="mt-auto">
+                    <PricingCTA quietWhenSignedIn />
+                  </div>
+                ) : (
+                  <PaidPlanCTA
+                    plan={plan.name as "Pro" | "Business"}
+                    primary={plan.name === "Business"}
+                  />
+                )}
               </div>
             ))}
           </div>
 
           <div className="ui-card ui-card-static mt-8">
             <h2 className="font-bold text-xl mb-2">Teams</h2>
-            <p className="text-muted-foreground">
-              From 2 seats, billed per team. Teams is $12 per seat a month, with 100,000 pooled
-              requests per seat. Team Business is $35 per seat a month, or $350 per seat a year:
-              each seat brings Business&apos;s 250,000 requests, 2,000 parsed pages and 250 AI
-              assists to the team&apos;s pool, with 50 layouts per endpoint, a custom domain, file
-              drops and 90-day retention for the endpoints you share.{" "}
-              <Link href={`${webhooksOrigin()}/for-teams`} className="underline">
-                About teams
-              </Link>
+            <p className="text-muted-foreground mb-4">
+              Share endpoints with the people you work with. From 2 seats, billed per team.
             </p>
+            <ul className="grid gap-3 md:grid-cols-2 mb-6">
+              <li className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                <span>
+                  <span className="font-bold">Teams, $12 a seat a month:</span> 100,000 pooled
+                  emails or webhooks per seat, 31-day retention
+                </span>
+              </li>
+              <li className="flex items-start gap-3">
+                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                <span>
+                  <span className="font-bold">
+                    Team Business, $35 a seat a month or $350 a year:
+                  </span>{" "}
+                  Business&apos;s limits per seat (250,000 emails or webhooks, 2,000 parsed pages,
+                  250 AI assists), 50 layouts, a custom domain, file drops, 90-day retention
+                </span>
+              </li>
+            </ul>
+            <Link href={`${webhooksOrigin()}/for-teams`} className="ui-btn-outline inline-block">
+              About teams
+            </Link>
           </div>
 
-          <section className="mt-20 max-w-3xl">
-            <h2 className="text-3xl font-bold mb-8">Questions</h2>
+          <section className="mt-20 max-w-3xl mx-auto">
+            <h2 className="text-3xl font-bold mb-8 text-center">Questions</h2>
             <FAQAccordion items={FAQ} />
           </section>
         </div>

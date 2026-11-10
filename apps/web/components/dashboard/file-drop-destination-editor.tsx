@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { Condition } from "@webhooks-cc/sdk";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -15,7 +15,8 @@ import {
   type FileDropDestinationConfig,
 } from "@/lib/dashboard-api";
 import { ConditionList } from "./condition-list";
-import { Field, Segmented, SwitchRow } from "./settings-primitives";
+import { Field, Segmented, SwitchRow, useConfirmStep } from "./settings-primitives";
+import { useReportDirty } from "./dirty-sections";
 
 type Protocol = FileDropDestinationConfig["protocol"];
 type Column = { header: string; value: string };
@@ -149,7 +150,13 @@ export function FileDropDestinationEditor({
     });
   const [savedState, setSavedState] = useState(() => formState(false, false));
   const dirty = !destination || formState(secret !== "", forgetHostKey) !== savedState;
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const {
+    armed: confirmArmed,
+    arm: armConfirm,
+    cancel: cancelConfirm,
+    settled: confirmSettled,
+    cancelRef: keepRef,
+  } = useConfirmStep();
 
   const secretInput = (): DestinationInput["dropSecret"] => {
     if (!secret) return undefined;
@@ -158,18 +165,24 @@ export function FileDropDestinationEditor({
     return { password: secret };
   };
 
-  const save = async () => {
-    if (!accessToken) return;
+  // Resolves true once it saved, for a save started from outside the editor.
+  const runSave = async (): Promise<boolean> => {
+    if (!accessToken) return false;
     setError(null);
     setSaved(false);
     setTested(null);
-    if (!email && !http) return setError("Pick at least one kind of request.");
+    if (!email && !http) {
+      setError("Pick at least one kind of request.");
+      return false;
+    }
     if (file !== "json" && columns.some((column) => !column.header.trim())) {
-      return setError("Give every column a header.");
+      setError("Give every column a header.");
+      return false;
     }
     const minutes = Number(batchMinutes);
     if (batch && (!Number.isInteger(minutes) || minutes < 1 || minutes > 60)) {
-      return setError("Collect a batch for 1 to 60 minutes.");
+      setError("Collect a batch for 1 to 60 minutes.");
+      return false;
     }
     setBusy("Saving...");
     try {
@@ -193,12 +206,28 @@ export function FileDropDestinationEditor({
       setSavedState(formState(false, false));
       setSaved(true);
       onSaved(result);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "The destination could not be saved.");
+      return false;
     } finally {
       setBusy(null);
     }
   };
+
+  // A save asked for while one runs (Save and leave right after Save) is the
+  // same save, not a second request that would add the destination twice.
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const save = (): Promise<boolean> => {
+    savingRef.current ??= runSave().finally(() => {
+      savingRef.current = null;
+    });
+    return savingRef.current;
+  };
+
+  // An edited destination counts as unsaved settings, like a section's own
+  // form; a new one only once something was typed into it.
+  useReportDirty(formState(secret !== "", forgetHostKey) !== savedState, save);
 
   const test = async () => {
     if (!accessToken || !destination) return;
@@ -490,7 +519,7 @@ export function FileDropDestinationEditor({
                     type="button"
                     aria-label={`Remove column ${index + 1}`}
                     onClick={() => setColumns(columns.filter((_, i) => i !== index))}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground hover:text-destructive-ink"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -627,29 +656,35 @@ export function FileDropDestinationEditor({
             Cancel
           </button>
         )}
+        {/* Armed, "Keep it" ends the row where Remove was and takes focus;
+            the confirmation is a new button before it. */}
         {destination &&
-          (confirmDelete ? (
-            <span className="ml-auto flex items-center gap-3">
+          (confirmArmed ? (
+            <span key="confirm" className="ml-auto flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => void remove()}
-                className="text-sm text-destructive"
+                onClick={() => {
+                  if (confirmSettled()) void remove();
+                }}
+                className="text-sm text-destructive-ink"
               >
                 Remove destination
               </button>
               <button
+                ref={keepRef}
                 type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="text-sm text-muted-foreground"
+                onClick={cancelConfirm}
+                className="text-sm text-muted-foreground min-w-14"
               >
                 Keep it
               </button>
             </span>
           ) : (
             <button
+              key="arm"
               type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="text-sm text-destructive ml-auto"
+              onClick={armConfirm}
+              className="text-sm text-destructive-ink ml-auto"
             >
               Remove
             </button>
@@ -661,7 +696,7 @@ export function FileDropDestinationEditor({
         )}
         {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}
         {tested && <span className="text-xs text-muted-foreground">{tested}</span>}
-        {error && <p className="w-full text-sm text-destructive">{error}</p>}
+        {error && <p className="w-full text-sm text-destructive-ink">{error}</p>}
       </div>
     </div>
   );

@@ -89,7 +89,7 @@ export function Panel({
                 id={titleId}
                 className={cn(
                   "text-base font-bold clean:font-semibold",
-                  tone === "danger" && "text-destructive"
+                  tone === "danger" && "text-destructive-ink"
                 )}
               >
                 {title}
@@ -154,7 +154,7 @@ export function InlineMessage({
         "text-sm",
         tone === "success" && "text-green-700 dark:text-green-400",
         tone === "warning" && "text-amber-700 dark:text-amber-400",
-        tone === "error" && "text-destructive"
+        tone === "error" && "text-destructive-ink"
       )}
     >
       {children}
@@ -190,7 +190,7 @@ export function Notice({
           className={cn(
             "text-sm font-semibold",
             tone === "warning" && "text-amber-800 dark:text-amber-300",
-            tone === "danger" && "text-destructive",
+            tone === "danger" && "text-destructive-ink",
             tone === "success" && "text-green-800 dark:text-green-300"
           )}
         >
@@ -239,7 +239,7 @@ export function StatusTag({
         tone === "neutral" && "border-line text-foreground",
         tone === "success" && "border-green-600/50 text-green-800 dark:text-green-300",
         tone === "warning" && "border-amber-500/60 text-amber-800 dark:text-amber-300",
-        tone === "danger" && "border-destructive/60 text-destructive"
+        tone === "danger" && "border-destructive/60 text-destructive-ink"
       )}
     >
       {children}

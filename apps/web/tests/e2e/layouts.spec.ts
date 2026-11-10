@@ -101,6 +101,7 @@ test("a layout is tried on a captured email as it is built, then saved", async (
   const layouts = await openLayouts(page);
 
   await layouts.getByRole("button", { name: "Add layout" }).click();
+  await page.getByRole("menuitem", { name: "Blank layout" }).click();
   await layouts.getByLabel("Layout 1: name").fill("Acme orders");
   await layouts.getByRole("button", { name: "Add field" }).click();
   await layouts.getByLabel("Field 1: name").fill("order");
@@ -112,13 +113,15 @@ test("a layout is tried on a captured email as it is built, then saved", async (
   await layouts
     .getByLabel("Layout 1: line item pattern")
     .fill("(?P<sku>[A-Z]-\\d+) x(?P<qty>\\d+)");
-  await layouts.getByLabel("Layout 1: start after").fill("Items:");
+  await layouts.getByLabel("Start after (optional)").fill("Items:");
 
   // The preview runs the draft on the newest email.
   await expect(layouts.getByText("matches the email below")).toBeVisible({ timeout: 10000 });
-  await expect(layouts.getByRole("cell", { name: "B-22" })).toBeVisible();
-  await expect(layouts.getByRole("cell", { name: "10" })).toBeVisible();
-  const header = layouts.getByRole("columnheader");
+  // The rows show beside the pattern that found them.
+  const rows = layouts.getByRole("table", { name: "Layout 1: rows found" });
+  await expect(rows.getByRole("cell", { name: "B-22" })).toBeVisible();
+  await expect(rows.getByRole("cell", { name: "10" })).toBeVisible();
+  const header = rows.getByRole("columnheader");
   await expect(header).toHaveText(["sku", "qty"]);
 
   await layouts.getByRole("button", { name: "Save changes" }).click();

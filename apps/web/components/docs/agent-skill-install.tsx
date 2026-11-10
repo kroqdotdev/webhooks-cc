@@ -41,7 +41,7 @@ export function AgentSkillInstall({ headingClassName }: { headingClassName?: str
         <Command>{SKILLS_CLI_INSTALL}</Command>
         <p className="text-sm text-muted-foreground mt-2">
           More on what the skill does:{" "}
-          <Link href="/docs/mcp/skills" className="text-primary hover:underline font-bold">
+          <Link href="/docs/mcp/skills" className="text-primary-ink hover:underline font-bold">
             Agent skill docs
           </Link>
           .

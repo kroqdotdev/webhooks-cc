@@ -441,21 +441,26 @@ function LandingDashboardInner() {
   const remainingRequests = Math.max(0, REQUEST_LIMIT - requestCount);
   const hasRequests = requests.length > 0;
 
-  // Signed-in visitors already have persistent endpoints: send them there.
+  // Signed-in visitors already have persistent endpoints: send them there. A compact
+  // band rather than the tall app frame, which would leave a small card in empty space.
+  // data-landing-signed-in lets the hero wrapper drop its viewport height (:has()).
   if (isAuthenticated) {
     return (
-      <DashboardFrame>
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-          <p className="text-lg font-bold">You&apos;re signed in</p>
-          <p className="text-sm text-muted-foreground max-w-sm">
-            Your persistent endpoints live in the dashboard; guest URLs are for first-time visitors.
-          </p>
-          <Link href="/dashboard" className="ui-btn-primary inline-block">
-            Go to dashboard
+      <div data-landing-signed-in className="border-b-strong border-line bg-background px-4 py-10">
+        <div className="max-w-3xl mx-auto flex flex-col items-center gap-4 text-center md:flex-row md:justify-between md:text-left">
+          <div className="space-y-1">
+            <p className="text-lg font-bold">You&apos;re signed in</p>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Your persistent endpoints live in the dashboard; guest URLs are for first-time
+              visitors.
+            </p>
+          </div>
+          <Link href="/dashboard" className="ui-btn-primary inline-block shrink-0">
+            Go to Dashboard
             <ArrowRight className="inline-block ml-2 h-4 w-4" />
           </Link>
         </div>
-      </DashboardFrame>
+      </div>
     );
   }
 
@@ -489,15 +494,46 @@ function LandingDashboardInner() {
     if (!isCreating && humanSignal !== "human") {
       return (
         <DashboardFrame>
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-            <p className="text-sm text-muted-foreground max-w-sm">
-              {humanSignal === "automated"
-                ? "Guest endpoints are created on demand in automated sessions."
-                : "Your free guest URL is created the moment you interact with the page, or right now:"}
-            </p>
-            <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
-              Get your webhook URL
-            </button>
+          <div className="relative flex-1 flex">
+            {/* A faint picture of the dashboard this button opens, so the first screen
+                is not an empty frame. Decorative only. */}
+            <div
+              aria-hidden
+              className="absolute inset-0 flex opacity-40 pointer-events-none select-none"
+            >
+              <div className="w-full md:w-96 shrink-0 md:border-r-strong md:border-line p-3 space-y-2">
+                {/* One readable example row says what the frame will hold. */}
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <span className="px-1.5 py-0.5 font-bold rounded-sm clean:bg-method-post/15 clean:text-method-post classic:bg-method-post classic:text-black">
+                    POST
+                  </span>
+                  <span className="flex-1 truncate">/webhooks/stripe</span>
+                  <span className="text-muted-foreground">JSON · 1.2 KB</span>
+                </div>
+                {[0, 1, 2, 3].map((row) => (
+                  <div key={row} className="flex items-center gap-2">
+                    <div className="bg-muted rounded-sm h-5 w-12" />
+                    <div className="bg-muted rounded-sm h-4 flex-1" />
+                    <div className="bg-muted rounded-sm h-4 w-14" />
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block flex-1 p-4 space-y-3">
+                <div className="bg-muted rounded-sm h-5 w-1/2" />
+                <div className="bg-muted rounded-sm h-4 w-1/3" />
+                <div className="bg-muted rounded-sm h-40 w-full" />
+              </div>
+            </div>
+            <div className="relative my-auto mx-4 sm:mx-auto ui-card ui-card-static max-w-sm p-6! text-center space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {humanSignal === "automated"
+                  ? "Your guest URL is one click away: no account, 12 hours of captures."
+                  : "Your free guest URL is created the moment you interact with the page, or right now:"}
+              </p>
+              <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
+                Get your webhook URL
+              </button>
+            </div>
           </div>
         </DashboardFrame>
       );
@@ -522,7 +558,7 @@ function LandingDashboardInner() {
     <DashboardFrame>
       <ErrorBoundary resetKey={endpoint?.id}>
         {/* URL bar: same layout as the real dashboard */}
-        <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex items-center gap-3">
+        <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5">
           <span className="font-bold text-sm caps shrink-0 hidden sm:inline">Your endpoint</span>
           <UrlCopy url={endpointUrl} />
           {/* Email capture needs an account: guest captures are readable by anyone with the slug. */}
@@ -534,17 +570,18 @@ function LandingDashboardInner() {
             <Mail className="h-3 w-3" />
             Sign up to get an email address too
           </Link>
-          <div className="hidden md:flex items-center gap-4 shrink-0 text-xs text-muted-foreground ml-auto">
+          <div className="flex items-center gap-4 shrink-0 text-xs text-muted-foreground md:ml-auto max-md:w-full">
             <span className="flex items-center gap-1.5">
-              <Circle className="h-2 w-2 fill-primary text-primary" />
-              Expires in{" "}
+              <Circle className="h-2 w-2 fill-primary text-primary-ink" />
+              <span className="max-sm:hidden">Expires in</span>
+              <span className="sm:hidden">Expires</span>{" "}
               <span className="font-mono font-bold text-foreground">{timeRemaining ?? "..."}</span>
             </span>
             <span>
               <span
                 className={cn(
                   "font-mono font-bold",
-                  remainingRequests <= 10 ? "text-destructive" : "text-foreground"
+                  remainingRequests <= 10 ? "text-destructive-ink" : "text-foreground"
                 )}
               >
                 {remainingRequests}
@@ -556,10 +593,13 @@ function LandingDashboardInner() {
 
         {/* Registration push: appears once the first webhook lands */}
         {hasRequests && !upgradeDismissed ? (
-          <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex items-center justify-between gap-4">
+          <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="text-sm font-medium">
-              Webhook received! One click keeps this endpoint, free: 50 requests/day, unlimited
-              endpoints, and full CLI, SDK &amp; MCP access. No credit card.
+              <span className="sm:hidden">Webhook received! Keep this endpoint free:</span>
+              <span className="max-sm:hidden">
+                Webhook received! One click keeps this endpoint, free: 50 requests/day, unlimited
+                endpoints, and full CLI, SDK &amp; MCP access. No credit card.
+              </span>
             </p>
             <div className="flex items-center gap-2 shrink-0">
               <OAuthSignInButtons
@@ -662,8 +702,12 @@ function LandingDashboardInner() {
           <p className="text-xs text-muted-foreground font-bold">
             Guest endpoint &middot; no account needed &middot; {REQUEST_LIMIT} requests, 12 hours
           </p>
-          <Link href="/webhooks" className="text-sm font-bold hover:text-primary transition-colors">
-            Works with Stripe, GitHub, Shopify &amp; 30+ providers
+          <Link
+            href="/webhooks"
+            className="text-xs sm:text-sm font-bold hover:text-primary-ink transition-colors whitespace-nowrap"
+          >
+            Works with <span className="max-sm:hidden">Stripe, GitHub, Shopify &amp; </span>30+
+            providers
             <ArrowRight className="inline-block ml-1 h-4 w-4" />
           </Link>
         </div>
@@ -691,7 +735,8 @@ function UrlCopy({ url }: { url: string }) {
   return (
     <div className="flex items-center gap-1.5 min-w-0">
       <code
-        className="font-mono text-sm text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors"
+        // The one string this page hands over: full colour, not muted.
+        className="font-mono text-sm md:text-base font-medium text-foreground truncate cursor-pointer hover:text-primary-ink transition-colors"
         onClick={handleCopy}
         title="Click to copy"
         data-testid="instant-url"
@@ -799,7 +844,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
               <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
             </span>
-            <p className="font-bold caps">Waiting for first request...</p>
+            <p className="font-bold caps">Waiting for the first request</p>
           </div>
 
           <button
@@ -851,7 +896,14 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
                 )}
               </button>
             </div>
-            <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
+            {/* Focusable, so the keyboard can scroll a line that does not fit. */}
+            <pre
+              tabIndex={0}
+              aria-label="curl command"
+              className="ui-code text-sm whitespace-pre overflow-x-auto text-left"
+            >
+              {curlCmd}
+            </pre>
           </div>
 
           <p className="text-xs text-muted-foreground">

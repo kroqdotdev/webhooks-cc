@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { DashboardEndpoint } from "@/lib/dashboard-api";
+import { useSite } from "@/components/providers/site-provider";
 import { Field, SaveFooter, Section, Segmented, useSave } from "./settings-primitives";
 
 type Mode = "plan" | "shorter" | "delivered";
@@ -23,6 +24,7 @@ export function RetentionSection({ endpoint }: { endpoint: DashboardEndpoint }) 
   const [mode, setMode] = useState<Mode>(initialMode);
   const [days, setDays] = useState<string>(String(initialDays));
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
+  const what = useSite().key === "mailhooks" ? "emails and requests" : "requests";
 
   useEffect(() => {
     setMode(initialMode);
@@ -39,7 +41,7 @@ export function RetentionSection({ endpoint }: { endpoint: DashboardEndpoint }) 
     <Section
       id="retention"
       title="Retention"
-      description={`How long requests stay here. Your plan keeps them for ${cap} days; any endpoint can keep them for less.`}
+      description={`How long ${what} stay here. Your plan keeps them for ${cap} days; any endpoint can keep them for less.`}
       footer={
         <SaveFooter
           dirty={dirty}
@@ -105,7 +107,9 @@ export function RetentionSection({ endpoint }: { endpoint: DashboardEndpoint }) 
           copy or has given up. An endpoint without destinations keeps nothing past that minute, so
           add one first.
           {(endpoint.destinationCount ?? 0) === 0 && (
-            <span className="block mt-1 text-destructive">This endpoint has no destinations.</span>
+            <span className="block mt-1 text-destructive-ink">
+              This endpoint has no destinations.
+            </span>
           )}
         </p>
       )}

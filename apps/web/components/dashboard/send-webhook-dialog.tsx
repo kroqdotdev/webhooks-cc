@@ -13,6 +13,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Send } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
@@ -29,6 +38,9 @@ import {
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type SendMode = "manual" | TemplateProvider;
 
+/** The heading of each group of modes in the Mode dropdown. */
+const GROUP_LABEL = "pl-2 text-xs font-semibold caps text-muted-foreground";
+
 interface SendWebhookDialogProps {
   slug: string;
   /** Controlled open state, for opening from a menu; uses its own button otherwise. */
@@ -43,6 +55,28 @@ function defaultTemplateSelection(): TemplateSelectionByProvider {
     WEB_TEMPLATE_PROVIDER_OPTIONS.map(({ id }) => [id, getDefaultTemplateId(id)])
   ) as TemplateSelectionByProvider;
 }
+
+/**
+ * The catalog labels each template "<Provider> template", with "(signed)" or
+ * "(token)" when the request carries a signature or a secret token. The mode
+ * list groups by that instead of repeating it on every option.
+ */
+function templateOptionGroups() {
+  const signed: { id: TemplateProvider; label: string }[] = [];
+  const unsigned: { id: TemplateProvider; label: string }[] = [];
+  for (const option of WEB_TEMPLATE_PROVIDER_OPTIONS) {
+    const match = / template(?: \((signed|token)\))?$/.exec(option.label);
+    const name = match ? option.label.slice(0, match.index) : option.label;
+    if (match?.[1] === "signed") signed.push({ id: option.id, label: name });
+    else if (match?.[1] === "token")
+      signed.push({ id: option.id, label: `${name} (secret token)` });
+    else unsigned.push({ id: option.id, label: name });
+  }
+  return { signed, unsigned };
+}
+
+const { signed: SIGNED_TEMPLATE_OPTIONS, unsigned: UNSIGNED_TEMPLATE_OPTIONS } =
+  templateOptionGroups();
 
 function parseHeaders(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -229,43 +263,66 @@ export function SendWebhookDialog({
       )}
       <DialogContent className="border-strong border-line shadow-raised max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Send Webhook</DialogTitle>
+          <DialogTitle className="font-bold caps">Send a test request</DialogTitle>
           <DialogDescription className="sr-only">
-            Send a test webhook to this endpoint
+            Send a test request to this endpoint
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <div>
-              <p className="text-xs font-bold caps mb-2">Mode</p>
-              <select
-                value={mode}
-                onChange={(e) => handleModeChange(e.target.value as SendMode)}
-                className="ui-input text-sm w-full"
-              >
-                <option value="manual">Manual request</option>
-                {WEB_TEMPLATE_PROVIDER_OPTIONS.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.label}
-                  </option>
-                ))}
-              </select>
+              <label htmlFor="send-mode" className="block text-xs font-bold caps mb-2">
+                Mode
+              </label>
+              <Select value={mode} onValueChange={(value) => handleModeChange(value as SendMode)}>
+                <SelectTrigger id="send-mode" className="ui-input text-sm w-full h-auto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-80">
+                  <SelectGroup>
+                    <SelectLabel className={GROUP_LABEL}>Write your own</SelectLabel>
+                    <SelectItem value="manual">Manual request</SelectItem>
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className={GROUP_LABEL}>Signed provider templates</SelectLabel>
+                    {SIGNED_TEMPLATE_OPTIONS.map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className={GROUP_LABEL}>Unsigned templates</SelectLabel>
+                    {UNSIGNED_TEMPLATE_OPTIONS.map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
             {isTemplateMode && (
               <div>
-                <p className="text-xs font-bold caps mb-2">Template preset</p>
-                <select
+                <label htmlFor="send-template" className="block text-xs font-bold caps mb-2">
+                  Template preset
+                </label>
+                <Select
                   value={selectedTemplateId}
-                  onChange={(e) => handleTemplateChange(mode, e.target.value)}
-                  className="ui-input text-sm w-full"
+                  onValueChange={(value) => handleTemplateChange(mode, value)}
                 >
-                  {providerPresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="send-template" className="ui-input text-sm w-full h-auto">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providerPresets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>
@@ -274,16 +331,18 @@ export function SendWebhookDialog({
             <>
               {isSecretRequired(mode) && (
                 <div>
-                  <p className="text-xs font-bold caps mb-2">
+                  <label htmlFor="send-secret" className="block text-xs font-bold caps mb-2">
                     {mode === "gitlab" ? "Mock webhook token" : "Mock webhook secret"}
-                  </p>
+                  </label>
                   <Input
+                    id="send-secret"
+                    aria-describedby="send-secret-help"
                     value={mockWebhookSecret}
                     onChange={(e) => setMockWebhookSecret(e.target.value)}
                     className="ui-input text-sm"
                     placeholder={mode === "gitlab" ? "gl_token_..." : "whsec_..."}
                   />
-                  <p className="mt-2 text-xs text-muted-foreground">
+                  <p id="send-secret-help" className="mt-2 text-xs text-muted-foreground">
                     {mode === "gitlab"
                       ? "The token your app checks in the x-gitlab-token header."
                       : "The signing secret your app uses to verify webhook signatures."}
@@ -292,8 +351,11 @@ export function SendWebhookDialog({
               )}
 
               <div>
-                <p className="text-xs font-bold caps mb-2">Event/topic override (optional)</p>
+                <label htmlFor="send-event" className="block text-xs font-bold caps mb-2">
+                  Event/topic override (optional)
+                </label>
                 <Input
+                  id="send-event"
                   value={templateEventOverride}
                   onChange={(e) => setTemplateEventOverride(e.target.value)}
                   className="ui-input text-sm"
@@ -322,20 +384,33 @@ export function SendWebhookDialog({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value as HttpMethod)}
-              className="ui-input text-sm"
-              disabled={isTemplateMode}
-            >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="DELETE">DELETE</option>
-            </select>
+            <div>
+              <label htmlFor="send-method" className="block text-xs font-bold caps mb-2">
+                Method
+              </label>
+              <Select
+                value={method}
+                onValueChange={(value) => setMethod(value as HttpMethod)}
+                disabled={isTemplateMode}
+              >
+                <SelectTrigger id="send-method" className="ui-input text-sm w-full h-auto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["GET", "POST", "PUT", "PATCH", "DELETE"] as const).map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="md:col-span-2">
+              <label htmlFor="send-path" className="block text-xs font-bold caps mb-2">
+                Path
+              </label>
               <Input
+                id="send-path"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="/"
@@ -350,8 +425,11 @@ export function SendWebhookDialog({
           </div>
 
           <div>
-            <p className="text-xs font-bold caps mb-2">Headers (one per line: Key: Value)</p>
+            <label htmlFor="send-headers" className="block text-xs font-bold caps mb-2">
+              Headers (one per line: Key: Value)
+            </label>
             <Textarea
+              id="send-headers"
               value={headersInput}
               onChange={(e) => setHeadersInput(e.target.value)}
               className="ui-input min-h-24 font-mono text-sm"
@@ -359,8 +437,11 @@ export function SendWebhookDialog({
           </div>
 
           <div>
-            <p className="text-xs font-bold caps mb-2">Body</p>
+            <label htmlFor="send-body" className="block text-xs font-bold caps mb-2">
+              Body
+            </label>
             <Textarea
+              id="send-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               className="ui-input min-h-28 font-mono text-sm"
@@ -373,7 +454,7 @@ export function SendWebhookDialog({
             <div
               className={
                 status === "error"
-                  ? "border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+                  ? "border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink"
                   : "ui-code p-3! text-sm"
               }
             >
@@ -386,7 +467,7 @@ export function SendWebhookDialog({
             disabled={status === "sending"}
             className="w-full ui-btn-primary"
           >
-            {status === "sending" ? "Sending..." : "Send webhook"}
+            {status === "sending" ? "Sending..." : "Send request"}
           </Button>
         </div>
       </DialogContent>

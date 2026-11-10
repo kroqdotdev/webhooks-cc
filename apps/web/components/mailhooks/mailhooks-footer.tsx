@@ -10,7 +10,8 @@ export function MailhooksFooter() {
     {
       title: "Product",
       links: [
-        { href: "/parse", label: "Senders" },
+        { href: "/parse", label: "Layout gallery" },
+        { href: "/guides", label: "Guides" },
         { href: "/pricing", label: "Pricing" },
         { href: "/login", label: "Sign in" },
       ],
@@ -20,9 +21,9 @@ export function MailhooksFooter() {
       links: MAILHOOKS_FEATURES.map((feature) => ({ href: feature.path, label: feature.name })),
     },
     {
-      title: "Docs",
+      title: "Docs on webhooks.cc",
       links: [
-        { href: `${webhooks}/docs/layouts`, label: "Layouts" },
+        { href: `${webhooks}/docs/layouts`, label: "Layout docs" },
         { href: `${webhooks}/docs/email-capture`, label: "Email capture" },
         { href: `${webhooks}/docs/forwarding`, label: "Destinations" },
         { href: `${webhooks}/docs/plans-limits`, label: "Plans and limits" },
@@ -31,6 +32,7 @@ export function MailhooksFooter() {
     {
       title: "Company",
       links: [
+        { href: "/support", label: "Support" },
         { href: webhooks, label: "webhooks.cc" },
         { href: `${webhooks}/privacy`, label: "Privacy" },
         { href: `${webhooks}/terms`, label: "Terms" },
@@ -51,17 +53,20 @@ export function MailhooksFooter() {
         {columns.map((column) => (
           <div key={column.title}>
             <p className="font-bold mb-4">{column.title}</p>
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-0.5 text-sm">
               {column.links.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href={link.href}
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     {link.label}
                   </Link>
                 </li>
               ))}
               {column.title === "Company" ? (
                 <li>
-                  <CookieSettingsLink className="text-muted-foreground hover:text-foreground" />
+                  <CookieSettingsLink className="inline-block py-1.5 text-muted-foreground hover:text-foreground" />
                 </li>
               ) : null}
             </ul>

@@ -133,6 +133,18 @@ export const METHOD_COLORS: Record<string, string> = {
   ...METHOD_COLORS_MAP,
 };
 
+/** A request's full receive time for detail views, e.g. "Nov 9, 13:50:36". */
+export function formatFullTimestamp(timestamp: number): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
 export function formatTimestamp(timestamp: number): string {
   const d = new Date(timestamp);
   const now = new Date();

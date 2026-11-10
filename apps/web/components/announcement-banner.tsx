@@ -21,20 +21,32 @@ function wasDismissed(id: string): boolean {
   }
 }
 
+/** The signed-in app's pages, where the announcement never shows. */
+export const IN_APP_PATH = /^\/(dashboard|account|teams|support)(\/|$)/;
+
+/** Pages without the banner: the signed-in app, and signing in, where it only distracts. */
+const NO_BANNER_PATH = /^\/(dashboard|account|teams|support|login|auth)(\/|$)/;
+
+/** Phones skip it: two pinned lines of promotion cost too much of a small screen. */
+const PHONE_QUERY = "(max-width: 639px)";
+
 export function AnnouncementBanner() {
   const announcement = ANNOUNCEMENTS[0];
   const announcementId = announcement?.id;
   const pathname = usePathname();
   const [visible, setVisible] = useState(false);
 
-  const isDashboard = pathname.startsWith("/dashboard");
+  // Signed-in app pages carry no marketing banner (see lib/announcements.ts).
+  const isDashboard = NO_BANNER_PATH.test(pathname);
 
   useEffect(() => {
     // Client navigation into the dashboard keeps this component mounted, so
     // hide the banner there as well as dropping its offset.
     // The announcements are webhooks.cc's news.
     const onMailhooks = siteForHost(window.location.host) === "mailhooks";
-    const show = !!announcementId && !isDashboard && !onMailhooks && !wasDismissed(announcementId);
+    const onPhone = window.matchMedia(PHONE_QUERY).matches;
+    const show =
+      !!announcementId && !isDashboard && !onMailhooks && !onPhone && !wasDismissed(announcementId);
     setVisible(show);
     setAnnOffset(show ? BANNER_HEIGHT : "0px");
   }, [announcementId, isDashboard]);
@@ -56,8 +68,9 @@ export function AnnouncementBanner() {
   return (
     <>
       <div
-        role="status"
-        aria-live="polite"
+        // A landmark, not a live region: it should not be announced on every page.
+        role="region"
+        aria-label="Announcement"
         className="fixed left-0 right-0 z-[55]"
         style={{ top: maintenanceActive ? BANNER_HEIGHT : 0 }}
       >
@@ -74,7 +87,7 @@ export function AnnouncementBanner() {
             </span>
             <button
               onClick={dismiss}
-              className="ml-2 p-0.5 hover:opacity-70 transition-opacity flex-shrink-0"
+              className="ml-2 p-2 -m-1.5 hover:opacity-70 transition-opacity flex-shrink-0"
               aria-label="Dismiss announcement"
             >
               <X className="h-4 w-4" />

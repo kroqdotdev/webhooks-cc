@@ -1,11 +1,13 @@
 "use client";
 
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Globe, Mail, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Globe, Mail, ShieldCheck } from "lucide-react";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { useSite } from "@/components/providers/site-provider";
 import { ResponsesSection } from "./responses-section";
 import { AddressPill } from "./endpoint-bar";
 import { DestinationsSection } from "./destinations-section";
@@ -18,12 +20,21 @@ import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import { EndpointSiteField, EndpointSiteText } from "./endpoint-site-field";
 import { twoSites, type EndpointSite } from "@/lib/site";
 import { setOpenEndpoint } from "@/lib/site-switch-client";
+import { useDirtySections, useSettingsLeave } from "./dirty-sections";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Field,
   SaveFooter,
   Section,
   SwitchRow,
   scrollToSection,
+  useConfirmStep,
   useSave,
   type SettingsSection,
 } from "./settings-primitives";
@@ -41,8 +52,12 @@ import {
   getWebProviderLabel,
   WEB_VERIFICATION_PROVIDER_OPTIONS,
 } from "@/lib/provider-catalog";
+import { stableStringify } from "@/lib/stable-json";
 
 export type { SettingsSection } from "./settings-primitives";
+
+/** The verification provider choice that means none (Radix items need a value). */
+const NO_PROVIDER = "__none__";
 
 interface EndpointSettingsPanelProps {
   endpoint: DashboardEndpoint & {
@@ -54,6 +69,8 @@ interface EndpointSettingsPanelProps {
   focusSection?: SettingsSection | null;
   /** Opens a request from the delivery log, with its Deliveries tab active. */
   onOpenRequestDeliveries?: (requestId: string) => void;
+  /** A section was jumped to from the section nav (the dashboard keeps it in the URL). */
+  onSectionJump?: (section: SettingsSection) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,11 +84,19 @@ function ReceivingSection({
   endpoint: EndpointSettingsPanelProps["endpoint"];
   isOwner: boolean;
 }) {
-  const router = useRouter();
+  const router = useAnnouncedRouter();
+  const { leaving } = useSettingsLeave();
+  // On webhooks.cc the email-only settings fold away unless they are in use;
+  // mailhooks.cc shows them open.
+  const mailFirst = useSite().key === "mailhooks";
+  const [emailOptionsOpen, setEmailOptionsOpen] = useState(
+    () =>
+      mailFirst || (endpoint.emailFields?.length ?? 0) > 0 || endpoint.showEmailExtracts === false
+  );
   const initialName = endpoint.name ?? "";
   const initialSite: EndpointSite = endpoint.site ?? "both";
   const initialExtracts = endpoint.showEmailExtracts !== false;
-  const initialFieldsKey = JSON.stringify(endpoint.emailFields ?? []);
+  const initialFieldsKey = stableStringify(endpoint.emailFields ?? []);
   const [name, setName] = useState(initialName);
   const [listedOn, setListedOn] = useState<EndpointSite>(initialSite);
   const [extracts, setExtracts] = useState(initialExtracts);
@@ -109,7 +134,7 @@ function ReceivingSection({
     );
   }, [initialName, initialSite, initialExtracts, initialFieldsKey]);
 
-  const fieldsChanged = JSON.stringify(fields) !== initialFieldsKey;
+  const fieldsChanged = stableStringify(fields) !== initialFieldsKey;
   const emailChanged = extracts !== initialExtracts || fieldsChanged;
   const siteChanged = listedOn !== initialSite;
   const dirty = name !== initialName || siteChanged || emailChanged;
@@ -128,7 +153,7 @@ function ReceivingSection({
     <Section
       id="receiving"
       title="Receiving"
-      description="Anything sent to either address lands in Requests and counts toward your monthly limit."
+      description={`Anything sent to either address lands in ${mailFirst ? "Inbox" : "Requests"} and counts toward your plan's limit.`}
       footer={
         <SaveFooter
           dirty={dirty}
@@ -147,7 +172,9 @@ function ReceivingSection({
           }}
           onSave={() => {
             setTriedSave(true);
-            if (siteChanged) {
+            // Saved on the way to another endpoint ("Save and leave"), the URL
+            // already names where the dashboard is going and stays as it is.
+            if (siteChanged && !leaving) {
               // Listed elsewhere once saved, it drops out of this site's list:
               // keep it open here by its slug instead of moving to another.
               const params = new URLSearchParams(window.location.search);
@@ -167,7 +194,11 @@ function ReceivingSection({
               },
               () => {
                 const [problem] = emailFieldIssues(fields);
-                if (problem) throw new Error(`Check the fields: ${problem}.`);
+                if (problem) {
+                  // The fields with the problem are shown.
+                  setEmailOptionsOpen(true);
+                  throw new Error(`Check the fields: ${problem}.`);
+                }
               }
             ).then((ok) => {
               // A site switch before the endpoint list reloads goes by the saved site.
@@ -209,42 +240,59 @@ function ReceivingSection({
               className="w-full"
             />
           </Field>
-          <div className="pt-4 border-t border-line/20 space-y-4">
-            <h3 className="text-sm font-semibold">Picked out of emails</h3>
-            <SwitchRow
-              id="settings-extracts"
-              label="Codes and links"
-              help={
-                <>
-                  Verification codes and links found in each email, shown above it with copy buttons
-                  and sent along when it is forwarded. Turn this off for endpoints that receive mail
-                  you would rather not have scanned.
-                  {!isOwner &&
-                    " Only the endpoint's owner can change these, because they also decide what forwarding sends."}
-                </>
-              }
-              checked={extracts}
-              onChange={setExtracts}
-              disabled={!isOwner}
-            />
-            <div>
-              <p className="text-sm font-semibold">Your fields</p>
-              <p className="text-xs text-muted-foreground mt-1 mb-3 max-w-[62ch]">
-                Name a value and say where it is: a regular expression (RE2) whose first group is
-                the value. It shows with the email, appears as <code>fields</code> in its JSON, and
-                forwarding templates and filters read it as{" "}
-                <code className="font-mono">{"{{ fields.invoice }}"}</code>.
-              </p>
-              <EmailFieldsEditor
-                slug={endpoint.slug}
-                fields={fields}
-                onChange={setFields}
-                disabled={!isOwner}
-                showRequired={triedSave}
-                emailAddress={endpoint.emailAddress}
+          <details
+            open={emailOptionsOpen}
+            onToggle={(event) => setEmailOptionsOpen(event.currentTarget.open)}
+            className="group pt-4 border-t border-line/20"
+          >
+            <summary className="flex items-center gap-1.5 text-sm font-semibold cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                aria-hidden
+                className="h-4 w-4 text-muted-foreground transition-transform motion-reduce:transition-none group-open:rotate-90"
               />
+              Email options
+              {!emailOptionsOpen && emailChanged && (
+                <span className="text-xs font-normal text-muted-foreground">(changed)</span>
+              )}
+            </summary>
+            <div className="pt-4 space-y-4">
+              <h3 className="text-sm font-semibold">Picked out of emails</h3>
+              <SwitchRow
+                id="settings-extracts"
+                label="Codes and links"
+                help={
+                  <>
+                    Verification codes and links found in each email, shown above it with copy
+                    buttons and sent along when it is forwarded. Turn this off for endpoints that
+                    receive mail you would rather not have scanned.
+                    {!isOwner &&
+                      " Only the endpoint's owner can change these, because they also decide what forwarding sends."}
+                  </>
+                }
+                checked={extracts}
+                onChange={setExtracts}
+                disabled={!isOwner}
+              />
+              <div>
+                <p className="text-sm font-semibold">Fields on every email</p>
+                <p className="text-xs text-muted-foreground mt-1 mb-3 max-w-[62ch]">
+                  Name a value and say where it is: a regular expression (RE2) whose first group is
+                  the value. It shows with the email, appears as <code>fields</code> in its JSON,
+                  and forwarding templates and filters read it as{" "}
+                  <code className="font-mono">{"{{ fields.invoice }}"}</code>. For fields that
+                  differ by sender, add them to a layout under Layouts instead.
+                </p>
+                <EmailFieldsEditor
+                  slug={endpoint.slug}
+                  fields={fields}
+                  onChange={setFields}
+                  disabled={!isOwner}
+                  showRequired={triedSave}
+                  emailAddress={endpoint.emailAddress}
+                />
+              </div>
             </div>
-          </div>
+          </details>
         </>
       )}
     </Section>
@@ -330,7 +378,25 @@ function SharingSection({ endpointId }: { endpointId: string }) {
     }
   };
 
-  if (loading || (teams.length === 0 && !error)) return null;
+  if (loading) return null;
+  // The nav always lists this section, so it is never left empty.
+  if (teams.length === 0 && !error) {
+    return (
+      <Section
+        id="sharing"
+        title="Team sharing"
+        description="Share this endpoint with your teams. Changes apply at once."
+      >
+        <p className="text-sm text-muted-foreground">
+          You are not in a team yet.{" "}
+          <Link href="/teams" className="underline font-medium text-foreground">
+            Create a team
+          </Link>{" "}
+          to share this endpoint with its members.
+        </p>
+      </Section>
+    );
+  }
 
   return (
     <Section
@@ -338,7 +404,7 @@ function SharingSection({ endpointId }: { endpointId: string }) {
       title="Team sharing"
       description="Share this endpoint with your teams. Changes apply at once."
     >
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       <ul className="divide-y divide-line/20">
         {teams.map((team) => {
           const isShared = shared.has(team.id);
@@ -374,6 +440,8 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
   const [hasSecret, setHasSecret] = useState(initialHasSecret);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
   const info = getWebProviderInfo(provider);
+  // mailhooks.cc names the HTTP-only sections as such, here and in the nav.
+  const mailFirst = useSite().key === "mailhooks";
 
   const reset = useCallback(() => {
     setProvider(initialProvider);
@@ -424,7 +492,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
   return (
     <Section
       id="verification"
-      title="Signature verification"
+      title={mailFirst ? "HTTP signature verification" : "Signature verification"}
       description="Check the signature on every HTTP request from a provider. Email is checked for SPF, DKIM and DMARC on its own."
       footer={
         <SaveFooter
@@ -445,13 +513,19 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
       <Field
         id="settings-signing-provider"
         label="Provider"
-        help="SendGrid uses IP allowlisting. Plaid verification needs Plaid API credentials, so it is template-only for now."
+        help={
+          provider === "sendgrid"
+            ? "SendGrid uses IP allowlisting, so it is template-only for now."
+            : provider === "plaid"
+              ? "Plaid verification needs Plaid API credentials, so it is template-only for now."
+              : "Pick the provider that signs this endpoint's webhooks, and paste its secret."
+        }
       >
-        <select
-          id="settings-signing-provider"
-          value={provider}
-          onChange={(e) => {
-            const next = e.target.value;
+        {/* Radix items cannot carry an empty value, so None has its own. */}
+        <Select
+          value={provider || NO_PROVIDER}
+          onValueChange={(value) => {
+            const next = value === NO_PROVIDER ? "" : value;
             setProvider(next);
             setSecret("");
             setHasSecret(next === initialProvider && initialHasSecret);
@@ -459,15 +533,22 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
               next === "generic-hmac" && initialProvider === "generic-hmac" ? initialHeader : ""
             );
           }}
-          className="ui-input w-full text-sm py-2!"
         >
-          <option value="">None</option>
-          {WEB_VERIFICATION_PROVIDER_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id="settings-signing-provider"
+            className="ui-input w-full text-sm h-auto py-2!"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value={NO_PROVIDER}>None</SelectItem>
+            {WEB_VERIFICATION_PROVIDER_OPTIONS.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </Field>
       {provider && (
         <Field
@@ -520,7 +601,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         </Field>
       )}
       {hasSecret && provider && (
-        <p className="flex items-center gap-1.5 text-xs text-primary font-semibold">
+        <p className="flex items-center gap-1.5 text-xs text-primary-ink font-semibold">
           <ShieldCheck className="h-3.5 w-3.5" />
           Verifying {getWebProviderLabel(provider) ?? provider} signatures
         </p>
@@ -537,21 +618,31 @@ function DeleteSection({
   requestCount?: number;
 }) {
   const { session } = useAuth();
-  const router = useRouter();
-  const [confirm, setConfirm] = useState(false);
+  const router = useAnnouncedRouter();
+  const { abandon } = useSettingsLeave();
+  const mailFirst = useSite().key === "mailhooks";
+  const {
+    armed: confirmArmed,
+    arm: armConfirm,
+    cancel: cancelConfirm,
+    settled: confirmSettled,
+    cancelRef: keepRef,
+  } = useConfirmStep();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const name = endpoint.name || endpoint.slug;
+  // mailhooks.cc calls what an endpoint holds emails first.
+  const held = mailFirst ? "emails and requests" : "requests";
   const what =
     requestCount === undefined
-      ? "its requests"
-      : `its ${requestCount} request${requestCount === 1 ? "" : "s"}`;
+      ? `its ${held}`
+      : mailFirst
+        ? `its ${requestCount} ${held}`
+        : `its ${requestCount} request${requestCount === 1 ? "" : "s"}`;
 
   const onDelete = async () => {
-    if (!confirm) {
-      setConfirm(true);
-      return;
-    }
+    // A second press right after arming (a double-click, a double Enter) is not a decision.
+    if (!confirmSettled() || deleting) return;
     setDeleting(true);
     setError(null);
     try {
@@ -559,6 +650,8 @@ function DeleteSection({
       await deleteDashboardEndpoint(session.access_token, endpoint.slug);
       trackEndpointDeleted();
       emitDashboardEndpointsChanged();
+      // Edits left unsaved in other sections went with the endpoint.
+      abandon();
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "The endpoint was not deleted.");
@@ -577,32 +670,45 @@ function DeleteSection({
           <p
             role="status"
             aria-live="polite"
-            className="text-xs flex-1 min-w-[180px] text-destructive"
+            className="text-xs flex-1 min-w-[180px] text-destructive-ink"
           >
-            {error ?? (confirm ? "This cannot be undone." : "")}
+            {error ?? (confirmArmed ? "This cannot be undone." : "")}
           </p>
-          {confirm && (
+          {/* Armed, Cancel takes the arming button's place (and focus) and the
+              confirmation is a new button beside it, so a second press where
+              the first one landed cannot delete. */}
+          {confirmArmed ? (
+            <>
+              <button
+                key="confirm"
+                type="button"
+                onClick={() => void onDelete()}
+                disabled={deleting}
+                className="ui-btn-outline py-1.5! px-3! text-xs bg-destructive! text-destructive-foreground! border-destructive!"
+              >
+                {deleting ? "Deleting..." : "Delete for good"}
+              </button>
+              <button
+                key="cancel"
+                ref={keepRef}
+                type="button"
+                onClick={cancelConfirm}
+                disabled={deleting}
+                className="ui-btn-outline py-1.5! px-3! text-xs min-w-30 classic:min-w-36"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
             <button
+              key="arm"
               type="button"
-              onClick={() => setConfirm(false)}
-              className="ui-btn-outline py-1.5! px-3! text-xs"
+              onClick={armConfirm}
+              className="ui-btn-outline py-1.5! px-3! text-xs text-destructive-ink"
             >
-              Cancel
+              Delete endpoint
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void onDelete()}
-            disabled={deleting}
-            className={cn(
-              "ui-btn-outline py-1.5! px-3! text-xs",
-              confirm
-                ? "bg-destructive! text-destructive-foreground! border-destructive!"
-                : "text-destructive"
-            )}
-          >
-            {deleting ? "Deleting..." : confirm ? "Delete for good" : "Delete endpoint"}
-          </button>
         </>
       }
     />
@@ -613,11 +719,40 @@ function DeleteSection({
 // Panel
 // ---------------------------------------------------------------------------
 
+/** The settings order on webhooks.cc: how a request is answered and sent on, then the rest. */
+const WEB_SECTION_ORDER: SettingsSection[] = [
+  "receiving",
+  "responses",
+  "forwarding",
+  "deliveries",
+  "verification",
+  "retention",
+  "layouts",
+  "alerts",
+  "sharing",
+  "delete",
+];
+
+/** The settings order on mailhooks.cc: mail first, the HTTP-only sections after. */
+const MAIL_SECTION_ORDER: SettingsSection[] = [
+  "receiving",
+  "layouts",
+  "forwarding",
+  "deliveries",
+  "alerts",
+  "retention",
+  "verification",
+  "responses",
+  "sharing",
+  "delete",
+];
+
 export function EndpointSettingsPanel({
   endpoint,
   requestCount,
   focusSection,
   onOpenRequestDeliveries,
+  onSectionJump,
 }: EndpointSettingsPanelProps) {
   // Owners see everything; members of a team the endpoint is shared with can
   // rename it and change its responses, but not change its email setting or
@@ -627,104 +762,328 @@ export function EndpointSettingsPanel({
   const hasLog =
     isOwner && ((endpoint.destinationCount ?? 0) > 0 || endpoint.hasForwardSecret === true);
   const hasEmail = isOwner && !!endpoint.emailAddress;
-  const sections = useMemo(
-    () =>
-      [
-        // In the order a request meets them: it arrives, its signature is
-        // checked, it is answered, and it is sent on.
-        { id: "receiving", label: "Receiving" },
-        ...(hasEmail ? [{ id: "layouts", label: "Layouts" }] : []),
-        ...(isOwner ? [{ id: "retention", label: "Retention" }] : []),
-        ...(isOwner ? [{ id: "verification", label: "Signature verification" }] : []),
-        { id: "responses", label: "Responses" },
-        ...(isOwner
-          ? [
-              { id: "forwarding", label: "Forwarding" },
-              ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
-              { id: "alerts", label: "Alerts" },
-              { id: "sharing", label: "Team sharing" },
-              { id: "delete", label: "Delete endpoint" },
-            ]
-          : []),
-      ] as { id: SettingsSection; label: string; nested?: boolean }[],
-    [isOwner, hasLog, hasEmail]
-  );
+  // mailhooks.cc leads with what mail needs; the HTTP-only sections follow.
+  const mailFirst = useSite().key === "mailhooks";
+  const sections = useMemo(() => {
+    // Each site sorts these below (WEB_SECTION_ORDER, MAIL_SECTION_ORDER).
+    const list = [
+      { id: "receiving", label: "Receiving" },
+      ...(hasEmail ? [{ id: "layouts", label: "Layouts" }] : []),
+      ...(isOwner ? [{ id: "retention", label: "Retention" }] : []),
+      ...(isOwner
+        ? [
+            {
+              id: "verification",
+              label: mailFirst ? "HTTP signature verification" : "Signature verification",
+            },
+          ]
+        : []),
+      { id: "responses", label: mailFirst ? "HTTP responses" : "Responses" },
+      ...(isOwner
+        ? [
+            { id: "forwarding", label: "Forwarding" },
+            ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
+            { id: "alerts", label: "Alerts" },
+            { id: "sharing", label: "Team sharing" },
+            { id: "delete", label: "Delete endpoint" },
+          ]
+        : []),
+    ] as { id: SettingsSection; label: string; nested?: boolean }[];
+    const order = mailFirst ? MAIL_SECTION_ORDER : WEB_SECTION_ORDER;
+    const rank = (id: SettingsSection) => order.indexOf(id);
+    return [...list].sort((a, b) => rank(a.id) - rank(b.id));
+  }, [isOwner, hasLog, hasEmail, mailFirst]);
   const [active, setActive] = useState<SettingsSection>(focusSection ?? "receiving");
   const scroller = useRef<HTMLDivElement>(null);
 
-  const jump = useCallback((id: SettingsSection) => {
-    setActive(id);
-    scrollToSection(id);
-  }, []);
+  // A jump scrolls smoothly past other sections; the spy stays quiet until it
+  // settles so the clicked section keeps its highlight.
+  const jumpedAt = useRef(0);
+  // The section jumped to stays named while it is in view, until the person
+  // scrolls themselves: a short one near the end (Alerts) cannot reach the
+  // top, and the end of the scroll area would otherwise name the last one.
+  const jumpTarget = useRef<SettingsSection | null>(null);
+  const jump = useCallback(
+    (id: SettingsSection) => {
+      jumpedAt.current = Date.now();
+      jumpTarget.current = id;
+      setActive(id);
+      scrollToSection(id);
+      onSectionJump?.(id);
+    },
+    [onSectionJump]
+  );
+  const dirty = useDirtySections();
 
+  // Opening at a section (?section=). Sections that load their data render
+  // later, and the ones above grow as they load, so the target is placed once
+  // it exists and kept at the top while the page settles, until the person
+  // scrolls themselves. The spy stays quiet meanwhile so the highlight holds.
   useEffect(() => {
-    if (focusSection)
-      document.getElementById(`settings-${focusSection}`)?.scrollIntoView({ block: "start" });
+    if (!focusSection) return;
+    const root = scroller.current;
+    const content = root?.firstElementChild;
+    if (!root || !content) return;
+    let focused = false;
+    let settled = false;
+    const place = () => {
+      if (settled) return;
+      const target = document.getElementById(`settings-${focusSection}`);
+      if (!target) return;
+      jumpedAt.current = Date.now();
+      jumpTarget.current = focusSection;
+      setActive(focusSection);
+      target.scrollIntoView({ block: "start" });
+      if (!focused) {
+        focused = true;
+        document.getElementById(`settings-${focusSection}-title`)?.focus({ preventScroll: true });
+      }
+    };
+    const settle = () => {
+      settled = true;
+    };
+    place();
+    const resize = new ResizeObserver(place);
+    resize.observe(content);
+    const timer = setTimeout(settle, 3000);
+    const events = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    events.forEach((name) => root.addEventListener(name, settle, { passive: true }));
+    return () => {
+      clearTimeout(timer);
+      resize.disconnect();
+      events.forEach((name) => root.removeEventListener(name, settle));
+    };
   }, [focusSection]);
 
-  // Scroll spy: the topmost section in view is the active one.
+  // Scroll spy: the active section is the first one still showing below a line
+  // a little under the top of the view, so a short section (Alerts) is named
+  // once it reaches the top and a tall one (an open editor) stays active all
+  // the way through. The jump lock keeps a clicked section highlighted while
+  // the smooth scroll passes others, and it stays named while in view until
+  // the person scrolls. Scrolled to the very end, the last sections may never
+  // reach that line, so the bottom of the scroll area makes the last one
+  // active. Sections grow and shrink as editors open and
+  // data loads, which moves them without a scroll, so a resize updates too.
   useEffect(() => {
     const root = scroller.current;
     if (!root) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      if (Date.now() - jumpedAt.current < 800) return;
+      const all = Array.from(root.querySelectorAll<HTMLElement>("[data-settings-section]"));
+      if (all.length === 0) return;
+      const rootBox = root.getBoundingClientRect();
+      const target = all.find(
+        (section) => section.getAttribute("data-settings-section") === jumpTarget.current
+      );
+      if (target) {
+        const box = target.getBoundingClientRect();
+        if (box.bottom > rootBox.top && box.top < rootBox.bottom) return;
+      }
+      const last = all[all.length - 1];
+      const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
+      const line = rootBox.top + 96;
+      const current = atBottom
+        ? last
+        : (all.find((section) => section.getBoundingClientRect().bottom > line) ?? last);
+      const id = current.getAttribute("data-settings-section") as SettingsSection | null;
+      if (id) setActive(id);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    // Scrolling by hand lets go of the section jumped to.
+    const release = () => {
+      jumpTarget.current = null;
+    };
+    const input = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    input.forEach((name) => root.addEventListener(name, release, { passive: true }));
+    root.addEventListener("scroll", schedule, { passive: true });
+    const resize = new ResizeObserver(schedule);
+    const content = root.firstElementChild;
+    if (content) resize.observe(content);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      input.forEach((name) => root.removeEventListener(name, release));
+      root.removeEventListener("scroll", schedule);
+      resize.disconnect();
+    };
+  }, [sections]);
+
+  // The sticky bar is for unsaved edits whose own Save is out of sight. While
+  // a dirty section's save footer is in view, the bar would only repeat it.
+  const [footersInView, setFootersInView] = useState<ReadonlySet<string>>(() => new Set());
+  const dirtyKey = dirty.map((section) => section.id).join(",");
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root || !dirtyKey) return;
+    const inView = new Set<string>();
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        const id = visible[0]?.target.getAttribute(
-          "data-settings-section"
-        ) as SettingsSection | null;
-        if (id) setActive(id);
+        for (const entry of entries) {
+          const id = entry.target.getAttribute("data-section-footer");
+          if (!id) continue;
+          if (entry.isIntersecting) inView.add(id);
+          else inView.delete(id);
+        }
+        setFootersInView(new Set(inView));
       },
-      { root, rootMargin: "0px 0px -60% 0px", threshold: 0 }
+      { root, threshold: 0.5 }
     );
-    root.querySelectorAll("[data-settings-section]").forEach((el) => observer.observe(el));
+    root.querySelectorAll("[data-section-footer]").forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [sections]);
+  }, [sections, dirtyKey]);
+  const showUnsavedBar = dirty.some((section) => !footersInView.has(section.id));
+
+  // One unsaved section saves from the bar; a failed save opens the section,
+  // whose footer says what went wrong.
+  const [barSaving, setBarSaving] = useState(false);
+  const saveFromBar = async () => {
+    const [section] = dirty;
+    if (dirty.length !== 1 || !section?.save || barSaving) return;
+    setBarSaving(true);
+    const ok = await section.save();
+    setBarSaving(false);
+    if (!ok) jump(section.id as SettingsSection);
+  };
 
   return (
     <div className="flex-1 flex flex-col md:flex-row min-h-0">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 flex md:flex-col gap-1 p-2 md:p-3 overflow-x-auto [scrollbar-width:none]"
+        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 px-4 py-2 md:p-3"
       >
-        {sections.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            onClick={() => jump(section.id)}
-            className={cn(
-              "text-left whitespace-nowrap px-3 py-2 text-sm rounded-md cursor-pointer transition-colors",
-              section.id === "delete" && "md:mt-3",
-              section.nested && "md:pl-6",
-              active === section.id
-                ? "bg-selected text-selected-foreground font-semibold"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-          >
-            {section.label}
-          </button>
-        ))}
+        {/* Ten sections do not fit a phone's width, and wrapped they take four
+            rows, so phones pick the section from a list instead. */}
+        <Select
+          value={active}
+          // After the list closes, so focus can move to the section's heading.
+          onValueChange={(value) => window.setTimeout(() => jump(value as SettingsSection), 0)}
+        >
+          <SelectTrigger aria-label="Settings section" className="md:hidden h-9">
+            <SelectValue />
+          </SelectTrigger>
+          {/* The jump focuses the section's heading; keep it there on close. */}
+          <SelectContent onCloseAutoFocus={(event) => event.preventDefault()}>
+            {sections.map((section) => (
+              <SelectItem key={section.id} value={section.id}>
+                {section.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="max-md:hidden flex flex-col gap-1">
+          {sections.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => jump(section.id)}
+              className={cn(
+                "text-left whitespace-nowrap px-3 py-2 text-sm rounded-md cursor-pointer transition-colors",
+                section.id === "delete" && "mt-3",
+                section.nested && "pl-6",
+                active === section.id
+                  ? section.id === "delete"
+                    ? "bg-destructive/10 text-destructive-ink font-semibold"
+                    : "bg-selected text-selected-foreground font-semibold"
+                  : section.id === "delete"
+                    ? "text-destructive-ink hover:bg-destructive/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              aria-current={active === section.id ? "true" : undefined}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
       </nav>
-      <div ref={scroller} className="flex-1 overflow-y-auto">
-        <div className="max-w-[780px] p-4 md:p-6 space-y-6">
-          <ReceivingSection endpoint={endpoint} isOwner={isOwner} />
-          {hasEmail && <LayoutsSection endpoint={endpoint} />}
-          {isOwner && <RetentionSection endpoint={endpoint} />}
-          {isOwner && <VerificationSection endpoint={endpoint} />}
-          <ResponsesSection endpoint={endpoint} />
-          {isOwner && (
-            <DestinationsSection endpoint={endpoint} onSeeDeliveries={() => jump("deliveries")} />
+      <div ref={scroller} className="flex-1 overflow-y-auto flex flex-col">
+        {/* The room at the bottom lets the last sections scroll up to the spy line. */}
+        <div className="max-w-[920px] w-full mx-auto p-4 md:p-6 pb-[40vh] md:pb-24 space-y-6 flex-1">
+          {/* The sections render in the nav's order, which the list above decides. */}
+          {sections.map(({ id }) => {
+            switch (id) {
+              case "receiving":
+                return <ReceivingSection key={id} endpoint={endpoint} isOwner={isOwner} />;
+              case "layouts":
+                return <LayoutsSection key={id} endpoint={endpoint} />;
+              case "retention":
+                return <RetentionSection key={id} endpoint={endpoint} />;
+              case "verification":
+                return <VerificationSection key={id} endpoint={endpoint} />;
+              case "responses":
+                return <ResponsesSection key={id} endpoint={endpoint} />;
+              case "forwarding":
+                return (
+                  <DestinationsSection
+                    key={id}
+                    endpoint={endpoint}
+                    onSeeDeliveries={() => jump("deliveries")}
+                  />
+                );
+              case "deliveries":
+                return (
+                  <DeliveriesSection
+                    key={id}
+                    endpoint={endpoint}
+                    onOpenRequest={(requestId) => onOpenRequestDeliveries?.(requestId)}
+                  />
+                );
+              case "alerts":
+                return <AlertsSection key={id} endpoint={endpoint} />;
+              case "sharing":
+                return <SharingSection key={id} endpointId={endpoint.id} />;
+              case "delete":
+                return <DeleteSection key={id} endpoint={endpoint} requestCount={requestCount} />;
+              default:
+                return null;
+            }
+          })}
+        </div>
+        {/* Sticks to the bottom of the scroll area while edits are unsaved and
+            their Save is out of view. The live region stays mounted so the
+            bar's arrival is announced. */}
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            "sticky bottom-0 z-10",
+            showUnsavedBar &&
+              "border-t-strong border-line bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
           )}
-          {hasLog && (
-            <DeliveriesSection
-              endpoint={endpoint}
-              onOpenRequest={(requestId) => onOpenRequestDeliveries?.(requestId)}
-            />
+        >
+          {showUnsavedBar && (
+            <div className="max-w-[920px] mx-auto px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <p className="text-sm flex-1 min-w-[180px]">
+                {dirty.length === 1
+                  ? `Unsaved changes in ${dirty[0].title}`
+                  : `Unsaved changes in ${dirty.length} sections`}
+              </p>
+              <button
+                type="button"
+                onClick={() => jump(dirty[0].id as SettingsSection)}
+                aria-label="Review unsaved changes"
+                className="ui-btn-outline py-1.5! px-3! text-xs"
+              >
+                Review
+              </button>
+              {dirty.length === 1 && dirty[0].save && (
+                <button
+                  type="button"
+                  onClick={() => void saveFromBar()}
+                  disabled={barSaving}
+                  aria-label={`Save ${dirty[0].title}`}
+                  className={cn(
+                    "ui-btn-primary py-1.5! px-3! text-xs",
+                    barSaving && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {barSaving ? "Saving..." : "Save"}
+                </button>
+              )}
+            </div>
           )}
-          {isOwner && <AlertsSection endpoint={endpoint} />}
-          {isOwner && <SharingSection endpointId={endpoint.id} />}
-          {isOwner && <DeleteSection endpoint={endpoint} requestCount={requestCount} />}
         </div>
       </div>
     </div>

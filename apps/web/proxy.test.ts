@@ -10,7 +10,9 @@ vi.mock("@supabase/ssr", () => ({
 }));
 
 import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
-import { proxy } from "./proxy";
+import { LAYOUT_TEMPLATES } from "./lib/layout-templates";
+import { MAILHOOKS_PAGES } from "./lib/site";
+import { config, proxy } from "./proxy";
 
 beforeEach(() => {
   getUser.mockClear();
@@ -215,6 +217,102 @@ describe("proxy: two sites", () => {
     const res = await proxy(new NextRequest("https://mailhooks.cc/docs/layouts?x=1"));
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("https://webhooks.cc/docs/layouts?x=1");
+  });
+
+  it("marks a path neither site serves for mailhooks.cc's own 404, without a rewrite of its own", async () => {
+    const res = await proxy(new NextRequest("https://mailhooks.cc/no-such-page/deeper"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+    // An absolute rewrite made here can leave the server and loop (lib/site.ts).
+    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(res.headers.get("x-middleware-request-x-whk-missing")).toBe("1");
+    expect(res.headers.get("x-middleware-request-x-whk-site")).toBe("mailhooks");
+  });
+
+  it("marks an unknown sender, and anything below a page with nothing below it, as missing", async () => {
+    for (const path of [
+      "/parse/no-such-sender",
+      "/parse/shopify-orders/extra",
+      "/parse/%E0%A4%A",
+      // Every page but /parse has nothing below it.
+      ...MAILHOOKS_PAGES.filter((page) => page !== "/parse").map((page) => `${page}/extra`),
+    ]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBe("1");
+    }
+    // Every page, every sender in the catalogue and the app's own paths are served as they are.
+    for (const path of [
+      ...MAILHOOKS_PAGES,
+      ...LAYOUT_TEMPLATES.map((template) => `/parse/${template.id}`),
+      "/dashboard/anything",
+    ]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBeNull();
+    }
+  });
+
+  it("lists the same pages as the feature catalogue", () => {
+    expect([...MAILHOOKS_PAGES].sort()).toEqual(
+      ["/pricing", "/parse", "/guides", ...MAILHOOKS_FEATURES.map((f) => f.path)].sort()
+    );
+  });
+
+  it("sends app/mailhooks's own path to the page it stands for on mailhooks.cc", async () => {
+    for (const [path, to] of [
+      ["/mailhooks", "/"],
+      ["/mailhooks/pricing?plan=business", "/pricing?plan=business"],
+      // Where an unknown sender then gets mailhooks.cc's 404.
+      ["/mailhooks/parse/no-such-sender", "/parse/no-such-sender"],
+    ]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(307);
+      expect(res.headers.get("location"), path).toBe(`https://mailhooks.cc${to}`);
+    }
+  });
+
+  it("never sends a /mailhooks path to another host", async () => {
+    for (const path of [
+      "/mailhooks//evil.example/x",
+      "/mailhooks/%2F%2Fevil.example",
+      "/mailhooks/\\evil.example",
+      "/mailhooks///evil.example?q=1",
+    ]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(307);
+      expect(new URL(res.headers.get("location")!).origin, path).toBe("https://mailhooks.cc");
+    }
+  });
+
+  it("drops a missing marker a client sends, on either site", async () => {
+    for (const url of ["https://mailhooks.cc/pricing", "https://webhooks.cc/docs"]) {
+      const res = await proxy(new NextRequest(url, { headers: { "x-whk-missing": "1" } }));
+      expect(res.status, url).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), url).toBeNull();
+      // The list of request headers Next keeps: it has the proxy's own and not the marker.
+      const kept = res.headers.get("x-middleware-override-headers");
+      expect(kept, url).toContain("x-whk-site");
+      expect(kept, url).not.toContain("x-whk-missing");
+    }
+  });
+
+  it("runs for every path except the ones the missing-page rewrite leaves out too", async () => {
+    // next.config.ts repeats this lookahead; next.config.test.ts compares the two.
+    expect(config.matcher).toHaveLength(1);
+    const matcher = new RegExp(`^${config.matcher[0]}$`);
+    for (const path of ["/no-such-page", "/docs/agents", "/_next/data/x.json"]) {
+      expect(matcher.test(path), path).toBe(true);
+    }
+    for (const path of [
+      "/_next/static/chunks/a.js",
+      "/_next/image",
+      "/favicon.ico",
+      "/robots.txt",
+      "/sitemap.xml",
+    ]) {
+      expect(matcher.test(path), path).toBe(false);
+    }
   });
 
   it("keeps mailhooks.cc's pages off webhooks.cc", async () => {

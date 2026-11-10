@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.62.9";
+export const APP_VERSION = "0.63.0";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,63 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.63.0",
+    date: "2026-11-10",
+    title: "Interface Review Fixes",
+    track: "web",
+    items: [
+      "The classic light style meets WCAG AA for links, JSON and focus rings, and method badges read clearly on a selected row",
+      "On phones the dashboard shows one address at a time with an HTTP and Email toggle, request details no longer overlap their buttons, and the guest sign-up strip and plan table fit the screen",
+      "Every focusable control shows a visible focus ring, including links, the account menu and the request search",
+      "webhooks.cc/pricing opens the pricing section, sign-up links open the sign-up form, and sign-up buttons say what they do",
+      "mailhooks.cc lists mail settings first, names its test email and empty states for mail, explains forwarding from Gmail and Outlook, and calls its catalogue Layouts",
+      "Consistent sentence case and one timestamp format across the dashboard, and no more em dashes in the interface",
+      "Binary request bodies show as a hex preview with a download, and Replay sends the exact captured bytes",
+      "Request detail tabs work as a proper tab list for keyboards and screen readers, the dashboard has a main landmark and heading, and the phone menu closes with Escape",
+      "Red warning text and buttons, and sign-in errors, meet AA contrast in every style",
+      "The request list's small text is larger, its phone controls are easier to tap, and the timeline spreads out requests that arrive together",
+      "mailhooks.cc: the New endpoint dialog and Send menu lead with email, the empty dashboard has a forwarding card, the hero has one primary sign-up button, and /layouts opens the layout gallery",
+      "Form fields, selects, switches and segmented controls have clearly visible edges in the clean style, and segmented options show their focus ring",
+      "The landing page's first screen previews the dashboard and says plainly that the URL is one click away; the phone menu lists Providers, Compare and Pricing",
+      "Pricing cards say what each paid plan adds, and the Teams video shows a still until it plays",
+      "mailhooks.cc: a Setup checklist for mail (first email, a layout, a destination, forwarding), ready-made layouts from inside Settings, emails that open on their preview, and a way to list endpoints from webhooks.cc on the empty dashboard",
+      "The dashboard keeps its view, settings section and open request in the address, so reload, links and the phone's Back button work as expected",
+      "Settings warn before unsaved changes are lost and show which sections still need saving",
+      "Layouts lead with the values they find: each field shows its value, the pattern sits behind Edit pattern, and one Add layout menu offers the ready-made senders",
+      "The Setup checklist ticks steps from what the endpoint actually has, and opens the right settings for each",
+      "Skip to content now skips the header, docs search is a proper dialog, classic buttons look alike everywhere, and Pricing is in the header on every page",
+      "The request list is one keyboard stop with arrow keys, email detail tabs work like request tabs, and choosing a settings section moves focus into it",
+      "Small JSON bodies open fully, and sign-up form errors appear on the field they concern",
+      "mailhooks.cc: send a ready-made layout's sample email to see it parse at once, a Guides page, line-item fields with visible labels, and a grouped, filterable Add layout menu",
+      "One New endpoint form for the dialog and its page, pages that no longer scroll sideways on phones, and a shorter landing page",
+      "Ready-made layouts can be proven on the spot even when other mail is already there, and a layout that does not apply to an email is no longer shown as an error",
+      "On phones the dashboard folds its actions into one menu, so requests start higher, and the site menu dims the page and closes when focus leaves it",
+      "Settings show save controls only for sections with changes, adding a destination confirms where captures go, the Raw tab can be copied, and the Send dialog labels every field",
+      "Outline buttons have visible edges in the clean style, focus rings on tabs are no longer cut off, and mailhooks.cc has its own 404 page and a Docs link",
+      "Saved layouts, fields, alerts and responses no longer look unsaved after a save",
+      "mailhooks.cc: read earlier emails again after changing layouts, a Read again button on each email, a Parsed tab that explains an unread email, Inbox wording, and Email first in the keyboard order",
+      "The selected option in toggles and tabs is marked with a visible underline, wide toggles stack on phones, tablets show one full address with a toggle, and a Sign up free button is in every header",
+      "Clearer destination URL errors with focus kept on the form, sign-in errors next to the password field, a wider settings column whose links land on the right section, and a Create a team button",
+      "mailhooks.cc: an email shows Reading with your layouts while it is parsed and updates when it is done, the inbox shows which layout read each email, fields keep the layout's order, and a ready-made layout is added as a short summary you can expand",
+      "On phones, settings and account pages use a section picker instead of a clipped strip, the email header gives the subject the full width, and the address row steps aside once requests arrive",
+      "The unsaved-changes bar can save directly, Replay explains a server it cannot reach, expired share links say so, the Send dialog groups its templates, and the timeline has a legend and keyboard access",
+      "Pricing cards line up their buttons, prices read the same on both sites, and the New endpoint dialog opens with the name field ready",
+      "Request and email details adapt to the width of their pane, the list pane is capped and its divider works with keyboard and touch, and each endpoint and account page has its own title",
+      "One dropdown style everywhere, parsed results that are easy to read and copy, an Edit layout button, sign-in tab order fixed, and plan upgrades shown under each plan",
+      "Phones: larger touch targets, the address stays one tap away, and the authentication details no longer break words",
+      "Deleting an endpoint or removing a destination can no longer happen from a double-click: the confirmation moves focus to Cancel and ignores a second quick press",
+      "Plan buttons say Upgrade to someone already signed in, signed-in visitors get a compact landing band, and every 404 offers the Dashboard when signed in",
+      "mailhooks.cc: layout pages explain what a layout reads in a table, the email header starts higher, settings say Inbox, and the landing ends with a sign-up",
+      "One select style in condition rows and the support form, larger helper text, and settings that highlight the section you are reading",
+      "The Export menu works with the keyboard, request details no longer repeat ids, and the settings list stays on the section you jumped to",
+      "Forwarding explains how to reach localhost with whk tunnel or Replay, list rows show the query string, and Alerts sit with the email settings on webhooks.cc",
+      "mailhooks.cc: every email offers a way to add a layout, gallery visitors land on sign-up, HTTP responses start collapsed, and inbox rows say reading only while a layout can still read them",
+      "Signed-in visitors no longer see guest sign-up copy, the announcement stays off sign-in pages and phones, sign-up checks the email format first, and the phone landing page is shorter",
+      "Following live requests or stepping through them with the keyboard no longer drops a tab you just opened, and an octet-stream body that is plain text shows as text",
+      "Unsaved settings are asked about however you leave them: the account menu, Back within the dashboard, another endpoint or a link to another page, and an edited destination counts too",
+    ],
+  },
   {
     version: "0.62.9",
     date: "2026-11-10",

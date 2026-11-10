@@ -88,6 +88,11 @@ async function openSettings(page: Page, section: string) {
     .click();
   const region = page.getByRole("region", { name: section });
   await expect(region).toBeVisible();
+  if (section === "Receiving") {
+    // On webhooks.cc the email settings start folded under "Email options".
+    const options = region.locator("details", { hasText: "Email options" });
+    if ((await options.getAttribute("open")) === null) await options.locator("summary").click();
+  }
   return region;
 }
 
@@ -168,7 +173,7 @@ test("an inbound email handler destination posts emails as Postmark does", async
   const forwarding = await openSettings(page, "Forwarding");
   await forwarding.getByRole("button", { name: /^Inbound email handler/ }).click();
   await forwarding.getByLabel("Send to").fill(hookUrl);
-  await expect(forwarding.getByLabel("Shaped like")).toHaveValue("postmark");
+  await expect(forwarding.getByLabel("Shaped like")).toHaveText("Postmark inbound");
   await forwarding.getByRole("button", { name: "Add destination" }).click();
   await expect
     .poll(

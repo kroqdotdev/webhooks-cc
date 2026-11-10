@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useAnnouncedRouter } from "@/lib/announced-router";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { resetUser, trackSignOut } from "@/lib/analytics";
+import { leaveThrough } from "@/lib/leave-guard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   ChevronDown,
+  CreditCard,
   Gauge,
   LayoutDashboard,
   LifeBuoy,
@@ -58,7 +60,10 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
   }
 
   return (
-    <div className="h-7 w-7 rounded-full border-strong border-line bg-muted flex items-center justify-center text-[10px] font-bold leading-none">
+    <div
+      aria-hidden
+      className="h-7 w-7 rounded-full border-strong border-line bg-muted flex items-center justify-center text-xs font-bold leading-none"
+    >
       {initials}
     </div>
   );
@@ -66,7 +71,7 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
 
 export function UserDropdown() {
   const { user: authUser, session } = useAuth();
-  const router = useRouter();
+  const router = useAnnouncedRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   // Asked when the menu first opens, not on every page load.
   const [menuOpened, setMenuOpened] = useState(false);
@@ -99,12 +104,15 @@ export function UserDropdown() {
     router.push("/");
   };
 
+  // Other pages ask first while the dashboard holds unsaved settings (lib/leave-guard.ts).
+  const go = (href: string) => leaveThrough(() => router.push(href));
+
   const displayName = profile.name || profile.email.split("@")[0];
 
   return (
     <DropdownMenu onOpenChange={(open) => open && setMenuOpened(true)}>
       {/* The name and initials stay out of autocapture. */}
-      <DropdownMenuTrigger className="ph-no-capture flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer outline-none">
+      <DropdownMenuTrigger className="ph-no-capture flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
         <UserAvatar profile={profile} />
         <span className="hidden lg:inline max-w-[120px] truncate">{displayName}</span>
         <ChevronDown className="h-3.5 w-3.5" />
@@ -114,28 +122,29 @@ export function UserDropdown() {
           <LayoutDashboard className="h-4 w-4 mr-2" />
           Dashboard
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/account")} className="cursor-pointer">
+        <DropdownMenuItem onClick={() => go("/account")} className="cursor-pointer">
           <Settings className="h-4 w-4 mr-2" />
           Account
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => router.push("/account/appearance")}
-          className="cursor-pointer"
-        >
+        <DropdownMenuItem onClick={() => go("/account/plan")} className="cursor-pointer">
+          <CreditCard className="h-4 w-4 mr-2" />
+          Plan and usage
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => go("/account/appearance")} className="cursor-pointer">
           <Palette className="h-4 w-4 mr-2" />
           Appearance
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/teams")} className="cursor-pointer">
+        <DropdownMenuItem onClick={() => go("/teams")} className="cursor-pointer">
           <Users className="h-4 w-4 mr-2" />
           Teams
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/support")} className="cursor-pointer">
+        <DropdownMenuItem onClick={() => go("/support")} className="cursor-pointer">
           <LifeBuoy className="h-4 w-4 mr-2" />
           Support
         </DropdownMenuItem>
         {staff?.staff && (
           <DropdownMenuItem
-            onClick={() => router.push("/ops")}
+            onClick={() => go("/ops")}
             className="cursor-pointer text-staff focus:text-staff"
           >
             <Gauge className="h-4 w-4 mr-2" />
@@ -148,9 +157,12 @@ export function UserDropdown() {
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
+        <DropdownMenuItem
+          onClick={() => leaveThrough(() => void handleSignOut())}
+          className="cursor-pointer"
+        >
           <LogOut className="h-4 w-4 mr-2" />
-          Sign Out
+          Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -48,7 +48,7 @@ test("mailhooks.cc has its own pages, and sends webhooks.cc's elsewhere", async 
   await expect(page).toHaveTitle(/^mailhooks\.cc: /);
   const header = page.getByRole("banner");
   await expect(header.getByRole("link", { name: "mailhooks.cc" })).toBeVisible();
-  await expect(header.getByRole("link", { name: "Senders" })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Layout gallery" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Turn the emails you receive into structured data" })
   ).toBeVisible();
@@ -65,6 +65,57 @@ test("mailhooks.cc has its own pages, and sends webhooks.cc's elsewhere", async 
   const response = await page.goto(`${MAIL}/docs/layouts`);
   expect(new URL(page.url()).host).not.toBe(new URL(MAIL!).host);
   expect(response?.ok()).toBe(true);
+});
+
+test("an unknown path on mailhooks.cc answers 404 with its own page", async ({ page }) => {
+  const response = await page.goto(`${MAIL}/no-such-page-${Date.now()}`);
+  expect(response?.status()).toBe(404);
+  // Still on mailhooks.cc: no jump to webhooks.cc's 404.
+  expect(new URL(page.url()).host).toBe(new URL(MAIL!).host);
+  await expect(page).toHaveTitle("Page not found | mailhooks.cc");
+  await expect(page.getByRole("heading", { name: "404", level: 1 })).toBeVisible();
+  await expect(page.getByText("This page doesn't exist on mailhooks.cc.")).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "mailhooks.cc" })).toBeVisible();
+  const places = page.getByRole("navigation", { name: "Places to go" });
+  await expect(places.getByRole("link", { name: "Layout gallery" })).toHaveAttribute(
+    "href",
+    "/parse"
+  );
+  await places.getByRole("link", { name: "Home" }).click();
+  await expect(page).toHaveURL(`${MAIL}/`);
+  await expect(page).toHaveTitle(/^mailhooks\.cc: /);
+});
+
+test("an unknown sender page is a 404 that is neither rendered nor cached", async ({
+  page,
+  request,
+}) => {
+  const path = `/parse/no-such-sender-${Date.now()}`;
+  // Twice: a page rendered on demand would be a cache HIT the second time.
+  for (let i = 0; i < 2; i++) {
+    const response = await request.get(`${MAIL}${path}`, { maxRedirects: 0 });
+    expect(response.status()).toBe(404);
+    const headers = response.headers();
+    expect(headers["cache-control"]).toContain("no-store");
+    expect(headers["cache-control"]).not.toContain("s-maxage");
+    expect(headers["x-nextjs-cache"]).toBeUndefined();
+  }
+  // Below a page with nothing below it, too.
+  const deeper = await request.get(`${MAIL}/pricing/no-such-page`, { maxRedirects: 0 });
+  expect(deeper.status()).toBe(404);
+  expect(deeper.headers()["cache-control"]).toContain("no-store");
+
+  // app/mailhooks's own path leads to the same 404, not webhooks.cc's.
+  const prefixed = await request.get(`${MAIL}/mailhooks${path}`);
+  expect(prefixed.status()).toBe(404);
+  expect(new URL(prefixed.url()).pathname).toBe(path);
+  expect(await prefixed.text()).toContain("exist on mailhooks.cc");
+
+  // It is mailhooks.cc's own 404, and a known sender still has its page.
+  await page.goto(`${MAIL}${path}`);
+  await expect(page.getByText("This page doesn't exist on mailhooks.cc.")).toBeVisible();
+  const known = await request.get(`${MAIL}/parse/shopify-orders`);
+  expect(known.status()).toBe(200);
 });
 
 async function captureEmail(subject: string) {
@@ -99,13 +150,14 @@ test("the dashboard on mailhooks.cc is under its name and opens on emails", asyn
   await signInTestUser(page, user, "/pricing", MAIL);
   await page.goto(`${MAIL}/dashboard?endpoint=${endpointSlug}`);
   await expect(page.getByText("Send an email")).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("Team collaboration")).toHaveCount(0);
+  await expect(page.getByText("Teams: share endpoints with your team.")).toHaveCount(0);
 
   // With mail in it, the list opens on emails.
   await captureEmail("Order 1 confirmed");
   // The dashboard's live connection keeps the network busy: no networkidle here.
   await page.goto(`${MAIL}/dashboard?endpoint=${endpointSlug}`);
-  await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
+  // Titled after the open endpoint (or "Dashboard" before there is one), then the site.
+  await expect(page).toHaveTitle(/ \| mailhooks\.cc$/);
   await expect(page.getByRole("banner").getByRole("link", { name: "mailhooks.cc" })).toBeVisible();
   await expect(page.getByRole("radio", { name: /^Email/ })).toHaveAttribute(
     "aria-checked",
@@ -184,7 +236,8 @@ test("an email link asked for on mailhooks.cc signs in there, even opened on web
     `${baseURL}/auth/confirm?token_hash=${encodeURIComponent(hash)}&type=email&redirect_to=${encodeURIComponent(redirectTo)}`
   );
   await expect(page).toHaveURL(redirectTo, { timeout: 15000 });
-  await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
+  // Titled after the open endpoint (or "Dashboard" before there is one), then the site.
+  await expect(page).toHaveTitle(/ \| mailhooks\.cc$/);
 
   // Emails sent later (quota, alerts) link to the site it signed in on.
   const { data } = await admin.from("users").select("home_site").eq("id", user.id).single();
@@ -226,5 +279,6 @@ test("signs in with a password on mailhooks.cc and stays there", async ({ page }
       timeout: 20000,
     }
   );
-  await expect(page).toHaveTitle("Dashboard | mailhooks.cc");
+  // Titled after the open endpoint (or "Dashboard" before there is one), then the site.
+  await expect(page).toHaveTitle(/ \| mailhooks\.cc$/);
 });

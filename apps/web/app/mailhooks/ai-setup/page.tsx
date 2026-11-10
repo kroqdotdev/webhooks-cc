@@ -41,7 +41,7 @@ export default function AiSetupPage() {
             <ul className="space-y-2">
               {SENT.map((item) => (
                 <li key={item} className="flex items-start gap-3 text-sm">
-                  <Check className="h-5 w-5 text-primary shrink-0" aria-hidden />
+                  <Check className="h-5 w-5 text-primary-ink shrink-0" aria-hidden />
                   <span>{item}</span>
                 </li>
               ))}
@@ -63,7 +63,7 @@ export default function AiSetupPage() {
           Anthropic is on our{" "}
           <Link
             href={`${webhooksOrigin()}/subprocessors`}
-            className="text-primary font-bold hover:underline"
+            className="text-primary-ink font-bold hover:underline"
           >
             list of subprocessors
           </Link>
@@ -82,7 +82,7 @@ export default function AiSetupPage() {
         <p className="text-muted-foreground">
           The result is the same kind of layout you would write by hand, so you can read it, change
           it and try it on an email in the preview. Start from a{" "}
-          <Link href="/parse" className="text-primary font-bold hover:underline">
+          <Link href="/parse" className="text-primary-ink font-bold hover:underline">
             ready-made layout
           </Link>{" "}
           instead when your sender has one.

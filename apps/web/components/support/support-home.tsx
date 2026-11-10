@@ -80,7 +80,7 @@ function TicketRows({ tickets }: { tickets: SupportTicketSummary[] }) {
               <span
                 className={cn(
                   "row-span-2 text-right text-xs",
-                  yours ? "font-semibold text-primary" : "text-muted-foreground"
+                  yours ? "font-semibold text-primary-ink" : "text-muted-foreground"
                 )}
               >
                 {yours && (
@@ -142,7 +142,7 @@ function TicketList({ token, userId }: { token: string | null; userId: string | 
   if (tickets === null) {
     return error ? (
       <div className="ui-card ui-card-static flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-destructive">{error}</p>
+        <p className="text-sm text-destructive-ink">{error}</p>
         <Button variant="outline" size="sm" onClick={() => void load()}>
           Try again
         </Button>

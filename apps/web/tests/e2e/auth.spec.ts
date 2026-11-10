@@ -59,7 +59,7 @@ test.describe("Authentication", () => {
 
     // Sign out lives in the avatar dropdown in the header
     await page.locator("header").getByRole("button").last().click();
-    await page.getByRole("menuitem", { name: "Sign Out" }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/(login)?$/, { timeout: 10000 });
 
     // Verify we can't access protected routes anymore
@@ -100,7 +100,10 @@ test.describe("Email/password authentication", () => {
       await page.getByLabel("Email").fill(email);
       await page.getByLabel("Password").fill("short");
       await page.getByRole("button", { name: "Create account" }).click();
-      await expect(page.locator('main [role="alert"]')).toHaveText(/at least 8 characters/);
+      // A check the form makes itself is shown under the field, which takes focus.
+      await expect(page.getByLabel("Password")).toHaveAttribute("aria-invalid", "true");
+      await expect(page.getByLabel("Password")).toBeFocused();
+      await expect(page.locator("#auth-password-error")).toHaveText(/at least 8 characters/);
 
       await page.getByLabel("Password").fill("a-long-enough-password");
       await page.getByRole("button", { name: "Create account" }).click();

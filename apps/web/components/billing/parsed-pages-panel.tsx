@@ -115,7 +115,7 @@ export function ParsedPagesPanel({
   if (!state) {
     return error ? (
       <Panel id="extra-pages" title="Parsed pages">
-        <p className="text-sm text-destructive">{error}</p>
+        <p className="text-sm text-destructive-ink">{error}</p>
       </Panel>
     ) : null;
   }
@@ -314,7 +314,7 @@ export function ParsedPagesPanel({
       )}
 
       {error && (
-        <p className="text-sm text-destructive" role="alert" aria-live="polite">
+        <p className="text-sm text-destructive-ink" role="alert" aria-live="polite">
           {error}
         </p>
       )}

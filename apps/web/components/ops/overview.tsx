@@ -115,7 +115,7 @@ export function OpsOverview() {
       <div className="p-6 lg:p-8">
         {error ? (
           <div className="flex items-center gap-3">
-            <p className="text-sm text-destructive">{error}</p>
+            <p className="text-sm text-destructive-ink">{error}</p>
             <Button size="sm" variant="outline" onClick={() => void load()}>
               Try again
             </Button>
@@ -162,13 +162,13 @@ export function OpsOverview() {
                         #{ticket.number}
                       </span>
                       {ticket.blocking && (
-                        <span className="ml-2 text-xs text-destructive">blocking</span>
+                        <span className="ml-2 text-xs text-destructive-ink">blocking</span>
                       )}
                     </span>
                     <span
                       className={cn(
                         "shrink-0 text-xs tabular-nums",
-                        late ? "font-medium text-destructive" : "text-muted-foreground"
+                        late ? "font-medium text-destructive-ink" : "text-muted-foreground"
                       )}
                     >
                       waiting {waitLabel(ticket.waitingSince)}
@@ -283,8 +283,8 @@ export function OpsOverview() {
                     <td
                       className={cn(
                         "px-3 py-2 text-right",
-                        delta.tone === "good" && "text-primary",
-                        delta.tone === "bad" && "text-destructive",
+                        delta.tone === "good" && "text-primary-ink",
+                        delta.tone === "bad" && "text-destructive-ink",
                         delta.tone === "flat" && "text-muted-foreground"
                       )}
                     >

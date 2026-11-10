@@ -17,6 +17,16 @@ export type SiteKey = "webhooks" | "mailhooks";
 /** Request header proxy.ts sets to the request's site; a client's own copy is dropped. */
 export const SITE_HEADER = "x-whk-site";
 
+/**
+ * Set by proxy.ts on a mailhooks.cc request for a path neither site serves;
+ * a next.config.ts rewrite that matches on it serves mailhooks.cc's own 404
+ * (app/mailhooks/missing). A header and a config rewrite, not a rewrite made
+ * in proxy.ts: that one is absolute, and where the server's own address
+ * differs from the one Next gives the proxy it leaves the server and comes
+ * back without the mailhooks.cc host, which sent the visitor around in a loop.
+ */
+export const MAILHOOKS_MISSING_HEADER = "x-whk-missing";
+
 export interface SiteInfo {
   key: SiteKey;
   /** The wordmark and the name in titles. */
@@ -121,21 +131,32 @@ export function requestSiteOrigin(request: Request): string {
 }
 
 /**
+ * mailhooks.cc's own pages, served from app/mailhooks by the host rewrites in
+ * next.config.ts (which cannot import this file; its test compares the two).
+ * Only /parse has pages below it, one per sender in the layout catalogue.
+ */
+export const MAILHOOKS_PAGES = [
+  "/pricing",
+  "/parse",
+  "/guides",
+  // The feature pages (lib/mailhooks-features.ts; a test compares the two).
+  "/google-sheets",
+  "/file-drops",
+  "/custom-domains",
+  "/ai-setup",
+  "/integrations",
+] as const;
+
+/**
  * Paths mailhooks.cc answers itself: its own pages (served from
  * app/mailhooks), signing in, the app, the API and share links. Anything
  * else there is webhooks.cc's (docs, blog, comparisons, legal pages, the CLI
  * and agent flows) and redirects to it.
  */
 const MAILHOOKS_PREFIXES = [
-  "/pricing",
-  "/parse",
-  // The feature pages (lib/mailhooks-features.ts).
-  "/google-sheets",
-  "/file-drops",
-  "/custom-domains",
-  "/ai-setup",
-  "/integrations",
+  ...MAILHOOKS_PAGES,
   "/login",
+  "/signup",
   "/auth",
   "/dashboard",
   "/account",
@@ -150,6 +171,78 @@ const MAILHOOKS_PREFIXES = [
   "/email-templates",
   "/_next",
 ];
+
+/**
+ * The first path segments webhooks.cc answers: its routes under app/ (the
+ * (settings) group's account and teams included), public/ files and the
+ * redirects in next.config.ts. A mailhooks.cc path outside its own list goes
+ * to webhooks.cc only when it is one of these; anything else is a mailhooks.cc
+ * 404, so a mistyped address stays on the site it was typed for. A unit test
+ * keeps the list in step with app/ and public/.
+ */
+export const WEBHOOKS_TOP_LEVEL = [
+  ".well-known",
+  "account",
+  "agent",
+  "android",
+  "api",
+  "api-explorer",
+  "apple-touch-icon.png",
+  "auth",
+  "auth.md",
+  "blog",
+  "changelog",
+  "cli",
+  "compare",
+  "dashboard",
+  "docs",
+  "docs.md",
+  "email-templates",
+  "email-testing",
+  "email-to-webhook",
+  "endpoints",
+  "favicon.ico",
+  "feed.xml",
+  "for-teams",
+  "go",
+  "index.md",
+  "install.sh",
+  "installation",
+  "ios",
+  "llms-full.txt",
+  "llms.txt",
+  "login",
+  "mcp",
+  "oauth",
+  "og-image.jpg",
+  "openapi.yaml",
+  "ops",
+  "privacy",
+  "robots.txt",
+  "s",
+  "signup",
+  "sitemap-index.xml",
+  "sitemap.rss",
+  "sitemap.txt",
+  "sitemap.xml",
+  "sitemaps",
+  "subprocessors",
+  "support",
+  "teams",
+  "terms",
+  "video",
+  "webhooks",
+] as const;
+
+const WEBHOOKS_TOP_LEVEL_SET: ReadonlySet<string> = new Set(WEBHOOKS_TOP_LEVEL);
+
+/** Whether webhooks.cc has something at this path's first segment (see WEBHOOKS_TOP_LEVEL). */
+export function existsOnWebhooks(pathname: string): boolean {
+  const first = pathname.split("/")[1] ?? "";
+  // Root-level verification and icon files in public/ (e.g. a search engine's key file).
+  if (/^[^/]+\.(?:txt|svg|png|ico|jpg|jpeg|webp|webmanifest)$/i.test(first)) return true;
+  return WEBHOOKS_TOP_LEVEL_SET.has(first);
+}
 
 export function servedOnMailhooks(pathname: string): boolean {
   if (pathname === "/") return true;

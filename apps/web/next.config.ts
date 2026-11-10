@@ -48,11 +48,24 @@ const mailhooksHost = hostnameOf(process.env.NEXT_PUBLIC_MAILHOOKS_URL);
 const onMailhooks = mailhooksHost
   ? [{ type: "host" as const, value: mailhooksHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }]
   : [];
+// A mailhooks.cc path neither site serves, marked by proxy.ts
+// (MAILHOOKS_MISSING_HEADER in lib/site.ts), gets mailhooks.cc's own 404.
+// Only on the mail host, and only on paths proxy.ts runs for (the lookahead
+// is its matcher's): there the proxy has dropped any marker a client sent,
+// so nobody can ask for the 404 page in place of a script or an icon.
+const missingOnMailhooks = [
+  ...onMailhooks,
+  { type: "header" as const, key: "x-whk-missing", value: "1" },
+];
+const proxiedPaths =
+  "/:path((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.(?:xml|txt|rss)).*)";
 const mailhooksRewrites = mailhooksHost
   ? [
+      { source: proxiedPaths, has: missingOnMailhooks, destination: "/mailhooks/missing" },
       { source: "/", has: onMailhooks, destination: "/mailhooks" },
       { source: "/pricing", has: onMailhooks, destination: "/mailhooks/pricing" },
       { source: "/parse", has: onMailhooks, destination: "/mailhooks/parse" },
+      { source: "/guides", has: onMailhooks, destination: "/mailhooks/guides" },
       { source: "/parse/:path*", has: onMailhooks, destination: "/mailhooks/parse/:path*" },
       // The feature pages (lib/mailhooks-features.ts).
       ...["/google-sheets", "/file-drops", "/custom-domains", "/ai-setup", "/integrations"].map(
@@ -169,6 +182,28 @@ const nextConfig: NextConfig = {
         missing: [{ type: "query", key: "go-get" }],
         destination: "/docs/sdk/go",
         permanent: true,
+      },
+      ...(onMailhooks.length
+        ? [
+            {
+              // The catalogue is called Layouts, so people try /layouts for it.
+              source: "/layouts",
+              has: onMailhooks,
+              destination: "/parse",
+              permanent: false,
+            },
+          ]
+        : []),
+      // Addresses people guess: sign-up opens the form, and the docs home is the quick start.
+      { source: "/signup", destination: "/login?mode=sign-up", permanent: false },
+      { source: "/docs/quickstart", destination: "/docs", permanent: true },
+      {
+        // mailhooks.cc has a pricing page; webhooks.cc's pricing is a section
+        // of its landing page, and people guess /pricing there too.
+        source: "/pricing",
+        ...(onMailhooks.length ? { missing: onMailhooks } : {}),
+        destination: "/#pricing",
+        permanent: false,
       },
       {
         // The sitemap index and its child sitemaps were folded into one /sitemap.xml.

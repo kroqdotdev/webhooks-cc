@@ -234,8 +234,8 @@ test("a captured request is relayed and its Deliveries tab shows the journey", a
   expect(relayed.headers.authorization).toBe("Bearer e2e-secret-token-9876");
 
   await openDashboard(page, owner);
-  await page.getByRole("button", { name: /^POST \/orders\/events/ }).click();
-  await shown(page.getByRole("button", { name: /^deliveries$/i })).click();
+  await page.getByRole("option", { name: /^POST \/orders\/events/ }).click();
+  await shown(page.getByRole("tab", { name: /^deliveries$/i })).click();
   await expect(shown(page.getByText(/^Forwarded as received to /))).toBeVisible({
     timeout: 15000,
   });
@@ -253,7 +253,7 @@ test("a captured request is relayed and its Deliveries tab shows the journey", a
     shown(page.getByText(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/).first())
   ).toBeVisible();
   await page.reload();
-  await shown(page.getByRole("button", { name: /^deliveries$/i })).click();
+  await shown(page.getByRole("tab", { name: /^deliveries$/i })).click();
   await expect(shown(page.getByRole("button", { name: "UTC. Show local time" }))).toBeVisible();
   await shown(page.getByRole("button", { name: "UTC. Show local time" })).click();
 });
@@ -391,10 +391,10 @@ test("a team member reads deliveries but cannot redeliver", async ({ page }) => 
 
   await openDashboard(page, member);
   await page
-    .getByRole("button", { name: /^POST \/orders\/events/ })
+    .getByRole("option", { name: /^POST \/orders\/events/ })
     .first()
     .click();
-  await shown(page.getByRole("button", { name: /^deliveries$/i })).click();
+  await shown(page.getByRole("tab", { name: /^deliveries$/i })).click();
   await expect(shown(page.getByText(/^Forwarded as received to /))).toBeVisible({
     timeout: 15000,
   });

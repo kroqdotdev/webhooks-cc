@@ -14,6 +14,14 @@ const METHOD_FILL: Record<string, string> = {
 };
 const DEFAULT_FILL = "hsl(0, 0%, 60%)";
 
+/** The legend under the axis: one swatch per colour the dots use. */
+const LEGEND: { key: string; label: string }[] = [
+  { key: "GET", label: "GET" },
+  { key: "POST", label: "POST" },
+  { key: "PUT", label: "PUT, PATCH" },
+  { key: "DELETE", label: "DELETE" },
+];
+
 function getItemId(item: AnyRequestSummary): string {
   return "_id" in item ? item._id : item.id;
 }
@@ -29,6 +37,8 @@ const SELECTED_RADIUS = 7;
 const PADDING_X = 24;
 const PADDING_Y = 20;
 const ROW_HEIGHT = 16;
+/** The click target around each dot: 24px across, larger than the dot itself. */
+const HIT_RADIUS = 12;
 
 export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimelineProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -60,10 +70,13 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
       if (r.receivedAt < min) min = r.receivedAt;
       if (r.receivedAt > max) max = r.receivedAt;
     }
-    // Ensure at least 1 second range
-    if (max - min < 1000) {
-      min -= 500;
-      max += 500;
+    // At least a minute across, centred on the requests, so a burst within a
+    // few seconds reads as a burst rather than one point with repeated labels.
+    const MIN_RANGE = 60_000;
+    if (max - min < MIN_RANGE) {
+      const pad = (MIN_RANGE - (max - min)) / 2;
+      min -= pad;
+      max += pad;
     }
 
     const usableWidth = width - PADDING_X * 2;
@@ -78,12 +91,17 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
       const stackIndex = columns.get(col) ?? 0;
       columns.set(col, stackIndex + 1);
 
+      const what = r.email ? r.email.subject || "(no subject)" : r.path;
       return {
         id,
         x: PADDING_X + rawX,
         y: PADDING_Y + stackIndex * ROW_HEIGHT,
         method: r.method,
-        receivedAt: r.receivedAt,
+        // What the tooltip (and the dot's accessible name) says: the method,
+        // the path or an email's subject, and the time.
+        label: [r.method, what, new Date(r.receivedAt).toLocaleTimeString()]
+          .filter(Boolean)
+          .join(" "),
       };
     });
 
@@ -101,25 +119,34 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
   const timeLabels = useMemo(() => {
     const range = timeRange.max - timeRange.min;
     const usableWidth = width - PADDING_X * 2;
-    const labelCount = Math.max(2, Math.min(6, Math.floor(usableWidth / 80)));
-    const labels: { x: number; label: string }[] = [];
+    // A label is about 55px wide at 11px; keep a gap between neighbours.
+    const labelCount = Math.max(2, Math.min(6, Math.floor(usableWidth / 96)));
+    const labels: { x: number; label: string; anchor: "start" | "middle" | "end" }[] = [];
 
     for (let i = 0; i < labelCount; i++) {
       const t = timeRange.min + (range * i) / (labelCount - 1);
       const x = PADDING_X + (usableWidth * i) / (labelCount - 1);
       const d = new Date(t);
+      const label = d.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+      // Never the same label twice in a row.
+      if (labels.at(-1)?.label === label) continue;
+      // The first and last labels sit inside the axis ends, so they stay
+      // within the pane's padding instead of hanging over the edge.
       labels.push({
         x,
-        label: d.toLocaleTimeString(undefined, {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }),
+        label,
+        anchor: i === 0 ? "start" : i === labelCount - 1 ? "end" : "middle",
       });
     }
     return labels;
   }, [timeRange, width]);
+
+  const hasEmail = requests.some((request) => request.method === "EMAIL");
 
   if (requests.length === 0) {
     return (
@@ -147,8 +174,8 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
             key={i}
             x={label.x}
             y={height + 16}
-            textAnchor="middle"
-            className="fill-muted-foreground text-[9px] font-mono"
+            textAnchor={label.anchor}
+            className="fill-muted-foreground text-[11px] font-mono"
           >
             {label.label}
           </text>
@@ -162,27 +189,63 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
           const fill = METHOD_FILL[dot.method] ?? DEFAULT_FILL;
 
           return (
-            <circle
+            <g
               key={dot.id}
-              cx={dot.x}
-              cy={dot.y}
-              r={r}
-              fill={fill}
-              stroke={isSelected ? "hsl(var(--foreground))" : "none"}
-              strokeWidth={isSelected ? 2 : 0}
-              opacity={isSelected || isHovered ? 1 : 0.7}
-              className="cursor-pointer transition-all duration-100"
+              role="button"
+              tabIndex={0}
+              aria-label={dot.label}
+              aria-pressed={isSelected}
+              className="group cursor-pointer outline-none"
               onClick={() => onSelect(dot.id)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                onSelect(dot.id);
+              }}
               onMouseEnter={() => setHoveredId(dot.id)}
               onMouseLeave={() => setHoveredId(null)}
             >
-              <title>
-                {dot.method} — {new Date(dot.receivedAt).toLocaleTimeString()}
-              </title>
-            </circle>
+              <title>{dot.label}</title>
+              {/* The keyboard focus ring, drawn around the dot. */}
+              <circle
+                cx={dot.x}
+                cy={dot.y}
+                r={r + 4}
+                fill="none"
+                stroke="hsl(var(--ring))"
+                strokeWidth={2}
+                className="opacity-0 group-focus-visible:opacity-100"
+              />
+              <circle
+                cx={dot.x}
+                cy={dot.y}
+                r={r}
+                fill={fill}
+                stroke={isSelected ? "hsl(var(--foreground))" : "none"}
+                strokeWidth={isSelected ? 2 : 0}
+                opacity={isSelected || isHovered ? 1 : 0.7}
+                className="transition-all duration-100"
+              />
+              <circle cx={dot.x} cy={dot.y} r={HIT_RADIUS} fill="transparent" />
+            </g>
           );
         })}
       </svg>
+      <ul
+        aria-label="Legend"
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 px-6 pb-3 text-xs text-muted-foreground"
+      >
+        {[...LEGEND, ...(hasEmail ? [{ key: "EMAIL", label: "Email" }] : [])].map((entry) => (
+          <li key={entry.key} className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ background: METHOD_FILL[entry.key] }}
+            />
+            {entry.label}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

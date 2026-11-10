@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { AiAssistPanel } from "./ai-assist-panel";
 import { Field, SaveFooter, Section, SwitchRow } from "./settings-primitives";
+import { stableStringify } from "@/lib/stable-json";
 
 /** A field to repair and where it is defined: the endpoint's own fields (null), or a layout. */
 type FieldAt = { field: EmailField; layoutId: string | null };
@@ -256,7 +257,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     notifyEmail: draft.notifyEmail,
     notifyDestinationIds: draft.notifyDestinationIds,
   };
-  const dirty = loaded !== null && JSON.stringify(next) !== JSON.stringify(loaded);
+  const dirty = loaded !== null && stableStringify(next) !== stableStringify(loaded);
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
@@ -326,7 +327,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
     <Section
       id="alerts"
       title="Alerts"
-      description="Hear about it when this endpoint's email fields stop matching, when mail stops arriving or when a delivery fails for good."
+      description="Hear about it when a delivery fails for good, when email stops arriving or when its fields stop matching."
       footer={
         <SaveFooter
           dirty={dirty}
@@ -360,7 +361,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         <>
           <SwitchRow
             id="alerts-enabled"
-            label="Alerts"
+            label="Email me when something needs attention"
             help="Checked about once a minute. You get one notice when an alert opens and one when it resolves."
             checked={draft.enabled}
             onChange={(enabled) => setDraft({ ...draft, enabled })}

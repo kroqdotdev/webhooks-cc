@@ -1,145 +1,42 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { RequireAuth } from "@/components/auth/require-auth";
-import { parseStatusCode } from "@/lib/http";
 import Link from "next/link";
-import { trackEndpointCreated } from "@/lib/analytics";
-import { createDashboardEndpoint } from "@/lib/dashboard-api";
+import { Button } from "@/components/ui/button";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { useSite } from "@/components/providers/site-provider";
-import { twoSites, type EndpointSite } from "@/lib/site";
-import { EndpointSiteField } from "@/components/dashboard/endpoint-site-field";
+import { NewEndpointForm, newEndpointDescription } from "@/components/dashboard/new-endpoint-form";
 
 export default function NewEndpointPage() {
   return (
     <RequireAuth>
-      <NewEndpointForm />
+      <NewEndpoint />
     </RequireAuth>
   );
 }
 
-function NewEndpointForm() {
+/** The New endpoint dialog's form on a page of its own, for links that open it directly. */
+function NewEndpoint() {
   const router = useRouter();
-  const { session } = useAuth();
-  const site = useSite();
-
-  const [name, setName] = useState("");
-  const [listedOn, setListedOn] = useState<EndpointSite>(site.key);
-  const [mockStatus, setMockStatus] = useState("200");
-  const [mockBody, setMockBody] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const accessToken = session?.access_token;
-      if (!accessToken) {
-        throw new Error("Not authenticated");
-      }
-
-      const result = await createDashboardEndpoint(accessToken, {
-        name: name || undefined,
-        ...(twoSites() ? { site: listedOn } : {}),
-        mockResponse: mockBody
-          ? {
-              status: parseStatusCode(mockStatus, 200),
-              body: mockBody,
-              headers: {},
-            }
-          : undefined,
-      });
-
-      trackEndpointCreated();
-      router.push(`/dashboard?endpoint=${result.slug}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create endpoint");
-      setIsSubmitting(false);
-    }
-  };
+  const mailFirst = useSite().key === "mailhooks";
 
   return (
     <div className="min-h-screen">
-      <header className="border-b">
-        <div className="container mx-auto px-4 h-16 flex items-center">
-          <Link href="/dashboard" className="font-bold text-xl">
-            {site.name}
-          </Link>
-        </div>
-      </header>
-
       <main className="container mx-auto px-4 py-8 max-w-xl">
-        <h1 className="text-2xl font-bold mb-6">Create new endpoint</h1>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="name">Name (optional)</Label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Webhook"
-            />
-            <p className="text-sm text-muted-foreground">A friendly name for this endpoint</p>
+        <div className="ui-card ui-card-static space-y-4">
+          <div className="space-y-1.5">
+            <h1 className="text-lg font-bold caps">Create endpoint</h1>
+            <p className="text-sm text-muted-foreground">{newEndpointDescription(mailFirst)}</p>
           </div>
-
-          {twoSites() && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
-
-          <div className="border rounded-lg p-4 space-y-4">
-            <h2 className="font-semibold">Mock Response (optional)</h2>
-            <p className="text-sm text-muted-foreground">
-              Configure what this endpoint returns when it receives a webhook
-            </p>
-
-            <div className="space-y-2">
-              <Label htmlFor="mockStatus">Status Code</Label>
-              <Input
-                id="mockStatus"
-                type="number"
-                value={mockStatus}
-                onChange={(e) => setMockStatus(e.target.value)}
-                placeholder="200"
-                min={100}
-                max={599}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="mockBody">Response Body</Label>
-              <Textarea
-                id="mockBody"
-                value={mockBody}
-                onChange={(e) => setMockBody(e.target.value)}
-                placeholder='{"success": true}'
-                rows={4}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded">
-              {error}
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <Button type="submit" disabled={isSubmitting || !session?.access_token}>
-              {isSubmitting ? "Creating..." : "Create Endpoint"}
-            </Button>
-            <Button type="button" variant="outline" asChild>
-              <Link href="/dashboard">Cancel</Link>
-            </Button>
-          </div>
-        </form>
+          <NewEndpointForm
+            onCreated={(slug) => router.push(`/dashboard?endpoint=${slug}`)}
+            cancel={
+              <Button type="button" variant="outline" asChild className="ui-btn-outline">
+                <Link href="/dashboard">Cancel</Link>
+              </Button>
+            }
+          />
+        </div>
       </main>
     </div>
   );

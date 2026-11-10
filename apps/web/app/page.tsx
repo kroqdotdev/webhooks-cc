@@ -1,3 +1,4 @@
+import { STARS_FLOOR } from "@/components/landing/github-card";
 import Link from "next/link";
 import { CookieSettingsLink } from "@/components/providers/cookie-consent";
 import { SiteHeader } from "@/components/nav/site-header";
@@ -17,9 +18,8 @@ import {
 } from "lucide-react";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
-import { PricingCTA } from "@/components/landing/pricing-cta";
+import { PaidPlanCTA, PricingCTA } from "@/components/landing/pricing-cta";
 import { LandingDashboard } from "@/components/landing/landing-dashboard";
-import { TeamsVideo } from "@/components/landing/teams-video";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
 import { mailhooksUrl } from "@/lib/mailhooks-seo";
@@ -28,7 +28,6 @@ import {
   softwareApplicationSchema,
   faqSchema,
   howToSchema,
-  videoObjectSchema,
   type FAQItem,
 } from "@/lib/schemas";
 import { createClient } from "@supabase/supabase-js";
@@ -212,11 +211,19 @@ const FOOTER_PROVIDERS = [
   { href: "/webhooks", label: "All providers" },
 ];
 
+/**
+ * Counts shown under the hero only once they help: a small number reads as a
+ * weakness next to "the fastest way to test webhooks". Webhooks captured is
+ * large from early on, so it has no floor.
+ */
+const SOCIAL_PROOF_FLOOR = { users: 1000, endpoints: 1000 };
+
 export default async function Home() {
   const [stars, stats] = await Promise.all([getStarCount(), getSiteStats()]);
 
   return (
-    <main className="min-h-screen">
+    // group/landing: sections that only make sense to a guest hide once the signed-in band shows.
+    <main className="group/landing min-h-screen">
       <JsonLd data={softwareApplicationSchema()} />
       <JsonLd data={faqSchema(LANDING_FAQ)} />
       <JsonLd
@@ -241,9 +248,13 @@ export default async function Home() {
           ],
         })}
       />
-      <JsonLd data={videoObjectSchema()} />
 
-      <SiteHeader>
+      <SiteHeader
+        mobileLinks={[
+          { href: "/webhooks", label: "Providers" },
+          { href: "/compare", label: "Compare" },
+        ]}
+      >
         <nav
           aria-label="Sections"
           className="hidden lg:flex items-center gap-4 text-sm font-medium"
@@ -254,40 +265,40 @@ export default async function Home() {
           <Link href="/compare" className="text-muted-foreground hover:text-foreground">
             Compare
           </Link>
-          <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
-            Pricing
-          </Link>
         </nav>
       </SiteHeader>
 
       {/* Hero: the landing screen IS the dashboard, webhook.site style */}
-      <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">
+      {/* A signed-in visitor gets a compact band instead of the full-height frame. */}
+      <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] has-[[data-landing-signed-in]]:h-auto flex flex-col">
         {/* Title strip inside the app chrome: the page's H1 lives here */}
-        <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-2 text-center">
-          <h1 className="text-base md:text-xl font-bold tracking-tight leading-snug">
+        <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-3 md:py-5 text-center">
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
             The fastest way to{" "}
-            <span className="bg-primary text-primary-foreground px-1.5 clean:bg-transparent clean:px-0 clean:text-primary">
+            <span className="bg-primary text-primary-foreground px-1.5 clean:bg-transparent clean:px-0 clean:text-primary-ink">
               test webhooks
             </span>
           </h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
-            Your free webhook URL is live below. Point any service at it. No signup, no credit card.
-            One click with GitHub or Google, or an email signup,{" "}
-            <Link href="/login" className="font-bold text-foreground hover:text-primary">
-              keeps it, free
-            </Link>
-            .
+          <p className="hidden md:block group-has-[[data-landing-signed-in]]/landing:hidden! text-base text-muted-foreground mt-2">
+            Get a free webhook URL below and point any service at it. No signup, no credit card.{" "}
+            <Link
+              href="/login?mode=sign-up"
+              className="font-bold text-foreground hover:text-primary-ink"
+            >
+              Sign up free
+            </Link>{" "}
+            to keep it.
           </p>
         </div>
 
         {/* The dashboard fills the rest of the first viewport: a real endpoint, created on page load */}
-        <div className="flex-1 min-h-[440px]">
+        <div className="flex-1 min-h-[440px] has-[[data-landing-signed-in]]:flex-none has-[[data-landing-signed-in]]:min-h-0">
           <LandingDashboard />
         </div>
       </section>
 
-      {/* One-click free upgrade: first thing below the app screen */}
-      <section className="py-16 px-4">
+      {/* One-click free upgrade: first thing below the app screen (guests only) */}
+      <section className="py-16 px-4 group-has-[[data-landing-signed-in]]/landing:hidden">
         <div className="max-w-6xl mx-auto flex flex-col items-center gap-8">
           <div className="text-center max-w-2xl">
             <h2 className="text-3xl md:text-4xl font-bold mb-3">One click keeps your endpoint</h2>
@@ -318,7 +329,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card ui-card-static border-primary relative">
-              <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
+              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
                 1 click away
               </div>
               <p className="text-xs font-bold caps text-muted-foreground mb-3">
@@ -335,7 +346,7 @@ export default async function Home() {
                   "CLI tunnel, plus full SDK & MCP access",
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-primary shrink-0" />
+                    <Check className="h-4 w-4 text-primary-ink shrink-0" />
                     {item}
                   </li>
                 ))}
@@ -345,13 +356,13 @@ export default async function Home() {
 
           <StartFreeCTA size="lg" align="center" goCta={null} />
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-            {stats && stats.total_users > 0 ? (
+            {stats && stats.total_users >= SOCIAL_PROOF_FLOOR.users ? (
               <span className="font-semibold">
                 <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
                 developers
               </span>
             ) : null}
-            {stats && stats.total_endpoints > 0 ? (
+            {stats && stats.total_endpoints >= SOCIAL_PROOF_FLOOR.endpoints ? (
               <span className="font-semibold">
                 <span className="text-foreground">{stats.total_endpoints.toLocaleString()}</span>{" "}
                 endpoints created
@@ -370,7 +381,7 @@ export default async function Home() {
               className="font-semibold hover:text-foreground"
             >
               Open source
-              {typeof stars === "number" ? (
+              {typeof stars === "number" && stars >= STARS_FLOOR ? (
                 <>
                   {" "}
                   &middot; <Star className="inline-block h-3.5 w-3.5 -mt-0.5" />{" "}
@@ -392,7 +403,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "You already have one: it went live the moment you opened this page. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
+                  "One click on this page gives you one, no account needed. GitHub or Google makes it permanent, or sign up with an email and password.",
               },
               {
                 step: "2",
@@ -431,7 +442,8 @@ export default async function Home() {
             Use the dashboard, the CLI, the SDK, or your AI agent. Same webhooks, your workflow.
           </p>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          {/* Phones show the titles only, two to a row, to keep the page short. */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 max-md:[&_.ui-card>p]:hidden max-md:[&_h3]:text-base max-md:[&_h3]:mb-0">
             <div className="ui-card">
               <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
                 <Eye className="h-6 w-6 text-primary-foreground clean:text-foreground" />
@@ -450,19 +462,28 @@ export default async function Home() {
               <h3 className="font-bold text-xl mb-2">Send signed provider test webhooks</h3>
               <p className="text-muted-foreground">
                 Realistic payloads with correct signature headers for{" "}
-                <Link href="/webhooks/stripe" className="text-primary font-bold hover:underline">
+                <Link
+                  href="/webhooks/stripe"
+                  className="text-primary-ink font-bold hover:underline"
+                >
                   Stripe
                 </Link>
                 ,{" "}
-                <Link href="/webhooks/github" className="text-primary font-bold hover:underline">
+                <Link
+                  href="/webhooks/github"
+                  className="text-primary-ink font-bold hover:underline"
+                >
                   GitHub
                 </Link>
                 ,{" "}
-                <Link href="/webhooks/shopify" className="text-primary font-bold hover:underline">
+                <Link
+                  href="/webhooks/shopify"
+                  className="text-primary-ink font-bold hover:underline"
+                >
                   Shopify
                 </Link>
                 , and{" "}
-                <Link href="/webhooks" className="text-primary font-bold hover:underline">
+                <Link href="/webhooks" className="text-primary-ink font-bold hover:underline">
                   30+ more
                 </Link>
                 . Test your verification code end-to-end.
@@ -527,7 +548,7 @@ export default async function Home() {
               Every endpoint on an account also has an email address. Test the emails your app
               sends, or turn inbound mail into signed JSON, Google Sheets rows or chat messages.
               Reading orders, bookings or reports out of mail and its attachments? Start at{" "}
-              <a href={mailhooksUrl("/")} className="text-primary font-bold hover:underline">
+              <a href={mailhooksUrl("/")} className="text-primary-ink font-bold hover:underline">
                 mailhooks.cc
               </a>
               , the mail-first side of the same account.
@@ -538,7 +559,7 @@ export default async function Home() {
                 <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
                   <Mail className="h-6 w-6 text-primary-foreground clean:text-foreground" />
                 </div>
-                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary-ink transition-colors">
                   Test signup, login and reset emails
                 </h4>
                 <p className="text-muted-foreground mb-4">
@@ -555,7 +576,7 @@ export default async function Home() {
                 <div className="w-12 h-12 border-strong border-line rounded-md bg-secondary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
                   <Webhook className="h-6 w-6 text-secondary-foreground clean:text-foreground" />
                 </div>
-                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary-ink transition-colors">
                   Turn inbound email into a webhook
                 </h4>
                 <p className="text-muted-foreground mb-4">
@@ -591,8 +612,8 @@ export default async function Home() {
               <code>
                 <span className="text-muted-foreground"># Send manually with curl</span>
                 {"\n"}
-                <span className="text-primary">$</span> curl -X POST https://go.webhooks.cc/w/abc123
-                \{"\n"}
+                <span className="text-primary-ink">$</span> curl -X POST
+                https://go.webhooks.cc/w/abc123 \{"\n"}
                 {"  "}-H{" "}
                 <span className="text-code-string">&quot;Content-Type: application/json&quot;</span>{" "}
                 \{"\n"}
@@ -632,44 +653,20 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Teams: dedicated video section */}
-      <section className="py-20 px-4 bg-muted">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            <div>
-              <p className="text-xs font-bold caps text-muted-foreground mb-4">Teams</p>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">Built for teams</h2>
-              <p className="text-xl text-muted-foreground mb-8">
-                Create a team, invite your colleagues, and share endpoints. Everyone sees the same
-                incoming webhooks in real time, with no more pasting URLs in Slack.
-              </p>
-              <Link href="/for-teams" className="ui-btn-primary inline-block">
-                How Teams works
-              </Link>
-              <p className="text-sm text-muted-foreground mt-3">
-                From $12/seat/mo, or $35/seat/mo for Team Business with Business&apos;s limits per
-                seat
-              </p>
-            </div>
-            <div className="ui-card ui-card-static p-0! overflow-hidden">
-              <TeamsVideo />
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Pricing */}
       <section id="pricing" className="py-20 px-4 scroll-mt-20">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
+          <div className="mb-12 max-w-2xl">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
             <p className="text-xl text-muted-foreground">
-              Free has every Pro feature; Business adds attachment parsing, more layouts, custom
-              domains, file drops and longer retention. Add Teams when you need to work together.
+              Every plan has the full toolset. Pro raises the limits; Business adds attachment
+              parsing, more layouts, custom domains, file drops and longer retention. Add Teams when
+              you need to work together.
             </p>
           </div>
 
           {/* Personal plans */}
+          {/* Equal-height cards: the buttons line up along the bottom. */}
           <div className="grid md:grid-cols-3 gap-6">
             {/* Free Plan */}
             <div className="ui-card flex flex-col">
@@ -677,10 +674,10 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Free</h3>
                 <p className="text-5xl font-bold">
                   $0
-                  <span className="text-lg font-normal text-muted-foreground">/forever</span>
+                  <span className="text-lg font-normal text-muted-foreground"> forever</span>
                 </p>
               </div>
-              <ul className="space-y-3 mb-8">
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
                   "50 requests/day",
                   "7-day data retention",
@@ -690,48 +687,45 @@ export default async function Home() {
                   "CLI, SDK & MCP access",
                   "Mock responses & replay",
                 ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                     <span>{feature}</span>
                   </li>
                 ))}
               </ul>
               <div className="mt-auto">
-                <PricingCTA />
+                <PricingCTA quietWhenSignedIn />
               </div>
             </div>
 
             {/* Pro Plan */}
             <div className="ui-card border-primary relative flex flex-col">
-              <div className="absolute -top-3 -right-3 bg-secondary text-secondary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
+              <div className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
                 Popular
               </div>
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Pro</h3>
                 <p className="text-5xl font-bold">
                   $8
-                  <span className="text-lg font-normal text-muted-foreground">/month</span>
+                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
                 </p>
               </div>
-              <ul className="space-y-3 mb-8">
+              <p className="text-sm font-semibold mb-3">Everything in Free, plus:</p>
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
                   "100,000 requests/month",
                   "31-day data retention",
-                  "Unlimited endpoints",
                   "100 parsed attachment pages/month",
                   "Extra requests in 25,000 blocks",
-                  "CLI, SDK & MCP access",
                 ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                     <span>{feature}</span>
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center mt-auto">
-                Start free, upgrade later
-              </p>
-              <PricingCTA />
+              {/* One action per paid plan: everyone starts free and upgrades under Account. */}
+              <PaidPlanCTA plan="Pro" primary />
             </div>
 
             {/* Business Plan */}
@@ -740,11 +734,12 @@ export default async function Home() {
                 <h3 className="font-bold text-2xl mb-2">Business</h3>
                 <p className="text-5xl font-bold">
                   $29
-                  <span className="text-lg font-normal text-muted-foreground">/month</span>
+                  <span className="text-lg font-normal text-muted-foreground"> a month</span>
                 </p>
-                <p className="text-sm text-muted-foreground mt-2">or $290/year</p>
+                <p className="text-sm text-muted-foreground mt-2">or $290 a year</p>
               </div>
-              <ul className="space-y-3 mb-8">
+              <p className="text-sm font-semibold mb-3">Everything in Pro, plus:</p>
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
                   "250,000 requests/month",
                   "90-day data retention",
@@ -753,108 +748,46 @@ export default async function Home() {
                   "1 custom inbound domain, extra ones $3/mo",
                   "File drops to SFTP, FTP/FTPS & S3",
                 ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
                     <span>{feature}</span>
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center mt-auto">
-                Start free, upgrade later
-              </p>
-              <PricingCTA />
+              {/* One action per paid plan: everyone starts free and upgrades under Account. */}
+              <PaidPlanCTA plan="Business" />
             </div>
           </div>
 
-          {/* Team plans: what a team is, then its two plans */}
-          <div className="grid md:grid-cols-3 gap-6 mt-6">
-            <div className="ui-card ui-card-static flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Team plans</h3>
-                <p className="text-muted-foreground">
-                  Share endpoints with the people you work with. A team has its own subscription,
-                  billed per seat from 2 seats, whatever plan each member is on.
-                </p>
-              </div>
-              <ul className="space-y-3 mb-8">
-                {[
-                  "Shared endpoints, real-time for everyone",
-                  "Seats are the member cap",
-                  "One pooled quota for the whole team",
-                  "Billed per team, not per account",
-                  "Any account can create a team",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
+          {/* Teams: one strip with both team plans; the details live on /for-teams. */}
+          <div className="ui-card ui-card-static mt-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <div>
+              <h3 className="font-bold text-2xl mb-2">Teams</h3>
+              <p className="text-muted-foreground mb-4">
+                Share endpoints with the people you work with: everyone sees the same webhooks the
+                moment they arrive. A team has its own subscription, billed per seat from 2 seats.
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-bold">Teams, $12 a seat a month:</span> 100,000 pooled
+                    requests per seat, 31-day retention
+                  </span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-bold">Team Business, $35 a seat a month:</span>{" "}
+                    Business&apos;s limits per seat, 90-day retention
+                  </span>
+                </li>
               </ul>
-              <Link href="/for-teams" className="ui-btn-outline w-full text-center block mt-auto">
-                How Teams works
-                <ArrowRight className="inline-block ml-2 h-5 w-5" />
-              </Link>
             </div>
-
-            {/* Teams Plan */}
-            <div className="ui-card flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Teams</h3>
-                <p className="text-5xl font-bold">
-                  $12
-                  <span className="text-lg font-normal text-muted-foreground">/seat/mo</span>
-                </p>
-              </div>
-              <ul className="space-y-3 mb-8">
-                {[
-                  "100,000 pooled requests per seat/month",
-                  "31-day retention on team traffic",
-                  "100 parsed attachment pages/month",
-                  "20 AI assists/30 days",
-                  "Extra requests in 25,000 blocks",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link href="/teams" className="ui-btn-outline w-full text-center block mt-auto">
-                Create a team
-                <ArrowRight className="inline-block ml-2 h-5 w-5" />
-              </Link>
-            </div>
-
-            {/* Team Business Plan */}
-            <div className="ui-card flex flex-col">
-              <div className="mb-6">
-                <h3 className="font-bold text-2xl mb-2">Team Business</h3>
-                <p className="text-5xl font-bold">
-                  $35
-                  <span className="text-lg font-normal text-muted-foreground">/seat/mo</span>
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">or $350/seat/year</p>
-              </div>
-              <ul className="space-y-3 mb-8">
-                {[
-                  "250,000 pooled requests per seat/month",
-                  "90-day retention on team traffic",
-                  "2,000 parsed attachment pages per seat/month",
-                  "Up to 50 layouts, 250 AI assists per seat",
-                  "1 custom inbound domain per team",
-                  "File drops to SFTP, FTP/FTPS & S3",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link href="/teams" className="ui-btn-outline w-full text-center block mt-auto">
-                Create a team
-                <ArrowRight className="inline-block ml-2 h-5 w-5" />
-              </Link>
-            </div>
+            <Link href="/for-teams" className="ui-btn-outline text-center block">
+              How Teams works
+              <ArrowRight className="inline-block ml-2 h-5 w-5" />
+            </Link>
           </div>
         </div>
       </section>
@@ -867,7 +800,8 @@ export default async function Home() {
             Honest, developer-focused comparisons against popular alternatives.
           </p>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          {/* Phones show three comparisons and a link to the rest. */}
+          <div className="grid md:grid-cols-3 gap-6 max-md:[&>*:nth-child(n+4)]:hidden">
             {[
               {
                 href: "/compare/webhook-site",
@@ -914,6 +848,13 @@ export default async function Home() {
               </Link>
             ))}
           </div>
+          <Link
+            href="/compare"
+            className="md:hidden mt-6 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+          >
+            All comparisons
+            <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
       </section>
 
@@ -938,11 +879,11 @@ export default async function Home() {
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
               Create an endpoint, point your service at it, and see what arrives. Free forever.
             </p>
-            <div className="flex justify-center text-foreground">
-              <PricingCTA />
+            <div className="flex justify-center">
+              <PricingCTA inverted />
             </div>
             <p className="text-sm opacity-80 mt-6">
-              No credit card &middot; or scroll up: your guest URL is already live
+              No credit card &middot; or scroll up for a guest URL, no account needed
             </p>
           </div>
         </div>
@@ -960,16 +901,19 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Product</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 <li>
-                  <Link href="/docs" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Documentation
                   </Link>
                 </li>
                 <li>
                   <Link
                     href="/installation"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Installation
                   </Link>
@@ -977,7 +921,7 @@ export default async function Home() {
                 <li>
                   <Link
                     href="/email-testing"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Email testing
                   </Link>
@@ -985,28 +929,40 @@ export default async function Home() {
                 <li>
                   <Link
                     href="/email-to-webhook"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Email to webhook
                   </Link>
                 </li>
                 <li>
-                  <Link href="/for-teams" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/for-teams"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Teams
                   </Link>
                 </li>
                 <li>
-                  <Link href="/compare" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/compare"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Compare
                   </Link>
                 </li>
                 <li>
-                  <Link href="/login" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/login"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Dashboard
                   </Link>
                 </li>
                 <li>
-                  <Link href="/changelog" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/changelog"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Changelog
                   </Link>
                 </li>
@@ -1014,10 +970,13 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Providers</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 {FOOTER_PROVIDERS.map((item) => (
                   <li key={item.href}>
-                    <Link href={item.href} className="text-muted-foreground hover:text-foreground">
+                    <Link
+                      href={item.href}
+                      className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                    >
                       {item.label}
                     </Link>
                   </li>
@@ -1026,24 +985,36 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Resources</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 <li>
-                  <Link href="/docs/cli" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs/cli"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     CLI Reference
                   </Link>
                 </li>
                 <li>
-                  <Link href="/docs/sdk" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs/sdk"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     SDK Reference
                   </Link>
                 </li>
                 <li>
-                  <Link href="/docs/mcp" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs/mcp"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     MCP Server
                   </Link>
                 </li>
                 <li>
-                  <Link href="/blog" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/blog"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Blog
                   </Link>
                 </li>
@@ -1051,37 +1022,46 @@ export default async function Home() {
             </div>
             <div>
               <p className="font-bold mb-4">Legal</p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-0.5 text-sm">
                 <li>
-                  <Link href="/privacy" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/privacy"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Privacy Policy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/terms" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/terms"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Terms of Service
                   </Link>
                 </li>
                 <li>
                   <Link
                     href="/subprocessors"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >
                     Subprocessors
                   </Link>
                 </li>
                 <li>
-                  <CookieSettingsLink className="text-muted-foreground hover:text-foreground" />
+                  <CookieSettingsLink className="inline-block py-1.5 text-muted-foreground hover:text-foreground" />
                 </li>
                 <li>
-                  <Link href="/support" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/support"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
                     Support
                   </Link>
                 </li>
                 <li>
                   <a
                     href="https://status.webhooks.cc"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                     target="_blank"
                     rel="noopener noreferrer"
                   >

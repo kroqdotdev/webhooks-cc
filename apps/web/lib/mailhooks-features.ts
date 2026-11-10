@@ -403,7 +403,7 @@ export const MAILHOOKS_FEATURES: readonly MailhooksFeature[] = [
     plans: "Every plan, Free included",
     heading: "Parsed email in Zapier and Make",
     intro:
-      "Send each email an endpoint receives to a Zap or a Make scenario, with the fields and line items your layouts read, and let it carry the order, booking or report on to your other tools. Our Zapier and Make apps are in review and not listed in their directories yet. Until they are, a catch hook in either one receives the same signed JSON today.",
+      "Send each email an endpoint receives to a Zap or a Make scenario, with the fields and line items your layouts read, and let it carry the order, booking or report on to your other tools.",
     planNote: "On every plan, Free included. Deliveries do not count against your quota.",
     steps: [
       {

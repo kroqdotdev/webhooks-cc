@@ -86,7 +86,7 @@ export function BlogPostShell({
       <div className="max-w-6xl mx-auto">
         {isDraft && (
           <div className="mb-5 border-strong border-yellow-500 rounded-lg bg-yellow-50 dark:bg-yellow-950 px-4 py-3 text-sm font-bold text-yellow-800 dark:text-yellow-200">
-            DRAFT — Not published
+            Draft: not published
           </div>
         )}
 

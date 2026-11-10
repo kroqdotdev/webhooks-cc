@@ -73,7 +73,7 @@ function link(href: string, label: ReactNode, key: number) {
       href={href}
       target="_blank"
       rel="noopener noreferrer nofollow ugc"
-      className="text-primary underline underline-offset-2 break-words"
+      className="text-primary-ink underline underline-offset-2 break-words"
     >
       {label}
     </a>

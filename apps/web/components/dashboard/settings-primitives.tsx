@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/dashboard-api";
+import { SectionIdentityContext, useReportDirty } from "./dirty-sections";
 
 /**
  * The building blocks every section of the endpoint settings shares: the
@@ -11,17 +12,25 @@ import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/da
  * and the save hook. Kept together so the sections read the same.
  */
 
-export type SettingsSection =
-  | "receiving"
-  | "layouts"
-  | "retention"
-  | "alerts"
-  | "responses"
-  | "forwarding"
-  | "deliveries"
-  | "sharing"
-  | "verification"
-  | "delete";
+export const SETTINGS_SECTIONS = [
+  "receiving",
+  "layouts",
+  "retention",
+  "alerts",
+  "responses",
+  "forwarding",
+  "deliveries",
+  "sharing",
+  "verification",
+  "delete",
+] as const;
+
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/** A section id read back from the URL. */
+export function isSettingsSection(value: string | null | undefined): value is SettingsSection {
+  return (SETTINGS_SECTIONS as readonly string[]).includes(value ?? "");
+}
 
 export function Section({
   id,
@@ -40,32 +49,46 @@ export function Section({
   danger?: boolean;
   sectionRef?: React.Ref<HTMLElement>;
 }) {
+  // The save footer inside reports its unsaved edits under this section's name.
+  const identity = useMemo(() => ({ id, title }), [id, title]);
   return (
-    <section
-      ref={sectionRef}
-      id={`settings-${id}`}
-      aria-labelledby={`settings-${id}-title`}
-      data-settings-section={id}
-      className={cn(
-        "ui-card ui-card-static p-0! scroll-mt-4 overflow-hidden",
-        danger && "border-destructive"
-      )}
-    >
-      <div className="p-5 space-y-4">
-        <div>
-          <h2 id={`settings-${id}-title`} className="text-base font-bold clean:font-semibold">
-            {title}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-[62ch]">{description}</p>
+    <SectionIdentityContext.Provider value={identity}>
+      <section
+        ref={sectionRef}
+        id={`settings-${id}`}
+        aria-labelledby={`settings-${id}-title`}
+        data-settings-section={id}
+        className={cn(
+          "ui-card ui-card-static p-0! scroll-mt-4 overflow-hidden",
+          danger && "border-destructive"
+        )}
+      >
+        <div className="p-5 space-y-4">
+          <div>
+            {/* A jump focuses the heading, so the next Tab enters this section. */}
+            <h2
+              id={`settings-${id}-title`}
+              tabIndex={-1}
+              className="text-base font-bold clean:font-semibold outline-none"
+            >
+              {title}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-[62ch]">{description}</p>
+          </div>
+          {children}
         </div>
-        {children}
-      </div>
-      {footer && (
-        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40">
-          {footer}
-        </div>
-      )}
-    </section>
+        {footer && (
+          // A save footer with nothing to say marks itself idle and the bar folds away.
+          // data-section-footer lets the panel tell when this save is in view.
+          <div
+            data-section-footer={id}
+            className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40 has-[[data-save-idle]]:hidden"
+          >
+            {footer}
+          </div>
+        )}
+      </section>
+    </SectionIdentityContext.Provider>
   );
 }
 
@@ -99,16 +122,21 @@ export function Field({
       </Label>
       {children}
       {error && (
-        <p id={errorId} className="text-xs text-destructive">
+        <p id={errorId} className="text-xs text-destructive-ink">
           {error}
         </p>
       )}
-      {help && <div className="text-xs text-muted-foreground space-y-1">{help}</div>}
+      {help && <div className="text-[13px] text-muted-foreground space-y-1">{help}</div>}
     </div>
   );
 }
 
-/** One save per section: disabled until something in it changes. */
+/**
+ * One save per section. It shows only while there is something to say: unsaved
+ * edits (Cancel and Save), a save running, "Saved." after one, or an error.
+ * Otherwise the footer bar folds away, so a page of untouched sections does
+ * not read as a column of disabled buttons.
+ */
 export function SaveFooter({
   dirty,
   saving,
@@ -126,14 +154,58 @@ export function SaveFooter({
   onSave: () => void;
   onReset: () => void;
 }) {
+  // A save started from outside the section (the sticky bar, the discard
+  // dialog) clicks this footer's Save and resolves once the state says how it
+  // went: an error, or saved (or no longer dirty) with nothing running.
+  const onSaveRef = useRef(onSave);
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  });
+  const pending = useRef<((ok: boolean) => void) | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const saveFromOutside = useCallback(
+    () =>
+      new Promise<boolean>((resolve) => {
+        pending.current?.(false);
+        pending.current = resolve;
+        // Batched with the section's own state changes from onSave, so the
+        // effect below first sees this attempt's state, never the last one's.
+        setAttempt((n) => n + 1);
+        onSaveRef.current();
+      }),
+    []
+  );
+  useEffect(() => {
+    const resolve = pending.current;
+    if (!resolve || saving) return;
+    if (error) {
+      pending.current = null;
+      resolve(false);
+    } else if (saved || !dirty) {
+      pending.current = null;
+      resolve(true);
+    }
+  }, [attempt, dirty, saving, error, saved]);
+  useEffect(
+    () => () => {
+      pending.current?.(false);
+      pending.current = null;
+    },
+    []
+  );
+  useReportDirty(dirty, saveFromOutside);
+  const idle = !dirty && !saving && !saved && !error;
+  // A failed save leaves the edits, so Save stays for a retry.
+  const showSave = dirty || saving;
   return (
     <>
+      {idle && <span data-save-idle hidden />}
       <p
         role="status"
         aria-live="polite"
         className={cn(
           "text-xs flex-1 min-w-[180px]",
-          error ? "text-destructive" : "text-muted-foreground"
+          error ? "text-destructive-ink" : "text-muted-foreground"
         )}
       >
         {error ?? (dirty ? hint : saved ? "Saved." : "")}
@@ -143,17 +215,19 @@ export function SaveFooter({
           Cancel
         </button>
       )}
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={!dirty || saving}
-        className={cn(
-          "ui-btn-primary py-1.5! px-3! text-xs",
-          (!dirty || saving) && "opacity-50 cursor-not-allowed"
-        )}
-      >
-        {saving ? "Saving..." : "Save changes"}
-      </button>
+      {showSave && (
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!dirty || saving}
+          className={cn(
+            "ui-btn-primary py-1.5! px-3! text-xs",
+            (!dirty || saving) && "opacity-50 cursor-not-allowed"
+          )}
+        >
+          {saving ? "Saving..." : "Save changes"}
+        </button>
+      )}
     </>
   );
 }
@@ -187,13 +261,16 @@ export function Switch({
         "relative inline-flex h-6 w-11 shrink-0 items-center border-strong border-line rounded-lg cursor-pointer transition-colors motion-reduce:transition-none",
         "disabled:cursor-not-allowed disabled:opacity-60",
         "clean:rounded-full",
-        checked ? "bg-primary" : "bg-muted"
+        // Off, clean's track takes the control boundary colour so it reads at 3:1.
+        checked ? "bg-primary" : "bg-muted clean:border-input"
       )}
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 bg-card border-strong border-line rounded-sm clean:rounded-full transition-transform motion-reduce:transition-none",
-          checked ? "translate-x-5.5" : "translate-x-0.5"
+          "inline-block h-4 w-4 border-strong border-line rounded-sm clean:rounded-full transition-transform motion-reduce:transition-none",
+          checked
+            ? "translate-x-5.5 bg-card"
+            : "translate-x-0.5 bg-card clean:bg-muted-foreground/70"
         )}
       />
     </button>
@@ -223,7 +300,7 @@ export function SwitchRow({
           {label}
         </label>
         {help && (
-          <p id={`${id}-help`} className="text-xs text-muted-foreground mt-1 max-w-[62ch]">
+          <p id={`${id}-help`} className="text-[13px] text-muted-foreground mt-1 max-w-[62ch]">
             {help}
           </p>
         )}
@@ -283,12 +360,16 @@ export function Segmented<T extends string>({
     const group = event.currentTarget.parentElement;
     group?.querySelectorAll<HTMLButtonElement>("[role=radio]")[next]?.focus();
   };
+  // More than three choices do not fit a phone's width side by side, and a
+  // scrolling strip hides some of them, so they stack there instead.
+  const stack = options.length > 3;
   return (
     <div
       role="radiogroup"
       aria-label={name}
       className={cn(
         "inline-flex max-w-full overflow-x-auto [scrollbar-width:none] rounded-sm border-strong border-line bg-background",
+        stack && "max-sm:flex max-sm:flex-col max-sm:w-full",
         className
       )}
     >
@@ -305,9 +386,18 @@ export function Segmented<T extends string>({
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
               "font-bold caps whitespace-nowrap cursor-pointer transition-colors motion-reduce:transition-none",
-              size === "sm" ? "px-3 py-1.5 text-xs" : "px-2 py-0.5 text-[10px]",
+              size === "sm" ? "px-3 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]",
               index > 0 && "border-l-strong border-line",
-              checked ? "bg-selected text-selected-foreground" : "hover:bg-muted"
+              stack && "max-sm:text-left",
+              stack && index > 0 && "max-sm:border-l-0 max-sm:border-t-strong",
+              // Clean's selected tint alone is too faint (WCAG 1.4.11), so the
+              // choice also gets a primary underline, or a side bar when stacked.
+              checked
+                ? cn(
+                    "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]",
+                    stack && "max-sm:clean:shadow-[inset_3px_0_0_hsl(var(--primary))]"
+                  )
+                : "hover:bg-muted"
             )}
           >
             {option.label}
@@ -322,6 +412,33 @@ export function Segmented<T extends string>({
       })}
     </div>
   );
+}
+
+/** How long after arming a confirmation a press on it still counts as the arming one. */
+const CONFIRM_SETTLE_MS = 600;
+
+/**
+ * A destructive action confirmed in a second step. The first press arms it and
+ * moves focus to the button that backs out, which the caller renders where the
+ * arming button was. Presses within 600 ms of arming are ignored on both
+ * buttons, so a double-click or a double Enter neither confirms nor cancels.
+ */
+export function useConfirmStep() {
+  const [armed, setArmed] = useState(false);
+  const armedAt = useRef(0);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const arm = useCallback(() => {
+    armedAt.current = Date.now();
+    setArmed(true);
+    requestAnimationFrame(() => cancelRef.current?.focus());
+  }, []);
+  /** False while a press is too soon after arming to be a decision. */
+  const settled = useCallback(() => Date.now() - armedAt.current >= CONFIRM_SETTLE_MS, []);
+  const cancel = useCallback(() => {
+    if (settled()) setArmed(false);
+  }, [settled]);
+  const reset = useCallback(() => setArmed(false), []);
+  return { armed, arm, cancel, reset, settled, cancelRef };
 }
 
 export function useSave(slug: string) {
@@ -354,10 +471,14 @@ export function useSave(slug: string) {
   return { save, saving, error, saved, setError, setSaved };
 }
 
-/** Scrolls a settings section into view; no smooth scroll under reduced motion. */
-export function scrollToSection(id: SettingsSection) {
+/**
+ * Scrolls a settings section into view (no smooth scroll under reduced motion)
+ * and moves focus to its heading, so the next Tab lands inside the section.
+ */
+export function scrollToSection(id: SettingsSection, { smooth = true }: { smooth?: boolean } = {}) {
   const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   document
     .getElementById(`settings-${id}`)
-    ?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    ?.scrollIntoView({ behavior: smooth && !reduce ? "smooth" : "auto", block: "start" });
+  document.getElementById(`settings-${id}-title`)?.focus({ preventScroll: true });
 }

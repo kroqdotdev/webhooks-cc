@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { isAuthError } from "@supabase/supabase-js";
 import { DEFAULT_EMAIL_DOMAIN } from "@webhooks-cc/sdk/email";
 import { createClient } from "@/lib/supabase/client";
@@ -26,8 +26,11 @@ export const PASSWORD_MIN_LENGTH = 8;
 export function EmailPasswordForm({
   initialMode = "sign-in",
   redirectTo = "/dashboard",
+  onModeChange,
 }: {
   initialMode?: EmailPasswordMode;
+  /** Told when the form switches mode, so the page heading can follow it. */
+  onModeChange?: (mode: EmailPasswordMode) => void;
   /** Sanitized same-origin path the login page will land on after sign-in. */
   redirectTo?: string;
 }) {
@@ -36,9 +39,28 @@ export function EmailPasswordForm({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A check the form makes itself names the field it is about: the message sits
+  // under that field and focus goes there. Server answers use the alert under
+  // the fields.
+  const [fieldError, setFieldError] = useState<{
+    field: "email" | "password";
+    message: string;
+  } | null>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
+  // The submit button was disabled while the request ran, so focus would fall to the
+  // page: it goes to the error instead, where a screen reader reads it.
+  const alertRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) alertRef.current?.focus();
+  }, [error]);
+  useEffect(() => {
+    if (fieldError?.field === "email") emailRef.current?.focus();
+    else if (fieldError?.field === "password") passwordRef.current?.focus();
+  }, [fieldError]);
 
   // Sign-up confirmation happens out of band (email link, possibly another
   // browser), so the login page's ?redirect= travels with it: GoTrue renders
@@ -48,7 +70,9 @@ export function EmailPasswordForm({
 
   const switchMode = (next: EmailPasswordMode) => {
     setMode(next);
+    onModeChange?.(next);
     setError(null);
+    setFieldError(null);
     setNotice(null);
     setDone(null);
     setCanResend(false);
@@ -59,24 +83,37 @@ export function EmailPasswordForm({
     event.preventDefault();
     if (busy) return;
     setError(null);
+    setFieldError(null);
     setNotice(null);
     setCanResend(false);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setError("Enter your email address");
+      setFieldError({ field: "email", message: "Enter your email address" });
       return;
     }
-    if (mode !== "forgot" && password.length < PASSWORD_MIN_LENGTH) {
-      setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+    // A malformed address is reported before anything about the password.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setFieldError({
+        field: "email",
+        message: "Enter a full email address, like you@example.com",
+      });
       return;
     }
     // GoTrue refuses these too (migration 00052), but its answer carries no
     // error code, so the form would only show the generic message.
     if (mode === "sign-up" && isCaptureDomainAddress(trimmedEmail, DEFAULT_EMAIL_DOMAIN)) {
-      setError(
-        `Addresses at ${DEFAULT_EMAIL_DOMAIN} can't be used for an account. Sign up with your own email address.`
-      );
+      setFieldError({
+        field: "email",
+        message: `Addresses at ${DEFAULT_EMAIL_DOMAIN} can't be used for an account. Sign up with your own email address.`,
+      });
+      return;
+    }
+    if (mode !== "forgot" && password.length < PASSWORD_MIN_LENGTH) {
+      setFieldError({
+        field: "password",
+        message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+      });
       return;
     }
 
@@ -172,27 +209,8 @@ export function EmailPasswordForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      {mode === "sign-up" ? (
-        <h2 className="text-base font-semibold">Create an account</h2>
-      ) : mode === "forgot" ? (
-        <h2 className="text-base font-semibold">Reset your password</h2>
-      ) : null}
-
-      {error ? (
-        <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded" role="alert">
-          <p>{error}</p>
-          {canResend ? (
-            <button
-              type="button"
-              onClick={() => void handleResend()}
-              disabled={busy}
-              className="mt-2 underline font-medium disabled:opacity-50"
-            >
-              Resend confirmation email
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      {/* Sign-up needs no heading of its own: the page's says "Create your ... account". */}
+      {mode === "forgot" ? <h2 className="text-base font-semibold">Reset your password</h2> : null}
 
       {notice ? (
         <div
@@ -211,41 +229,99 @@ export function EmailPasswordForm({
           type="email"
           autoComplete="email"
           required
+          ref={emailRef}
+          aria-invalid={fieldError?.field === "email" || undefined}
+          aria-describedby={fieldError?.field === "email" ? "auth-email-error" : undefined}
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            setError(null);
+            if (fieldError?.field === "email") setFieldError(null);
+          }}
           disabled={busy}
         />
+        {fieldError?.field === "email" ? (
+          <p id="auth-email-error" className="text-xs text-destructive-ink">
+            {fieldError.message}
+          </p>
+        ) : null}
       </div>
 
       {mode !== "forgot" ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="auth-password">Password</Label>
-            {mode === "sign-in" ? (
-              <button
-                type="button"
-                onClick={() => switchMode("forgot")}
-                className="text-xs underline text-muted-foreground hover:text-foreground"
-              >
-                Forgot password?
-              </button>
-            ) : null}
-          </div>
+        // "Forgot password?" follows the input in the DOM, so Tab goes from the email to the
+        // password; the grid still shows it on the label's row.
+        <div className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2">
+          <Label htmlFor="auth-password" className="col-start-1 row-start-1">
+            Password
+          </Label>
           <Input
+            className="col-span-2"
             id="auth-password"
             name="password"
             type="password"
             autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
             required
             minLength={PASSWORD_MIN_LENGTH}
+            ref={passwordRef}
+            aria-invalid={fieldError?.field === "password" || undefined}
+            aria-describedby={
+              [
+                fieldError?.field === "password" ? "auth-password-error" : null,
+                mode === "sign-up" && fieldError?.field !== "password"
+                  ? "auth-password-hint"
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(null);
+              if (fieldError?.field === "password") setFieldError(null);
+            }}
             disabled={busy}
           />
-          {mode === "sign-up" ? (
-            <p className="text-xs text-muted-foreground">
+          {mode === "sign-in" ? (
+            <button
+              type="button"
+              onClick={() => switchMode("forgot")}
+              className="col-start-2 row-start-1 justify-self-end py-1.5 -my-1.5 text-xs underline text-muted-foreground hover:text-foreground"
+            >
+              Forgot password?
+            </button>
+          ) : null}
+          {fieldError?.field === "password" ? (
+            <p id="auth-password-error" className="col-span-2 text-xs text-destructive-ink">
+              {fieldError.message}
+            </p>
+          ) : null}
+          {mode === "sign-up" && fieldError?.field !== "password" ? (
+            <p id="auth-password-hint" className="col-span-2 text-xs text-muted-foreground">
               At least {PASSWORD_MIN_LENGTH} characters.
             </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Under the fields, next to what it is about, and gone once either changes. */}
+      {error ? (
+        <div
+          ref={alertRef}
+          tabIndex={-1}
+          className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3"
+          role="alert"
+        >
+          <p>{error}</p>
+          {canResend ? (
+            <button
+              type="button"
+              onClick={() => void handleResend()}
+              disabled={busy}
+              className="mt-2 underline font-medium disabled:opacity-50"
+            >
+              Resend confirmation email
+            </button>
           ) : null}
         </div>
       ) : null}

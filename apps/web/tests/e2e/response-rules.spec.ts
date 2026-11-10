@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator } from "@playwright/test";
 import {
   createTestUser,
   deleteTestUser,
@@ -7,7 +7,7 @@ import {
   type TestUser,
 } from "./helpers/auth";
 
-// Tests must run serially — they share an endpoint with rules
+// Tests must run serially: they share an endpoint with rules
 test.describe.configure({ mode: "serial" });
 
 let testUser: TestUser;
@@ -62,6 +62,12 @@ function responsesSection(page: Page) {
   return page.getByRole("region", { name: "Responses" });
 }
 
+/** Picks an option in one of the condition rows' pickers (a listbox, not a native select). */
+async function pick(page: Page, picker: Locator, option: string) {
+  await picker.click();
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
+
 async function openSettingsTab(page: Page) {
   // Wait for the endpoint bar to show the endpoint name
   await expect(page.locator("span.font-bold.caps", { hasText: "Rules E2E Test" })).toBeVisible({
@@ -97,7 +103,7 @@ test("can add a rule with a condition", async ({ page }) => {
 
   await expect(section.getByRole("button", { name: /^Rule 1 When method is POST/ })).toBeVisible();
   await expect(section.getByRole("button", { name: /^Otherwise/ })).toBeVisible();
-  await expect(section.getByLabel("Condition 1: what to check")).toHaveValue("method");
+  await expect(section.getByLabel("Condition 1: what to check")).toHaveText("Method");
 });
 
 test("can change condition field and operator", async ({ page }) => {
@@ -105,12 +111,12 @@ test("can change condition field and operator", async ({ page }) => {
   const section = responsesSection(page);
   await section.getByRole("button", { name: "Add rule" }).click();
 
-  await section.getByLabel("Condition 1: what to check").selectOption("header");
+  await pick(page, section.getByLabel("Condition 1: what to check"), "Header");
   const op = section.getByLabel("Condition 1: how to compare");
-  await expect(op).toHaveValue("exists");
+  await expect(op).toHaveText("is present");
   await expect(section.getByLabel("Condition 1: Header name")).toBeVisible();
 
-  await op.selectOption("regex");
+  await pick(page, op, "matches regex");
   await expect(section.getByLabel("Condition 1: value")).toBeVisible();
   await expect(section.getByText(/RE2 syntax/)).toBeVisible();
 });
@@ -123,9 +129,9 @@ test("can add, combine and remove conditions", async ({ page }) => {
 
   await expect(section.getByLabel(/^Condition \d: what to check$/)).toHaveCount(2);
   const logic = section.getByLabel("How the conditions combine");
-  await expect(logic).toHaveValue("and");
-  await logic.selectOption("or");
-  await expect(logic).toHaveValue("or");
+  await expect(logic).toHaveText("all");
+  await pick(page, logic, "any");
+  await expect(logic).toHaveText("any");
 
   await section.getByRole("button", { name: "Remove condition 1" }).click();
   await expect(section.getByLabel(/^Condition \d: what to check$/)).toHaveCount(1);
@@ -152,19 +158,19 @@ test("can switch off, reorder and delete rules", async ({ page }) => {
   await expect(section.getByRole("button", { name: /^Rule 2/ })).toHaveCount(0);
 });
 
-test("save stays disabled until the responses change", async ({ page }) => {
+test("save shows only once the responses change", async ({ page }) => {
   await openSettings(page);
 
   const section = responsesSection(page);
   const save = section.getByRole("button", { name: "Save changes" });
-  await expect(save).toBeDisabled();
+  await expect(save).toHaveCount(0);
 
   await section.getByRole("button", { name: "Add rule" }).click();
   await expect(save).toBeEnabled();
   await expect(section.getByText("Rules changed.")).toBeVisible();
 
   await section.getByRole("button", { name: "Cancel" }).click();
-  await expect(save).toBeDisabled();
+  await expect(save).toHaveCount(0);
   await expect(section.getByRole("button", { name: /^Rule 1/ })).toHaveCount(0);
 });
 
@@ -174,7 +180,7 @@ test("can save a rule with placeholders, and the preview shows it answering", as
 
   await section.getByRole("button", { name: "Add rule" }).click();
   await section.getByPlaceholder("Optional, for example Payment failed").fill("Persist Test");
-  await section.getByLabel("Condition 1: what to check").selectOption("body_path");
+  await pick(page, section.getByLabel("Condition 1: what to check"), "Body field");
   await section.getByLabel("Condition 1: Field path").fill("type");
   await section.getByLabel("Condition 1: value").fill("invoice.paid");
   await section
@@ -225,10 +231,13 @@ test("the preview marks the rule that answers a captured request", async ({ page
   });
 
   // Pick the matching request: Rule 1 answers, with its placeholders filled in.
-  const options = await preview.locator("option").allTextContents();
-  const billing = options.find((text) => text.includes("/billing"));
-  expect(billing).toBeTruthy();
-  await preview.selectOption({ label: billing! });
+  await preview.click();
+  await page
+    .locator('[role="listbox"][data-state="open"]')
+    .getByRole("option")
+    .filter({ hasText: "/billing" })
+    .first()
+    .click();
   await expect(section.getByText("Rule 1, Persist Test, answers")).toBeVisible({ timeout: 10000 });
   await expect(section.getByText('{"received": "invoice.paid", "path": "/billing"}')).toBeVisible();
 });

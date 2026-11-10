@@ -8,12 +8,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const site = SITES[await currentSite()];
   return {
     ...createPageMetadata({
-      title: "Sign In",
+      title: "Sign in",
       description: `Sign in to ${site.name} to manage your endpoints, captured requests and emails.`,
       path: "/login",
       noIndex: true,
     }),
-    title: { absolute: `Sign In | ${site.name}` },
+    title: { absolute: `Sign in | ${site.name}` },
   };
 }
 

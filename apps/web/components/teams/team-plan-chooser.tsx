@@ -235,7 +235,7 @@ export function TeamPlanChooser({
         </p>
       )}
       {error && (
-        <p className="text-sm text-destructive" role="alert" aria-live="polite">
+        <p className="text-sm text-destructive-ink" role="alert" aria-live="polite">
           {error}
         </p>
       )}

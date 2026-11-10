@@ -136,7 +136,7 @@ export function ShareRequestDialog({
       </DialogTrigger>
       <DialogContent className="border-strong border-line shadow-raised">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Share Request</DialogTitle>
+          <DialogTitle className="font-bold caps">Share request</DialogTitle>
           <DialogDescription>
             A read-only link to a copy of this request, for a pull request, a ticket or a chat.
             Anyone with the link can open it, no account needed.
@@ -182,7 +182,7 @@ export function ShareRequestDialog({
           </div>
 
           {error && (
-            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
               {error}
             </div>
           )}
@@ -228,7 +228,7 @@ export function ShareRequestDialog({
                     </button>
                     <button
                       onClick={() => revoke(link)}
-                      className="p-1 text-muted-foreground hover:text-destructive cursor-pointer"
+                      className="p-1 text-muted-foreground hover:text-destructive-ink cursor-pointer"
                       aria-label="Revoke link"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

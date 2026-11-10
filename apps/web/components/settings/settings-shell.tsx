@@ -1,11 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { APP_VERSION } from "@/lib/changelog";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useSite } from "@/components/providers/site-provider";
 import { useSettingsData } from "./settings-data";
+
+const NEW_TEAM_HREF = "/teams?new=1";
 
 interface NavItem {
   href: string;
@@ -29,20 +42,31 @@ const ACCOUNT_ITEMS: NavItem[] = [
   { href: "/account/support-access", label: "Support access" },
 ];
 
+/**
+ * Keeps the section's own <title> in front of the layout's metadata one
+ * ("Account"): React puts a newly mounted title first, and each navigation
+ * mounts the metadata title again, so this one moves back in front whenever
+ * the head changes (as the dashboard's does).
+ */
+function keepTitleFirst(own: HTMLTitleElement | null) {
+  if (!own) return;
+  const head = own.ownerDocument.head;
+  const moveFirst = () => {
+    const first = head.querySelector("title");
+    if (first && first !== own && own.parentNode === head) head.insertBefore(own, first);
+  };
+  moveFirst();
+  const observer = new MutationObserver(moveFirst);
+  observer.observe(head, { childList: true });
+  return () => observer.disconnect();
+}
+
 function isActive(pathname: string, item: NavItem): boolean {
   if (item.exact) return pathname === item.href;
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-function NavLink({
-  item,
-  pathname,
-  compact,
-}: {
-  item: NavItem;
-  pathname: string;
-  compact?: boolean;
-}) {
+function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = isActive(pathname, item);
   return (
     <Link
@@ -51,14 +75,14 @@ function NavLink({
       className={cn(
         "flex items-center justify-between gap-3 rounded-md text-sm transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        compact ? "px-3 py-1.5 whitespace-nowrap" : "px-3 py-2",
+        "px-3 py-2",
         active
           ? "bg-selected text-selected-foreground font-medium"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
       )}
     >
       <span className="truncate">{item.label}</span>
-      {item.meta && !compact && (
+      {item.meta && (
         <span
           className={cn(
             "shrink-0 text-xs",
@@ -96,25 +120,63 @@ function useTeamItems(): NavItem[] {
 
 /**
  * The account and team settings frame: a sticky side nav on wide screens, a
- * scrolling strip of the same links on narrow ones, and the page beside it.
+ * list to pick the same pages from on narrow ones, and the page beside it.
  */
 export function SettingsShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const teamItems = useTeamItems();
+  const site = useSite();
+  // The page shown, for the narrow screens' list and the title: the most specific match.
+  const activeItem = [...ACCOUNT_ITEMS, ...teamItems]
+    .filter((item) => isActive(pathname, item))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+  const activeHref = activeItem?.href ?? "";
+  const onAccount = !!activeItem && ACCOUNT_ITEMS.includes(activeItem);
+  // A team's name is its owner's own words and stays out of the title, which analytics read.
+  const titleLabel = onAccount || activeItem?.href === "/teams" ? activeItem?.label : "Team";
 
   return (
     <div className="container mx-auto px-4 py-6 lg:py-10">
-      <nav
-        aria-label="Settings"
-        className="lg:hidden -mx-4 mb-6 overflow-x-auto border-b-strong border-line px-4 pb-3"
-      >
-        <ul className="flex gap-1">
-          {[...ACCOUNT_ITEMS, ...teamItems].map((item) => (
-            <li key={item.href}>
-              <NavLink item={item} pathname={pathname} compact />
-            </li>
-          ))}
-        </ul>
+      {/* Each section names itself in the tab, so open account tabs can be told apart. */}
+      {activeItem && (
+        <title
+          ref={keepTitleFirst}
+        >{`${titleLabel} | ${onAccount ? "Account" : "Teams"} | ${site.name}`}</title>
+      )}
+      {/* Nine account pages and the teams do not fit a phone's width, so
+          narrow screens pick the page from a list. */}
+      <nav aria-label="Settings" className="lg:hidden mb-6">
+        <Select value={activeHref} onValueChange={(href) => router.push(href)}>
+          <SelectTrigger aria-label="Account section" className="w-full">
+            <SelectValue placeholder="Account section" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel className="text-xs font-medium text-muted-foreground">
+                Account
+              </SelectLabel>
+              {ACCOUNT_ITEMS.map((item) => (
+                <SelectItem key={item.href} value={item.href}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectSeparator />
+            {/* Team names are the owner's own words; keep them out of autocapture. */}
+            <SelectGroup className="ph-no-capture">
+              <SelectLabel className="text-xs font-medium text-muted-foreground">Teams</SelectLabel>
+              {teamItems.map((item) => (
+                <SelectItem key={item.href} value={item.href}>
+                  {item.meta && item.href !== "/teams"
+                    ? `${item.label} (${item.meta})`
+                    : item.label}
+                </SelectItem>
+              ))}
+              <SelectItem value={NEW_TEAM_HREF}>New team</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </nav>
 
       <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
@@ -140,7 +202,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
                 ))}
                 <li>
                   <Link
-                    href="/teams?new=1"
+                    href={NEW_TEAM_HREF}
                     className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -149,18 +211,18 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
                 </li>
               </ul>
             </div>
-            <div className="space-y-1 px-3 text-xs text-muted-foreground">
-              <Link href="/support" className="block hover:text-foreground">
+            <div className="px-3 text-xs text-muted-foreground">
+              <Link href="/support" className="block py-1 hover:text-foreground">
                 Get support
               </Link>
-              <Link href="/changelog" className="block hover:text-foreground">
+              <Link href="/changelog" className="block py-1 hover:text-foreground">
                 Version {APP_VERSION}
               </Link>
             </div>
           </nav>
         </aside>
 
-        <main className="min-w-0 max-w-3xl">{children}</main>
+        <main className="min-w-0 max-w-4xl">{children}</main>
       </div>
     </div>
   );

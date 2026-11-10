@@ -450,7 +450,7 @@ export function TeamBillingPanel({
               ) : (
                 <Button
                   variant="outline"
-                  className="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  className="border-destructive/60 text-destructive-ink hover:bg-destructive/10 hover:text-destructive-ink"
                   onClick={() => setConfirmCancelOpen(true)}
                   disabled={canceling || !accessToken}
                 >

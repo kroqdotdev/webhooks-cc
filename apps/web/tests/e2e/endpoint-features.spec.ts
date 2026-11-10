@@ -238,7 +238,7 @@ test("alerts are set up, and an open alert replays its emails", async ({ page })
       await expect(control).toHaveAttribute("aria-checked", "true", { timeout: 1000 });
     }).toPass({ timeout: 15000 });
   };
-  await turnOn("Alerts");
+  await turnOn("Email me when something needs attention");
   await alerts.getByLabel("Quiet for (hours)").fill("12");
   await turnOn("Failed deliveries");
   await alerts.getByRole("button", { name: "Save changes" }).click();
@@ -277,12 +277,12 @@ test("an email's attachment and its exact message download from the dashboard", 
   const subject = `Order attached ${ts}`;
   const { raw } = await deliverMail(subject, "sku,qty\r\nB-2,5");
   await openDashboard(page);
-  await page.getByRole("button", { name: new RegExp(`EMAIL ${subject}`) }).click();
+  await page.getByRole("option", { name: new RegExp(`EMAIL ${subject}`) }).click();
   await expect(shown(page.getByRole("heading", { name: subject }))).toBeVisible({
     timeout: 15000,
   });
 
-  await shown(page.getByRole("button", { name: /^Attachments/ })).click();
+  await shown(page.getByRole("tab", { name: /^Attachments/ })).click();
   await expect(
     shown(page.getByText("Attachments are kept with the email and deleted with it."))
   ).toBeVisible();
@@ -293,7 +293,7 @@ test("an email's attachment and its exact message download from the dashboard", 
   const csv = await (await file.createReadStream()).toArray();
   expect(Buffer.concat(csv).toString("utf8")).toBe("sku,qty\r\nB-2,5");
 
-  await shown(page.getByRole("button", { name: /^Raw$/ })).click();
+  await shown(page.getByRole("tab", { name: /^Raw$/ })).click();
   await expect(shown(page.getByText(`Subject: ${subject}`))).toBeVisible();
   const eml = page.waitForEvent("download");
   await shown(page.getByRole("button", { name: "Download .eml" })).click();

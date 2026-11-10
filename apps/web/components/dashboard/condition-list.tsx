@@ -10,6 +10,13 @@ import {
 } from "@webhooks-cc/sdk";
 import { cn } from "@/lib/utils";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   FIELD_LABELS,
   OP_LABELS,
   blankCondition,
@@ -27,8 +34,48 @@ import {
  * signature check).
  */
 
-const selectClass = "ui-input text-[13px] py-1.5! px-2! min-w-0";
-const inputClass = "ui-input text-[13px] font-mono py-1.5! px-2! min-w-0";
+const triggerClass =
+  "h-8 min-w-0 gap-1.5 text-[13px] rounded-md border-strong border-line bg-background px-2 py-0 text-left cursor-pointer focus:ring-offset-0";
+const inputClass = "ui-input h-8 text-[13px] font-mono py-0! px-2! min-w-0";
+
+/**
+ * The rows' picker: the shared select at the rows' size. An unset value shows
+ * the placeholder (Radix items cannot carry an empty value), and a value the
+ * choices do not hold, such as an older condition's, is still listed so the
+ * row shows what is saved.
+ */
+function ChoiceSelect({
+  label,
+  value,
+  choices,
+  onChange,
+  className,
+}: {
+  label: string;
+  value: string;
+  choices: { value: string; label: string }[];
+  onChange: (next: string) => void;
+  className?: string;
+}) {
+  const listed =
+    value && !choices.some((choice) => choice.value === value)
+      ? [...choices, { value, label: value }]
+      : choices;
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger aria-label={label} className={cn(triggerClass, className)}>
+        <SelectValue placeholder="Choose" />
+      </SelectTrigger>
+      <SelectContent className="border-strong border-line shadow-raised max-h-80">
+        {listed.map((choice) => (
+          <SelectItem key={choice.value} value={choice.value} className="text-[13px]">
+            {choice.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 function opHint(op: ConditionOp): string | null {
   if (op === "matches")
@@ -82,39 +129,32 @@ function ConditionRow({
   return (
     <div role="group" aria-label={`Condition ${n}`} className="space-y-1">
       <div className="flex flex-wrap items-center gap-1.5">
-        <select
-          aria-label={`Condition ${n}: what to check`}
+        <ChoiceSelect
+          label={`Condition ${n}: what to check`}
           value={shownField}
-          onChange={(e) => {
-            const next = withField(condition, e.target.value as ConditionField);
+          choices={fieldsFor(use).map((field) => ({
+            value: field,
+            label: FIELD_LABELS[field].label,
+          }))}
+          onChange={(value) => {
+            const next = withField(condition, value as ConditionField);
             onChange(
               next.field === "email_field" && !next.name && emailFieldNames[0]
                 ? { ...next, name: emailFieldNames[0] }
                 : next
             );
           }}
-          className={cn(selectClass, "w-36")}
-        >
-          {fieldsFor(use).map((field) => (
-            <option key={field} value={field}>
-              {FIELD_LABELS[field].label}
-            </option>
-          ))}
-        </select>
+          className="w-36"
+        />
         {key &&
           (keyChoices ? (
-            <select
-              aria-label={`Condition ${n}: ${labels.keyLabel ?? "which"}`}
+            <ChoiceSelect
+              label={`Condition ${n}: ${labels.keyLabel ?? "which"}`}
               value={condition.name ?? ""}
-              onChange={(e) => onChange({ ...condition, name: e.target.value })}
-              className={cn(selectClass, "w-32")}
-            >
-              {keyChoices.map((choice) => (
-                <option key={choice.value} value={choice.value}>
-                  {choice.label}
-                </option>
-              ))}
-            </select>
+              choices={keyChoices}
+              onChange={(name) => onChange({ ...condition, name })}
+              className="w-32"
+            />
           ) : (
             <input
               aria-label={`Condition ${n}: ${labels.keyLabel}`}
@@ -131,38 +171,28 @@ function ConditionRow({
               className={cn(inputClass, "w-36")}
             />
           ))}
-        <select
-          aria-label={`Condition ${n}: how to compare`}
+        <ChoiceSelect
+          label={`Condition ${n}: how to compare`}
           value={condition.op}
-          onChange={(e) => {
-            const op = e.target.value as ConditionOp;
+          choices={labels.ops.map((op) => ({ value: op, label: OP_LABELS[op] }))}
+          onChange={(value) => {
+            const op = value as ConditionOp;
             const next: Condition = { ...condition, op };
             if (!takesValue(op)) delete next.value;
             else if (next.value === undefined) next.value = labels.valueChoices?.[0] ?? "";
             onChange(next);
           }}
-          className={cn(selectClass, "w-36")}
-        >
-          {labels.ops.map((op) => (
-            <option key={op} value={op}>
-              {OP_LABELS[op]}
-            </option>
-          ))}
-        </select>
+          className="w-36"
+        />
         {takesValue(condition.op) &&
           (labels.valueChoices && (condition.op === "eq" || condition.op === "neq") ? (
-            <select
-              aria-label={`Condition ${n}: value`}
+            <ChoiceSelect
+              label={`Condition ${n}: value`}
               value={condition.value ?? ""}
-              onChange={(e) => onChange({ ...condition, value: e.target.value })}
-              className={cn(selectClass, "w-32")}
-            >
-              {labels.valueChoices.map((choice) => (
-                <option key={choice} value={choice}>
-                  {choice}
-                </option>
-              ))}
-            </select>
+              choices={labels.valueChoices.map((choice) => ({ value: choice, label: choice }))}
+              onChange={(value) => onChange({ ...condition, value })}
+              className="w-32"
+            />
           ) : (
             <input
               aria-label={`Condition ${n}: value`}
@@ -192,7 +222,7 @@ function ConditionRow({
         )}
       </div>
       {issue ? (
-        <p id={`${idPrefix}-condition-${index}-issue`} className="text-xs text-destructive">
+        <p id={`${idPrefix}-condition-${index}-issue`} className="text-xs text-destructive-ink">
           {issue.charAt(0).toUpperCase() + issue.slice(1)}.
         </p>
       ) : hint ? (
@@ -211,6 +241,7 @@ export function ConditionList({
   onChange,
   emptyLabel,
   emailFieldNames = [],
+  lead = true,
 }: {
   conditions: Condition[];
   logic: "and" | "or";
@@ -223,6 +254,8 @@ export function ConditionList({
   emptyLabel?: string;
   /** The endpoint's named email fields: what "Email field" offers. */
   emailFieldNames?: string[];
+  /** Lead a single condition with "When this matches:"; off where a heading already says it. */
+  lead?: boolean;
 }) {
   const set = (next: Condition[], nextLogic: "and" | "or" = logic) =>
     onChange({ conditions: next, logic: nextLogic });
@@ -232,19 +265,20 @@ export function ConditionList({
       {conditions.length > 1 ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span>When</span>
-          <select
-            aria-label="How the conditions combine"
+          <ChoiceSelect
+            label="How the conditions combine"
             value={logic}
-            onChange={(e) => set(conditions, e.target.value as "and" | "or")}
-            className={cn(selectClass, "w-auto")}
-          >
-            <option value="and">all</option>
-            <option value="or">any</option>
-          </select>
+            choices={[
+              { value: "and", label: "all" },
+              { value: "or", label: "any" },
+            ]}
+            onChange={(value) => set(conditions, value as "and" | "or")}
+            className="w-auto"
+          />
           <span>of these match:</span>
         </div>
       ) : conditions.length === 1 ? (
-        <p className="text-sm">When this matches:</p>
+        lead && <p className="text-sm">When this matches:</p>
       ) : emptyLabel ? (
         <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : null}

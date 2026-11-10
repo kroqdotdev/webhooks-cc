@@ -206,7 +206,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             Prefer a walkthrough? Read the{" "}
             <Link
               href={guide?.href ?? "/docs/guides/test-webhooks-locally"}
-              className="text-primary font-bold hover:underline"
+              className="text-primary-ink font-bold hover:underline"
             >
               {guide ? guide.label : "local webhook testing guide"}
             </Link>
@@ -215,7 +215,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               <>
                 {" "}
                 Weighing the alternatives? See{" "}
-                <Link href={comparison.href} className="text-primary font-bold hover:underline">
+                <Link href={comparison.href} className="text-primary-ink font-bold hover:underline">
                   {comparison.label}
                 </Link>
                 .
@@ -259,7 +259,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               Source:{" "}
               <a
                 href={reference.source.href}
-                className="text-primary font-bold hover:underline"
+                className="text-primary-ink font-bold hover:underline"
                 rel="noopener"
               >
                 {reference.source.label}
@@ -316,7 +316,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                   <td className="py-2">
                     {page.verifySupported ? (
                       <span className="inline-flex items-center gap-2">
-                        <ShieldCheck className="h-4 w-4 text-primary" />
+                        <ShieldCheck className="h-4 w-4 text-primary-ink" />
                         Supported: add your {page.credentialLabel.toLowerCase()} and every request
                         is checked automatically
                       </span>
@@ -343,7 +343,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             New to signature verification? Read the{" "}
             <Link
               href="/docs/guides/verify-webhook-signatures"
-              className="text-primary font-bold hover:underline"
+              className="text-primary-ink font-bold hover:underline"
             >
               webhook signature verification guide
             </Link>
@@ -421,12 +421,12 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             </div>
             <p className="text-sm text-muted-foreground mt-3">
               Let your coding agent write and run it: the{" "}
-              <Link href="/docs/mcp/skills" className="text-primary font-bold hover:underline">
+              <Link href="/docs/mcp/skills" className="text-primary-ink font-bold hover:underline">
                 webhooks.cc agent skill
               </Link>{" "}
               teaches Claude Code, Cursor, and Codex to test webhook handlers with signed payloads.
               More patterns in the{" "}
-              <Link href="/docs/sdk/testing" className="text-primary font-bold hover:underline">
+              <Link href="/docs/sdk/testing" className="text-primary-ink font-bold hover:underline">
                 SDK testing docs
               </Link>
               .
@@ -448,7 +448,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               "MCP server for AI coding agents",
             ].map((item) => (
               <li key={item} className="flex items-start gap-3">
-                <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" />
                 <span className="text-sm">{item}</span>
               </li>
             ))}
@@ -467,7 +467,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <div className="grid sm:grid-cols-3 gap-4">
             {related.map((p) => (
               <Link key={p.slug} href={`/webhooks/${p.slug}`} className="ui-card block group">
-                <h3 className="font-bold group-hover:text-primary transition-colors">
+                <h3 className="font-bold group-hover:text-primary-ink transition-colors">
                   {p.label} webhooks
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">{p.category}</p>
@@ -475,7 +475,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             ))}
           </div>
           <p className="mt-4 text-sm">
-            <Link href="/webhooks" className="text-primary font-bold hover:underline">
+            <Link href="/webhooks" className="text-primary-ink font-bold hover:underline">
               Browse all {WEBHOOK_PROVIDER_SLUGS.length} providers
               <ArrowRight className="inline-block ml-1 h-4 w-4" />
             </Link>
@@ -490,8 +490,8 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <p className="opacity-80 mb-6 max-w-md mx-auto">
             Sign up free, create an endpoint, and point {page.label} at it.
           </p>
-          <div className="flex justify-center text-foreground">
-            <PricingCTA />
+          <div className="flex justify-center">
+            <PricingCTA inverted />
           </div>
           <p className="text-sm opacity-80 mt-6">
             No credit card &middot; or{" "}

@@ -85,7 +85,7 @@ export function BillingPortalLink({
         {children}
       </button>
       {error && (
-        <span role="alert" className="text-destructive">
+        <span role="alert" className="text-destructive-ink">
           {" "}
           ({error})
         </span>

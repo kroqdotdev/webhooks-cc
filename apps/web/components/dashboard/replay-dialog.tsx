@@ -22,6 +22,8 @@ interface ReplayDialogProps {
   headers: Record<string, string>;
   /** Request body, if present. */
   body?: string;
+  /** The exact body bytes for a body that is not text; sent instead of `body`. */
+  bodyBytes?: Uint8Array<ArrayBuffer>;
 }
 
 /**
@@ -50,7 +52,23 @@ function isValidTargetUrl(url: string): { valid: boolean; error?: string } {
   }
 }
 
-export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
+/**
+ * A fetch from the browser fails with a bare TypeError ("Failed to fetch")
+ * both for a closed port and for a CORS refusal, and the browser does not say
+ * which, so the message names both and the ways around them.
+ */
+function unreachableMessage(target: string): string {
+  let host = target;
+  try {
+    host = new URL(target).host;
+  } catch {
+    // Validated above; keep the text as typed if it still does not parse.
+  }
+  return `Could not reach ${host}. Check that the server is running and accepts requests from ${window.location.origin} (CORS). If it does not, use whk tunnel or a forwarding destination.`;
+}
+
+export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogProps) {
+  const bodySize = bodyBytes ? bodyBytes.length : body ? new TextEncoder().encode(body).length : 0;
   const [targetUrl, setTargetUrl] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [response, setResponse] = useState<{
@@ -84,13 +102,19 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
       const res = await fetch(targetUrl, {
         method,
         headers: filteredHeaders,
-        body: method !== "GET" && method !== "HEAD" ? body : undefined,
+        body: method !== "GET" && method !== "HEAD" ? (bodyBytes ?? body) : undefined,
       });
       setResponse({ status: res.status, statusText: res.statusText });
       setStatus("done");
       trackRequestReplayed(method, res.status);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Request failed");
+      setErrorMsg(
+        err instanceof TypeError
+          ? unreachableMessage(targetUrl)
+          : err instanceof Error
+            ? err.message
+            : "Request failed"
+      );
       setStatus("error");
     }
   };
@@ -117,7 +141,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
       </DialogTrigger>
       <DialogContent className="border-strong border-line shadow-raised">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Replay Request</DialogTitle>
+          <DialogTitle className="font-bold caps">Replay request</DialogTitle>
           <DialogDescription>
             Send this captured request to another URL. Requests are made from your browser, so
             localhost URLs work for local development testing.
@@ -135,13 +159,18 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
               value={targetUrl}
               onChange={(e) => setTargetUrl(e.target.value)}
               placeholder="http://localhost:3000/webhook"
+              aria-describedby="replay-url-hint"
               className="ui-input w-full text-sm"
             />
+            <p id="replay-url-hint" className="mt-1.5 text-xs text-muted-foreground">
+              The URL to send this request to, for example your local server. It is sent from your
+              browser.
+            </p>
           </div>
 
           <div className="text-xs font-mono text-muted-foreground">
             {method} with {Object.keys(headers).length} headers
-            {body ? `, ${body.length} byte body` : ", no body"}
+            {bodySize ? `, ${bodySize} byte body` : ", no body"}
           </div>
 
           {status === "done" && response && (
@@ -151,7 +180,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
           )}
 
           {status === "error" && (
-            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
               {errorMsg}
             </div>
           )}
@@ -161,7 +190,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
             disabled={!targetUrl || status === "sending"}
             className="w-full ui-btn-primary"
           >
-            {status === "sending" ? "Sending..." : "Send Request"}
+            {status === "sending" ? "Sending..." : "Send request"}
           </Button>
         </div>
       </DialogContent>

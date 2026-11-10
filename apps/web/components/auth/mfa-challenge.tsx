@@ -141,7 +141,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center px-6">
         <div className="ui-card ui-card-static w-full max-w-sm space-y-4">
-          <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
+          <ShieldCheck className="h-6 w-6 text-primary-ink" aria-hidden="true" />
           <h1 className="text-xl font-bold clean:font-semibold">You are signed in</h1>
           <p className="text-sm text-muted-foreground">
             The recovery code worked, and two-factor sign-in is now off. Set it up again with your
@@ -168,7 +168,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-6">
       <form onSubmit={verify} className="ui-card ui-card-static w-full max-w-sm space-y-4">
-        <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
+        <ShieldCheck className="h-6 w-6 text-primary-ink" aria-hidden="true" />
         <div className="space-y-1">
           <h1 className="text-xl font-bold clean:font-semibold">Two-factor sign-in</h1>
           <p className="text-sm text-muted-foreground">
@@ -191,7 +191,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
           className="text-center font-mono text-lg tracking-[0.3em] uppercase"
         />
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-ink">
             {error}
           </p>
         )}
@@ -200,7 +200,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
         </Button>
         <button
           type="button"
-          className="text-sm text-primary underline underline-offset-2"
+          className="text-sm text-primary-ink underline underline-offset-2"
           onClick={() => {
             setUseRecovery((value) => !value);
             setCode("");

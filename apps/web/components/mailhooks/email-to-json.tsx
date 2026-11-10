@@ -15,8 +15,8 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
     },
   };
   return (
-    <div className="grid lg:grid-cols-2 gap-6 items-start">
-      <figure className="ui-card ui-card-static p-0! overflow-hidden">
+    <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[repeat(2,minmax(0,1fr))] gap-6 items-stretch">
+      <figure className="ui-card ui-card-static p-0! overflow-hidden flex flex-col">
         <figcaption className="px-5 py-3 border-b-strong border-line text-xs font-bold caps text-muted-foreground">
           The email
         </figcaption>
@@ -34,15 +34,20 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
             </>
           )}
         </dl>
-        <pre className="px-5 py-4 text-sm whitespace-pre-wrap font-sans leading-relaxed">
+        <pre className="flex-1 px-5 py-4 text-sm whitespace-pre-wrap font-sans leading-relaxed">
           {sample.text}
         </pre>
       </figure>
-      <figure className="ui-card ui-card-static p-0! overflow-hidden">
+      <figure className="ui-card ui-card-static p-0! overflow-hidden flex flex-col">
         <figcaption className="px-5 py-3 border-b-strong border-line text-xs font-bold caps text-muted-foreground">
           What your endpoint delivers
         </figcaption>
-        <pre className="px-5 py-4 text-xs font-mono overflow-x-auto leading-relaxed">
+        {/* On phones the JSON scrolls in a shorter box, so the page reaches "How it works" sooner. */}
+        <pre
+          tabIndex={0}
+          aria-label="The JSON your endpoint delivers"
+          className="px-5 py-4 text-xs font-mono overflow-x-auto leading-relaxed max-md:max-h-72 max-md:overflow-y-auto"
+        >
           {JSON.stringify(json, null, 2)}
         </pre>
         {sample.attachment && (

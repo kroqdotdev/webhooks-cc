@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   AtSign,
+  Check,
   Bell,
   FileSpreadsheet,
   History,
@@ -141,17 +142,30 @@ export default function MailhooksHome() {
                 booking, receipt or report arrives as JSON at your webhook, as rows in Google
                 Sheets, or as a message in Slack or Discord.
               </p>
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
                 <div className="w-full sm:w-auto sm:min-w-80">
-                  <PricingCTA />
+                  <PricingCTA primary emailAlign="start" />
                 </div>
-                <Link href="/parse" className="ui-btn-outline inline-flex items-center gap-2">
-                  See ready-made layouts
+                {/* h-11: centred on the sign-up buttons beside it. */}
+                <Link
+                  href="/parse"
+                  className="max-md:hidden sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+                >
+                  See the layout gallery
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
               <p className="text-sm text-muted-foreground mt-4">
                 Free: 50 emails a day and 20 parsed attachment pages a month. No credit card.
+                {/* On phones the gallery link joins this line, so the buttons stand alone. */}
+                <span className="md:hidden">
+                  {" "}
+                  Or browse the{" "}
+                  <Link href="/parse" className="font-bold text-primary-ink underline">
+                    layout gallery
+                  </Link>
+                  .
+                </span>
               </p>
             </div>
             <div className="mt-14">
@@ -166,7 +180,7 @@ export default function MailhooksHome() {
             <ol className="grid md:grid-cols-3 gap-6">
               {STEPS.map((step, index) => (
                 <li key={step.title} className="ui-card ui-card-static">
-                  <step.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
+                  <step.icon className="h-6 w-6 text-primary-ink mb-4" aria-hidden />
                   <p className="text-xs font-bold caps text-muted-foreground mb-2">
                     Step {index + 1}
                   </p>
@@ -185,7 +199,7 @@ export default function MailhooksHome() {
               Start from a sender you already get email from, then adjust it to your own emails in
               the preview.
             </p>
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <ul className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               {LAYOUT_TEMPLATES.slice(0, 8).map((template) => (
                 <li key={template.id}>
                   <Link href={`/parse/${template.id}`} className="ui-card block h-full">
@@ -199,7 +213,7 @@ export default function MailhooksHome() {
               href="/parse"
               className="inline-flex items-center gap-2 mt-6 font-medium hover:underline"
             >
-              All {LAYOUT_TEMPLATES.length} senders
+              All {LAYOUT_TEMPLATES.length} layouts
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
@@ -211,16 +225,20 @@ export default function MailhooksHome() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {FEATURES.map((feature) => (
                 <div key={feature.title} className="ui-card ui-card-static">
-                  <feature.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
+                  <feature.icon className="h-6 w-6 text-primary-ink mb-4" aria-hidden />
                   <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
                   <p className="text-muted-foreground">{feature.text}</p>
                 </div>
               ))}
             </div>
             <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Equal cards; an unfinished last row is centred rather than left with a hole. */}
+            <ul className="flex flex-wrap justify-center gap-6">
               {MAILHOOKS_FEATURES.map((feature) => (
-                <li key={feature.path}>
+                <li
+                  key={feature.path}
+                  className="w-full sm:w-[calc(50%-0.75rem)] lg:w-[calc((100%-3rem)/3)]"
+                >
                   <Link href={feature.path} className="ui-card block h-full">
                     <p className="font-bold mb-1">{feature.name}</p>
                     <p className="text-sm text-muted-foreground">{feature.summary}</p>
@@ -231,19 +249,24 @@ export default function MailhooksHome() {
           </div>
         </section>
 
-        <section className="py-20 px-4">
+        <section id="pricing" className="py-20 px-4 scroll-mt-20">
+          <h2 className="max-w-6xl mx-auto text-3xl md:text-4xl font-bold mb-10">Pricing</h2>
           <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6">
             {[
               {
                 name: "Free",
                 price: "$0",
-                lines: ["50 emails a day", "20 parsed pages a month", "5 AI assists every 30 days"],
+                lines: [
+                  "50 emails or webhooks a day",
+                  "20 parsed pages a month",
+                  "5 AI assists every 30 days",
+                ],
               },
               {
                 name: "Pro",
                 price: "$8 a month",
                 lines: [
-                  "100,000 emails and webhooks",
+                  "100,000 emails or webhooks a month",
                   "100 parsed pages a month",
                   "20 AI assists every 30 days",
                 ],
@@ -252,29 +275,47 @@ export default function MailhooksHome() {
                 name: "Business",
                 price: "$29 a month",
                 lines: [
-                  "250,000 emails and webhooks",
+                  "250,000 emails or webhooks a month",
                   "2,000 parsed pages a month, 50 layouts",
                   "Your own domain and file drops",
                 ],
               },
             ].map((plan) => (
-              <div key={plan.name} className="ui-card ui-card-static">
+              <Link
+                key={plan.name}
+                href="/pricing"
+                className={`ui-card relative block ${plan.name === "Business" ? "border-primary" : ""}`}
+              >
+                {plan.name === "Business" && (
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
+                    Best for parsing
+                  </span>
+                )}
                 <p className="font-bold text-xl">{plan.name}</p>
                 <p className="text-2xl font-bold mt-1 mb-4">{plan.price}</p>
-                <ul className="space-y-1 text-muted-foreground">
+                <ul className="space-y-2">
                   {plan.lines.map((line) => (
-                    <li key={line}>{line}</li>
+                    <li key={line} className="flex items-start gap-2">
+                      <Check className="h-5 w-5 text-primary-ink shrink-0" aria-hidden />
+                      <span>{line}</span>
+                    </li>
                   ))}
                 </ul>
-              </div>
+              </Link>
             ))}
-            <Link
-              href="/pricing"
-              className="md:col-span-3 inline-flex items-center gap-2 font-medium hover:underline"
-            >
-              Compare plans
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+            <div className="md:col-span-3 flex flex-wrap items-start gap-4">
+              <div className="w-full sm:w-auto sm:min-w-80">
+                <PricingCTA emailAlign="start" />
+              </div>
+              {/* A text link, so the sign-up button stays the one filled action here. */}
+              <Link
+                href="/pricing"
+                className="sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+              >
+                Compare plans
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
         </section>
 
@@ -282,6 +323,21 @@ export default function MailhooksHome() {
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl md:text-4xl font-bold mb-10">Questions</h2>
             <FAQAccordion items={FAQ} />
+          </div>
+        </section>
+
+        {/* The closing ask, so the page does not end on questions. */}
+        <section className="py-20 px-4">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Start with one sender</h2>
+            <p className="text-lg text-muted-foreground mb-8">
+              Free: 50 emails a day and 20 parsed attachment pages a month. No credit card.
+            </p>
+            <div className="flex justify-center">
+              <div className="w-full sm:w-auto sm:min-w-80">
+                <PricingCTA primary />
+              </div>
+            </div>
           </div>
         </section>
       </main>
