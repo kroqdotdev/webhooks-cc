@@ -43,6 +43,10 @@ pub const HEADER_KIND: &str = "x-whk-kind";
 /// `whk tunnel --live`: the slug of the endpoint whose captures come down
 /// the tunnel.
 pub const HEADER_ENDPOINT: &str = "x-whk-endpoint";
+/// On the receiver's relay call to the edge: the captured request's id. The
+/// edge takes it off before the app sees the request and names it in the
+/// [`EdgeMessage::Request`] it sends the CLI.
+pub const HEADER_REQUEST_ID: &str = "x-whk-request-id";
 /// On the CLI's own 502 when nothing listens on the port; the edge shows
 /// visitors its page for that instead.
 pub const HEADER_NOTHING_LISTENING: &str = "x-whk-nothing-listening";
@@ -75,6 +79,11 @@ pub enum EdgeMessage {
         path: String,
         status: u16,
         ms: u64,
+        /// For a live relay: the captured request's id (the receiver sends it
+        /// in [`HEADER_REQUEST_ID`]), so the CLI can tell which captures the
+        /// edge carried. Absent for previews and from older edges.
+        #[serde(default, rename = "requestId", skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
     },
     /// Something to show as it is.
     Notice { text: String },
@@ -86,4 +95,43 @@ pub enum EdgeMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorBody {
     pub error: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_request_line_carries_the_capture_id_only_when_there_is_one() {
+        let with = EdgeMessage::Request {
+            method: "POST".into(),
+            path: "/hooks".into(),
+            status: 200,
+            ms: 3,
+            request_id: Some("abc-1".into()),
+        };
+        let json = serde_json::to_string(&with).unwrap();
+        assert!(json.contains("\"requestId\":\"abc-1\""), "{json}");
+        let without = EdgeMessage::Request {
+            method: "GET".into(),
+            path: "/".into(),
+            status: 200,
+            ms: 1,
+            request_id: None,
+        };
+        let json = serde_json::to_string(&without).unwrap();
+        assert!(!json.contains("requestId"), "{json}");
+        // An older edge's line still reads, without an id.
+        let old: EdgeMessage = serde_json::from_str(
+            r#"{"type":"request","method":"GET","path":"/","status":200,"ms":1}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            old,
+            EdgeMessage::Request {
+                request_id: None,
+                ..
+            }
+        ));
+    }
 }

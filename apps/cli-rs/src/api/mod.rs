@@ -32,6 +32,8 @@ pub struct ApiClient {
     pub base_url: String,
     pub webhook_url: String,
     bearer: Bearer,
+    /// The bearer is `WHK_API_KEY` (with `WHK_AUTH=key`), for `whk auth status`.
+    env_key: bool,
 }
 
 /// Where the client's bearer comes from: the device login's API key
@@ -49,6 +51,8 @@ enum Bearer {
 pub enum AuthSource<'a> {
     None,
     Login,
+    /// `WHK_API_KEY`, chosen with `WHK_AUTH=key`.
+    EnvKey,
     Agent(&'a AgentSession),
 }
 
@@ -70,7 +74,7 @@ impl std::fmt::Debug for ApiClient {
 /// Where a client's bearer comes from.
 #[derive(Debug, PartialEq)]
 enum TokenSource {
-    /// `WHK_API_KEY`.
+    /// `WHK_API_KEY`, only with `WHK_AUTH=key`.
     Key(String),
     /// The agent credential file only (`WHK_AUTH=agent`).
     Agent,
@@ -78,19 +82,37 @@ enum TokenSource {
     Login,
 }
 
-fn token_source(key: Option<String>, agent_only: bool) -> TokenSource {
-    match (key, agent_only) {
-        (Some(key), _) => TokenSource::Key(key),
-        (None, true) => TokenSource::Agent,
-        (None, false) => TokenSource::Login,
+/// What `WHK_AUTH` asks for.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum AuthMode {
+    /// Unset (or anything else): the login, else the agent file. A
+    /// `WHK_API_KEY` in the environment is ignored, since it is often there
+    /// for the SDKs and may name another account.
+    Default,
+    /// `WHK_AUTH=key`: the key in `WHK_API_KEY` (the SDKs' `share()` and the
+    /// MCP server's `share_port` set both).
+    Key,
+    /// `WHK_AUTH=agent`: the agent credential file, not `token.json`.
+    Agent,
+}
+
+fn token_source(key: Option<String>, mode: AuthMode) -> TokenSource {
+    match (mode, key) {
+        (AuthMode::Key, Some(key)) => TokenSource::Key(key),
+        (AuthMode::Agent, _) => TokenSource::Agent,
+        _ => TokenSource::Login,
     }
 }
 
-/// `WHK_AUTH=agent`: use the agent credential file, not `token.json`.
-fn agent_only() -> bool {
-    std::env::var("WHK_AUTH")
-        .map(|v| v.trim().eq_ignore_ascii_case("agent"))
-        .unwrap_or(false)
+fn auth_mode() -> AuthMode {
+    match std::env::var("WHK_AUTH")
+        .map(|v| v.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        Ok("key") => AuthMode::Key,
+        Ok("agent") => AuthMode::Agent,
+        _ => AuthMode::Default,
+    }
 }
 
 /// `WHK_API_KEY`, trimmed; unset or blank is none.
@@ -102,19 +124,21 @@ fn env_api_key() -> Option<String> {
 }
 
 impl ApiClient {
-    /// Create a new API client. An API key in `WHK_API_KEY` wins (the SDK's
-    /// `share()` and the MCP server's `share_port` pass theirs that way);
-    /// otherwise the token comes from disk, and without one a live
-    /// `claimed` slot in the agent credential file (`WHK_AGENT_FILE` or the
-    /// default path) supplies the bearer. `WHK_AUTH=agent` skips the token
-    /// on disk, so a program running on an agent's connection starts `whk`
-    /// on the same account rather than this machine's login. URLs come
-    /// from env.
+    /// Create a new API client. The token comes from disk, and without one
+    /// a live `claimed` slot in the agent credential file (`WHK_AGENT_FILE`
+    /// or the default path) supplies the bearer. `WHK_AUTH=key` uses the API
+    /// key in `WHK_API_KEY` instead (the SDKs' `share()` and the MCP server's
+    /// `share_port` start `whk` that way); without `WHK_AUTH=key` that
+    /// variable is ignored. `WHK_AUTH=agent` skips the token on disk, so a
+    /// program running on an agent's connection starts `whk` on the same
+    /// account rather than this machine's login. URLs come from env.
     pub fn new(
         base_url_override: Option<&str>,
         webhook_url_override: Option<&str>,
     ) -> Result<Self> {
-        let token = match token_source(env_api_key(), agent_only()) {
+        let source = token_source(env_api_key(), auth_mode());
+        let env_key = matches!(source, TokenSource::Key(_));
+        let token = match source {
             TokenSource::Key(key) => Some(key),
             TokenSource::Agent => None,
             TokenSource::Login => auth::load_token()?.map(|t| t.access_token),
@@ -124,7 +148,10 @@ impl ApiClient {
             .or_else(|| std::env::var("WHK_API_URL").ok())
             .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
         let agents = CredentialStore::locate(base.trim_end_matches('/'));
-        Self::with_credentials(Some(&base), webhook_url_override, token, Some(agents))
+        let mut client =
+            Self::with_credentials(Some(&base), webhook_url_override, token, Some(agents))?;
+        client.env_key = env_key;
+        Ok(client)
     }
 
     /// A client with an explicit login token and credential store (`None`:
@@ -180,17 +207,20 @@ impl ApiClient {
             base_url,
             webhook_url,
             bearer,
+            env_key: false,
         })
     }
 
     /// Set the auth token (used after login).
     pub fn set_token(&mut self, token: String) {
         self.bearer = Bearer::Token(token);
+        self.env_key = false;
     }
 
     pub fn auth_source(&self) -> AuthSource<'_> {
         match &self.bearer {
             Bearer::None => AuthSource::None,
+            Bearer::Token(_) if self.env_key => AuthSource::EnvKey,
             Bearer::Token(_) => AuthSource::Login,
             Bearer::Agent(session) => AuthSource::Agent(session),
         }
@@ -303,17 +333,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_api_key_wins_then_agent_only_then_the_login() {
+    fn auth_status_names_a_key_from_the_environment() {
+        let mut client =
+            ApiClient::with_credentials(Some("http://x"), None, Some("whcc_k".into()), None)
+                .unwrap();
+        assert!(matches!(client.auth_source(), AuthSource::Login));
+        client.env_key = true;
+        assert!(matches!(client.auth_source(), AuthSource::EnvKey));
+        // A login made in this process is the login again.
+        client.set_token("whcc_new".into());
+        assert!(matches!(client.auth_source(), AuthSource::Login));
+    }
+
+    #[test]
+    fn an_api_key_counts_only_with_whk_auth_key() {
+        let key = || Some("whcc_k".to_string());
         assert_eq!(
-            token_source(Some("whcc_k".into()), true),
+            token_source(key(), AuthMode::Key),
             TokenSource::Key("whcc_k".into())
         );
-        assert_eq!(
-            token_source(Some("whcc_k".into()), false),
-            TokenSource::Key("whcc_k".into())
-        );
-        assert_eq!(token_source(None, true), TokenSource::Agent);
-        assert_eq!(token_source(None, false), TokenSource::Login);
+        // A WHK_API_KEY left in the shell for the SDKs never replaces the
+        // login, nor the agent file the program asked for.
+        assert_eq!(token_source(key(), AuthMode::Default), TokenSource::Login);
+        assert_eq!(token_source(key(), AuthMode::Agent), TokenSource::Agent);
+        // WHK_AUTH=key without a key falls back to the login.
+        assert_eq!(token_source(None, AuthMode::Key), TokenSource::Login);
+        assert_eq!(token_source(None, AuthMode::Agent), TokenSource::Agent);
+        assert_eq!(token_source(None, AuthMode::Default), TokenSource::Login);
     }
 
     #[test]

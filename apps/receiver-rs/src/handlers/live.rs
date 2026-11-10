@@ -14,9 +14,9 @@
 //! (503, the account's streams are in use), `refused` (502, an answer the
 //! edge does not pass back: a download, a type no API answers with, or one
 //! over [`MAX_ANSWER_BYTES`]; or, as a 404, our own secret or path, which is
-//! a fault on our side). The header is removed before the answer goes out. When the edge itself cannot be reached the sender gets
-//! 502, and a capture past the account's live relays gets 503 with
-//! `Retry-After`.
+//! a fault on our side). The header is removed before the answer goes out.
+//! When the edge itself cannot be reached the sender gets 502, and a capture
+//! past the account's live relays gets 503 with `Retry-After`.
 //!
 //! The app's answer streams through to the sender as it arrives; only its
 //! first 64 KB are kept on the side. An answer that runs past
@@ -46,6 +46,41 @@ use crate::metrics;
 
 /// Request header carrying the shared secret to the edge's relay port.
 pub const RELAY_AUTH_HEADER: &str = "x-whk-relay-auth";
+/// The captured request's id, on the relay call: the edge names it to the CLI
+/// (so `whk tunnel --live` forwards none of its captures twice) and takes it
+/// off before the app sees the request. A sender's own copy is dropped.
+pub const REQUEST_ID_HEADER: &str = "x-whk-request-id";
+
+/// When the last "live but not configured" warning went out (seconds since
+/// the epoch), to warn at most once a minute.
+static NOT_CONFIGURED_WARNED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A capture the database calls live while this receiver has no relay
+/// (`EDGE_RELAY_URL` unset): it is answered like any capture, counted as
+/// `live.not_configured`, and warned about at most once a minute, since the
+/// CLI shows "live" while senders get the mock.
+pub fn not_configured() {
+    crate::metrics::live("not_configured");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let last = NOT_CONFIGURED_WARNED.load(std::sync::atomic::Ordering::Relaxed);
+    if now.saturating_sub(last) >= 60
+        && NOT_CONFIGURED_WARNED
+            .compare_exchange(
+                last,
+                now,
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_ok()
+    {
+        tracing::warn!(
+            "a live endpoint captured, but EDGE_RELAY_URL is not set: answered like any capture"
+        );
+    }
+}
 /// The edge's mark on its answers.
 pub const LIVE_HEADER: &str = "x-whk-live";
 /// How much of an answer's body the row keeps.
@@ -156,6 +191,9 @@ pub struct LiveRequest<'a> {
     pub raw_query: Option<&'a str>,
     pub headers: &'a HeaderMap,
     pub body: Bytes,
+    /// The captured request's id, sent to the edge in [`REQUEST_ID_HEADER`]
+    /// so the CLI knows the relay carried it.
+    pub request_id: Option<&'a str>,
 }
 
 /// A [`LiveRequest`] that owns its parts, to relay in a task of its own.
@@ -168,6 +206,7 @@ pub struct OwnedLiveRequest {
     pub raw_query: Option<String>,
     pub headers: HeaderMap,
     pub body: Bytes,
+    pub request_id: Option<String>,
 }
 
 impl OwnedLiveRequest {
@@ -181,6 +220,7 @@ impl OwnedLiveRequest {
             raw_query: self.raw_query.as_deref(),
             headers: &self.headers,
             body: self.body.clone(),
+            request_id: self.request_id.as_deref(),
         }
     }
 }
@@ -300,6 +340,12 @@ impl LiveRelay {
         );
         if let Ok(secret) = HeaderValue::from_str(&self.config.secret) {
             headers.insert(HeaderName::from_static(RELAY_AUTH_HEADER), secret);
+        }
+        if let Some(id) = request
+            .request_id
+            .and_then(|id| HeaderValue::from_str(id).ok())
+        {
+            headers.insert(HeaderName::from_static(REQUEST_ID_HEADER), id);
         }
         let sent = self
             .client
@@ -558,6 +604,7 @@ pub fn relay_headers(headers: &HeaderMap) -> HeaderMap {
         if super::webhook::is_proxy_header(lower)
             || HOP_BY_HOP.contains(&lower)
             || lower == RELAY_AUTH_HEADER
+            || lower == REQUEST_ID_HEADER
         {
             continue;
         }
@@ -813,11 +860,18 @@ mod tests {
         headers.append("connection", HeaderValue::from_static("keep-alive"));
         headers.append("host", HeaderValue::from_static("go.webhooks.cc"));
         headers.append(RELAY_AUTH_HEADER, HeaderValue::from_static("forged"));
+        headers.append(REQUEST_ID_HEADER, HeaderValue::from_static("forged-id"));
         let out = relay_headers(&headers);
         assert_eq!(out.get("content-type").unwrap(), "application/json");
         assert_eq!(out.get("x-signature").unwrap(), "abc");
         assert_eq!(out.get_all("x-multi").iter().count(), 2);
-        for gone in ["cf-connecting-ip", "connection", "host", RELAY_AUTH_HEADER] {
+        for gone in [
+            "cf-connecting-ip",
+            "connection",
+            "host",
+            RELAY_AUTH_HEADER,
+            REQUEST_ID_HEADER,
+        ] {
             assert!(out.get(gone).is_none(), "{gone} should be dropped");
         }
     }
@@ -918,6 +972,7 @@ mod tests {
             raw_query: Some("x=1"),
             headers,
             body: Bytes::from_static(br#"{"id":1}"#),
+            request_id: Some("3f2a8c1e-0000-4000-8000-000000000001"),
         }
     }
 
@@ -951,6 +1006,7 @@ mod tests {
                 raw_query: None,
                 headers: HeaderMap::new(),
                 body: Bytes::from_static(b"{}"),
+                request_id: None,
             },
             move |recorded| {
                 let _ = tx.send(recorded);
@@ -970,6 +1026,20 @@ mod tests {
         assert_eq!(record.outcome, "answered");
     }
 
+    #[test]
+    fn a_live_capture_without_a_relay_warns_at_most_once_a_minute() {
+        NOT_CONFIGURED_WARNED.store(0, std::sync::atomic::Ordering::Relaxed);
+        not_configured();
+        let first = NOT_CONFIGURED_WARNED.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(first > 0, "the first one warns");
+        not_configured();
+        assert_eq!(
+            NOT_CONFIGURED_WARNED.load(std::sync::atomic::Ordering::Relaxed),
+            first,
+            "the next within the minute does not"
+        );
+    }
+
     #[tokio::test]
     async fn the_apps_answer_reaches_the_sender_and_the_row() {
         let base = fake_edge(|req: Request| {
@@ -978,6 +1048,12 @@ mod tests {
             assert_eq!(req.uri().path(), "/v1/live/ep_1/orders");
             assert_eq!(req.uri().query(), Some("x=1"));
             assert_eq!(req.headers().get(RELAY_AUTH_HEADER).unwrap(), "s3cret");
+            // The capture's id, for the CLI, once.
+            assert_eq!(
+                req.headers().get(REQUEST_ID_HEADER).unwrap(),
+                "3f2a8c1e-0000-4000-8000-000000000001"
+            );
+            assert_eq!(req.headers().get_all(REQUEST_ID_HEADER).iter().count(), 1);
             assert_eq!(req.method(), Method::POST);
             // Where the sender sent it, for the app to rebuild the URL.
             assert_eq!(

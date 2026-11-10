@@ -968,6 +968,9 @@ async fn handle_webhook_inner(
 
                     // A live endpoint: the app answers, not the mock or the
                     // rules, and the row records what it said.
+                    if capture.live && state.live.is_none() {
+                        super::live::not_configured();
+                    }
                     if capture.live
                         && let Some(ref live) = state.live
                         && let Some(ref endpoint_id) = capture.endpoint_id
@@ -991,6 +994,7 @@ async fn handle_webhook_inner(
                                 raw_query: raw_query.clone(),
                                 headers: headers.clone(),
                                 body: body.clone(),
+                                request_id: request_id.clone(),
                             },
                             move |record| {
                                 if let Some(request_id) = request_id {

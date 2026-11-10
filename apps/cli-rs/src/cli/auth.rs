@@ -90,6 +90,27 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
 }
 
 pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
+    // WHK_AUTH=key: the key in WHK_API_KEY acts, whatever the saved login.
+    if matches!(client.auth_source(), AuthSource::EnvKey) {
+        if json {
+            println!(
+                "{}",
+                serde_json::json!({ "logged_in": true, "via": "api_key_env" })
+            );
+        } else {
+            println!(
+                "  {} Using the API key in {} ({})",
+                green("●"),
+                bold("WHK_API_KEY"),
+                dim("WHK_AUTH=key")
+            );
+            println!(
+                "  {}",
+                dim("Unset WHK_AUTH to use this machine's login (whk auth login) instead.")
+            );
+        }
+        return Ok(());
+    }
     match auth::load_token()? {
         Some(token) => {
             if json {

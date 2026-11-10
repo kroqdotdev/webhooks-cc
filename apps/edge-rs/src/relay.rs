@@ -40,7 +40,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::net::TcpListener;
-use whk_tunnel::{EdgeMessage, HEADER_NOTHING_LISTENING};
+use whk_tunnel::{EdgeMessage, HEADER_NOTHING_LISTENING, HEADER_REQUEST_ID};
 
 use crate::{Body, State, header_str, pages};
 
@@ -256,6 +256,18 @@ fn said(status: StatusCode, live: &'static str, message: &str) -> Response<Body>
     response.body(pages::full(body)).unwrap()
 }
 
+/// The receiver's capture id ([`HEADER_REQUEST_ID`]), when it is a plain id
+/// (letters, digits and hyphens, at most 64).
+fn request_id_of(headers: &http::HeaderMap) -> Option<String> {
+    header_str(headers, HEADER_REQUEST_ID)
+        .filter(|id| {
+            !id.is_empty()
+                && id.len() <= 64
+                && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+        .map(str::to_string)
+}
+
 async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     let authorized = header_str(req.headers(), AUTH_HEADER)
         .is_some_and(|given| crate::control::same_secret(given, &state.config.edge_secret));
@@ -283,12 +295,16 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     };
     let started = Instant::now();
     let method = req.method().to_string();
+    // The captured request's id, from the receiver, so the CLI knows which
+    // captures this relay carried (and forwards none of them twice).
+    let request_id = request_id_of(req.headers());
     let unreachable = |session: &crate::registry::Session, status: u16| {
         session.notify(&EdgeMessage::Request {
             method: method.clone(),
             path: rest.clone(),
             status,
             ms: started.elapsed().as_millis() as u64,
+            request_id: request_id.clone(),
         });
     };
     let Ok(stream) = session.opener.open().await else {
@@ -318,6 +334,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     parts.uri = rest.parse().unwrap_or_else(|_| http::Uri::from_static("/"));
     parts.version = http::Version::HTTP_11;
     parts.headers.remove(AUTH_HEADER);
+    parts.headers.remove(HEADER_REQUEST_ID);
     // Webhooks do not upgrade: one request, one answer.
     crate::strip_hop_by_hop(&mut parts.headers, false);
     let local_host = format!("localhost:{}", session.port);
@@ -390,6 +407,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
         path: rest.clone(),
         status: status.as_u16(),
         ms: started.elapsed().as_millis() as u64,
+        request_id: request_id.clone(),
     });
     parts
         .headers
@@ -595,7 +613,8 @@ mod tests {
         let state = state();
         let port = app(|req: Request<Incoming>| async move {
             let host = header_str(req.headers(), "host").unwrap_or("").to_string();
-            let auth = req.headers().contains_key(AUTH_HEADER);
+            let auth = req.headers().contains_key(AUTH_HEADER)
+                || req.headers().contains_key(HEADER_REQUEST_ID);
             let path = req.uri().to_string();
             let body = req.into_body().collect().await.unwrap().to_bytes();
             Response::builder()
@@ -614,6 +633,7 @@ mod tests {
         let response = reqwest::Client::new()
             .post(format!("{base}/v1/live/ep1/hooks/stripe?x=1"))
             .header(AUTH_HEADER, "s")
+            .header(HEADER_REQUEST_ID, "3f2a8c1e-0000-4000-8000-000000000001")
             .body("{\"id\":\"evt_1\"}")
             .send()
             .await
@@ -625,6 +645,29 @@ mod tests {
             response.text().await.unwrap(),
             format!("localhost:{port}|false|/hooks/stripe?x=1|{{\"id\":\"evt_1\"}}")
         );
+    }
+
+    #[test]
+    fn the_capture_id_is_taken_only_when_it_is_a_plain_id() {
+        let mut headers = http::HeaderMap::new();
+        assert_eq!(request_id_of(&headers), None);
+        headers.insert(
+            HEADER_REQUEST_ID,
+            HeaderValue::from_static("3f2a8c1e-0000-4000"),
+        );
+        assert_eq!(
+            request_id_of(&headers).as_deref(),
+            Some("3f2a8c1e-0000-4000")
+        );
+        for bad in ["", "a b", "a/b", "a\"b"] {
+            headers.insert(HEADER_REQUEST_ID, HeaderValue::from_str(bad).unwrap());
+            assert_eq!(request_id_of(&headers), None, "{bad:?}");
+        }
+        headers.insert(
+            HEADER_REQUEST_ID,
+            HeaderValue::from_str(&"a".repeat(65)).unwrap(),
+        );
+        assert_eq!(request_id_of(&headers), None);
     }
 
     #[tokio::test]

@@ -35,8 +35,13 @@ ARG GIT_SHA=
 # The access log goes to a volume mounted at /var/log/edge (14 days).
 # EDGE_WORDS_FILE must name the private list of brands and lure words,
 # mounted read-only; the edge refuses to start without it.
+# The control (4001) and relay (4002) ports listen on every interface inside
+# the container, so stops, password changes and live relays work without
+# further settings; publish them on the private address only (ops does).
 ENV GIT_SHA=$GIT_SHA \
     LISTEN=0.0.0.0:4000 \
+    CONTROL_LISTEN=0.0.0.0:4001 \
+    RELAY_LISTEN=0.0.0.0:4002 \
     ACCESS_LOG_DIR=/var/log/edge
 
 USER edge

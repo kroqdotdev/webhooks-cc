@@ -856,6 +856,7 @@ async fn proxy(
                 path,
                 status: 503,
                 ms: started.elapsed().as_millis() as u64,
+                request_id: None,
             });
             return pages::no_answer(session.port, &report);
         }
@@ -869,6 +870,7 @@ async fn proxy(
             path,
             status: page.status().as_u16(),
             ms: started.elapsed().as_millis() as u64,
+            request_id: None,
         });
         return page;
     }
@@ -884,6 +886,7 @@ async fn proxy(
                     path,
                     status: 503,
                     ms: started.elapsed().as_millis() as u64,
+                    request_id: None,
                 });
                 return pages::no_answer(session.port, &report);
             }
@@ -924,6 +927,7 @@ async fn proxy(
                 path: path.clone(),
                 status: page.status().as_u16(),
                 ms: started.elapsed().as_millis() as u64,
+                request_id: None,
             });
             if session.limits.should_warn_blocked(Instant::now()) {
                 session.notify(&EdgeMessage::Notice {
@@ -942,6 +946,7 @@ async fn proxy(
         path: path.clone(),
         status: status.as_u16(),
         ms: started.elapsed().as_millis() as u64,
+        request_id: None,
     });
 
     if status == StatusCode::SWITCHING_PROTOCOLS {
@@ -1105,6 +1110,7 @@ fn debugger_refused(
         path,
         status: page.status().as_u16(),
         ms: started.elapsed().as_millis() as u64,
+        request_id: None,
     });
     if session.limits.should_warn_debugger() {
         session.notify(&EdgeMessage::Notice {

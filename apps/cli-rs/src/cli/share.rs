@@ -200,6 +200,7 @@ fn show_share_update(update: Update, local: &str, json: bool, qr: bool) {
             path,
             status,
             ms,
+            ..
         } => {
             if json {
                 Event::Request {

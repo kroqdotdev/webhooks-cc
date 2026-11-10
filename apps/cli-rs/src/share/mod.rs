@@ -109,6 +109,8 @@ pub enum Update {
         path: String,
         status: u16,
         ms: u64,
+        /// A relayed capture's id, from an edge that sends it.
+        request_id: Option<String>,
     },
     /// Something the edge said, as it is.
     Notice(String),
@@ -391,8 +393,8 @@ async fn once(
                             on(Update::Ready { name, url, expires_at, expires_in, notice, password });
                         }
                     }
-                    Ok(EdgeMessage::Request { method, path, status, ms }) => {
-                        on(Update::Request { method, path, status, ms });
+                    Ok(EdgeMessage::Request { method, path, status, ms, request_id }) => {
+                        on(Update::Request { method, path, status, ms, request_id });
                     }
                     Ok(EdgeMessage::Notice { text }) => on(Update::Notice(text)),
                     Ok(EdgeMessage::Closing { reason }) => return Ok(Ended::Closed(reason)),
