@@ -124,6 +124,10 @@ const nextConfig: NextConfig = {
   // content/docs (which the Dockerfile copies instead).
   outputFileTracingIncludes: {
     "/.well-known/agent-skills/**": ["../../plugins/webhooks-cc/skills/**/*.md"],
+    // The fonts of the generated Open Graph images (lib/og/image.tsx). A blog
+    // post's image is rendered at request time, so the files must be in the
+    // standalone output; the other images are made at build time.
+    "/blog/**": ["./assets/og/*"],
   },
   transpilePackages: ["@webhooks-cc/sdk"],
   experimental: {

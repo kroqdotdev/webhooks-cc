@@ -109,8 +109,9 @@ describe("webhook provider pages", () => {
         seo.title ?? "",
         seo.description ?? "",
         ...(seo.faq ?? []).flatMap((item) => [item.question, item.answer]),
-        ...(seo.reference ? [seo.reference.heading, seo.reference.intro] : []),
-        ...(seo.reference?.rows.flat() ?? []),
+        ...[...(seo.reference ? [seo.reference] : []), ...(seo.moreReferences ?? [])].flatMap(
+          (table) => [table.heading, table.intro, ...table.rows.flat()]
+        ),
       ].join(" ");
       expect(copy, page.slug).not.toContain(String.fromCharCode(0x2014));
       expect(
@@ -119,6 +120,7 @@ describe("webhook provider pages", () => {
           "2026-10-20T00:00:00.000Z",
           "2026-10-23T00:00:00.000Z",
           "2026-10-26T00:00:00.000Z",
+          "2026-11-10T00:00:00.000Z",
           `${SHARED_COPY_CHANGED}T00:00:00.000Z`,
         ],
         page.slug

@@ -20,6 +20,11 @@ const PRIVACY_UPDATED = new Date("2026-11-04T00:00:00.000Z");
 const MARKETING_PASS_UPDATED = new Date("2026-11-03T00:00:00.000Z");
 // Compare pages and their checklist, rechecked against each tool's own site.
 const COMPARE_UPDATED = new Date("2026-11-03T00:00:00.000Z");
+// /compare/smee: what smee.io is and how to use it, with gh webhook forward.
+const SMEE_COMPARE_UPDATED = new Date("2026-11-10T00:00:00.000Z");
+// The mail comparisons (Mailtrap, Mailosaur, MailSlurp), the compare index's
+// email checklist, and the rewrite of /email-testing that links to them.
+const EMAIL_TESTING_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 // /pricing, its own page since it stopped redirecting to the landing page.
 const PRICING_PAGE_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 
@@ -39,7 +44,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/email-testing",
     changeFrequency: "monthly",
     priority: 0.8,
-    lastModified: MARKETING_PASS_UPDATED,
+    lastModified: EMAIL_TESTING_UPDATED,
   },
   {
     path: "/email-to-webhook",
@@ -60,7 +65,12 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     lastModified: PRICING_PAGE_UPDATED,
   },
   // Docs pages are auto-generated from content/docs/ in app/sitemap.xml/route.ts
-  { path: "/compare", changeFrequency: "monthly", priority: 0.7, lastModified: COMPARE_UPDATED },
+  {
+    path: "/compare",
+    changeFrequency: "monthly",
+    priority: 0.7,
+    lastModified: EMAIL_TESTING_UPDATED,
+  },
   {
     path: "/compare/webhook-site",
     changeFrequency: "monthly",
@@ -107,13 +117,31 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare/smee",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: COMPARE_UPDATED,
+    lastModified: SMEE_COMPARE_UPDATED,
   },
   {
     path: "/compare/localtunnel",
     changeFrequency: "monthly",
     priority: 0.6,
     lastModified: COMPARE_UPDATED,
+  },
+  {
+    path: "/compare/mailtrap",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: EMAIL_TESTING_UPDATED,
+  },
+  {
+    path: "/compare/mailosaur",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: EMAIL_TESTING_UPDATED,
+  },
+  {
+    path: "/compare/mailslurp",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: EMAIL_TESTING_UPDATED,
   },
   // Blog pages are dynamically generated from Supabase in app/sitemap.xml/route.ts
   // /api-explorer is noindexed - client-only Scalar viewer, /docs/api owns this query
@@ -146,6 +174,45 @@ interface PageMetadataInput {
   canonical?: string;
 }
 
+/** The size of every generated Open Graph image (lib/og/image.tsx). */
+export const OG_IMAGE_SIZE = { width: 1200, height: 630 } as const;
+
+/**
+ * The compare pages, by the last part of their path. The sitemap list above
+ * is the one place every compare page is already named, so a page added
+ * there gets its generated image with no other step.
+ */
+export const COMPARE_PAGE_SLUGS: readonly string[] = PUBLIC_SITEMAP_PAGES.flatMap((page) => {
+  const match = /^\/compare\/([a-z0-9-]+)$/.exec(page.path);
+  return match ? [match[1]] : [];
+});
+
+/**
+ * The path of a page's generated Open Graph image, or null for a page that
+ * shares the static one. Each path is answered by an `opengraph-image` route
+ * beside the page (app/compare, app/webhooks, app/blog/[slug]).
+ */
+export function generatedOgImagePath(path: string): string | null {
+  if (path === "/compare" || path === "/webhooks") return `${path}/opengraph-image`;
+  const [, section, slug, ...rest] = path.split("/");
+  if (!slug || rest.length > 0) return null;
+  if (section === "compare") {
+    return COMPARE_PAGE_SLUGS.includes(slug) ? `${path}/opengraph-image` : null;
+  }
+  // Provider pages and blog posts only ask for metadata once they exist.
+  if (section === "webhooks" || section === "blog") return `${path}/opengraph-image`;
+  return null;
+}
+
+type SocialImages = NonNullable<NonNullable<Metadata["openGraph"]>["images"]>;
+
+/** `openGraph.images` and `twitter.images` for a page: its own image, or the shared one. */
+function socialImages(path: string, title: string): SocialImages {
+  const generated = generatedOgImagePath(path);
+  if (!generated) return [DEFAULT_OG_IMAGE_PATH];
+  return [{ url: generated, ...OG_IMAGE_SIZE, type: "image/png", alt: title }];
+}
+
 function toAbsoluteUrl(path: string): string {
   if (path === "/") {
     return SITE_URL;
@@ -163,6 +230,7 @@ export function createPageMetadata({
   canonical = path,
 }: PageMetadataInput): Metadata {
   const absoluteUrl = toAbsoluteUrl(path);
+  const images = socialImages(path, title);
 
   return {
     title,
@@ -177,13 +245,13 @@ export function createPageMetadata({
       siteName: SITE_NAME,
       title,
       description,
-      images: [DEFAULT_OG_IMAGE_PATH],
+      images,
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [DEFAULT_OG_IMAGE_PATH],
+      images,
     },
     robots: {
       index: !noIndex,
@@ -201,6 +269,7 @@ export function createDynamicBlogPostMetadata(post: BlogPostData): Metadata {
   const absoluteUrl = toAbsoluteUrl(`/blog/${post.slug}`);
   const publishedTime = post.publishedAt ? new Date(post.publishedAt).toISOString() : undefined;
   const modifiedTime = new Date(post.updatedAt).toISOString();
+  const images = socialImages(`/blog/${post.slug}`, title);
 
   return {
     title,
@@ -215,7 +284,7 @@ export function createDynamicBlogPostMetadata(post: BlogPostData): Metadata {
       siteName: SITE_NAME,
       title,
       description,
-      images: [DEFAULT_OG_IMAGE_PATH],
+      images,
       publishedTime,
       modifiedTime,
       section: post.category,
@@ -226,7 +295,7 @@ export function createDynamicBlogPostMetadata(post: BlogPostData): Metadata {
       card: "summary_large_image",
       title,
       description,
-      images: [DEFAULT_OG_IMAGE_PATH],
+      images,
     },
     robots: {
       index: true,

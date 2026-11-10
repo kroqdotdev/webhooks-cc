@@ -34,6 +34,9 @@ export function MailhooksFooter() {
       links: [
         { href: "/support", label: "Support" },
         { href: webhooks, label: "webhooks.cc" },
+        // Developer pages that live on webhooks.cc only (lib/site.ts): linked, not served here.
+        { href: `${webhooks}/email-testing`, label: "Email testing in CI" },
+        { href: `${webhooks}/compare#email-testing-tools`, label: "Compare email tools" },
         { href: `${webhooks}/privacy`, label: "Privacy" },
         { href: `${webhooks}/terms`, label: "Terms" },
         { href: `${webhooks}/subprocessors`, label: "Subprocessors" },

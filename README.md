@@ -6,6 +6,8 @@ Get a unique URL, point your webhook there, and see every request in real time. 
 
 **[Try it now →](https://webhooks.cc)**
 
+[![A Stripe test webhook captured on webhooks.cc: the request list, the event's parsed JSON body, and tabs for headers, raw body and signature](.github/assets/dashboard.png)](https://webhooks.cc)
+
 ## Getting Started
 
 1. Visit [webhooks.cc](https://webhooks.cc)

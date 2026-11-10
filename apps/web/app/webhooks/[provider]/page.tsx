@@ -126,7 +126,10 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
   const guide = GUIDE_BY_PROVIDER[page.slug];
   const comparison = COMPARISON_BY_PROVIDER[page.slug];
   const faqItems = buildFaq(page);
-  const reference = page.seo?.reference;
+  const references = [
+    ...(page.seo?.reference ? [page.seo.reference] : []),
+    ...(page.seo?.moreReferences ?? []),
+  ];
   const testSnippet = providerTestSnippet(page);
   const related = getRelatedProviderPages(page.slug);
 
@@ -186,7 +189,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               </span>
             )}
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-              Test {page.label} webhooks
+              {page.seo?.h1 ?? `Test ${page.label} webhooks`}
             </h1>
           </div>
           <p className="text-xl text-muted-foreground mb-6">
@@ -224,8 +227,8 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           </p>
         </div>
 
-        {reference && (
-          <section className="mb-12">
+        {references.map((reference) => (
+          <section key={reference.heading} className="mb-12">
             <h2 className="text-2xl md:text-3xl font-bold mb-4">{reference.heading}</h2>
             <p className="text-muted-foreground mb-6">{reference.intro}</p>
             <div className="ui-card ui-card-static overflow-x-auto">
@@ -267,7 +270,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               .
             </p>
           </section>
-        )}
+        ))}
 
         {/* How it works */}
         <section className="mb-12">

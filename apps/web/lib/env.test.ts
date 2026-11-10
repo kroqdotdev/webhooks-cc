@@ -29,6 +29,13 @@ describe("serverEnv", () => {
     expect((await loadServerEnv()).QUOTA_EMAILS_ENABLED).toBe(false);
   });
 
+  it("reads WELCOME_EMAILS_ENABLED from the environment, off by default", async () => {
+    vi.stubEnv("WELCOME_EMAILS_ENABLED", "");
+    expect((await loadServerEnv()).WELCOME_EMAILS_ENABLED).toBe(false);
+    vi.stubEnv("WELCOME_EMAILS_ENABLED", "true");
+    expect((await loadServerEnv()).WELCOME_EMAILS_ENABLED).toBe(true);
+  });
+
   it("takes the resolver forms Resolver.setServers() accepts", async () => {
     const list = "1.1.1.1, 9.9.9.9:53,[8.8.8.8]:53,2606:4700:4700::1111,[2001:4860:4860::8888]:53";
     vi.stubEnv("DOMAIN_DNS_SERVERS", list);

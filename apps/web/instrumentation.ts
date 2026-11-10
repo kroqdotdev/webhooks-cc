@@ -20,6 +20,12 @@ export async function register() {
       startQuotaEmailPoller();
     }
 
+    // One getting-started email per new account; opt-in, see WELCOME_EMAILS_ENABLED.
+    if (serverEnv().WELCOME_EMAILS_ENABLED) {
+      const { startWelcomeEmailPoller } = await import("./lib/welcome-emails");
+      startWelcomeEmailPoller();
+    }
+
     // Send forwarded email (lib/forwarding/worker.ts); see EMAIL_FORWARDING_WORKER.
     if (serverEnv().EMAIL_FORWARDING_WORKER) {
       const { startForwardingWorker } = await import("./lib/forwarding/worker");
