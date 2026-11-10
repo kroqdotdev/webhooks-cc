@@ -1,0 +1,6 @@
+{
+  "title": "Pages recover from a stale cached copy",
+  "items": [
+    "A page that picked up code from an earlier release out of the browser's cache now reloads itself once instead of showing an error"
+  ]
+}

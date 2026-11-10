@@ -90,6 +90,26 @@ describe("isChunkLoadError", () => {
     expect(isChunkLoadError(new Error("Cannot read properties of undefined"))).toBe(false);
     expect(isChunkLoadError(null)).toBe(false);
   });
+
+  it("recognizes a lazy component that resolved to nothing, the other sign of mixed builds", () => {
+    expect(
+      isChunkLoadError(
+        new Error(
+          "Minified React error #306; visit https://react.dev/errors/306?args[]=undefined&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        )
+      )
+    ).toBe(true);
+    expect(
+      isChunkLoadError(
+        new Error(
+          "Element type is invalid. Received a promise that resolves to: undefined. Lazy element type must resolve to a class or function."
+        )
+      )
+    ).toBe(true);
+    // Other React errors are ours to fix, not a reason to reload.
+    expect(isChunkLoadError(new Error("Minified React error #3060; visit ..."))).toBe(false);
+    expect(isChunkLoadError(new Error("Minified React error #418; visit ..."))).toBe(false);
+  });
 });
 
 describe("tryReloadOnChunkError", () => {
@@ -130,6 +150,17 @@ describe("tryReloadOnChunkError", () => {
 
     const error = new Error("Loading chunk 1 failed");
     expect(tryReloadOnChunkError(error)).toBe(true);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads when a lazy component resolved to nothing", () => {
+    const reloadMock = vi.fn();
+    vi.stubGlobal("window", {
+      location: { reload: reloadMock },
+      sessionStorage: { getItem: () => null, setItem: () => {} },
+    });
+
+    expect(tryReloadOnChunkError(new Error("Minified React error #306; visit ..."))).toBe(true);
     expect(reloadMock).toHaveBeenCalledTimes(1);
   });
 });
