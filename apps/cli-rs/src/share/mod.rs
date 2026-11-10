@@ -226,10 +226,12 @@ fn doubled(wait: Duration) -> Duration {
 
 /// Whether a refusal ends the share as a stop rather than an error: once it
 /// has been live, a refusal on reconnecting means it was ended meanwhile
-/// (stopped on webhooks.cc, the time limit, a plan change), and 410 always
-/// means it was stopped.
+/// (stopped on webhooks.cc, the time limit, a plan change, or the key
+/// revoked, a 401 that a fresh agent token did not cure), and 410 always
+/// means it was stopped. The caller spends the one token refresh on a 401
+/// before asking.
 fn refusal_is_a_stop(status: u16, was_live: bool) -> bool {
-    status == 410 || (was_live && status != 401)
+    status == 410 || was_live
 }
 
 /// Runs the session until the edge closes it or a refusal ends a share
@@ -595,6 +597,13 @@ pub fn parse_local_target(target: &str) -> Result<(LocalTarget, String)> {
     if lower.starts_with("https://") {
         bail!(
             "Local HTTPS servers aren't supported: whk talks plain HTTP to your app. Serve it over HTTP (most dev servers do by default) and give that port, such as 3000."
+        );
+    }
+    if let Some((scheme, _)) = lower.split_once("://")
+        && scheme != "http"
+    {
+        bail!(
+            "{scheme}:// isn't something whk can forward to: it speaks plain HTTP to a local web server. Give that server's port, such as 3000, or http://localhost:3000."
         );
     }
     let rest = if lower.starts_with("http://") {

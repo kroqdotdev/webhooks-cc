@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 51 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 57 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-11-10
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 51 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 57 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -585,7 +585,7 @@ Share a local port at `https://<name>.sharehooks.cc` by running `whk share` on y
 
 ### list_shares
 
-List your shares and live tunnels: running ones first, then the latest that ended, with this month's shared data and your plan's sharing limits.
+List your shares and live tunnels: running ones first, then the latest that ended, with this month's shared data, your plan's sharing limits, and `hints` with the next step when the plan's slots or data run out (stop a share with `stop_share`, or wait for the month).
 
 | Parameter | Type     | Required | Description                                 |
 | --------- | -------- | -------- | ------------------------------------------- |
@@ -595,9 +595,55 @@ List your shares and live tunnels: running ones first, then the latest that ende
 
 Stop a share or live tunnel by its id (from `list_shares`). The CLI running it is told why and exits.
 
-| Parameter | Type     | Required | Description                     |
-| --------- | -------- | -------- | ------------------------------- |
+| Parameter | Type     | Required | Description                        |
+| --------- | -------- | -------- | ---------------------------------- |
 | `id`      | `string` | yes      | The share's id, from `list_shares` |
+
+### share_requests
+
+The last requests visitors made to a running preview, newest first: method, path, status, time taken, size, country, device and a number per visitor, never an address. `available` is `false` when the log could not be read just now. Use it to see whether the person opened the link and what failed for them.
+
+| Parameter | Type     | Required | Description                        |
+| --------- | -------- | -------- | ---------------------------------- |
+| `id`      | `string` | yes      | The share's id, from `list_shares` |
+
+### list_names
+
+Your reserved preview names (Pro and Business) and your teams': each with its link, whether it has a password, whether a preview runs under it now, and whether your plan still covers it (`usable`), plus how many your plan allows and how many you hold. No parameters.
+
+### reserve_name
+
+Reserve a name so `share_port` can use `https://<name>.sharehooks.cc`. Lowercase letters, digits and dashes; names that look like random ones or end in `-free` are refused.
+
+| Parameter | Type     | Required | Description                                                              |
+| --------- | -------- | -------- | ------------------------------------------------------------------------ |
+| `name`    | `string` | yes      | The name                                                                 |
+| `team`    | `string` | no       | A team's id or name (from `list_teams`): every member may share under it |
+
+### release_name
+
+Release a name you reserved (or, for a team name, as the team's owner). A preview running under it stops.
+
+| Parameter | Type     | Required | Description                 |
+| --------- | -------- | -------- | --------------------------- |
+| `name`    | `string` | yes      | The name, from `list_names` |
+
+### set_name_password
+
+Put a password on every preview under a name (Pro and Business). The password is not returned; give it to the person yourself.
+
+| Parameter  | Type     | Required | Description                                  |
+| ---------- | -------- | -------- | -------------------------------------------- |
+| `name`     | `string` | yes      | The name, from `list_names`                  |
+| `password` | `string` | yes      | What visitors must type, 8 to 200 characters |
+
+### clear_name_password
+
+Take the password off a name.
+
+| Parameter | Type     | Required | Description                 |
+| --------- | -------- | -------- | --------------------------- |
+| `name`    | `string` | yes      | The name, from `list_names` |
 
 ## Utilities
 

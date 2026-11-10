@@ -175,6 +175,10 @@ pub struct ShareRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShareRequestsResponse {
+    /// False when the edge could not be asked just now.
+    #[serde(default = "yes")]
+    pub available: bool,
+    /// Newest first.
     #[serde(default)]
     pub requests: Vec<ShareRequest>,
 }
@@ -204,8 +208,29 @@ pub struct TunnelName {
     pub password: bool,
     #[serde(default)]
     pub live: bool,
+    /// False for a name the plan no longer covers (past its count after a
+    /// downgrade, or a team whose subscription ended): kept, but nothing
+    /// can be shared under it until the plan grows or another is released.
+    #[serde(default = "yes")]
+    pub usable: bool,
     #[serde(default)]
     pub created_at: Option<ApiTime>,
+}
+
+/// A team's names and how many it may keep, when the API gives them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamNameCount {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// False while the team has no subscription.
+    #[serde(default = "yes")]
+    pub active: bool,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub used: Option<u32>,
 }
 
 /// `GET /api/tunnel-names`.
@@ -217,6 +242,17 @@ pub struct NamesResponse {
     pub limit: Option<u32>,
     #[serde(default)]
     pub used: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// Each team's own count, when the API gives it (team names count
+    /// against the team, not the person who kept them).
+    #[serde(
+        default,
+        alias = "teamNames",
+        alias = "teamCounts",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub teams: Vec<TeamNameCount>,
 }
 
 /// `POST /api/tunnel-names`.

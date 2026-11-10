@@ -32,6 +32,7 @@ import {
   type ConditionField,
   type EmailRequest,
   type LiveShare,
+  type TunnelShareList,
   type PayloadSchemaFormat,
   type Request,
   type VerifyProvider,
@@ -1116,6 +1117,43 @@ function shareSummary(live: LiveShare): Record<string, unknown> {
     password: live.password,
     notes: notes.join(" "),
   };
+}
+
+/**
+ * What an agent can do about the account's sharing limits, from a share
+ * list: the next step when slots or data run out, so it never has to send
+ * the person to the dashboard.
+ */
+export function shareHints(list: TunnelShareList): string[] {
+  const hints: string[] = [];
+  const limits = list.limits;
+  const usage = list.usage;
+  const previews = list.shares.filter((s) => s.kind !== "live" && !s.endedAt);
+  if (usage?.over) {
+    hints.push(
+      `This month's shared data is used up, so previews are paused until ${usage.resetsAt}. A larger plan (Pro 25 GB, Business 150 GB) raises it; the person upgrades on webhooks.cc.`
+    );
+  }
+  if (limits && previews.length >= limits.shares) {
+    hints.push(
+      `All ${limits.shares} of the plan's preview slots are in use: stop one with stop_share (its id is in shares) before share_port.`
+    );
+  }
+  if (limits && limits.sessionMinutes) {
+    hints.push(
+      `Previews on this plan stop after ${limits.sessionMinutes} minutes; share_port again gives a new link.`
+    );
+  }
+  if (limits && !limits.passwords) {
+    hints.push("Passwords and reserved names come with Pro and Business.");
+  }
+  return hints;
+}
+
+/** A share list with the hints added, for list_shares and share_port. */
+function withShareHints(list: TunnelShareList): Record<string, unknown> {
+  const hints = shareHints(list);
+  return hints.length > 0 ? { ...list, hints } : { ...list };
 }
 
 /**
@@ -2542,17 +2580,39 @@ export function registerTools(
         started.delete(port);
         await running.stop();
       }
-      const live = await client.shares.start({
-        port,
-        ...(name ? { name } : {}),
-        ...(password ? { password } : {}),
-        ...(process.env.WHK_PATH ? { whkPath: process.env.WHK_PATH } : {}),
-      });
+      let live: LiveShare;
+      try {
+        live = await client.shares.start({
+          port,
+          ...(name ? { name } : {}),
+          ...(password ? { password } : {}),
+          ...(process.env.WHK_PATH ? { whkPath: process.env.WHK_PATH } : {}),
+        });
+      } catch (error) {
+        // whk's own words, plus what an agent can do here without the
+        // dashboard: see what runs and the plan's limits, free a slot.
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${message} With these tools: list_shares shows what runs and the plan's limits, stop_share frees a slot, list_names shows the names you can use.`
+        );
+      }
       started.set(port, live);
       void live.closed.then(() => {
         if (started.get(port) === live) started.delete(port);
       });
-      return jsonContent(shareSummary(live));
+      const summary: Record<string, unknown> = shareSummary(live);
+      // The plan's limits and this month's data, so the agent knows what is
+      // left; a failure here never hides the link.
+      try {
+        const list = await client.shares.list({ state: "live" });
+        summary.limits = list.limits;
+        summary.usage = list.usage;
+        const hints = shareHints(list);
+        if (hints.length > 0) summary.hints = hints;
+      } catch {
+        // The link is what matters.
+      }
+      return jsonContent(summary);
     })
   );
 
@@ -2566,7 +2626,7 @@ export function registerTools(
         .describe("Only the running ones, or only the ended ones"),
     },
     withErrorHandling(async ({ state }) => {
-      return jsonContent(await client.shares.list(state ? { state } : {}));
+      return jsonContent(withShareHints(await client.shares.list(state ? { state } : {})));
     })
   );
 
@@ -2579,6 +2639,78 @@ export function registerTools(
     withErrorHandling(async ({ id }) => {
       await client.shares.stop(id);
       return jsonContent({ stopped: id });
+    })
+  );
+
+  server.tool(
+    "share_requests",
+    "The last requests visitors made to a running preview (from list_shares), newest first: method, path, status, time, size, country, device and a number per visitor, never an address. Use it to see whether the person opened the link and what failed for them. `available` is false when the log could not be read just now.",
+    {
+      id: z.string().describe("The share's id, from list_shares"),
+    },
+    withErrorHandling(async ({ id }) => {
+      return jsonContent(await client.shares.requests(id));
+    })
+  );
+
+  server.tool(
+    "list_names",
+    "List the reserved preview names you can share under (Pro and Business): your own and your teams', each with its link, whether it has a password, whether a preview runs under it now, and whether your plan still covers it (usable). Includes how many your plan allows and how many you hold. Share under one with share_port and its name.",
+    {},
+    withErrorHandling(async () => {
+      return jsonContent(await client.names.list());
+    })
+  );
+
+  server.tool(
+    "reserve_name",
+    "Reserve a preview name, so share_port can use the link https://<name>.sharehooks.cc (Pro and Business). Lowercase letters, digits and dashes; names that look like random ones or end in -free are refused. With team, the name belongs to that team and every member may share under it.",
+    {
+      name: z.string().min(1).max(63).describe("The name: lowercase letters, digits and dashes"),
+      team: z
+        .string()
+        .optional()
+        .describe("A team's id or name (from list_teams), to keep the name inside that team"),
+    },
+    withErrorHandling(async ({ name, team }) => {
+      return jsonContent(await client.names.reserve(name, team ? { team } : {}));
+    })
+  );
+
+  server.tool(
+    "release_name",
+    "Release a reserved preview name you kept (or, for a team name, as the team's owner). A preview running under it stops, and the link stops working.",
+    {
+      name: z.string().min(1).max(63).describe("The name, from list_names"),
+    },
+    withErrorHandling(async ({ name }) => {
+      await client.names.release(name);
+      return jsonContent({ released: name });
+    })
+  );
+
+  server.tool(
+    "set_name_password",
+    "Put a password on every preview under a reserved name (Pro and Business): visitors must type it before the page opens. The password is not shown back; give it to the person yourself.",
+    {
+      name: z.string().min(1).max(63).describe("The name, from list_names"),
+      password: z.string().min(8).max(200).describe("What visitors must type, 8 to 200 characters"),
+    },
+    withErrorHandling(async ({ name, password }) => {
+      await client.names.setPassword(name, password);
+      return jsonContent({ name, password: true });
+    })
+  );
+
+  server.tool(
+    "clear_name_password",
+    "Take the password off a reserved name, so its previews open without one.",
+    {
+      name: z.string().min(1).max(63).describe("The name, from list_names"),
+    },
+    withErrorHandling(async ({ name }) => {
+      await client.names.clearPassword(name);
+      return jsonContent({ name, password: false });
     })
   );
 

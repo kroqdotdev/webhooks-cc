@@ -150,11 +150,14 @@ async fn main() -> Result<()> {
         Some(Command::Shares { action }) => match action {
             SharesAction::Ls { ended } => cli::share::list(&client, ended, args.json).await?,
             SharesAction::Stop { share } => cli::share::stop(&client, &share, args.json).await?,
+            SharesAction::Log { share } => cli::share::log(&client, &share, args.json).await?,
         },
 
         Some(Command::Names { action }) => match action {
             NamesAction::Ls => cli::share::names(&client, args.json).await?,
-            NamesAction::Reserve { name } => cli::share::reserve(&client, &name, args.json).await?,
+            NamesAction::Reserve { name, team } => {
+                cli::share::reserve(&client, &name, team.as_deref(), args.json).await?
+            }
             NamesAction::Release { name } => cli::share::release(&client, &name, args.json).await?,
             NamesAction::Password { name, clear } => {
                 cli::share::password(&client, &name, clear, args.json).await?

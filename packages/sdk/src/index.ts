@@ -283,6 +283,7 @@ export type {
   TunnelVisits,
   TunnelName,
   TunnelNameList,
+  TunnelTeamNameCount,
   CreateEndpointOptions,
   EndpointSite,
   UpdateEndpointOptions,

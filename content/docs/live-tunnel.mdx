@@ -31,14 +31,14 @@ Every request is still captured first, so the dashboard, CLI, SDKs and MCP serve
 
 ## What changes with --live
 
-|                           | `whk tunnel`                                   | `whk tunnel --live`                                         |
-| ------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
-| The sender gets           | The endpoint's mock response, or `200`, at once | Your local app's response                                   |
-| Your app gets the request | Replayed after the capture                     | While the sender waits                                      |
+|                           | `whk tunnel`                                    | `whk tunnel --live`                                                                                                                                |
+| ------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The sender gets           | The endpoint's mock response, or `200`, at once | Your local app's response                                                                                                                          |
+| Your app gets the request | Replayed after the capture                      | While the sender waits                                                                                                                             |
 | Request to your app       | Sensitive headers filtered, `-H` added          | The sender's request: method, path, headers and exact body, with `-H` added, plus `X-Forwarded-Host`, `X-Forwarded-Proto` and `X-Forwarded-Prefix` |
-| Mock responses and rules  | Answer the sender                              | Not used: your app answers                                  |
-| Stored with the request   | The answer the sender got                      | Your app's status, headers and the first 64 KB of its body  |
-| Emails                    | Posted to your server                          | Posted to your server, the same way                         |
+| Mock responses and rules  | Answer the sender                               | Not used: your app answers                                                                                                                         |
+| Stored with the request   | The answer the sender got                       | What the sender got from your app: status, headers as passed on, and the first 64 KB of the body                                                   |
+| Emails                    | Posted to your server                           | Posted to your server, the same way                                                                                                                |
 
 Because the request reaches your app as the sender sent it, your handler can check the provider's signature with your real signing secret, as it would in production.
 
@@ -64,11 +64,11 @@ Senders that retry on `5xx` will try again later, the way they would if your rea
 
 A live tunnel answers webhook senders, not browsers, so the answer is kept to what an API returns:
 
-- **Up to 1 MB.** A larger answer does not reach the sender, which gets an error instead.
-- **API-shaped types only:** JSON, XML, plain text and form data. Other types (HTML pages, images, files) and anything sent as a download (`Content-Disposition: attachment`) are refused the same way.
-- **No cookies or browser security headers.** `Set-Cookie`, `Strict-Transport-Security`, `Content-Security-Policy` and `X-Frame-Options` from your app are not passed on; the sender's copy carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` instead. The stored response shows your app's headers as it sent them.
+- **Up to 1 MB.** An answer that says it is larger gets the sender a `502` instead. One that streams past 1 MB without saying so is cut off there: the sender has already had the status and headers, so it gets a broken stream, and the request is stored with your app's status (often `200`) and the outcome `refused`. Treat `refused` as the sender having seen a failure.
+- **API-shaped types only:** JSON, XML, text (HTML included, under the sandbox below) and form data. Script, images, video, files and anything sent as a download (`Content-Disposition: attachment`) get the sender a `502`, and `whk` says why.
+- **No cookies or browser security headers.** `Set-Cookie`, `Strict-Transport-Security`, `Content-Security-Policy` and `X-Frame-Options` from your app are not passed on; the sender's copy carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` instead.
 
-Only the first 64 KB of the body is stored with the request.
+The stored response is what the sender got, not your app's raw answer: the headers above are already removed or added, and only the first 64 KB of the body is kept.
 
 ## Limits
 

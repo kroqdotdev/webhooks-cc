@@ -43,12 +43,15 @@ impl ApiClient {
         serde_json::from_str(&resp.body).context("failed to parse name list")
     }
 
-    /// `POST /api/tunnel-names` with `{name}`.
-    pub async fn reserve_name(&self, name: &str) -> Result<ReservedName> {
+    /// `POST /api/tunnel-names` with `{name}`, and `{team}` (a team id) to
+    /// keep it inside that team.
+    pub async fn reserve_name(&self, name: &str, team: Option<&str>) -> Result<ReservedName> {
         self.require_auth()?;
-        let resp = self
-            .post("/api/tunnel-names", &serde_json::json!({ "name": name }))
-            .await?;
+        let body = match team {
+            Some(team) => serde_json::json!({ "name": name, "team": team }),
+            None => serde_json::json!({ "name": name }),
+        };
+        let resp = self.post("/api/tunnel-names", &body).await?;
         serde_json::from_str(&resp.body).context("failed to parse reserved name")
     }
 

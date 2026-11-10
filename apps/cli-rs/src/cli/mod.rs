@@ -331,6 +331,12 @@ pub enum SharesAction {
         /// Share id or name
         share: String,
     },
+    /// The last requests visitors made to a live share (newest first)
+    #[command(alias = "requests")]
+    Log {
+        /// Share id or name
+        share: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -342,6 +348,9 @@ pub enum NamesAction {
     Reserve {
         /// The name: lowercase letters, digits and dashes
         name: String,
+        /// Keep it inside a team (id or name), so every member may share under it
+        #[arg(long)]
+        team: Option<String>,
     },
     /// Let a name go
     Release {
@@ -738,9 +747,21 @@ mod tests {
         ));
         match parse(&["names", "reserve", "acme"]) {
             Some(Command::Names {
-                action: NamesAction::Reserve { name },
+                action: NamesAction::Reserve { name, team: None },
             }) => assert_eq!(name, "acme"),
             other => panic!("expected names reserve, got {other:?}"),
+        }
+        match parse(&["names", "reserve", "acme", "--team", "Acme Inc"]) {
+            Some(Command::Names {
+                action: NamesAction::Reserve { team, .. },
+            }) => assert_eq!(team.as_deref(), Some("Acme Inc")),
+            other => panic!("expected names reserve --team, got {other:?}"),
+        }
+        match parse(&["shares", "log", "acme"]) {
+            Some(Command::Shares {
+                action: SharesAction::Log { share },
+            }) => assert_eq!(share, "acme"),
+            other => panic!("expected shares log, got {other:?}"),
         }
         match parse(&["names", "release", "acme"]) {
             Some(Command::Names {

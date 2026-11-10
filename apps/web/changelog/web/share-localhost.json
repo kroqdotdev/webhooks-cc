@@ -4,6 +4,7 @@
     "whk share puts the site on your computer at a public link on sharehooks.cc, with live reload, reserved names and passwords on paid plans",
     "whk tunnel --live relays each webhook to your local app while the sender waits, so the sender gets your app's answer, and stores that answer with the request",
     "Sharing is included in every plan: Free gets 1 share at a time for 2 hours and 1 GB a month, Pro 3 shares, 3 names and 25 GB, Business 10 shares, 20 names and 150 GB",
+    "Agents need no dashboard for any of it: the MCP server has share_port, list_shares, stop_share, share_requests and tools for reserved names and their passwords, and whk has whk shares (ls, log, stop) and whk names",
     "New docs: Share localhost and Live tunnels; the ngrok comparison covers sharing"
   ]
 }

@@ -9,7 +9,10 @@ use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, sanitize, sanitize_line};
 use crate::share::events::Event;
 use crate::share::{self, Kind, Session, Update, duration, printable};
-use crate::types::{Share, SharesResponse, TunnelName, TunnelUsage};
+use crate::types::{
+    NamesResponse, Share, ShareRequestsResponse, SharesResponse, TunnelLimits, TunnelName,
+    TunnelUsage,
+};
 
 pub struct ShareOptions {
     pub target: String,
@@ -303,15 +306,87 @@ fn share_label(share: &Share) -> String {
     }
 }
 
-/// `whk shares ls`.
+/// `whk shares ls`: the shares, this month's data, the plan's limits and,
+/// for live shares, the names that can be shared under: everything the
+/// Shares page shows, so nothing needs the dashboard.
 pub async fn list(client: &ApiClient, ended: bool, json: bool) -> Result<()> {
     let result = client.list_shares(ended).await?;
+    // Names are a second call; a failure there never hides the shares.
+    let names = if ended {
+        None
+    } else {
+        client.list_names().await.ok()
+    };
     if json {
-        println!("{}", serde_json::to_string_pretty(&result)?);
+        let mut value = serde_json::to_value(&result)?;
+        if let (Some(names), Some(object)) = (&names, value.as_object_mut()) {
+            object.insert("names".to_string(), serde_json::to_value(names)?);
+        }
+        println!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(());
     }
     print_shares(&result, ended);
+    if let Some(limits) = &result.limits {
+        let live = result.shares.iter().filter(|s| s.kind != "live").count();
+        println!("  {}", dim(&limits_line(limits, live)));
+    }
+    if let Some(names) = &names
+        && let Some(line) = names_line(names)
+    {
+        println!("  {}", dim(&line));
+    }
     Ok(())
+}
+
+/// "Plan pro: 2 of 3 shares at once, no time limit, 25 GB a month,
+/// passwords on, no visitor notice."
+pub fn limits_line(limits: &TunnelLimits, live: usize) -> String {
+    let plan = limits.plan.as_deref().unwrap_or("your plan");
+    let mut parts = Vec::new();
+    if let Some(shares) = limits.shares {
+        let noun = if shares == 1 { "share" } else { "shares" };
+        parts.push(format!("{live} of {shares} {noun} at once"));
+    }
+    parts.push(match limits.session_minutes {
+        Some(minutes) if minutes % 60 == 0 => format!("{} h a share", minutes / 60),
+        Some(minutes) => format!("{minutes} min a share"),
+        None => "no time limit".to_string(),
+    });
+    if let Some(gb) = limits.data_gb {
+        parts.push(format!("{gb} GB a month"));
+    }
+    parts.push(if limits.passwords {
+        "passwords on".to_string()
+    } else {
+        "no passwords".to_string()
+    });
+    parts.push(if limits.notice {
+        "visitors see a notice first".to_string()
+    } else {
+        "no visitor notice".to_string()
+    });
+    format!("Plan {plan}: {}.", parts.join(", "))
+}
+
+/// "Names: acme, beta (2 of 3; whk names ls)", or None with none to use.
+fn names_line(names: &NamesResponse) -> Option<String> {
+    let usable: Vec<&str> = names
+        .names
+        .iter()
+        .filter(|n| n.usable)
+        .map(|n| n.name.as_str())
+        .collect();
+    if usable.is_empty() {
+        return None;
+    }
+    let count = match (names.used, names.limit) {
+        (Some(used), Some(limit)) if limit > 0 => format!("{used} of {limit}; "),
+        _ => String::new(),
+    };
+    Some(format!(
+        "Names to share under: {} ({count}whk share 3000 --name <name>)",
+        sanitize_line(&usable.join(", "))
+    ))
 }
 
 fn print_shares(result: &SharesResponse, ended: bool) {
@@ -410,6 +485,68 @@ pub async fn stop(client: &ApiClient, needle: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
+/// `whk shares log <id|name>`: the last requests visitors made to a live
+/// share, newest first, from the edge's memory (no addresses).
+pub async fn log(client: &ApiClient, needle: &str, json: bool) -> Result<()> {
+    let live = client.list_shares(false).await?;
+    let share = resolve_share(&live.shares, needle)?;
+    let result = client.share_requests(&share.id).await?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
+    print_log(&result);
+    Ok(())
+}
+
+fn print_log(result: &ShareRequestsResponse) {
+    if !result.available {
+        println!("  The request log can't be read just now. Try again in a moment.");
+        return;
+    }
+    if result.requests.is_empty() {
+        println!("  No visitors yet.");
+        return;
+    }
+    println!(
+        "  {}",
+        dim(&format!(
+            "{:<17} {:<7} {:<40} {:>6} {:>7} {:>9}  {}",
+            "TIME", "METHOD", "PATH", "STATUS", "MS", "DATA", "VISITOR"
+        ))
+    );
+    for r in &result.requests {
+        let visitor = match &r.visitor {
+            Some(serde_json::Value::Number(n)) => format!("#{n}"),
+            Some(serde_json::Value::String(s)) => sanitize_line(s),
+            _ => "-".to_string(),
+        };
+        let place = [r.device.as_deref(), r.country.as_deref()]
+            .into_iter()
+            .flatten()
+            .map(sanitize_line)
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "  {:<17} {:<7} {:<40} {:>6} {:>7} {:>9}  {}{}",
+            r.at.as_ref().map(|t| t.display()).unwrap_or_default(),
+            printable(&r.method, 7),
+            printable(&r.path, 40),
+            r.status
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "-".into()),
+            r.ms.map(|m| m.to_string()).unwrap_or_else(|| "-".into()),
+            r.bytes.map(data).unwrap_or_else(|| "-".into()),
+            visitor,
+            if place.is_empty() {
+                String::new()
+            } else {
+                format!(" ({place})")
+            },
+        );
+    }
+}
+
 /// `whk names ls`.
 pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
     let result = client.list_names().await?;
@@ -457,11 +594,30 @@ pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
             dim(&format!("{used} of {limit} names on your plan"))
         );
     }
+    for team in &result.teams {
+        if let (Some(used), Some(limit)) = (team.used, team.limit) {
+            let lapsed = if team.active {
+                ""
+            } else {
+                " (no subscription: its names wait until it subscribes again)"
+            };
+            println!(
+                "  {}",
+                dim(&format!(
+                    "{used} of {limit} names in team {}{lapsed}",
+                    sanitize_line(team.name.as_deref().or(team.id.as_deref()).unwrap_or("-"))
+                ))
+            );
+        }
+    }
     Ok(())
 }
 
 fn name_notes(name: &TunnelName) -> String {
     let mut notes = Vec::new();
+    if !name.usable {
+        notes.push("not usable on your plan".to_string());
+    }
     if name.live {
         notes.push("live now".to_string());
     }
@@ -476,9 +632,13 @@ fn name_notes(name: &TunnelName) -> String {
     notes.join(", ")
 }
 
-/// `whk names reserve <name>`.
-pub async fn reserve(client: &ApiClient, name: &str, json: bool) -> Result<()> {
-    let reserved = client.reserve_name(name).await?;
+/// `whk names reserve <name> [--team <id|name>]`.
+pub async fn reserve(client: &ApiClient, name: &str, team: Option<&str>, json: bool) -> Result<()> {
+    let team_id = match team {
+        Some(team) => Some(team_id(client, team).await?),
+        None => None,
+    };
+    let reserved = client.reserve_name(name, team_id.as_deref()).await?;
     if json {
         println!("{}", serde_json::to_string_pretty(&reserved)?);
     } else {
@@ -498,6 +658,31 @@ pub async fn reserve(client: &ApiClient, name: &str, json: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// A team named by id or by name (case does not matter), from the
+/// account's teams.
+async fn team_id(client: &ApiClient, wanted: &str) -> Result<String> {
+    let teams = client.list_teams().await?;
+    if let Some(team) = teams.iter().find(|t| t.id == wanted) {
+        return Ok(team.id.clone());
+    }
+    let matches: Vec<_> = teams
+        .iter()
+        .filter(|t| t.name.eq_ignore_ascii_case(wanted.trim()))
+        .collect();
+    match matches.as_slice() {
+        [team] => Ok(team.id.clone()),
+        [] => bail!("You are in no team named {wanted:?}. See `whk teams list`."),
+        many => bail!(
+            "{} teams are named {wanted:?}; give the id instead ({})",
+            many.len(),
+            many.iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 /// `whk names release <name>`.
@@ -594,5 +779,68 @@ mod tests {
             "{line}"
         );
         assert!(line.contains("paused"));
+    }
+
+    #[test]
+    fn limits_read_like_the_shares_page() {
+        let free: TunnelLimits = serde_json::from_value(serde_json::json!({
+            "plan": "free", "shares": 1, "reservedNames": 0, "sessionMinutes": 120,
+            "dataGb": 1, "passwords": false, "notice": true
+        }))
+        .unwrap();
+        assert_eq!(
+            limits_line(&free, 1),
+            "Plan free: 1 of 1 share at once, 2 h a share, 1 GB a month, no passwords, visitors see a notice first."
+        );
+        let pro: TunnelLimits = serde_json::from_value(serde_json::json!({
+            "plan": "pro", "shares": 3, "sessionMinutes": null, "dataGb": 25,
+            "passwords": true, "notice": false
+        }))
+        .unwrap();
+        assert_eq!(
+            limits_line(&pro, 0),
+            "Plan pro: 0 of 3 shares at once, no time limit, 25 GB a month, passwords on, no visitor notice."
+        );
+    }
+
+    #[test]
+    fn only_usable_names_are_offered() {
+        let names: NamesResponse = serde_json::from_value(serde_json::json!({
+            "names": [
+                {"name": "acme", "usable": true},
+                {"name": "old", "usable": false},
+                {"name": "beta"}
+            ],
+            "limit": 3, "used": 3,
+            "teams": [{"id": "t1", "name": "Acme", "limit": 6, "used": 1}]
+        }))
+        .unwrap();
+        let line = names_line(&names).unwrap();
+        assert!(line.contains("acme, beta"), "{line}");
+        assert!(!line.contains("old"), "{line}");
+        assert!(line.contains("3 of 3"), "{line}");
+        assert_eq!(names.teams[0].limit, Some(6));
+        assert!(name_notes(&names.names[1]).contains("not usable"));
+        let none: NamesResponse =
+            serde_json::from_value(serde_json::json!({"names": [], "limit": 0})).unwrap();
+        assert!(names_line(&none).is_none());
+    }
+
+    #[test]
+    fn the_request_log_parses_the_api_shape() {
+        let log: ShareRequestsResponse = serde_json::from_value(serde_json::json!({
+            "available": true,
+            "requests": [{"method": "GET", "path": "/", "status": 200, "ms": 4, "bytes": 512,
+                "at": "2026-11-10T12:00:00.000Z", "country": "DK", "device": "phone", "visitor": 1}]
+        }))
+        .unwrap();
+        assert!(log.available);
+        assert_eq!(log.requests[0].status, Some(200));
+        let older: ShareRequestsResponse =
+            serde_json::from_value(serde_json::json!({"requests": []})).unwrap();
+        assert!(
+            older.available,
+            "an older server without the flag reads as available"
+        );
     }
 }

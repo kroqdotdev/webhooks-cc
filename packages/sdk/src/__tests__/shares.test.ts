@@ -66,9 +66,25 @@ describe("shares and names", () => {
     const reserved = { name: "acme-demo", url: "https://acme-demo.sharehooks.cc", mine: true };
     const fetchMock = mockFetch({ name: reserved }, 201);
     globalThis.fetch = fetchMock;
-    expect(await client().names.reserve("acme-demo", { team: "t1" })).toEqual(reserved);
+    expect(await client().names.reserve("acme-demo")).toEqual(reserved);
     expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/tunnel-names`);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: "acme-demo", team: "t1" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: "acme-demo" });
+
+    // A team by name is resolved to its id, as other team options are.
+    const teams = [
+      { id: "t1", name: "Acme" },
+      { id: "t2", name: "Beta" },
+    ];
+    const teamFetch = vi
+      .fn()
+      .mockResolvedValueOnce((await mockFetch(teams)())!)
+      .mockResolvedValueOnce((await mockFetch({ name: reserved }, 201)())!);
+    globalThis.fetch = teamFetch;
+    await client().names.reserve("acme-demo", { team: "acme" });
+    expect(teamFetch.mock.calls[0][0]).toBe(`${BASE_URL}/api/teams`);
+    expect(JSON.parse(teamFetch.mock.calls[1][1].body)).toEqual({ name: "acme-demo", team: "t1" });
+    globalThis.fetch = mockFetch(teams);
+    await expect(client().names.reserve("acme-demo", { team: "nope" })).rejects.toThrow("No team");
 
     const ok = mockFetch({ ok: true, password: true });
     globalThis.fetch = ok;

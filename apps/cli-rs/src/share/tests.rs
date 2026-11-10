@@ -89,7 +89,25 @@ fn a_refusal_after_the_share_was_live_is_a_stop() {
     assert!(refusal_is_a_stop(403, true));
     assert!(refusal_is_a_stop(409, true));
     assert!(!refusal_is_a_stop(403, false));
-    assert!(!refusal_is_a_stop(401, true));
+    // A revoked key while reconnecting: the share was live, so it stopped.
+    assert!(refusal_is_a_stop(401, true));
+    assert!(!refusal_is_a_stop(401, false));
+}
+
+#[test]
+fn other_schemes_are_refused_by_name() {
+    let err = parse_local_target("ftp://localhost:5173")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.starts_with("ftp:// isn't something whk can forward to"),
+        "{err}"
+    );
+    let err = parse_local_target("ws://localhost:5173")
+        .unwrap_err()
+        .to_string();
+    assert!(err.starts_with("ws://"), "{err}");
+    assert!(parse_local_target("HTTP://localhost:5173").is_ok());
 }
 
 #[test]

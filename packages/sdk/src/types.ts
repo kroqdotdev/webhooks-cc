@@ -355,15 +355,38 @@ export interface TunnelName {
   password: boolean;
   /** Whether a preview runs under it now. */
   live: boolean;
+  /**
+   * False when the plan no longer covers it (past the plan's count after a
+   * downgrade, or a team whose subscription ended): it is kept, but nothing
+   * can be shared under it until the plan grows or another name is
+   * released. Missing from older servers, which means usable.
+   */
+  usable?: boolean;
   createdAt: string;
+}
+
+/** A team's own count of names: team names count against the team. */
+export interface TunnelTeamNameCount {
+  id: string;
+  name: string;
+  /** False while the team has no subscription: its names wait, unusable. */
+  active?: boolean;
+  /** Names the team may keep (its plan's names per seat). */
+  limit: number;
+  /** Names it keeps. */
+  used: number;
 }
 
 export interface TunnelNameList {
   names: TunnelName[];
-  /** Names the plan allows. */
+  /** Your own names the plan allows. */
   limit: number;
-  /** Names you hold. */
+  /** Your own names. */
   used: number;
+  /** The plan your sharing limits come from ("pro", "team_business"). */
+  plan?: string;
+  /** Each of your teams' counts, when the server gives them. */
+  teams?: TunnelTeamNameCount[];
 }
 
 /**

@@ -79,6 +79,12 @@ Names use lowercase letters, digits and hyphens. Names that imitate well-known b
 
 A name reserved inside a team belongs to the team: every member can share under it, one share at a time. If a teammate is already sharing under the name, the CLI says who; stop that share first or pick another name.
 
+```bash
+whk names reserve acme --team "Acme Studio"   # a team's id or name
+```
+
+Team names count against the team, per seat (Teams: 3 a seat, Team Business: 20 a seat), not against the member who reserved them, so your own names stay yours. When a member leaves, the names they kept for the team stay with the team. `whk names ls` shows your count and each team's.
+
 ## Passwords
 
 On Pro, Business and team plans, put a share behind a password:
@@ -100,17 +106,19 @@ A password given to `whk share --password` wins over the name's for that run.
 
 ## Plan changes
 
-Limits apply to shares that are already running, not only to new ones. When your plan no longer includes something a running share uses (a password, a reserved name, a slot, no time limit), that share ends and the CLI says why. In `--json` output it is a `stopped` event and the CLI exits with status 0, like any other stop.
+Limits apply to shares that are already running, not only to new ones. A share that no longer matches your plan ends as "plan changed": a password, a reserved name or a slot the plan no longer includes, no time limit where the plan now has one, or a paid share's name and no notice after a move to Free. The CLI says why; in `--json` output it is a `stopped` event and the CLI exits with status 0, like any other stop. Start it again and it opens within the new plan (on Free: a random `-free` name, the notice, 2 hours).
+
+Names past your plan's count are kept, oldest first counted, but nothing can be shared under the rest until the plan grows or you release some: `whk names ls` marks them "not usable on your plan".
 
 ## Limits
 
-| Plan          | Shares at once  | Reserved names  | Session length | Data a month    | Passwords |
-| ------------- | --------------- | --------------- | -------------- | --------------- | --------- |
-| Free          | 1               | none            | 2 hours        | 1 GB            | No        |
-| Pro           | 3               | 3               | No limit       | 25 GB           | Yes       |
-| Business      | 10              | 20              | No limit       | 150 GB          | Yes       |
-| Teams         | 3 per member    | 3 per member    | No limit       | 25 GB per member  | Yes       |
-| Team Business | 10 per member   | 20 per member   | No limit       | 150 GB per member | Yes       |
+| Plan          | Shares at once | Reserved names          | Session length | Data a month      | Passwords |
+| ------------- | -------------- | ----------------------- | -------------- | ----------------- | --------- |
+| Free          | 1              | none                    | 2 hours        | 1 GB              | No        |
+| Pro           | 3              | 3                       | No limit       | 25 GB             | Yes       |
+| Business      | 10             | 20                      | No limit       | 150 GB            | Yes       |
+| Teams         | 3 per member   | 3 per seat, the team's  | No limit       | 25 GB per member  | Yes       |
+| Team Business | 10 per member  | 20 per seat, the team's | No limit       | 150 GB per member | Yes       |
 
 Data is what visitors download from your shares, counted per calendar month in UTC. Your plan is the best of your own plan and any subscribed team you belong to. When the month's data runs out, your previews show "This preview is paused" until the month turns (or you move to a bigger plan), and `whk share` says so. One visitor can take at most 250 MB a day from a share, so a stranger cannot use up your month.
 
@@ -140,12 +148,13 @@ The CLI tells you once when something was kept back.
 Ctrl-C stops a share. You can also stop one from another terminal, or a teammate's under a team name:
 
 ```bash
-whk shares ls            # live shares and this month's data
+whk shares ls            # live shares, this month's data, your plan's limits and names
 whk shares ls --ended    # earlier ones
+whk shares log acme      # the last requests visitors made (no addresses)
 whk shares stop acme     # by name or id
 ```
 
-Revoking the API key a share was started with stops it too, and a stopped share stays stopped: the CLI does not reconnect it.
+Revoking the API key a share was started with stops it too, even while the CLI is reconnecting, and a stopped share stays stopped: the CLI does not reconnect it.
 
 ## Scripts and agents
 
@@ -161,7 +170,21 @@ Other events are `reconnected`, `retrying` and `notice` (something the edge want
 
 The `--until-stdin-closes` flag stops the share when its standard input closes, which is how the SDK and the MCP server stop the shares they start on every platform.
 
-Coding agents can share through the local [MCP server](/docs/mcp)'s `share_port` tool, which runs `whk share` for them and hands back the link. It needs `whk` installed on the same machine; the hosted MCP server cannot reach your computer, so it can list and stop shares but not start them.
+## For agents
+
+Everything about sharing works without the dashboard, so a coding agent can do it end to end once you have approved its CLI login or MCP connection:
+
+| Task                                     | MCP tool                                     | CLI                                   |
+| ---------------------------------------- | -------------------------------------------- | ------------------------------------- |
+| Share a port and get the link            | `share_port` (local server)                  | `whk share 3000`                      |
+| See what runs, the data and the limits   | `list_shares`                                | `whk shares ls`                       |
+| See who opened it and what failed        | `share_requests`                             | `whk shares log <name>`               |
+| Stop a share                             | `stop_share`                                 | `whk shares stop <name>`              |
+| Reserve, list and release names          | `reserve_name`, `list_names`, `release_name` | `whk names reserve`, `ls`, `release`  |
+| Put a password on a name, or take it off | `set_name_password`, `clear_name_password`   | `whk names password <name> [--clear]` |
+| Relay webhooks with the app's answer     | (the developer runs it)                      | `whk tunnel 3000 --live`              |
+
+`share_port` runs `whk share` for the agent and hands back the link, so it needs `whk` on the same machine and the local [MCP server](/docs/mcp); the hosted server cannot reach your computer, so it has every tool above except `share_port`. `list_shares` and `share_port` also return `hints`: the next step when the plan's slots or data run out. Errors name the CLI command or tool that fixes them. The SDK has the same through `client.shares` and `client.names`.
 
 <FAQ>
 <FAQItem question="How do I share localhost with a public URL?">

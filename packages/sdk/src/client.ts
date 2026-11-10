@@ -1629,7 +1629,7 @@ export class WebhooksCC {
         list: { description: "List your reserved preview names and your team's", params: {} },
         reserve: {
           description: "Reserve a preview name (Pro and Business): <name>.sharehooks.cc",
-          params: { name: "string", team: "string? (team id)" },
+          params: { name: "string", team: "string? (team id or unique name)" },
         },
         release: { description: "Release a reserved name", params: { name: "string" } },
         setPassword: {
@@ -1971,11 +1971,14 @@ export class WebhooksCC {
       return this.request<TunnelNameList>("GET", "/tunnel-names");
     },
 
-    /** Reserve a name; with `team` (a team id) it belongs to that team. */
+    /**
+     * Reserve a name; with `team` (a team id, or a name that matches one of
+     * your teams) it belongs to that team and every member may share under it.
+     */
     reserve: async (name: string, options: { team?: string } = {}): Promise<TunnelName> => {
       validatePathSegment(name, "name");
       const body: { name: string; team?: string } = { name };
-      if (options.team) body.team = options.team;
+      if (options.team) body.team = resolveTeam(await this.teams.list(), options.team).id;
       return (await this.request<{ name: TunnelName }>("POST", "/tunnel-names", body)).name;
     },
 

@@ -212,7 +212,15 @@ CloudMailin, test the handler with real mail in that provider's shape:
   or the end of the MCP server. It needs `whk` installed and the local MCP
   server. Free shares get a random name ending in `-free`, two hours, and a
   notice page before the site; say so when you hand over the link.
-  `list_shares` shows what runs and this month's shared data.
+  `list_shares` shows what runs, this month's shared data, the plan's
+  limits and `hints` for what to do when they run out; `stop_share` frees
+  a slot. `share_requests` shows whether the person opened the link and
+  what failed for them.
+- Reserved names and passwords (Pro and Business) need no dashboard:
+  `list_names`, `reserve_name` (with `team` to share it with a team),
+  `release_name`, `set_name_password` and `clear_name_password`. Then
+  `share_port` with that `name`. Give the person the password yourself; the
+  tools never echo it.
 - When a webhook provider needs a public URL and must get the local app's
   own answer (Slack slash commands, Twilio replies, validation handshakes,
   OAuth callbacks), the developer runs `whk tunnel <port> --live`: each
