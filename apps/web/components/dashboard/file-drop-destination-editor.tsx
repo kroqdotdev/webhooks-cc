@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { Condition } from "@webhooks-cc/sdk";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -166,7 +166,7 @@ export function FileDropDestinationEditor({
   };
 
   // Resolves true once it saved, for a save started from outside the editor.
-  const save = async (): Promise<boolean> => {
+  const runSave = async (): Promise<boolean> => {
     if (!accessToken) return false;
     setError(null);
     setSaved(false);
@@ -213,6 +213,16 @@ export function FileDropDestinationEditor({
     } finally {
       setBusy(null);
     }
+  };
+
+  // A save asked for while one runs (Save and leave right after Save) is the
+  // same save, not a second request that would add the destination twice.
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const save = (): Promise<boolean> => {
+    savingRef.current ??= runSave().finally(() => {
+      savingRef.current = null;
+    });
+    return savingRef.current;
   };
 
   // An edited destination counts as unsaved settings, like a section's own

@@ -203,6 +203,11 @@ export function DiscardChangesDialog({
     setWasOpen(open);
     if (open) setFailed(false);
   }
+  // Whether the question is still up when a save started from it finishes.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   const saveAndLeave = async () => {
     if (!save || saving) return;
     setSaving(true);
@@ -210,6 +215,8 @@ export function DiscardChangesDialog({
     setFailedTitle(sections[0]?.title ?? null);
     const ok = await save();
     setSaving(false);
+    // The page may have gone ahead on its own once nothing was unsaved.
+    if (!openRef.current) return;
     if (ok) onDiscard();
     else setFailed(true);
   };
@@ -218,7 +225,11 @@ export function DiscardChangesDialog({
     <AlertDialog open={open}>
       <AlertDialogContent
         className="border-strong border-line shadow-raised"
-        onEscapeKeyDown={onKeep}
+        // While a save runs the answer is already given: it leaves once saved.
+        onEscapeKeyDown={(event) => {
+          if (saving) event.preventDefault();
+          else onKeep();
+        }}
       >
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -237,7 +248,9 @@ export function DiscardChangesDialog({
           )}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onKeep}>Keep editing</AlertDialogCancel>
+          <AlertDialogCancel onClick={onKeep} disabled={saving}>
+            Keep editing
+          </AlertDialogCancel>
           {save && (
             <Button
               type="button"
@@ -251,6 +264,7 @@ export function DiscardChangesDialog({
           )}
           <AlertDialogAction
             onClick={onDiscard}
+            disabled={saving}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             Discard

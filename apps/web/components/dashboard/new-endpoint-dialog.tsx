@@ -1,5 +1,6 @@
 "use client";
 
+import { noteNavigation } from "@/lib/leave-guard";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,7 @@ export function NewEndpointDialog({
           autoFocusName
           onCreated={(slug) => {
             setOpen(false);
+            noteNavigation();
             router.push(`/dashboard?endpoint=${slug}`);
           }}
           cancel={

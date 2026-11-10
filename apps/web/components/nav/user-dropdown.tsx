@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { resetUser, trackSignOut } from "@/lib/analytics";
-import { leaveThrough } from "@/lib/leave-guard";
+import { leaveThrough, noteNavigation } from "@/lib/leave-guard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,6 +104,14 @@ export function UserDropdown() {
     router.push("/");
   };
 
+  // Other pages ask first while the dashboard holds unsaved settings, and the
+  // dashboard is told a navigation is on its way (lib/leave-guard.ts).
+  const go = (href: string) =>
+    leaveThrough(() => {
+      noteNavigation();
+      router.push(href);
+    });
+
   const displayName = profile.name || profile.email.split("@")[0];
 
   return (
@@ -115,48 +123,39 @@ export function UserDropdown() {
         <ChevronDown className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="ph-no-capture w-48">
-        <DropdownMenuItem onClick={() => router.push("/dashboard")} className="cursor-pointer">
+        <DropdownMenuItem
+          onClick={() => {
+            noteNavigation();
+            router.push("/dashboard");
+          }}
+          className="cursor-pointer"
+        >
           <LayoutDashboard className="h-4 w-4 mr-2" />
           Dashboard
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => leaveThrough(() => router.push("/account"))}
-          className="cursor-pointer"
-        >
+        <DropdownMenuItem onClick={() => go("/account")} className="cursor-pointer">
           <Settings className="h-4 w-4 mr-2" />
           Account
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => leaveThrough(() => router.push("/account/plan"))}
-          className="cursor-pointer"
-        >
+        <DropdownMenuItem onClick={() => go("/account/plan")} className="cursor-pointer">
           <CreditCard className="h-4 w-4 mr-2" />
           Plan and usage
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => leaveThrough(() => router.push("/account/appearance"))}
-          className="cursor-pointer"
-        >
+        <DropdownMenuItem onClick={() => go("/account/appearance")} className="cursor-pointer">
           <Palette className="h-4 w-4 mr-2" />
           Appearance
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => leaveThrough(() => router.push("/teams"))}
-          className="cursor-pointer"
-        >
+        <DropdownMenuItem onClick={() => go("/teams")} className="cursor-pointer">
           <Users className="h-4 w-4 mr-2" />
           Teams
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => leaveThrough(() => router.push("/support"))}
-          className="cursor-pointer"
-        >
+        <DropdownMenuItem onClick={() => go("/support")} className="cursor-pointer">
           <LifeBuoy className="h-4 w-4 mr-2" />
           Support
         </DropdownMenuItem>
         {staff?.staff && (
           <DropdownMenuItem
-            onClick={() => leaveThrough(() => router.push("/ops"))}
+            onClick={() => go("/ops")}
             className="cursor-pointer text-staff focus:text-staff"
           >
             <Gauge className="h-4 w-4 mr-2" />

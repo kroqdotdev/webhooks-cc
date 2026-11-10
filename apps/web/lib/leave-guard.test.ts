@@ -1,7 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { leaveThrough, setLeaveGuard } from "./leave-guard";
+import {
+  leaveThrough,
+  navigationPending,
+  navigationSettled,
+  noteNavigation,
+  setLeaveGuard,
+} from "./leave-guard";
 
-afterEach(() => setLeaveGuard(null));
+afterEach(() => {
+  setLeaveGuard(null);
+  navigationSettled();
+  vi.useRealTimers();
+});
 
 describe("leaveThrough", () => {
   it("navigates at once without a guard", () => {
@@ -20,5 +30,24 @@ describe("leaveThrough", () => {
     expect(proceed).not.toHaveBeenCalled();
     held!();
     expect(proceed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("navigationPending", () => {
+  it("is pending from the note until the navigation settles", () => {
+    expect(navigationPending()).toBe(false);
+    noteNavigation();
+    expect(navigationPending()).toBe(true);
+    navigationSettled();
+    expect(navigationPending()).toBe(false);
+  });
+
+  it("stops counting a navigation that never lands", () => {
+    vi.useFakeTimers();
+    noteNavigation();
+    vi.advanceTimersByTime(9_000);
+    expect(navigationPending()).toBe(true);
+    vi.advanceTimersByTime(2_000);
+    expect(navigationPending()).toBe(false);
   });
 });

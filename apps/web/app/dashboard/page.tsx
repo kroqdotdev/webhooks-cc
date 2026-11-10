@@ -21,7 +21,12 @@ import {
   type DirtySection,
 } from "@/components/dashboard/dirty-sections";
 import { leavesEditedSettings } from "@/components/dashboard/dirty-reporters";
-import { setLeaveGuard } from "@/lib/leave-guard";
+import {
+  navigationPending,
+  navigationSettled,
+  noteNavigation,
+  setLeaveGuard,
+} from "@/lib/leave-guard";
 import { RequestList } from "@/components/dashboard/request-list";
 import {
   RequestDetail,
@@ -139,6 +144,8 @@ const COUNT_RESYNC_INTERVAL_MS = 60_000;
 // minutes on an endpoint with layouts has no result, the list is read again.
 const PARSE_FRESH_MS = 2 * 60 * 1000;
 const PARSE_REFRESH_MS = 4000;
+// How long the open request waits before it is written to the address (see writeRequestSoon).
+const REQUEST_WRITE_DELAY_MS = 200;
 // Email that arrived before the layouts were saved was never queued for them.
 // The save time is this browser's and the arrival the server's, so allow for
 // a clock a little ahead.
@@ -210,8 +217,14 @@ export default function DashboardPage() {
   if (held) {
     const heldSlug = held.slug;
     if (
-      // Kept editing: the URL is back on the held endpoint's Settings.
-      (settingsParam && endpointSlugParam === heldSlug) ||
+      // Kept editing, or Back returned there: the URL opens the held
+      // endpoint's Settings again, by its slug or as the default endpoint.
+      !leavesEditedSettings({
+        editing: heldSlug,
+        slug: endpointSlugParam,
+        settings: settingsParam,
+        defaultSlug: endpoints ? defaultDashboardEndpoint(endpoints)?.slug : undefined,
+      }) ||
       // The held endpoint is gone (deleted here or elsewhere): nothing to keep.
       (allEndpoints !== undefined && !allEndpoints.some((ep) => ep.slug === heldSlug))
     ) {
@@ -482,8 +495,24 @@ export default function DashboardPage() {
   // Through the History API, which Next syncs into useSearchParams: the URL
   // changes at once, so calls in quick succession (live follow, arrow keys)
   // never drop each other's changes, and none costs a server round trip.
+  // A ?request= write that is waiting (writeRequestSoon below) rides along with
+  // the next write of anything else, so the two cost one history call.
+  const requestWriteRef = useRef<{
+    value: string | null;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  const cancelRequestWrite = useCallback(() => {
+    const waiting = requestWriteRef.current;
+    requestWriteRef.current = null;
+    if (waiting) clearTimeout(waiting.timer);
+    return waiting;
+  }, []);
+  useEffect(() => () => void cancelRequestWrite(), [cancelRequestWrite]);
   const updateParams = useCallback(
-    (changes: Record<string, string | null>, mode: "replace" | "push" = "replace") => {
+    (given: Record<string, string | null>, mode: "replace" | "push" = "replace") => {
+      const waiting = cancelRequestWrite();
+      const changes =
+        waiting && !("request" in given) ? { request: waiting.value, ...given } : given;
       const params = new URLSearchParams(window.location.search);
       for (const [key, value] of Object.entries(changes)) {
         if (value === null) params.delete(key);
@@ -491,11 +520,41 @@ export default function DashboardPage() {
       }
       const qs = params.toString();
       const href = `${pathname}${qs ? `?${qs}` : ""}`;
+      // Nothing to change: no history call at all.
+      if (mode === "replace" && href === `${window.location.pathname}${window.location.search}`) {
+        return;
+      }
       if (mode === "push") window.history.pushState(null, "", href);
       else window.history.replaceState(null, "", href);
     },
-    [pathname]
+    [pathname, cancelRequestWrite]
   );
+  // The open request goes into the address a moment later, and only the last
+  // one: holding j or k, or a burst of arrivals while following, is one write
+  // instead of one per step (Safari refuses more than about 100 history calls
+  // in a short while). It also waits for a navigation that is on its way,
+  // because Next reads a history write as a navigation and would drop that one.
+  const writeRequestSoon = useCallback(
+    (value: string | null) => {
+      writtenRequestRef.current = value;
+      cancelRequestWrite();
+      const flush = () => {
+        if (navigationPending()) {
+          requestWriteRef.current = { value, timer: setTimeout(flush, REQUEST_WRITE_DELAY_MS) };
+          return;
+        }
+        requestWriteRef.current = null;
+        updateParams({ request: value });
+      };
+      requestWriteRef.current = { value, timer: setTimeout(flush, REQUEST_WRITE_DELAY_MS) };
+    },
+    [updateParams, cancelRequestWrite]
+  );
+  // The address changed (a navigation landed, or this page wrote it).
+  const searchKey = searchParams.toString();
+  useEffect(() => {
+    navigationSettled();
+  }, [pathname, searchKey]);
   const setActiveTab = useCallback(
     (tab: Tab) => updateParams({ tab: tab === "body" ? null : tab }),
     [updateParams]
@@ -1106,10 +1165,15 @@ export default function DashboardPage() {
           if (matching.length > 0) {
             const followed = matching[0]._id;
             setSelectedId(followed);
-            // A URL naming a request follows along; one naming none means "the newest".
-            if (writtenRequestRef.current !== null && writtenRequestRef.current !== followed) {
-              writtenRequestRef.current = followed;
-              updateParams({ request: followed });
+            // Following means "the newest", which the address says by naming
+            // no request: one write when following starts, none per arrival.
+            // A phone with a request open keeps naming it, so that Back still
+            // has something to take away and returns to the list.
+            const phoneDetail =
+              mobileDetailRef.current && window.matchMedia("(max-width: 767px)").matches;
+            const next = phoneDetail ? followed : null;
+            if (writtenRequestRef.current !== null && writtenRequestRef.current !== next) {
+              writeRequestSoon(next);
             }
           }
         } else if (matching.length > 0) {
@@ -1127,7 +1191,7 @@ export default function DashboardPage() {
 
     prevTopSummaryId.current = topId;
     countedRequestsRef.current = recentRequests;
-  }, [recentRequests, liveMode, debouncedSearch, methodFilter, kindFilter, updateParams]);
+  }, [recentRequests, liveMode, debouncedSearch, methodFilter, kindFilter, writeRequestSoon]);
 
   // With nothing selected, select the newest request the list shows.
   useEffect(() => {
@@ -1142,6 +1206,8 @@ export default function DashboardPage() {
     const previous = prevEndpointIdRef.current;
     prevEndpointIdRef.current = currentEndpointId;
     if (previous === undefined || previous === currentEndpointId) return;
+    // A request of the endpoint left behind is not written to this one's address.
+    cancelRequestWrite();
     setSelectedId(null);
     setSelectedClickHouseDetail(null);
     setNewCount(0);
@@ -1159,7 +1225,7 @@ export default function DashboardPage() {
     setSearchLoading(false);
     setSearchError(false);
     clickHouseDetailMap.current.clear();
-  }, [currentEndpointId, defaultKind]);
+  }, [currentEndpointId, defaultKind, cancelRequestWrite]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -1168,12 +1234,15 @@ export default function DashboardPage() {
       // entry, so Back returns to the list rather than leaving the dashboard.
       const push = window.matchMedia("(max-width: 767px)").matches && !mobileDetailRef.current;
       setMobileDetail(true);
-      if (!push && writtenRequestRef.current === id) return;
-      writtenRequestRef.current = id;
-      if (push) pushedRequestRef.current = true;
-      updateParams({ request: id }, push ? "push" : "replace");
+      if (push) {
+        writtenRequestRef.current = id;
+        pushedRequestRef.current = true;
+        updateParams({ request: id }, "push");
+      } else if (writtenRequestRef.current !== id) {
+        writeRequestSoon(id);
+      }
     },
-    [updateParams]
+    [updateParams, writeRequestSoon]
   );
 
   // ?request= changed by Back, Forward or a link: follow it.
@@ -1194,11 +1263,14 @@ export default function DashboardPage() {
   // it commits takes the parameter from unset to unset, which the effect above
   // never sees, and the request would stay open over the list.
   useEffect(() => {
-    const onPopState = () =>
+    const onPopState = () => {
+      // The entry arrived at says which request is open; a write still waiting is stale.
+      cancelRequestWrite();
       followRequestParam(new URLSearchParams(window.location.search).get("request"));
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [followRequestParam]);
+  }, [followRequestParam, cancelRequestWrite]);
 
   // Phones: Back to list goes back when opening the request added a history entry.
   const handleBackToList = useCallback(() => {
@@ -1222,12 +1294,9 @@ export default function DashboardPage() {
       const id = "_id" in newest ? newest._id : newest.id;
       setSelectedId(id);
       setNewCount(0);
-      if (writtenRequestRef.current !== id) {
-        writtenRequestRef.current = id;
-        updateParams({ request: id });
-      }
+      if (writtenRequestRef.current !== id) writeRequestSoon(id);
     }
-  }, [displayedItems, updateParams]);
+  }, [displayedItems, writeRequestSoon]);
 
   const handleExportJson = useCallback(async () => {
     if (!currentEndpoint) return;
@@ -1327,21 +1396,66 @@ export default function DashboardPage() {
   );
   // Leaving Settings with unsaved edits asks first.
   const [discardPrompt, setDiscardPrompt] = useState<{ proceed: () => void } | null>(null);
-  const confirmDiscard = useCallback((proceed: () => void) => {
-    if (dirtySectionsRef.current.length > 0) setDiscardPrompt({ proceed });
-    else proceed();
+  // The same prompt and hold for handlers that outlive a render (a save that
+  // finishes later), so each way out is taken once.
+  const discardPromptRef = useRef<{ proceed: () => void } | null>(null);
+  const askToDiscard = useCallback((prompt: { proceed: () => void } | null) => {
+    discardPromptRef.current = prompt;
+    setDiscardPrompt(prompt);
   }, []);
+  const heldLeaveRef = useRef(heldLeave);
+  useEffect(() => {
+    heldLeaveRef.current = heldLeave;
+  }, [heldLeave]);
+  const confirmDiscard = useCallback(
+    (proceed: () => void) => {
+      if (dirtySectionsRef.current.length > 0) askToDiscard({ proceed });
+      else proceed();
+    },
+    [askToDiscard]
+  );
   // A discard remounts the settings, so the edits are gone even when the
   // endpoint that shows next is the same one.
   const [discardCount, setDiscardCount] = useState(0);
+  // Goes where the person was going: the prompt's way out, or the held one
+  // (whose URL is already there). Does nothing when neither waits any more, so
+  // a second call (Discard pressed while a save finishes) is harmless.
+  const finishLeave = () => {
+    // Nothing is unsaved any more, so the way out is not held or asked about again.
+    handleDirtyChange([]);
+    const prompt = discardPromptRef.current;
+    if (prompt) {
+      askToDiscard(null);
+      prompt.proceed();
+      return;
+    }
+    if (heldLeaveRef.current) {
+      heldLeaveRef.current = null;
+      setHeldLeave(null);
+      setDiscardCount((count) => count + 1);
+    }
+  };
+  const hasUnsaved = dirtySections.length > 0;
+  const askingToLeave = discardPrompt !== null || (heldLeave !== null && !heldLeave.keeping);
+  // The last unsaved section was saved while the question was up (its own save
+  // was already running): nothing is left to ask about, so the way out is taken.
+  const finishLeaveRef = useRef(finishLeave);
+  useEffect(() => {
+    finishLeaveRef.current = finishLeave;
+  });
+  useEffect(() => {
+    if (askingToLeave && !hasUnsaved) finishLeaveRef.current();
+  }, [askingToLeave, hasUnsaved]);
   // Leaving the dashboard for another page asks too: the header's menu goes
   // through the guard (lib/leave-guard.ts), and a link is caught on its click,
   // before Next follows it. Links within the dashboard are held above instead;
   // a full page load gets the browser's own prompt (DirtySectionsProvider).
-  const hasUnsaved = dirtySections.length > 0;
   useEffect(() => {
     if (!hasUnsaved) return;
-    setLeaveGuard((proceed) => setDiscardPrompt({ proceed }));
+    setLeaveGuard((proceed) => askToDiscard({ proceed }));
+    return () => setLeaveGuard(null);
+  }, [hasUnsaved, askToDiscard]);
+  useEffect(() => {
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0) return;
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -1350,16 +1464,27 @@ export default function DashboardPage() {
       if (!anchor || anchor.hasAttribute("download")) return;
       if (anchor.target && anchor.target !== "_self") return;
       const url = new URL(anchor.href, window.location.href);
-      if (url.origin !== window.location.origin || url.pathname === pathname) return;
-      event.preventDefault();
-      setDiscardPrompt({ proceed: () => router.push(`${url.pathname}${url.search}${url.hash}`) });
+      if (url.origin !== window.location.origin) return;
+      // A link to a place on this page (Skip to content) goes nowhere.
+      if (url.pathname === window.location.pathname && url.search === window.location.search) {
+        return;
+      }
+      if (hasUnsaved && url.pathname !== pathname) {
+        event.preventDefault();
+        askToDiscard({
+          proceed: () => {
+            noteNavigation();
+            router.push(`${url.pathname}${url.search}${url.hash}`);
+          },
+        });
+        return;
+      }
+      // A navigation is on its way: live requests do not write the address meanwhile.
+      noteNavigation();
     };
     window.addEventListener("click", onClick, true);
-    return () => {
-      setLeaveGuard(null);
-      window.removeEventListener("click", onClick, true);
-    };
-  }, [hasUnsaved, pathname, router]);
+    return () => window.removeEventListener("click", onClick, true);
+  }, [hasUnsaved, pathname, router, askToDiscard]);
   const handleOpenSettings = useCallback(() => openSettingsAt("verification"), [openSettingsAt]);
   const handleOpenForwarding = useCallback(() => openSettingsAt("forwarding"), [openSettingsAt]);
   const handleOpenLayouts = useCallback(() => openSettingsAt("layouts"), [openSettingsAt]);
@@ -1436,10 +1561,10 @@ export default function DashboardPage() {
           return;
         }
         setSelectedId(null);
-        if (writtenRequestRef.current === id) {
-          writtenRequestRef.current = null;
-          updateParams({ request: null });
-        }
+        // On a phone the list shows, not the detail of the newest request
+        // that gets selected in its place.
+        setMobileDetail(false);
+        if (writtenRequestRef.current === id) writeRequestSoon(null);
       })
       .catch(() => {
         // Left selected; the detail stays empty.
@@ -1451,7 +1576,7 @@ export default function DashboardPage() {
     currentEndpointId,
     currentSlug,
     requestsReady,
-    updateParams,
+    writeRequestSoon,
   ]);
 
   // The account has no endpoint by the slug in the URL: say which one shows
@@ -1638,10 +1763,10 @@ export default function DashboardPage() {
 
       <DiscardChangesDialog
         sections={dirtySections}
-        open={discardPrompt !== null || (heldLeave !== null && !heldLeave.keeping)}
+        open={askingToLeave}
         onKeep={() => {
           if (discardPrompt) {
-            setDiscardPrompt(null);
+            askToDiscard(null);
             return;
           }
           if (!heldLeave) return;
@@ -1649,20 +1774,8 @@ export default function DashboardPage() {
           setHeldLeave({ ...heldLeave, keeping: true });
           updateParams({ endpoint: heldLeave.slug, view: "settings" });
         }}
-        onDiscard={() => {
-          // Discarded (or saved, from "Save and leave"): nothing is unsaved
-          // any more, so the way out is not held or asked about again.
-          handleDirtyChange([]);
-          if (discardPrompt) {
-            const { proceed } = discardPrompt;
-            setDiscardPrompt(null);
-            proceed();
-            return;
-          }
-          // The URL already names where the person was going; it stays.
-          setHeldLeave(null);
-          setDiscardCount((count) => count + 1);
-        }}
+        // Discarded, or saved from "Save and leave".
+        onDiscard={finishLeave}
       />
 
       {missingSlug && missingVerified === missingSlug && missingDismissed !== missingSlug && (

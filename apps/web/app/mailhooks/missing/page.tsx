@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   robots: { index: false },
 };
 
+// Rendered per request, so the 404 goes out uncacheable like every other one.
+// Prerendered, it carried a year of s-maxage, and a shared cache would have
+// kept answering 404 for a path after a page was added there.
+export const dynamic = "force-dynamic";
+
 /**
  * A mailhooks.cc path that neither site serves is rewritten here (proxy.ts
  * marks it, next.config.ts rewrites it), so the visitor gets mailhooks.cc's

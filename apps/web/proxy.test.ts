@@ -10,7 +10,7 @@ vi.mock("@supabase/ssr", () => ({
 }));
 
 import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
-import { proxy } from "./proxy";
+import { config, proxy } from "./proxy";
 
 beforeEach(() => {
   getUser.mockClear();
@@ -227,11 +227,34 @@ describe("proxy: two sites", () => {
     expect(res.headers.get("x-middleware-request-x-whk-site")).toBe("mailhooks");
   });
 
-  it("drops a missing marker a client sends", async () => {
-    const res = await proxy(
-      new NextRequest("https://mailhooks.cc/pricing", { headers: { "x-whk-missing": "1" } })
-    );
-    expect(res.headers.get("x-middleware-request-x-whk-missing")).toBeNull();
+  it("drops a missing marker a client sends, on either site", async () => {
+    for (const url of ["https://mailhooks.cc/pricing", "https://webhooks.cc/docs"]) {
+      const res = await proxy(new NextRequest(url, { headers: { "x-whk-missing": "1" } }));
+      expect(res.status, url).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-whk-missing"), url).toBeNull();
+      // The list of request headers Next keeps: it has the proxy's own and not the marker.
+      const kept = res.headers.get("x-middleware-override-headers");
+      expect(kept, url).toContain("x-whk-site");
+      expect(kept, url).not.toContain("x-whk-missing");
+    }
+  });
+
+  it("runs for every path except the ones the missing-page rewrite leaves out too", async () => {
+    // next.config.ts repeats this lookahead; next.config.test.ts compares the two.
+    expect(config.matcher).toHaveLength(1);
+    const matcher = new RegExp(`^${config.matcher[0]}$`);
+    for (const path of ["/no-such-page", "/docs/agents", "/_next/data/x.json"]) {
+      expect(matcher.test(path), path).toBe(true);
+    }
+    for (const path of [
+      "/_next/static/chunks/a.js",
+      "/_next/image",
+      "/favicon.ico",
+      "/robots.txt",
+      "/sitemap.xml",
+    ]) {
+      expect(matcher.test(path), path).toBe(false);
+    }
   });
 
   it("keeps mailhooks.cc's pages off webhooks.cc", async () => {

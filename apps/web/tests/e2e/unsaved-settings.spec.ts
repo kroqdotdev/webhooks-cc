@@ -289,6 +289,54 @@ test("save and leave adds the destination being edited", async ({ page }) => {
   expect(data?.map((row) => row.url)).toEqual(["https://hooks.example.com/inbound"]);
 });
 
+test("an existing destination keeps its edit when the list is read again", async ({ page }) => {
+  // The destination the test above added.
+  await openSettings(page);
+  const forwarding = page.getByRole("region", { name: "Forwarding" });
+  await forwarding.getByRole("button", { name: /^Open hooks\.example\.com/ }).click();
+  const name = forwarding.getByLabel("Name");
+  await name.fill("Edited while polling");
+
+  // The section reads its list again every 15 seconds while it is on screen.
+  await page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname === `/api/endpoints/${alphaSlug}/destinations`,
+    { timeout: 30000 }
+  );
+  await page.waitForTimeout(500);
+  await expect(name).toHaveValue("Edited while polling");
+
+  // Still unsaved, so leaving asks.
+  await endpointTab(page, "Requests").click();
+  await expectAsked(page, "Forwarding");
+  await dialog(page).getByRole("button", { name: "Discard" }).click();
+  await expect(nameField(page)).toBeHidden();
+});
+
+test("the favourite star keeps Settings open and the edit in it", async ({ page }) => {
+  // Without ?endpoint= the dashboard opens the default endpoint, and the star
+  // then writes the endpoint into the address.
+  await signInTestUser(page, user, "/dashboard?view=settings&section=receiving");
+  await expect(nameField(page)).toBeVisible({ timeout: 15000 });
+  const saved = await nameField(page).inputValue();
+  await nameField(page).fill("Edited before the star");
+
+  await page.getByRole("button", { name: /^Add .* to favourites$/ }).click();
+  await expect(page.getByRole("button", { name: /^Remove .* from favourites$/ })).toBeVisible();
+  await expect.poll(() => endpointOf(page)).not.toBeNull();
+  await page.waitForTimeout(500);
+  await expect(dialog(page)).toBeHidden();
+  expect(viewOf(page)).toBe("settings");
+  expect(new URL(page.url()).searchParams.get("section")).toBe("receiving");
+  await expect(nameField(page)).toHaveValue("Edited before the star");
+
+  await page.getByRole("button", { name: /^Remove .* from favourites$/ }).click();
+  await expect(page.getByRole("button", { name: /^Add .* to favourites$/ })).toBeVisible();
+  await expect(nameField(page)).toHaveValue("Edited before the star");
+  expect(saved).not.toBe("Edited before the star");
+});
+
 test("leaving the dashboard for another page asks too", async ({ page }) => {
   await openSettings(page);
   await editName(page, "Edited before leaving");

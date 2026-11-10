@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { noteNavigation } from "@/lib/leave-guard";
 import { Star } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
@@ -90,6 +91,7 @@ export function EndpointSwitcher() {
 
   const handleChange = (slug: string) => {
     trackEndpointSwitched();
+    noteNavigation();
     router.push(`/dashboard?endpoint=${slug}`);
   };
 
@@ -122,7 +124,12 @@ export function EndpointSwitcher() {
     // Keep the open endpoint open: when the URL names no endpoint, or one
     // that is gone, the dashboard shows the first favourite, which this
     // change may move.
-    if (current.slug !== currentSlug) router.replace(`/dashboard?endpoint=${current.slug}`);
+    // Only the endpoint is added: the view, section and open request stay.
+    if (current.slug !== currentSlug) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("endpoint", current.slug);
+      router.replace(`/dashboard?${params.toString()}`);
+    }
     setData((prev) =>
       prev
         ? { owned: prev.owned.map(mark(favorite)), shared: prev.shared.map(mark(favorite)) }

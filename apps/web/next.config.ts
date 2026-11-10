@@ -50,10 +50,18 @@ const onMailhooks = mailhooksHost
   : [];
 // A mailhooks.cc path neither site serves, marked by proxy.ts
 // (MAILHOOKS_MISSING_HEADER in lib/site.ts), gets mailhooks.cc's own 404.
-const missingOnMailhooks = [{ type: "header" as const, key: "x-whk-missing", value: "1" }];
+// Only on the mail host, and only on paths proxy.ts runs for (the lookahead
+// is its matcher's): there the proxy has dropped any marker a client sent,
+// so nobody can ask for the 404 page in place of a script or an icon.
+const missingOnMailhooks = [
+  ...onMailhooks,
+  { type: "header" as const, key: "x-whk-missing", value: "1" },
+];
+const proxiedPaths =
+  "/:path((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.(?:xml|txt|rss)).*)";
 const mailhooksRewrites = mailhooksHost
   ? [
-      { source: "/:path*", has: missingOnMailhooks, destination: "/mailhooks/missing" },
+      { source: proxiedPaths, has: missingOnMailhooks, destination: "/mailhooks/missing" },
       { source: "/", has: onMailhooks, destination: "/mailhooks" },
       { source: "/pricing", has: onMailhooks, destination: "/mailhooks/pricing" },
       { source: "/parse", has: onMailhooks, destination: "/mailhooks/parse" },

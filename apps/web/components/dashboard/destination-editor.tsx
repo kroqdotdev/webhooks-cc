@@ -540,7 +540,16 @@ function GenericDestinationEditor({
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
-  const initial = useMemo(() => draftFrom(destination, preset), [destination, preset]);
+  // The saved values, replaced only when they change or after a save here. The
+  // list is read again every few seconds, which hands this editor a new
+  // destination object with the same values; resetting on that would throw
+  // away what is being typed.
+  const fresh = useMemo(() => draftFrom(destination, preset), [destination, preset]);
+  const [savedCount, setSavedCount] = useState(0);
+  const freshKey = `${savedCount}:${JSON.stringify({ ...fresh, rows: serializeRows(fresh.rows) })}`;
+  const [initialState, setInitialState] = useState({ key: freshKey, draft: fresh });
+  if (initialState.key !== freshKey) setInitialState({ key: freshKey, draft: fresh });
+  const initial = initialState.draft;
   const [draft, setDraft] = useState<Draft>(initial);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -655,7 +664,7 @@ function GenericDestinationEditor({
       : null;
 
   // Resolves true once it saved, for a save started from outside the editor.
-  const save = async (): Promise<boolean> => {
+  const runSave = async (): Promise<boolean> => {
     setSubmitted(true);
     if (!accessToken) return false;
     if (problemCount > 0) {
@@ -680,6 +689,9 @@ function GenericDestinationEditor({
         : await createDestination(accessToken, slug, { ...value, url: value.url! });
       setSaved(true);
       setSubmitted(false);
+      // The draft starts over from what was saved, even when nothing the
+      // list returns differs (a new signing key is never sent back).
+      setSavedCount((count) => count + 1);
       onSaved(result);
       return true;
     } catch (err) {
@@ -698,6 +710,16 @@ function GenericDestinationEditor({
     } finally {
       setSaving(false);
     }
+  };
+
+  // A save asked for while one runs (Save and leave right after Save) is the
+  // same save, not a second request that would add the destination twice.
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const save = (): Promise<boolean> => {
+    savingRef.current ??= runSave().finally(() => {
+      savingRef.current = null;
+    });
+    return savingRef.current;
   };
 
   // An edited destination counts as unsaved settings, like a section's own form.

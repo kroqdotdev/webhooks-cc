@@ -150,6 +150,16 @@ test.describe("at phone width", () => {
     expect(requestOf(page)).toBeNull();
   });
 
+  test("a link to a request that is not there shows the list, not another request", async ({
+    page,
+  }) => {
+    const missing = "00000000-0000-4000-8000-000000000000";
+    await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}&request=${missing}`);
+    await expect(row(page, newestId)).toBeVisible({ timeout: 15000 });
+    await expect(backToList(page)).toBeHidden();
+    await expect.poll(() => requestOf(page)).toBeNull();
+  });
+
   test("a request's link opens its detail, and Back to list shows the list", async ({ page }) => {
     await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}&request=${oldestId}`);
     await expect(backToList(page)).toBeVisible({ timeout: 15000 });
@@ -158,4 +168,39 @@ test.describe("at phone width", () => {
     await expect(row(page, newestId)).toBeVisible();
     await expect.poll(() => requestOf(page)).toBeNull();
   });
+});
+
+// Last: it adds a request, which the tests above would see as the newest.
+test("following live requests selects the newest and names no request in the address", async ({
+  page,
+}) => {
+  await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}&request=${middleId}`);
+  await expect(row(page, middleId)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
+
+  const first = await captureRequest("/orders/live-1", new Date());
+  await expect(row(page, first)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
+  // "The newest" is an address without ?request=: a reload opens the newest again.
+  await expect.poll(() => requestOf(page)).toBeNull();
+
+  // Later arrivals are followed without another write to the address. (Next
+  // mirrors the write above with one of its own a moment later; let it pass.)
+  await page.waitForTimeout(1500);
+  const writes = await page.evaluate(() => {
+    const counter = { count: 0 };
+    const original = history.replaceState.bind(history);
+    history.replaceState = (...args) => {
+      counter.count++;
+      return original(...args);
+    };
+    (window as unknown as { __writes: typeof counter }).__writes = counter;
+    return counter.count;
+  });
+  expect(writes).toBe(0);
+  const second = await captureRequest("/orders/live-2", new Date());
+  await expect(row(page, second)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
+  await page.waitForTimeout(600);
+  expect(
+    await page.evaluate(() => (window as unknown as { __writes: { count: number } }).__writes.count)
+  ).toBe(0);
+  expect(requestOf(page)).toBeNull();
 });
