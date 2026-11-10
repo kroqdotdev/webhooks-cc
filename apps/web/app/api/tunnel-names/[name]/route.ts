@@ -10,7 +10,7 @@ const WINDOW_MS = 10 * 60_000;
 
 /**
  * Lets a kept name go: one's own, or any name of a team one owns. A live
- * preview under it keeps running until it ends.
+ * preview under it stops, so its name's password never comes off a live link.
  */
 export async function DELETE(request: Request, { params }: { params: Promise<{ name: string }> }) {
   if (!tunnelConfig()) return sharingOff();

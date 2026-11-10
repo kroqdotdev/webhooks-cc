@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mayManageName } from "./names";
 import { hashPassword, newPasswordVersion, verifyPassword } from "./password-hash";
 
 /*
@@ -124,14 +125,15 @@ export async function passwordMatches(gate: Gate, password: string): Promise<boo
 }
 
 /**
- * Sets (or with null, removes) the password on a kept name the account may
- * use. Returns the live preview under the name whose gate changed, for the
- * edge (null when none follows the name), or false when the name is not the
- * account's.
+ * Sets (or with null, removes) the password on a kept name. Who may: as for
+ * releasing it (mayManageName: its keeper, or a team's owner, while in the
+ * team), and for a team's name only while the team's subscription is live.
+ * Returns the live preview under the name whose gate changed, for the edge
+ * (null when none follows the name), or false when the account may not.
  */
 export async function setNamePassword(
   userId: string,
-  teamIds: string[],
+  activeTeamIds: string[],
   name: string,
   password: string | null
 ): Promise<false | { shareId: string; gate: string | null } | null> {
@@ -143,7 +145,7 @@ export async function setNamePassword(
     .maybeSingle();
   if (error) throw error;
   if (!row) return false;
-  if (row.user_id !== userId && !(row.team_id && teamIds.includes(row.team_id))) return false;
+  if (!(await mayManageName(userId, row, activeTeamIds))) return false;
   const version = password ? newPasswordVersion() : null;
   const { error: updateError } = await admin
     .from("tunnel_names")

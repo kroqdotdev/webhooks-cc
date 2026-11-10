@@ -12,8 +12,9 @@ const STOP_LIMIT = 60;
 const STOP_WINDOW_MS = 60_000;
 
 /**
- * Stops a run: the account's own, or a teammate's preview under a name of one
- * of its teams. The edge closes the tunnel and the CLI exits, saying why.
+ * Stops a run: the account's own, a teammate's preview under a name of one of
+ * its teams, or a teammate's live tunnel on one of its own endpoints. The edge
+ * closes the tunnel and the CLI exits, saying why.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!tunnelConfig()) return sharingOff();
@@ -42,7 +43,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         rateLimit
       );
     }
-    const kind = !found.mine ? "team" : requestVia(request) === "session" ? "stopped" : "api";
+    const kind = found.owner
+      ? "owner"
+      : !found.mine
+        ? "team"
+        : requestVia(request) === "session"
+          ? "stopped"
+          : "api";
     const result = await stopShares({ shareId: found.row.id }, kind);
     await auditUserAction(request, auth.userId, {
       action: "tunnel.share_stopped",

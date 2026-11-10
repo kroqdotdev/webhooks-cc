@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   try {
     const plan = await tunnelPlanOf(auth.userId);
     if (!plan) return Response.json({ error: "Account not found" }, { status: 404 });
-    const names = await namesOf(auth.userId, plan.teamIds);
+    const names = await namesOf(auth.userId, plan);
     return applyRateLimitHeaders(
       Response.json({
         names: await apiNames(names),
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
         targetId: result.name,
       });
     const [shown] = await apiNames(
-      (await namesOf(auth.userId, plan.teamIds)).filter((n) => n.name === result.name)
+      (await namesOf(auth.userId, plan)).filter((n) => n.name === result.name)
     );
     return applyRateLimitHeaders(
       Response.json({ name: shown }, { status: result.reserved ? 201 : 200 }),

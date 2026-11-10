@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { getWebhookUrl } from "@/lib/constants";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { accountForKey } from "@/lib/tunnels/accounts";
@@ -87,8 +88,18 @@ export async function POST(request: Request) {
   const free = plan.key === "free";
   const again = !requested && instance ? await runName(userId, instance) : null;
   const kept = again && (await randomNameFree(userId, again, free)) ? again : null;
-  const named = kept ? { name: kept } : await nameForShare(userId, plan, requested);
+  const named = kept
+    ? { name: kept, reserved: false }
+    : await nameForShare(userId, plan, requested);
   if ("error" in named) return Response.json({ error: named.error }, { status: named.status });
+  // `whk share --name` keeps a new name like the reserve route does: audit it the same way.
+  if (named.reserved)
+    await auditUserAction(request, userId, {
+      action: "tunnel.name_reserved",
+      status: 201,
+      targetId: named.name,
+      metadata: { via: "share" },
+    });
 
   // One preview runs under a name at a time: a teammate's is theirs until stopped.
   const other = requested ? await someoneElseSharing(named.name, userId) : null;

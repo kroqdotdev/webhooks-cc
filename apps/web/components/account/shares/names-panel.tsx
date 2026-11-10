@@ -147,6 +147,11 @@ export function NamesPanel({
                 <p className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="font-mono font-medium">{entry.name}</span>
                   {entry.live && <StatusTag tone="success">Sharing now</StatusTag>}
+                  {entry.usable === false && (
+                    <span title="Past your plan's reserved names, or the team's subscription ended. It is kept, not deleted.">
+                      <StatusTag tone="warning">Not usable on your plan</StatusTag>
+                    </span>
+                  )}
                   {entry.password && (
                     <span
                       className="inline-flex items-center gap-1 text-xs text-muted-foreground"

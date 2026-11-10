@@ -10,7 +10,9 @@
 -- capture_webhook(): 00090's body, with the same signature, also returning
 --   `endpoint_id` and `live`. `live` is true only for an HTTP capture whose
 --   endpoint names a live session that is still open (one primary key read
---   of tunnel_shares, and only when the endpoint names one). Email is never
+--   of tunnel_shares, and only when the endpoint names one), or whose session
+--   dropped less than two minutes ago (endpoints.live_grace_until, read from
+--   the endpoint row already loaded). Email is never
 --   live: no sender waits for its answer. The receiver of the running
 --   release ignores the two new keys, so this applies before or after the
 --   release that reads them.
@@ -102,6 +104,7 @@ begin
          signing_provider, signing_secret_encrypted, signing_header,
          agent_registration_id,
          live_session_id,
+         live_grace_until,
          -- Read only for email, so an HTTP capture never loads the layouts.
          case when v_kind = 'email' then jsonb_array_length(layouts) > 0 else false end
            as has_layouts
@@ -388,6 +391,12 @@ begin
        and s.kind = 'live'
        and s.ended_at is null;
     v_live := coalesce(v_live, false);
+  end if;
+  -- A session that just dropped (00091, live_grace_until): still live for two
+  -- minutes, so the sender gets the edge's 502 while the CLI reconnects
+  -- instead of the mock's 200. Read from the row already loaded.
+  if v_kind = 'http' and not v_live and v_endpoint.live_grace_until > now() then
+    v_live := true;
   end if;
 
   -- 6. Build response

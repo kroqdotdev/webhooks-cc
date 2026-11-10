@@ -87,17 +87,31 @@ export function batchesOf(raw: unknown): Batch[] {
  * Adds the edge's batches of counts. Each batch is added once: the edge sends
  * one again when it missed the answer, which may have been after it was
  * added. The account is taken from the run itself, never from the edge.
+ *
+ * A batch the database refuses is reported and dropped, never thrown: the
+ * edge resends what the sync did not confirm, oldest first, so one bad batch
+ * would otherwise fail every sync (and the stops, gates and pauses it
+ * carries) until the edge gave up on it. Answers how many failed.
  */
-export async function recordUsage(raw: unknown, now = Date.now()): Promise<void> {
+export async function recordUsage(raw: unknown, now = Date.now()): Promise<number> {
   const admin = createAdminClient();
+  let failed = 0;
+  let firstError: unknown = null;
   for (const batch of batchesOf(raw)) {
-    const { error } = await admin.rpc("tunnel_apply_usage_batch", {
-      p_batch_id: batch.id,
-      p_usage: batch.usage as unknown as never,
-      p_month: monthOf(now),
-    });
-    if (error) throw error;
+    try {
+      const { error } = await admin.rpc("tunnel_apply_usage_batch", {
+        p_batch_id: batch.id,
+        p_usage: batch.usage as unknown as never,
+        p_month: monthOf(now),
+      });
+      if (error) throw error;
+    } catch (err) {
+      failed += 1;
+      firstError ??= err;
+    }
   }
+  if (firstError) reportError(`Failed to add ${failed} tunnel usage batch(es)`, firstError);
+  return failed;
 }
 
 export interface MonthUsage {

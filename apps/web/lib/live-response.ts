@@ -102,7 +102,7 @@ export function liveResponseSummary(response: LiveResponse): string {
     case "busy":
       return `Too many requests were waiting for your app${sent}`;
     case "refused":
-      return `The request's path was not relayed${sent}`;
+      return `Your app's answer was not passed back (a download, a type an API does not answer with, over 1 MB, or a path outside the endpoint)${sent}`;
     default:
       return `Your app answered ${response.status ?? ""}${took}`.replace(/ {2,}/g, " ");
   }

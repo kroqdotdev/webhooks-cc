@@ -41,6 +41,7 @@ describe("tunnel usage", () => {
       notice: true,
       teamId: null,
       teamIds: [],
+      activeTeamIds: [],
     };
     const message = overMessage({
       plan,

@@ -3,13 +3,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { previewUrl } from "./config";
 import type { TunnelPlan } from "./plan";
 import type { ShareRow } from "./shares";
+import { foldEnded } from "./fold-ended";
 import { describeEnding } from "./stops";
 import type { MonthUsage } from "./usage";
 
 /*
  * Runs and limits as the API shows them (GET /api/shares): the account's own
- * runs, and the live previews teammates run under the names of a team the
- * account is in, which any member may stop.
+ * runs, the live previews teammates run under the names of a team the account
+ * is in, which any member may stop, and teammates' live tunnels on the
+ * account's own endpoints, which their owner may stop. A run that reconnected
+ * (the tunnel dropped, the edge restarted) is one run, not one per connection.
  */
 
 export interface ApiShare {
@@ -95,9 +98,23 @@ async function teamLiveShares(userId: string, teamIds: string[]): Promise<ShareR
   return (data ?? []) as ShareRow[];
 }
 
+/** Teammates' live tunnels on the account's own endpoints. */
+async function liveOnOwnEndpoints(userId: string): Promise<ShareRow[]> {
+  const { data, error } = await createAdminClient()
+    .from("tunnel_shares")
+    .select(`${COLUMNS}, endpoints!inner(user_id)`)
+    .eq("kind", "live")
+    .is("ended_at", null)
+    .eq("endpoints.user_id", userId)
+    .neq("user_id", userId);
+  if (error) throw error;
+  return (data ?? []) as unknown as ShareRow[];
+}
+
 /**
- * The runs an account sees: its live ones, its latest `limit` ended ones, and
- * its teams' live previews. `state` narrows to live or ended.
+ * The runs an account sees: its live ones, its latest `limit` ended ones, its
+ * teams' live previews, and teammates' live tunnels on its own endpoints.
+ * `state` narrows to live or ended.
  */
 export async function sharesFor(
   userId: string,
@@ -106,15 +123,14 @@ export async function sharesFor(
   limit = 30
 ): Promise<ApiShare[]> {
   const admin = createAdminClient();
-  const [live, ended, team] = await Promise.all([
-    state === "ended"
-      ? Promise.resolve({ data: [] as ShareRow[], error: null })
-      : admin
-          .from("tunnel_shares")
-          .select(COLUMNS)
-          .eq("user_id", userId)
-          .is("ended_at", null)
-          .order("started_at", { ascending: false }),
+  const [live, ended, team, onMine] = await Promise.all([
+    // Live runs are needed for the ended list too: a run live again is not ended.
+    admin
+      .from("tunnel_shares")
+      .select(COLUMNS)
+      .eq("user_id", userId)
+      .is("ended_at", null)
+      .order("started_at", { ascending: false }),
     state === "live"
       ? Promise.resolve({ data: [] as ShareRow[], error: null })
       : admin
@@ -122,16 +138,23 @@ export async function sharesFor(
           .select(COLUMNS)
           .eq("user_id", userId)
           .not("ended_at", "is", null)
-          .order("started_at", { ascending: false })
-          .limit(limit),
+          .order("ended_at", { ascending: false })
+          // Reconnects fold into one run; read enough rows for `limit` runs.
+          .limit(limit * 5),
     state === "ended" ? Promise.resolve([] as ShareRow[]) : teamLiveShares(userId, plan.teamIds),
+    state === "ended" ? Promise.resolve([] as ShareRow[]) : liveOnOwnEndpoints(userId),
   ]);
   if (live.error) throw live.error;
   if (ended.error) throw ended.error;
+  const liveRows = (live.data ?? []) as ShareRow[];
+  const liveInstances = new Set(
+    liveRows.filter((r) => r.instance).map((r) => `${r.user_id}:${r.instance}`)
+  );
   const rows = [
-    ...((live.data ?? []) as ShareRow[]),
+    ...(state === "ended" ? [] : liveRows),
     ...team,
-    ...((ended.data ?? []) as ShareRow[]),
+    ...onMine,
+    ...foldEnded((ended.data ?? []) as ShareRow[], liveInstances, limit),
   ];
   return describe(rows, userId);
 }
@@ -189,14 +212,15 @@ export async function describe(rows: ShareRow[], userId: string): Promise<ApiSha
 }
 
 /**
- * A run the account may act on: its own, or a teammate's live preview under
- * a name of one of the account's teams. Null otherwise.
+ * A run the account may act on: its own, a teammate's live preview under a
+ * name of one of the account's teams, or a teammate's live tunnel on one of
+ * the account's own endpoints (`owner`). Null otherwise.
  */
 export async function shareFor(
   id: string,
   userId: string,
   teamIds: string[]
-): Promise<{ row: ShareRow; mine: boolean } | null> {
+): Promise<{ row: ShareRow; mine: boolean; owner?: boolean } | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("tunnel_shares")
@@ -207,6 +231,15 @@ export async function shareFor(
   const row = data as ShareRow | null;
   if (!row) return null;
   if (row.user_id === userId) return { row, mine: true };
+  if (row.kind === "live" && row.endpoint_id) {
+    const { data: endpoint, error: endpointError } = await admin
+      .from("endpoints")
+      .select("user_id")
+      .eq("id", row.endpoint_id)
+      .maybeSingle();
+    if (endpointError) throw endpointError;
+    return endpoint?.user_id === userId ? { row, mine: false, owner: true } : null;
+  }
   if (row.kind !== "share" || !row.name || teamIds.length === 0) return null;
   const { data: name, error: nameError } = await admin
     .from("tunnel_names")

@@ -208,7 +208,9 @@ create table if not exists public.tunnel_shares (
   -- a run at once; the address clean-up deletes the row after the retention.
   user_id          uuid references public.users(id) on delete set null,
   name             text,
-  endpoint_id      uuid references public.endpoints(id) on delete cascade,
+  -- Set null, not cascaded, when the endpoint is deleted: the run ends with
+  -- 'endpoint deleted' (tunnel_runs_without_access()) and keeps its record.
+  endpoint_id      uuid references public.endpoints(id) on delete set null,
   free             boolean not null default false,
   client           text not null default '' check (char_length(client) <= 100),
   key_id           uuid references public.api_keys(id) on delete set null,
@@ -230,7 +232,7 @@ create table if not exists public.tunnel_shares (
   requests         bigint not null default 0 check (requests >= 0),
   constraint tunnel_shares_kind_shape check (
     (kind = 'share' and name is not null and endpoint_id is null)
-    or (kind = 'live' and name is null and endpoint_id is not null)
+    or (kind = 'live' and name is null)
   ),
   constraint tunnel_shares_password check ((password_hash is null) = (password_version is null))
 );
@@ -261,7 +263,13 @@ alter table public.tunnel_shares enable row level security;
 revoke all on table public.tunnel_shares from anon, authenticated;
 
 alter table public.endpoints
-  add column if not exists live_session_id uuid;
+  add column if not exists live_session_id uuid,
+  -- When a live session drops without being stopped (the tunnel fell, the
+  -- edge restarted), the endpoint stays live for two minutes, so senders get
+  -- 502 and retry rather than the mock's 200 while the CLI reconnects.
+  -- capture_webhook() reads it with the row it already loads; a new live
+  -- session or a stop clears it.
+  add column if not exists live_grace_until timestamptz;
 
 alter table public.requests
   add column if not exists live_response jsonb;
@@ -401,8 +409,16 @@ begin
       case when p_kind = 'live' then p_endpoint_id end,
       p_free, left(coalesce(p_client, ''), 100), p_key_id, left(p_instance, 64),
       left(p_client_address, 64),
+      -- A reconnect of the same run (same account and instance) keeps the
+      -- time limit it started with: reconnecting never buys more time.
       case when p_session_minutes is null then null
-           else now() + make_interval(mins => p_session_minutes) end,
+           else least(
+             now() + make_interval(mins => p_session_minutes),
+             (select min(prev.expires_at) from public.tunnel_shares prev
+               where prev.user_id = p_user_id
+                 and p_instance is not null
+                 and prev.instance = left(p_instance, 64)
+                 and prev.expires_at is not null)) end,
       p_password_hash, p_password_version, p_agent_registration_id
     )
     returning * into v_row;
@@ -411,7 +427,9 @@ begin
   end;
 
   if p_kind = 'live' then
-    update public.endpoints set live_session_id = v_row.id where id = p_endpoint_id;
+    update public.endpoints
+       set live_session_id = v_row.id, live_grace_until = null
+     where id = p_endpoint_id;
   end if;
 
   return jsonb_build_object(
@@ -428,7 +446,10 @@ grant execute on function public.tunnel_open_share(uuid, text, text, uuid, integ
   to service_role;
 
 -- Ends the open runs among p_ids with p_reason and clears the live session
--- they held on their endpoints. Answers the runs it ended.
+-- they held on their endpoints. A live session that dropped ('closed': the
+-- tunnel fell; 'edge restart') leaves its endpoint live for two minutes
+-- (live_grace_until), so senders get 502 while the CLI reconnects; any other
+-- reason is a stop and ends that too. Answers the runs it ended.
 create or replace function public.tunnel_end_shares(p_ids uuid[], p_reason text)
 returns table (id uuid, user_id uuid, kind text, name text, endpoint_id uuid)
 language plpgsql
@@ -443,7 +464,9 @@ begin
     returning s.id, s.user_id, s.kind, s.name, s.endpoint_id
   ), cleared as (
     update public.endpoints e
-       set live_session_id = null
+       set live_session_id = null,
+           live_grace_until = case when p_reason in ('closed', 'edge restart')
+                                   then now() + interval '2 minutes' end
       from ended
      where ended.kind = 'live'
        and e.id = ended.endpoint_id
@@ -474,7 +497,10 @@ begin
     returning id
   )
   select count(*) into v_count from ended;
-  update public.endpoints set live_session_id = null where live_session_id is not null;
+  -- Their CLIs reconnect to the new edge: senders get 502 meanwhile.
+  update public.endpoints
+     set live_session_id = null, live_grace_until = now() + interval '2 minutes'
+   where live_session_id is not null;
   return v_count;
 end;
 $$;
@@ -485,14 +511,21 @@ grant execute on function public.tunnel_close_all_open(text) to service_role;
 -- The open runs whose access has ended since they opened, with why. Access is
 -- checked once, at open; this is what the web app runs on every edge sync and
 -- right after anything that takes access away (a member leaving or removed,
--- an endpoint unshared, a team's subscription ending, an agent disconnected,
--- an account deleted), so a run never outlives the grant it was opened on:
---   'account deleted'  the account is gone (user_id was set null)
---   'access ended'     the agent registration that opened it is revoked or
---                      gone; a live run's endpoint is neither the account's
---                      own nor shared with a subscribed team it belongs to;
---                      a preview under a team's name whose team the account
---                      has left
+-- an endpoint unshared or deleted, a team's subscription ending, an agent
+-- disconnected, a key deleted, sharing suspended, an account deleted), so a
+-- run never outlives the grant it was opened on:
+--   'account deleted'    the account is gone (user_id was set null)
+--   'sharing suspended'  staff suspended sharing on the account
+--   'key revoked'        the API key that opened it was deleted (agent
+--                        tokens are judged by their registration instead:
+--                        expired ones are deleted while it lives on)
+--   'endpoint deleted'   a live run's endpoint is gone
+--   'access ended'       the agent registration that opened it is revoked or
+--                        gone; a live run's endpoint is neither the account's
+--                        own nor shared with a subscribed team it belongs to;
+--                        a preview under a team's name when the account is no
+--                        longer in that team or the team's subscription ended;
+--                        a preview under someone else's own name
 -- One statement over the open runs, which are few.
 create or replace function public.tunnel_runs_without_access()
 returns table (id uuid, reason text)
@@ -501,11 +534,20 @@ stable
 set search_path = ''
 as $$
   select s.id,
-         case when s.user_id is null then 'account deleted' else 'access ended' end
+         case
+           when s.user_id is null then 'account deleted'
+           when u.tunnels_suspended then 'sharing suspended'
+           when s.key_id is null and s.agent_registration_id is null then 'key revoked'
+           when s.kind = 'live' and s.endpoint_id is null then 'endpoint deleted'
+           else 'access ended'
+         end
     from public.tunnel_shares s
+    left join public.users u on u.id = s.user_id
    where s.ended_at is null
      and (
        s.user_id is null
+       or u.tunnels_suspended
+       or (s.key_id is null and s.agent_registration_id is null)
        or (s.agent_registration_id is not null and not exists (
              select 1 from public.agent_registrations r
               where r.id = s.agent_registration_id and r.revoked_at is null))
@@ -523,10 +565,14 @@ as $$
        or (s.kind = 'share' and exists (
              select 1 from public.tunnel_names n
               where n.name = s.name
-                and n.user_id <> s.user_id
-                and (n.team_id is null or not exists (
-                      select 1 from public.team_members tm
-                       where tm.team_id = n.team_id and tm.user_id = s.user_id))))
+                and (
+                  (n.team_id is null and n.user_id <> s.user_id)
+                  or (n.team_id is not null and not exists (
+                        select 1
+                          from public.team_members tm
+                          join public.teams t
+                            on t.id = tm.team_id and t.subscription_status is not null
+                         where tm.team_id = n.team_id and tm.user_id = s.user_id)))))
      );
 $$;
 
@@ -561,9 +607,11 @@ begin
      where s.id = c.id and s.kind = 'share'
     returning s.user_id, c.bytes, c.requests
   )
+  -- A deleted account's runs keep their own counters but no month.
   insert into public.tunnel_usage as t (user_id, month, bytes, requests)
   select user_id, p_month, sum(bytes), sum(requests)
     from touched
+   where user_id is not null
    group by user_id
   on conflict (user_id, month) do update
     set bytes = t.bytes + excluded.bytes,

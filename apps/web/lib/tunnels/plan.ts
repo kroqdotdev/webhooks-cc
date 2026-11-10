@@ -33,6 +33,11 @@ export interface TunnelPlan {
   teamId: string | null;
   /** Every team the account belongs to, live or not. */
   teamIds: string[];
+  /**
+   * The teams whose subscription is live: only their names may be shared
+   * under or have their passwords changed by their members.
+   */
+  activeTeamIds: string[];
 }
 
 interface Candidate {
@@ -46,7 +51,8 @@ export function chooseTunnelPlan(
   candidates: Candidate[],
   lifted: boolean,
   teamIds: string[],
-  now = Date.now()
+  now = Date.now(),
+  activeTeamIds: string[] = candidates.flatMap((c) => (c.teamId ? [c.teamId] : []))
 ): TunnelPlan {
   const rank = (c: Candidate) => {
     const e = ENTITLEMENTS[c.key];
@@ -62,6 +68,7 @@ export function chooseTunnelPlan(
     notice: best.key === "free" ? true : !lifted && fresh,
     teamId: best.teamId,
     teamIds,
+    activeTeamIds,
   };
 }
 
@@ -119,7 +126,11 @@ export async function tunnelPlansOf(
           paidSince: m.teams.paid_since,
         });
     }
-    plans.set(user.id, chooseTunnelPlan(candidates, user.tunnel_notice_lifted, teamIds, now));
+    const activeTeamIds = candidates.flatMap((c) => (c.teamId ? [c.teamId] : []));
+    plans.set(
+      user.id,
+      chooseTunnelPlan(candidates, user.tunnel_notice_lifted, teamIds, now, activeTeamIds)
+    );
   }
   return plans;
 }

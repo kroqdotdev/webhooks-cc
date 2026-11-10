@@ -458,6 +458,8 @@ export interface Database {
           show_email_extracts: boolean;
           /** The open `whk tunnel --live` run (migration 00091). */
           live_session_id: string | null;
+          /** Until when a dropped live session keeps the endpoint live (00091). */
+          live_grace_until: string | null;
           site: string;
           /** Named fields picked out of every email (migration 00064). */
           email_fields: Json;
@@ -1541,6 +1543,7 @@ export interface Database {
           password_version?: string | null;
         };
         Update: {
+          user_id?: string;
           team_id?: string | null;
           password_hash?: string | null;
           password_version?: string | null;
@@ -1571,6 +1574,7 @@ export interface Database {
         };
         Insert: Record<string, never>;
         Update: {
+          expires_at?: string | null;
           ended_at?: string | null;
           end_reason?: string | null;
           password_hash?: string | null;

@@ -11,6 +11,11 @@ export interface ApiName {
   mine: boolean;
   password: boolean;
   live: boolean;
+  /**
+   * Whether it can be shared under now: false for one's own names past the
+   * plan's count and for names of a team whose subscription ended.
+   */
+  usable: boolean;
   createdAt: string;
 }
 
@@ -44,6 +49,7 @@ export async function apiNames(names: UsableName[]): Promise<ApiName[]> {
     mine: n.mine,
     password: n.password,
     live: running.has(n.name),
+    usable: n.usable,
     createdAt: n.createdAt,
   }));
 }

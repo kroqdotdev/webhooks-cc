@@ -3,9 +3,11 @@ import { closeOnEdge } from "./edge";
 
 /*
  * Stopping live runs on purpose: by their owner from the dashboard or through
- * the API (the SDK, a coding agent), by staff (a report, a blocked name, a
- * suspension), when a key is revoked, or in a team (someone in it stopped a
- * preview under the team's name). Each stop is recorded on the run, then sent
+ * the API (whk shares stop, the SDK, a coding agent), by staff (a report, a
+ * blocked name, a suspension), when a key is revoked, in a team (someone in
+ * it stopped a preview under the team's name), by an endpoint's owner (a
+ * teammate's live tunnel on it), when a name is released, or when the plan no
+ * longer covers the run. Each stop is recorded on the run, then sent
  * to the edge, which closes the tunnel and tells the CLI why; the CLI then
  * exits rather than reconnect.
  */
@@ -18,8 +20,8 @@ export const STOPS = {
   },
   api: {
     record: "stopped through the API",
-    tell: "you stopped it through the webhooks.cc API (the SDK or a coding agent)",
-    ending: "stopped through the API",
+    tell: "you stopped it (whk shares stop, the Shares page or the API)",
+    ending: "stopped with whk shares stop or the API",
   },
   staff: {
     record: "stopped by webhooks.cc",
@@ -51,6 +53,26 @@ export const STOPS = {
     tell: "someone in your team stopped it on webhooks.cc",
     ending: "stopped by someone in your team",
   },
+  owner: {
+    record: "stopped by the endpoint owner",
+    tell: "the endpoint's owner stopped it on webhooks.cc",
+    ending: "stopped by the endpoint's owner",
+  },
+  released: {
+    record: "name released",
+    tell: "its reserved name was released. Reserve it again or share under another name",
+    ending: "the reserved name was released",
+  },
+  endpoint: {
+    record: "endpoint deleted",
+    tell: "its endpoint was deleted",
+    ending: "the endpoint was deleted",
+  },
+  plan: {
+    record: "plan changed",
+    tell: "your plan changed and no longer covers it (fewer shares, names or passwords, or a time limit). Start it again within the new plan",
+    ending: "the plan changed",
+  },
   access: {
     record: "access ended",
     tell: "the access it was opened with has ended (a team, a shared endpoint or an agent connection). Start it again if you still have access",
@@ -64,7 +86,7 @@ export type StopKind = keyof typeof STOPS;
 const OTHER_ENDINGS: Record<string, string> = {
   replaced: "replaced by a newer share under the same name",
   "time limit": "the plan's time limit was reached",
-  "edge restart": "webhooks.cc restarted the tunnel service",
+  "edge restart": "webhooks.cc restarted and the CLI did not reconnect",
 };
 
 /** "the plan's time limit was reached", or null for a run its CLI ended. */
@@ -92,7 +114,8 @@ export type StopWhich =
   | { shareId: string; userId?: string }
   | { userId: string }
   | { keyId: string; userId: string }
-  | { name: string };
+  | { name: string }
+  | { ids: string[] };
 
 export interface Stopped {
   /** Runs that were live and are now ended. */
@@ -110,7 +133,10 @@ export async function stopShares(which: StopWhich, kind: StopKind): Promise<Stop
     if (which.userId) query = query.eq("user_id", which.userId);
   } else if ("keyId" in which) query = query.eq("key_id", which.keyId).eq("user_id", which.userId);
   else if ("userId" in which) query = query.eq("user_id", which.userId);
-  else query = query.eq("name", which.name).eq("kind", "share");
+  else if ("ids" in which) {
+    if (which.ids.length === 0) return { stopped: 0, edgeReached: true };
+    query = query.in("id", which.ids);
+  } else query = query.eq("name", which.name).eq("kind", "share");
   const { data: open, error } = await query;
   if (error) throw error;
   const ids = (open ?? []).map((s) => s.id);

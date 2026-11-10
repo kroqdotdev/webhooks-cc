@@ -4,6 +4,7 @@ import { removeMemberShares } from "./teams-endpoints";
 import type { TeamMember, TeamMemberRow } from "./teams-types";
 import { reportError } from "@/lib/observability";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
+import { handOverTeamNames } from "@/lib/tunnels/names";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -147,6 +148,8 @@ export async function removeTeamMember(
   // failure after the membership delete would leave the departed member's
   // endpoints draining the team pool with nothing left to retry it.
   await removeMemberShares(teamId, targetUserId);
+  // Preview names they kept in the team stay the team's, with its owner.
+  await handOverTeamNames(teamId, targetUserId);
 
   // The deleted row carries the seat assignment away with it, so read it back.
   const { data, error } = await admin
@@ -187,6 +190,7 @@ export async function leaveTeam(userId: string, teamId: string): Promise<boolean
 
   // Shares first, same rationale as removeTeamMember: abort while retryable.
   await removeMemberShares(teamId, userId);
+  await handOverTeamNames(teamId, userId);
 
   const { data, error } = await admin
     .from("team_members")

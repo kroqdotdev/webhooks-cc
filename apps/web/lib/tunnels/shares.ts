@@ -75,18 +75,26 @@ export async function openShare(input: {
   if (error) throw error;
   const answer = data as { shareId?: string; expiresAt?: string | null; error?: string };
   if (answer.error === "taken") return { error: "That name is taken.", status: 409, taken: true };
-  if (answer.error === "slots") {
-    const what = input.kind === "live" ? "live tunnels" : "live shares";
-    return {
-      error: `${input.plan.label} allows ${slots} ${what} at a time. Stop one first.`,
-      status: 429,
-    };
-  }
+  if (answer.error === "slots")
+    return { error: slotsMessage(input.plan, input.kind, slots), status: 429 };
   if (answer.error || !answer.shareId) return { error: "That account is gone.", status: 401 };
   return {
     shareId: answer.shareId,
     expiresAt: answer.expiresAt ? new Date(answer.expiresAt) : null,
   };
+}
+
+/** "Free allows 1 live share at a time. Stop one with whk shares stop, or on the Shares page." */
+export function slotsMessage(plan: TunnelPlan, kind: "share" | "live", slots: number): string {
+  const what =
+    kind === "live"
+      ? slots === 1
+        ? "live tunnel"
+        : "live tunnels"
+      : slots === 1
+        ? "live share"
+        : "live shares";
+  return `${plan.label} allows ${slots} ${what} at a time. Stop one with whk shares stop, or on the Shares page.`;
 }
 
 export async function closeShare(id: string, reason: string): Promise<void> {

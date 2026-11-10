@@ -377,7 +377,9 @@ describe("edge routes", () => {
     const stop = await api("/api/shares/stop", "POST", user.key, { params: { id: shareId } });
     expect(stop.status).toBe(200);
     expect(edgeCalls.find((c) => c.path === "/close")?.body).toEqual({
-      closes: [{ shareId, reason: expect.stringMatching(/through the webhooks.cc API/) }],
+      closes: [
+        { shareId, reason: expect.stringMatching(/whk shares stop, the Shares page or the API/) },
+      ],
     });
 
     const synced = (await (await edge("sync", { shareIds: [shareId] })).json()) as {
@@ -399,7 +401,7 @@ describe("edge routes", () => {
       })
     ).json()) as { shares: { id: string; endedAt: string | null; endReason: string }[] };
     expect(listed.shares.find((s) => s.id === shareId)).toMatchObject({
-      endReason: "stopped through the API",
+      endReason: "stopped with whk shares stop or the API",
     });
   });
 
@@ -763,5 +765,325 @@ describe("edge routes", () => {
       .eq("id", opened.body.shareId as string)
       .single();
     expect(data?.end_reason).toBe("edge restart");
+  });
+});
+
+describe("round two: limits, names and access while runs are open", () => {
+  async function endReason(id: unknown): Promise<string | null> {
+    const { data } = await admin
+      .from("tunnel_shares")
+      .select("end_reason")
+      .eq("id", id as string)
+      .single();
+    return data?.end_reason ?? null;
+  }
+
+  async function team(owner: string, members: string[], active = true) {
+    const { data, error } = await admin
+      .from("teams")
+      .insert({
+        name: "Round two team",
+        created_by: owner,
+        subscription_status: active ? "active" : null,
+        seats: 2,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    createdTeamIds.push(data.id);
+    await admin
+      .from("team_members")
+      .insert([
+        { team_id: data.id, user_id: owner, role: "owner" },
+        ...members.map((m) => ({ team_id: data.id, user_id: m, role: "member" })),
+      ]);
+    return data.id as string;
+  }
+
+  it("adds usage for a deleted account's run without failing the sync", async () => {
+    const user = await createUser();
+    const opened = await open(user.key);
+    expect(opened.status).toBe(200);
+    await admin.auth.admin.deleteUser(user.id);
+    const batch = `round2-deleted-${ts}`;
+    const res = await edge("sync", {
+      shareIds: [opened.body.shareId],
+      batches: [{ id: batch, usage: [{ id: opened.body.shareId, bytes: 2048, requests: 3 }] }],
+    });
+    expect(res.status).toBe(200);
+    const { data: run } = await admin
+      .from("tunnel_shares")
+      .select("bytes, requests, end_reason")
+      .eq("id", opened.body.shareId as string)
+      .single();
+    expect(run).toMatchObject({ bytes: 2048, requests: 3, end_reason: "account deleted" });
+    const { data: applied } = await admin
+      .from("tunnel_usage_batches")
+      .select("id")
+      .eq("id", batch)
+      .maybeSingle();
+    expect(applied?.id).toBe(batch);
+    await admin
+      .from("tunnel_shares")
+      .delete()
+      .eq("id", opened.body.shareId as string);
+  });
+
+  it("keeps a Free run's time limit across reconnects", async () => {
+    const user = await createUser();
+    const instance = `limit-run-${ts}`;
+    const first = await open(user.key, { instance });
+    expect(first.status).toBe(200);
+    // Five minutes left on the first connection.
+    const soon = new Date(Date.now() + 5 * 60_000).toISOString();
+    await admin
+      .from("tunnel_shares")
+      .update({ expires_at: soon })
+      .eq("id", first.body.shareId as string);
+    await edge("close", { shareId: first.body.shareId, reason: "closed" });
+    const again = await open(user.key, { instance });
+    expect(again.status).toBe(200);
+    expect(Date.parse(again.body.expiresAt as string)).toBeLessThanOrEqual(Date.parse(soon) + 1000);
+    expect(again.body.expiresIn as number).toBeLessThanOrEqual(5 * 60);
+    await edge("close", { shareId: again.body.shareId, reason: "closed" });
+  });
+
+  it("hands a leaving member's team names to the owner and ends their runs under them", async () => {
+    const { removeTeamMember } = await import("@/lib/supabase/teams-members");
+    const owner = await createUser({ plan: "pro", request_limit: 100_000 });
+    const member = await createUser({ plan: "pro", request_limit: 100_000 });
+    const teamId = await team(owner.id, [member.id]);
+    const name = `crew-left-${ts % 100_000}`;
+    expect(
+      (await api("/api/tunnel-names", "POST", member.key, { body: { name, team: teamId } })).status
+    ).toBe(201);
+    const run = await open(member.key, { name });
+    expect(run.status).toBe(200);
+
+    expect(await removeTeamMember(owner.id, teamId, member.id)).toBe(true);
+    const { data: kept } = await admin
+      .from("tunnel_names")
+      .select("user_id, team_id")
+      .eq("name", name)
+      .single();
+    expect(kept).toEqual({ user_id: owner.id, team_id: teamId });
+    expect(await endReason(run.body.shareId)).toBe("access ended");
+
+    // The former member can no longer share under it, change it or release it.
+    const again = await open(member.key, { name });
+    expect(again.status).toBe(409);
+    expect(
+      (
+        await api("/api/tunnel-names/password", "PUT", member.key, {
+          params: { name },
+          body: { password: "correct-horse-1" },
+        })
+      ).status
+    ).toBe(404);
+    expect(
+      (await api("/api/tunnel-names/name", "DELETE", member.key, { params: { name } })).status
+    ).toBe(404);
+  });
+
+  it("ends previews under a lapsed team's names and refuses their passwords", async () => {
+    const owner = await createUser({ plan: "pro", request_limit: 100_000 });
+    const member = await createUser();
+    const teamId = await team(owner.id, [member.id]);
+    const name = `crew-lapse-${ts % 100_000}`;
+    expect(
+      (await api("/api/tunnel-names", "POST", owner.key, { body: { name, team: teamId } })).status
+    ).toBe(201);
+    const run = await open(member.key, { name });
+    expect(run.status).toBe(200);
+
+    await admin.from("teams").update({ subscription_status: null }).eq("id", teamId);
+    const synced = (await (
+      await edge("sync", { shareIds: [run.body.shareId], batches: [] })
+    ).json()) as { close: { shareId: string }[] };
+    expect(synced.close.map((c) => c.shareId)).toContain(run.body.shareId);
+    expect(await endReason(run.body.shareId)).toBe("access ended");
+
+    // The owner's own runs under it end too, and the name's password is frozen.
+    expect((await open(owner.key, { name })).status).toBe(403);
+    expect(
+      (
+        await api("/api/tunnel-names/password", "PUT", owner.key, {
+          params: { name },
+          body: { password: "correct-horse-1" },
+        })
+      ).status
+    ).toBe(404);
+    // Releasing still works, so a lapsed team's names are never stuck.
+    expect(
+      (await api("/api/tunnel-names/name", "DELETE", owner.key, { params: { name } })).status
+    ).toBe(200);
+  });
+
+  it("holds open previews to the plan after a downgrade", async () => {
+    const user = await createUser({
+      plan: "pro",
+      request_limit: 100_000,
+      paid_since: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+    });
+    const name = `downgrade-${ts % 100_000}`;
+    const named = await open(user.key, { name, password: "correct-horse-1" });
+    expect(named.status).toBe(200);
+    const plain = await open(user.key);
+    expect(plain.status).toBe(200);
+    expect(plain.body.expiresAt).toBeNull();
+
+    await admin.from("users").update({ plan: "free" }).eq("id", user.id);
+    const synced = (await (
+      await edge("sync", { shareIds: [named.body.shareId, plain.body.shareId], batches: [] })
+    ).json()) as { close: { shareId: string; reason: string }[] };
+    expect(synced.close).toContainEqual({
+      shareId: named.body.shareId,
+      reason: expect.stringMatching(/your plan changed/),
+    });
+    expect(await endReason(named.body.shareId)).toBe("plan changed");
+    // The other stays, now with Free's two hours from when it started.
+    expect(await endReason(plain.body.shareId)).toBeNull();
+    const { data: limited } = await admin
+      .from("tunnel_shares")
+      .select("started_at, expires_at")
+      .eq("id", plain.body.shareId as string)
+      .single();
+    expect(Date.parse(limited!.expires_at!) - Date.parse(limited!.started_at)).toBe(120 * 60_000);
+
+    // The kept name is past Free's count: listed, not usable.
+    const names = (await (await api("/api/tunnel-names", "GET", user.key)).json()) as {
+      names: { name: string; usable: boolean }[];
+    };
+    expect(names.names).toContainEqual(expect.objectContaining({ name, usable: false }));
+    await edge("close", { shareId: plain.body.shareId, reason: "closed" });
+  });
+
+  it("covers only the oldest reserved names after a downgrade to fewer", async () => {
+    const user = await createUser({ plan: "business", request_limit: 250_000 });
+    const names = [1, 2, 3, 4].map((i) => `count-${i}-${ts % 100_000}`);
+    for (const name of names)
+      expect((await api("/api/tunnel-names", "POST", user.key, { body: { name } })).status).toBe(
+        201
+      );
+    await admin.from("users").update({ plan: "pro" }).eq("id", user.id);
+    // Pro covers three: the fourth kept is refused, the first three open.
+    expect((await open(user.key, { name: names[0] })).status).toBe(200);
+    const past = await open(user.key, { name: names[3] });
+    expect(past.status).toBe(403);
+    expect(past.body.error).toMatch(/past that/);
+  });
+
+  it("lets an endpoint's owner see and stop a teammate's live tunnel on it", async () => {
+    const owner = await createUser({ plan: "pro", request_limit: 100_000 });
+    const member = await createUser();
+    const teamId = await team(owner.id, [member.id]);
+    const slug = `own${ts % 1_000_000}`;
+    const { data: endpoint, error } = await admin
+      .from("endpoints")
+      .insert({ user_id: owner.id, slug, name: "owned" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    await admin
+      .from("team_endpoints")
+      .insert({ team_id: teamId, endpoint_id: endpoint.id, shared_by: owner.id });
+    const live = await open(member.key, { kind: "live", endpoint: slug });
+    expect(live.status).toBe(200);
+
+    const view = (await (
+      await api("/api/shares", "GET", owner.key, { url: "http://localhost/api/shares?state=live" })
+    ).json()) as { shares: { id: string; mine: boolean; kind: string }[] };
+    expect(view.shares).toContainEqual(
+      expect.objectContaining({ id: live.body.shareId, mine: false, kind: "live" })
+    );
+    const stop = await api("/api/shares/stop", "POST", owner.key, {
+      params: { id: live.body.shareId as string },
+    });
+    expect(stop.status).toBe(200);
+    expect(await endReason(live.body.shareId)).toBe("stopped by the endpoint owner");
+  });
+
+  it("ends runs of suspended accounts, deleted keys and deleted endpoints with their reason", async () => {
+    const { deleteEndpointBySlugForUser } = await import("@/lib/supabase/endpoints");
+    const suspended = await createUser();
+    const a = await open(suspended.key);
+    await admin.from("users").update({ tunnels_suspended: true }).eq("id", suspended.id);
+
+    const keyed = await createUser();
+    const b = await open(keyed.key);
+    await admin.from("api_keys").delete().eq("user_id", keyed.id);
+
+    await edge("sync", { shareIds: [a.body.shareId, b.body.shareId], batches: [] });
+    expect(await endReason(a.body.shareId)).toBe("sharing suspended");
+    expect(await endReason(b.body.shareId)).toBe("key revoked");
+
+    const owner = await createUser();
+    const slug = `gone${ts % 1_000_000}`;
+    await admin.from("endpoints").insert({ user_id: owner.id, slug, name: "doomed" });
+    const live = await open(owner.key, { kind: "live", endpoint: slug });
+    expect(live.status).toBe(200);
+    expect(await deleteEndpointBySlugForUser(owner.id, slug)).toBe(true);
+    const { data: run } = await admin
+      .from("tunnel_shares")
+      .select("endpoint_id, end_reason")
+      .eq("id", live.body.shareId as string)
+      .single();
+    expect(run).toEqual({ endpoint_id: null, end_reason: "endpoint deleted" });
+  });
+
+  it("stops a preview when its reserved name is released", async () => {
+    const user = await createUser({ plan: "pro", request_limit: 100_000 });
+    const name = `let-go-${ts % 100_000}`;
+    expect((await api("/api/tunnel-names", "POST", user.key, { body: { name } })).status).toBe(201);
+    const run = await open(user.key, { name });
+    expect(run.status).toBe(200);
+    expect(
+      (await api("/api/tunnel-names/name", "DELETE", user.key, { params: { name } })).status
+    ).toBe(200);
+    expect(await endReason(run.body.shareId)).toBe("name released");
+  });
+
+  it("keeps an endpoint live for two minutes after its session drops, not after a stop", async () => {
+    const user = await createUser();
+    const slug = `grace${ts % 1_000_000}`;
+    const { data: endpoint, error } = await admin
+      .from("endpoints")
+      .insert({ user_id: user.id, slug, name: "grace" })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const capture = async () => {
+      const { data, error: captureError } = await admin.rpc("capture_webhook", {
+        p_slug: slug,
+        p_method: "POST",
+        p_path: `/w/${slug}`,
+        p_headers: {},
+        p_body: "{}",
+        p_query_params: {},
+        p_content_type: "application/json",
+        p_ip: "192.0.2.10",
+        p_received_at: new Date().toISOString(),
+      });
+      if (captureError) throw captureError;
+      return (data as { live?: boolean }).live;
+    };
+    const graceOf = async () =>
+      (await admin.from("endpoints").select("live_grace_until").eq("id", endpoint.id).single()).data
+        ?.live_grace_until ?? null;
+
+    const first = await open(user.key, { kind: "live", endpoint: slug });
+    expect(await capture()).toBe(true);
+    // The tunnel fell: still live, so senders get the edge's 502.
+    await edge("close", { shareId: first.body.shareId, reason: "closed" });
+    expect(await graceOf()).not.toBeNull();
+    expect(await capture()).toBe(true);
+    // A new session clears the grace; a stop ends it at once.
+    const second = await open(user.key, { kind: "live", endpoint: slug });
+    expect(await graceOf()).toBeNull();
+    await api("/api/shares/stop", "POST", user.key, {
+      params: { id: second.body.shareId as string },
+    });
+    expect(await graceOf()).toBeNull();
+    expect(await capture()).toBe(false);
   });
 });
