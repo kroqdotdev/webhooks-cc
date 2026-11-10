@@ -7,10 +7,11 @@
 -- the same way as the quota email of migration 00040.
 --
 --  1. Two columns on users. welcome_email_claimed_at is a short lease taken
---     by the poll; welcome_email_sent_at is written only after a successful
---     send (mark_welcome_email_sent). A poll that dies between claim and send
---     leaves only the lease, which expires after 15 minutes, so the account
---     is tried again.
+--     by the poll; welcome_email_sent_at is written just before the send
+--     (mark_welcome_email_sent), so a database error after a successful send
+--     can never email the account twice. A failed send clears both columns so
+--     a later poll tries again; a poll that dies between the mark and the
+--     send loses that one email, which is the better failure for a welcome.
 --
 --  2. Accounts that exist when this runs never get the email. The column is
 --     added with DEFAULT now() and the default is dropped in the same
@@ -83,7 +84,7 @@ as $$
   returning u.id, u.email, u.home_site;
 $$;
 
--- Called after a successful send: records it for good and releases the lease.
+-- Called just before the send: records it for good and releases the lease.
 create or replace function public.mark_welcome_email_sent(p_user_id uuid)
 returns void
 language sql

@@ -61,16 +61,48 @@ describe("sendWelcomeEmails", () => {
     expect(message.text).toContain("https://webhooks.cc/dashboard");
   });
 
-  it("releases the lease and does not mark sent when a send fails", async () => {
+  it("records each account before sending, so a failure after the send cannot repeat it", async () => {
+    claimReturns([claimed[0]]);
+    const order: string[] = [];
+    rpc.mockImplementation(async (fn: string) => {
+      order.push(fn);
+      return fn === "claim_welcome_email_users"
+        ? { data: [claimed[0]], error: null }
+        : { error: null };
+    });
+    sendEmail.mockImplementation(async () => {
+      order.push("send");
+    });
+
+    await sendWelcomeEmails();
+    expect(order).toEqual(["claim_welcome_email_users", "mark_welcome_email_sent", "send"]);
+  });
+
+  it("clears the record and the lease when a send fails, so a later poll retries", async () => {
     claimReturns(claimed);
     sendEmail.mockRejectedValueOnce(new Error("smtp down")).mockResolvedValueOnce(undefined);
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(sendWelcomeEmails()).resolves.toEqual({ sent: 1, failed: 1 });
-    expect(update).toHaveBeenCalledWith({ welcome_email_claimed_at: null });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({
+      welcome_email_sent_at: null,
+      welcome_email_claimed_at: null,
+    });
     expect(eq).toHaveBeenCalledWith("id", "u1");
-    expect(rpc).not.toHaveBeenCalledWith("mark_welcome_email_sent", { p_user_id: "u1" });
-    expect(rpc).toHaveBeenCalledWith("mark_welcome_email_sent", { p_user_id: "u2" });
+  });
+
+  it("skips an account it could not record, without sending", async () => {
+    rpc.mockImplementation(async (fn: string, args?: { p_user_id?: string }) => {
+      if (fn === "claim_welcome_email_users") return { data: claimed, error: null };
+      return args?.p_user_id === "u1" ? { error: { message: "blip" } } : { error: null };
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(sendWelcomeEmails()).resolves.toEqual({ sent: 1, failed: 1 });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].to).toBe("b@example.com");
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("throws when the claim fails", async () => {

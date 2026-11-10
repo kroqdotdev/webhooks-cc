@@ -32,7 +32,7 @@ const FAQ_ITEMS = [
   {
     question: "Does Mailtrap or webhooks.cc send a webhook when an email arrives?",
     answer:
-      "webhooks.cc does on every plan: each endpoint sends what it receives to up to 10 destinations as signed JSON with retries, or to Slack, Discord, Google Sheets, Zapier or Make. Mailtrap documents webhooks for sending events and for its separate Inbound Email product, not for Email Sandbox messages.",
+      "webhooks.cc does on every plan: each endpoint sends what it receives to up to 10 destinations as signed JSON with retries, or to Slack, Discord, Google Sheets, Zapier or Make. Mailtrap documents webhooks for its sending, inbound, campaign, reputation and audit log products, not for Email Sandbox messages.",
   },
 ];
 
@@ -79,14 +79,14 @@ const ROWS = [
   [
     "Webhook when an email arrives",
     "Yes, signed JSON with retries, up to 10 destinations",
-    "Not for sandboxes (its Inbound Email product has one)",
+    "Not for sandboxes (its other products have them)",
   ],
   ["Spam score", "Yes (rspamd)", "Yes (SpamAssassin), with a blacklist report"],
   ["HTML check against email clients", "No", "Yes (HTML Check)"],
   [
     "Email client screenshots",
     "No; desktop and mobile width preview",
-    "Device Previews, a paid add-on (100+ configurations)",
+    "Device Previews, on request on paid plans (100+ configurations)",
   ],
   ["Forward test mail to a real inbox", "No", "Yes, Basic and up"],
   ["Webhook capture on the same endpoint", "Yes", "No"],
@@ -203,9 +203,9 @@ export default function CompareMailtrapPage() {
               the TypeScript, Python and Go SDKs, and the code or the link already picked out.
               Mailtrap is stronger on the message itself: HTML Check lists the email clients that
               lack support for each element, the spam report runs SpamAssassin and a blacklist
-              lookup, and Device Previews (a paid add-on) screenshots the email in more than 100
-              client configurations. webhooks.cc has a spam score and a deliverability report, but
-              no client support check and no screenshots.
+              lookup, and Device Previews (on request on paid plans) screenshots the email in more
+              than 100 client configurations. webhooks.cc has a spam score and a deliverability
+              report, but no client support check and no screenshots.
             </p>
           </div>
 

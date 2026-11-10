@@ -135,7 +135,8 @@ jobs:
     name: Update Homebrew tap
     needs: release
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref_name, '-') }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -154,7 +155,17 @@ jobs:
             exit 0
           fi
           version="${GITHUB_REF_NAME#v}"
-          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/kroqdotdev/homebrew-tap.git" tap
+          # Only plain releases go to the tap, never a prerelease such as 1.9.0-rc.1.
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "$GITHUB_REF_NAME is not a plain release; the tap stays as it is."
+            exit 0
+          fi
+          # The token goes in a header for this one command, never into the
+          # clone URL or .git/config.
+          basic="$(printf 'x-access-token:%s' "$TAP_TOKEN" | base64 -w0)"
+          echo "::add-mask::$basic"
+          auth="AUTHORIZATION: basic $basic"
+          git -c http.extraheader="$auth" clone --depth 1 https://github.com/kroqdotdev/homebrew-tap.git tap
           .github/scripts/homebrew-formula.sh "$version" checksums.txt > tap/whk.rb
           cd tap
           if git diff --quiet; then
@@ -164,4 +175,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "whk $version"
-          git push origin HEAD
+          git -c http.extraheader="$auth" push origin HEAD

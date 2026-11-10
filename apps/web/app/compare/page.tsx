@@ -275,7 +275,7 @@ const EMAIL_MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Node.js, Python, Java, .NET, Ruby, PHP, Go",
     "JavaScript, Python, Java, C#, PHP, Ruby, Go and more",
   ],
-  ["CLI", "Yes", "Yes", "Not documented", "Not documented"],
+  ["CLI", "Yes", "Yes", "Not documented", "No maintained CLI"],
   ["MCP server", "Remote (OAuth) or local", "Local", "Core and up", "Hosted"],
   [
     "Webhook when an email arrives",
@@ -284,7 +284,13 @@ const EMAIL_MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Not documented",
     "Yes, with retries",
   ],
-  ["Email client screenshots", "No", "Paid add-on", "Add-on on Core", "1 to 200 a month by plan"],
+  [
+    "Email client screenshots",
+    "No",
+    "On request, paid plans",
+    "Add-on on Core",
+    "1 to 200 a month by plan",
+  ],
   ["Webhook capture on the same endpoint", "Yes", "No", "No", "No"],
   ["Open source", "Yes", "SDKs and Mailtrap Local", "Client libraries on GitHub", "SDKs on GitHub"],
 ];

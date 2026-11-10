@@ -12,11 +12,14 @@ const BATCH_SIZE = 50;
  * Sends each new account one getting-started email (migration 00093).
  * claim_welcome_email_users() returns accounts between 30 minutes and 7 days
  * old with a confirmed email that were never sent one, and takes a 15-minute
- * lease on each, so concurrent polls never email the same account. Only a
- * successful send is recorded (mark_welcome_email_sent). A failed send
- * releases the lease so the next poll retries, and a poll that dies mid-batch
- * simply lets its leases expire. Accounts that existed before the migration
- * are marked as handled by it and are never claimed.
+ * lease on each, so concurrent polls never email the same account. Each
+ * account is recorded as sent before the send (mark_welcome_email_sent), so a
+ * database blip after a successful send can never email it twice: a second
+ * "we send this once" email is worse than a missing one. When the mark fails
+ * the account is skipped and its lease expires; when the send fails the
+ * record and the lease are cleared so a later poll tries again. Accounts that
+ * existed before the migration are marked as handled by it and are never
+ * claimed.
  */
 export async function sendWelcomeEmails(): Promise<{ sent: number; failed: number }> {
   const admin = createAdminClient();
@@ -29,6 +32,15 @@ export async function sendWelcomeEmails(): Promise<{ sent: number; failed: numbe
   let failed = 0;
 
   for (const user of data ?? []) {
+    const { error: markError } = await admin.rpc("mark_welcome_email_sent", {
+      p_user_id: user.id,
+    });
+    if (markError) {
+      failed++;
+      reportError("[welcome-emails] mark sent failed", markError.message);
+      continue;
+    }
+
     try {
       await sendEmail(
         buildWelcomeEmail({
@@ -39,18 +51,14 @@ export async function sendWelcomeEmails(): Promise<{ sent: number; failed: numbe
         })
       );
       sent++;
-      const { error: markError } = await admin.rpc("mark_welcome_email_sent", {
-        p_user_id: user.id,
-      });
-      if (markError) reportError("[welcome-emails] mark sent failed", markError.message);
     } catch (sendError) {
       failed++;
       reportError("[welcome-emails] send failed", sendError);
-      const { error: releaseError } = await admin
+      const { error: undoError } = await admin
         .from("users")
-        .update({ welcome_email_claimed_at: null })
+        .update({ welcome_email_sent_at: null, welcome_email_claimed_at: null })
         .eq("id", user.id);
-      if (releaseError) reportError("[welcome-emails] lease release failed", releaseError.message);
+      if (undoError) reportError("[welcome-emails] undo after failed send", undoError.message);
     }
   }
 
@@ -63,12 +71,19 @@ const globalForPoller = globalThis as unknown as { __welcomeEmailPoller?: NodeJS
 export function startWelcomeEmailPoller(): void {
   if (globalForPoller.__welcomeEmailPoller) return;
 
+  // A slow mail server can make a batch outlast the interval; skip a tick
+  // rather than run two batches at once.
+  let running = false;
   const tick = async () => {
+    if (running) return;
+    running = true;
     try {
       const { sent, failed } = await sendWelcomeEmails();
       if (sent || failed) console.info(`[welcome-emails] sent=${sent} failed=${failed}`);
     } catch (error) {
       reportError("[welcome-emails] poll failed", error);
+    } finally {
+      running = false;
     }
   };
 

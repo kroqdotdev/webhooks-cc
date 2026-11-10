@@ -67,7 +67,7 @@ const ROWS = [
   ["Wait for an email in a test", "Yes (emails.waitFor)", "Yes (waitForLatestEmail)"],
   ["SDKs", "TypeScript, Python and Go", "JavaScript, Python, Java, C#, PHP, Ruby, Go and more"],
   ["Cypress", "Through the SDK or the REST API", "Official plugin (cypress-mailslurp)"],
-  ["CLI", "Yes (whk)", "Not documented"],
+  ["CLI", "Yes (whk)", "No maintained CLI"],
   [
     "MCP server for AI agents",
     "Yes, remote (OAuth) or local",
