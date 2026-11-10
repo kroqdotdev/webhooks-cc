@@ -7,7 +7,8 @@ import { serverEnv } from "@/lib/env";
  * `m/{request_id}/raw.eml` (the exact message) and `m/{request_id}/a/{i}`
  * (attachment i's decoded contents). The receiver writes; the web app reads,
  * hands out short-lived presigned links and deletes. Path-style URLs, so any
- * S3-compatible service works (SeaweedFS, self-hosted, in production and dev).
+ * S3-compatible service works (Hetzner Object Storage in production, SeaweedFS
+ * or any other in development).
  */
 
 export interface ObjectStorageConfig {
