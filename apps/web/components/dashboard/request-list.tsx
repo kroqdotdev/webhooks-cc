@@ -40,6 +40,7 @@ import {
 } from "@/types/request";
 import type { AnyRequestSummary, KindFilter } from "@/types/request";
 import type { ParsedEmail } from "@webhooks-cc/sdk/email";
+import { ResponseAnswerCompact } from "./response-answer";
 
 const TS_PREF_KEY = "request_list_relative_time";
 
@@ -726,6 +727,17 @@ export function RequestList({
               <span className="text-xs text-muted-foreground font-mono shrink-0 whitespace-nowrap">
                 {formatBytes(request.size)}
               </span>
+            </>
+          )}
+          {request.responseStatus != null && (
+            <>
+              <span className="text-xs text-muted-foreground" aria-hidden>
+                &middot;
+              </span>
+              <ResponseAnswerCompact
+                request={request}
+                className="text-xs text-muted-foreground font-mono"
+              />
             </>
           )}
         </div>

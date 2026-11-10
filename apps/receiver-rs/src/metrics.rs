@@ -56,6 +56,12 @@ pub fn capture_failed(kind: &'static str) {
     add("capture_failed", kind);
 }
 
+/// Record a request row whose recorded answer had to be corrected after the
+/// capture (`answer.corrected`), or whose correction failed (`answer.failed`).
+pub fn answer(outcome: &'static str) {
+    add("answer", outcome);
+}
+
 /// Record one mail ingest outcome, such as `check_ok`, `check_unknown`,
 /// `captured`, `duplicate`, `over_quota` or `transient`.
 pub fn mail_ingest(outcome: &'static str) {

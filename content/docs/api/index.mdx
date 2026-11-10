@@ -3,7 +3,7 @@ title: "REST API"
 description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests and captured emails, configure forwarding, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -212,10 +212,14 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
   "signatureVerified": true,
   "signatureError": null,
   "signingProvider": "stripe",
+  "responseStatus": 402,
+  "responseRule": "Payment failed",
   "kind": "http",
   "email": null
 }
 ```
+
+`responseStatus` is the HTTP status the endpoint answered the sender with, and `responseRule` the [response rule](/docs/mock-responses) that chose it: its name, or `Rule 2` for an unnamed one by its place in the list. `responseRule` is `null` when no rule matched and the endpoint's own response or the plain 200 answered. Both are recorded when the request arrives, so later edits to the rules do not change them, and both are `null` for emails and for requests captured before answers were recorded, in November 2026.
 
 `detectedProvider` and `detectedEvent` are best-effort metadata derived from headers and body shape. They power the provider icon and event badge in the dashboard. Signature fields are present when endpoint-level verification is configured.
 

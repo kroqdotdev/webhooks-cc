@@ -570,6 +570,8 @@ export interface Database {
           signature_verified: boolean | null;
           signature_error: string | null;
           signing_provider: string | null;
+          response_status: number | null;
+          response_rule: string | null;
           kind: "http" | "email";
           email: Json | null;
           dedupe_key: string | null;
@@ -594,6 +596,8 @@ export interface Database {
           signature_verified?: boolean | null;
           signature_error?: string | null;
           signing_provider?: string | null;
+          response_status?: number | null;
+          response_rule?: string | null;
           kind?: "http" | "email";
           email?: Json | null;
           dedupe_key?: string | null;
@@ -618,6 +622,8 @@ export interface Database {
           signature_verified?: boolean | null;
           signature_error?: string | null;
           signing_provider?: string | null;
+          response_status?: number | null;
+          response_rule?: string | null;
           kind?: "http" | "email";
           email?: Json | null;
           dedupe_key?: string | null;

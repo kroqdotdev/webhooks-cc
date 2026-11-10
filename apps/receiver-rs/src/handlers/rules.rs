@@ -59,6 +59,11 @@ pub struct ResponseRule {
     pub conditions: Vec<RuleCondition>,
     /// Response to return when conditions match
     pub response: MockResponse,
+    /// Where the rule sits in the endpoint's stored list, counting rules that
+    /// could not be read: the "Rule N" the dashboard shows. Set by the capture
+    /// handler as it reads the list.
+    #[serde(skip)]
+    pub position: usize,
 }
 
 fn default_true() -> bool {
@@ -90,20 +95,26 @@ pub fn evaluate_rules(rules: &[ResponseRule], ctx: &RequestContext<'_>) -> Optio
 
 /// `evaluate_rules` with a body the caller parses at most once (the
 /// placeholders of the chosen response read it too).
+#[cfg(test)]
 pub(crate) fn evaluate_rules_with(
     rules: &[ResponseRule],
     ctx: &RequestContext<'_>,
     body: &LazyBody<'_>,
 ) -> Option<MockResponse> {
-    for rule in rules {
-        if !rule.enabled || rule.conditions.is_empty() {
-            continue;
-        }
-        if conditions_hold(&rule.logic, &rule.conditions, ctx, body) {
-            return Some(rule.response.clone());
-        }
-    }
-    None
+    matching_rule(rules, ctx, body).map(|index| rules[index].response.clone())
+}
+
+/// The index of the first enabled rule whose conditions hold, if any.
+pub(crate) fn matching_rule(
+    rules: &[ResponseRule],
+    ctx: &RequestContext<'_>,
+    body: &LazyBody<'_>,
+) -> Option<usize> {
+    rules.iter().position(|rule| {
+        rule.enabled
+            && !rule.conditions.is_empty()
+            && conditions_hold(&rule.logic, &rule.conditions, ctx, body)
+    })
 }
 
 /// Whether the conditions hold together: every one ("and") or any ("or").
@@ -327,6 +338,7 @@ mod tests {
             enabled: true,
             logic: logic.to_string(),
             conditions,
+            position: 0,
             response: MockResponse {
                 status,
                 body: body.to_string(),

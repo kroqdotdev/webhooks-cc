@@ -38,6 +38,8 @@ type SelectedRequestRow = Pick<
   signature_verified?: boolean | null;
   signature_error?: string | null;
   signing_provider?: string | null;
+  response_status?: number | null;
+  response_rule?: string | null;
 };
 type OwnedEndpointRow = Pick<Database["public"]["Tables"]["endpoints"]["Row"], "id" | "slug">;
 /** Present when the select asked for it (the forwarding worker does). */
@@ -78,6 +80,13 @@ export interface RequestRecord {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  /**
+   * The HTTP status the receiver answered with (since migration 00090; null
+   * for email and for requests captured before it).
+   */
+  responseStatus?: number | null;
+  /** The response rule that chose the answer, by name or "Rule N"; null when no rule did. */
+  responseRule?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
   /** "email" for captured emails (`email` is set), "http" for everything else. */
@@ -184,6 +193,8 @@ function normalizeRequest(row: SelectedRequestRowWithQuery): RequestRecord {
     signatureVerified: row.signature_verified ?? null,
     signatureError: row.signature_error ?? null,
     signingProvider: row.signing_provider ?? null,
+    responseStatus: row.response_status ?? null,
+    responseRule: row.response_rule ?? null,
     detectedProvider: detection.detectedProvider,
     detectedEvent: detection.detectedEvent,
     kind,
@@ -466,7 +477,7 @@ export async function getRetainedRequestsByIds(
   const query = createAdminClient()
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, result)"
     )
     .eq("endpoint_id", endpointId)
     .in("id", ids);
@@ -514,7 +525,7 @@ export async function getRequestsByIds(ids: string[]): Promise<RequestRecord[]> 
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, result)"
     )
     .in("id", ids)
     .returns<SelectedRequestRowWithQuery[]>();
@@ -532,7 +543,7 @@ export async function getRequestByIdForUser(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, result)"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()
@@ -590,7 +601,7 @@ export async function listRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -661,7 +672,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -727,7 +738,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -816,7 +827,7 @@ export async function listRequestsForSandboxEndpoint(
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, summary)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, summary)"
     )
     .eq("endpoint_id", endpointId);
   if (input.since !== undefined) {
@@ -839,7 +850,7 @@ export async function getSandboxRequest(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email, request_parses(status, result)"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, kind, email, request_parses(status, result)"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()

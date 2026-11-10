@@ -3,7 +3,7 @@ title: "Requests"
 description: "Every webhook sent to your endpoint is captured and displayed in real time. Inspect headers, body, query parameters, method, and IP address for each incoming request."
 section: dashboard
 order: 3
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords: ["webhook request", "request inspector", "webhook body", "webhook headers"]
 seo:
@@ -21,6 +21,7 @@ The left panel shows captured requests sorted by time. Each entry displays the H
 - **Filter**: filter by HTTP method or search by path, body, or request ID
 - **Provider badge**: Stripe, GitHub, Shopify, Typeform, and other known providers show an icon in the list
 - **Event badge**: known event names like `checkout.session.completed`, `push`, or `form_response` appear under the request
+- **Answer**: the status the endpoint answered with, and the [response rule](/docs/mock-responses) that chose it, appear under the request
 
 ## Request detail
 
@@ -32,6 +33,8 @@ Click a request to view its details. Tabs organize the data:
 - **Raw**: unformatted request body
 - **Signature**: verify the request's webhook signature (client-side or server-side)
 - **Deliveries**: each [forwarding](/docs/forwarding) destination's tries for this request, with **Redeliver** (once the endpoint has destinations)
+
+Above the tabs, beside the size and time, the request shows what the endpoint answered the sender with, such as **Answered 402 (Rule: Payment failed)**, or **Answered 200** when no rule matched. It is recorded when the request arrives, so it stays what the sender got even after the rules change. Emails, and requests captured before answers were recorded in November 2026, do not show it.
 
 A format badge (JSON, XML, FORM, TEXT) appears above the body for quick identification. Emails open their own view with a preview, codes and links, and sender checks; see [Email Capture](/docs/email-capture#in-the-dashboard).
 

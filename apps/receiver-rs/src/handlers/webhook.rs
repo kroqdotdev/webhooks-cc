@@ -10,10 +10,11 @@ use std::collections::hash_map::Entry;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use super::answers::{self, Answer};
 use super::capture_limiter::CaptureLimiter;
 use super::log_throttle::LogThrottle;
 use super::placeholders::{self, Mode, TemplateRequest};
-use super::rules::{self, RequestContext, ResponseRule};
+use super::rules::{RequestContext, ResponseRule};
 use super::values::LazyBody;
 use crate::AppState; // ResponseRule needed for deserialization
 use crate::metrics;
@@ -211,7 +212,10 @@ pub(crate) struct CaptureResult {
     pub(crate) status: String,
     /// UUID of the inserted request row (for post-capture verification UPDATE).
     pub(crate) request_id: Option<String>,
-    mock_response: Option<MockResponse>,
+    /// Raw JSON, read on its own, so that a malformed stored mock cannot make
+    /// the whole result unreadable (and skip the rules and signature checks).
+    #[serde(default)]
+    mock_response: Option<serde_json::Value>,
     /// Raw JSON so that malformed rules don't break mock_response deserialization.
     #[serde(default)]
     response_rules: Option<serde_json::Value>,
@@ -238,7 +242,11 @@ struct WebhookTarget {
 #[derive(Debug, Deserialize, Clone)]
 pub struct MockResponse {
     pub status: i64,
+    // Defaults, so a mock stored without them (an older partial PATCH) cannot
+    // make the whole capture result unreadable.
+    #[serde(default)]
     pub body: String,
+    #[serde(default)]
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub delay: Option<u64>,
@@ -278,34 +286,58 @@ fn fill_mock_response(mut mock: MockResponse, request: &TemplateRequest<'_>) -> 
     mock
 }
 
-/// Build an HTTP response from a mock_response configuration.
-fn build_mock_response(mock: &MockResponse) -> Response {
-    let status_code = u16::try_from(mock.status)
+/// The mock's headers that go out: oversized, blocked and CRLF-carrying ones
+/// are skipped.
+fn sendable_headers(mock: &MockResponse) -> impl Iterator<Item = (&str, &str)> {
+    mock.headers
+        .iter()
+        .filter(|(key, value)| {
+            key.len() <= MAX_HEADER_KEY_LEN
+                && value.len() <= MAX_HEADER_VALUE_LEN
+                && !BLOCKED_HEADERS.contains(&key.to_lowercase().as_str())
+                && !key.contains(['\r', '\n'])
+                && !value.contains(['\r', '\n'])
+        })
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+}
+
+/// The status line a mock asks for: its own when it is a valid HTTP status,
+/// otherwise 200. A 1xx cannot end a response (hyper would send 500 for most
+/// and a bare 101 Switching Protocols for 101), so it is sent as 500.
+fn requested_status(mock: &MockResponse) -> StatusCode {
+    let status = u16::try_from(mock.status)
         .ok()
         .and_then(|s| StatusCode::from_u16(s).ok())
         .unwrap_or(StatusCode::OK);
+    if status.is_informational() {
+        StatusCode::INTERNAL_SERVER_ERROR
+    } else {
+        status
+    }
+}
+
+/// The status a sender gets for `mock`: the one it asks for when every header
+/// `build_mock_response` keeps is a valid header, otherwise the plain 200 the
+/// builder falls back to.
+pub(crate) fn mock_status(mock: &MockResponse) -> StatusCode {
+    let headers_ok = sendable_headers(mock).all(|(key, value)| {
+        axum::http::HeaderName::from_bytes(key.as_bytes()).is_ok()
+            && HeaderValue::from_str(value).is_ok()
+    });
+    if headers_ok {
+        requested_status(mock)
+    } else {
+        StatusCode::OK
+    }
+}
+
+/// Builds an HTTP response from a mock_response configuration.
+fn build_mock_response(mock: &MockResponse) -> Response {
+    let status_code = requested_status(mock);
 
     let mut builder = axum::http::Response::builder().status(status_code);
-
-    for (key, value) in &mock.headers {
-        // Skip oversized headers
-        if key.len() > MAX_HEADER_KEY_LEN || value.len() > MAX_HEADER_VALUE_LEN {
-            continue;
-        }
-
-        // Skip blocked headers
-        let key_lower = key.to_lowercase();
-        if BLOCKED_HEADERS.contains(&key_lower.as_str()) {
-            continue;
-        }
-
-        // Skip CRLF injection attempts
-        if key.contains('\r') || key.contains('\n') || value.contains('\r') || value.contains('\n')
-        {
-            continue;
-        }
-
-        builder = builder.header(key.as_str(), value.as_str());
+    for (key, value) in sendable_headers(mock) {
+        builder = builder.header(key, value);
     }
 
     builder
@@ -456,6 +488,43 @@ fn capture_failure_response(slug: &str, e: &sqlx::Error) -> Response {
     }
 }
 
+/// Records on the request row what it was answered with, when the answer the
+/// insert recorded (predicted from cached rules) turned out different. In the
+/// background: the sender's response never waits for it.
+fn correct_answer(state: &AppState, request_id: &str, answer: Answer) {
+    let pool = state.pool.clone();
+    let request_id = request_id.to_string();
+    tokio::spawn(async move {
+        // Two tries a second apart: a correction runs outside the capture
+        // slots, so a busy pool can time it out once.
+        for attempt in 1..=2 {
+            // The same bounds capture_webhook() applies (migration 00090).
+            let result = sqlx::query(
+                "UPDATE public.requests \
+                 SET response_status = CASE WHEN $1 BETWEEN 100 AND 599 THEN $1::smallint END, \
+                     response_rule = NULLIF(LEFT($2, 200), '') \
+                 WHERE id = $3::uuid",
+            )
+            .bind(i32::from(answer.status))
+            .bind(answer.rule.as_deref())
+            .bind(&request_id)
+            .execute(&pool)
+            .await;
+            match result {
+                Ok(_) => {
+                    metrics::answer("corrected");
+                    return;
+                }
+                Err(e) if attempt == 2 => {
+                    metrics::answer("failed");
+                    tracing::warn!(request_id, error = %e, "failed to record the answer a request got");
+                }
+                Err(_) => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+            }
+        }
+    });
+}
+
 /// The main webhook handler: any method at /w/{slug}/{*path}
 pub async fn handle_webhook(
     State(state): State<AppState>,
@@ -555,6 +624,28 @@ async fn handle_webhook_inner(
     let query_json = serde_json::to_value(&query_params)
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
+    // 3b. The answer, as the rules this slug's last capture returned would
+    //     give it (handlers/answers.rs; the plain 200 when none are kept), so
+    //     the insert records it in the same write. The body is parsed here and
+    //     dropped before the query: it cannot be held across an await.
+    let predicted: Answer = {
+        let content_type = (!content_type.is_empty()).then_some(content_type.as_str());
+        let lazy_body = LazyBody::new(&body_str, content_type);
+        state.answers.predict(
+            &slug,
+            &RequestContext {
+                method: method.as_str(),
+                path: &req_path,
+                headers: &filtered_headers,
+                body: &body_str,
+                query: &query_params,
+                content_type,
+                size: Some(body.len() as u64),
+            },
+            &lazy_body,
+        )
+    };
+
     // 4. Call the stored procedure, holding one of the account's capture slots
     //    for the query only (never across a mock response delay).
     let limit_key = match state.capture_limiter.cached_key(&slug) {
@@ -580,9 +671,10 @@ async fn handle_webhook_inner(
     };
     let result: Result<serde_json::Value, sqlx::Error> =
         // p_query_raw by name (migration 00058): the email parameters between
-        // keep their defaults.
+        // keep their defaults. The answer by name too (migration 00090).
         sqlx::query_scalar(
-            "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, p_query_raw => $11)",
+            "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, p_query_raw => $11, \
+             p_response_status => $12, p_response_rule => $13)",
         )
         .bind(&slug)
             .bind(method.as_str())
@@ -595,6 +687,8 @@ async fn handle_webhook_inner(
             .bind(received_at)
             .bind(&body_raw)
             .bind(raw_query.as_deref())
+            .bind(i32::from(predicted.status))
+            .bind(predicted.rule.as_deref())
             .fetch_one(&state.pool)
             .await;
     drop(permit);
@@ -602,13 +696,23 @@ async fn handle_webhook_inner(
     // 5. Map result to HTTP response
     match result {
         Ok(json_value) => {
-            let capture: CaptureResult = match serde_json::from_value(json_value) {
+            let inserted_id = json_value
+                .get("request_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string);
+            let mut capture: CaptureResult = match serde_json::from_value(json_value) {
                 Ok(c) => c,
                 Err(e) => {
                     // The row was inserted but we cannot read the outcome; fail open
                     // (the sender must not retry), but count and log it loudly.
                     metrics::capture_failed("parse");
                     tracing::error!(slug, kind = "parse", error = %e, "failed to parse capture_webhook result");
+                    // The sender gets the plain 200, whatever was predicted.
+                    if let Some(ref request_id) = inserted_id
+                        && predicted != Answer::plain_ok()
+                    {
+                        correct_answer(&state, request_id, Answer::plain_ok());
+                    }
                     return (StatusCode::OK, "OK").into_response();
                 }
             };
@@ -741,6 +845,17 @@ async fn handle_webhook_inner(
                         }
                     }
 
+                    // The endpoint's own response; a stored mock that cannot be
+                    // read is logged and left out, as a malformed rule is.
+                    let mock_response: Option<MockResponse> =
+                        capture.mock_response.take().and_then(|value| {
+                            serde_json::from_value(value)
+                                .inspect_err(|e| {
+                                    tracing::error!(slug, error = %e, "skipping malformed mock response");
+                                })
+                                .ok()
+                        });
+
                     // Evaluate conditional response rules first, fall back to default mock.
                     // Parse rules item-by-item so one malformed rule doesn't kill all rules.
                     let parsed_rules: Option<Vec<ResponseRule>> = capture
@@ -750,7 +865,7 @@ async fn handle_webhook_inner(
                                 let mut rules = Vec::with_capacity(items.len());
                                 for (idx, item) in items.into_iter().enumerate() {
                                     match serde_json::from_value::<ResponseRule>(item) {
-                                        Ok(rule) => rules.push(rule),
+                                        Ok(rule) => rules.push(ResponseRule { position: idx, ..rule }),
                                         Err(e) => {
                                             tracing::error!(slug, index = idx, error = %e, "skipping malformed response rule");
                                         }
@@ -767,26 +882,27 @@ async fn handle_webhook_inner(
 
                     // Pick the response and fill in its placeholders before any
                     // delay: the parsed body is not held across the await.
-                    let effective_mock = {
+                    let (effective_mock, answer) = {
                         let content_type =
                             (!content_type.is_empty()).then_some(content_type.as_str());
                         let lazy_body = LazyBody::new(&body_str, content_type);
-                        let chosen = if let Some(ref rules) = parsed_rules {
-                            let ctx = RequestContext {
-                                method: method.as_str(),
-                                path: &req_path,
-                                headers: &filtered_headers,
-                                body: &body_str,
-                                query: &query_params,
-                                content_type,
-                                size: Some(body.len() as u64),
-                            };
-                            rules::evaluate_rules_with(rules, &ctx, &lazy_body)
-                                .or(capture.mock_response.clone())
-                        } else {
-                            capture.mock_response.clone()
+                        let ctx = RequestContext {
+                            method: method.as_str(),
+                            path: &req_path,
+                            headers: &filtered_headers,
+                            body: &body_str,
+                            query: &query_params,
+                            content_type,
+                            size: Some(body.len() as u64),
                         };
-                        chosen.map(|mock| {
+                        let rules = parsed_rules.as_deref().unwrap_or_default();
+                        let (answer, rule_index) =
+                            answers::decide(rules, mock_response.as_ref(), &ctx, &lazy_body);
+                        let chosen = match rule_index {
+                            Some(index) => Some(rules[index].response.clone()),
+                            None => mock_response.clone(),
+                        };
+                        let filled = chosen.map(|mock| {
                             let request_id = capture.request_id.clone().unwrap_or_default();
                             let received = received_at.to_rfc3339_opts(SecondsFormat::Millis, true);
                             let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -811,22 +927,43 @@ async fn handle_webhook_inner(
                                     now: &now,
                                 },
                             )
-                        })
+                        });
+                        (filled, answer)
                     };
 
-                    if let Some(ref mock) = effective_mock {
-                        if let Some(delay) = mock.delay {
-                            let capped = delay.min(MAX_DELAY_MS);
-                            if capped > 0 {
-                                tokio::time::sleep(std::time::Duration::from_millis(capped)).await;
-                            }
-                        }
-                        build_mock_response(mock)
-                    } else {
-                        (StatusCode::OK, "OK").into_response()
+                    // The row records the status that actually goes out, judged
+                    // on the filled response: one that cannot be built goes out as
+                    // a plain 200, and a 1xx as hyper's 500 (mock_status).
+                    let sent = Answer {
+                        status: answers::response_status(effective_mock.as_ref()),
+                        ..answer
+                    };
+                    let response = match effective_mock {
+                        Some(ref mock) => build_mock_response(mock),
+                        None => (StatusCode::OK, "OK").into_response(),
+                    };
+
+                    // The next capture of this slug predicts from these rules; the
+                    // row is corrected only when the prediction missed.
+                    state
+                        .answers
+                        .remember(&slug, parsed_rules.as_deref(), mock_response.as_ref());
+                    if predicted != sent
+                        && let Some(ref request_id) = capture.request_id
+                    {
+                        correct_answer(&state, request_id, sent);
                     }
+
+                    if let Some(delay) = effective_mock.as_ref().and_then(|mock| mock.delay) {
+                        let capped = delay.min(MAX_DELAY_MS);
+                        if capped > 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(capped)).await;
+                        }
+                    }
+                    response
                 }
                 "not_found" => {
+                    state.answers.forget(&slug);
                     metrics::capture_result("not_found");
                     (
                         StatusCode::NOT_FOUND,
@@ -835,6 +972,7 @@ async fn handle_webhook_inner(
                         .into_response()
                 }
                 "expired" => {
+                    state.answers.forget(&slug);
                     metrics::capture_result("expired");
                     (
                         StatusCode::GONE,
@@ -881,6 +1019,53 @@ async fn handle_webhook_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mock_whose_response_cannot_be_built_goes_out_as_a_plain_200() {
+        // The row records response.status(), so it must say what this sends.
+        let mock = MockResponse {
+            status: 402,
+            body: "no".to_string(),
+            headers: HashMap::from([("X Foo".to_string(), "a".to_string())]),
+            delay: None,
+        };
+        assert_eq!(build_mock_response(&mock).status(), StatusCode::OK);
+        assert_eq!(mock_status(&mock), StatusCode::OK);
+        let fine = MockResponse {
+            headers: HashMap::from([("x-ok".to_string(), "a".to_string())]),
+            ..mock
+        };
+        assert_eq!(
+            build_mock_response(&fine).status(),
+            StatusCode::PAYMENT_REQUIRED
+        );
+        assert_eq!(mock_status(&fine), StatusCode::PAYMENT_REQUIRED);
+        // Headers the builder skips cannot make it fall back.
+        let skipped = MockResponse {
+            headers: HashMap::from([("bad\nname".to_string(), "a".to_string())]),
+            ..fine
+        };
+        assert_eq!(
+            build_mock_response(&skipped).status(),
+            StatusCode::PAYMENT_REQUIRED
+        );
+        assert_eq!(mock_status(&skipped), StatusCode::PAYMENT_REQUIRED);
+        // A 1xx cannot end a response: every one goes out as 500, 101 included.
+        for status in [100, 101, 102, 103, 199] {
+            let informational = MockResponse {
+                status,
+                ..skipped.clone()
+            };
+            assert_eq!(
+                build_mock_response(&informational).status(),
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+            assert_eq!(
+                mock_status(&informational),
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+        }
+    }
 
     fn filled(mock: MockResponse, body: &str, content_type: Option<&str>) -> MockResponse {
         let headers = HashMap::from([("x-event".to_string(), "order.paid".to_string())]);

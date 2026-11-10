@@ -30,6 +30,7 @@ import { ProviderBadge } from "./provider-badge";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 import { PayloadSchemaView } from "./payload-schema-view";
 import { ShareRequestDialog } from "./share-request-dialog";
+import { ResponseAnswer } from "./response-answer";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -308,6 +309,7 @@ export function RequestDetail({
                   onClick={() => setTab("signature")}
                 />
               )}
+              <ResponseAnswer request={request} />
             </div>
           </div>
           {/* On phones every action is at least 36px tall (Share and Replay render their own buttons). */}
