@@ -79,6 +79,32 @@ export default tseslint.config(
     },
   },
 
+  // The script the tunnel edge adds to shared pages (apps/edge-rs): it runs
+  // in visitors' browsers, and the edge fills in __BRANDS__ when serving it.
+  // Empty catch blocks there are deliberate: a page's own code must never
+  // see the script fail.
+  {
+    files: ["apps/edge-rs/src/**/*.js"],
+    languageOptions: {
+      sourceType: "script",
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        location: "readonly",
+        navigator: "readonly",
+        sessionStorage: "readonly",
+        setTimeout: "readonly",
+        addEventListener: "readonly",
+        Blob: "readonly",
+        CSSStyleSheet: "readonly",
+        __BRANDS__: "readonly",
+      },
+    },
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
+    },
+  },
+
   // SDK rules
   {
     files: ["packages/sdk/**/*.ts"],

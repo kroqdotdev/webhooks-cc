@@ -1,0 +1,28 @@
+{
+  "brands": [
+    "paypal",
+    "apple id",
+    "icloud",
+    "microsoft",
+    "outlook",
+    "office 365",
+    "google",
+    "gmail",
+    "amazon",
+    "netflix",
+    "facebook",
+    "instagram",
+    "bank",
+    "coinbase",
+    "metamask",
+    "wallet",
+    "github",
+    "stripe",
+    "visa",
+    "mastercard",
+    "webhooks.cc",
+    "mailhooks",
+    "sharehooks"
+  ],
+  "words": ["verify your account", "account suspended", "recovery phrase", "seed phrase"]
+}
