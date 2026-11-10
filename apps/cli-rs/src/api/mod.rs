@@ -67,15 +67,28 @@ impl std::fmt::Debug for ApiClient {
     }
 }
 
+/// `WHK_API_KEY`, trimmed; unset or blank is none.
+fn env_api_key() -> Option<String> {
+    std::env::var("WHK_API_KEY")
+        .ok()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+}
+
 impl ApiClient {
-    /// Create a new API client. Reads the token from disk and URLs from env;
-    /// without a token, a live `claimed` slot in the agent credential file
-    /// (`WHK_AGENT_FILE` or the default path) supplies the bearer.
+    /// Create a new API client. An API key in `WHK_API_KEY` wins (the SDK's
+    /// `share()` and the MCP server's `share_port` pass theirs that way);
+    /// otherwise the token comes from disk, and without one a live
+    /// `claimed` slot in the agent credential file (`WHK_AGENT_FILE` or the
+    /// default path) supplies the bearer. URLs come from env.
     pub fn new(
         base_url_override: Option<&str>,
         webhook_url_override: Option<&str>,
     ) -> Result<Self> {
-        let token = auth::load_token()?.map(|t| t.access_token);
+        let token = match env_api_key() {
+            Some(key) => Some(key),
+            None => auth::load_token()?.map(|t| t.access_token),
+        };
         let base = base_url_override
             .map(String::from)
             .or_else(|| std::env::var("WHK_API_URL").ok())

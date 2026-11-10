@@ -31,6 +31,7 @@ import {
   conditionIssues,
   type ConditionField,
   type EmailRequest,
+  type LiveShare,
   type PayloadSchemaFormat,
   type Request,
   type VerifyProvider,
@@ -1011,8 +1012,11 @@ export interface RegisterToolsOptions {
   remote?: boolean;
 }
 
-/** Tools that only make sense next to the caller: they post to a URL of the caller's choosing. */
-const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request"]);
+/**
+ * Tools that only make sense next to the caller: they post to a URL of the
+ * caller's choosing, or (share_port) run the whk CLI on the caller's machine.
+ */
+const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request", "share_port"]);
 /** Tools whose optional targetUrl posts somewhere of the caller's choosing. */
 const TARGET_URL_TOOLS = new Set(["render_email", "test_webhook_flow"]);
 /** Longest wait on the hosted server; Cloudflare ends a request after 100 seconds. */
@@ -1085,6 +1089,26 @@ function toolTarget(
       handles.push(handle);
       return handle;
     },
+  };
+}
+
+/** What share_port tells the agent about a running share. */
+function shareSummary(live: LiveShare): Record<string, unknown> {
+  const notes: string[] = [];
+  if (live.notice) {
+    notes.push("Visitors see a short notice from webhooks.cc before the site.");
+  }
+  if (live.password) notes.push("Visitors need the password.");
+  if (live.expiresAt) notes.push(`The plan stops this share at ${live.expiresAt}.`);
+  notes.push("It runs until stop_share or the end of this MCP server.");
+  return {
+    url: live.url,
+    name: live.name,
+    port: live.port,
+    expiresAt: live.expiresAt,
+    notice: live.notice,
+    password: live.password,
+    notes: notes.join(" "),
   };
 }
 
@@ -2477,6 +2501,72 @@ export function registerTools(
           ? await client.forwarding.redeliver(requestId, options)
           : await client.forwarding.redeliverFailed(endpointSlug!, options)
       );
+    })
+  );
+
+  // Shares this server started, by port, so asking again returns the same
+  // link. They run until stop_share, the plan's limit, or this server's end
+  // (whk stops when its stdin closes).
+  const started = new Map<number, LiveShare>();
+
+  server.tool(
+    "share_port",
+    "Share a port on this computer at a public link (https://<name>.sharehooks.cc) by running the webhooks.cc CLI (whk share), so a person can open the site you are building. Returns the link. It keeps running until stop_share, the plan's session limit, or the end of this MCP server. Free accounts get a random name ending in -free, a 2-hour limit and a notice page before the site; Pro and Business can use a reserved name and a password. Needs whk installed on this computer. For a webhook provider that must get your local app's real answer, use `whk tunnel <port> --live` instead.",
+    {
+      port: z.number().int().min(1).max(65535).describe("The local port the site runs on"),
+      name: z
+        .string()
+        .optional()
+        .describe("A name you reserved (Pro and Business); leave out for a random one"),
+      password: z
+        .string()
+        .min(8)
+        .max(200)
+        .optional()
+        .describe("What visitors must type (Pro and Business), 8 to 200 characters"),
+    },
+    withErrorHandling(async ({ port, name, password }) => {
+      const running = started.get(port);
+      if (running && !name && !password) {
+        return jsonContent({ ...shareSummary(running), alreadyRunning: true });
+      }
+      const live = await client.shares.start({
+        port,
+        ...(name ? { name } : {}),
+        ...(password ? { password } : {}),
+        ...(process.env.WHK_PATH ? { whkPath: process.env.WHK_PATH } : {}),
+      });
+      started.set(port, live);
+      void live.closed.then(() => {
+        if (started.get(port) === live) started.delete(port);
+      });
+      return jsonContent(shareSummary(live));
+    })
+  );
+
+  server.tool(
+    "list_shares",
+    "List your public previews of local ports (whk share, share_port) and live tunnels (whk tunnel --live): live ones first, then the latest that ended, with this month's shared data and your plan's sharing limits. Not the same as share_endpoint, which shares an endpoint with a team.",
+    {
+      state: z
+        .enum(["live", "ended"])
+        .optional()
+        .describe("Only the running ones, or only the ended ones"),
+    },
+    withErrorHandling(async ({ state }) => {
+      return jsonContent(await client.shares.list(state ? { state } : {}));
+    })
+  );
+
+  server.tool(
+    "stop_share",
+    "Stop a public preview or live tunnel by its id (from list_shares). The CLI running it is told why and exits.",
+    {
+      id: z.string().describe("The share's id, from list_shares"),
+    },
+    withErrorHandling(async ({ id }) => {
+      await client.shares.stop(id);
+      return jsonContent({ stopped: id });
     })
   );
 

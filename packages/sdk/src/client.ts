@@ -72,7 +72,12 @@ import type {
   ListDeliveriesOptions,
   RenderEmailOptions,
   RenderedEmail,
+  TunnelName,
+  TunnelNameList,
+  TunnelShareList,
+  TunnelVisits,
 } from "./types";
+import { share as runShare, type LiveShare, type ShareOptions } from "./share";
 import type { EmailReceivedEvent, RequestKind } from "./email/types";
 import type { ParsedEmail } from "./email/layouts";
 import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/address";
@@ -1583,6 +1588,48 @@ export class WebhooksCC {
           params: { inviteId: "string" },
         },
       },
+      shares: {
+        list: {
+          description:
+            "List your public previews (whk share) and live tunnels, this month's shared data and your plan's sharing limits",
+          params: { state: '"live" | "ended"?' },
+        },
+        stop: {
+          description:
+            "Stop a preview or live tunnel by id (yours, or a teammate's under a team name)",
+          params: { id: "string" },
+        },
+        requests: {
+          description: "The last visitor requests to a preview, from the tunnel edge's memory",
+          params: { id: "string" },
+        },
+        start: {
+          description:
+            "Share a local port at a public link by running the whk CLI (Node.js only, whk installed); resolves with the link",
+          params: {
+            port: "number",
+            name: "string? (a reserved name, Pro and Business)",
+            password: "string? (8 to 200 characters, Pro and Business)",
+            whkPath: "string?",
+          },
+        },
+      },
+      names: {
+        list: { description: "List your reserved preview names and your team's", params: {} },
+        reserve: {
+          description: "Reserve a preview name (Pro and Business): <name>.sharehooks.cc",
+          params: { name: "string", team: "string? (team id)" },
+        },
+        release: { description: "Release a reserved name", params: { name: "string" } },
+        setPassword: {
+          description: "Put a password on every preview under a name",
+          params: { name: "string", password: "string" },
+        },
+        clearPassword: {
+          description: "Remove a name's password",
+          params: { name: "string" },
+        },
+      },
     };
   }
 
@@ -1849,6 +1896,83 @@ export class WebhooksCC {
         validatePathSegment(inviteId, "inviteId");
         await this.request("POST", `/invites/${inviteId}/decline`);
       },
+    },
+  };
+
+  /**
+   * Public previews of local ports (`whk share`) and live tunnels (`whk
+   * tunnel --live`). Previews are served at `<name>.sharehooks.cc`; Free
+   * previews get a random name ending in `-free` and a time limit.
+   */
+  shares = {
+    /** Your previews and live tunnels (live first, then the latest that ended), with this month's data and your limits. */
+    list: async (options: { state?: "live" | "ended" } = {}): Promise<TunnelShareList> => {
+      const state = options.state;
+      if (state !== undefined && state !== "live" && state !== "ended") {
+        throw new Error('state must be "live" or "ended"');
+      }
+      return this.request<TunnelShareList>("GET", state ? `/shares?state=${state}` : "/shares");
+    },
+
+    /** Stop a preview or live tunnel. Its CLI is told why and exits. */
+    stop: async (id: string): Promise<void> => {
+      validatePathSegment(id, "id");
+      await this.request("POST", `/shares/${id}/stop`, {});
+    },
+
+    /** The last visitor requests to a preview (no addresses, a number per visitor), newest first. */
+    requests: async (id: string): Promise<TunnelVisits> => {
+      validatePathSegment(id, "id");
+      return this.request<TunnelVisits>("GET", `/shares/${id}/requests`);
+    },
+
+    /**
+     * Share a local port at a public link with this client's account, by
+     * running the whk CLI (Node.js only; see `share()`).
+     */
+    start: async (options: Omit<ShareOptions, "apiKey" | "baseUrl">): Promise<LiveShare> => {
+      return runShare({
+        ...options,
+        apiKey: this.apiKey,
+        baseUrl: this.baseUrl,
+      });
+    },
+  };
+
+  /** Reserved preview names (Pro and Business): `<name>.sharehooks.cc`. */
+  names = {
+    /** Your names and your teams' names, with how many your plan allows. */
+    list: async (): Promise<TunnelNameList> => {
+      return this.request<TunnelNameList>("GET", "/tunnel-names");
+    },
+
+    /** Reserve a name; with `team` (a team id) it belongs to that team. */
+    reserve: async (name: string, options: { team?: string } = {}): Promise<TunnelName> => {
+      validatePathSegment(name, "name");
+      const body: { name: string; team?: string } = { name };
+      if (options.team) body.team = options.team;
+      return (await this.request<{ name: TunnelName }>("POST", "/tunnel-names", body)).name;
+    },
+
+    /** Release a name you reserved (or, for a team name, as the team's owner). */
+    release: async (name: string): Promise<void> => {
+      validatePathSegment(name, "name");
+      await this.request("DELETE", `/tunnel-names/${name}`);
+    },
+
+    /** Put a password on every preview under this name. */
+    setPassword: async (name: string, password: string): Promise<void> => {
+      validatePathSegment(name, "name");
+      if (typeof password !== "string" || password.length < 8 || password.length > 200) {
+        throw new Error("password must be 8 to 200 characters");
+      }
+      await this.request("PUT", `/tunnel-names/${name}/password`, { password });
+    },
+
+    /** Remove the name's password. */
+    clearPassword: async (name: string): Promise<void> => {
+      validatePathSegment(name, "name");
+      await this.request("DELETE", `/tunnel-names/${name}/password`);
     },
   };
 

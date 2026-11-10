@@ -137,3 +137,41 @@ func clearRaw(v reflect.Value) {
 		}
 	}
 }
+
+// A request captured while `whk tunnel --live` ran carries the app's answer.
+func TestRequestReadsLiveResponse(t *testing.T) {
+	var request webhookscc.Request
+	data := `{"id":"r1","endpointId":"ep_1","method":"POST","path":"/hook","headers":{},"body":"{}",` +
+		`"queryParams":{},"ip":"203.0.113.7","size":2,"receivedAt":1767225600123,"kind":"http",` +
+		`"liveResponse":{"status":201,"headers":{"content-type":"application/json"},` +
+		`"body":"{\"ok\":true}","bodyTruncated":false,"bodyEncoding":"utf8","ms":12}}`
+	if err := json.Unmarshal([]byte(data), &request); err != nil {
+		t.Fatal(err)
+	}
+	want := &webhookscc.LiveResponse{
+		Status: 201, Headers: map[string]string{"content-type": "application/json"},
+		Body: `{"ok":true}`, BodyEncoding: "utf8", MS: 12,
+	}
+	if !reflect.DeepEqual(request.LiveResponse, want) {
+		t.Fatalf("LiveResponse = %+v, want %+v", request.LiveResponse, want)
+	}
+	again, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back webhookscc.Request
+	if err := json.Unmarshal(again, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(back.LiveResponse, want) {
+		t.Fatalf("round trip LiveResponse = %+v", back.LiveResponse)
+	}
+
+	var plain webhookscc.Request
+	if err := json.Unmarshal([]byte(`{"id":"r2","method":"GET","path":"/"}`), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if plain.LiveResponse != nil {
+		t.Fatalf("LiveResponse = %+v, want nil", plain.LiveResponse)
+	}
+}

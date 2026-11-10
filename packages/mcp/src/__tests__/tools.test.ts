@@ -64,6 +64,9 @@ const EXPECTED_TOOLS = [
   "test_forwarding",
   "list_deliveries",
   "redeliver",
+  "share_port",
+  "list_shares",
+  "stop_share",
 ];
 
 type RegisteredTool = {
@@ -171,6 +174,13 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
       invites: { list: vi.fn(), accept: vi.fn(), decline: vi.fn() },
       ...(overrides.teams ?? {}),
     },
+    shares: {
+      list: vi.fn(),
+      stop: vi.fn(),
+      requests: vi.fn(),
+      start: vi.fn(),
+      ...(overrides.shares ?? {}),
+    },
     emails: {
       address: vi.fn((slug: string, tag?: string) =>
         tag ? `${slug}+${tag}@mailhooks.cc` : `${slug}@mailhooks.cc`
@@ -233,9 +243,12 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(46);
+    expect(Object.keys(tools)).toHaveLength(48);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
+    expect(tools).not.toHaveProperty("share_port");
+    expect(tools).toHaveProperty("list_shares");
+    expect(tools).toHaveProperty("stop_share");
 
     const render = await tools.render_email.handler({
       requestId: "req1",
@@ -273,7 +286,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(48);
+    expect(Object.keys(tools)).toHaveLength(51);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1207,6 +1220,79 @@ describe("registerTools", () => {
     await tools.list_endpoints.handler({ team: "Team A" });
 
     expect(list.mock.calls).toEqual([[{}], [{ team: "Team A" }]]);
+  });
+
+  it("shares a port once per port and returns the link with its notes", async () => {
+    let closeShare!: (value: { reason: string }) => void;
+    const live = {
+      url: "https://calm-river-7f2a-free.sharehooks.cc",
+      name: "calm-river-7f2a-free",
+      expiresAt: "2026-11-10T20:00:00Z",
+      notice: true,
+      password: false,
+      port: 3000,
+      stop: vi.fn(),
+      closed: new Promise<{ reason: string }>((r) => (closeShare = r)),
+    };
+    const start = vi.fn(async () => live);
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { start } as unknown as WebhooksCC["shares"] })
+    );
+
+    const first = parseJsonResult(await tools.share_port.handler({ port: 3000 }));
+    expect(first.url).toBe(live.url);
+    expect(first.notes).toContain("notice");
+    expect(first.notes).toContain("2026-11-10T20:00:00Z");
+    expect(start).toHaveBeenCalledWith({ port: 3000 });
+
+    const again = parseJsonResult(await tools.share_port.handler({ port: 3000 }));
+    expect(again.alreadyRunning).toBe(true);
+    expect(start).toHaveBeenCalledTimes(1);
+
+    closeShare({ reason: "you stopped it" });
+    await live.closed;
+    await new Promise((r) => setTimeout(r, 0));
+    await tools.share_port.handler({ port: 3000, name: "acme-demo", password: "correct-horse" });
+    expect(start).toHaveBeenLastCalledWith({
+      port: 3000,
+      name: "acme-demo",
+      password: "correct-horse",
+    });
+  });
+
+  it("lists and stops shares through the API", async () => {
+    const list = vi.fn(async () => ({ shares: [], usage: {}, limits: {} }));
+    const stop = vi.fn(async () => undefined);
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { list, stop } as unknown as WebhooksCC["shares"] })
+    );
+    parseJsonResult(await tools.list_shares.handler({ state: "live" }));
+    expect(list).toHaveBeenCalledWith({ state: "live" });
+    parseJsonResult(await tools.list_shares.handler({}));
+    expect(list).toHaveBeenLastCalledWith({});
+    const stopped = parseJsonResult(await tools.stop_share.handler({ id: "s1" }));
+    expect(stopped).toEqual({ stopped: "s1" });
+    expect(stop).toHaveBeenCalledWith("s1");
+  });
+
+  it("passes a live tunnel's answer through get_request", async () => {
+    const liveResponse = {
+      status: 201,
+      headers: { "content-type": "application/json" },
+      body: '{"ok":true}',
+      bodyTruncated: false,
+      bodyEncoding: "utf8" as const,
+      ms: 12,
+    };
+    const tools = getRegisteredTools(
+      createMockClient({
+        requests: {
+          get: vi.fn(async () => makeRequest({ id: "req1", liveResponse })),
+        } as unknown as WebhooksCC["requests"],
+      })
+    );
+    const request = parseJsonResult(await tools.get_request.handler({ requestId: "req1" }));
+    expect(request.liveResponse).toEqual(liveResponse);
   });
 
   it("lists teams with ISO period ends", async () => {

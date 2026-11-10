@@ -777,6 +777,30 @@ def test_path_globs_cross_line_breaks() -> None:
     assert match_path("/a/b?c/d")(request) is True
 
 
+def test_live_response_is_read_when_present() -> None:
+    request = Request.from_dict(
+        captured(
+            "r1",
+            liveResponse={
+                "status": 201,
+                "headers": {"content-type": "application/json"},
+                "body": '{"ok":true}',
+                "bodyTruncated": False,
+                "bodyEncoding": "utf8",
+                "ms": 12,
+            },
+        )
+    )
+    assert request.live_response is not None
+    assert request.live_response.status == 201
+    assert request.live_response.headers == {"content-type": "application/json"}
+    assert request.live_response.body == '{"ok":true}'
+    assert request.live_response.body_truncated is False
+    assert request.live_response.body_encoding == "utf8"
+    assert request.live_response.ms == 12
+    assert Request.from_dict(captured("r2")).live_response is None
+
+
 def test_slugs_are_validated() -> None:
     client = make_client(lambda request: httpx.Response(500))
     with pytest.raises(ValueError, match="slug"):

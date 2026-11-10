@@ -89,8 +89,26 @@ type Request struct {
 	// Parsed is what the endpoint's layouts found, once the parse is done
 	// (emails on endpoints with layouts).
 	Parsed *ParsedEmail
+	// LiveResponse is what the local app answered, for a request captured
+	// while `whk tunnel --live` ran: the sender got this answer instead of
+	// the endpoint's mock response. Nil otherwise.
+	LiveResponse *LiveResponse
 	// Raw is the JSON the request was read from.
 	Raw json.RawMessage
+}
+
+// LiveResponse is the answer a local app gave a request relayed through
+// `whk tunnel --live`. Body holds the start of the body (up to 64 KB),
+// base64-encoded when BodyEncoding is "base64".
+type LiveResponse struct {
+	Status        int               `json:"status"`
+	Headers       map[string]string `json:"headers"`
+	Body          string            `json:"body"`
+	BodyTruncated bool              `json:"bodyTruncated"`
+	// BodyEncoding is "utf8" for text and "base64" for other bytes.
+	BodyEncoding string `json:"bodyEncoding"`
+	// MS is how long the app took, in milliseconds.
+	MS int64 `json:"ms"`
 }
 
 // UnmarshalJSON reads a request as the API returns it.
@@ -158,6 +176,12 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 			return err
 		}
 	}
+	if live := o.raw("liveResponse"); isJSONObject(live) {
+		r.LiveResponse = new(LiveResponse)
+		if err := json.Unmarshal(live, r.LiveResponse); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -187,11 +211,12 @@ func (r Request) MarshalJSON() ([]byte, error) {
 		EmailFields       map[string]*string `json:"emailFields,omitempty"`
 		ReplyText         string             `json:"replyText,omitempty"`
 		Parsed            *ParsedEmail       `json:"parsed,omitempty"`
+		LiveResponse      *LiveResponse      `json:"liveResponse,omitempty"`
 	}{
 		r.ID, r.EndpointID, r.Slug, r.Method, r.Path, r.Headers, r.Body, r.QueryParams, r.IP, r.Size,
 		millisOf(r.ReceivedAt), r.ContentType, r.BodyRaw, r.SignatureVerified, r.SignatureError,
 		r.SigningProvider, r.Kind, r.Email, r.Extracts, emailFieldValuesJSON(r.EmailFields), r.ReplyText,
-		r.Parsed,
+		r.Parsed, r.LiveResponse,
 	})
 }
 

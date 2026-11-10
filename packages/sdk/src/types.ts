@@ -227,6 +227,136 @@ export interface Request {
   email?: EmailCapture | null;
   /** What the endpoint's layouts found, once the parse is done (emails on endpoints with layouts) */
   parsed?: ParsedEmail | null;
+  /**
+   * What the local app answered, for a request captured while `whk tunnel
+   * --live` ran: the sender got this answer instead of the mock response.
+   */
+  liveResponse?: LiveResponse | null;
+}
+
+/** The answer a local app gave a request relayed through `whk tunnel --live`. */
+export interface LiveResponse {
+  /** The HTTP status the app answered with. */
+  status: number;
+  /** The response headers. */
+  headers: Record<string, string>;
+  /** The start of the body (up to 64 KB). */
+  body: string;
+  /** True when the body was longer than what is kept. */
+  bodyTruncated: boolean;
+  /** "utf8" for text, "base64" for bytes that are not UTF-8. */
+  bodyEncoding: "utf8" | "base64";
+  /** How long the app took, in milliseconds. */
+  ms: number;
+}
+
+/** A `whk share` preview or a `whk tunnel --live` session (GET /api/shares). */
+export interface TunnelShare {
+  id: string;
+  /** "share": a preview at a name; "live": an endpoint's captures relayed to a local app. */
+  kind: "share" | "live";
+  /** The preview's name, or null for a live session. */
+  name: string | null;
+  /** The preview's link, or the capture URL for a live session. */
+  url: string | null;
+  /** The endpoint, for a live session. */
+  endpointSlug: string | null;
+  /** What it runs on: "laptop, macOS". */
+  client: string;
+  startedAt: string;
+  /** Null while it runs. */
+  endedAt: string | null;
+  /** Why it ended, in words. */
+  endReason: string | null;
+  /** When the plan's session time runs out, or null without a limit. */
+  expiresAt: string | null;
+  /** Data sent to visitors. */
+  bytes: number;
+  requests: number;
+  /** Whether visitors need a password. */
+  password: boolean;
+  /** False for a teammate's share under a team name. */
+  mine: boolean;
+  /** Who started it, for a teammate's share. */
+  startedBy: { id: string; email: string } | null;
+}
+
+/** This month's shared data (UTC month). */
+export interface TunnelUsage {
+  /** "2026-11". */
+  month: string;
+  bytes: number;
+  limitBytes: number;
+  /** True once the month's data is used: previews pause until `resetsAt`. */
+  over: boolean;
+  resetsAt: string;
+}
+
+/** What the account's plan allows for sharing. */
+export interface TunnelLimits {
+  plan: string;
+  /** Previews at once. */
+  shares: number;
+  reservedNames: number;
+  /** Minutes a preview may run, or null without a limit. */
+  sessionMinutes: number | null;
+  /** Data a month, in GB. */
+  dataGb: number;
+  passwords: boolean;
+  /** Whether visitors see a short notice before the page. */
+  notice: boolean;
+}
+
+export interface TunnelShareList {
+  shares: TunnelShare[];
+  usage: TunnelUsage;
+  limits: TunnelLimits;
+}
+
+/** One visitor request to a preview, from the edge's memory (no addresses). */
+export interface TunnelVisit {
+  method: string;
+  path: string;
+  status: number;
+  ms: number;
+  bytes: number;
+  at: string;
+  country: string | null;
+  device: "phone" | "tablet" | "computer" | "bot" | "unknown";
+  /** 1 for the first visitor seen, 2 for the next. */
+  visitor: number;
+}
+
+export interface TunnelVisits {
+  /** False when the edge could not be asked just now. */
+  available: boolean;
+  /** Newest first. */
+  requests: TunnelVisit[];
+}
+
+/** A reserved preview name (GET /api/tunnel-names). */
+export interface TunnelName {
+  name: string;
+  /** The preview link it gives. */
+  url: string | null;
+  /** The team it belongs to, when reserved inside one. */
+  team: { id: string; name: string } | null;
+  reservedBy: { id: string; email: string } | null;
+  /** False for a teammate's name. */
+  mine: boolean;
+  /** Whether it has a password of its own. */
+  password: boolean;
+  /** Whether a preview runs under it now. */
+  live: boolean;
+  createdAt: string;
+}
+
+export interface TunnelNameList {
+  names: TunnelName[];
+  /** Names the plan allows. */
+  limit: number;
+  /** Names you hold. */
+  used: number;
 }
 
 /**
@@ -977,6 +1107,10 @@ export interface SDKDescription {
   destinations: Record<string, OperationDescription>;
   alerts: Record<string, OperationDescription>;
   teams: Record<string, OperationDescription>;
+  /** Public previews of local ports (`whk share`) and live tunnels. */
+  shares: Record<string, OperationDescription>;
+  /** Reserved preview names. */
+  names: Record<string, OperationDescription>;
 }
 
 /** Which emails to match. Strings match exactly (subject: contains; addresses: case-insensitive). */

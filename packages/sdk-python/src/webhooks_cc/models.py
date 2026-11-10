@@ -577,6 +577,35 @@ class Layout:
 
 
 @dataclass(frozen=True)
+class LiveResponse:
+    """The answer a local app gave a request relayed through ``whk tunnel --live``.
+
+    The sender got this answer instead of the endpoint's mock response.
+    ``body`` holds the start of the body (up to 64 KB), base64-encoded when
+    ``body_encoding`` is ``"base64"``.
+    """
+
+    status: int
+    headers: dict[str, str]
+    body: str
+    body_truncated: bool
+    body_encoding: str
+    ms: int
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> LiveResponse:
+        encoding = data.get("bodyEncoding")
+        return cls(
+            status=int(_number(data.get("status"))),
+            headers=_str_map(data.get("headers")),
+            body=data["body"] if isinstance(data.get("body"), str) else "",
+            body_truncated=data.get("bodyTruncated") is True,
+            body_encoding=encoding if encoding in ("utf8", "base64") else "utf8",
+            ms=int(_number(data.get("ms"))),
+        )
+
+
+@dataclass(frozen=True)
 class Request:
     """A captured request: an HTTP webhook, or an email when ``kind`` is ``"email"``.
 
@@ -618,6 +647,9 @@ class Request:
     parsed: ParsedEmail | None = None
     """What the endpoint's layouts found, once the parse is done (emails on endpoints
     with layouts)."""
+    live_response: LiveResponse | None = None
+    """What the local app answered, for a request captured while ``whk tunnel --live``
+    ran."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -656,6 +688,9 @@ class Request:
             reply_text=_str_or_none(data.get("replyText")),
             parsed=ParsedEmail.from_dict(data["parsed"])
             if isinstance(data.get("parsed"), Mapping)
+            else None,
+            live_response=LiveResponse.from_dict(data["liveResponse"])
+            if isinstance(data.get("liveResponse"), Mapping)
             else None,
             raw=dict(data),
         )
