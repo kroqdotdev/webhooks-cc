@@ -7,6 +7,7 @@ import {
   negotiatesMarkdown,
 } from "@/lib/markdown-negotiation";
 import {
+  MAILHOOKS_MISSING_HEADER,
   SITE_HEADER,
   existsOnWebhooks,
   mailhooksOrigin,
@@ -127,6 +128,7 @@ export async function proxy(request: NextRequest) {
   // change: a permanent one would stay cached in browsers.
   // The header is ours to set, like the markdown marker below.
   request.headers.delete(SITE_HEADER);
+  request.headers.delete(MAILHOOKS_MISSING_HEADER);
   const site = siteForHost(request.headers.get("host") ?? request.nextUrl.host);
   // A path mailhooks.cc does not serve goes to webhooks.cc only when webhooks.cc
   // has it; anything else is mailhooks.cc's own 404 (app/mailhooks/not-found.tsx).
@@ -165,9 +167,10 @@ export async function proxy(request: NextRequest) {
   let response: NextResponse;
   const isRead = request.method === "GET" || request.method === "HEAD";
   if (missingOnMailhooks) {
-    response = NextResponse.rewrite(new URL("/mailhooks/missing", request.url), {
-      request: { headers: request.headers },
-    });
+    // Marked for the next.config.ts rewrite to mailhooks.cc's own 404.
+    const headers = new Headers(request.headers);
+    headers.set(MAILHOOKS_MISSING_HEADER, "1");
+    response = NextResponse.next({ request: { headers } });
   } else if (isRead && negotiatesMarkdown(pathname, request.headers.get("accept"))) {
     const headers = new Headers(request.headers);
     headers.set(MARKDOWN_TWIN_HEADER, "1");

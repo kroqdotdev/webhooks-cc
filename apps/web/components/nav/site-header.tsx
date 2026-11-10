@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { leaveThrough } from "@/lib/leave-guard";
 import { usePathname, useRouter } from "next/navigation";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
@@ -313,7 +314,7 @@ export function SiteHeader({
                   <div className="pt-3 border-t-strong border-foreground/20">
                     <button
                       type="button"
-                      onClick={() => void handleSignOut()}
+                      onClick={() => leaveThrough(() => void handleSignOut())}
                       className="text-foreground font-medium text-lg cursor-pointer"
                     >
                       Sign out

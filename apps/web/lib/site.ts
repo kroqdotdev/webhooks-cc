@@ -17,6 +17,16 @@ export type SiteKey = "webhooks" | "mailhooks";
 /** Request header proxy.ts sets to the request's site; a client's own copy is dropped. */
 export const SITE_HEADER = "x-whk-site";
 
+/**
+ * Set by proxy.ts on a mailhooks.cc request for a path neither site serves;
+ * a next.config.ts rewrite that matches on it serves mailhooks.cc's own 404
+ * (app/mailhooks/missing). A header and a config rewrite, not a rewrite made
+ * in proxy.ts: that one is absolute, and where the server's own address
+ * differs from the one Next gives the proxy it leaves the server and comes
+ * back without the mailhooks.cc host, which sent the visitor around in a loop.
+ */
+export const MAILHOOKS_MISSING_HEADER = "x-whk-missing";
+
 export interface SiteInfo {
   key: SiteKey;
   /** The wordmark and the name in titles. */

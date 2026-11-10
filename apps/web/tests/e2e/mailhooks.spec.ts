@@ -67,6 +67,25 @@ test("mailhooks.cc has its own pages, and sends webhooks.cc's elsewhere", async 
   expect(response?.ok()).toBe(true);
 });
 
+test("an unknown path on mailhooks.cc answers 404 with its own page", async ({ page }) => {
+  const response = await page.goto(`${MAIL}/no-such-page-${Date.now()}`);
+  expect(response?.status()).toBe(404);
+  // Still on mailhooks.cc: no jump to webhooks.cc's 404.
+  expect(new URL(page.url()).host).toBe(new URL(MAIL!).host);
+  await expect(page).toHaveTitle("Page not found | mailhooks.cc");
+  await expect(page.getByRole("heading", { name: "404", level: 1 })).toBeVisible();
+  await expect(page.getByText("This page doesn't exist on mailhooks.cc.")).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "mailhooks.cc" })).toBeVisible();
+  const places = page.getByRole("navigation", { name: "Places to go" });
+  await expect(places.getByRole("link", { name: "Layout gallery" })).toHaveAttribute(
+    "href",
+    "/parse"
+  );
+  await places.getByRole("link", { name: "Home" }).click();
+  await expect(page).toHaveURL(`${MAIL}/`);
+  await expect(page).toHaveTitle(/^mailhooks\.cc: /);
+});
+
 async function captureEmail(subject: string) {
   const text = "Thanks for your order.";
   const { error } = await admin.rpc("capture_webhook", {

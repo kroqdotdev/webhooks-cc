@@ -48,8 +48,12 @@ const mailhooksHost = hostnameOf(process.env.NEXT_PUBLIC_MAILHOOKS_URL);
 const onMailhooks = mailhooksHost
   ? [{ type: "host" as const, value: mailhooksHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }]
   : [];
+// A mailhooks.cc path neither site serves, marked by proxy.ts
+// (MAILHOOKS_MISSING_HEADER in lib/site.ts), gets mailhooks.cc's own 404.
+const missingOnMailhooks = [{ type: "header" as const, key: "x-whk-missing", value: "1" }];
 const mailhooksRewrites = mailhooksHost
   ? [
+      { source: "/:path*", has: missingOnMailhooks, destination: "/mailhooks/missing" },
       { source: "/", has: onMailhooks, destination: "/mailhooks" },
       { source: "/pricing", has: onMailhooks, destination: "/mailhooks/pricing" },
       { source: "/parse", has: onMailhooks, destination: "/mailhooks/parse" },

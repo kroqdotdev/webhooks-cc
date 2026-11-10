@@ -16,6 +16,7 @@ import {
 } from "@/lib/dashboard-api";
 import { ConditionList } from "./condition-list";
 import { Field, Segmented, SwitchRow, useConfirmStep } from "./settings-primitives";
+import { useReportDirty } from "./dirty-sections";
 
 type Protocol = FileDropDestinationConfig["protocol"];
 type Column = { header: string; value: string };
@@ -164,18 +165,24 @@ export function FileDropDestinationEditor({
     return { password: secret };
   };
 
-  const save = async () => {
-    if (!accessToken) return;
+  // Resolves true once it saved, for a save started from outside the editor.
+  const save = async (): Promise<boolean> => {
+    if (!accessToken) return false;
     setError(null);
     setSaved(false);
     setTested(null);
-    if (!email && !http) return setError("Pick at least one kind of request.");
+    if (!email && !http) {
+      setError("Pick at least one kind of request.");
+      return false;
+    }
     if (file !== "json" && columns.some((column) => !column.header.trim())) {
-      return setError("Give every column a header.");
+      setError("Give every column a header.");
+      return false;
     }
     const minutes = Number(batchMinutes);
     if (batch && (!Number.isInteger(minutes) || minutes < 1 || minutes > 60)) {
-      return setError("Collect a batch for 1 to 60 minutes.");
+      setError("Collect a batch for 1 to 60 minutes.");
+      return false;
     }
     setBusy("Saving...");
     try {
@@ -199,12 +206,18 @@ export function FileDropDestinationEditor({
       setSavedState(formState(false, false));
       setSaved(true);
       onSaved(result);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "The destination could not be saved.");
+      return false;
     } finally {
       setBusy(null);
     }
   };
+
+  // An edited destination counts as unsaved settings, like a section's own
+  // form; a new one only once something was typed into it.
+  useReportDirty(formState(secret !== "", forgetHostKey) !== savedState, save);
 
   const test = async () => {
     if (!accessToken || !destination) return;

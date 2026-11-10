@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { resetUser, trackSignOut } from "@/lib/analytics";
+import { leaveThrough } from "@/lib/leave-guard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -118,32 +119,44 @@ export function UserDropdown() {
           <LayoutDashboard className="h-4 w-4 mr-2" />
           Dashboard
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/account")} className="cursor-pointer">
+        <DropdownMenuItem
+          onClick={() => leaveThrough(() => router.push("/account"))}
+          className="cursor-pointer"
+        >
           <Settings className="h-4 w-4 mr-2" />
           Account
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/account/plan")} className="cursor-pointer">
+        <DropdownMenuItem
+          onClick={() => leaveThrough(() => router.push("/account/plan"))}
+          className="cursor-pointer"
+        >
           <CreditCard className="h-4 w-4 mr-2" />
           Plan and usage
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => router.push("/account/appearance")}
+          onClick={() => leaveThrough(() => router.push("/account/appearance"))}
           className="cursor-pointer"
         >
           <Palette className="h-4 w-4 mr-2" />
           Appearance
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/teams")} className="cursor-pointer">
+        <DropdownMenuItem
+          onClick={() => leaveThrough(() => router.push("/teams"))}
+          className="cursor-pointer"
+        >
           <Users className="h-4 w-4 mr-2" />
           Teams
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/support")} className="cursor-pointer">
+        <DropdownMenuItem
+          onClick={() => leaveThrough(() => router.push("/support"))}
+          className="cursor-pointer"
+        >
           <LifeBuoy className="h-4 w-4 mr-2" />
           Support
         </DropdownMenuItem>
         {staff?.staff && (
           <DropdownMenuItem
-            onClick={() => router.push("/ops")}
+            onClick={() => leaveThrough(() => router.push("/ops"))}
             className="cursor-pointer text-staff focus:text-staff"
           >
             <Gauge className="h-4 w-4 mr-2" />
@@ -156,7 +169,10 @@ export function UserDropdown() {
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
+        <DropdownMenuItem
+          onClick={() => leaveThrough(() => void handleSignOut())}
+          className="cursor-pointer"
+        >
           <LogOut className="h-4 w-4 mr-2" />
           Sign out
         </DropdownMenuItem>

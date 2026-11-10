@@ -51,6 +51,7 @@ import {
 } from "./forwarding-parts";
 import { PlaceholderMenu, forwardingPlaceholders, insertAtCursor } from "./placeholder-menu";
 import { Field, Segmented, Switch, SwitchRow, useConfirmStep } from "./settings-primitives";
+import { useReportDirty } from "./dirty-sections";
 import { SheetsDestinationEditor } from "./sheets-destination-editor";
 import { FileDropDestinationEditor } from "./file-drop-destination-editor";
 
@@ -653,9 +654,10 @@ function GenericDestinationEditor({
       ? "The preview runs once the URL, what it gets and the template are filled in."
       : null;
 
-  const save = async () => {
+  // Resolves true once it saved, for a save started from outside the editor.
+  const save = async (): Promise<boolean> => {
     setSubmitted(true);
-    if (!accessToken) return;
+    if (!accessToken) return false;
     if (problemCount > 0) {
       setError(
         problemCount === 1
@@ -663,12 +665,12 @@ function GenericDestinationEditor({
           : `Fix the ${problemCount} fields marked above.`
       );
       if (urlError) focusUrl();
-      return;
+      return false;
     }
     const value = inputOf(draft, headersChanged);
     if ("error" in value) {
       setError(value.error);
-      return;
+      return false;
     }
     setSaving(true);
     setError(null);
@@ -679,6 +681,7 @@ function GenericDestinationEditor({
       setSaved(true);
       setSubmitted(false);
       onSaved(result);
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : "The destination could not be saved.";
       const fieldMessage = urlFieldMessage(message, slug);
@@ -691,10 +694,14 @@ function GenericDestinationEditor({
       } else {
         setError(message);
       }
+      return false;
     } finally {
       setSaving(false);
     }
   };
+
+  // An edited destination counts as unsaved settings, like a section's own form.
+  useReportDirty(dirty, save);
 
   const remove = async () => {
     if (!accessToken || !destination) return;

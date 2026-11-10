@@ -20,7 +20,7 @@ import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import { EndpointSiteField, EndpointSiteText } from "./endpoint-site-field";
 import { twoSites, type EndpointSite } from "@/lib/site";
 import { setOpenEndpoint } from "@/lib/site-switch-client";
-import { useDirtySections } from "./dirty-sections";
+import { useDirtySections, useSettingsLeave } from "./dirty-sections";
 import {
   Select,
   SelectContent,
@@ -85,6 +85,7 @@ function ReceivingSection({
   isOwner: boolean;
 }) {
   const router = useRouter();
+  const { leaving } = useSettingsLeave();
   // On webhooks.cc the email-only settings fold away unless they are in use;
   // mailhooks.cc shows them open.
   const mailFirst = useSite().key === "mailhooks";
@@ -171,7 +172,9 @@ function ReceivingSection({
           }}
           onSave={() => {
             setTriedSave(true);
-            if (siteChanged) {
+            // Saved on the way to another endpoint ("Save and leave"), the URL
+            // already names where the dashboard is going and stays as it is.
+            if (siteChanged && !leaving) {
               // Listed elsewhere once saved, it drops out of this site's list:
               // keep it open here by its slug instead of moving to another.
               const params = new URLSearchParams(window.location.search);
@@ -616,6 +619,7 @@ function DeleteSection({
 }) {
   const { session } = useAuth();
   const router = useRouter();
+  const { abandon } = useSettingsLeave();
   const mailFirst = useSite().key === "mailhooks";
   const {
     armed: confirmArmed,
@@ -646,6 +650,8 @@ function DeleteSection({
       await deleteDashboardEndpoint(session.access_token, endpoint.slug);
       trackEndpointDeleted();
       emitDashboardEndpointsChanged();
+      // Edits left unsaved in other sections went with the endpoint.
+      abandon();
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "The endpoint was not deleted.");

@@ -19,6 +19,7 @@ import {
 } from "@/lib/dashboard-api";
 import { ConditionList } from "./condition-list";
 import { Field, Segmented, SwitchRow } from "./settings-primitives";
+import { useReportDirty } from "./dirty-sections";
 
 type Column = { header: string; value: string };
 
@@ -229,14 +230,41 @@ export function SheetsDestinationEditor({
   const config: SheetsDestinationConfig | null =
     connectionId && spreadsheetId ? { connectionId, spreadsheetId, sheet, rows, columns } : null;
 
-  const save = async () => {
-    if (!accessToken) return;
+  // The form as it would be saved, to tell unsaved edits. A new destination
+  // picks the first Google account on its own, which is not an edit.
+  const formState = () =>
+    JSON.stringify({
+      name,
+      enabled,
+      email,
+      http,
+      conditions,
+      logic,
+      connectionId: destination ? connectionId : null,
+      spreadsheetId,
+      sheet,
+      rows,
+      columns,
+    });
+  const [savedState, setSavedState] = useState(formState);
+  const dirty = formState() !== savedState;
+
+  // Resolves true once it saved, for a save started from outside the editor.
+  const save = async (): Promise<boolean> => {
+    if (!accessToken) return false;
     setError(null);
     setSaved(false);
-    if (!config) return setError("Connect a Google account and choose a spreadsheet first.");
-    if (!email && !http) return setError("Pick at least one kind of request.");
+    if (!config) {
+      setError("Connect a Google account and choose a spreadsheet first.");
+      return false;
+    }
+    if (!email && !http) {
+      setError("Pick at least one kind of request.");
+      return false;
+    }
     if (columns.some((column) => !column.header.trim())) {
-      return setError("Give every column a header.");
+      setError("Give every column a header.");
+      return false;
     }
     setBusy("Saving...");
     try {
@@ -267,14 +295,20 @@ export function SheetsDestinationEditor({
       const result = destination
         ? await updateDestination(accessToken, slug, destination.id, input)
         : await createDestination(accessToken, slug, input);
+      setSavedState(formState());
       setSaved(true);
       onSaved(result);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "The destination could not be saved.");
+      return false;
     } finally {
       setBusy(null);
     }
   };
+
+  // An edited destination counts as unsaved settings, like a section's own form.
+  useReportDirty(dirty, save);
 
   const remove = async () => {
     if (!accessToken || !destination) return;

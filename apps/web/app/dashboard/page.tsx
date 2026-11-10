@@ -20,6 +20,8 @@ import {
   DiscardChangesDialog,
   type DirtySection,
 } from "@/components/dashboard/dirty-sections";
+import { leavesEditedSettings } from "@/components/dashboard/dirty-reporters";
+import { setLeaveGuard } from "@/lib/leave-guard";
 import { RequestList } from "@/components/dashboard/request-list";
 import {
   RequestDetail,
@@ -179,31 +181,45 @@ export default function DashboardPage() {
     setDirtySections(list);
   }, []);
 
-  // Another endpoint opened (the header's switcher) while settings are unsaved:
-  // the open one is held until the person keeps editing or discards.
-  const [heldSwitch, setHeldSwitch] = useState<{ from: string | null; keeping: boolean } | null>(
-    null
-  );
-  const [seenSlugParam, setSeenSlugParam] = useState(endpointSlugParam);
-  let held = heldSwitch;
-  if (seenSlugParam !== endpointSlugParam) {
-    setSeenSlugParam(endpointSlugParam);
+  // The URL moved away from settings with unsaved edits (another endpoint from
+  // the header's switcher, the account menu's Dashboard, Back or Forward): the
+  // settings stay open, held by the edited endpoint's slug, until the person
+  // keeps editing or discards.
+  const settingsParam = searchParams.get("view") === "settings";
+  const [heldLeave, setHeldLeave] = useState<{ slug: string; keeping: boolean } | null>(null);
+  const [seenPlace, setSeenPlace] = useState({ slug: endpointSlugParam, settings: settingsParam });
+  let held = heldLeave;
+  if (seenPlace.slug !== endpointSlugParam || seenPlace.settings !== settingsParam) {
+    setSeenPlace({ slug: endpointSlugParam, settings: settingsParam });
+    const editing = resolveEndpoint(seenPlace.slug)?.slug;
     if (
       held === null &&
       dirtySections.length > 0 &&
-      endpointSlugParam !== null &&
-      resolveEndpoint(endpointSlugParam)?.id !== resolveEndpoint(seenSlugParam)?.id
+      editing !== undefined &&
+      leavesEditedSettings({
+        editing,
+        slug: endpointSlugParam,
+        settings: settingsParam,
+        defaultSlug: endpoints ? defaultDashboardEndpoint(endpoints)?.slug : undefined,
+      })
     ) {
-      held = { from: seenSlugParam, keeping: false };
-      setHeldSwitch(held);
+      held = { slug: editing, keeping: false };
+      setHeldLeave(held);
     }
   }
-  // Kept editing: the URL is back on the held endpoint.
-  if (held && resolveEndpoint(endpointSlugParam)?.id === resolveEndpoint(held.from)?.id) {
-    held = null;
-    setHeldSwitch(null);
+  if (held) {
+    const heldSlug = held.slug;
+    if (
+      // Kept editing: the URL is back on the held endpoint's Settings.
+      (settingsParam && endpointSlugParam === heldSlug) ||
+      // The held endpoint is gone (deleted here or elsewhere): nothing to keep.
+      (allEndpoints !== undefined && !allEndpoints.some((ep) => ep.slug === heldSlug))
+    ) {
+      held = null;
+      setHeldLeave(null);
+    }
   }
-  const endpointSlug = held ? held.from : endpointSlugParam;
+  const endpointSlug = held ? held.slug : endpointSlugParam;
   // Opened by its slug (a link, the other site's switcher) though listed elsewhere.
   const linkedEndpoint = endpointSlug
     ? allEndpoints?.find((ep) => ep.slug === endpointSlug)
@@ -1161,17 +1177,28 @@ export default function DashboardPage() {
   );
 
   // ?request= changed by Back, Forward or a link: follow it.
-  useEffect(() => {
-    if (requestParam === writtenRequestRef.current) return;
-    writtenRequestRef.current = requestParam;
+  const followRequestParam = useCallback((value: string | null) => {
+    if (value === writtenRequestRef.current) return;
+    writtenRequestRef.current = value;
     pushedRequestRef.current = false;
-    if (requestParam === null) {
+    if (value === null) {
       setMobileDetail(false);
       return;
     }
-    setSelectedId(requestParam);
+    setSelectedId(value);
     setMobileDetail(true);
-  }, [requestParam]);
+  }, []);
+  useEffect(() => followRequestParam(requestParam), [requestParam, followRequestParam]);
+  // Back and Forward are also read from the address itself. Next brings a
+  // pushed URL into useSearchParams in a transition; a Back that lands before
+  // it commits takes the parameter from unset to unset, which the effect above
+  // never sees, and the request would stay open over the list.
+  useEffect(() => {
+    const onPopState = () =>
+      followRequestParam(new URLSearchParams(window.location.search).get("request"));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [followRequestParam]);
 
   // Phones: Back to list goes back when opening the request added a history entry.
   const handleBackToList = useCallback(() => {
@@ -1280,10 +1307,9 @@ export default function DashboardPage() {
 
   // Ref for cURL button (avoids DOM scraping in keyboard handler)
   const curlBtnRef = useRef<HTMLButtonElement>(null);
-  // Requests or Settings, from ?view=settings (a held endpoint switch stays
+  // Requests or Settings, from ?view=settings (a held way out stays
   // on Settings); links elsewhere open Settings at a section, kept in ?section=.
-  const endpointTab: EndpointTab =
-    held || searchParams.get("view") === "settings" ? "settings" : "requests";
+  const endpointTab: EndpointTab = held || settingsParam ? "settings" : "requests";
   const [settingsFocus, setSettingsFocus] = useState<SettingsSection | null>(() => {
     const section = searchParams.get("section");
     return isSettingsSection(section) ? section : null;
@@ -1305,6 +1331,35 @@ export default function DashboardPage() {
     if (dirtySectionsRef.current.length > 0) setDiscardPrompt({ proceed });
     else proceed();
   }, []);
+  // A discard remounts the settings, so the edits are gone even when the
+  // endpoint that shows next is the same one.
+  const [discardCount, setDiscardCount] = useState(0);
+  // Leaving the dashboard for another page asks too: the header's menu goes
+  // through the guard (lib/leave-guard.ts), and a link is caught on its click,
+  // before Next follows it. Links within the dashboard are held above instead;
+  // a full page load gets the browser's own prompt (DirtySectionsProvider).
+  const hasUnsaved = dirtySections.length > 0;
+  useEffect(() => {
+    if (!hasUnsaved) return;
+    setLeaveGuard((proceed) => setDiscardPrompt({ proceed }));
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor =
+        event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!anchor || anchor.hasAttribute("download")) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin || url.pathname === pathname) return;
+      event.preventDefault();
+      setDiscardPrompt({ proceed: () => router.push(`${url.pathname}${url.search}${url.hash}`) });
+    };
+    window.addEventListener("click", onClick, true);
+    return () => {
+      setLeaveGuard(null);
+      window.removeEventListener("click", onClick, true);
+    };
+  }, [hasUnsaved, pathname, router]);
   const handleOpenSettings = useCallback(() => openSettingsAt("verification"), [openSettingsAt]);
   const handleOpenForwarding = useCallback(() => openSettingsAt("forwarding"), [openSettingsAt]);
   const handleOpenLayouts = useCallback(() => openSettingsAt("layouts"), [openSettingsAt]);
@@ -1583,29 +1638,30 @@ export default function DashboardPage() {
 
       <DiscardChangesDialog
         sections={dirtySections}
-        open={discardPrompt !== null || (heldSwitch !== null && !heldSwitch.keeping)}
+        open={discardPrompt !== null || (heldLeave !== null && !heldLeave.keeping)}
         onKeep={() => {
           if (discardPrompt) {
             setDiscardPrompt(null);
             return;
           }
-          if (!heldSwitch) return;
+          if (!heldLeave) return;
           // Back to the endpoint being edited, on its Settings.
-          setHeldSwitch({ ...heldSwitch, keeping: true });
-          const params = new URLSearchParams({
-            endpoint: currentEndpoint.slug,
-            view: "settings",
-          });
-          router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+          setHeldLeave({ ...heldLeave, keeping: true });
+          updateParams({ endpoint: heldLeave.slug, view: "settings" });
         }}
         onDiscard={() => {
+          // Discarded (or saved, from "Save and leave"): nothing is unsaved
+          // any more, so the way out is not held or asked about again.
+          handleDirtyChange([]);
           if (discardPrompt) {
             const { proceed } = discardPrompt;
             setDiscardPrompt(null);
             proceed();
             return;
           }
-          setHeldSwitch(null);
+          // The URL already names where the person was going; it stays.
+          setHeldLeave(null);
+          setDiscardCount((count) => count + 1);
         }}
       />
 
@@ -1663,7 +1719,11 @@ export default function DashboardPage() {
 
       {/* Settings, the split pane, or the empty state */}
       {endpointTab === "settings" ? (
-        <DirtySectionsProvider key={currentEndpoint.id} onChange={handleDirtyChange}>
+        <DirtySectionsProvider
+          key={`${currentEndpoint.id}:${discardCount}`}
+          onChange={handleDirtyChange}
+          leaving={held !== null}
+        >
           <EndpointSettingsPanel
             endpoint={currentEndpoint}
             requestCount={retainedTotalCount ?? recentRequests.length}

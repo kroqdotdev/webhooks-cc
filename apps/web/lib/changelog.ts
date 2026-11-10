@@ -80,6 +80,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "mailhooks.cc: every email offers a way to add a layout, gallery visitors land on sign-up, HTTP responses start collapsed, and inbox rows say reading only while a layout can still read them",
       "Signed-in visitors no longer see guest sign-up copy, the announcement stays off sign-in pages and phones, sign-up checks the email format first, and the phone landing page is shorter",
       "Following live requests or stepping through them with the keyboard no longer drops a tab you just opened, and an octet-stream body that is plain text shows as text",
+      "Unsaved settings are asked about however you leave them: the account menu, Back, another endpoint or another page, and an edited destination counts too",
     ],
   },
   {

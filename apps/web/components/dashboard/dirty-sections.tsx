@@ -1,6 +1,21 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  dirtySectionsOf,
+  reportDirty,
+  type DirtyReporter,
+  type DirtySection,
+} from "./dirty-reporters";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -14,63 +29,62 @@ import {
 } from "@/components/ui/alert-dialog";
 
 /**
- * Which settings sections hold edits that are not saved yet. Every section's
- * SaveFooter reports its own dirty state here (by the section it sits in), so
- * the dashboard can ask before leaving them and the panel can point at them.
+ * Which settings sections hold edits that are not saved yet. Every form that
+ * saves on its own (a section's SaveFooter, a destination's editor) reports
+ * its dirty state here under the section it sits in, so the dashboard can ask
+ * before leaving them and the panel can point at them. The bookkeeping is in
+ * dirty-reporters.ts.
  */
 
-export interface DirtySection {
-  id: string;
-  title: string;
-  /**
-   * Runs the section's own save, as its Save button would, and resolves true
-   * once it saved, false when it did not (a validation or server error, which
-   * the section's footer shows).
-   */
-  save?: () => Promise<boolean>;
+export type { DirtySection };
+
+type Report = (reporter: DirtyReporter, dirty: boolean) => void;
+
+// Two contexts, so a form that only reports does not render again every time
+// the list changes.
+const ReportDirtyContext = createContext<Report | null>(null);
+const DirtySectionsContext = createContext<DirtySection[] | null>(null);
+
+/** How the panel stands with the page around it (see useSettingsLeave). */
+interface SettingsLeave {
+  leaving: boolean;
+  abandon: () => void;
 }
+const SettingsLeaveContext = createContext<SettingsLeave>({ leaving: false, abandon: () => {} });
 
-interface DirtySectionsValue {
-  dirty: DirtySection[];
-  report: (section: DirtySection, dirty: boolean) => void;
-}
-
-const DirtySectionsContext = createContext<DirtySectionsValue | null>(null);
-
-/** The section a SaveFooter sits in, set by Section. */
-export const SectionIdentityContext = createContext<DirtySection | null>(null);
+/** The section a form sits in, set by Section. */
+export const SectionIdentityContext = createContext<{ id: string; title: string } | null>(null);
 
 /** Sorts sections by where they are on the page, so the first is the topmost. */
 function inPageOrder(list: DirtySection[]): DirtySection[] {
   if (typeof document === "undefined") return list;
+  const all = Array.from(document.querySelectorAll("[data-settings-section]"));
   const position = (id: string) => {
     const el = document.getElementById(`settings-${id}`);
-    if (!el) return Number.MAX_SAFE_INTEGER;
-    const all = Array.from(document.querySelectorAll("[data-settings-section]"));
-    return all.indexOf(el);
+    const index = el ? all.indexOf(el) : -1;
+    return index === -1 ? Number.MAX_SAFE_INTEGER : index;
   };
   return [...list].sort((a, b) => position(a.id) - position(b.id));
 }
 
 export function DirtySectionsProvider({
   onChange,
+  leaving = false,
   children,
 }: {
   /** Told about every change, in page order. */
   onChange?: (dirty: DirtySection[]) => void;
+  /** The page is already on its way elsewhere and only waits for the discard dialog. */
+  leaving?: boolean;
   children: React.ReactNode;
 }) {
-  const [dirty, setDirty] = useState<DirtySection[]>([]);
+  const [reporters, setReporters] = useState<DirtyReporter[]>([]);
 
-  const report = useCallback((section: DirtySection, isDirty: boolean) => {
-    setDirty((prev) => {
-      const has = prev.some((entry) => entry.id === section.id);
-      if (isDirty === has) return prev;
-      return isDirty
-        ? inPageOrder([...prev, section])
-        : prev.filter((entry) => entry.id !== section.id);
-    });
+  const report = useCallback<Report>((reporter, isDirty) => {
+    setReporters((prev) => reportDirty(prev, reporter, isDirty));
   }, []);
+
+  const dirty = useMemo(() => inPageOrder(dirtySectionsOf(reporters)), [reporters]);
 
   useEffect(() => {
     onChange?.(dirty);
@@ -92,33 +106,69 @@ export function DirtySectionsProvider({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [anyDirty]);
 
-  const value = useMemo(() => ({ dirty, report }), [dirty, report]);
-  return <DirtySectionsContext.Provider value={value}>{children}</DirtySectionsContext.Provider>;
+  // What is unsaved no longer matters (the endpoint was deleted): forget it
+  // at once, so the navigation that follows is not asked about.
+  const abandon = useCallback(() => {
+    setReporters([]);
+    onChange?.([]);
+  }, [onChange]);
+  const leave = useMemo(() => ({ leaving, abandon }), [leaving, abandon]);
+
+  return (
+    <ReportDirtyContext.Provider value={report}>
+      <DirtySectionsContext.Provider value={dirty}>
+        <SettingsLeaveContext.Provider value={leave}>{children}</SettingsLeaveContext.Provider>
+      </DirtySectionsContext.Provider>
+    </ReportDirtyContext.Provider>
+  );
+}
+
+/**
+ * `leaving`: the dashboard already moved on (another endpoint, out of
+ * Settings) and holds this panel open only until the discard dialog is
+ * answered, so a save must not write this endpoint back into the URL.
+ * `abandon()` drops every unsaved edit from the count.
+ */
+export function useSettingsLeave(): SettingsLeave {
+  return useContext(SettingsLeaveContext);
 }
 
 /** The unsaved sections, in page order; empty outside a provider. */
 export function useDirtySections(): DirtySection[] {
-  return useContext(DirtySectionsContext)?.dirty ?? EMPTY;
+  return useContext(DirtySectionsContext) ?? EMPTY;
 }
 
 const EMPTY: DirtySection[] = [];
 
 /**
- * Reports whether the section this sits in has unsaved edits, and how to save
- * them (a stable callback), so the sticky bar and the discard dialog can save
- * a single dirty section without scrolling to it.
+ * Reports whether the form this is called from has unsaved edits, under the
+ * section it sits in, and how to save them, so the sticky bar and the discard
+ * dialog can save a section without scrolling to it. Several forms in one
+ * section each report on their own. `save` need not be stable: the latest one
+ * is the one that runs.
  */
 export function useReportDirty(dirty: boolean, save?: () => Promise<boolean>) {
-  const context = useContext(DirtySectionsContext);
+  const report = useContext(ReportDirtyContext);
   const section = useContext(SectionIdentityContext);
-  const report = context?.report;
-  const id = section?.id;
+  const reporterId = useId();
+  const sectionId = section?.id;
   const title = section?.title;
+  const saveRef = useRef(save);
   useEffect(() => {
-    if (!report || !id || !title) return;
-    report({ id, title, save }, dirty);
-    return () => report({ id, title, save }, false);
-  }, [report, id, title, dirty, save]);
+    saveRef.current = save;
+  });
+  const canSave = save !== undefined;
+  useEffect(() => {
+    if (!report || !sectionId || !title) return;
+    const reporter: DirtyReporter = {
+      reporterId,
+      sectionId,
+      title,
+      save: canSave ? () => saveRef.current?.() ?? Promise.resolve(false) : undefined,
+    };
+    report(reporter, dirty);
+    return () => report(reporter, false);
+  }, [report, reporterId, sectionId, title, dirty, canSave]);
 }
 
 /** "Responses", "Responses and Alerts", "Receiving, Responses and Alerts". */
@@ -142,6 +192,9 @@ export function DiscardChangesDialog({
 }) {
   // One unsaved section can be saved from here; then the way out goes ahead.
   const save = sections.length === 1 ? sections[0].save : undefined;
+  // The section named when a save fails: the dialog's own list empties as
+  // the forms that did save stop reporting.
+  const [failedTitle, setFailedTitle] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
   // A fresh prompt starts without the last one's failure.
@@ -154,6 +207,7 @@ export function DiscardChangesDialog({
     if (!save || saving) return;
     setSaving(true);
     setFailed(false);
+    setFailedTitle(sections[0]?.title ?? null);
     const ok = await save();
     setSaving(false);
     if (ok) onDiscard();
@@ -177,7 +231,8 @@ export function DiscardChangesDialog({
           </AlertDialogDescription>
           {failed && (
             <p role="alert" className="text-sm text-destructive-ink">
-              The changes were not saved. Keep editing to see why in {sections[0]?.title}.
+              The changes were not saved. Keep editing to see why
+              {failedTitle ? ` in ${failedTitle}` : ""}.
             </p>
           )}
         </AlertDialogHeader>

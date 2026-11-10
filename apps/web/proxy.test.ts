@@ -217,6 +217,23 @@ describe("proxy: two sites", () => {
     expect(res.headers.get("location")).toBe("https://webhooks.cc/docs/layouts?x=1");
   });
 
+  it("marks a path neither site serves for mailhooks.cc's own 404, without a rewrite of its own", async () => {
+    const res = await proxy(new NextRequest("https://mailhooks.cc/no-such-page/deeper"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+    // An absolute rewrite made here can leave the server and loop (lib/site.ts).
+    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(res.headers.get("x-middleware-request-x-whk-missing")).toBe("1");
+    expect(res.headers.get("x-middleware-request-x-whk-site")).toBe("mailhooks");
+  });
+
+  it("drops a missing marker a client sends", async () => {
+    const res = await proxy(
+      new NextRequest("https://mailhooks.cc/pricing", { headers: { "x-whk-missing": "1" } })
+    );
+    expect(res.headers.get("x-middleware-request-x-whk-missing")).toBeNull();
+  });
+
   it("keeps mailhooks.cc's pages off webhooks.cc", async () => {
     const res = await proxy(new NextRequest("https://webhooks.cc/mailhooks/pricing?plan=business"));
     expect(res.status).toBe(307);
