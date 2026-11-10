@@ -31,6 +31,11 @@ describe("entitlements", () => {
       pageAddons: false,
       annualBilling: false,
       perSeat: false,
+      shareSlots: 1,
+      shareSessionMinutes: 120,
+      shareDataGb: 1,
+      reservedNames: 0,
+      sharePasswords: false,
     });
     expect(ENTITLEMENTS.pro).toEqual({
       key: "pro",
@@ -46,6 +51,11 @@ describe("entitlements", () => {
       pageAddons: false,
       annualBilling: false,
       perSeat: false,
+      shareSlots: 3,
+      shareSessionMinutes: null,
+      shareDataGb: 25,
+      reservedNames: 3,
+      sharePasswords: true,
     });
     expect(ENTITLEMENTS.business).toEqual({
       key: "business",
@@ -61,6 +71,11 @@ describe("entitlements", () => {
       pageAddons: true,
       annualBilling: true,
       perSeat: false,
+      shareSlots: 10,
+      shareSessionMinutes: null,
+      shareDataGb: 150,
+      reservedNames: 20,
+      sharePasswords: true,
     });
     // A Teams team gets Pro's limits: requests per seat, the rest per team.
     expect(ENTITLEMENTS.team).toEqual({
@@ -77,6 +92,11 @@ describe("entitlements", () => {
       pageAddons: false,
       annualBilling: false,
       perSeat: false,
+      shareSlots: 3,
+      shareSessionMinutes: null,
+      shareDataGb: 25,
+      reservedNames: 3,
+      sharePasswords: true,
     });
     // Team Business: Business per seat (requests, parsed pages, AI assists),
     // its other limits per team, monthly or annual.
@@ -95,6 +115,11 @@ describe("entitlements", () => {
       pageAddons: true,
       annualBilling: true,
       perSeat: true,
+      shareSlots: 10,
+      shareSessionMinutes: null,
+      shareDataGb: 150,
+      reservedNames: 20,
+      sharePasswords: true,
     });
     expect(Object.keys(ENTITLEMENTS).sort()).toEqual([
       "business",

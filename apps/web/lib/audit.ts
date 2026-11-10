@@ -93,7 +93,12 @@ export type AuditAction =
   | "ops.view_ended"
   | "ops.refund_approved"
   | "ops.refund_dismissed"
-  | "ops.saved_reply_changed";
+  | "ops.saved_reply_changed"
+  | "tunnel.share_stopped"
+  | "tunnel.name_reserved"
+  | "tunnel.name_released"
+  | "tunnel.name_password_set"
+  | "tunnel.name_password_cleared";
 
 /** Agent registration (auth.md) events: no signed-in user is behind most of them. */
 export type AgentAuditAction =

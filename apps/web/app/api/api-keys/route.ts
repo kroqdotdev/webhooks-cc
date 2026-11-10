@@ -3,6 +3,8 @@ import { authenticateSessionRequest, type SessionAuthResult } from "@/lib/api-au
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "@/lib/supabase/api-keys";
 import { reportError } from "@/lib/observability";
+import { tunnelConfig } from "@/lib/tunnels/config";
+import { stopShares } from "@/lib/tunnels/stops";
 
 const DEFAULT_TTL_DAYS = 365;
 
@@ -103,6 +105,13 @@ export async function DELETE(request: Request) {
   }
 
   const admin = createAdminClient();
+  // Shares the key opened stop with it (the CLI is told to log in again).
+  // Before the delete: the runs lose their key id when the key goes.
+  if (tunnelConfig()) {
+    await stopShares({ keyId, userId: auth.userId }, "revoked").catch((err) =>
+      reportError("Failed to stop the shares of a deleted API key", err)
+    );
+  }
   const { data: deletedKeys, error } = await admin
     .from("api_keys")
     .delete()

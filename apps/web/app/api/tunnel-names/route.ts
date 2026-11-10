@@ -1,0 +1,107 @@
+import { auditUserAction } from "@/lib/audit";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { reportError } from "@/lib/observability";
+import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
+import { sharingOff, tunnelConfig } from "@/lib/tunnels/config";
+import { apiNames } from "@/lib/tunnels/name-api";
+import { namesOf, reserveName } from "@/lib/tunnels/names";
+import { tunnelPlanOf } from "@/lib/tunnels/plan";
+
+const READ_LIMIT = 120;
+const READ_WINDOW_MS = 60_000;
+const RESERVE_LIMIT = 30;
+const RESERVE_WINDOW_MS = 10 * 60_000;
+
+/** The preview names the account may use: its own and its teams'. */
+export async function GET(request: Request) {
+  if (!tunnelConfig()) return sharingOff();
+  const auth = await authenticateRequestRequireUser(request);
+  if (!auth.success) return auth.response;
+
+  const rateLimit = await checkRateLimitByKeyWithInfo(
+    `tunnel-names-read:${auth.userId}`,
+    READ_LIMIT,
+    READ_WINDOW_MS
+  );
+  if (rateLimit.response) return rateLimit.response;
+
+  try {
+    const plan = await tunnelPlanOf(auth.userId);
+    if (!plan) return Response.json({ error: "Account not found" }, { status: 404 });
+    const names = await namesOf(auth.userId, plan.teamIds);
+    return applyRateLimitHeaders(
+      Response.json({
+        names: await apiNames(names),
+        limit: plan.limits.reservedNames,
+        used: names.filter((n) => n.mine).length,
+      }),
+      rateLimit
+    );
+  } catch (error) {
+    reportError("Failed to list tunnel names", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * Keeps a preview name: `{name}`, and `{team}` (a team id) to keep it inside
+ * one of the account's teams so every member may share under it.
+ */
+export async function POST(request: Request) {
+  if (!tunnelConfig()) return sharingOff();
+  const auth = await authenticateRequestRequireUser(request);
+  if (!auth.success) return auth.response;
+
+  const rateLimit = await checkRateLimitByKeyWithInfo(
+    `tunnel-names-reserve:${auth.userId}`,
+    RESERVE_LIMIT,
+    RESERVE_WINDOW_MS
+  );
+  if (rateLimit.response) return rateLimit.response;
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (typeof body.name !== "string" || body.name.length > 100)
+    return Response.json({ error: "name is required" }, { status: 400 });
+  const teamId = typeof body.team === "string" && body.team ? body.team : null;
+
+  try {
+    const plan = await tunnelPlanOf(auth.userId);
+    if (!plan) return Response.json({ error: "Account not found" }, { status: 404 });
+    const result = await reserveName(auth.userId, plan, body.name, teamId);
+    if ("error" in result) {
+      await auditUserAction(request, auth.userId, {
+        action: "tunnel.name_reserved",
+        status: result.status,
+        reason: result.error,
+        teamId,
+        metadata: { name: body.name.slice(0, 40) },
+      });
+      return applyRateLimitHeaders(
+        Response.json({ error: result.error }, { status: result.status }),
+        rateLimit
+      );
+    }
+    if (result.reserved)
+      await auditUserAction(request, auth.userId, {
+        action: "tunnel.name_reserved",
+        status: 201,
+        teamId,
+        targetId: result.name,
+      });
+    const [shown] = await apiNames(
+      (await namesOf(auth.userId, plan.teamIds)).filter((n) => n.name === result.name)
+    );
+    return applyRateLimitHeaders(
+      Response.json({ name: shown }, { status: result.reserved ? 201 : 200 }),
+      rateLimit
+    );
+  } catch (error) {
+    reportError("Failed to reserve a tunnel name", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

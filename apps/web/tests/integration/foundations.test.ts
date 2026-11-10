@@ -122,6 +122,11 @@ describe("plan_entitlements", () => {
         pageAddons: row.page_addons,
         annualBilling: row.annual_billing,
         perSeat: row.per_seat,
+        shareSlots: row.share_slots,
+        shareSessionMinutes: row.share_session_minutes,
+        shareDataGb: row.share_data_gb,
+        reservedNames: row.reserved_names,
+        sharePasswords: row.share_passwords,
       }).toEqual(mirror);
     }
   });
