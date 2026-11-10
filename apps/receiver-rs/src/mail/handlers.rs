@@ -912,6 +912,7 @@ mod tests {
                 .unwrap(),
             config,
             capture_limiter: Arc::new(CaptureLimiter::new(4)),
+            answers: Arc::new(crate::handlers::answers::AnswerCache::new()),
             mail_deliver_slots: Arc::new(tokio::sync::Semaphore::new(DELIVER_CONCURRENCY)),
             object_store: None,
             inbound_domains: Arc::new(crate::mail::domains::InboundDomains::fixed(&[])),

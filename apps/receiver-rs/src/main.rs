@@ -25,6 +25,8 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: Config,
     pub capture_limiter: std::sync::Arc<handlers::capture_limiter::CaptureLimiter>,
+    /// The rules each slug's last capture returned, to record answers in one write.
+    pub answers: std::sync::Arc<handlers::answers::AnswerCache>,
     /// Bounds how many mail deliveries are decoded and held in memory at once.
     pub mail_deliver_slots: std::sync::Arc<tokio::sync::Semaphore>,
     /// Object storage for captured email, when configured.
@@ -103,6 +105,7 @@ async fn run(statoss: bool) {
         capture_limiter: std::sync::Arc::new(handlers::capture_limiter::CaptureLimiter::new(
             config.capture_max_inflight_per_account,
         )),
+        answers: std::sync::Arc::new(handlers::answers::AnswerCache::new()),
         mail_deliver_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
             mail::handlers::DELIVER_CONCURRENCY,
         )),

@@ -459,7 +459,7 @@ export async function createEndpointForUser({
     slug,
     name: name ?? null,
     site: site ?? "both",
-    mock_response: (mockResponse as Json | undefined) ?? null,
+    mock_response: storableMockResponse(mockResponse),
     response_rules: (responseRules as Json | undefined) ?? null,
     is_ephemeral: ephemeral,
     expires_at: expiresAtIso,
@@ -559,6 +559,25 @@ export async function claimGuestEndpoint(
   return data ? normalizeEndpoint(data) : null;
 }
 
+/**
+ * A mock response as stored: the receiver reads the row as it is and needs a
+ * body and headers beside the status, which a PATCH may leave out. Without
+ * them it could not read any capture result for the endpoint, and every
+ * sender got a plain 200.
+ */
+export function storableMockResponse(
+  mockResponse: Record<string, unknown> | null | undefined
+): Json | null {
+  if (!mockResponse) return null;
+  if (typeof mockResponse.status !== "number") return mockResponse as Json;
+  return {
+    ...mockResponse,
+    body: typeof mockResponse.body === "string" ? mockResponse.body : "",
+    headers:
+      mockResponse.headers && typeof mockResponse.headers === "object" ? mockResponse.headers : {},
+  } as Json;
+}
+
 export async function updateEndpointBySlugForUser({
   userId,
   slug,
@@ -653,7 +672,7 @@ export async function updateEndpointBySlugForUser({
     updates.name = name;
   }
   if (mockResponse !== undefined) {
-    updates.mock_response = mockResponse as Json | null;
+    updates.mock_response = storableMockResponse(mockResponse);
   }
   if (responseRules !== undefined) {
     updates.response_rules = responseRules as Json | null;

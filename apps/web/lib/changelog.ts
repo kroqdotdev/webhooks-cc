@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.64.0";
+export const APP_VERSION = "0.65.0";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,17 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.65.0",
+    date: "2026-11-10",
+    title: "What Each Request Was Answered With",
+    track: "web",
+    items: [
+      'Each captured request records the status your endpoint answered with and the response rule that chose it, shown as "Answered 402 (Rule: Payment failed)" on the request and in short in the request list',
+      "The API's request objects carry the same as responseStatus and responseRule",
+      "Fixed: a mock response saved through the API without a body or headers made the endpoint answer every sender with a plain 200 and skip its response rules and signature checks; it now answers with the status and body it was saved with",
+    ],
+  },
   {
     version: "0.64.0",
     date: "2026-11-10",

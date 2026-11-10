@@ -22,6 +22,10 @@ export interface Request {
   signatureError?: string | null;
   /** Provider that verified (or attempted to verify) the signature */
   signingProvider?: string | null;
+  /** The HTTP status the receiver answered with; null for email and older requests */
+  responseStatus?: number | null;
+  /** The response rule that chose that answer (its name, or "Rule N"); null when none did */
+  responseRule?: string | null;
   /** Best-effort detected provider derived from request headers/body */
   detectedProvider?: string | null;
   /** Best-effort detected event or topic derived from request headers/body */
@@ -44,6 +48,8 @@ export interface RequestSummary {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  responseStatus?: number | null;
+  responseRule?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
   kind?: "http" | "email";
@@ -67,6 +73,8 @@ export interface ClickHouseRequest {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  responseStatus?: number | null;
+  responseRule?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
   kind?: "http" | "email";
@@ -86,6 +94,8 @@ export interface ClickHouseSummary {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  responseStatus?: number | null;
+  responseRule?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
   kind?: "http" | "email";
