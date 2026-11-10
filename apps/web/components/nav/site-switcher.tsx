@@ -10,7 +10,7 @@ import {
 import { useSite } from "@/components/providers/site-provider";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { SITES, listedOn, twoSites, type EndpointSite, type SiteKey } from "@/lib/site";
-import { openEndpointSite, switchSite } from "@/lib/site-switch-client";
+import { SHARED_PUBLIC_PATHS, openEndpointSite, switchSite } from "@/lib/site-switch-client";
 
 const ORDER: SiteKey[] = ["webhooks", "mailhooks"];
 
@@ -33,6 +33,7 @@ export function switchNextPath(
   const inApp = APP_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
+  if (SHARED_PUBLIC_PATHS.has(pathname)) return pathname;
   if (!inApp) return "/";
   const params = new URLSearchParams(search);
   const slug = params.get("endpoint");

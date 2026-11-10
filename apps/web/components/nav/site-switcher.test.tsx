@@ -25,8 +25,12 @@ describe("switchNextPath", () => {
 
   it("goes to the other site's home from any other page", () => {
     expect(switchNextPath("/docs/layouts", "", "mailhooks")).toBe("/");
-    expect(switchNextPath("/pricing", "?x=1", "webhooks")).toBe("/");
     expect(switchNextPath("/dashboards-are-not-this", "", "mailhooks")).toBe("/");
+  });
+
+  it("goes from one pricing page to the other's", () => {
+    expect(switchNextPath("/pricing", "?x=1", "webhooks")).toBe("/pricing");
+    expect(switchNextPath("/pricing", "", "mailhooks")).toBe("/pricing");
   });
 
   it("keeps the open endpoint when the other site lists it", () => {

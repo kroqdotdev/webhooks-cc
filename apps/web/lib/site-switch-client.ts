@@ -18,6 +18,12 @@ export function openEndpointSite(slug: string): { site: EndpointSite | undefined
 }
 
 /**
+ * Public pages both sites have: switching from one opens the same page on the
+ * other site, signed in or not. Every other public page is one site's own.
+ */
+export const SHARED_PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/pricing"]);
+
+/**
  * One switch at a time per page: a second click would make a new ticket,
  * and GoTrue keeps only the newest sign-in token, so the first would fail.
  */
@@ -43,8 +49,8 @@ export async function switchSite(
     window.location.assign(login.toString());
   };
   if (!accessToken) {
-    // Signed out: the other site's home, or its sign-in page on the way to an app page.
-    if (nextPath === "/") window.location.assign(`${origin}/`);
+    // Signed out: the same public page there, or its sign-in page on the way to an app page.
+    if (SHARED_PUBLIC_PATHS.has(nextPath)) window.location.assign(`${origin}${nextPath}`);
     else signIn();
     return;
   }

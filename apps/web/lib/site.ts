@@ -217,6 +217,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "og-image.jpg",
   "openapi.yaml",
   "ops",
+  "pricing",
   "privacy",
   "robots.txt",
   "s",

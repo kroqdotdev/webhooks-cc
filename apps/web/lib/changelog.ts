@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.63.1";
+export const APP_VERSION = "0.63.2";
 export const CLI_VERSION = "1.8.0";
 export const SDK_VERSION = "1.21.0";
 export const PYTHON_SDK_VERSION = "0.5.0";
@@ -26,6 +26,16 @@ export const MCP_VERSION = "1.17.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.63.2",
+    date: "2026-11-10",
+    title: "A Pricing Page",
+    track: "web",
+    items: [
+      "webhooks.cc/pricing is a page of its own: the plans, Teams, extra requests and parsed pages, and the questions people ask before paying",
+      "The header's Pricing link opens it, and the site switcher goes from one site's pricing page to the other's",
+    ],
+  },
   {
     version: "0.63.1",
     date: "2026-11-10",
