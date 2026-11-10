@@ -131,21 +131,30 @@ export function requestSiteOrigin(request: Request): string {
 }
 
 /**
+ * mailhooks.cc's own pages, served from app/mailhooks by the host rewrites in
+ * next.config.ts (which cannot import this file; its test compares the two).
+ * Only /parse has pages below it, one per sender in the layout catalogue.
+ */
+export const MAILHOOKS_PAGES = [
+  "/pricing",
+  "/parse",
+  "/guides",
+  // The feature pages (lib/mailhooks-features.ts; a test compares the two).
+  "/google-sheets",
+  "/file-drops",
+  "/custom-domains",
+  "/ai-setup",
+  "/integrations",
+] as const;
+
+/**
  * Paths mailhooks.cc answers itself: its own pages (served from
  * app/mailhooks), signing in, the app, the API and share links. Anything
  * else there is webhooks.cc's (docs, blog, comparisons, legal pages, the CLI
  * and agent flows) and redirects to it.
  */
 const MAILHOOKS_PREFIXES = [
-  "/pricing",
-  "/parse",
-  "/guides",
-  // The feature pages (lib/mailhooks-features.ts).
-  "/google-sheets",
-  "/file-drops",
-  "/custom-domains",
-  "/ai-setup",
-  "/integrations",
+  ...MAILHOOKS_PAGES,
   "/login",
   "/signup",
   "/auth",

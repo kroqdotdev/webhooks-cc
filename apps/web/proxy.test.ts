@@ -10,6 +10,8 @@ vi.mock("@supabase/ssr", () => ({
 }));
 
 import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
+import { LAYOUT_TEMPLATES } from "./lib/layout-templates";
+import { MAILHOOKS_PAGES } from "./lib/site";
 import { config, proxy } from "./proxy";
 
 beforeEach(() => {
@@ -232,18 +234,41 @@ describe("proxy: two sites", () => {
       "/parse/no-such-sender",
       "/parse/shopify-orders/extra",
       "/parse/%E0%A4%A",
-      "/pricing/extra",
-      "/guides/extra",
-      `${MAILHOOKS_FEATURES[0].path}/extra`,
+      // Every page but /parse has nothing below it.
+      ...MAILHOOKS_PAGES.filter((page) => page !== "/parse").map((page) => `${page}/extra`),
     ]) {
       const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
       expect(res.status, path).toBe(200);
       expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBe("1");
     }
-    // The catalogue's senders and the app's own paths are served as they are.
-    for (const path of ["/parse", "/parse/shopify-orders", "/dashboard/anything", "/pricing"]) {
+    // Every page, every sender in the catalogue and the app's own paths are served as they are.
+    for (const path of [
+      ...MAILHOOKS_PAGES,
+      ...LAYOUT_TEMPLATES.map((template) => `/parse/${template.id}`),
+      "/dashboard/anything",
+    ]) {
       const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(200);
       expect(res.headers.get("x-middleware-request-x-whk-missing"), path).toBeNull();
+    }
+  });
+
+  it("lists the same pages as the feature catalogue", () => {
+    expect([...MAILHOOKS_PAGES].sort()).toEqual(
+      ["/pricing", "/parse", "/guides", ...MAILHOOKS_FEATURES.map((f) => f.path)].sort()
+    );
+  });
+
+  it("sends app/mailhooks's own path to the page it stands for on mailhooks.cc", async () => {
+    for (const [path, to] of [
+      ["/mailhooks", "/"],
+      ["/mailhooks/pricing?plan=business", "/pricing?plan=business"],
+      // Where an unknown sender then gets mailhooks.cc's 404.
+      ["/mailhooks/parse/no-such-sender", "/parse/no-such-sender"],
+    ]) {
+      const res = await proxy(new NextRequest(`https://mailhooks.cc${path}`));
+      expect(res.status, path).toBe(307);
+      expect(res.headers.get("location"), path).toBe(`https://mailhooks.cc${to}`);
     }
   });
 

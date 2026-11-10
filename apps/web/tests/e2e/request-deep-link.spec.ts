@@ -27,6 +27,7 @@ let middleId: string;
 let newestId: string;
 let otherSlug: string;
 let otherNewestId: string;
+let otherOlderId: string;
 
 /** Captures an HTTP request the way the receiver does, through the stored procedure. */
 async function captureRequest(
@@ -78,7 +79,7 @@ test.beforeAll(async () => {
     .from("endpoints")
     .insert({ slug: otherSlug, name: "Deep link other E2E", user_id: user.id });
   if (otherError) throw otherError;
-  await captureRequest("/other/1", new Date(Date.now() - 5 * 60_000), otherSlug);
+  otherOlderId = await captureRequest("/other/1", new Date(Date.now() - 5 * 60_000), otherSlug);
   otherNewestId = await captureRequest("/other/2", new Date(Date.now() - 4 * 60_000), otherSlug);
 
   // One request older than the first page, then a full page after it.
@@ -161,6 +162,64 @@ test("Back and Forward between endpoints select each one's own request", async (
   });
   await expect(shown(page.getByText('"/other/2"'))).toBeVisible();
   expect(lookups).toEqual([]);
+});
+
+test("stepping with j moves one row per press and ends in the address", async ({ page }) => {
+  await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
+  await expect(row(page, newestId)).toBeVisible({ timeout: 15000 });
+  const ids = await page
+    .locator('[role="option"][data-request-id]')
+    .filter({ visible: true })
+    .evaluateAll((rows) => rows.map((el) => el.getAttribute("data-request-id")!));
+  const start = ids.findIndex((id) => id !== null);
+  await expect(row(page, ids[start])).toHaveAttribute("aria-selected", "true");
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+
+  // About as fast as the address write and the router's echo of it, which
+  // used to be read as a change from outside and take the selection back.
+  const presses = 10;
+  for (let i = 1; i <= presses; i++) {
+    await page.keyboard.press("j");
+    await expect(row(page, ids[start + i]), `press ${i}`).toHaveAttribute("aria-selected", "true", {
+      timeout: 150,
+    });
+    await page.waitForTimeout(200);
+  }
+  await page.waitForTimeout(800);
+  await expect(row(page, ids[start + presses])).toHaveAttribute("aria-selected", "true");
+  expect(requestOf(page)).toBe(ids[start + presses]);
+});
+
+test("a held way out leaves the other endpoint's request alone", async ({ page }) => {
+  // The other endpoint with its older request open, then this one's Settings.
+  await signInTestUser(page, user, `/dashboard?endpoint=${otherSlug}&request=${otherOlderId}`);
+  await expect(row(page, otherOlderId)).toHaveAttribute("aria-selected", "true", {
+    timeout: 15000,
+  });
+  await page.getByRole("combobox", { name: "Endpoint" }).click();
+  await page.getByRole("option", { name: "Deep link E2E", exact: true }).click();
+  await expect(row(page, newestId)).toBeVisible({ timeout: 15000 });
+  await page
+    .getByRole("navigation", { name: "Endpoint" })
+    .getByRole("button", { name: "Settings" })
+    .click();
+  await page.locator("#settings-name").fill("Edited, then left by Back");
+
+  // Back to the other endpoint is held; the question stays up a while.
+  await page.goBack();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  await page.waitForTimeout(3000);
+  expect(requestOf(page)).toBe(otherOlderId);
+
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(row(page, otherOlderId)).toHaveAttribute("aria-selected", "true", {
+    timeout: 15000,
+  });
+  await expect(shown(page.getByText('"/other/1"'))).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(requestOf(page)).toBe(otherOlderId);
 });
 
 test.describe("at phone width", () => {

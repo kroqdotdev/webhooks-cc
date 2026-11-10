@@ -420,6 +420,75 @@ test("save and leave during a save that is running adds the destination once", a
   expect(data).toHaveLength(1);
 });
 
+/** Holds the endpoint's first save back for `ms`; later saves pass. Says when it was let go. */
+async function holdFirstSave(page: Page, ms: number) {
+  const state = { held: false, released: false };
+  await page.route(`**/api/endpoints/${alphaSlug}`, async (route) => {
+    if (route.request().method() === "GET" || state.held) return route.continue();
+    state.held = true;
+    await new Promise((done) => setTimeout(done, ms));
+    state.released = true;
+    await route.continue();
+  });
+  return state;
+}
+
+test("a save that takes too long lets Keep editing out of the question", async ({ page }) => {
+  test.setTimeout(60000);
+  await openSettings(page);
+  const save = await holdFirstSave(page, 11000);
+  await editName(page, `Slow save ${ts}`);
+  await endpointTab(page, "Requests").click();
+  await expectAsked(page);
+  await dialog(page).getByRole("button", { name: "Save and leave" }).click();
+
+  // While the save runs the answer is given; then, after a while, there is a way back.
+  const keep = dialog(page).getByRole("button", { name: "Keep editing" });
+  await expect(keep).toBeDisabled();
+  await expect(dialog(page).getByRole("button", { name: "Discard" })).toBeDisabled();
+  await expect(keep).toBeEnabled({ timeout: 10000 });
+  expect(save.released).toBe(false);
+  await keep.click();
+  await expectStillEditing(page, `Slow save ${ts}`);
+
+  // The save still lands, and no longer leaves: its question was answered.
+  await expect.poll(savedName, { timeout: 15000 }).toBe(`Slow save ${ts}`);
+  await page.waitForTimeout(1000);
+  await expect(nameField(page)).toBeVisible();
+  expect(viewOf(page)).toBe("settings");
+});
+
+test("a save that outlives Keep editing does not answer the next question", async ({ page }) => {
+  test.setTimeout(60000);
+  await openSettings(page);
+  const save = await holdFirstSave(page, 12000);
+  await editName(page, `First edit ${ts}`);
+  await endpointTab(page, "Requests").click();
+  await expectAsked(page);
+  await dialog(page).getByRole("button", { name: "Save and leave" }).click();
+  const keep = dialog(page).getByRole("button", { name: "Keep editing" });
+  await expect(keep).toBeEnabled({ timeout: 10000 });
+  await keep.click();
+  await expect(dialog(page)).toBeHidden();
+
+  // A second edit, and a second question, while the first save is still out.
+  await nameField(page).fill(`Second edit ${ts}`);
+  await endpointTab(page, "Requests").click();
+  await expectAsked(page);
+  expect(save.released).toBe(false);
+  // This question is not "Saving...": it can be answered any way.
+  await expect(dialog(page).getByRole("button", { name: "Save and leave" })).toBeEnabled();
+  await expect(dialog(page).getByRole("button", { name: "Discard" })).toBeEnabled();
+
+  // The first save lands: the question stays, and so does the second edit.
+  await expect.poll(savedName, { timeout: 15000 }).toBe(`First edit ${ts}`);
+  await page.waitForTimeout(1500);
+  await expectAsked(page);
+  await expect(dialog(page).getByRole("button", { name: "Discard" })).toBeEnabled();
+  await dialog(page).getByRole("button", { name: "Keep editing" }).click();
+  await expectStillEditing(page, `Second edit ${ts}`);
+});
+
 test("leaving the dashboard for another page asks too", async ({ page }) => {
   await openSettings(page);
   await editName(page, "Edited before leaving");

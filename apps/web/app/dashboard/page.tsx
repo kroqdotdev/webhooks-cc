@@ -147,6 +147,7 @@ const PARSE_FRESH_MS = 2 * 60 * 1000;
 const PARSE_REFRESH_MS = 4000;
 // How long the open request waits before it is written to the address (see writeRequestSoon).
 const REQUEST_WRITE_DELAY_MS = 200;
+const NO_ECHO = Symbol("no echo");
 // Email that arrived before the layouts were saved was never queued for them.
 // The save time is this browser's and the arrival the server's, so allow for
 // a clock a little ahead.
@@ -248,6 +249,13 @@ export default function DashboardPage() {
     }
   }
   const endpointSlug = held ? held.slug : endpointSlugParam;
+  // While a way out is held the address already names the place the person
+  // was going, not the endpoint still on screen: its ?request= is not this
+  // endpoint's, so it is neither followed nor written until the hold ends.
+  const holding = held !== null;
+  const holdingRef = useRef(holding);
+  // eslint-disable-next-line react-hooks/refs
+  holdingRef.current = holding;
   // Opened by its slug (a link, the other site's switcher) though listed elsewhere.
   const linkedEndpoint = endpointSlug
     ? allEndpoints?.find((ep) => ep.slug === endpointSlug)
@@ -266,6 +274,9 @@ export default function DashboardPage() {
   // a link or a reload opens it, and on phones Back closes it.
   const requestParam = searchParams.get("request");
   const [selectedId, setSelectedId] = useState<string | null>(() => requestParam);
+  const requestParamRef = useRef(requestParam);
+  // eslint-disable-next-line react-hooks/refs
+  requestParamRef.current = requestParam;
   const [selectedClickHouseDetail, setSelectedClickHouseDetail] =
     useState<ClickHouseRequest | null>(null);
   const [liveMode, setLiveMode] = useState(true);
@@ -512,6 +523,9 @@ export default function DashboardPage() {
   // never drop each other's changes, and none costs a server round trip.
   // A ?request= write that is waiting (writeRequestSoon below) rides along with
   // the next write of anything else, so the two cost one history call.
+  // The ?request= value this page wrote last, until the router has echoed it
+  // back; NO_ECHO when none is on its way.
+  const writeEchoRef = useRef<string | null | typeof NO_ECHO>(NO_ECHO);
   const requestWriteRef = useRef<{
     value: string | null;
     timer: ReturnType<typeof setTimeout>;
@@ -562,6 +576,7 @@ export default function DashboardPage() {
   // because Next reads a history write as a navigation and would drop that one.
   const writeRequestSoon = useCallback(
     (value: string | null) => {
+      if (holdingRef.current) return;
       writtenRequestRef.current = value;
       cancelRequestWrite();
       if (!onScreenRef.current) return;
@@ -571,6 +586,12 @@ export default function DashboardPage() {
           return;
         }
         requestWriteRef.current = null;
+        // The router hands this value back through useSearchParams a moment
+        // later; by then a newer request may be selected (see below).
+        // Only a write that changes the address comes back.
+        if (new URLSearchParams(window.location.search).get("request") !== value) {
+          writeEchoRef.current = value;
+        }
         updateParams({ request: value });
       };
       requestWriteRef.current = { value, timer: setTimeout(flush, REQUEST_WRITE_DELAY_MS) };
@@ -1243,7 +1264,9 @@ export default function DashboardPage() {
     // and one looked up there may be looked up again here.
     cancelRequestWrite();
     lookedUpRequestRef.current = null;
-    setSelectedId(null);
+    // The selection is the address's (a link, or Back to an entry that names a
+    // request), else none until this endpoint's list picks its newest.
+    setSelectedId(holdingRef.current ? null : requestParamRef.current);
     setSelectedClickHouseDetail(null);
     setNewCount(0);
     prevTopSummaryId.current = null;
@@ -1298,15 +1321,31 @@ export default function DashboardPage() {
     },
     [cancelRequestWrite]
   );
-  useEffect(() => followRequestParam(requestParam), [requestParam, followRequestParam]);
+  const seenRequestParamRef = useRef(requestParam);
+  useEffect(() => {
+    if (holding) return;
+    // The router echoing this page's own write is not a change from outside,
+    // even when a newer request was selected since (stepping with j and k
+    // faster than the echo): following it would undo the newer selection.
+    if (seenRequestParamRef.current !== requestParam) {
+      seenRequestParamRef.current = requestParam;
+      const echo = writeEchoRef.current;
+      writeEchoRef.current = NO_ECHO;
+      if (requestParam === echo) return;
+    }
+    followRequestParam(requestParam);
+  }, [requestParam, holding, followRequestParam]);
   // Back and Forward are also read from the address itself. Next brings a
   // pushed URL into useSearchParams in a transition; a Back that lands before
   // it commits takes the parameter from unset to unset, which the effect above
   // never sees, and the request would stay open over the list.
   useEffect(() => {
     const onPopState = () => {
-      // The entry arrived at says which request is open; a write still waiting is stale.
+      // The entry arrived at says which request is open; a write still waiting
+      // is stale, and so is the echo of one made before.
       cancelRequestWrite();
+      writeEchoRef.current = NO_ECHO;
+      if (holdingRef.current) return;
       followRequestParam(new URLSearchParams(window.location.search).get("request"));
     };
     window.addEventListener("popstate", onPopState);
@@ -1583,7 +1622,7 @@ export default function DashboardPage() {
   // is fetched on its own; one that is gone, or another endpoint's, is dropped.
   const requestsReady = !!currentSlug && requestsLoadedFor === currentSlug;
   useEffect(() => {
-    if (!selectedId || !accessToken || !currentEndpointId || !requestsReady) return;
+    if (!selectedId || !accessToken || !currentEndpointId || !requestsReady || holding) return;
     if (selectedRecentRequest || clickHouseDetailMap.current.has(selectedId)) return;
     if (lookedUpRequestRef.current === selectedId) return;
     lookedUpRequestRef.current = selectedId;
@@ -1614,6 +1653,7 @@ export default function DashboardPage() {
     currentSlug,
     requestsReady,
     writeRequestSoon,
+    holding,
   ]);
 
   // The account has no endpoint by the slug in the URL: say which one shows

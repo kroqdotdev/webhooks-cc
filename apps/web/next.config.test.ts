@@ -10,7 +10,7 @@ import {
   matchHas,
   prepareDestination,
 } from "next/dist/shared/lib/router/utils/prepare-destination";
-import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
+import { MAILHOOKS_PAGES } from "./lib/site";
 import { MARKDOWN_TWIN_HEADER } from "./lib/markdown-negotiation";
 import nextConfig from "./next.config";
 
@@ -133,12 +133,8 @@ describe("next.config.ts mailhooks.cc rewrites", () => {
 
   it("serves every mailhooks.cc page from app/mailhooks on the mail host only", async () => {
     const config = await mailConfig();
-    const paths = [
-      "/pricing",
-      "/parse",
-      "/parse/shopify-orders",
-      ...MAILHOOKS_FEATURES.map((f) => f.path),
-    ];
+    // lib/site.ts's list is what proxy.ts goes by; every page on it has a rewrite here.
+    const paths = [...MAILHOOKS_PAGES, "/parse/shopify-orders"];
     for (const path of paths) {
       expect(await rewriteFor(path, { host: "mailhooks.cc" }, config), path).toBe(
         `/mailhooks${path}`

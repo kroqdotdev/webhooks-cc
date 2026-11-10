@@ -205,6 +205,9 @@ export function DiscardChangesDialog({
   if (wasOpen !== open) {
     setWasOpen(open);
     if (open) setFailed(false);
+    // A save belongs to the question it was started from: a new question, or
+    // a closed one, is not "Saving...".
+    setSaving(false);
   }
   // A save that takes this long may never answer (a lost connection): Keep
   // editing and Escape work again, so the dialog is never a dead end. The save
@@ -218,20 +221,26 @@ export function DiscardChangesDialog({
       setStuck(false);
     };
   }, [saving]);
-  // Whether the question is still up when a save started from it finishes.
+  // Which question is up: every opening and closing is a new one, so a save
+  // that finishes late (after Keep editing, perhaps under a later question
+  // about a later edit) can tell that its own question is gone.
+  const questionRef = useRef(0);
   const openRef = useRef(open);
   useEffect(() => {
     openRef.current = open;
+    questionRef.current++;
   }, [open]);
   const saveAndLeave = async () => {
     if (!save || saving) return;
     setSaving(true);
     setFailed(false);
     setFailedTitle(sections[0]?.title ?? null);
+    const question = questionRef.current;
     const ok = await save();
+    // Its question was answered meanwhile (Keep editing once the save took
+    // too long, or the page went ahead on its own): the save changes nothing here.
+    if (question !== questionRef.current || !openRef.current) return;
     setSaving(false);
-    // The page may have gone ahead on its own once nothing was unsaved.
-    if (!openRef.current) return;
     if (ok) onDiscard();
     else setFailed(true);
   };

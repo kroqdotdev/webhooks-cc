@@ -105,6 +105,12 @@ test("an unknown sender page is a 404 that is neither rendered nor cached", asyn
   expect(deeper.status()).toBe(404);
   expect(deeper.headers()["cache-control"]).toContain("no-store");
 
+  // app/mailhooks's own path leads to the same 404, not webhooks.cc's.
+  const prefixed = await request.get(`${MAIL}/mailhooks${path}`);
+  expect(prefixed.status()).toBe(404);
+  expect(new URL(prefixed.url()).pathname).toBe(path);
+  expect(await prefixed.text()).toContain("exist on mailhooks.cc");
+
   // It is mailhooks.cc's own 404, and a known sender still has its page.
   await page.goto(`${MAIL}${path}`);
   await expect(page.getByText("This page doesn't exist on mailhooks.cc.")).toBeVisible();

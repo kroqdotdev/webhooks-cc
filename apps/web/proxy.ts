@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { layoutTemplate } from "@/lib/layout-templates";
-import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { imgSrcDirective } from "@/lib/csp-img-src";
 import {
   MARKDOWN_TWIN_HEADER,
@@ -10,6 +9,7 @@ import {
 } from "@/lib/markdown-negotiation";
 import {
   MAILHOOKS_MISSING_HEADER,
+  MAILHOOKS_PAGES,
   SITE_HEADER,
   existsOnWebhooks,
   mailhooksOrigin,
@@ -66,13 +66,7 @@ function shouldNoIndexPath(pathname: string): boolean {
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-/** mailhooks.cc's own pages (the host rewrites in next.config.ts). */
-const MAILHOOKS_PAGES: ReadonlySet<string> = new Set([
-  "/pricing",
-  "/parse",
-  "/guides",
-  ...MAILHOOKS_FEATURES.map((feature) => feature.path),
-]);
+const MAILHOOKS_PAGE_SET: ReadonlySet<string> = new Set(MAILHOOKS_PAGES);
 
 /**
  * A path below one of mailhooks.cc's own pages that is no page: /parse/<sender>
@@ -82,7 +76,7 @@ const MAILHOOKS_PAGES: ReadonlySet<string> = new Set([
  */
 function unknownMailhooksPage(pathname: string): boolean {
   const [, first, ...rest] = pathname.split("/");
-  if (rest.length === 0 || !MAILHOOKS_PAGES.has(`/${first}`)) return false;
+  if (rest.length === 0 || !MAILHOOKS_PAGE_SET.has(`/${first}`)) return false;
   if (first !== "parse") return true;
   if (rest.length > 1) return true;
   let sender = rest[0];
@@ -168,6 +162,16 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 307);
     }
     missingOnMailhooks = true;
+  }
+  // app/mailhooks is where the host rewrites lead, not an address of its own:
+  // on mailhooks.cc /mailhooks/pricing is /pricing, so an unknown page under
+  // it ends at mailhooks.cc's 404 like any other instead of the root one.
+  if (site === "mailhooks" && (pathname === "/mailhooks" || pathname.startsWith("/mailhooks/"))) {
+    const own = pathname.slice("/mailhooks".length) || "/";
+    return NextResponse.redirect(
+      new URL(`${own}${request.nextUrl.search}`, mailhooksOrigin()!),
+      307
+    );
   }
   // Under mailhooks.cc's own pages only the catalogue's senders exist.
   if (site === "mailhooks" && unknownMailhooksPage(pathname)) missingOnMailhooks = true;
