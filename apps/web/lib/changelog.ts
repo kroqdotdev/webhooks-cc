@@ -79,6 +79,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Forwarding explains how to reach localhost with whk tunnel or Replay, list rows show the query string, and Alerts sit with the email settings on webhooks.cc",
       "mailhooks.cc: every email offers a way to add a layout, gallery visitors land on sign-up, HTTP responses start collapsed, and inbox rows say reading only while a layout can still read them",
       "Signed-in visitors no longer see guest sign-up copy, the announcement stays off sign-in pages and phones, sign-up checks the email format first, and the phone landing page is shorter",
+      "Following live requests or stepping through them with the keyboard no longer drops a tab you just opened, and an octet-stream body that is plain text shows as text",
     ],
   },
   {

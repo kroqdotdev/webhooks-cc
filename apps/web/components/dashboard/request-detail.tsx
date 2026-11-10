@@ -215,9 +215,11 @@ export function RequestDetail({
   };
   const curlCommand = useMemo(() => generateCurlCommand(request), [request]);
   const fullTime = formatFullTimestamp(request.receivedAt);
-  const bodyFormat = detectFormat(request.contentType, request.body);
   // The exact bytes when the body was not UTF-8 (body_raw); shown as hex and replayed as is.
-  const isBinary = bodyFormat === "binary" || !!request.bodyRaw;
+  // An octet-stream body that was valid UTF-8 is kept as text, so it reads as text.
+  const isBinary = !!request.bodyRaw;
+  const declaredFormat = detectFormat(request.contentType, request.body);
+  const bodyFormat = declaredFormat === "binary" && !isBinary ? "text" : declaredFormat;
   const bodyBytes = useMemo(
     () => (isBinary ? requestBodyBytes(request) : null),
     [isBinary, request]

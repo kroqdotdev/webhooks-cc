@@ -462,8 +462,10 @@ export default function DashboardPage() {
   const pathname = usePathname();
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : "body";
-  // Sets (a string) or drops (null) query parameters and keeps the rest. One
-  // handler makes one call: the URL a second call reads may not be updated yet.
+  // Sets (a string) or drops (null) query parameters and keeps the rest.
+  // Through the History API, which Next syncs into useSearchParams: the URL
+  // changes at once, so calls in quick succession (live follow, arrow keys)
+  // never drop each other's changes, and none costs a server round trip.
   const updateParams = useCallback(
     (changes: Record<string, string | null>, mode: "replace" | "push" = "replace") => {
       const params = new URLSearchParams(window.location.search);
@@ -473,10 +475,10 @@ export default function DashboardPage() {
       }
       const qs = params.toString();
       const href = `${pathname}${qs ? `?${qs}` : ""}`;
-      if (mode === "push") router.push(href, { scroll: false });
-      else router.replace(href, { scroll: false });
+      if (mode === "push") window.history.pushState(null, "", href);
+      else window.history.replaceState(null, "", href);
     },
-    [router, pathname]
+    [pathname]
   );
   const setActiveTab = useCallback(
     (tab: Tab) => updateParams({ tab: tab === "body" ? null : tab }),
@@ -1261,12 +1263,13 @@ export default function DashboardPage() {
   // A filter change can hide the selected request: drop it, and the effect
   // above selects the list's newest match instead.
   // Not on the first render: a request named by the URL is kept until the list loads.
-  const filtersChangedRef = useRef(false);
+  // Compared with the previous filters, not a first-run flag, so StrictMode's
+  // second run of the effect does not count as a change.
+  const prevSelectionFilters = useRef(`${methodFilter}|${kindFilter}`);
   useEffect(() => {
-    if (!filtersChangedRef.current) {
-      filtersChangedRef.current = true;
-      return;
-    }
+    const filters = `${methodFilter}|${kindFilter}`;
+    if (prevSelectionFilters.current === filters) return;
+    prevSelectionFilters.current = filters;
     const id = selectedIdRef.current;
     if (!id) return;
     const visible = displayedItemsRef.current.some(
