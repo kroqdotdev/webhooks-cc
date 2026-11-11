@@ -203,6 +203,21 @@ impl Screen for UsageScreen {
             // A short terminal loses the blank lines, then the gauges, before it
             // loses a row: the counts stay readable at one line each.
             let rows = allowances.len();
+            if (inner.height as usize) < rows {
+                // Too short even for a line each: every allowance on one line.
+                if inner.height > 0 {
+                    let summary = allowances
+                        .iter()
+                        .map(|row| format!("{} {}", row.label, row.amount))
+                        .collect::<Vec<_>>()
+                        .join("   ");
+                    frame.render_widget(
+                        Paragraph::new(Line::from(Span::styled(summary, theme::style()))),
+                        Rect::new(inner.x, inner.y, inner.width, 1),
+                    );
+                }
+                return;
+            }
             let stride: u16 = if inner.height as usize >= rows * 3 - 1 {
                 3
             } else if inner.height as usize >= rows * 2 {
@@ -431,6 +446,25 @@ mod tests {
             .collect();
         for label in ["Parsed pages", "Preview data", "AI assists"] {
             assert!(text.contains(label), "{label} missing:\n{text}");
+        }
+
+        // A 20-line terminal less the TUI's header and status bar: 16 lines,
+        // a card of two inner lines, so the allowances share one line.
+        let mut terminal = Terminal::new(TestBackend::new(110, 16)).unwrap();
+        terminal
+            .draw(|frame| screen.render(frame, frame.area()))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text: String = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+                    + "\n"
+            })
+            .collect();
+        for label in ["Parsed pages", "Preview data", "AI assists"] {
+            assert!(text.contains(label), "{label} missing at 16 lines:\n{text}");
         }
     }
 
