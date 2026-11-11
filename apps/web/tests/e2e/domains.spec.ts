@@ -106,8 +106,12 @@ test("a domain past the plan is refused, and extra domains go through a checkout
   page,
   baseURL,
 }) => {
-  // Extra domains are on sale only with the Polar domain products in .env.local.
-  test.skip(!process.env.POLAR_DOMAINS_PRODUCT_ID, "needs POLAR_DOMAINS_PRODUCT_ID");
+  // Extra domains are on sale only with both Polar domain products in .env.local
+  // (getDomainProductIds() in lib/polar.ts).
+  test.skip(
+    !process.env.POLAR_DOMAINS_PRODUCT_ID || !process.env.POLAR_DOMAINS_ADD_PRODUCT_ID,
+    "needs POLAR_DOMAINS_PRODUCT_ID and POLAR_DOMAINS_ADD_PRODUCT_ID"
+  );
   const user = await userWith({ plan: "business", subscription_status: "active" });
   const older = uniqueDomain("first");
   const newer = uniqueDomain("second");

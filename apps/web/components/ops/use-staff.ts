@@ -51,6 +51,9 @@ export function useStaff(
       .then(async (response) => {
         // Read the body either way, so a 404 does not leave the response open.
         const body = (await response.json().catch(() => null)) as StaffStatus | null;
+        // An unreadable success says nothing about staff status: leave it unset
+        // and uncached, so a later mount asks again.
+        if (response.ok && !body) return;
         const value: StaffStatus =
           response.ok && body
             ? body

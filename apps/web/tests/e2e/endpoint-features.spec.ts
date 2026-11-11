@@ -275,7 +275,15 @@ test("an email's attachment and its exact message download from the dashboard", 
   page,
 }) => {
   // Attachment contents and the exact message are kept only in object storage.
-  test.skip(!process.env.OBJECT_STORAGE_BUCKET, "needs OBJECT_STORAGE_* for the receiver");
+  test.skip(
+    ![
+      process.env.OBJECT_STORAGE_ENDPOINT,
+      process.env.OBJECT_STORAGE_BUCKET,
+      process.env.OBJECT_STORAGE_ACCESS_KEY_ID,
+      process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+    ].every(Boolean),
+    "needs OBJECT_STORAGE_* for the receiver"
+  );
   const subject = `Order attached ${ts}`;
   const { raw } = await deliverMail(subject, "sku,qty\r\nB-2,5");
   await openDashboard(page);
@@ -308,7 +316,10 @@ test("an email's attachment and its exact message download from the dashboard", 
 
 test("a Google Sheets destination is set up with a new spreadsheet", async ({ page }) => {
   // Sheets is offered only with the Google OAuth client in .env.local.
-  test.skip(!process.env.GOOGLE_OAUTH_CLIENT_ID, "needs GOOGLE_OAUTH_CLIENT_ID");
+  test.skip(
+    !process.env.GOOGLE_OAUTH_CLIENT_ID || !process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+    "needs GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET"
+  );
   // A connected Google account, as the OAuth callback stores it; the calls
   // that would reach Google are stubbed.
   const { data: connection, error } = await admin
