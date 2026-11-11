@@ -65,7 +65,9 @@ describe("readStoredTheme", () => {
     for (const value of [null, "system", "classic", ""]) {
       stub(value);
       expect(readStoredTheme()).toBe("system");
-      expect(run({ storage: value === null ? {} : { theme: value } }).dark).toBe(false);
+      const storage: Record<string, string> = value === null ? {} : { theme: value };
+      expect(run({ storage, prefersDark: true }).dark).toBe(true);
+      expect(run({ storage, prefersDark: false }).dark).toBe(false);
     }
     stub(null, true);
     expect(readStoredTheme()).toBe("system");

@@ -35,9 +35,10 @@ const RETIRED: { pattern: RegExp; use: string }[] = [
   { pattern: /data-style/, use: "nothing: there is one style" },
 ];
 
-// caps was also an English word in comments, so only class lists are checked for it.
-const CAPS = /(?<![\w-])caps(?:-wide)?(?![\w-])/;
-const CLASS_LIST = /className=|\bcn\(|\bcva\(/;
+// caps is also an English word, so comments are skipped and only a caps
+// inside a string (a class list, wherever its line breaks fall) counts.
+const COMMENT = /^\s*(?:\/\/|\*|\/\*|\{\/\*)/;
+const CAPS_IN_STRING = /["'`][^"'`\n]*(?<![\w-])caps(?:-wide)?(?![\w-])[^"'`\n]*["'`]/;
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -68,7 +69,7 @@ describe("retired style classes", () => {
             const match = line.match(pattern);
             if (match) violations.push(`${where} has ${match[0]}, use ${use}`);
           }
-          if (CLASS_LIST.test(line) && CAPS.test(line)) {
+          if (!COMMENT.test(line) && CAPS_IN_STRING.test(line)) {
             violations.push(`${where} has caps, which no longer exists`);
           }
         });

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { cn } from "./utils";
 
 describe("cn", () => {
-  it("lets a later class replace an earlier one in the same group", () => {
-    expect(cn("p-4", "p-2")).toBe("p-2");
+  it("keeps a shadow colour next to a tinted shadow", () => {
+    expect(cn("shadow-float", "shadow-primary/20")).toBe("shadow-float shadow-primary/20");
   });
 
   it("treats the tinted shadows as shadows", () => {

@@ -298,8 +298,11 @@ body {
 
   /* Card: a hairline on a white surface. One that can be clicked darkens
      its hairline on hover instead of lifting. */
+  /* box-shadow is written out rather than applied as shadow-surface, so a
+     focus ring utility on the element replaces it instead of adding to it. */
   .ui-card {
-    @apply border border-border rounded-lg bg-card p-6 shadow-surface;
+    @apply border border-border rounded-lg bg-card p-6;
+    box-shadow: var(--elevation-sm);
     transition: border-color 150ms;
   }
 
@@ -316,7 +319,8 @@ body {
   .ui-btn-secondary,
   .ui-btn-outline {
     /* Not transition-all: the focus outline must appear at once, not fade in from currentColor. */
-    @apply border border-border rounded-md px-4 py-2 text-sm font-medium shadow-surface transition-[background-color,color,box-shadow,border-color] cursor-pointer;
+    @apply border border-border rounded-md px-4 py-2 text-sm font-medium transition-[background-color,color,box-shadow,border-color] cursor-pointer;
+    box-shadow: var(--elevation-sm);
   }
 
   .ui-btn-primary {
@@ -328,7 +332,13 @@ body {
   }
 
   .ui-btn-secondary {
-    @apply bg-secondary text-secondary-foreground border-transparent shadow-none;
+    @apply bg-secondary text-secondary-foreground border-transparent;
+    box-shadow: none;
+  }
+
+  /* A secondary button rests flat and lifts by a hairline under the pointer. */
+  .ui-btn-secondary:is(:hover, :active) {
+    box-shadow: var(--elevation-sm);
   }
 
   .ui-btn-secondary:hover {
