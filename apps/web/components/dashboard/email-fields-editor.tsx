@@ -37,7 +37,7 @@ const SOURCES: { value: EmailFieldSource; label: string }[] = [
 ];
 
 const selectClass =
-  "h-auto w-32 min-w-0 gap-1.5 text-[13px] rounded-md border-strong border-line bg-background px-2 py-1.5 text-left cursor-pointer focus:ring-offset-0";
+  "h-auto w-32 min-w-0 gap-1.5 text-[13px] rounded-md border border-border bg-background px-2 py-1.5 text-left cursor-pointer focus:ring-offset-0";
 // No ligatures: a pattern's "<=" must not read as "≤".
 const inputClass =
   "ui-input text-[13px] font-mono [font-variant-ligatures:none] py-1.5! px-2! min-w-0";
@@ -174,7 +174,7 @@ export function EmailFieldsEditor({
             const patternId = `${baseId}-pattern-${index}`;
             const label = field.name || `field ${n}`;
             return (
-              <li key={index} className="border-strong border-line rounded-md bg-card p-2.5">
+              <li key={index} className="border border-border rounded-md bg-card p-2.5">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                   <input
                     aria-label={`Field ${n}: name`}
@@ -199,7 +199,7 @@ export function EmailFieldsEditor({
                     <SelectTrigger aria-label={`Field ${n}: what it reads`} className={selectClass}>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="border-strong border-line shadow-raised">
+                    <SelectContent className="border border-border shadow-float">
                       {SOURCES.map((source) => (
                         <SelectItem key={source.value} value={source.value} className="text-[13px]">
                           {source.label}

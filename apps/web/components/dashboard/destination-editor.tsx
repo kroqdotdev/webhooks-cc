@@ -840,7 +840,7 @@ function GenericDestinationEditor({
       </div>
 
       {/* What it gets */}
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">What it gets</h3>
         <div
           role="group"
@@ -887,7 +887,7 @@ function GenericDestinationEditor({
       </div>
 
       {/* How it is sent */}
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">How it is sent</h3>
         <div className="space-y-1.5">
           <Segmented
@@ -966,7 +966,7 @@ function GenericDestinationEditor({
         {draft.format === "template" && (
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <label htmlFor={`${idPrefix}-template`} className="block text-xs font-bold caps">
+              <label htmlFor={`${idPrefix}-template`} className="block text-xs font-bold">
                 JSON to send
               </label>
               <PlaceholderMenu
@@ -981,7 +981,7 @@ function GenericDestinationEditor({
               onChange={(e) => set({ bodyTemplate: e.target.value })}
               rows={8}
               spellCheck={false}
-              className="border-strong border-line text-[13px] font-mono"
+              className="border border-border text-[13px] font-mono"
             />
             {templateError ? (
               <p className="text-xs text-destructive-ink">{templateError}</p>
@@ -998,7 +998,7 @@ function GenericDestinationEditor({
         {chat && (
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <label htmlFor={`${idPrefix}-message`} className="block text-xs font-bold caps">
+              <label htmlFor={`${idPrefix}-message`} className="block text-xs font-bold">
                 Message
               </label>
               <PlaceholderMenu
@@ -1013,7 +1013,7 @@ function GenericDestinationEditor({
               onChange={(e) => set({ messageTemplate: e.target.value })}
               rows={3}
               placeholder="Leave empty for the standard message, or write your own: Invoice {{ json.data.object.id }} paid"
-              className="border-strong border-line text-[13px]"
+              className="border border-border text-[13px]"
             />
           </div>
         )}
@@ -1021,7 +1021,7 @@ function GenericDestinationEditor({
 
       {/* Signing and headers */}
       {!chat && (
-        <div className="pt-4 border-t border-line/20 space-y-4">
+        <div className="pt-4 border-t border-border/20 space-y-4">
           <h3 className="text-sm font-semibold">Signing and headers</h3>
           <Field label="Signing secret">
             {destination ? (
@@ -1055,9 +1055,9 @@ function GenericDestinationEditor({
       )}
 
       {/* Advanced */}
-      <details className="pt-4 border-t border-line/20 group">
+      <details className="pt-4 border-t border-border/20 group">
         <summary className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-          <span className="inline-flex items-center gap-1 text-xs font-bold caps">
+          <span className="inline-flex items-center gap-1 text-xs font-bold">
             <ChevronRight className="h-3 w-3 transition-transform motion-reduce:transition-none group-open:rotate-90" />
             Advanced
           </span>
@@ -1188,7 +1188,7 @@ function GenericDestinationEditor({
       </details>
 
       {/* Preview */}
-      <div className="pt-4 border-t border-line/20">
+      <div className="pt-4 border-t border-border/20">
         <DeliveryPreview
           slug={slug}
           destinationId={destination?.id ?? null}
@@ -1200,7 +1200,7 @@ function GenericDestinationEditor({
 
       {/* Test */}
       {destination && (
-        <div className="pt-4 border-t border-line/20 space-y-2">
+        <div className="pt-4 border-t border-border/20 space-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -1238,7 +1238,7 @@ function GenericDestinationEditor({
       )}
 
       {/* Footer */}
-      <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-line/20">
+      <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border/20">
         <div className="flex items-center gap-2">
           <Switch
             id={`${idPrefix}-enabled`}
@@ -1281,7 +1281,7 @@ function GenericDestinationEditor({
                 ref={keepRef}
                 type="button"
                 onClick={cancelConfirm}
-                className="ui-btn-outline py-1.5! px-3! text-xs min-w-24 classic:min-w-26"
+                className="ui-btn-outline py-1.5! px-3! text-xs min-w-24"
               >
                 Keep it
               </button>

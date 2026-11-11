@@ -66,7 +66,7 @@ export function OAuthSignInButtons({
   return (
     <div>
       {error ? (
-        <div className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3 mb-4">
+        <div className="text-sm text-destructive-ink bg-destructive/10 border border-destructive/40 rounded-md p-3 mb-4">
           {error}
         </div>
       ) : null}

@@ -12,7 +12,7 @@ export function MaintenanceBanner() {
 
   const content = (
     <div
-      className="flex items-center justify-center bg-yellow-100 border-b-strong border-yellow-400 text-yellow-900 dark:bg-yellow-900/30 dark:border-yellow-600 dark:text-yellow-200 px-4 text-center text-sm font-medium"
+      className="flex items-center justify-center bg-yellow-100 border-b border-yellow-400 text-yellow-900 dark:bg-yellow-900/30 dark:border-yellow-600 dark:text-yellow-200 px-4 text-center text-sm font-medium"
       style={{ height: BANNER_HEIGHT }}
     >
       {process.env.NEXT_PUBLIC_MAINTENANCE_BANNER_TEXT}

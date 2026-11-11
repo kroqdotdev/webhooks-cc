@@ -307,7 +307,7 @@ export function SavedReplies() {
           {replies.map((reply) => (
             <li
               key={reply.id}
-              className="flex items-start justify-between gap-4 border-t border-line px-4 py-3 first:border-t-0"
+              className="flex items-start justify-between gap-4 border-t border-border px-4 py-3 first:border-t-0"
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium">{reply.title}</p>

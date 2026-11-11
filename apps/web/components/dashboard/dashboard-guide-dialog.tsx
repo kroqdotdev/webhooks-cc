@@ -380,7 +380,7 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             <strong>Verification badges</strong>:{" "}
-            <ShieldCheck className="inline h-3 w-3 text-primary-ink" /> (valid) and shield-alert
+            <ShieldCheck className="inline h-3 w-3 text-primary" /> (valid) and shield-alert
             (invalid) icons appear in the request list
           </li>
           <li>
@@ -470,7 +470,7 @@ const SECTIONS: Section[] = [
       <div className="space-y-3">
         <p>
           The{" "}
-          <Link href="/api-explorer" className="text-primary-ink hover:underline font-bold">
+          <Link href="/api-explorer" className="text-primary hover:underline font-bold">
             API Explorer
           </Link>{" "}
           is an interactive reference for the webhooks.cc REST API. Try endpoints directly from your
@@ -482,7 +482,7 @@ const SECTIONS: Section[] = [
           <li>Browse all available endpoints, request parameters, and response schemas</li>
           <li>
             API keys can be created from{" "}
-            <Link href="/account/api-keys" className="text-primary-ink hover:underline font-bold">
+            <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
               your API keys page
             </Link>
           </li>
@@ -494,7 +494,7 @@ const SECTIONS: Section[] = [
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="px-1.5 py-0.5 text-[11px] font-mono font-bold border-strong border-line rounded-sm bg-muted inline-block">
+    <kbd className="px-1.5 py-0.5 text-[11px] font-mono font-bold border border-border rounded-sm bg-muted inline-block">
       {children}
     </kbd>
   );
@@ -542,9 +542,9 @@ export function DashboardGuideDialog({
       <DialogContent className="max-w-3xl max-h-[85vh] p-0 overflow-hidden">
         <div className="flex max-h-[85vh] min-h-0">
           {/* Sidebar */}
-          <nav className="w-52 shrink-0 border-r-strong border-line overflow-y-auto py-4">
+          <nav className="w-52 shrink-0 border-r border-border overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
-              <DialogTitle className="text-sm caps">Dashboard guide</DialogTitle>
+              <DialogTitle className="text-sm tracking-normal">Dashboard guide</DialogTitle>
             </DialogHeader>
             <div className="space-y-0.5">
               {SECTIONS.map((section) => (
@@ -552,7 +552,7 @@ export function DashboardGuideDialog({
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
                   className={cn(
-                    "w-full px-4 py-1.5 text-left text-xs font-bold caps flex items-center gap-2 cursor-pointer transition-colors",
+                    "w-full px-4 py-1.5 text-left text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors",
                     activeSection === section.id
                       ? "bg-selected text-selected-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -567,7 +567,7 @@ export function DashboardGuideDialog({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            <h2 className="text-lg font-bold caps mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2 tracking-normal">
               {current.icon}
               {current.title}
             </h2>

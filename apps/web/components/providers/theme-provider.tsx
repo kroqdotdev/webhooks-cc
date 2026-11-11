@@ -1,19 +1,14 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { trackUiStyleChanged } from "@/lib/analytics";
-import { DEFAULT_UI_STYLE, readUiStyle, storeChosenUiStyle, type UiStyle } from "@/lib/ui-style";
+import { readStoredTheme, THEME_STORAGE_KEY, type Theme } from "@/lib/theme";
 
-export type Theme = "light" | "dark" | "system";
-
-export type { UiStyle };
+export type { Theme };
 
 interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   resolvedTheme: "light" | "dark";
-  uiStyle: UiStyle;
-  setUiStyle: (style: UiStyle) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -21,24 +16,9 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");
-  const [uiStyle, setUiStyleState] = useState<UiStyle>(DEFAULT_UI_STYLE);
 
   useEffect(() => {
-    let stored: Theme | null = null;
-    try {
-      stored = localStorage.getItem("theme") as Theme | null;
-    } catch {
-      // Storage is blocked: follow the system.
-    }
-    if (stored) {
-      setTheme(stored);
-    }
-    // The inline script in app/layout.tsx applies the style before paint. A
-    // page rendered on the client without it (a not-found from a dynamic
-    // route) would fall back to classic, so the style is applied here too.
-    const style = readUiStyle();
-    document.documentElement.dataset.style = style;
-    setUiStyleState(style);
+    setTheme(readStoredTheme());
   }, []);
 
   useEffect(() => {
@@ -69,19 +49,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const handleSetTheme = (newTheme: Theme) => {
     setTheme(newTheme);
     try {
-      localStorage.setItem("theme", newTheme);
+      localStorage.setItem(THEME_STORAGE_KEY, newTheme);
     } catch {
       // Storage is blocked: the choice lasts for this page view.
-    }
-  };
-
-  const handleSetUiStyle = (style: UiStyle) => {
-    const previous = readUiStyle();
-    setUiStyleState(style);
-    storeChosenUiStyle(style);
-    document.documentElement.dataset.style = style;
-    if (style !== previous) {
-      trackUiStyleChanged({ from: previous, to: style });
     }
   };
 
@@ -91,8 +61,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         theme,
         setTheme: handleSetTheme,
         resolvedTheme,
-        uiStyle,
-        setUiStyle: handleSetUiStyle,
       }}
     >
       {children}
@@ -108,8 +76,6 @@ const FALLBACK_THEME: ThemeContextType = {
   theme: "system",
   setTheme: () => {},
   resolvedTheme: "dark",
-  uiStyle: DEFAULT_UI_STYLE,
-  setUiStyle: () => {},
 };
 
 export function useTheme() {

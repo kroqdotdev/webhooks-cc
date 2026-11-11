@@ -12,7 +12,7 @@ import {
  * The agent claim page (/agent/claim?attempt=...): signed-out redirect, the
  * request summary, a wrong code, connecting, declining, the wrong account,
  * an identity provider's link request, and Connected Agents in Account, in
- * both styles and both themes.
+ * both themes.
  * Registrations and attempts are seeded with the service role, hashed the
  * way lib/agent/claims.ts hashes them.
  */
@@ -77,20 +77,10 @@ async function seedAttempt(
   return { attempt, code, slug, registrationId: data.id };
 }
 
-async function openAs(
-  page: Page,
-  user: TestUser,
-  path: string,
-  look: { style: "classic" | "clean"; theme: "light" | "dark" } = {
-    style: "classic",
-    theme: "light",
-  }
-) {
-  await page.addInitScript(({ style, theme }) => {
-    localStorage.setItem("ui-style", style);
-    localStorage.setItem("ui-style-source", "chosen");
+async function openAs(page: Page, user: TestUser, path: string, theme: "light" | "dark" = "light") {
+  await page.addInitScript((theme) => {
     localStorage.setItem("theme", theme);
-  }, look);
+  }, theme);
   await signInTestUser(page, user, path);
 }
 
@@ -116,72 +106,71 @@ test("signed out, the claim link goes through login and keeps the attempt", asyn
   expect(redirect).toBe(`/agent/claim?attempt=${attempt}`);
 });
 
-for (const style of ["classic", "clean"] as const) {
-  for (const theme of ["light", "dark"] as const) {
-    test(`connects an agent in ${style} ${theme}`, async ({ page }) => {
-      const { attempt, code, slug } = await seedAttempt(owner.email, {
-        clientName: `E2E agent ${style} ${theme}`,
-      });
-      await openAs(page, owner, `/agent/claim?attempt=${attempt}`, { style, theme });
-      await expect(page.locator("html")).toHaveAttribute("data-style", style);
-
-      const panel = page.getByTestId("agent-claim");
-      await expect(panel.getByRole("heading", { name: "Connect an agent" })).toBeVisible({
-        timeout: 15000,
-      });
-      await expect(panel.getByText(`E2E agent ${style} ${theme}`)).toBeVisible();
-      await expect(panel.getByText("name given by the agent")).toBeVisible();
-      await expect(panel.getByText(slug!, { exact: false })).toBeVisible();
-
-      const input = panel.getByLabel("Code from the agent");
-      await input.fill(code === "000000" ? "111111" : "000000");
-      await panel.getByRole("button", { name: "Connect" }).click();
-      await expect(panel.getByRole("alert")).toHaveText(/That code is not right\. 4 tries left\./);
-
-      await input.fill(code);
-      await panel.getByRole("button", { name: "Connect" }).click();
-      await expect(panel.getByRole("heading", { name: "Agent connected" })).toBeVisible();
-      await expect(panel.getByText(slug!)).toBeVisible();
-
-      const { data: endpoint } = await admin
-        .from("endpoints")
-        .select("user_id, agent_registration_id")
-        .eq("slug", slug!)
-        .single();
-      expect(endpoint).toEqual({ user_id: owner.id, agent_registration_id: null });
+for (const theme of ["light", "dark"] as const) {
+  test(`connects an agent in ${theme}`, async ({ page }) => {
+    const { attempt, code, slug } = await seedAttempt(owner.email, {
+      clientName: `E2E agent ${theme}`,
     });
-  }
-}
+    await openAs(page, owner, `/agent/claim?attempt=${attempt}`, theme);
+    await (theme === "dark"
+      ? expect(page.locator("html")).toHaveClass(/\bdark\b/)
+      : expect(page.locator("html")).not.toHaveClass(/\bdark\b/));
 
-for (const style of ["classic", "clean"] as const) {
-  test(`links an identity provider's identity in ${style}`, async ({ page }) => {
-    // No provider is trusted in development, so the page falls back to the
-    // issuer's host; a trusted one shows its display_name.
-    const { attempt, code, registrationId } = await seedAttempt(owner.email, {
-      endpoint: false,
-      idjagIss: "https://idp.e2e.example",
-    });
-    await openAs(page, owner, `/agent/claim?attempt=${attempt}`, { style, theme: "dark" });
     const panel = page.getByTestId("agent-claim");
     await expect(panel.getByRole("heading", { name: "Connect an agent" })).toBeVisible({
       timeout: 15000,
     });
-    await expect(panel.getByText("is asking to link this account")).toBeVisible();
-    await expect(panel.getByText("Identity provider")).toBeVisible();
-    await expect(panel.getByText("idp.e2e.example").first()).toBeVisible();
-    await expect(panel.getByText("name given by the agent")).toHaveCount(0);
+    await expect(panel.getByText(`E2E agent ${theme}`)).toBeVisible();
+    await expect(panel.getByText("name given by the agent")).toBeVisible();
+    await expect(panel.getByText(slug!, { exact: false })).toBeVisible();
 
-    await panel.getByLabel("Code from the agent").fill(code);
+    const input = panel.getByLabel("Code from the agent");
+    await input.fill(code === "000000" ? "111111" : "000000");
+    await panel.getByRole("button", { name: "Connect" }).click();
+    await expect(panel.getByRole("alert")).toHaveText(/That code is not right\. 4 tries left\./);
+
+    await input.fill(code);
     await panel.getByRole("button", { name: "Connect" }).click();
     await expect(panel.getByRole("heading", { name: "Agent connected" })).toBeVisible();
-    const { data } = await admin
-      .from("agent_registrations")
-      .select("user_id, claimed_at")
-      .eq("id", registrationId)
+    await expect(panel.getByText(slug!)).toBeVisible();
+
+    const { data: endpoint } = await admin
+      .from("endpoints")
+      .select("user_id, agent_registration_id")
+      .eq("slug", slug!)
       .single();
-    expect(data?.user_id).toBe(owner.id);
+    expect(endpoint).toEqual({ user_id: owner.id, agent_registration_id: null });
   });
 }
+
+test(`links an identity provider's identity`, async ({ page }) => {
+  // No provider is trusted in development, so the page falls back to the
+  // issuer's host; a trusted one shows its display_name.
+  const { attempt, code, registrationId } = await seedAttempt(owner.email, {
+    endpoint: false,
+    idjagIss: "https://idp.e2e.example",
+  });
+  await openAs(page, owner, `/agent/claim?attempt=${attempt}`, "dark");
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+  const panel = page.getByTestId("agent-claim");
+  await expect(panel.getByRole("heading", { name: "Connect an agent" })).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(panel.getByText("is asking to link this account")).toBeVisible();
+  await expect(panel.getByText("Identity provider")).toBeVisible();
+  await expect(panel.getByText("idp.e2e.example").first()).toBeVisible();
+  await expect(panel.getByText("name given by the agent")).toHaveCount(0);
+
+  await panel.getByLabel("Code from the agent").fill(code);
+  await panel.getByRole("button", { name: "Connect" }).click();
+  await expect(panel.getByRole("heading", { name: "Agent connected" })).toBeVisible();
+  const { data } = await admin
+    .from("agent_registrations")
+    .select("user_id, claimed_at")
+    .eq("id", registrationId)
+    .single();
+  expect(data?.user_id).toBe(owner.id);
+});
 
 test("shows the wrong account and offers to switch", async ({ page }) => {
   const { attempt } = await seedAttempt(stranger.email, { endpoint: false });

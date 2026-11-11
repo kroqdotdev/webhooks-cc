@@ -345,7 +345,7 @@ function Checklist({
     <div className="ui-code overflow-x-auto mb-3">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b-strong border-line">
+          <tr className="border-b border-border">
             <th scope="col" className="text-left py-2.5 pr-4 font-bold">
               Feature
             </th>
@@ -356,7 +356,7 @@ function Checklist({
                 className="text-left py-2.5 pr-4 font-bold whitespace-nowrap"
               >
                 {tool.href ? (
-                  <Link href={tool.href} className="hover:text-primary-ink transition-colors">
+                  <Link href={tool.href} className="hover:text-primary transition-colors">
                     {tool.name}
                   </Link>
                 ) : (
@@ -396,12 +396,12 @@ export default function CompareIndexPage() {
       />
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
       <div className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold caps text-muted-foreground mb-3">Updated November 2026</p>
+        <p className="text-xs font-bold text-muted-foreground mb-3">Updated November 2026</p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">Webhook testing tools compared</h1>
         <p className="text-lg text-muted-foreground mb-10">
           Honest, developer-focused comparisons against popular webhook testing alternatives, and
           against the{" "}
-          <a href="#email-testing-tools" className="text-primary-ink font-bold hover:underline">
+          <a href="#email-testing-tools" className="text-primary font-bold hover:underline">
             email testing tools
           </a>{" "}
           developers weigh for signup and login tests. The checklists below put them side by side;
@@ -414,7 +414,7 @@ export default function CompareIndexPage() {
           Other tools as listed on their own sites when we compared in November 2026; check pricing
           before you buy. RequestBin lives on Pipedream Workflows, which takes no new signups and
           shuts down on March 31, 2027. Sharing with a team?{" "}
-          <Link href="/for-teams" className="text-primary-ink font-bold hover:underline">
+          <Link href="/for-teams" className="text-primary font-bold hover:underline">
             Webhook testing for teams
           </Link>
           .
@@ -440,7 +440,7 @@ export default function CompareIndexPage() {
         </h2>
         <p className="text-muted-foreground mb-4">
           Every endpoint on a webhooks.cc account also receives email, so the same tool covers{" "}
-          <Link href="/email-testing" className="text-primary-ink font-bold hover:underline">
+          <Link href="/email-testing" className="text-primary font-bold hover:underline">
             email testing
           </Link>
           : signup, magic link and password reset emails in Playwright, Cypress and CI. This is how

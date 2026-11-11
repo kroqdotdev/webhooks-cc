@@ -74,7 +74,7 @@ test.afterAll(async () => {
 
 async function openForwarding(page: Page) {
   await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold.caps", { hasText: "Drops E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "Drops E2E" })).toBeVisible({
     timeout: 15000,
   });
   await page

@@ -200,20 +200,12 @@ test.afterAll(async () => {
   if (testUser) await deleteTestUser(testUser.id);
 });
 
-async function openDashboard(
-  page: Page,
-  look: { style: "classic" | "clean"; theme: "light" | "dark" } = {
-    style: "classic",
-    theme: "light",
-  }
-) {
-  await page.addInitScript(({ style, theme }) => {
-    localStorage.setItem("ui-style", style);
-    localStorage.setItem("ui-style-source", "chosen");
+async function openDashboard(page: Page, theme: "light" | "dark" = "light") {
+  await page.addInitScript((theme) => {
     localStorage.setItem("theme", theme);
-  }, look);
+  }, theme);
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold.caps", { hasText: "Mail E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "Mail E2E" })).toBeVisible({
     timeout: 15000,
   });
 }
@@ -231,61 +223,62 @@ function emailRow(page: Page) {
   return page.getByRole("option", { name: new RegExp(`EMAIL ${SUBJECT}`) });
 }
 
-for (const style of ["classic", "clean"] as const) {
-  for (const theme of ["light", "dark"] as const) {
-    test(`email view works in ${style} ${theme}`, async ({ page }) => {
-      await openDashboard(page, { style, theme });
-      await expect(page.locator("html")).toHaveAttribute("data-style", style);
+for (const theme of ["light", "dark"] as const) {
+  test(`email view works in ${theme}`, async ({ page }) => {
+    await openDashboard(page, theme);
+    await (theme === "dark"
+      ? expect(page.locator("html")).toHaveClass(/\bdark\b/)
+      : expect(page.locator("html")).not.toHaveClass(/\bdark\b/));
 
-      // The endpoint bar shows the email address next to the HTTP URL
-      await expect(page.getByText(`${endpointSlug}@mailhooks.cc`).first()).toBeVisible();
+    // The endpoint bar shows the email address next to the HTTP URL
+    await expect(page.getByText(`${endpointSlug}@mailhooks.cc`).first()).toBeVisible();
 
-      await emailRow(page).click();
-      await expect(shown(page.getByRole("heading", { name: SUBJECT }))).toBeVisible();
+    await emailRow(page).click();
+    await expect(shown(page.getByRole("heading", { name: SUBJECT }))).toBeVisible();
 
-      // Found in this email: the code and the confirm link
-      await expect(shown(page.getByText("Found in this email"))).toBeVisible();
-      await expect(shown(page.getByText(CODE, { exact: true })).first()).toBeVisible();
-      await expect(
-        shown(page.getByRole("link", { name: "Open link in a new tab" }))
-      ).toHaveAttribute("href", CONFIRM_URL);
+    // Found in this email: the code and the confirm link
+    await expect(shown(page.getByText("Found in this email"))).toBeVisible();
+    await expect(shown(page.getByText(CODE, { exact: true })).first()).toBeVisible();
+    await expect(shown(page.getByRole("link", { name: "Open link in a new tab" }))).toHaveAttribute(
+      "href",
+      CONFIRM_URL
+    );
 
-      // Emails open on their JSON: the body forwarding sends.
-      const json = shown(page.locator("code.language-json"));
-      await expect(json).toContainText('"type": "email.received"');
-      await expect(json).toContainText(`"subject": "${SUBJECT}"`);
-      await expect(json).toContainText(`"codes": [\n      "${CODE}"\n    ]`);
-      await expect(shown(page.getByText("Forwarding can POST this JSON"))).toBeVisible();
+    // Emails open on their JSON: the body forwarding sends.
+    const json = shown(page.locator("code.language-json"));
+    await expect(json).toContainText('"type": "email.received"');
+    await expect(json).toContainText(`"subject": "${SUBJECT}"`);
+    await expect(json).toContainText(`"codes": [\n      "${CODE}"\n    ]`);
+    await expect(shown(page.getByText("Forwarding can POST this JSON"))).toBeVisible();
 
-      // The preview is sandboxed without scripts, and remote images wait for a click
-      await shown(page.getByRole("tab", { name: /^Preview$/i })).click();
-      const frame = shown(page.locator('iframe[title="Email preview"]'));
-      await expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
-      await expect(shown(page.getByText("2 remote images are blocked"))).toBeVisible();
-      await expect(frame.contentFrame().getByText("Confirm your email")).toBeVisible();
-      await shown(page.getByRole("button", { name: "Load images" })).click();
-      await expect(shown(page.getByText("2 remote images are blocked"))).toHaveCount(0);
+    // The preview is sandboxed without scripts, and remote images wait for a click
+    await shown(page.getByRole("tab", { name: /^Preview$/i })).click();
+    const frame = shown(page.locator('iframe[title="Email preview"]'));
+    await expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
+    await expect(shown(page.getByText("2 remote images are blocked"))).toBeVisible();
+    await expect(frame.contentFrame().getByText("Confirm your email")).toBeVisible();
+    await shown(page.getByRole("button", { name: "Load images" })).click();
+    await expect(shown(page.getByText("2 remote images are blocked"))).toHaveCount(0);
 
-      // The spam verdict: a chip in the header, the score and rules in the tab
-      await expect(shown(page.getByText("Looks spammy 7.5"))).toBeVisible();
-      await shown(page.getByRole("tab", { name: /^Authentication$/i })).click();
-      await expect(shown(page.getByText("SPF", { exact: true })).first()).toBeVisible();
-      await expect(shown(page.getByText("Spam score", { exact: true }))).toBeVisible();
-      await expect(shown(page.getByText("SUBJ_ALL_CAPS"))).toBeVisible();
-      await expect(shown(page.getByText("+3.00"))).toBeVisible();
+    // The spam verdict: a chip in the header, the score and rules in the tab
+    await expect(shown(page.getByText("Looks spammy 7.5"))).toBeVisible();
+    await shown(page.getByRole("tab", { name: /^Authentication$/i })).click();
+    await expect(shown(page.getByText("SPF", { exact: true })).first()).toBeVisible();
+    await expect(shown(page.getByText("Spam score", { exact: true }))).toBeVisible();
+    await expect(shown(page.getByText("SUBJ_ALL_CAPS"))).toBeVisible();
+    await expect(shown(page.getByText("+3.00"))).toBeVisible();
 
-      // The deliverability report: the 1024-bit key is worth improving;
-      // the logo and tracking pixel above the code are ordinary mail.
-      await expect(shown(page.getByText("1 to improve")).first()).toBeVisible();
-      await expect(shown(page.getByText("Deliverability", { exact: true }))).toBeVisible();
-      await expect(shown(page.getByText("DKIM key is 1024 bits"))).toBeVisible();
-      await expect(shown(page.getByText("1 image with text"))).toBeVisible();
-      await expect(shown(page.getByText("SPF record ends in ~all"))).toBeVisible();
+    // The deliverability report: the 1024-bit key is worth improving;
+    // the logo and tracking pixel above the code are ordinary mail.
+    await expect(shown(page.getByText("1 to improve")).first()).toBeVisible();
+    await expect(shown(page.getByText("Deliverability", { exact: true }))).toBeVisible();
+    await expect(shown(page.getByText("DKIM key is 1024 bits"))).toBeVisible();
+    await expect(shown(page.getByText("1 image with text"))).toBeVisible();
+    await expect(shown(page.getByText("SPF record ends in ~all"))).toBeVisible();
 
-      await shown(page.getByRole("tab", { name: /^Raw$/i })).click();
-      await expect(shown(page.getByText(`Subject: ${SUBJECT}`))).toBeVisible();
-    });
-  }
+    await shown(page.getByRole("tab", { name: /^Raw$/i })).click();
+    await expect(shown(page.getByText(`Subject: ${SUBJECT}`))).toBeVisible();
+  });
 }
 
 test("the preview disarms links, redirects and SVG in a hostile email", async ({ page }) => {

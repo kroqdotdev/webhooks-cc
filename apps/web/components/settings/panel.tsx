@@ -1,14 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-/** Inline links in settings copy: foreground with an underline, readable in every style. */
+/** Inline links in settings copy: foreground with an underline. */
 export const settingsLink =
   "font-medium text-foreground underline underline-offset-2 decoration-muted-foreground hover:decoration-foreground";
 
 /**
  * Building blocks for the account and team settings pages: the page heading,
- * a panel with an optional footer for its actions, and a labelled row. They
- * use the style-aware classes only, so classic and clean both render them.
+ * a panel with an optional footer for its actions, and a labelled row.
  */
 
 export function SettingsPageHeader({
@@ -26,7 +25,7 @@ export function SettingsPageHeader({
     <header className="mb-8 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-2xl font-bold clean:font-semibold break-words">{title}</h1>
+          <h1 className="text-2xl break-words font-semibold">{title}</h1>
           {description && (
             <p className="text-sm text-muted-foreground max-w-[60ch]">{description}</p>
           )}
@@ -80,7 +79,7 @@ export function Panel({
         <div
           className={cn(
             "flex flex-wrap items-start justify-between gap-3 px-5 pt-5",
-            !hasBody ? "pb-5" : flush ? "pb-4 border-b-strong border-line" : "pb-0"
+            !hasBody ? "pb-5" : flush ? "pb-4 border-b border-border" : "pb-0"
           )}
         >
           <div className="min-w-0 space-y-0.5">
@@ -88,7 +87,7 @@ export function Panel({
               <h2
                 id={titleId}
                 className={cn(
-                  "text-base font-bold clean:font-semibold",
+                  "text-base font-semibold",
                   tone === "danger" && "text-destructive-ink"
                 )}
               >
@@ -104,7 +103,7 @@ export function Panel({
       )}
       {hasBody && <div className={flush ? "" : "p-5"}>{children}</div>}
       {footer && (
-        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40">
+        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-border bg-muted/40">
           {footer}
         </div>
       )}
@@ -126,7 +125,7 @@ export function PanelRow({
 }) {
   const Label = htmlFor ? "label" : "div";
   return (
-    <div className="grid gap-2 py-4 first:pt-0 last:pb-0 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-6 border-b border-line/60 last:border-b-0">
+    <div className="grid gap-2 py-4 first:pt-0 last:pb-0 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-6 border-b border-border/60 last:border-b-0">
       <div className="space-y-0.5">
         <Label htmlFor={htmlFor} className="text-sm font-medium block">
           {label}
@@ -178,8 +177,8 @@ export function Notice({
     <div
       role={tone === "danger" ? "alert" : undefined}
       className={cn(
-        "flex flex-wrap items-start justify-between gap-3 rounded-md border-strong p-4",
-        tone === "info" && "border-line bg-muted/50",
+        "flex flex-wrap items-start justify-between gap-3 rounded-md border p-4",
+        tone === "info" && "border-border bg-muted/50",
         tone === "warning" && "border-amber-500/60 bg-amber-500/10",
         tone === "danger" && "border-destructive/60 bg-destructive/10",
         tone === "success" && "border-green-600/50 bg-green-500/10"
@@ -236,7 +235,7 @@ export function StatusTag({
     <span
       className={cn(
         "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap",
-        tone === "neutral" && "border-line text-foreground",
+        tone === "neutral" && "border-border text-foreground",
         tone === "success" && "border-green-600/50 text-green-800 dark:text-green-300",
         tone === "warning" && "border-amber-500/60 text-amber-800 dark:text-amber-300",
         tone === "danger" && "border-destructive/60 text-destructive-ink"

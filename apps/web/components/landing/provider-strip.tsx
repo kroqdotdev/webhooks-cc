@@ -26,7 +26,7 @@ export function ProviderStrip() {
                 key={provider.slug}
                 href={`/webhooks/${provider.slug}`}
                 // Phones show the first dozen; the link below the chips lists every provider.
-                className={`${index >= 12 ? "max-sm:hidden " : ""}inline-flex items-center gap-2 border-strong border-line rounded-md bg-card px-3 py-2 font-bold text-sm shadow-raised-sm hover:-translate-x-(--press) hover:-translate-y-(--press) hover:shadow-raised-lg transition-all`}
+                className={`${index >= 12 ? "max-sm:hidden " : ""}inline-flex items-center gap-2 border border-border rounded-md bg-card px-3 py-2 font-bold text-sm shadow-surface hover:shadow-float-lg transition-all`}
               >
                 {icon && (
                   <span
@@ -44,7 +44,7 @@ export function ProviderStrip() {
           })}
           <Link
             href="/webhooks"
-            className="inline-flex items-center gap-1 border-strong border-line rounded-md bg-action text-action-foreground px-3 py-2 font-bold text-sm shadow-raised-sm hover:-translate-x-(--press) hover:-translate-y-(--press) hover:shadow-raised-lg transition-all"
+            className="inline-flex items-center gap-1 border border-border rounded-md bg-primary text-primary-foreground px-3 py-2 font-bold text-sm shadow-surface hover:shadow-float-lg transition-all"
           >
             All providers
             <ArrowRight className="h-4 w-4" />

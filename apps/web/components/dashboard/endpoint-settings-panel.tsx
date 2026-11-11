@@ -243,7 +243,7 @@ function ReceivingSection({
           <details
             open={emailOptionsOpen}
             onToggle={(event) => setEmailOptionsOpen(event.currentTarget.open)}
-            className="group pt-4 border-t border-line/20"
+            className="group pt-4 border-t border-border/20"
           >
             <summary className="flex items-center gap-1.5 text-sm font-semibold cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
               <ChevronRight
@@ -405,7 +405,7 @@ function SharingSection({ endpointId }: { endpointId: string }) {
       description="Share this endpoint with your teams. Changes apply at once."
     >
       {error && <p className="text-sm text-destructive-ink">{error}</p>}
-      <ul className="divide-y divide-line/20">
+      <ul className="divide-y divide-border/20">
         {teams.map((team) => {
           const isShared = shared.has(team.id);
           return (
@@ -416,7 +416,7 @@ function SharingSection({ endpointId }: { endpointId: string }) {
                 onClick={() => void toggle(team.id, isShared)}
                 disabled={toggling === team.id}
                 className={cn(
-                  "text-xs px-2.5 py-1 border-strong border-line rounded-md transition-colors cursor-pointer",
+                  "text-xs px-2.5 py-1 border border-border rounded-md transition-colors cursor-pointer",
                   isShared ? "bg-selected text-selected-foreground" : "hover:bg-muted"
                 )}
               >
@@ -601,7 +601,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         </Field>
       )}
       {hasSecret && provider && (
-        <p className="flex items-center gap-1.5 text-xs text-primary-ink font-semibold">
+        <p className="flex items-center gap-1.5 text-xs text-primary font-semibold">
           <ShieldCheck className="h-3.5 w-3.5" />
           Verifying {getWebProviderLabel(provider) ?? provider} signatures
         </p>
@@ -694,7 +694,7 @@ function DeleteSection({
                 type="button"
                 onClick={cancelConfirm}
                 disabled={deleting}
-                className="ui-btn-outline py-1.5! px-3! text-xs min-w-30 classic:min-w-36"
+                className="ui-btn-outline py-1.5! px-3! text-xs min-w-30"
               >
                 Cancel
               </button>
@@ -952,7 +952,7 @@ export function EndpointSettingsPanel({
     <div className="flex-1 flex flex-col md:flex-row min-h-0">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 md:w-56 md:border-r-strong md:border-line border-b-strong border-line md:border-b-0 px-4 py-2 md:p-3"
+        className="shrink-0 md:w-56 md:border-r md:border-border border-b border-border md:border-b-0 px-4 py-2 md:p-3"
       >
         {/* Ten sections do not fit a phone's width, and wrapped they take four
             rows, so phones pick the section from a list instead. */}
@@ -1050,7 +1050,7 @@ export function EndpointSettingsPanel({
           className={cn(
             "sticky bottom-0 z-10",
             showUnsavedBar &&
-              "border-t-strong border-line bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+              "border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
           )}
         >
           {showUnsavedBar && (

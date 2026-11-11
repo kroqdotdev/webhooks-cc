@@ -146,11 +146,11 @@ export function SearchModal() {
             event.preventDefault();
             inputRef.current?.focus();
           }}
-          className="fixed left-1/2 top-[15vh] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border-strong border-line bg-background shadow-raised"
+          className="fixed left-1/2 top-[15vh] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border border-border bg-background shadow-float"
         >
           <DialogPrimitive.Title className="sr-only">Search documentation</DialogPrimitive.Title>
         {/* Input */}
-        <div className="flex items-center border-b-strong border-line px-4">
+        <div className="flex items-center border-b border-border px-4">
           <Search className="h-5 w-5 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
@@ -187,7 +187,7 @@ export function SearchModal() {
                 >
                   <p className="font-bold text-sm">{result.title}</p>
                   {result.section && (
-                    <p className="text-xs text-muted-foreground caps">{result.section}</p>
+                    <p className="text-xs text-muted-foreground">{result.section}</p>
                   )}
                   <p
                     className="text-sm text-muted-foreground mt-1 line-clamp-2 [&>mark]:bg-primary/20 [&>mark]:text-foreground"
@@ -214,7 +214,7 @@ export function SearchModal() {
         )}
 
         {/* Footer hint */}
-        <div className="flex items-center gap-4 px-4 py-2 border-t-strong border-line text-xs text-muted-foreground">
+        <div className="flex items-center gap-4 px-4 py-2 border-t border-border text-xs text-muted-foreground">
           <span>
             <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">↑↓</kbd>{" "}
             navigate

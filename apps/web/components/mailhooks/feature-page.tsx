@@ -23,7 +23,7 @@ export function FeatureTable({
       <table className="w-full text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="border-b-strong border-line">
+          <tr className="border-b border-border">
             {columns.map((column) => (
               <th key={column.header} scope="col" className="text-left py-2 pr-6 last:pr-0">
                 <span className="font-bold">{column.header}</span>
@@ -82,7 +82,7 @@ export function FeaturePage({
       <SiteHeader />
       <main className="py-16 px-4">
         <article className="max-w-4xl mx-auto">
-          <p className="text-xs font-bold caps text-muted-foreground mb-3">{feature.plans}</p>
+          <p className="text-xs font-bold text-muted-foreground mb-3">{feature.plans}</p>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">{feature.heading}</h1>
           <p className="text-xl text-muted-foreground mb-8">{feature.intro}</p>
           <div className="flex flex-wrap items-start gap-x-4 gap-y-2 mb-14">
@@ -97,7 +97,7 @@ export function FeaturePage({
             <ol className="space-y-4">
               {feature.steps.map((step, i) => (
                 <li key={step.name} className="flex gap-4">
-                  <span className="w-9 h-9 border-strong border-line rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-raised-sm">
+                  <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                     {i + 1}
                   </span>
                   <div>
@@ -109,7 +109,7 @@ export function FeaturePage({
             </ol>
             <p className="text-sm text-muted-foreground mt-6">
               Every setting, in full:{" "}
-              <Link href={feature.docs.path} className="text-primary-ink font-bold hover:underline">
+              <Link href={feature.docs.path} className="text-primary font-bold hover:underline">
                 {feature.docs.label}
                 <ArrowRight className="inline-block ml-1 h-4 w-4" aria-hidden />
               </Link>
@@ -123,14 +123,14 @@ export function FeaturePage({
             <ul className="grid sm:grid-cols-2 gap-3">
               {feature.limits.map((item) => (
                 <li key={item} className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                  <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
                   <span className="text-sm">{item}</span>
                 </li>
               ))}
             </ul>
             <p className="text-sm text-muted-foreground mt-4">
               Plans, prices and limits:{" "}
-              <Link href="/pricing" className="text-primary-ink font-bold hover:underline">
+              <Link href="/pricing" className="text-primary font-bold hover:underline">
                 Pricing
               </Link>
             </p>

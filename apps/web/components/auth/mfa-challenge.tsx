@@ -141,8 +141,8 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center px-6">
         <div className="ui-card ui-card-static w-full max-w-sm space-y-4">
-          <ShieldCheck className="h-6 w-6 text-primary-ink" aria-hidden="true" />
-          <h1 className="text-xl font-bold clean:font-semibold">You are signed in</h1>
+          <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
+          <h1 className="text-xl font-semibold">You are signed in</h1>
           <p className="text-sm text-muted-foreground">
             The recovery code worked, and two-factor sign-in is now off. Set it up again with your
             new phone or app; we also emailed you about this.
@@ -168,9 +168,9 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-6">
       <form onSubmit={verify} className="ui-card ui-card-static w-full max-w-sm space-y-4">
-        <ShieldCheck className="h-6 w-6 text-primary-ink" aria-hidden="true" />
+        <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
         <div className="space-y-1">
-          <h1 className="text-xl font-bold clean:font-semibold">Two-factor sign-in</h1>
+          <h1 className="text-xl font-semibold">Two-factor sign-in</h1>
           <p className="text-sm text-muted-foreground">
             {useRecovery
               ? "Enter one of the recovery codes you saved when you set up two-factor sign-in."
@@ -200,7 +200,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
         </Button>
         <button
           type="button"
-          className="text-sm text-primary-ink underline underline-offset-2"
+          className="text-sm text-primary underline underline-offset-2"
           onClick={() => {
             setUseRecovery((value) => !value);
             setCode("");

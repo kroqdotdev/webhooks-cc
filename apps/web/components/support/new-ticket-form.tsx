@@ -206,12 +206,12 @@ export function NewTicketForm() {
   return (
     <main className="mx-auto max-w-3xl px-6 pb-16 pt-10 md:px-10">
       <p className="mb-2 text-xs text-muted-foreground">
-        <Link href="/support" className="text-primary-ink hover:underline">
+        <Link href="/support" className="text-primary hover:underline">
           Support
         </Link>{" "}
         / New ticket
       </p>
-      <h1 className="mb-2 text-3xl font-bold clean:font-semibold">New ticket</h1>
+      <h1 className="mb-2 text-3xl font-semibold">New ticket</h1>
       <p className="mb-6 max-w-[60ch] text-sm text-muted-foreground">
         Tell us what happened and what you expected. Request ids and endpoint names help.
       </p>
@@ -252,7 +252,7 @@ export function NewTicketForm() {
             placeholder="Stripe signature fails after rotating the secret"
           />
           {suggestions.length > 0 && (
-            <div className="border-l-strong border-line pl-3 text-sm" aria-live="polite">
+            <div className="border-l border-border pl-3 text-sm" aria-live="polite">
               <p className="text-muted-foreground">These docs might answer it:</p>
               <ul className="mt-1 space-y-0.5">
                 {suggestions.map((suggestion) => (
@@ -261,7 +261,7 @@ export function NewTicketForm() {
                       href={suggestion.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary-ink hover:underline"
+                      className="text-primary hover:underline"
                     >
                       {suggestion.title}
                     </a>
@@ -345,7 +345,7 @@ export function NewTicketForm() {
           </div>
         )}
 
-        <div className="space-y-4 border-t border-line pt-5">
+        <div className="space-y-4 border-t border-border pt-5">
           <CheckRow
             id="ticket-notify"
             checked={notifyEmail}

@@ -91,7 +91,7 @@ export function NewEndpointForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="ep-name" className="font-bold caps text-xs">
+        <Label htmlFor="ep-name" className="font-bold text-xs">
           Name (optional)
         </Label>
         <input
@@ -124,9 +124,9 @@ export function NewEndpointForm({
           <div id={moreId} hidden={!moreOpen} className="space-y-4">
             {showSites && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
             {showMock && (
-              <div className="border-strong border-line rounded-lg p-4 space-y-4">
+              <div className="border border-border rounded-lg p-4 space-y-4">
                 <div>
-                  <p className="font-bold caps text-xs mb-1">Mock response (optional)</p>
+                  <p className="font-bold text-xs mb-1">Mock response (optional)</p>
                   <p className="text-xs text-muted-foreground">
                     Configure what this endpoint returns when it receives a request.
                   </p>
@@ -135,7 +135,7 @@ export function NewEndpointForm({
                 <StatusCodePicker id="ep-status" value={mockStatus} onChange={setMockStatus} />
 
                 <div className="space-y-2">
-                  <Label htmlFor="ep-body" className="font-bold caps text-xs">
+                  <Label htmlFor="ep-body" className="font-bold text-xs">
                     Response body
                   </Label>
                   <Textarea
@@ -145,7 +145,7 @@ export function NewEndpointForm({
                     placeholder='{"success": true}'
                     rows={3}
                     aria-describedby="ep-body-hint"
-                    className="border-strong border-line text-sm font-mono"
+                    className="border border-border text-sm font-mono"
                   />
                   <p id="ep-body-hint" className="text-xs text-muted-foreground">
                     {looksLikeBrokenJson(mockBody) ? (
@@ -166,7 +166,7 @@ export function NewEndpointForm({
       {error && (
         <div
           role="alert"
-          className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink"
+          className="border border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink"
         >
           {error}
         </div>

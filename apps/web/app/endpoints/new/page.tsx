@@ -25,7 +25,7 @@ function NewEndpoint() {
       <main className="container mx-auto px-4 py-8 max-w-xl">
         <div className="ui-card ui-card-static space-y-4">
           <div className="space-y-1.5">
-            <h1 className="text-lg font-bold caps">Create endpoint</h1>
+            <h1 className="text-lg font-bold tracking-normal">Create endpoint</h1>
             <p className="text-sm text-muted-foreground">{newEndpointDescription(mailFirst)}</p>
           </div>
           <NewEndpointForm

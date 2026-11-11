@@ -14,8 +14,7 @@ import {
  * email, and the quota shown. Needs the dev server started with
  * ANTHROPIC_API_KEY and AI_API_BASE_URL=http://127.0.0.1:3199 (the fake
  * model this spec runs); skipped when the server does not offer AI setup.
- * The fake model listens on one fixed port, so the spec runs in one worker
- * (the chromium project) and covers the classic style itself.
+ * The fake model listens on one fixed port, so the spec runs in one worker.
  */
 
 const FAKE_PORT = 3199;
@@ -41,19 +40,15 @@ const TOTAL = {
   layoutName: null,
 };
 
+// The fake model has one port, so the spec runs serially in one worker.
 test.describe.configure({ mode: "serial" });
-// The fake model has one port: one worker (the chromium project) runs the spec.
-const ONLY = "chromium";
-// eslint-disable-next-line no-empty-pattern -- Playwright wants the fixtures destructured
-test.beforeEach(({}, testInfo) => {
-  test.skip(testInfo.project.name !== ONLY, "runs in one worker; covers the classic style itself");
+test.beforeEach(() => {
   // A production build always talks to the real API, never to the fake model.
   test.skip(process.env.PLAYWRIGHT_USE_PROD_SERVER === "1", "needs the fake model");
 });
 
-// eslint-disable-next-line no-empty-pattern -- Playwright wants the fixtures destructured
-test.beforeAll(async ({}, testInfo) => {
-  if (testInfo.project.name !== ONLY || process.env.PLAYWRIGHT_USE_PROD_SERVER === "1") return;
+test.beforeAll(async () => {
+  if (process.env.PLAYWRIGHT_USE_PROD_SERVER === "1") return;
   server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -138,7 +133,7 @@ async function setup(
 
 async function openSettings(page: Page, user: TestUser, endpointSlug: string) {
   await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold.caps", { hasText: "AI E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "AI E2E" })).toBeVisible({
     timeout: 15000,
   });
   await page
@@ -225,14 +220,6 @@ async function draftAndFind(page: Page) {
 }
 
 test("draft a layout from emails, then find another field for it", async ({ page }) => {
-  await draftAndFind(page);
-});
-
-test("the same in the classic style", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("ui-style", "classic");
-    localStorage.setItem("ui-style-source", "chosen");
-  });
   await draftAndFind(page);
 });
 

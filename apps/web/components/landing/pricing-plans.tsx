@@ -43,7 +43,7 @@ function FeatureList({ features }: { features: readonly string[] }) {
     <ul className="space-y-3 mb-8 flex-1">
       {features.map((feature) => (
         <li key={feature} className="flex items-start gap-3">
-          <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" aria-hidden />
+          <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" aria-hidden />
           <span>{feature}</span>
         </li>
       ))}
@@ -80,7 +80,7 @@ export function PricingPlans({ headingLevel = "h3" }: PricingPlansProps) {
 
         {/* Pro Plan */}
         <div className="ui-card border-primary relative flex flex-col">
-          <div className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
+          <div className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-surface">
             Popular
           </div>
           <div className="mb-6">
@@ -123,14 +123,14 @@ export function PricingPlans({ headingLevel = "h3" }: PricingPlansProps) {
           </p>
           <ul className="grid gap-2 sm:grid-cols-2">
             <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" aria-hidden />
+              <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" aria-hidden />
               <span>
                 <span className="font-bold">Teams, $12 a seat a month:</span> 100,000 pooled
                 requests per seat, 31-day retention
               </span>
             </li>
             <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" aria-hidden />
+              <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" aria-hidden />
               <span>
                 <span className="font-bold">Team Business, $35 a seat a month:</span>{" "}
                 Business&apos;s limits per seat, 90-day retention

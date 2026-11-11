@@ -142,7 +142,7 @@ export default function CompareNgrokPage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold caps text-muted-foreground mb-3">
+        <p className="text-xs font-bold text-muted-foreground mb-3">
           Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs ngrok</h1>
@@ -161,7 +161,7 @@ export default function CompareNgrokPage() {
         <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-strong border-line">
+              <tr className="border-b border-border">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -221,7 +221,7 @@ export default function CompareNgrokPage() {
               assigned ngrok-free.app domain that stays the same across restarts, shows an
               interstitial page to browsers, and includes 1 GB of data and 20,000 HTTP requests a
               month; its Hobbyist plan at $10 a month removes the interstitial. webhooks.cc includes{" "}
-              <Link href="/docs/share" className="font-semibold hover:text-primary-ink">
+              <Link href="/docs/share" className="font-semibold hover:text-primary">
                 whk share
               </Link>{" "}
               on every plan: Free shares get a random name ending in -free and a short notice page,
@@ -285,33 +285,33 @@ export default function CompareNgrokPage() {
           See also:{" "}
           <Link
             href="/compare/webhook-site"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Webhook.site
           </Link>
           {" · "}
           <Link
             href="/compare/localtunnel"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs LocalTunnel
           </Link>
           {" · "}
           <Link
             href="/compare/hookdeck"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Hookdeck
           </Link>
           {" · "}
           <Link
             href="/compare/stripe-cli"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Stripe CLI
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
             All comparisons
           </Link>
         </p>

@@ -1863,7 +1863,7 @@ export default function DashboardPage() {
       />
 
       {missingSlug && missingVerified === missingSlug && missingDismissed !== missingSlug && (
-        <div className="shrink-0 border-b border-line bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex items-center gap-3">
+        <div className="shrink-0 border-b border-border bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex items-center gap-3">
           <span className="flex-1 min-w-0">
             No endpoint named <span className="font-mono text-foreground">{missingSlug}</span> in
             this account. Showing {currentEndpoint.name || currentEndpoint.slug} instead.
@@ -1998,7 +1998,7 @@ export default function DashboardPage() {
               aria-valuenow={Math.min(paneWidth, paneMaxWidthNow)}
               aria-valuetext={paneCollapsed ? "Collapsed" : `${paneWidth} pixels`}
               tabIndex={0}
-              className="shrink-0 border-r-strong border-line relative group cursor-col-resize select-none touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="shrink-0 border-r border-border relative group cursor-col-resize select-none touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               onPointerDown={handleDragStart}
               onDoubleClick={toggleCollapse}
               onKeyDown={handleDividerKeyDown}
@@ -2064,7 +2064,7 @@ export default function DashboardPage() {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <button
                   onClick={handleBackToList}
-                  className="border-b-strong border-line px-4 py-2 text-sm font-bold caps hover:bg-muted cursor-pointer transition-colors shrink-0"
+                  className="border-b border-border px-4 py-2 text-sm font-bold hover:bg-muted cursor-pointer transition-colors shrink-0"
                 >
                   &larr; Back to list
                 </button>
@@ -2177,7 +2177,7 @@ function ExportDropdown({
           <ChevronDown className="h-3 w-3 hidden sm:block" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="border-strong border-line shadow-raised">
+      <DropdownMenuContent align="end" className="border border-border shadow-float">
         <DropdownMenuItem onSelect={onExportJson}>
           <Download className="h-3.5 w-3.5" />
           Export JSON
@@ -2195,7 +2195,7 @@ function DashboardSkeleton() {
   return (
     <div className="flex-1 flex flex-col">
       {/* URL bar skeleton */}
-      <div className="border-b-strong border-line bg-card px-4 py-3 shrink-0">
+      <div className="border-b border-border bg-card px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
           <Skeleton className="h-5 w-24" />
           <Skeleton className="h-5 flex-1 max-w-md" />
@@ -2212,8 +2212,8 @@ function RequestsSkeleton() {
     <div className="flex-1 flex flex-col" data-testid="requests-loading">
       <div className="flex-1 flex">
         {/* List skeleton */}
-        <div className="w-80 shrink-0 border-r-strong border-line hidden md:block">
-          <div className="border-b-strong border-line px-3 py-2">
+        <div className="w-80 shrink-0 border-r border-border hidden md:block">
+          <div className="border-b border-border px-3 py-2">
             <Skeleton className="h-5 w-20" />
           </div>
           <div className="p-3 space-y-3">
@@ -2384,7 +2384,7 @@ function WaitingForRequests({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
               <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
             </span>
-            <p className="font-bold caps">Waiting for the first email</p>
+            <p className="font-bold">Waiting for the first email</p>
           </div>
 
           <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
@@ -2408,7 +2408,7 @@ function WaitingForRequests({
             {emailButton(true)}
             {emailError && <p className="text-xs text-destructive-ink">{emailError}</p>}
 
-            <div className="border-t border-line/20 pt-3 space-y-2">
+            <div className="border-t border-border/20 pt-3 space-y-2">
               <p className="text-sm font-semibold">Forward a mailbox here</p>
               <div className="grid gap-3 sm:grid-cols-2 text-sm">
                 <div>
@@ -2472,7 +2472,7 @@ function WaitingForRequests({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
           </span>
-          <p className="font-bold caps">Waiting for the first request</p>
+          <p className="font-bold">Waiting for the first request</p>
         </div>
 
         {/* minmax(0, 1fr): a long curl line scrolls inside its card instead of widening the page. */}
@@ -2587,10 +2587,10 @@ function AutoCreateEndpoint({
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-md border-strong border-line bg-muted flex items-center justify-center mx-auto mb-2">
+          <div className="w-16 h-16 rounded-md border border-border bg-muted flex items-center justify-center mx-auto mb-2">
             <Send className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h2 className="text-xl font-bold caps">No endpoints yet</h2>
+          <h2 className="text-xl font-bold tracking-normal">No endpoints yet</h2>
           <p className="text-muted-foreground max-w-sm">{error}</p>
           <button onClick={handleRetry} className="ui-btn-primary">
             Try again
@@ -2650,14 +2650,14 @@ function NoEndpointsHere({
   return (
     <div className="flex-1 overflow-y-auto flex p-8">
       <div className="m-auto text-center space-y-4 max-w-md">
-        <div className="w-16 h-16 rounded-md border-strong border-line bg-muted flex items-center justify-center mx-auto mb-2">
+        <div className="w-16 h-16 rounded-md border border-border bg-muted flex items-center justify-center mx-auto mb-2">
           {site.key === "mailhooks" ? (
             <Inbox className="h-8 w-8 text-muted-foreground" />
           ) : (
             <Send className="h-8 w-8 text-muted-foreground" />
           )}
         </div>
-        <h2 className="text-xl font-bold caps">
+        <h2 className="text-xl font-bold tracking-normal">
           {site.key === "mailhooks"
             ? "Start receiving email here"
             : `Start capturing on ${site.name}`}
@@ -2754,7 +2754,7 @@ function ListedElsewhereNotice({
       });
   };
   return (
-    <div className="shrink-0 border-b border-line bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="shrink-0 border-b border-border bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
       <span>Listed on {home.name}.</span>
       {canList && (
         <button

@@ -95,7 +95,7 @@ export default function PricingPage() {
             <p className="mt-6">
               <Link
                 href="/docs/plans-limits"
-                className="inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+                className="inline-flex items-center gap-1 font-bold text-primary hover:underline"
               >
                 Every limit, side by side
                 <ArrowRight className="h-4 w-4" aria-hidden />

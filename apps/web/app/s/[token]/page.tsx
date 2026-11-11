@@ -54,7 +54,7 @@ export default async function SharedRequestPage({ params }: PageProps) {
       <main className="max-w-6xl mx-auto px-4 pt-10 pb-16">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-bold caps text-muted-foreground mb-1">Shared request</p>
+            <p className="text-xs font-bold text-muted-foreground mb-1">Shared request</p>
             <h1 className="text-2xl font-bold">
               {snapshot.detectedEvent
                 ? `${providerLabel ? `${providerLabel} ` : ""}${snapshot.detectedEvent}`
@@ -75,7 +75,7 @@ export default async function SharedRequestPage({ params }: PageProps) {
         </div>
 
         {(hidden.length > 0 || snapshot.bodyTruncated || snapshot.bodyNotUtf8) && (
-          <div className="mb-4 rounded-md border-strong border-line bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
+          <div className="mb-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
             {hidden.length > 0 && (
               <p className="flex items-start gap-1.5">
                 <EyeOff className="h-3.5 w-3.5 shrink-0 mt-px" />
@@ -92,7 +92,7 @@ export default async function SharedRequestPage({ params }: PageProps) {
           </div>
         )}
 
-        <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised">
+        <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-lg border border-border bg-background shadow-float">
           <RequestDetail request={snapshotToRequest(snapshot, token)} />
         </div>
 

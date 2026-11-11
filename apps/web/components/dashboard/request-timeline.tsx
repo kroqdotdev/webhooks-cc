@@ -150,7 +150,7 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
 
   if (requests.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-xs text-muted-foreground font-bold caps">
+      <div className="flex items-center justify-center h-full text-xs text-muted-foreground font-bold">
         No requests to display
       </div>
     );

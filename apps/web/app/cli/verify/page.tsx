@@ -100,7 +100,7 @@ function CliVerifyContent() {
               </div>
 
               {error && (
-                <div className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3 mb-4">
+                <div className="text-sm text-destructive-ink bg-destructive/10 border border-destructive/40 rounded-md p-3 mb-4">
                   {error}
                 </div>
               )}
@@ -111,7 +111,7 @@ function CliVerifyContent() {
                   value={code}
                   onChange={(e) => setCode(formatCode(e.target.value))}
                   placeholder="XXXX-XXXX"
-                  className="w-full text-center text-2xl tracking-[0.3em] font-mono px-4 py-3 rounded-md border-strong border-line bg-background focus:outline-none focus:ring-2 focus:ring-foreground/20"
+                  className="w-full text-center text-2xl tracking-[0.3em] font-mono px-4 py-3 rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-foreground/20"
                   maxLength={9}
                   autoFocus
                   disabled={status === "submitting"}

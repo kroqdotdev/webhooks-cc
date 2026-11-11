@@ -64,7 +64,7 @@ export default function ChangelogPage() {
             <button
               key={track}
               onClick={() => setActiveTrack(track)}
-              className={`px-3 py-1.5 text-xs font-bold caps border-strong border-line rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-xs font-bold border border-border rounded-md transition-colors ${
                 activeTrack === track
                   ? "bg-selected text-selected-foreground"
                   : "bg-background text-foreground hover:bg-muted"
@@ -80,12 +80,12 @@ export default function ChangelogPage() {
             <article
               key={`${entry.track}-${entry.version}`}
               id={`${entry.track}-v${entry.version}`}
-              className="border-strong border-line rounded-lg p-6"
+              className="border border-border rounded-lg p-6"
             >
               <div className="flex items-start justify-between gap-4 mb-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-bold caps-wide px-1.5 py-0.5 border border-line rounded-sm">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 border border-border rounded-sm">
                       {TRACK_LABELS[entry.track]}
                     </span>
                     <span className="font-mono text-sm font-bold">v{entry.version}</span>

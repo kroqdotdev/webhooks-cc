@@ -235,7 +235,7 @@ export function DeliveriesSection({
   })();
 
   const open = (row: LogDelivery) => onOpenRequest(row.requestId);
-  const cell = "py-2 pr-2.5 border-b border-line/15 align-middle";
+  const cell = "py-2 pr-2.5 border-b border-border/15 align-middle";
   const num = cn(cell, "font-mono text-xs whitespace-nowrap");
 
   return (
@@ -342,15 +342,15 @@ export function DeliveriesSection({
           <div className="overflow-x-auto -mx-1 px-1">
             <table className="w-full text-[13px] border-collapse">
               <thead>
-                <tr className="text-left text-[11px] font-bold caps text-muted-foreground">
-                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
+                <tr className="text-left text-[11px] font-bold text-muted-foreground">
+                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-border/30 font-bold">
                     Status
                   </th>
-                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
+                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-border/30 font-bold">
                     Request
                   </th>
                   {showDestination && (
-                    <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
+                    <th scope="col" className="pb-1.5 pr-2.5 border-b border-border/30 font-bold">
                       To
                     </th>
                   )}
@@ -358,32 +358,32 @@ export function DeliveriesSection({
                     <th
                       scope="col"
                       title="From the sender's own timestamp to our receipt"
-                      className="pb-1.5 pr-2.5 border-b border-line/30 font-bold whitespace-nowrap"
+                      className="pb-1.5 pr-2.5 border-b border-border/30 font-bold whitespace-nowrap"
                     >
                       Sent to received
                     </th>
                   )}
-                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
+                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-border/30 font-bold">
                     Answer
                   </th>
                   <th
                     scope="col"
                     title="From capture to the accepted delivery"
-                    className="pb-1.5 pr-2.5 border-b border-line/30 font-bold whitespace-nowrap"
+                    className="pb-1.5 pr-2.5 border-b border-border/30 font-bold whitespace-nowrap"
                   >
                     Delivered after
                   </th>
                   <th
                     scope="col"
                     title="How long your server took to answer the last try"
-                    className="hidden md:table-cell pb-1.5 pr-2.5 border-b border-line/30 font-bold whitespace-nowrap"
+                    className="hidden md:table-cell pb-1.5 pr-2.5 border-b border-border/30 font-bold whitespace-nowrap"
                   >
                     Server took
                   </th>
-                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-line/30 font-bold">
+                  <th scope="col" className="pb-1.5 pr-2.5 border-b border-border/30 font-bold">
                     Received
                   </th>
-                  <th scope="col" className="pb-1.5 border-b border-line/30 font-bold">
+                  <th scope="col" className="pb-1.5 border-b border-border/30 font-bold">
                     <span className="sr-only">Open</span>
                   </th>
                 </tr>
@@ -419,7 +419,7 @@ export function DeliveriesSection({
                       <td className={cn(cell, "min-w-0 whitespace-nowrap")}>
                         <span
                           className={cn(
-                            "inline-block px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent w-14 text-center align-middle",
+                            "inline-block px-1.5 py-0.5 text-[11px] font-mono font-bold rounded-sm border w-14 text-center align-middle border-transparent",
                             getMethodColor(method)
                           )}
                         >

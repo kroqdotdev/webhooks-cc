@@ -112,7 +112,7 @@ export function EndpointSwitcher() {
 
   const hasSections = favorites.length > 0 || sharedByMe.length > 0 || sharedWithMe.length > 0;
 
-  const labelClass = "text-xs font-bold caps text-muted-foreground";
+  const labelClass = "text-xs font-bold text-muted-foreground";
 
   const toggleFavorite = async () => {
     const accessToken = session?.access_token;
@@ -220,7 +220,7 @@ export function EndpointSwitcher() {
             : `Add ${endpointName} to favourites`
         }
       >
-        <Star className={isFavorite ? "h-4 w-4 fill-action text-action" : "h-4 w-4"} />
+        <Star className={isFavorite ? "h-4 w-4 fill-primary text-primary" : "h-4 w-4"} />
       </Button>
     </div>
   );

@@ -139,9 +139,9 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
           Replay
         </button>
       </DialogTrigger>
-      <DialogContent className="border-strong border-line shadow-raised">
+      <DialogContent className="border border-border shadow-float">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Replay request</DialogTitle>
+          <DialogTitle className="font-bold tracking-normal">Replay request</DialogTitle>
           <DialogDescription>
             Send this captured request to another URL. Requests are made from your browser, so
             localhost URLs work for local development testing.
@@ -150,7 +150,7 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="replay-url" className="text-sm font-bold caps mb-2 block">
+            <label htmlFor="replay-url" className="text-sm font-bold mb-2 block">
               Target URL
             </label>
             <input
@@ -180,7 +180,7 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
           )}
 
           {status === "error" && (
-            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
+            <div className="border border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
               {errorMsg}
             </div>
           )}

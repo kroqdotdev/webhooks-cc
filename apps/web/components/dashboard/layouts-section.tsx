@@ -310,7 +310,7 @@ function LineItemsTable({
   return (
     // As wide as its columns need (at least the width on a phone, 60% wider up),
     // so a few narrow columns do not spread across the panel.
-    <div className="overflow-x-auto w-fit max-w-full min-w-full sm:min-w-[60%] border-strong border-line rounded-md">
+    <div className="overflow-x-auto w-fit max-w-full min-w-full sm:min-w-[60%] border border-border rounded-md">
       <table className="w-full text-xs" aria-label={label}>
         <thead>
           <tr className="bg-muted">
@@ -329,7 +329,7 @@ function LineItemsTable({
         </thead>
         <tbody>
           {shown.map((row, index) => (
-            <tr key={index} className="border-t border-line/20">
+            <tr key={index} className="border-t border-border/20">
               {columns.map((column) => (
                 <td
                   key={column}
@@ -348,7 +348,7 @@ function LineItemsTable({
         </tbody>
       </table>
       {rows.length > limit && (
-        <p className="text-xs text-muted-foreground px-2 py-1 border-t border-line/20">
+        <p className="text-xs text-muted-foreground px-2 py-1 border-t border-border/20">
           {more(rows.length - limit)}
         </p>
       )}
@@ -398,7 +398,7 @@ function CopyValueButton({ name, value }: { name: string; value: string }) {
       className="shrink-0 -my-0.5 h-6 w-6 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
     >
       {copied ? (
-        <Check className="h-3.5 w-3.5 text-primary-ink" aria-hidden />
+        <Check className="h-3.5 w-3.5 text-primary" aria-hidden />
       ) : (
         <Copy className="h-3.5 w-3.5" aria-hidden />
       )}
@@ -433,7 +433,7 @@ export function ParsedResult({
             type="button"
             onClick={onOpenLayouts}
             title="Open in Settings, Layouts"
-            className="font-semibold underline decoration-line/40 underline-offset-2 hover:decoration-current cursor-pointer"
+            className="font-semibold underline decoration-border/40 underline-offset-2 hover:decoration-current cursor-pointer"
           >
             {parsed.layout?.name}
           </button>
@@ -1078,7 +1078,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             const summaryTemplate =
               !expanded && summarized.has(layout.id) ? templateFor(layout) : null;
             return (
-              <li key={layout.id} className="border-strong border-line rounded-md bg-card">
+              <li key={layout.id} className="border border-border rounded-md bg-card">
                 <div
                   id={`layout-${layout.id}-header`}
                   className="flex flex-wrap items-center gap-2 p-2.5 scroll-mt-4"
@@ -1101,7 +1101,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                     </span>
                   )}
                   {matched && (
-                    <span className="text-xs text-primary-ink font-medium">
+                    <span className="text-xs text-primary font-medium">
                       matches the email below
                     </span>
                   )}
@@ -1143,7 +1143,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   </p>
                 )}
                 {!expanded && summarized.has(layout.id) && (
-                  <div className="border-t border-line/20 p-3 space-y-2.5">
+                  <div className="border-t border-border/20 p-3 space-y-2.5">
                     <p className="text-sm">{layoutSummary(layout)}.</p>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <SwitchRow
@@ -1175,7 +1175,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   </div>
                 )}
                 {expanded && (
-                  <div className="border-t border-line/20 p-3 space-y-4">
+                  <div className="border-t border-border/20 p-3 space-y-4">
                     {noEmail && (
                       <div className="space-y-1.5">
                         <p className="text-sm text-muted-foreground">
@@ -1332,7 +1332,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             avoidCollisions={false}
             // Focus goes to the added layout's name, not back to the trigger below it.
             onCloseAutoFocus={(e) => e.preventDefault()}
-            className="w-72 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border-strong border-line shadow-raised"
+            className="w-72 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border border-border shadow-float"
             onKeyDown={(e) => {
               // Typing anywhere in the menu filters the senders (instead of
               // the menu's own jump to the item starting with that letter).
@@ -1403,7 +1403,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             )}
             {menuGroups.map((group) => (
               <DropdownMenuGroup key={group.name}>
-                <DropdownMenuLabel className="caps text-[11px] text-muted-foreground font-medium pt-2 pb-1">
+                <DropdownMenuLabel className="text-[11px] text-muted-foreground font-medium pt-2 pb-1">
                   {group.name}
                 </DropdownMenuLabel>
                 {group.templates.map((template) => (
@@ -1453,7 +1453,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         />
       )}
       {layouts.length > 0 && preview && (
-        <div className="pt-4 border-t border-line/20 space-y-2" aria-live="polite">
+        <div className="pt-4 border-t border-border/20 space-y-2" aria-live="polite">
           {preview.request ? (
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold">Tried on</h3>
@@ -1463,11 +1463,11 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
               >
                 <SelectTrigger
                   aria-label="Email to try the layouts on"
-                  className="h-auto w-auto min-w-0 max-w-full gap-1.5 text-[13px] rounded-md border-strong border-line bg-background px-2 py-1 max-md:py-1.5 text-left cursor-pointer focus:ring-offset-0"
+                  className="h-auto w-auto min-w-0 max-w-full gap-1.5 text-[13px] rounded-md border border-border bg-background px-2 py-1 max-md:py-1.5 text-left cursor-pointer focus:ring-offset-0"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))] border-strong border-line shadow-raised">
+                <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))] border border-border shadow-float">
                   <SelectItem value={NEWEST_SAMPLE} className="text-[13px]">
                     The newest email
                     {sampleId ? "" : `, "${preview.request.subject || "(no subject)"}"`}

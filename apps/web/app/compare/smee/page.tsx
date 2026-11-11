@@ -123,7 +123,7 @@ export default function CompareSmeePage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold caps text-muted-foreground mb-3">
+        <p className="text-xs font-bold text-muted-foreground mb-3">
           Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
@@ -143,7 +143,7 @@ export default function CompareSmeePage() {
           <p>
             <a
               href="https://smee.io/"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
               rel="noopener"
             >
               smee.io
@@ -154,7 +154,7 @@ export default function CompareSmeePage() {
             to get deliveries to a development machine. Both halves are open source: the{" "}
             <a
               href="https://github.com/probot/smee.io"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
               rel="noopener"
             >
               smee.io server
@@ -162,7 +162,7 @@ export default function CompareSmeePage() {
             and{" "}
             <a
               href="https://github.com/probot/smee-client"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
               rel="noopener"
             >
               smee-client
@@ -235,7 +235,7 @@ export default function CompareSmeePage() {
           <p>
             <a
               href="https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/using-the-github-cli-to-forward-webhooks-for-testing"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
               rel="noopener"
             >
               GitHub&apos;s docs
@@ -254,7 +254,7 @@ export default function CompareSmeePage() {
         <h2 className="text-2xl font-bold mb-4">The same job with webhooks.cc</h2>
         <div className="space-y-4 text-muted-foreground mb-10">
           <p>
-            <Link href="/docs/cli/tunnel" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/cli/tunnel" className="text-primary font-bold hover:underline">
               whk tunnel
             </Link>{" "}
             creates an endpoint, prints its URL, and forwards every request to your local port, from
@@ -274,7 +274,7 @@ export default function CompareSmeePage() {
         <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-strong border-line">
+              <tr className="border-b border-border">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -378,26 +378,26 @@ export default function CompareSmeePage() {
           See also:{" "}
           <Link
             href="/compare/localtunnel"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs LocalTunnel
           </Link>
           {" · "}
           <Link
             href="/compare/ngrok"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs ngrok
           </Link>
           {" · "}
           <Link
             href="/compare/webhook-site"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Webhook.site
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
             All comparisons
           </Link>
         </p>

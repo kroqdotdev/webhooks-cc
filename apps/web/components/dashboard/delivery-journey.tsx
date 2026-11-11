@@ -36,10 +36,10 @@ export interface JourneyStop {
 
 const DOT_TONE: Record<StopTone, string> = {
   hollow: "bg-card",
-  solid: "bg-foreground clean:border-foreground/60",
-  delivered: "bg-primary clean:border-primary",
-  retrying: "bg-secondary clean:bg-amber-500 clean:border-amber-500",
-  failed: "bg-destructive clean:border-destructive",
+  solid: "bg-foreground border-foreground/60",
+  delivered: "bg-primary border-primary",
+  retrying: "bg-amber-500 border-amber-500",
+  failed: "bg-destructive border-destructive",
   queued: "bg-muted border-dashed",
 };
 
@@ -69,8 +69,7 @@ export function DeliveryJourney({
             >
               <span
                 className={cn(
-                  "absolute left-0 top-1 md:top-4 h-3 w-3 border-strong border-line",
-                  "clean:h-2.5 clean:w-2.5 clean:rounded-full clean:border-foreground/30 clean:top-[5px] md:clean:top-[17px]",
+                  "absolute left-0 top-[5px] md:top-[17px] h-2.5 w-2.5 rounded-full border border-foreground/30",
                   DOT_TONE[stop.tone],
                   pulse && "motion-safe:animate-pulse [animation-duration:1.6s]"
                 )}
@@ -78,10 +77,10 @@ export function DeliveryJourney({
               {!last && stop.segment && (
                 <span
                   className={cn(
-                    "absolute left-[5px] top-[22px] bottom-1 w-0 border-l-strong md:border-l-0 md:w-auto md:left-[18px] md:right-2 md:top-[21px] md:bottom-auto md:border-t-strong",
+                    "absolute left-[5px] top-[22px] bottom-1 w-0 border-l md:border-l-0 md:w-auto md:left-[18px] md:right-2 md:top-[21px] md:bottom-auto md:border-t",
                     stop.segment.dashed
                       ? "border-dashed border-muted-foreground"
-                      : "border-line clean:border-foreground/30"
+                      : "border-foreground/30"
                   )}
                   title={stop.segment.title}
                 >
@@ -111,7 +110,7 @@ export function DeliveryJourney({
   );
 }
 
-/** A small status dot, as in the health line: 8 px square in classic, round in clean. */
+/** A small round status dot, as in the health line. */
 export function StatusDot({
   tone,
   className,
@@ -123,9 +122,9 @@ export function StatusDot({
     <i
       aria-hidden="true"
       className={cn(
-        "inline-block h-2 w-2 border-strong border-line clean:rounded-full clean:border-transparent",
+        "inline-block h-2 w-2 rounded-full",
         tone === "delivered" && "bg-primary",
-        tone === "retrying" && "bg-secondary clean:bg-amber-500",
+        tone === "retrying" && "bg-amber-500",
         tone === "failed" && "bg-destructive",
         className
       )}

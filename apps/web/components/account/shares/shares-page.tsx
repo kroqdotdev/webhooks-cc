@@ -245,7 +245,7 @@ export function SharesPage({ accessToken }: { accessToken: string | null }) {
           </ul>
         )}
         {live.length > 0 && (
-          <div className="border-t-strong border-line px-5 py-3">
+          <div className="border-t border-border px-5 py-3">
             <p className="mb-1 text-xs text-muted-foreground">Share another port:</p>
             <CommandBlock command="whk share 3000" />
           </div>
@@ -305,7 +305,7 @@ export function SharesPage({ accessToken }: { accessToken: string | null }) {
             {ended.map((share) => (
               <li
                 key={share.id}
-                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line/60 px-5 py-2.5 text-sm last:border-b-0"
+                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border/60 px-5 py-2.5 text-sm last:border-b-0"
               >
                 <div className="min-w-0">
                   <p className="truncate font-mono">
@@ -386,7 +386,7 @@ function LiveShareRow({
   return (
     <li
       className={cn(
-        "space-y-2 border-b border-line/60 px-5 py-4 last:border-b-0",
+        "space-y-2 border-b border-border/60 px-5 py-4 last:border-b-0",
         watching && "bg-muted/40"
       )}
     >
@@ -493,10 +493,7 @@ function DataMeter({
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="text-sm">
           <span
-            className={cn(
-              "text-2xl font-bold clean:font-semibold tabular-nums",
-              near && "text-destructive-ink"
-            )}
+            className={cn("text-2xl tabular-nums font-semibold", near && "text-destructive-ink")}
           >
             {formatBytes(bytes)}
           </span>{" "}

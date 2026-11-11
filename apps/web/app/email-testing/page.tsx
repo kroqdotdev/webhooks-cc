@@ -282,12 +282,12 @@ export default function EmailTestingPage() {
             Free for 50 emails a day, no credit card. Read the{" "}
             <Link
               href="/docs/guides/test-signup-emails-playwright"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
             >
               Playwright email testing guide
             </Link>{" "}
             or the{" "}
-            <Link href="/docs/email-capture" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/email-capture" className="text-primary font-bold hover:underline">
               email capture docs
             </Link>
             .
@@ -315,7 +315,7 @@ export default function EmailTestingPage() {
             password resets and CI:{" "}
             <Link
               href="/docs/guides/test-signup-emails-playwright"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
             >
               how to test emails in Playwright
             </Link>
@@ -359,28 +359,28 @@ export default function EmailTestingPage() {
           </div>
           <p className="text-sm text-muted-foreground mt-3">
             The{" "}
-            <Link href="/docs/sdk/python" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/sdk/python" className="text-primary font-bold hover:underline">
               Python
             </Link>{" "}
             and{" "}
-            <Link href="/docs/sdk/go" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/sdk/go" className="text-primary font-bold hover:underline">
               Go
             </Link>{" "}
             SDKs have the same waits and finders for pytest and Go tests, and the{" "}
-            <Link href="/docs/api" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/api" className="text-primary font-bold hover:underline">
               REST API
             </Link>{" "}
             returns the same emails with <code className="font-mono">kind=email</code> and{" "}
             <code className="font-mono">extracts=true</code>, so Selenium or any runner that can
             make an HTTP call works too. AI coding agents get the same through the{" "}
-            <Link href="/docs/mcp" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/mcp" className="text-primary font-bold hover:underline">
               MCP server
             </Link>
             : <code className="font-mono">wait_for_email</code> returns the email with its code and
             link. More patterns:{" "}
             <Link
               href="/docs/sdk/testing#testing-emails"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
             >
               testing emails with the SDK
             </Link>
@@ -393,7 +393,7 @@ export default function EmailTestingPage() {
           <ol className="space-y-4">
             {STEPS.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border-strong border-line rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-raised-sm">
+                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                   {i + 1}
                 </span>
                 <div>
@@ -415,7 +415,7 @@ export default function EmailTestingPage() {
           <div className="grid sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
               <div key={feature.title} className="ui-card ui-card-static">
-                <feature.icon className="h-5 w-5 text-primary-ink mb-3" aria-hidden="true" />
+                <feature.icon className="h-5 w-5 text-primary mb-3" aria-hidden="true" />
                 <h3 className="font-bold mb-1.5">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground">{feature.text}</p>
               </div>
@@ -452,7 +452,7 @@ export default function EmailTestingPage() {
               signed JSON, retried until your server accepts it. No mail server to run and no MIME
               to parse.
             </p>
-            <Link href="/email-to-webhook" className="text-primary-ink font-bold hover:underline">
+            <Link href="/email-to-webhook" className="text-primary font-bold hover:underline">
               Email to webhook
               <ArrowRight className="inline-block ml-1 h-4 w-4" />
             </Link>
@@ -471,7 +471,7 @@ export default function EmailTestingPage() {
               "Same retention as your HTTP requests",
             ].map((item) => (
               <li key={item} className="flex items-start gap-3">
-                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" />
+                <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                 <span className="text-sm">{item}</span>
               </li>
             ))}

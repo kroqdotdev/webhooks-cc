@@ -166,7 +166,7 @@ export function ResponseEditor({
           }
         />
         <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-delay`} className="font-bold caps text-xs">
+          <Label htmlFor={`${idPrefix}-delay`} className="font-bold text-xs">
             Delay
           </Label>
           <div className="flex items-center gap-1.5">
@@ -188,7 +188,7 @@ export function ResponseEditor({
 
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-end justify-between gap-2">
-          <label htmlFor={`${idPrefix}-body`} className="block font-bold caps text-xs">
+          <label htmlFor={`${idPrefix}-body`} className="block font-bold text-xs">
             Body
           </label>
           <PlaceholderMenu groups={REQUEST_PLACEHOLDERS} onInsert={insert} />
@@ -202,7 +202,7 @@ export function ResponseEditor({
           rows={4}
           spellCheck={false}
           aria-describedby={`${idPrefix}-body-hint`}
-          className="border-strong border-line text-[13px] font-mono"
+          className="border border-border text-[13px] font-mono"
         />
         <p id={`${idPrefix}-body-hint`} className="text-xs text-muted-foreground">
           Fill in values from the request with placeholders, for example{" "}
@@ -211,7 +211,7 @@ export function ResponseEditor({
       </div>
 
       <div className="space-y-1.5">
-        <span id={`${idPrefix}-headers-label`} className="block font-bold caps text-xs">
+        <span id={`${idPrefix}-headers-label`} className="block font-bold text-xs">
           Headers
         </span>
         {draft.headers.length > 0 && (

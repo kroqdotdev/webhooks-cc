@@ -136,7 +136,7 @@ export default function CompareMailSlurpPage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold caps text-muted-foreground mb-3">
+        <p className="text-xs font-bold text-muted-foreground mb-3">
           Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs MailSlurp</h1>
@@ -144,7 +144,7 @@ export default function CompareMailSlurpPage() {
           MailSlurp is an email and SMS API: tests create inboxes, send and receive from them, and
           wait for messages, with SDKs in a long list of languages. webhooks.cc does the receiving
           half of{" "}
-          <Link href="/email-testing" className="text-primary-ink font-bold hover:underline">
+          <Link href="/email-testing" className="text-primary font-bold hover:underline">
             email testing
           </Link>
           : one endpoint with a real address and a tag per test run, a wait in the SDK, and the code
@@ -157,7 +157,7 @@ export default function CompareMailSlurpPage() {
         <div className="ui-code overflow-x-auto mb-3">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-strong border-line">
+              <tr className="border-b border-border">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -288,26 +288,26 @@ export default function CompareMailSlurpPage() {
           See also:{" "}
           <Link
             href="/compare/mailtrap"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Mailtrap
           </Link>
           {" · "}
           <Link
             href="/compare/mailosaur"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Mailosaur
           </Link>
           {" · "}
           <Link
             href="/docs/guides/test-signup-emails-playwright"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             Email testing in Playwright
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
             All comparisons
           </Link>
         </p>

@@ -61,16 +61,15 @@ export type ChipStatus = "succeeded" | "pending" | "failed" | "queued" | "skippe
 const CHIP: Record<ChipStatus, { label: string; className: string }> = {
   succeeded: {
     label: "Delivered",
-    className: "bg-primary text-primary-foreground clean:bg-primary/12 clean:text-primary-ink",
+    className: "bg-primary/12 text-primary",
   },
   pending: {
     label: "Retrying",
-    className:
-      "bg-secondary text-black clean:bg-amber-500/15 clean:text-amber-700 dark:clean:text-amber-400",
+    className: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
   },
   failed: {
     label: "Failed",
-    className: "bg-destructive text-white clean:bg-destructive/12 clean:text-destructive-ink",
+    className: "bg-destructive/12 text-destructive-ink",
   },
   queued: {
     label: "Queued",
@@ -92,7 +91,7 @@ export function DeliveryChip({ status }: { status: ChipStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex px-2 py-0.5 text-[11px] font-bold caps rounded-sm border-strong border-line clean:border-transparent clean:font-medium whitespace-nowrap",
+        "inline-flex px-2 py-0.5 text-[11px] rounded-sm border whitespace-nowrap border-transparent font-medium",
         chip.className
       )}
     >
@@ -415,8 +414,8 @@ function TriesList({
   if (tries.length === 0) return null;
   const shown = all ? tries : tries.slice(0, TRIES_SHOWN);
   return (
-    <div className="mt-3.5 border-t border-line/20">
-      <p className="pt-2.5 pb-0.5 text-[11px] font-bold caps text-muted-foreground">Tries</p>
+    <div className="mt-3.5 border-t border-border/20">
+      <p className="pt-2.5 pb-0.5 text-[11px] font-bold text-muted-foreground">Tries</p>
       <ol className="text-[13px]">
         {shown.map((attempt, index) => {
           const number = tries.length - index;
@@ -427,7 +426,7 @@ function TriesList({
               key={`${attempt.attemptedAt}-${index}`}
               className={cn(
                 "flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5",
-                index > 0 && "border-t border-line/15"
+                index > 0 && "border-t border-border/15"
               )}
             >
               <span className="text-muted-foreground tabular-nums">{number}</span>
@@ -490,7 +489,7 @@ function DeliveryCard({
   const kind = isRedelivery ? "Redelivery" : "Delivery";
   return (
     <section className="ui-card ui-card-static p-0! overflow-hidden" aria-label={kind}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 border-b border-line/20">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 border-b border-border/20">
         <DeliveryChip status={chipStatus(delivery.status, delivery.attempts)} />
         <span className="text-sm">{kind}</span>
         <span className="text-xs text-muted-foreground">{journey.meta}</span>

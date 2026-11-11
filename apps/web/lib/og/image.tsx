@@ -7,7 +7,7 @@ import { fitTitle, ogText } from "./text";
 /**
  * The Open Graph card for a page: its kind, its title, the wordmark.
  *
- * Drawn in the clean style (app/globals.css): cool paper, a white surface with
+ * Drawn in the site's look (app/globals.css): cool paper, a white surface with
  * a hairline, ink text, one pine green, IBM Plex Sans with IBM Plex Mono. The
  * fonts are files in assets/og (SIL Open Font License, OFL.txt beside them),
  * never fetched: images are built in CI and rendered on the production host,
@@ -15,7 +15,7 @@ import { fitTitle, ogText } from "./text";
  * standalone output for the images rendered at request time.
  */
 
-// The clean style's light tokens, as hex because the renderer has no CSS variables.
+// The light tokens, as hex because the renderer has no CSS variables.
 const PAPER = "#f7f8fa";
 const SURFACE = "#ffffff";
 const INK = "#171b21";

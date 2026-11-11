@@ -31,7 +31,7 @@ const NAV = [
 function NotFound() {
   return (
     <main className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
-      <h1 className="text-2xl font-bold clean:font-semibold">Page not found</h1>
+      <h1 className="text-2xl font-semibold">Page not found</h1>
       <p className="text-sm text-muted-foreground">The page you are looking for does not exist.</p>
       <Button asChild variant="outline">
         <Link href="/dashboard">Go to the dashboard</Link>
@@ -44,7 +44,7 @@ function NeedsTwoFactor() {
   return (
     <main className="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center gap-4 px-6">
       <ShieldAlert className="h-6 w-6 text-staff" aria-hidden="true" />
-      <h1 className="text-2xl font-bold clean:font-semibold">Two-factor sign-in first</h1>
+      <h1 className="text-2xl font-semibold">Two-factor sign-in first</h1>
       <p className="text-sm text-muted-foreground">
         Operations shows other people&rsquo;s accounts, so it needs a session that signed in with an
         authenticator app. Set it up under Security, then come back.
@@ -83,7 +83,7 @@ export function OpsShell({ children }: { children: React.ReactNode }) {
       <div className="lg:grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[12rem_minmax(0,1fr)]">
         <nav
           aria-label="Operations"
-          className="border-b border-line bg-card px-3 py-3 lg:border-b-0 lg:border-r lg:py-5"
+          className="border-b border-border bg-card px-3 py-3 lg:border-b-0 lg:border-r lg:py-5"
         >
           <p className="mb-2 hidden px-3 text-xs font-medium text-staff lg:block">Operations</p>
           <ul className="flex gap-1 overflow-x-auto lg:flex-col lg:gap-0.5">

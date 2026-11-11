@@ -259,13 +259,6 @@ test("an email link asked for on mailhooks.cc signs in there, even opened on web
   expect(data?.home_site).toBe("mailhooks");
 });
 
-test("mailhooks.cc renders in the style the project picked", async ({ page }, testInfo) => {
-  // The classic project stores its pick for this origin too (playwright.config.ts).
-  await page.goto(`${MAIL}/`);
-  const style = testInfo.project.name === "chromium-classic" ? "classic" : "clean";
-  await expect(page.locator("html")).toHaveAttribute("data-style", style);
-});
-
 test("signs up on mailhooks.cc", async ({ page }) => {
   const email = `e2e-mail-signup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@webhooks-test.local`;
   try {

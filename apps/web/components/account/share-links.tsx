@@ -111,7 +111,7 @@ export function ShareLinks({ accessToken }: { accessToken: string | null }) {
             return (
               <li
                 key={link.id}
-                className="flex items-center justify-between gap-4 border-b border-line/60 px-5 py-3 last:border-b-0"
+                className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-3 last:border-b-0"
               >
                 <div className="min-w-0 space-y-0.5">
                   <p className="truncate text-sm font-medium">
@@ -169,7 +169,7 @@ export function ShareLinks({ accessToken }: { accessToken: string | null }) {
         </ul>
       )}
       {error && links !== null && (
-        <div className="border-t-strong border-line px-5 py-3">
+        <div className="border-t border-border px-5 py-3">
           <InlineMessage tone="error">{error}</InlineMessage>
         </div>
       )}

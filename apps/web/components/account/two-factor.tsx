@@ -205,7 +205,7 @@ export function TwoFactor() {
             <img
               src={enrollment.qr}
               alt="QR code for your authenticator app"
-              className="h-40 w-40 rounded-md border border-line bg-white p-2"
+              className="h-40 w-40 rounded-md border border-border bg-white p-2"
             />
             <div className="min-w-0 space-y-1 text-sm">
               <p className="text-muted-foreground">Cannot scan? Enter this key instead:</p>
@@ -329,7 +329,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
           are shown only now.
         </p>
       </div>
-      <ol className="ph-no-capture grid max-w-sm grid-cols-2 gap-x-6 gap-y-1 rounded-md border border-line p-4 font-mono text-sm tabular-nums">
+      <ol className="ph-no-capture grid max-w-sm grid-cols-2 gap-x-6 gap-y-1 rounded-md border border-border p-4 font-mono text-sm tabular-nums">
         {codes.map((code) => (
           <li key={code}>{code}</li>
         ))}

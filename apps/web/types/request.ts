@@ -113,19 +113,18 @@ export type AnyRequestSummary = RequestSummary | ClickHouseSummary;
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
 const METHOD_COLORS_MAP: Record<HttpMethod, string> = {
-  GET: "bg-primary text-primary-foreground clean:bg-method-get/15 clean:text-method-get",
-  POST: "bg-secondary text-secondary-foreground clean:bg-method-post/15 clean:text-method-post",
-  PUT: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
-  DELETE:
-    "bg-destructive text-destructive-foreground clean:bg-method-delete/15 clean:text-method-delete",
-  PATCH: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
+  GET: "bg-method-get/15 text-method-get",
+  POST: "bg-method-post/15 text-method-post",
+  PUT: "bg-method-put/15 text-method-put",
+  DELETE: "bg-method-delete/15 text-method-delete",
+  PATCH: "bg-method-put/15 text-method-put",
   HEAD: "bg-muted text-muted-foreground",
   OPTIONS: "bg-muted text-muted-foreground",
 };
 
 const DEFAULT_METHOD_COLOR = "bg-muted text-muted-foreground";
 /** Captured emails carry the method "EMAIL" (see the receiver's mail handler). */
-const EMAIL_COLOR = "bg-kind-email text-black clean:bg-kind-email/15 clean:text-kind-email";
+const EMAIL_COLOR = "bg-kind-email/15 text-kind-email";
 
 /**
  * Gets the CSS color classes for an HTTP method, or for "EMAIL".

@@ -62,7 +62,7 @@ function SidebarContent({
       <button
         onClick={onSearchClick}
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 mb-4 text-sm text-muted-foreground rounded-md border-strong border-foreground/30 hover:border-line clean:hover:border-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+        className="flex w-full items-center gap-2 px-3 py-2 mb-4 text-sm text-muted-foreground rounded-md border border-foreground/30 hover:text-foreground transition-colors cursor-pointer hover:border-foreground/50"
       >
         <Search className="h-4 w-4" />
         <span>Search</span>
@@ -80,7 +80,7 @@ function SidebarContent({
               onClick={() => toggle(section)}
               type="button"
               aria-expanded={showItems}
-              className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold caps-wide text-muted-foreground hover:text-foreground cursor-pointer"
+              className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
             >
               {section.title}
               <ChevronDown
@@ -110,7 +110,7 @@ function SidebarContent({
                       >
                         {item.title}
                         {item.isNew && (
-                          <span className="text-[10px] font-bold uppercase clean:normal-case bg-primary text-primary-foreground px-1.5 py-0.5 rounded-sm border border-line">
+                          <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-sm border border-border normal-case">
                             New
                           </span>
                         )}
@@ -161,7 +161,7 @@ export function DocsSidebar() {
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border-strong border-line bg-background shadow-raised-sm cursor-pointer"
+        className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border border-border bg-background shadow-surface cursor-pointer"
         style={{ top: s.toggle }}
         aria-expanded={mobileOpen}
         aria-label={mobileOpen ? "Close docs contents" : "Open docs contents"}
@@ -187,7 +187,7 @@ export function DocsSidebar() {
         aria-label="Documentation navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r-strong border-line bg-background clean:bg-card shadow-raised overflow-y-auto pt-16 pb-6 px-2 transition-transform",
+          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r border-border shadow-float overflow-y-auto pt-16 pb-6 px-2 transition-transform bg-card",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ top: s.panel }}
@@ -197,7 +197,7 @@ export function DocsSidebar() {
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:block w-64 shrink-0 sticky self-start border-r-strong border-line overflow-y-auto py-8 pr-4"
+        className="hidden md:block w-64 shrink-0 sticky self-start border-r border-border overflow-y-auto py-8 pr-4"
         style={{ top: s.desktop, maxHeight: s.maxH }}
       >
         <SidebarContent onSearchClick={handleSearchClick} />

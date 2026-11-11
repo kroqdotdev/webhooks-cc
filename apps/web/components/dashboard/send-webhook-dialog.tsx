@@ -39,7 +39,7 @@ type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type SendMode = "manual" | TemplateProvider;
 
 /** The heading of each group of modes in the Mode dropdown. */
-const GROUP_LABEL = "pl-2 text-xs font-semibold caps text-muted-foreground";
+const GROUP_LABEL = "pl-2 text-xs font-semibold text-muted-foreground";
 
 interface SendWebhookDialogProps {
   slug: string;
@@ -261,9 +261,9 @@ export function SendWebhookDialog({
           </button>
         </DialogTrigger>
       )}
-      <DialogContent className="border-strong border-line shadow-raised max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="border border-border shadow-float max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Send a test request</DialogTitle>
+          <DialogTitle className="font-bold tracking-normal">Send a test request</DialogTitle>
           <DialogDescription className="sr-only">
             Send a test request to this endpoint
           </DialogDescription>
@@ -272,7 +272,7 @@ export function SendWebhookDialog({
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <div>
-              <label htmlFor="send-mode" className="block text-xs font-bold caps mb-2">
+              <label htmlFor="send-mode" className="block text-xs font-bold mb-2">
                 Mode
               </label>
               <Select value={mode} onValueChange={(value) => handleModeChange(value as SendMode)}>
@@ -305,7 +305,7 @@ export function SendWebhookDialog({
             </div>
             {isTemplateMode && (
               <div>
-                <label htmlFor="send-template" className="block text-xs font-bold caps mb-2">
+                <label htmlFor="send-template" className="block text-xs font-bold mb-2">
                   Template preset
                 </label>
                 <Select
@@ -331,7 +331,7 @@ export function SendWebhookDialog({
             <>
               {isSecretRequired(mode) && (
                 <div>
-                  <label htmlFor="send-secret" className="block text-xs font-bold caps mb-2">
+                  <label htmlFor="send-secret" className="block text-xs font-bold mb-2">
                     {mode === "gitlab" ? "Mock webhook token" : "Mock webhook secret"}
                   </label>
                   <Input
@@ -351,7 +351,7 @@ export function SendWebhookDialog({
               )}
 
               <div>
-                <label htmlFor="send-event" className="block text-xs font-bold caps mb-2">
+                <label htmlFor="send-event" className="block text-xs font-bold mb-2">
                   Event/topic override (optional)
                 </label>
                 <Input
@@ -385,7 +385,7 @@ export function SendWebhookDialog({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <div>
-              <label htmlFor="send-method" className="block text-xs font-bold caps mb-2">
+              <label htmlFor="send-method" className="block text-xs font-bold mb-2">
                 Method
               </label>
               <Select
@@ -406,7 +406,7 @@ export function SendWebhookDialog({
               </Select>
             </div>
             <div className="md:col-span-2">
-              <label htmlFor="send-path" className="block text-xs font-bold caps mb-2">
+              <label htmlFor="send-path" className="block text-xs font-bold mb-2">
                 Path
               </label>
               <Input
@@ -420,12 +420,12 @@ export function SendWebhookDialog({
           </div>
 
           <div>
-            <p className="text-xs font-bold caps mb-2">Endpoint</p>
+            <p className="text-xs font-bold mb-2">Endpoint</p>
             <pre className="ui-code text-xs overflow-x-auto">{endpointUrl}</pre>
           </div>
 
           <div>
-            <label htmlFor="send-headers" className="block text-xs font-bold caps mb-2">
+            <label htmlFor="send-headers" className="block text-xs font-bold mb-2">
               Headers (one per line: Key: Value)
             </label>
             <Textarea
@@ -437,7 +437,7 @@ export function SendWebhookDialog({
           </div>
 
           <div>
-            <label htmlFor="send-body" className="block text-xs font-bold caps mb-2">
+            <label htmlFor="send-body" className="block text-xs font-bold mb-2">
               Body
             </label>
             <Textarea
@@ -454,7 +454,7 @@ export function SendWebhookDialog({
             <div
               className={
                 status === "error"
-                  ? "border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink"
+                  ? "border border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink"
                   : "ui-code p-3! text-sm"
               }
             >

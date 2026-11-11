@@ -476,14 +476,14 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         </>
       )}
       {events.length > 0 && (
-        <div className="pt-4 border-t border-line/20">
+        <div className="pt-4 border-t border-border/20">
           <h3 className="text-sm font-semibold mb-2">Recent alerts</h3>
           <ul className="space-y-2">
             {events.slice(0, 10).map((event) => (
               <li key={event.id} className="flex flex-wrap items-center gap-2 text-sm">
                 <span
                   className={cn(
-                    "text-xs font-bold caps px-1.5 py-0.5 rounded-sm",
+                    "text-xs font-bold px-1.5 py-0.5 rounded-sm",
                     event.resolvedAt === null
                       ? "bg-destructive text-destructive-foreground"
                       : "bg-muted text-muted-foreground"

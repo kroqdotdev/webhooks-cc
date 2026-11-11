@@ -35,7 +35,7 @@ export function Avatar({
 }) {
   const [failed, setFailed] = useState(false);
   const base = cn(
-    "shrink-0 rounded-full border-strong border-line overflow-hidden",
+    "shrink-0 rounded-full border border-border overflow-hidden",
     SIZES[size],
     className
   );

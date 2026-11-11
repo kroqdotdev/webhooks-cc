@@ -142,7 +142,7 @@ export function PlaceholderMenu({
           {label}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 border-strong border-line shadow-raised">
+      <DropdownMenuContent align="start" className="w-64 border border-border shadow-float">
         {groups.map((group, index) => (
           <div key={group.label}>
             {index > 0 && <DropdownMenuSeparator />}

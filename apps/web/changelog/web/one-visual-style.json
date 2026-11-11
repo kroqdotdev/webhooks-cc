@@ -1,0 +1,7 @@
+{
+  "title": "One visual style",
+  "items": [
+    "The classic neobrutalist style is retired: everyone sees the clean style, and Account > Appearance now picks light, dark or system only",
+    "The page fonts load sooner, since the classic style's fonts are no longer downloaded"
+  ]
+}

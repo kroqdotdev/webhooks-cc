@@ -160,7 +160,7 @@ export function SiteHeader({
   return (
     <>
       <header
-        className="sticky z-50 shrink-0 border-b-strong border-line bg-background clean:bg-card"
+        className="sticky z-50 shrink-0 border-b border-border bg-card"
         style={{ top: top ?? siteHeaderTop() }}
       >
         <div
@@ -229,7 +229,7 @@ export function SiteHeader({
             type="button"
             aria-controls={open ? "site-menu" : undefined}
             onClick={() => setOpen((prev) => !prev)}
-            className="md:hidden p-2 rounded-md border-strong border-line hover:bg-muted transition-colors cursor-pointer"
+            className="md:hidden p-2 rounded-md border border-border hover:bg-muted transition-colors cursor-pointer"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
           >
@@ -257,7 +257,7 @@ export function SiteHeader({
                 setOpen(false);
               }
             }}
-            className="md:hidden absolute top-full left-0 right-0 border-t-strong border-line bg-background clean:bg-card shadow-raised"
+            className="md:hidden absolute top-full left-0 right-0 border-t border-border shadow-float bg-card"
           >
             <div className="px-4 py-4 flex flex-col gap-3">
               <SiteSwitchRow onNavigate={() => setOpen(false)} />
@@ -311,7 +311,7 @@ export function SiteHeader({
                   >
                     Support
                   </Link>
-                  <div className="pt-3 border-t-strong border-foreground/20">
+                  <div className="pt-3 border-t border-foreground/20">
                     <button
                       type="button"
                       onClick={() => leaveThrough(() => void handleSignOut())}
@@ -323,7 +323,7 @@ export function SiteHeader({
                 </>
               ) : (
                 !onAuthPage && (
-                  <div className="pt-3 border-t-strong border-foreground/20">
+                  <div className="pt-3 border-t border-foreground/20">
                     <Link
                       href="/login"
                       className="ui-btn-outline inline-block text-sm"

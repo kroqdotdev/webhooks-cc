@@ -51,9 +51,9 @@ export function NewEndpointDialog({
           </button>
         </DialogTrigger>
       )}
-      <DialogContent className="border-strong border-line shadow-raised">
+      <DialogContent className="border border-border shadow-float">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Create endpoint</DialogTitle>
+          <DialogTitle className="font-bold tracking-normal">Create endpoint</DialogTitle>
           <DialogDescription>{newEndpointDescription(mailFirst)}</DialogDescription>
         </DialogHeader>
 

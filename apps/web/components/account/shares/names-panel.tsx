@@ -143,7 +143,7 @@ export function NamesPanel({
           {listing.names.map((entry) => (
             <li
               key={entry.name}
-              className="flex flex-wrap items-center justify-between gap-3 border-b border-line/60 px-5 py-3"
+              className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-3"
             >
               <div className="min-w-0 space-y-0.5">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -324,7 +324,7 @@ export function NamesPanel({
       </AlertDialog>
 
       <Dialog open={passwordFor !== null} onOpenChange={(open) => !open && setPasswordFor(null)}>
-        <DialogContent className="ph-no-capture max-w-md border-strong border-line shadow-raised">
+        <DialogContent className="ph-no-capture max-w-md border border-border shadow-float">
           <form onSubmit={(event) => void savePassword(event)} className="space-y-4">
             <DialogHeader>
               <DialogTitle>Password for {passwordFor?.name}</DialogTitle>

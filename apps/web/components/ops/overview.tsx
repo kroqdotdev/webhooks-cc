@@ -151,7 +151,7 @@ export function OpsOverview() {
             {data.needs.tickets.map((ticket) => {
               const late = now - new Date(ticket.waitingSince).getTime() > 24 * 3_600_000;
               return (
-                <li key={ticket.number} className="border-t border-line first:border-t-0">
+                <li key={ticket.number} className="border-t border-border first:border-t-0">
                   <Link
                     href={`/ops/tickets/${ticket.number}`}
                     className="flex items-center justify-between gap-4 px-4 py-2.5 text-sm hover:bg-muted/60"
@@ -178,7 +178,7 @@ export function OpsOverview() {
               );
             })}
             {data.needs.refunds.map((refund) => (
-              <li key={refund.id} className="border-t border-line first:border-t-0">
+              <li key={refund.id} className="border-t border-border first:border-t-0">
                 <Link
                   href="/ops/refunds"
                   className="flex items-center justify-between gap-4 px-4 py-2.5 text-sm hover:bg-muted/60"
@@ -268,7 +268,7 @@ export function OpsOverview() {
                   <tr
                     key={line.key}
                     className={cn(
-                      "border-t border-line",
+                      "border-t border-border",
                       index === firstMoney && "border-t-foreground/25"
                     )}
                   >
@@ -283,7 +283,7 @@ export function OpsOverview() {
                     <td
                       className={cn(
                         "px-3 py-2 text-right",
-                        delta.tone === "good" && "text-primary-ink",
+                        delta.tone === "good" && "text-primary",
                         delta.tone === "bad" && "text-destructive-ink",
                         delta.tone === "flat" && "text-muted-foreground"
                       )}

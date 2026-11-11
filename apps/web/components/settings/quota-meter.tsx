@@ -88,7 +88,7 @@ export function QuotaMeter({
           <p className="text-sm">
             <span
               className={cn(
-                "text-2xl font-bold clean:font-semibold tabular-nums",
+                "text-2xl tabular-nums font-semibold",
                 nearLimit && "text-destructive-ink"
               )}
             >
@@ -126,7 +126,7 @@ export function QuotaMeter({
               aria-hidden="true"
               className={cn(
                 "relative flex-1 min-w-0 overflow-hidden rounded-sm bg-muted/60",
-                compact ? "h-2" : perSeat ? "h-9 border-strong border-line" : "h-3",
+                compact ? "h-2" : perSeat ? "h-9 border border-border" : "h-3",
                 ending && "opacity-50 border-dashed"
               )}
             >

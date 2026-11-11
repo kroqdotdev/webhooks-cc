@@ -50,7 +50,7 @@ export default function GoogleSheetsPage() {
         />
         <p className="text-sm text-muted-foreground mt-4">
           An email without line items still adds one row. Start from a{" "}
-          <Link href="/parse" className="text-primary-ink font-bold hover:underline">
+          <Link href="/parse" className="text-primary font-bold hover:underline">
             ready-made layout
           </Link>{" "}
           for Shopify, WooCommerce or Etsy orders, which reads their line items, then check it on

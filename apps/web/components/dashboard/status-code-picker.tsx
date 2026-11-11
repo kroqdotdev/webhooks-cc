@@ -121,7 +121,7 @@ export function StatusCodePicker({
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={id} className="font-bold caps text-xs">
+      <Label htmlFor={id} className="font-bold text-xs">
         {label}
       </Label>
       <div className="flex gap-2">
@@ -129,17 +129,17 @@ export function StatusCodePicker({
           <SelectTrigger
             id={id}
             className={cn(
-              "border-strong border-line text-sm font-mono h-auto py-2",
+              "border border-border text-sm font-mono h-auto py-2",
               isCustom ? "w-36 shrink-0" : "w-full"
             )}
           >
             <SelectValue placeholder="Select status" />
           </SelectTrigger>
-          <SelectContent className="border-strong border-line shadow-raised">
+          <SelectContent className="border border-border shadow-float">
             {STATUS_CODES.map((group, i) => (
               <SelectGroup key={group.group}>
                 {i > 0 && <SelectSeparator className="bg-foreground/20" />}
-                <SelectLabel className="font-bold caps text-xs text-muted-foreground">
+                <SelectLabel className="font-bold text-xs text-muted-foreground">
                   {group.group}
                 </SelectLabel>
                 {group.codes.map((code) => (

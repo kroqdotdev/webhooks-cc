@@ -20,13 +20,13 @@ export const STARS_FLOOR = 100;
 export function GitHubCard({ stars }: GitHubCardProps) {
   return (
     <div className="ui-card ui-card-static shrink-0 lg:mt-12 flex flex-col items-center text-center w-full lg:w-auto">
-      <div className="w-14 h-14 border-strong border-line rounded-md bg-foreground flex items-center justify-center mb-4 shadow-raised-sm">
+      <div className="w-14 h-14 border border-border rounded-md bg-foreground flex items-center justify-center mb-4 shadow-surface">
         <GitHubIcon className="h-7 w-7 text-background" />
       </div>
-      <p className="text-xs font-bold caps text-muted-foreground mb-1">Open Source</p>
+      <p className="text-xs font-bold text-muted-foreground mb-1">Open Source</p>
       {stars !== null && stars >= STARS_FLOOR && (
         <p className="text-2xl font-bold mb-1 flex items-center gap-1.5">
-          <Star className="h-5 w-5 text-secondary fill-secondary clean:text-amber-500 clean:fill-amber-500" />
+          <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
           {formatCount(stars)}
         </p>
       )}

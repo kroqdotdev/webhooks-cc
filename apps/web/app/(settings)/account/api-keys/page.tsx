@@ -141,7 +141,7 @@ export default function ApiKeysPage() {
             <table className="w-full min-w-[36rem] text-sm">
               <caption className="sr-only">Your API keys</caption>
               <thead>
-                <tr className="border-b-strong border-line text-left text-xs text-muted-foreground">
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
                   <th scope="col" className="px-5 py-2.5 font-medium">
                     Name
                   </th>
@@ -167,7 +167,7 @@ export default function ApiKeysPage() {
                   const expiresMs = key.expires_at ? Date.parse(key.expires_at) : null;
                   const expired = expiresMs !== null && expiresMs <= nowMs;
                   return (
-                    <tr key={key.id} className="border-b border-line/60 last:border-b-0">
+                    <tr key={key.id} className="border-b border-border/60 last:border-b-0">
                       <td className="max-w-[14rem] truncate px-5 py-3 font-medium">{key.name}</td>
                       <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
                         {key.key_prefix}...
@@ -235,7 +235,7 @@ export default function ApiKeysPage() {
           </div>
         )}
         {deleteError && (
-          <div className="border-t-strong border-line px-5 py-3">
+          <div className="border-t border-border px-5 py-3">
             <InlineMessage tone="error">{deleteError}</InlineMessage>
           </div>
         )}

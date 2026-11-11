@@ -353,12 +353,12 @@ export function RequestList({
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Toolbar */}
-      <div className="@container border-b-strong border-line px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+      <div className="@container border-b border-border px-3 py-2 flex items-center justify-between gap-2 shrink-0">
         {onKindFilterChange ? (
           <div
             role="radiogroup"
             aria-label="Show"
-            className="flex min-w-0 overflow-hidden rounded-md border-strong border-line"
+            className="flex min-w-0 overflow-hidden rounded-md border border-border"
           >
             {kinds.map((kind, index) => (
               <button
@@ -389,8 +389,8 @@ export function RequestList({
                     [(index + step + kinds.length) % kinds.length]?.focus();
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold caps cursor-pointer transition-colors whitespace-nowrap",
-                  index > 0 && "border-l-strong border-line",
+                  "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap",
+                  index > 0 && "border-l border-border",
                   kindFilter === kind.id
                     ? "bg-selected text-selected-foreground"
                     : "bg-background hover:bg-muted"
@@ -418,7 +418,7 @@ export function RequestList({
           {onViewModeChange && (
             <button
               onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
-              className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
+              className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border border-border"
               title={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-label={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-pressed={viewMode === "timeline"}
@@ -432,7 +432,7 @@ export function RequestList({
           )}
           <button
             onClick={onToggleSort}
-            className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
+            className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border border-border"
             title={sortNewest ? "Showing newest first" : "Showing oldest first"}
             aria-label={
               sortNewest
@@ -446,7 +446,7 @@ export function RequestList({
             onClick={onToggleLiveMode}
             aria-pressed={liveMode}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 max-md:py-2 text-xs font-bold caps rounded-md border-strong border-line cursor-pointer transition-colors",
+              "flex items-center gap-1.5 px-2 py-1 max-md:py-2 text-xs font-bold rounded-md border border-border cursor-pointer transition-colors",
               liveMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
             )}
             title={
@@ -467,12 +467,12 @@ export function RequestList({
       </div>
 
       {/* Filter bar */}
-      <div className="border-b-strong border-line px-3 py-2 flex items-center gap-2 shrink-0">
+      <div className="border-b border-border px-3 py-2 flex items-center gap-2 shrink-0">
         {kindFilter !== "email" && (
           <Select value={methodFilter} onValueChange={onMethodFilterChange}>
             <SelectTrigger
               aria-label="Method"
-              className="h-auto w-auto shrink-0 gap-1.5 text-xs font-bold rounded-md border-strong border-line bg-background px-2 py-1 max-md:py-2 cursor-pointer focus:ring-offset-0"
+              className="h-auto w-auto shrink-0 gap-1.5 text-xs font-bold rounded-md border border-border bg-background px-2 py-1 max-md:py-2 cursor-pointer focus:ring-offset-0"
             >
               <SelectValue />
             </SelectTrigger>
@@ -485,7 +485,7 @@ export function RequestList({
             </SelectContent>
           </Select>
         )}
-        <div className="ui-control flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
+        <div className="ui-control flex-1 flex items-center gap-1 rounded-md border border-border px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
@@ -524,7 +524,7 @@ export function RequestList({
 
       {/* Compare hint */}
       {compareId && (
-        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b-strong border-line">
+        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b border-border">
           Shift-click another request to compare
         </div>
       )}
@@ -538,7 +538,7 @@ export function RequestList({
             {loadMore}
           </>
         ) : searchLoading ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps flex items-center justify-center gap-2">
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold flex items-center justify-center gap-2">
             <Loader2 className="h-3 w-3 animate-spin" />
             Searching...
           </div>
@@ -555,7 +555,7 @@ export function RequestList({
           <NoEmailsYet address={emailAddress} />
         ) : pinned.length === 0 && unpinned.length === 0 ? (
           <>
-            <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps">
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold">
               {searchError
                 ? "Search unavailable"
                 : hasMore
@@ -580,7 +580,7 @@ export function RequestList({
                   <div role="group" aria-label="Pinned">
                     <div
                       aria-hidden="true"
-                      className="px-3 py-1 text-xs font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1"
+                      className="px-3 py-1 text-xs font-bold text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1"
                     >
                       <Star className="h-2.5 w-2.5 fill-current" />
                       Pinned
@@ -591,7 +591,7 @@ export function RequestList({
                     <div role="group" aria-label={`All ${itemNoun}`}>
                       <div
                         aria-hidden="true"
-                        className="px-3 py-1 text-xs font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10"
+                        className="px-3 py-1 text-xs font-bold text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10"
                       >
                         All {itemNoun}
                       </div>
@@ -613,7 +613,7 @@ export function RequestList({
       {ctxMenu && (
         <div
           ref={ctxRef}
-          className="fixed z-50 overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised min-w-[160px]"
+          className="fixed z-50 overflow-hidden rounded-lg border border-border bg-background shadow-float min-w-[160px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
           {onTogglePin && (
@@ -622,7 +622,7 @@ export function RequestList({
                 onTogglePin(ctxMenu.id);
                 setCtxMenu(null);
               }}
-              className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b border-border flex items-center gap-2"
             >
               <Star className={cn("h-3 w-3", pinnedIds?.has(ctxMenu.id) && "fill-current")} />
               {pinnedIds?.has(ctxMenu.id) ? "Unpin" : "Pin"}
@@ -634,7 +634,7 @@ export function RequestList({
                 onCompareSelect(ctxMenu.id);
                 setCtxMenu(null);
               }}
-              className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b border-border flex items-center gap-2"
             >
               <GitCompareArrows className="h-3 w-3" />
               Compare
@@ -645,7 +645,7 @@ export function RequestList({
               void copyToClipboard(ctxMenu.id);
               setCtxMenu(null);
             }}
-            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line flex items-center gap-2"
+            className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b border-border flex items-center gap-2"
           >
             <Clipboard className="h-3 w-3" />
             Copy ID
@@ -655,7 +655,7 @@ export function RequestList({
               toggleTimestampMode();
               setCtxMenu(null);
             }}
-            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
+            className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
           >
             <Clock className="h-3 w-3" />
             {relativeTime ? "Show clock times" : "Show relative times"}
@@ -678,7 +678,7 @@ export function RequestList({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "px-1.5 py-0.5 text-xs font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-15 text-center",
+              "px-1.5 py-0.5 text-xs font-mono font-bold rounded-sm border shrink-0 min-w-15 text-center border-transparent",
               getMethodColor(request.method)
             )}
           >
@@ -763,7 +763,7 @@ export function RequestList({
           {!onlyEmail && (
             <span
               className={cn(
-                "px-1.5 py-0.5 text-xs font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 min-w-15 text-center",
+                "px-1.5 py-0.5 text-xs font-mono font-bold rounded-sm border shrink-0 min-w-15 text-center border-transparent",
                 getMethodColor("EMAIL")
               )}
             >
@@ -792,7 +792,7 @@ export function RequestList({
         >
           {sender && <span className="text-xs text-muted-foreground truncate">{sender}</span>}
           {email?.tag && (
-            <span className="text-xs font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
+            <span className="text-xs font-mono font-semibold text-kind-email truncate max-w-[40%]">
               +{email.tag}
             </span>
           )}
@@ -812,7 +812,7 @@ export function RequestList({
             <span
               className={cn(
                 "text-xs truncate min-w-0",
-                parse.kind === "read" ? "text-primary-ink" : "text-muted-foreground"
+                parse.kind === "read" ? "text-primary" : "text-muted-foreground"
               )}
             >
               &middot;{" "}
@@ -863,7 +863,7 @@ function NoEmailsYet({ address }: { address: string }) {
   return (
     <div className="px-4 py-8 text-center space-y-3">
       <p className="text-sm font-semibold">No emails yet.</p>
-      <div className="inline-flex max-w-full items-center gap-1 rounded-md border-strong border-line bg-background pl-2.5 pr-1 py-1">
+      <div className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-background pl-2.5 pr-1 py-1">
         <span className="font-mono text-xs truncate">{address}</span>
         <button
           type="button"

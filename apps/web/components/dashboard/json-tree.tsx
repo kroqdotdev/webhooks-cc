@@ -67,7 +67,7 @@ export function JsonTree({ data, defaultExpandDepth }: JsonTreeProps) {
       <div className="flex items-center justify-end mb-2">
         <button
           onClick={toggleAll}
-          className="text-[11px] text-muted-foreground hover:text-foreground inline-flex min-h-6 items-center gap-1 px-1.5 -mr-1.5 cursor-pointer transition-colors caps font-bold font-sans max-md:py-1.5"
+          className="text-[11px] text-muted-foreground hover:text-foreground inline-flex min-h-6 items-center gap-1 px-1.5 -mr-1.5 cursor-pointer transition-colors font-bold font-sans max-md:py-1.5"
         >
           <ChevronsUpDown className="h-3 w-3" />
           {expandTarget ? "Collapse all" : "Expand all"}
@@ -145,7 +145,7 @@ function JsonNode({
             title={`Copy: ${currentPath}`}
           >
             {copiedPath === currentPath ? (
-              <Check className="inline h-3 w-3 mr-1 text-primary-ink" />
+              <Check className="inline h-3 w-3 mr-1 text-primary" />
             ) : null}
             {keyName}
             <span className="syntax-punctuation">: </span>
@@ -191,7 +191,7 @@ function JsonNode({
             title={`Copy: ${currentPath}`}
           >
             {copiedPath === currentPath ? (
-              <Check className="inline h-3 w-3 mr-1 text-primary-ink" />
+              <Check className="inline h-3 w-3 mr-1 text-primary" />
             ) : null}
             {keyName}
             <span className="syntax-punctuation">: </span>

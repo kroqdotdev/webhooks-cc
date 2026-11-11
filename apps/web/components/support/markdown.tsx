@@ -73,7 +73,7 @@ function link(href: string, label: ReactNode, key: number) {
       href={href}
       target="_blank"
       rel="noopener noreferrer nofollow ugc"
-      className="text-primary-ink underline underline-offset-2 break-words"
+      className="text-primary underline underline-offset-2 break-words"
     >
       {label}
     </a>
@@ -125,7 +125,7 @@ export function Markdown({ source, className }: { source: string; className?: st
           return (
             <pre
               key={index}
-              className="ui-code overflow-x-auto rounded-md border border-line p-3 font-mono text-xs leading-relaxed"
+              className="ui-code overflow-x-auto rounded-md border border-border p-3 font-mono text-xs leading-relaxed"
             >
               {block.text}
             </pre>

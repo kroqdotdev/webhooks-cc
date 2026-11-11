@@ -104,7 +104,7 @@ export default function CompareWebhookSitePage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold caps text-muted-foreground mb-3">
+        <p className="text-xs font-bold text-muted-foreground mb-3">
           Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Webhook.site</h1>
@@ -121,7 +121,7 @@ export default function CompareWebhookSitePage() {
         <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-strong border-line">
+              <tr className="border-b border-border">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -188,11 +188,11 @@ export default function CompareWebhookSitePage() {
               Sheets, Slack, Discord, Zapier or Make, on every plan. Business adds your own inbound
               domain and file drops to SFTP, FTP or S3. On Webhook.site, acting on incoming email
               takes Custom Actions, which are part of its paid plans. See{" "}
-              <Link href="/email-testing" className="font-semibold hover:text-primary-ink">
+              <Link href="/email-testing" className="font-semibold hover:text-primary">
                 email testing
               </Link>{" "}
               and{" "}
-              <Link href="/email-to-webhook" className="font-semibold hover:text-primary-ink">
+              <Link href="/email-to-webhook" className="font-semibold hover:text-primary">
                 email to webhook
               </Link>
               .
@@ -257,26 +257,26 @@ export default function CompareWebhookSitePage() {
           See also:{" "}
           <Link
             href="/compare/ngrok"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs ngrok
           </Link>
           {" · "}
           <Link
             href="/compare/beeceptor"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Beeceptor
           </Link>
           {" · "}
           <Link
             href="/compare/requestbin"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs RequestBin
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
             All comparisons
           </Link>
         </p>

@@ -69,7 +69,7 @@ export function Section({
             <h2
               id={`settings-${id}-title`}
               tabIndex={-1}
-              className="text-base font-bold clean:font-semibold outline-none"
+              className="text-base outline-none font-semibold"
             >
               {title}
             </h2>
@@ -82,7 +82,7 @@ export function Section({
           // data-section-footer lets the panel tell when this save is in view.
           <div
             data-section-footer={id}
-            className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40 has-[[data-save-idle]]:hidden"
+            className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-border bg-muted/40 has-[[data-save-idle]]:hidden"
           >
             {footer}
           </div>
@@ -117,7 +117,7 @@ export function Field({
   const Label = id ? "label" : "span";
   return (
     <div className={cn("space-y-1.5", className)}>
-      <Label htmlFor={id} id={labelId} className="block text-xs font-bold caps">
+      <Label htmlFor={id} id={labelId} className="block text-xs font-bold">
         {label}
       </Label>
       {children}
@@ -258,19 +258,16 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center border-strong border-line rounded-lg cursor-pointer transition-colors motion-reduce:transition-none",
+        "relative inline-flex h-6 w-11 shrink-0 items-center border border-border rounded-full cursor-pointer transition-colors motion-reduce:transition-none",
         "disabled:cursor-not-allowed disabled:opacity-60",
-        "clean:rounded-full",
-        // Off, clean's track takes the control boundary colour so it reads at 3:1.
-        checked ? "bg-primary" : "bg-muted clean:border-input"
+        // Off, the track takes the control boundary colour so it reads at 3:1.
+        checked ? "bg-primary" : "bg-muted border-input"
       )}
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 border-strong border-line rounded-sm clean:rounded-full transition-transform motion-reduce:transition-none",
-          checked
-            ? "translate-x-5.5 bg-card"
-            : "translate-x-0.5 bg-card clean:bg-muted-foreground/70"
+          "inline-block h-4 w-4 border border-border transition-transform motion-reduce:transition-none rounded-full",
+          checked ? "translate-x-5.5 bg-card" : "translate-x-0.5 bg-muted-foreground/70"
         )}
       />
     </button>
@@ -368,7 +365,7 @@ export function Segmented<T extends string>({
       role="radiogroup"
       aria-label={name}
       className={cn(
-        "inline-flex max-w-full overflow-x-auto [scrollbar-width:none] rounded-sm border-strong border-line bg-background",
+        "inline-flex max-w-full overflow-x-auto [scrollbar-width:none] rounded-sm border border-border bg-background",
         stack && "max-sm:flex max-sm:flex-col max-sm:w-full",
         className
       )}
@@ -385,17 +382,17 @@ export function Segmented<T extends string>({
             onClick={() => onChange(option.value)}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
-              "font-bold caps whitespace-nowrap cursor-pointer transition-colors motion-reduce:transition-none",
+              "font-bold whitespace-nowrap cursor-pointer transition-colors motion-reduce:transition-none",
               size === "sm" ? "px-3 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]",
-              index > 0 && "border-l-strong border-line",
+              index > 0 && "border-l border-border",
               stack && "max-sm:text-left",
-              stack && index > 0 && "max-sm:border-l-0 max-sm:border-t-strong",
-              // Clean's selected tint alone is too faint (WCAG 1.4.11), so the
+              stack && index > 0 && "max-sm:border-l-0 max-sm:border-t",
+              // The selected tint alone is too faint (WCAG 1.4.11), so the
               // choice also gets a primary underline, or a side bar when stacked.
               checked
                 ? cn(
-                    "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]",
-                    stack && "max-sm:clean:shadow-[inset_3px_0_0_hsl(var(--primary))]"
+                    "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]",
+                    stack && "max-sm:shadow-[inset_3px_0_0_hsl(var(--primary))]"
                   )
                 : "hover:bg-muted"
             )}

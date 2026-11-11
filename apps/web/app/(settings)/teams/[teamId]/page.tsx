@@ -622,7 +622,7 @@ function TeamDetailContent() {
               <table className="w-full text-sm">
                 <caption className="sr-only">Members and pending invites</caption>
                 <thead>
-                  <tr className="border-b-strong border-line text-left text-xs text-muted-foreground">
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
                     <th scope="col" className="px-5 py-2.5 font-medium">
                       Person
                     </th>
@@ -649,7 +649,7 @@ function TeamDetailContent() {
                     const isYou = member.userId === currentUserId;
                     const shared = endpoints.filter((e) => e.ownerId === member.userId).length;
                     return (
-                      <tr key={member.id} className="border-b border-line/60 last:border-b-0">
+                      <tr key={member.id} className="border-b border-border/60 last:border-b-0">
                         <td className="px-5 py-3">
                           <div className="flex min-w-0 items-center gap-3">
                             <Avatar name={member.name} email={member.email} image={member.image} />
@@ -717,7 +717,7 @@ function TeamDetailContent() {
                     );
                   })}
                   {invites.map((invite) => (
-                    <tr key={invite.id} className="border-b border-line/60 last:border-b-0">
+                    <tr key={invite.id} className="border-b border-border/60 last:border-b-0">
                       <td className="px-5 py-3">
                         <div className="flex min-w-0 items-center gap-3">
                           <span
@@ -752,7 +752,7 @@ function TeamDetailContent() {
             </div>
           )}
           {membersError && (
-            <div className="border-t-strong border-line px-5 py-3">
+            <div className="border-t border-border px-5 py-3">
               <InlineMessage tone="error">{membersError}</InlineMessage>
             </div>
           )}
@@ -815,7 +815,7 @@ function TeamDetailContent() {
                 return (
                   <li
                     key={endpoint.id}
-                    className="flex flex-wrap items-center justify-between gap-3 border-b border-line/60 px-5 py-3 last:border-b-0"
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-3 last:border-b-0"
                   >
                     <div className="min-w-0 space-y-0.5">
                       <p className="truncate text-sm font-medium">
@@ -858,7 +858,7 @@ function TeamDetailContent() {
             </ul>
           )}
           {endpointsError && (
-            <div className="border-t-strong border-line px-5 py-3">
+            <div className="border-t border-border px-5 py-3">
               <InlineMessage tone="error">{endpointsError}</InlineMessage>
             </div>
           )}

@@ -270,7 +270,7 @@ function TeamsContent() {
                 return (
                   <li
                     key={invite.id}
-                    className="space-y-2 border-b border-line/60 px-5 py-4 last:border-b-0"
+                    className="space-y-2 border-b border-border/60 px-5 py-4 last:border-b-0"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
@@ -339,7 +339,7 @@ function TeamsContent() {
                   () => ({ kind: "open" })
                 );
                 return (
-                  <li key={team.id} className="border-b border-line/60 last:border-b-0">
+                  <li key={team.id} className="border-b border-border/60 last:border-b-0">
                     <Link
                       href={`/teams/${team.id}`}
                       aria-label={`${team.role === "owner" ? "Manage" : "View"} ${team.name}`}

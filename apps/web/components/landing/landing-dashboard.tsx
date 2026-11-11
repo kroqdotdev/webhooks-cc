@@ -51,7 +51,7 @@ const RequestDetailEmpty = dynamic(
 
 function PaneLoading({ label }: { label: string }) {
   return (
-    <div className="h-full flex items-center justify-center text-xs font-bold caps text-muted-foreground">
+    <div className="h-full flex items-center justify-center text-xs font-bold text-muted-foreground">
       {label}
     </div>
   );
@@ -446,7 +446,7 @@ function LandingDashboardInner() {
   // data-landing-signed-in lets the hero wrapper drop its viewport height (:has()).
   if (isAuthenticated) {
     return (
-      <div data-landing-signed-in className="border-b-strong border-line bg-background px-4 py-10">
+      <div data-landing-signed-in className="border-b border-border bg-background px-4 py-10">
         <div className="max-w-3xl mx-auto flex flex-col items-center gap-4 text-center md:flex-row md:justify-between md:text-left">
           <div className="space-y-1">
             <p className="text-lg font-bold">You&apos;re signed in</p>
@@ -501,10 +501,10 @@ function LandingDashboardInner() {
               aria-hidden
               className="absolute inset-0 flex opacity-40 pointer-events-none select-none"
             >
-              <div className="w-full md:w-96 shrink-0 md:border-r-strong md:border-line p-3 space-y-2">
+              <div className="w-full md:w-96 shrink-0 md:border-r md:border-border p-3 space-y-2">
                 {/* One readable example row says what the frame will hold. */}
                 <div className="flex items-center gap-2 font-mono text-xs">
-                  <span className="px-1.5 py-0.5 font-bold rounded-sm clean:bg-method-post/15 clean:text-method-post classic:bg-method-post classic:text-black">
+                  <span className="px-1.5 py-0.5 font-bold rounded-sm bg-method-post/15 text-method-post">
                     POST
                   </span>
                   <span className="flex-1 truncate">/webhooks/stripe</span>
@@ -543,12 +543,10 @@ function LandingDashboardInner() {
       <DashboardFrame>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
           <span
-            className="h-3 w-3 bg-primary border-strong border-line animate-pulse motion-reduce:animate-none"
+            className="h-3 w-3 bg-primary border border-border animate-pulse motion-reduce:animate-none"
             aria-hidden
           />
-          <p className="text-sm font-bold caps text-muted-foreground">
-            Creating your webhook URL...
-          </p>
+          <p className="text-sm font-bold text-muted-foreground">Creating your webhook URL...</p>
         </div>
       </DashboardFrame>
     );
@@ -558,21 +556,21 @@ function LandingDashboardInner() {
     <DashboardFrame>
       <ErrorBoundary resetKey={endpoint?.id}>
         {/* URL bar: same layout as the real dashboard */}
-        <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5">
-          <span className="font-bold text-sm caps shrink-0 hidden sm:inline">Your endpoint</span>
+        <div className="shrink-0 border-b border-border bg-card px-4 py-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5">
+          <span className="font-bold text-sm shrink-0 hidden sm:inline">Your endpoint</span>
           <UrlCopy url={endpointUrl} />
           {/* Email capture needs an account: guest captures are readable by anyone with the slug. */}
           <Link
             href="/login"
             onClick={() => trackCTAClick("register")}
-            className="hidden lg:inline-flex items-center gap-2 h-8 px-2.5 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            className="hidden lg:inline-flex items-center gap-2 h-8 px-2.5 text-xs text-muted-foreground border border-border border-dashed rounded-md hover:text-foreground hover:bg-muted transition-colors shrink-0"
           >
             <Mail className="h-3 w-3" />
             Sign up to get an email address too
           </Link>
           <div className="flex items-center gap-4 shrink-0 text-xs text-muted-foreground md:ml-auto max-md:w-full">
             <span className="flex items-center gap-1.5">
-              <Circle className="h-2 w-2 fill-primary text-primary-ink" />
+              <Circle className="h-2 w-2 fill-primary text-primary" />
               <span className="max-sm:hidden">Expires in</span>
               <span className="sm:hidden">Expires</span>{" "}
               <span className="font-mono font-bold text-foreground">{timeRemaining ?? "..."}</span>
@@ -593,7 +591,7 @@ function LandingDashboardInner() {
 
         {/* Registration push: appears once the first webhook lands */}
         {hasRequests && !upgradeDismissed ? (
-          <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="shrink-0 border-b border-border bg-primary/10 px-4 py-2.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="text-sm font-medium">
               <span className="sm:hidden">Webhook received! Keep this endpoint free:</span>
               <span className="max-sm:hidden">
@@ -623,7 +621,7 @@ function LandingDashboardInner() {
           {hasRequests ? (
             <>
               <div className="hidden md:flex h-full overflow-hidden">
-                <div className="w-80 shrink-0 border-r-strong border-line overflow-hidden">
+                <div className="w-80 shrink-0 border-r border-border overflow-hidden">
                   <RequestList
                     requests={filteredSummaries}
                     selectedId={selectedId}
@@ -657,7 +655,7 @@ function LandingDashboardInner() {
                   <div className="flex-1 flex flex-col overflow-hidden">
                     <button
                       onClick={() => setMobileDetail(false)}
-                      className="border-b-strong border-line px-4 py-2 text-sm font-bold caps hover:bg-muted cursor-pointer transition-colors shrink-0"
+                      className="border-b border-border px-4 py-2 text-sm font-bold hover:bg-muted cursor-pointer transition-colors shrink-0"
                     >
                       &larr; Back to list
                     </button>
@@ -698,13 +696,13 @@ function LandingDashboardInner() {
         </div>
 
         {/* Frame footer */}
-        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t-strong border-line px-4 py-2 bg-muted">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 bg-muted">
           <p className="text-xs text-muted-foreground font-bold">
             Guest endpoint &middot; no account needed &middot; {REQUEST_LIMIT} requests, 12 hours
           </p>
           <Link
             href="/webhooks"
-            className="text-xs sm:text-sm font-bold hover:text-primary-ink transition-colors whitespace-nowrap"
+            className="text-xs sm:text-sm font-bold hover:text-primary transition-colors whitespace-nowrap"
           >
             Works with <span className="max-sm:hidden">Stripe, GitHub, Shopify &amp; </span>30+
             providers
@@ -736,7 +734,7 @@ function UrlCopy({ url }: { url: string }) {
     <div className="flex items-center gap-1.5 min-w-0">
       <code
         // The one string this page hands over: full colour, not muted.
-        className="font-mono text-sm md:text-base font-medium text-foreground truncate cursor-pointer hover:text-primary-ink transition-colors"
+        className="font-mono text-sm md:text-base font-medium text-foreground truncate cursor-pointer hover:text-primary transition-colors"
         onClick={handleCopy}
         title="Click to copy"
         data-testid="instant-url"
@@ -745,7 +743,7 @@ function UrlCopy({ url }: { url: string }) {
       </code>
       <button
         onClick={handleCopy}
-        className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-strong border-line rounded-md shrink-0"
+        className="p-1.5 hover:bg-muted transition-colors cursor-pointer border border-border rounded-md shrink-0"
         title="Copy URL"
         aria-label="Copy webhook URL"
       >
@@ -844,7 +842,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
               <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
             </span>
-            <p className="font-bold caps">Waiting for the first request</p>
+            <p className="font-bold">Waiting for the first request</p>
           </div>
 
           <button
@@ -857,7 +855,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
           </button>
 
           <div className="space-y-2">
-            <p className="text-xs font-bold caps text-muted-foreground">
+            <p className="text-xs font-bold text-muted-foreground">
               Or try a signed provider payload
             </p>
             <div className="flex items-center justify-center gap-2">
@@ -880,7 +878,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
 
           <div className="text-left">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold caps text-muted-foreground">Or use curl</span>
+              <span className="text-xs font-bold text-muted-foreground">Or use curl</span>
               <button
                 onClick={() => void handleCopy()}
                 className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
@@ -920,7 +918,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
  *  Top edge is provided by the title strip above it. */
 function DashboardFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full border-b-strong border-line bg-background flex flex-col overflow-hidden">
+    <div className="h-full border-b border-border bg-background flex flex-col overflow-hidden">
       {children}
     </div>
   );

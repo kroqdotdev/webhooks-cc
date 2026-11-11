@@ -12,7 +12,7 @@ export function ProviderCard({
   docsUrl: string;
 }) {
   return (
-    <div className="my-3 p-4 rounded-lg border-strong border-line bg-card shadow-raised-sm">
+    <div className="my-3 p-4 rounded-lg border border-border bg-card shadow-surface">
       <p className="font-bold text-foreground mb-2">{name}</p>
       <dl className="text-sm space-y-1 m-0">
         <div className="flex gap-2">
@@ -28,7 +28,7 @@ export function ProviderCard({
         href={docsUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-sm text-primary-ink hover:underline font-bold mt-2"
+        className="inline-flex items-center gap-1 text-sm text-primary hover:underline font-bold mt-2"
       >
         Official docs <ExternalLink className="h-3.5 w-3.5" />
       </a>

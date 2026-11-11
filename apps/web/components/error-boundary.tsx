@@ -60,7 +60,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="flex items-center justify-center min-h-[200px] p-8">
           <div className="text-center space-y-4">
-            <h2 className="text-lg font-bold caps">Something went wrong</h2>
+            <h2 className="text-lg font-bold tracking-normal">Something went wrong</h2>
             <p className="text-sm text-muted-foreground">
               An unexpected error occurred. Please try again.
             </p>
