@@ -156,10 +156,10 @@ test("a new email is parsed and opens on the Parsed tab", async ({ page }) => {
     .toBeGreaterThan(0);
 
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await shown(page.getByRole("button", { name: /Order 1002 confirmed/ }))
+  await shown(page.getByRole("option", { name: /Order 1002 confirmed/ }))
     .first()
     .click();
-  await expect(shown(page.getByRole("button", { name: "Parsed", exact: true }))).toBeVisible({
+  await expect(shown(page.getByRole("tab", { name: "Parsed", exact: true }))).toBeVisible({
     timeout: 15000,
   });
   await expect(shown(page.getByText("Acme orders", { exact: true }))).toBeVisible();

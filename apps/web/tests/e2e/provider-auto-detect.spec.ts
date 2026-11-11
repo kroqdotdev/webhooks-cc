@@ -92,7 +92,7 @@ test("dashboard shows detected provider, event, and preselects manual verificati
     timeout: 15_000,
   });
 
-  const requestRow = page.locator("button").filter({ hasText: REQUEST_PATH }).first();
+  const requestRow = page.getByRole("option").filter({ hasText: REQUEST_PATH }).first();
   await expect(requestRow).toBeVisible({ timeout: 15_000 });
   await expect(requestRow.getByLabel("Detected provider: Typeform")).toBeVisible();
   await expect(requestRow).toContainText("form_response");
@@ -104,10 +104,10 @@ test("dashboard shows detected provider, event, and preselects manual verificati
   });
   await expect(page.getByText("form_response").first()).toBeVisible();
 
-  await page.getByRole("button", { name: /^signature$/i }).click();
+  await page.getByRole("tab", { name: /^signature$/i }).click();
 
   await expect(page.locator("div").filter({ hasText: "Detected: Typeform" }).first()).toBeVisible();
-  await expect(page.locator("#sig-provider").first()).toHaveValue("typeform");
+  await expect(page.locator("#sig-provider").first()).toHaveText("Typeform");
   await expect(page.locator("#sig-secret").first()).toHaveAttribute(
     "placeholder",
     "your webhook secret"

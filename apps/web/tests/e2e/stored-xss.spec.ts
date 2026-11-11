@@ -162,13 +162,13 @@ test("dashboard renders hostile request payloads inertly", async ({ page }) => {
   });
 
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.getByRole("button", { name: /^body$/i })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("tab", { name: /^body$/i })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(REQUEST_PATH).first()).toBeVisible({ timeout: 15_000 });
 
   await expectNoXssExecution(page, dialogs);
 
   await test.step("body tab keeps the hostile body inert", async () => {
-    await page.getByRole("button", { name: /^body$/i }).click();
+    await page.getByRole("tab", { name: /^body$/i }).click();
 
     const bodyCode = page.locator("code.language-markup").first();
     await expect(bodyCode).toBeVisible();
@@ -206,7 +206,7 @@ test("dashboard renders hostile request payloads inertly", async ({ page }) => {
   });
 
   await test.step("query tab keeps the hostile query param inert", async () => {
-    await page.getByRole("button", { name: /^query$/i }).click();
+    await page.getByRole("tab", { name: /^query\s*,?\s*\d*$/i }).click();
 
     const queryTable = page.locator("table").first();
     await expect(queryTable).toBeVisible();
@@ -259,7 +259,7 @@ test("schema view and share page keep hostile JSON keys inert", async ({ page })
 
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
   await page.getByText(JSON_PATH).first().click();
-  await page.getByRole("button", { name: /^body$/i }).click();
+  await page.getByRole("tab", { name: /^body$/i }).click();
   await page.getByRole("button", { name: "Schema", exact: true }).click();
 
   for (const format of ["TypeScript", "Zod", "Pydantic", "JSON Schema"]) {

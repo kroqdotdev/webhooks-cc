@@ -14,6 +14,16 @@ import {
  */
 
 const DAY = 86_400_000;
+
+// The Parsed pages panel (and its "Extra pages end on" notice) shows only when
+// page blocks are on sale, which needs all four Polar page products in
+// .env.local (getPageProductIds() in lib/polar.ts).
+const PAGE_BLOCKS = [
+  process.env.POLAR_PAGE_BLOCKS_PRODUCT_ID,
+  process.env.POLAR_MONTHLY_PAGE_BLOCKS_PRODUCT_ID,
+  process.env.POLAR_MONTHLY_PAGE_BLOCKS_ADD_PRODUCT_ID,
+  process.env.POLAR_PAGE_OVERAGE_PRODUCT_ID,
+].every(Boolean);
 const users: TestUser[] = [];
 const teams: string[] = [];
 
@@ -42,11 +52,11 @@ test("a free account can start Pro, Business monthly or Business yearly", async 
   await signInTestUser(page, user, "/account/plan");
 
   const plan = page.locator("#plan");
-  await expect(plan.getByRole("button", { name: "Upgrade to Pro, $8 a month" })).toBeVisible({
+  await expect(plan.getByRole("button", { name: /^Upgrade to Pro ?, \$8 a month$/ })).toBeVisible({
     timeout: 15000,
   });
   await expect(
-    plan.getByRole("button", { name: "Upgrade to Business, $29 a month" })
+    plan.getByRole("button", { name: /^Upgrade to Business ?, \$29 a month$/ })
   ).toBeVisible();
   await expect(plan.getByRole("button", { name: "or $290 a year" })).toBeVisible();
   await expect(plan.getByRole("columnheader", { name: /Business/ })).toBeVisible();
@@ -71,7 +81,7 @@ test("Pro moves to Business now, pro rata, after saying so", async ({ page }) =>
   await expect(plan.getByRole("button", { name: "or $290 a year, from the renewal" })).toBeVisible({
     timeout: 15000,
   });
-  await plan.getByRole("button", { name: "Switch to Business, $29 a month" }).click();
+  await plan.getByRole("button", { name: /^Switch to Business ?, \$29 a month$/ }).click();
 
   const dialog = page.getByRole("alertdialog");
   await expect(dialog.getByRole("heading", { name: "Start Business?" })).toBeVisible();
@@ -83,6 +93,7 @@ test("Pro moves to Business now, pro rata, after saying so", async ({ page }) =>
 });
 
 test("a change waiting for the renewal shows, and keeping the plan drops it", async ({ page }) => {
+  test.skip(!PAGE_BLOCKS, "needs the four POLAR_*PAGE* product ids");
   const user = await userWith({
     plan: "business",
     request_limit: 250_000,
@@ -205,6 +216,7 @@ test("a Teams team moves up to Team Business now, after a quote", async ({ page 
 test("a move to Teams waiting for the renewal shows, and keeping Team Business drops it", async ({
   page,
 }) => {
+  test.skip(!PAGE_BLOCKS, "needs the four POLAR_*PAGE* product ids");
   const owner = await userWith({ plan: "free" });
   const teamId = await ownedTeam(owner, {
     ...SUBSCRIBED(),
