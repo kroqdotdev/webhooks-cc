@@ -105,7 +105,9 @@ impl Screen for UsageScreen {
         let allowance_height = if allowances.is_empty() {
             0
         } else {
-            (allowances.len() * 3 - 1 + 4) as u16
+            // Only what the title and the request card leave: on a short
+            // terminal this card shrinks first, never the request card.
+            ((allowances.len() * 3 - 1 + 4) as u16).min(area.height.saturating_sub(2 + 8))
         };
         let chunks = Layout::vertical([
             Constraint::Length(2),                // Title
@@ -206,9 +208,10 @@ impl Screen for UsageScreen {
             if (inner.height as usize) < rows {
                 // Too short even for a line each: every allowance on one line.
                 if inner.height > 0 {
+                    // Short names and bare counts, so it fits an 80-column terminal.
                     let summary = allowances
                         .iter()
-                        .map(|row| format!("{} {}", row.label, row.amount))
+                        .map(|row| format!("{} {}", row.short, row.amount.replace(" / ", "/")))
                         .collect::<Vec<_>>()
                         .join("   ");
                     frame.render_widget(
@@ -309,6 +312,8 @@ fn bar_color(ratio: f64) -> ratatui::style::Color {
 /// One allowance beside requests, as the screen draws it.
 struct AllowanceRow {
     label: &'static str,
+    /// The name in the one-line summary of a very short terminal.
+    short: &'static str,
     ratio: f64,
     amount: String,
     when: String,
@@ -331,6 +336,7 @@ fn allowance_rows(usage: &UsageInfo) -> Vec<AllowanceRow> {
     if let Some(pages) = &usage.parsed_pages {
         rows.push(AllowanceRow {
             label: "Parsed pages",
+            short: "Pages",
             ratio: ratio(pages.used, pages.limit),
             amount: format!("{} / {} pages", pages.used, pages.limit),
             when: match &pages.resets_at {
@@ -343,6 +349,7 @@ fn allowance_rows(usage: &UsageInfo) -> Vec<AllowanceRow> {
         let at = preview.resets_at.as_ref().map(|t| t.display());
         rows.push(AllowanceRow {
             label: "Preview data",
+            short: "Preview",
             ratio: if preview.over {
                 1.0
             } else {
@@ -364,6 +371,7 @@ fn allowance_rows(usage: &UsageInfo) -> Vec<AllowanceRow> {
     if let Some(assists) = &usage.ai_assists {
         rows.push(AllowanceRow {
             label: "AI assists",
+            short: "AI",
             ratio: ratio(assists.used, assists.allowed),
             amount: format!("{} / {}", assists.used, assists.allowed),
             when: match (&assists.next_at, assists.used >= assists.allowed) {
@@ -448,9 +456,9 @@ mod tests {
             assert!(text.contains(label), "{label} missing:\n{text}");
         }
 
-        // A 20-line terminal less the TUI's header and status bar: 16 lines,
+        // An 80x20 terminal less the TUI's header and status bar: 16 lines,
         // a card of two inner lines, so the allowances share one line.
-        let mut terminal = Terminal::new(TestBackend::new(110, 16)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
         terminal
             .draw(|frame| screen.render(frame, frame.area()))
             .unwrap();
@@ -463,8 +471,12 @@ mod tests {
                     + "\n"
             })
             .collect();
-        for label in ["Parsed pages", "Preview data", "AI assists"] {
-            assert!(text.contains(label), "{label} missing at 16 lines:\n{text}");
+        assert!(
+            text.contains("1 / 50 requests"),
+            "request card squeezed:\n{text}"
+        );
+        for part in ["Pages 2/20 pages", "Preview 0 B/1.00 GB", "AI 0/5"] {
+            assert!(text.contains(part), "{part} missing at 80x16:\n{text}");
         }
     }
 
