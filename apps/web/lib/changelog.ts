@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.9.0";
-export const SDK_VERSION = "1.22.0";
-export const PYTHON_SDK_VERSION = "0.6.0";
-export const GO_SDK_VERSION = "0.6.0";
-export const MCP_VERSION = "1.18.0";
+export const CLI_VERSION = "1.10.0";
+export const SDK_VERSION = "1.23.0";
+export const PYTHON_SDK_VERSION = "0.7.0";
+export const GO_SDK_VERSION = "0.7.0";
+export const MCP_VERSION = "1.19.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.10.0",
+    date: "2026-11-11",
+    title: "All Usage in One Place",
+    track: "cli",
+    items: [
+      "`whk usage` shows parsed pages, preview data and AI assists under your requests, each with when it resets or frees up; `--json` now passes the whole `/api/usage` answer on (`parsedPages`, `previewData`, `aiAssists`, and the block, overage and email counts it used to leave out)",
+      "The usage screen in the TUI has an Other Allowances card with a gauge for each; on a short terminal it shrinks before the request card does",
+    ],
+  },
+  {
     version: "1.9.0",
     date: "2026-11-11",
     title: "Share Localhost and Live Tunnels",
@@ -2397,6 +2407,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.23.0",
+    date: "2026-11-11",
+    title: "All Usage in One Place",
+    track: "sdk",
+    items: [
+      "`client.usage()` returns `parsedPages`, `previewData` and `aiAssists` beside requests, typed as `ParsedPagesUsage`, `PreviewDataUsage` and `AiAssistsUsage`; each is null where the server does not offer it",
+    ],
+  },
   {
     version: "1.22.0",
     date: "2026-11-11",
@@ -2780,6 +2799,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.7.0",
+    date: "2026-11-11",
+    title: "All Usage in One Place",
+    track: "python",
+    items: [
+      "`client.usage()` returns `parsed_pages`, `preview_data` and `ai_assists` beside requests (`ParsedPagesUsage`, `PreviewDataUsage`, `AiAssistsUsage`); each is `None` where the server does not offer it",
+    ],
+  },
+  {
     version: "0.6.0",
     date: "2026-11-11",
     title: "Share Localhost",
@@ -2882,6 +2910,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.7.0",
+    date: "2026-11-11",
+    title: "All Usage in One Place",
+    track: "go",
+    items: [
+      "`Usage` carries `ParsedPages`, `PreviewData` and `AIAssists` beside requests; each is nil where the server does not offer it, and a `Usage` written to JSON reads back the same",
+    ],
+  },
+  {
     version: "0.6.0",
     date: "2026-11-11",
     title: "Share Localhost",
@@ -2961,6 +2998,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.19.0",
+    date: "2026-11-11",
+    title: "All Usage in One Place",
+    track: "mcp",
+    items: [
+      "`get_usage` returns parsed pages, preview data and AI assists beside requests, each with when it resets",
+    ],
+  },
   {
     version: "1.18.0",
     date: "2026-11-11",
