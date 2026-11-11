@@ -384,14 +384,15 @@ pub fn allowance_lines(usage: &UsageInfo) -> Vec<(&'static str, String)> {
     let mut lines = Vec::new();
     if let Some(pages) = &usage.parsed_pages {
         let mut text = format!("{}/{}", pages.used, pages.limit);
-        match &pages.overage {
-            Some(overage) if overage.active && overage.used > 0 => {
-                text.push_str(&format!(" (+{} in overage)", overage.used));
-            }
-            _ if pages.credit_pages > 0 => {
-                text.push_str(&format!(" (+{} one-time)", pages.credit_pages));
-            }
-            _ => {}
+        let mut extras = Vec::new();
+        if pages.credit_pages > 0 {
+            extras.push(format!("+{} one-time", pages.credit_pages));
+        }
+        if let Some(overage) = pages.overage.as_ref().filter(|o| o.active && o.used > 0) {
+            extras.push(format!("+{} in overage", overage.used));
+        }
+        if !extras.is_empty() {
+            text.push_str(&format!(" ({})", extras.join(", ")));
         }
         if let Some(resets) = &pages.resets_at {
             text.push_str(&format!(", resets {}", resets.display()));
@@ -433,7 +434,7 @@ mod tests {
         let usage: UsageInfo = serde_json::from_str(
             r#"{"used":0,"limit":50,"remaining":50,"plan":"pro",
                 "parsedPages":{"used":87,"limit":100,"creditPages":1000,
-                    "overage":{"active":false,"used":0,"max":0},"resetsAt":null},
+                    "overage":{"active":true,"used":40,"max":2000},"resetsAt":null},
                 "previewData":{"bytes":3650722202,"limitBytes":26843545600,"over":true,
                     "resetsAt":"not a time"},
                 "aiAssists":{"used":20,"allowed":20,"nextAt":"later"}}"#,
@@ -442,7 +443,10 @@ mod tests {
         assert_eq!(
             allowance_lines(&usage),
             vec![
-                ("Parsed pages:", "87/100 (+1000 one-time)".to_string()),
+                (
+                    "Parsed pages:",
+                    "87/100 (+1000 one-time, +40 in overage)".to_string()
+                ),
                 (
                     "Preview data:",
                     "3.40 GB of 25.00 GB, previews paused until not a time".to_string()

@@ -200,9 +200,19 @@ impl Screen for UsageScreen {
                 .padding(Padding::new(2, 2, 1, 1));
             let inner = card.inner(chunks[2]);
             frame.render_widget(card, chunks[2]);
+            // A short terminal loses the blank lines, then the gauges, before it
+            // loses a row: the counts stay readable at one line each.
+            let rows = allowances.len();
+            let stride: u16 = if inner.height as usize >= rows * 3 - 1 {
+                3
+            } else if inner.height as usize >= rows * 2 {
+                2
+            } else {
+                1
+            };
             for (i, row) in allowances.iter().enumerate() {
-                let y = inner.y + (i as u16) * 3;
-                if y + 1 >= inner.y + inner.height {
+                let y = inner.y + (i as u16) * stride;
+                if y >= inner.y + inner.height {
                     break;
                 }
                 let line = Line::from(vec![
@@ -219,7 +229,9 @@ impl Screen for UsageScreen {
                             .bg(theme::SURFACE_RAISED),
                     )
                     .label("");
-                frame.render_widget(gauge, Rect::new(inner.x, y + 1, inner.width, 1));
+                if stride > 1 {
+                    frame.render_widget(gauge, Rect::new(inner.x, y + 1, inner.width, 1));
+                }
             }
         }
     }
@@ -388,6 +400,38 @@ mod tests {
             text.contains("AI assists    3 / 20  over the last 30 days"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn a_short_terminal_still_shows_every_allowance() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let usage: UsageInfo = serde_json::from_str(
+            r#"{"used":1,"limit":50,"remaining":49,"plan":"free",
+                "parsedPages":{"used":2,"limit":20},
+                "previewData":{"bytes":0,"limitBytes":1073741824},
+                "aiAssists":{"used":0,"allowed":5}}"#,
+        )
+        .unwrap();
+        let mut screen = UsageScreen::new();
+        screen.usage = Some(usage);
+        screen.state = State::Loaded;
+        // Title 2 + request card 8 leaves 7 lines: an inner card of 3.
+        let mut terminal = Terminal::new(TestBackend::new(90, 17)).unwrap();
+        terminal
+            .draw(|frame| screen.render(frame, frame.area()))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text: String = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+                    + "\n"
+            })
+            .collect();
+        for label in ["Parsed pages", "Preview data", "AI assists"] {
+            assert!(text.contains(label), "{label} missing:\n{text}");
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profile";
 import { identifyUser } from "@/lib/analytics";
@@ -22,6 +22,8 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
   const [periodEmails, setPeriodEmails] = useState<number | null>(null);
   /** The plan's other allowances (from /api/usage); null until known. */
   const [allowances, setAllowances] = useState<AllowanceUsage | null>(null);
+  // Refreshes overlap (interval, focus, signals): only the newest usage read applies.
+  const usageRead = useRef(0);
   const [loading, setLoading] = useState(true);
   const accessToken = session?.access_token ?? null;
 
@@ -44,11 +46,13 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
     setLoading(false);
 
     if (live && accessToken) {
+      const read = ++usageRead.current;
       void fetch("/api/usage", { headers: { Authorization: `Bearer ${accessToken}` } })
         .then((res) =>
           res.ok ? (res.json() as Promise<Partial<AllowanceUsage> & { emails?: number }>) : null
         )
         .then((usage) => {
+          if (read !== usageRead.current) return;
           setPeriodEmails(typeof usage?.emails === "number" ? usage.emails : null);
           // A failed read keeps what is shown rather than blanking the meters.
           if (usage) {
@@ -59,7 +63,9 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
             });
           }
         })
-        .catch(() => setPeriodEmails(null));
+        .catch(() => {
+          if (read === usageRead.current) setPeriodEmails(null);
+        });
     }
 
     if (data) {

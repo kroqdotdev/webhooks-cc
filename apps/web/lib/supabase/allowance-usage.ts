@@ -54,13 +54,13 @@ export interface AllowanceUsage {
 export async function getAllowanceUsage(userId: string): Promise<AllowanceUsage> {
   const [parsedPages, previewData, aiAssists] = await Promise.all([
     softly("parsed pages", () => parsedPagesOf(userId)),
-    tunnelConfig() ? softly("preview data", () => previewDataOf(userId)) : null,
-    aiOffered() ? softly("AI assists", () => aiAssistsOf(userId)) : null,
+    softly("preview data", () => (tunnelConfig() ? previewDataOf(userId) : null)),
+    softly("AI assists", () => (aiOffered() ? aiAssistsOf(userId) : null)),
   ]);
   return { parsedPages, previewData, aiAssists };
 }
 
-async function softly<T>(what: string, read: () => Promise<T | null>): Promise<T | null> {
+async function softly<T>(what: string, read: () => Promise<T | null> | null): Promise<T | null> {
   try {
     return await read();
   } catch (error) {

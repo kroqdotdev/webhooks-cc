@@ -120,11 +120,16 @@ export function AllowanceMeters({
           limit={parsedPages.limit}
           amount={{ used: count(parsedPages.used), of: `${count(parsedPages.limit)} pages` }}
           extra={
-            parsedPages.overage.active && parsedPages.overage.used > 0
-              ? `${count(parsedPages.overage.used)} in overage`
-              : parsedPages.creditPages > 0
+            [
+              parsedPages.creditPages > 0
                 ? `plus ${count(parsedPages.creditPages)} one-time pages`
-                : null
+                : null,
+              parsedPages.overage.active && parsedPages.overage.used > 0
+                ? `${count(parsedPages.overage.used)} in overage`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(", ") || null
           }
         />
       )}

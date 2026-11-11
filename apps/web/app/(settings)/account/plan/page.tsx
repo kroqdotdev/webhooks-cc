@@ -430,7 +430,8 @@ export default function PlanPage() {
         <ParsedPagesPanel
           accessToken={accessToken}
           canManage
-          showUsage={false}
+          // The meter above shows the pages; the panel's own row stands in when it could not.
+          showUsage={allowances !== null && !allowances.parsedPages}
           reloadKey={[
             profile.plan,
             profile.subscription_status,
