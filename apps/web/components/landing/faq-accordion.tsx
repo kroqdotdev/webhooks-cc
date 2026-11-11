@@ -19,7 +19,7 @@ export function FAQAccordion({ items }: FAQAccordionProps) {
         return (
           <div
             key={item.question}
-            className={`border border-border rounded-lg bg-card transition-all ${isOpen ? "shadow-md" : "shadow-xs"}`}
+            className={`border border-border rounded-lg bg-card transition-all ${isOpen ? "shadow-float" : "shadow-surface"}`}
           >
             <button
               id={buttonId}

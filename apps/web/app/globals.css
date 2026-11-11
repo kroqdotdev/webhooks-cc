@@ -3,14 +3,14 @@
 
 /*
  * The look: paper and ink. A cool paper canvas with white surfaces on it,
- * hairlines instead of shadows, and one pine green (the brand mint pulled
- * down to ink) for buttons, links and selection alike. Light and dark mode
- * are the .dark class on <html> (ThemeProvider and the inline script from
- * lib/theme.ts), so there are two token sets below.
+ * edged by hairlines rather than drop shadows, and one pine green (the brand
+ * mint pulled down to ink) for buttons, links and selection alike. Light and
+ * dark mode are the .dark class on <html> (ThemeProvider and the inline script
+ * from lib/theme.ts); the token values for both are in the base layer below.
  *
- * Resting surfaces carry shadow-xs at most; only floating layers (menus,
- * dialogs, the docs navbar) lift with shadow-md or shadow-lg, which are
- * tinted to the ink.
+ * A resting surface carries at most shadow-surface, a barely visible 1px
+ * shadow; only floating layers (menus, dialogs, the docs navbar) lift with
+ * shadow-float or shadow-float-lg. All three are tinted to the ink.
  */
 /* dark: follows the theme toggle (the .dark class ThemeProvider sets on <html>), not the OS */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -80,15 +80,15 @@ body {
   --color-method-put: hsl(var(--method-put));
   --color-method-delete: hsl(var(--method-delete));
   --color-kind-email: hsl(var(--kind-email));
-  --color-kind-email-ink: hsl(var(--kind-email-ink));
   --color-staff: hsl(var(--staff));
   --color-staff-wash: hsl(var(--staff-wash));
   --color-staff-line: hsl(var(--staff-line));
 
-  /* Shadows tinted to the ink, deeper in dark mode */
-  --shadow-xs: var(--elevation-sm);
-  --shadow-md: var(--elevation);
-  --shadow-lg: var(--elevation-lg);
+  /* Shadows tinted to the ink, deeper in dark mode: shadow-surface for a
+     resting surface, shadow-float and shadow-float-lg for floating layers */
+  --shadow-surface: var(--elevation-sm);
+  --shadow-float: var(--elevation);
+  --shadow-float-lg: var(--elevation-lg);
 }
 
 @layer base {
@@ -142,7 +142,6 @@ body {
     --method-delete: 2 70% 40%;
     /* Captured emails: a blue dark enough to be text on the page */
     --kind-email: 222 70% 45%;
-    --kind-email-ink: 222 70% 45%;
     /* Staff: ochre, for what only staff see (notes, the support view band, ops). */
     --staff: 36 80% 30%;
     --staff-wash: 44 92% 93%;
@@ -193,7 +192,6 @@ body {
     --method-put: 258 85% 76%;
     --method-delete: 2 85% 68%;
     --kind-email: 213 90% 70%;
-    --kind-email-ink: 213 90% 70%;
     --staff: 40 85% 64%;
     --staff-wash: 38 40% 13%;
     --staff-line: 38 45% 32%;
@@ -301,7 +299,7 @@ body {
   /* Card: a hairline on a white surface. One that can be clicked darkens
      its hairline on hover instead of lifting. */
   .ui-card {
-    @apply border border-border rounded-lg bg-card p-6 shadow-xs;
+    @apply border border-border rounded-lg bg-card p-6 shadow-surface;
     transition: border-color 150ms;
   }
 
@@ -318,7 +316,7 @@ body {
   .ui-btn-secondary,
   .ui-btn-outline {
     /* Not transition-all: the focus outline must appear at once, not fade in from currentColor. */
-    @apply border border-border rounded-md px-4 py-2 text-sm font-medium shadow-xs transition-[background-color,color,box-shadow,border-color] cursor-pointer;
+    @apply border border-border rounded-md px-4 py-2 text-sm font-medium shadow-surface transition-[background-color,color,box-shadow,border-color] cursor-pointer;
   }
 
   .ui-btn-primary {

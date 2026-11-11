@@ -324,7 +324,7 @@ export function NamesPanel({
       </AlertDialog>
 
       <Dialog open={passwordFor !== null} onOpenChange={(open) => !open && setPasswordFor(null)}>
-        <DialogContent className="ph-no-capture max-w-md border border-border shadow-md">
+        <DialogContent className="ph-no-capture max-w-md border border-border shadow-float">
           <form onSubmit={(event) => void savePassword(event)} className="space-y-4">
             <DialogHeader>
               <DialogTitle>Password for {passwordFor?.name}</DialogTitle>

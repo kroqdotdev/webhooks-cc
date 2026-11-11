@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { themeBootstrapScript } from "./theme";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { readStoredTheme, themeBootstrapScript } from "./theme";
 
 /** Runs the inline bootstrap script against a fake browser. */
 function run(options: {
@@ -37,5 +37,37 @@ describe("themeBootstrapScript", () => {
 
   it("still honors the system theme when storage is blocked", () => {
     expect(run({ blockStorage: true, prefersDark: true }).dark).toBe(true);
+  });
+});
+
+describe("readStoredTheme", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stub(value: string | null, blocked = false) {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        if (blocked) throw new Error("storage blocked");
+        return value;
+      },
+    });
+  }
+
+  it("returns light or dark as stored", () => {
+    stub("dark");
+    expect(readStoredTheme()).toBe("dark");
+    stub("light");
+    expect(readStoredTheme()).toBe("light");
+  });
+
+  it("follows the system for anything else, as the bootstrap script does", () => {
+    for (const value of [null, "system", "classic", ""]) {
+      stub(value);
+      expect(readStoredTheme()).toBe("system");
+      expect(run({ storage: value === null ? {} : { theme: value } }).dark).toBe(false);
+    }
+    stub(null, true);
+    expect(readStoredTheme()).toBe("system");
   });
 });

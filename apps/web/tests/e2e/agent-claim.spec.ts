@@ -112,6 +112,9 @@ for (const theme of ["light", "dark"] as const) {
       clientName: `E2E agent ${theme}`,
     });
     await openAs(page, owner, `/agent/claim?attempt=${attempt}`, theme);
+    await (theme === "dark"
+      ? expect(page.locator("html")).toHaveClass(/\bdark\b/)
+      : expect(page.locator("html")).not.toHaveClass(/\bdark\b/));
 
     const panel = page.getByTestId("agent-claim");
     await expect(panel.getByRole("heading", { name: "Connect an agent" })).toBeVisible({
@@ -148,6 +151,7 @@ test(`links an identity provider's identity`, async ({ page }) => {
     idjagIss: "https://idp.e2e.example",
   });
   await openAs(page, owner, `/agent/claim?attempt=${attempt}`, "dark");
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
   const panel = page.getByTestId("agent-claim");
   await expect(panel.getByRole("heading", { name: "Connect an agent" })).toBeVisible({
     timeout: 15000,

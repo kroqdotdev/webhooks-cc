@@ -139,9 +139,9 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
           Replay
         </button>
       </DialogTrigger>
-      <DialogContent className="border border-border shadow-md">
+      <DialogContent className="border border-border shadow-float">
         <DialogHeader>
-          <DialogTitle className="font-bold">Replay request</DialogTitle>
+          <DialogTitle className="font-bold tracking-normal">Replay request</DialogTitle>
           <DialogDescription>
             Send this captured request to another URL. Requests are made from your browser, so
             localhost URLs work for local development testing.

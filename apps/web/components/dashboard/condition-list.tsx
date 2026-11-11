@@ -66,7 +66,7 @@ function ChoiceSelect({
       <SelectTrigger aria-label={label} className={cn(triggerClass, className)}>
         <SelectValue placeholder="Choose" />
       </SelectTrigger>
-      <SelectContent className="border border-border shadow-md max-h-80">
+      <SelectContent className="border border-border shadow-float max-h-80">
         {listed.map((choice) => (
           <SelectItem key={choice.value} value={choice.value} className="text-[13px]">
             {choice.label}

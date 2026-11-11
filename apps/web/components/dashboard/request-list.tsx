@@ -613,7 +613,7 @@ export function RequestList({
       {ctxMenu && (
         <div
           ref={ctxRef}
-          className="fixed z-50 overflow-hidden rounded-lg border border-border bg-background shadow-md min-w-[160px]"
+          className="fixed z-50 overflow-hidden rounded-lg border border-border bg-background shadow-float min-w-[160px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
           {onTogglePin && (
@@ -792,7 +792,7 @@ export function RequestList({
         >
           {sender && <span className="text-xs text-muted-foreground truncate">{sender}</span>}
           {email?.tag && (
-            <span className="text-xs font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
+            <span className="text-xs font-mono font-semibold text-kind-email truncate max-w-[40%]">
               +{email.tag}
             </span>
           )}

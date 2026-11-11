@@ -79,7 +79,7 @@ function shown(locator: Locator) {
 
 async function openSettings(page: Page, section: string) {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold", { hasText: "Fields E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "Fields E2E" })).toBeVisible({
     timeout: 15000,
   });
   await page

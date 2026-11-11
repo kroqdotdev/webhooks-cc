@@ -258,10 +258,9 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center border border-border rounded-lg cursor-pointer transition-colors motion-reduce:transition-none",
+        "relative inline-flex h-6 w-11 shrink-0 items-center border border-border rounded-full cursor-pointer transition-colors motion-reduce:transition-none",
         "disabled:cursor-not-allowed disabled:opacity-60",
-        "rounded-full",
-        // Off, clean's track takes the control boundary colour so it reads at 3:1.
+        // Off, the track takes the control boundary colour so it reads at 3:1.
         checked ? "bg-primary" : "bg-muted border-input"
       )}
     >
@@ -388,7 +387,7 @@ export function Segmented<T extends string>({
               index > 0 && "border-l border-border",
               stack && "max-sm:text-left",
               stack && index > 0 && "max-sm:border-l-0 max-sm:border-t",
-              // Clean's selected tint alone is too faint (WCAG 1.4.11), so the
+              // The selected tint alone is too faint (WCAG 1.4.11), so the
               // choice also gets a primary underline, or a side bar when stacked.
               checked
                 ? cn(

@@ -134,9 +134,9 @@ export function ShareRequestDialog({
           Share
         </button>
       </DialogTrigger>
-      <DialogContent className="border border-border shadow-md">
+      <DialogContent className="border border-border shadow-float">
         <DialogHeader>
-          <DialogTitle className="font-bold">Share request</DialogTitle>
+          <DialogTitle className="font-bold tracking-normal">Share request</DialogTitle>
           <DialogDescription>
             A read-only link to a copy of this request, for a pull request, a ticket or a chat.
             Anyone with the link can open it, no account needed.

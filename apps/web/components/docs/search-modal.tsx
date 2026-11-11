@@ -146,7 +146,7 @@ export function SearchModal() {
             event.preventDefault();
             inputRef.current?.focus();
           }}
-          className="fixed left-1/2 top-[15vh] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border border-border bg-background shadow-md"
+          className="fixed left-1/2 top-[15vh] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border border-border bg-background shadow-float"
         >
           <DialogPrimitive.Title className="sr-only">Search documentation</DialogPrimitive.Title>
         {/* Input */}

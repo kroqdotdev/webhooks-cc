@@ -97,7 +97,7 @@ export function FeaturePage({
             <ol className="space-y-4">
               {feature.steps.map((step, i) => (
                 <li key={step.name} className="flex gap-4">
-                  <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-xs">
+                  <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                     {i + 1}
                   </span>
                   <div>

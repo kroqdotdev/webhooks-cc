@@ -6,7 +6,22 @@
  * localStorage) or the system preference and applies it before React loads.
  */
 
+export type Theme = "light" | "dark" | "system";
+
 export const THEME_STORAGE_KEY = "theme";
+
+/**
+ * The stored choice, read the way the bootstrap script reads it: anything
+ * other than light or dark (nothing stored, blocked storage) follows the system.
+ */
+export function readStoredTheme(): Theme {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "light" || stored === "dark" ? stored : "system";
+  } catch {
+    return "system";
+  }
+}
 
 /** Source of the script that sets the dark mode class before first paint. */
 export function themeBootstrapScript(): string {

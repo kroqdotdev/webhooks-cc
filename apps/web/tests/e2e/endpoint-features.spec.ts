@@ -108,7 +108,7 @@ function shown(locator: Locator) {
 
 async function openDashboard(page: Page) {
   await signInTestUser(page, user, `/dashboard?endpoint=${slug}`);
-  await expect(page.locator("span.font-bold", { hasText: NAME })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: NAME })).toBeVisible({
     timeout: 15000,
   });
 }

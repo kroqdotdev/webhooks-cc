@@ -16,7 +16,7 @@ export function PrevNextNav({ prev, next }: { prev: NavLink | null; next: NavLin
         {prev ? (
           <SiteLink
             href={prev.href}
-            className="group flex items-center gap-3 p-4 rounded-lg border border-border bg-card shadow-xs hover:shadow-md transition-all no-underline"
+            className="group flex items-center gap-3 p-4 rounded-lg border border-border bg-card shadow-surface hover:shadow-float transition-all no-underline"
           >
             <ArrowLeft className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors" />
             <div className="text-right flex-1">
@@ -30,7 +30,7 @@ export function PrevNextNav({ prev, next }: { prev: NavLink | null; next: NavLin
         {next ? (
           <SiteLink
             href={next.href}
-            className="group flex items-center gap-3 p-4 rounded-lg border border-border bg-card shadow-xs hover:shadow-md transition-all no-underline"
+            className="group flex items-center gap-3 p-4 rounded-lg border border-border bg-card shadow-surface hover:shadow-float transition-all no-underline"
           >
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">{next.section}</p>

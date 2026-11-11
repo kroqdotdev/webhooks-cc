@@ -285,7 +285,7 @@ export default function MailhooksHome() {
                 className={`ui-card relative block ${plan.name === "Business" ? "border-primary" : ""}`}
               >
                 {plan.name === "Business" && (
-                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-xs">
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-surface">
                     Best for parsing
                   </span>
                 )}

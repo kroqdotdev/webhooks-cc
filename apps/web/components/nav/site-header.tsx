@@ -257,7 +257,7 @@ export function SiteHeader({
                 setOpen(false);
               }
             }}
-            className="md:hidden absolute top-full left-0 right-0 border-t border-border shadow-md bg-card"
+            className="md:hidden absolute top-full left-0 right-0 border-t border-border shadow-float bg-card"
           >
             <div className="px-4 py-4 flex flex-col gap-3">
               <SiteSwitchRow onNavigate={() => setOpen(false)} />

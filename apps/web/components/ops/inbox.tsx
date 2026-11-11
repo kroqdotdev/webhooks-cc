@@ -459,7 +459,7 @@ function TicketPane({
                 Saved replies <kbd className="font-mono">/</kbd>
               </button>
               {pickerOpen && (
-                <div className="absolute right-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-md">
+                <div className="absolute right-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-float">
                   {saved === null ? (
                     <p className="p-2 text-xs text-muted-foreground">Loading...</p>
                   ) : saved.length === 0 ? (

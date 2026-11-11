@@ -41,7 +41,7 @@ export function TemplateImportDialog({
     // takes the template out of the URL).
     return (
       <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="border border-border shadow-md">
+        <DialogContent className="border border-border shadow-float">
           <DialogHeader>
             <DialogTitle className="font-bold">That layout is not available</DialogTitle>
             <DialogDescription>
@@ -73,7 +73,7 @@ export function TemplateImportDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="border border-border shadow-md">
+      <DialogContent className="border border-border shadow-float">
         <DialogHeader>
           <DialogTitle className="font-bold">Add the {template.layout.name} layout</DialogTitle>
           <DialogDescription>

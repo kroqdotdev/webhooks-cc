@@ -135,7 +135,7 @@ export function StatusCodePicker({
           >
             <SelectValue placeholder="Select status" />
           </SelectTrigger>
-          <SelectContent className="border border-border shadow-md">
+          <SelectContent className="border border-border shadow-float">
             {STATUS_CODES.map((group, i) => (
               <SelectGroup key={group.group}>
                 {i > 0 && <SelectSeparator className="bg-foreground/20" />}

@@ -387,7 +387,7 @@ console.log(endpoint.url);`}
                           href={cursorUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-xs hover:shadow-none transition-all hover:bg-muted"
+                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-surface hover:shadow-none transition-all hover:bg-muted"
                         >
                           Add to Cursor
                         </a>
@@ -402,7 +402,7 @@ console.log(endpoint.url);`}
                           href={VSCODE_URL}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-xs hover:shadow-none transition-all hover:bg-muted"
+                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-surface hover:shadow-none transition-all hover:bg-muted"
                         >
                           Add to VS Code
                         </a>

@@ -1332,7 +1332,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             avoidCollisions={false}
             // Focus goes to the added layout's name, not back to the trigger below it.
             onCloseAutoFocus={(e) => e.preventDefault()}
-            className="w-72 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border border-border shadow-md"
+            className="w-72 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border border-border shadow-float"
             onKeyDown={(e) => {
               // Typing anywhere in the menu filters the senders (instead of
               // the menu's own jump to the item starting with that letter).
@@ -1403,7 +1403,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             )}
             {menuGroups.map((group) => (
               <DropdownMenuGroup key={group.name}>
-                <DropdownMenuLabel className=" text-[11px] text-muted-foreground font-medium pt-2 pb-1">
+                <DropdownMenuLabel className="text-[11px] text-muted-foreground font-medium pt-2 pb-1">
                   {group.name}
                 </DropdownMenuLabel>
                 {group.templates.map((template) => (
@@ -1467,7 +1467,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))] border border-border shadow-md">
+                <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))] border border-border shadow-float">
                   <SelectItem value={NEWEST_SAMPLE} className="text-[13px]">
                     The newest email
                     {sampleId ? "" : `, "${preview.request.subject || "(no subject)"}"`}

@@ -261,9 +261,9 @@ export function SendWebhookDialog({
           </button>
         </DialogTrigger>
       )}
-      <DialogContent className="border border-border shadow-md max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="border border-border shadow-float max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-bold">Send a test request</DialogTitle>
+          <DialogTitle className="font-bold tracking-normal">Send a test request</DialogTitle>
           <DialogDescription className="sr-only">
             Send a test request to this endpoint
           </DialogDescription>

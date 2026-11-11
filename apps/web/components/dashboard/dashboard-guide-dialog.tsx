@@ -544,7 +544,7 @@ export function DashboardGuideDialog({
           {/* Sidebar */}
           <nav className="w-52 shrink-0 border-r border-border overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
-              <DialogTitle className="text-sm">Dashboard guide</DialogTitle>
+              <DialogTitle className="text-sm tracking-normal">Dashboard guide</DialogTitle>
             </DialogHeader>
             <div className="space-y-0.5">
               {SECTIONS.map((section) => (
@@ -567,7 +567,7 @@ export function DashboardGuideDialog({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2 tracking-normal">
               {current.icon}
               {current.title}
             </h2>

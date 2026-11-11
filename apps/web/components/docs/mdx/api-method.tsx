@@ -23,7 +23,7 @@ export function ApiMethod({
   const color = METHOD_COLORS[method.toUpperCase()] ?? "bg-muted text-foreground";
 
   return (
-    <div className="my-8 rounded-lg border border-border bg-card shadow-xs">
+    <div className="my-8 rounded-lg border border-border bg-card shadow-surface">
       <div className="border-b border-border p-4">
         <div className="flex items-center gap-3 mb-1">
           <span

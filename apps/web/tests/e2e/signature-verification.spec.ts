@@ -78,7 +78,7 @@ async function pickOption(
 
 async function openDashboard(page: import("@playwright/test").Page) {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold", { hasText: "Sig Verify E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "Sig Verify E2E" })).toBeVisible({
     timeout: 10000,
   });
 }
@@ -318,7 +318,7 @@ test("configure signing secret and save", async ({ page }) => {
 
   // Navigate again so endpoint settings are read back from persisted state.
   await page.goto(`/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold", { hasText: "Sig Verify E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "Sig Verify E2E" })).toBeVisible({
     timeout: 10000,
   });
 

@@ -23,7 +23,7 @@ function buildCursorUrl(apiKey: string) {
 }
 
 const BTN =
-  "inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border bg-background font-bold text-sm shadow-xs hover:shadow-none transition-all hover:bg-muted";
+  "inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border bg-background font-bold text-sm shadow-surface hover:shadow-none transition-all hover:bg-muted";
 
 function CodeBlock({ children, copyText }: { children: string; copyText?: string }) {
   return (

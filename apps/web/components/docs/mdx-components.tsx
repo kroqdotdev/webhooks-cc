@@ -46,7 +46,7 @@ export const mdxComponents: MDXComponents = {
   },
 
   table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
-    <div className="my-6 overflow-x-auto rounded-lg border border-border shadow-xs">
+    <div className="my-6 overflow-x-auto rounded-lg border border-border shadow-surface">
       <table className="w-full text-sm" {...props} />
     </div>
   ),

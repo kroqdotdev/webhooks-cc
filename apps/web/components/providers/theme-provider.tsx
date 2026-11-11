@@ -1,9 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { THEME_STORAGE_KEY } from "@/lib/theme";
+import { readStoredTheme, THEME_STORAGE_KEY, type Theme } from "@/lib/theme";
 
-export type Theme = "light" | "dark" | "system";
+export type { Theme };
 
 interface ThemeContextType {
   theme: Theme;
@@ -18,15 +18,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");
 
   useEffect(() => {
-    let stored: Theme | null = null;
-    try {
-      stored = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
-    } catch {
-      // Storage is blocked: follow the system.
-    }
-    if (stored) {
-      setTheme(stored);
-    }
+    setTheme(readStoredTheme());
   }, []);
 
   useEffect(() => {

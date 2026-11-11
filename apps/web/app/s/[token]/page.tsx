@@ -92,7 +92,7 @@ export default async function SharedRequestPage({ params }: PageProps) {
           </div>
         )}
 
-        <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-lg border border-border bg-background shadow-md">
+        <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-lg border border-border bg-background shadow-float">
           <RequestDetail request={snapshotToRequest(snapshot, token)} />
         </div>
 

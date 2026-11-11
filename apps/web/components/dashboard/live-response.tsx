@@ -40,7 +40,7 @@ export function LiveResponseView({ response }: { response: LiveResponse }) {
       ) : (
         <>
           <section className="space-y-2">
-            <h3 className="text-[11px] font-mono font-bold text-muted-foreground">
+            <h3 className="text-[11px] font-mono font-bold text-muted-foreground tracking-normal">
               Headers <span className="font-normal">{headers.length}</span>
             </h3>
             {headers.length === 0 ? (
@@ -61,7 +61,9 @@ export function LiveResponseView({ response }: { response: LiveResponse }) {
             )}
           </section>
           <section className="space-y-2">
-            <h3 className="text-[11px] font-mono font-bold text-muted-foreground">Body</h3>
+            <h3 className="text-[11px] font-mono font-bold text-muted-foreground tracking-normal">
+              Body
+            </h3>
             {response.body === "" ? (
               <p className="text-sm text-muted-foreground">(empty body)</p>
             ) : text === null ? (

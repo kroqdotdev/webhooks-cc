@@ -405,7 +405,7 @@ export function RequestDetail({
                 }}
                 className={cn(
                   "px-4 py-2 text-xs font-bold border-r border-border last:border-r-0 cursor-pointer transition-colors whitespace-nowrap capitalize",
-                  // Clean's tint alone is too faint, so the active tab also gets a primary underline.
+                  // The tint alone is too faint, so the active tab also gets a primary underline.
                   tab === t
                     ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                     : "bg-background hover:bg-muted"
@@ -691,7 +691,7 @@ function BodyCopyDropdown({
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border border-border bg-background shadow-md z-50 min-w-[180px]">
+        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border border-border bg-background shadow-float z-50 min-w-[180px]">
           {options.map((opt, i) => (
             <button
               key={opt.key}

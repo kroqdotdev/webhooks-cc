@@ -138,7 +138,7 @@ async function setup(
 
 async function openSettings(page: Page, user: TestUser, endpointSlug: string) {
   await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold", { hasText: "AI E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "AI E2E" })).toBeVisible({
     timeout: 15000,
   });
   await page

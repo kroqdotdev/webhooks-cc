@@ -80,7 +80,7 @@ export function PricingPlans({ headingLevel = "h3" }: PricingPlansProps) {
 
         {/* Pro Plan */}
         <div className="ui-card border-primary relative flex flex-col">
-          <div className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-xs">
+          <div className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-surface">
             Popular
           </div>
           <div className="mb-6">

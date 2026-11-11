@@ -2177,7 +2177,7 @@ function ExportDropdown({
           <ChevronDown className="h-3 w-3 hidden sm:block" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="border border-border shadow-md">
+      <DropdownMenuContent align="end" className="border border-border shadow-float">
         <DropdownMenuItem onSelect={onExportJson}>
           <Download className="h-3.5 w-3.5" />
           Export JSON
@@ -2590,7 +2590,7 @@ function AutoCreateEndpoint({
           <div className="w-16 h-16 rounded-md border border-border bg-muted flex items-center justify-center mx-auto mb-2">
             <Send className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h2 className="text-xl font-bold">No endpoints yet</h2>
+          <h2 className="text-xl font-bold tracking-normal">No endpoints yet</h2>
           <p className="text-muted-foreground max-w-sm">{error}</p>
           <button onClick={handleRetry} className="ui-btn-primary">
             Try again
@@ -2657,7 +2657,7 @@ function NoEndpointsHere({
             <Send className="h-8 w-8 text-muted-foreground" />
           )}
         </div>
-        <h2 className="text-xl font-bold">
+        <h2 className="text-xl font-bold tracking-normal">
           {site.key === "mailhooks"
             ? "Start receiving email here"
             : `Start capturing on ${site.name}`}

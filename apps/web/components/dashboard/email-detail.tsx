@@ -144,7 +144,7 @@ function TaggedAddress({ address }: { address: string }) {
   return (
     <span className="font-mono text-[13px]">
       {local.slice(0, plus)}
-      <span className="font-semibold text-kind-email-ink">{local.slice(plus)}</span>
+      <span className="font-semibold text-kind-email">{local.slice(plus)}</span>
       {domain}
     </span>
   );
@@ -168,7 +168,7 @@ function AddressLine({ addresses }: { addresses: EmailAddress[] }) {
   );
 }
 
-/** Pass and fail look like the method badges of each style; "none" is plain text. */
+/** Pass and fail look like the method badges; "none" is plain text. */
 function VerdictBadge({ verdict, label }: { verdict: Verdict; label: string }) {
   if (verdict === "none") {
     return <span className="font-mono text-[11.5px] text-muted-foreground">{label}</span>;
@@ -176,8 +176,7 @@ function VerdictBadge({ verdict, label }: { verdict: Verdict; label: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 h-6 px-2 font-mono text-[11.5px] font-bold rounded-sm border border-border",
-        "border-transparent font-medium",
+        "inline-flex items-center gap-1 h-6 px-2 font-mono text-[11.5px] font-medium rounded-sm border border-transparent",
         verdict === "pass"
           ? "bg-method-get/15 text-method-get"
           : "bg-method-delete/15 text-method-delete"
@@ -345,7 +344,7 @@ function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
   const warnings = count("warn");
   return (
     <section className="ui-card ui-card-static p-4!">
-      <h3 className="text-sm font-bold mb-1">Deliverability</h3>
+      <h3 className="text-sm font-bold mb-1 tracking-normal">Deliverability</h3>
       <p className="text-sm py-2">
         {fails + warnings === 0
           ? "Nothing to fix: this email is set up the way Gmail, Yahoo and Outlook expect."
@@ -407,14 +406,14 @@ function Pick({
   return (
     <span
       className={cn(
-        "inline-flex items-stretch h-8 min-w-0 max-w-full border border-border rounded-md bg-card shadow-xs overflow-hidden",
+        "inline-flex items-stretch h-8 min-w-0 max-w-full border border-border rounded-md bg-card shadow-surface overflow-hidden",
         wide && "md:max-w-[460px]"
       )}
     >
       <span
         className={cn(
           "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r border-border shrink-0 max-w-[220px] max-sm:max-w-[120px] max-sm:px-2",
-          exactLabel ? "font-mono" : ""
+          exactLabel && "font-mono"
         )}
         title={label}
       >
@@ -633,7 +632,7 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
       )}
       <div className="grid justify-items-center grid-cols-[minmax(0,1fr)] bg-muted/60 rounded-lg py-8 px-4">
         <div
-          className="w-full bg-white border border-border rounded-md shadow-lg overflow-hidden"
+          className="w-full bg-white border border-border rounded-md shadow-float-lg overflow-hidden"
           style={{ maxWidth: width === "mobile" ? 390 : 680 }}
         >
           <iframe
@@ -678,7 +677,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
   const scored = spam.score !== null && spam.required !== null && spam.action !== null;
   return (
     <section className="ui-card ui-card-static p-4!">
-      <h3 className="text-sm font-bold mb-1">Spam score</h3>
+      <h3 className="text-sm font-bold mb-1 tracking-normal">Spam score</h3>
       {!scored ? (
         <p className="text-sm text-muted-foreground py-2">
           No score for this email{spam.error ? ` (${spam.error})` : ""}. It was captured as usual.
@@ -759,7 +758,7 @@ function AuthenticationPane({
   return (
     <div className="grid gap-4 max-w-[860px]">
       <section className="ui-card ui-card-static p-4!">
-        <h3 className="text-sm font-bold mb-1">Sender checks</h3>
+        <h3 className="text-sm font-bold mb-1 tracking-normal">Sender checks</h3>
         {isTest ? (
           <p className="text-sm text-muted-foreground py-2">
             This is a test email sent from the dashboard, so SPF, DKIM and DMARC do not apply. Mail
@@ -851,7 +850,7 @@ function AuthenticationPane({
       {report && <DeliverabilitySection report={report} />}
       {email.spam && <SpamSection spam={email.spam} />}
       <section className="ui-card ui-card-static p-4!">
-        <h3 className="text-sm font-bold mb-1">Delivery</h3>
+        <h3 className="text-sm font-bold mb-1 tracking-normal">Delivery</h3>
         {/* Two columns from sm up; on a phone each value goes under its label. */}
         <dl className="grid grid-cols-1 sm:grid-cols-[minmax(120px,200px)_1fr] text-sm">
           {[

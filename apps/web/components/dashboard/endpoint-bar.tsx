@@ -97,7 +97,7 @@ export function AddressPill({
     <span
       className={cn(
         // On a phone the value wraps rather than losing its end to an ellipsis.
-        "inline-flex items-stretch h-9 max-sm:h-auto max-sm:min-h-9 min-w-0 border border-border rounded-md bg-background shadow-xs overflow-hidden",
+        "inline-flex items-stretch h-9 max-sm:h-auto max-sm:min-h-9 min-w-0 border border-border rounded-md bg-background shadow-surface overflow-hidden",
         className
       )}
     >
@@ -237,7 +237,7 @@ function SetupMenu({
           {label}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64 border border-border shadow-md">
+      <DropdownMenuContent align="end" className="w-64 border border-border shadow-float">
         <SetupItems
           setup={setup}
           slug={slug}
@@ -363,7 +363,7 @@ function SendMenu({
           <ChevronDown className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72 border border-border shadow-md">
+      <DropdownMenuContent align="end" className="w-72 border border-border shadow-float">
         <SendItems send={send} canEmail={canEmail} mailFirst={mailFirst} />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -381,7 +381,7 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
           ? "sr-only"
           : // A toast at the foot of the screen where Send sits in Actions
             // (phones and tablets), inline text next to Send on wide screens.
-            "fixed inset-x-4 bottom-4 z-50 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-xs md:inset-x-auto md:right-4 md:max-w-[320px] lg:static lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+            "fixed inset-x-4 bottom-4 z-50 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-surface md:inset-x-auto md:right-4 md:max-w-[320px] lg:static lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
         status?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
       )}
       title={status?.text}
@@ -463,7 +463,7 @@ function ActionsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="w-72 max-w-[calc(100vw-2rem)] border border-border shadow-md"
+        className="w-72 max-w-[calc(100vw-2rem)] border border-border shadow-float"
       >
         {copyItems.length > 0 && (
           <>

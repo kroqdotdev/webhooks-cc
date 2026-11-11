@@ -161,7 +161,7 @@ export function DocsSidebar() {
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border border-border bg-background shadow-xs cursor-pointer"
+        className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border border-border bg-background shadow-surface cursor-pointer"
         style={{ top: s.toggle }}
         aria-expanded={mobileOpen}
         aria-label={mobileOpen ? "Close docs contents" : "Open docs contents"}
@@ -187,7 +187,7 @@ export function DocsSidebar() {
         aria-label="Documentation navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r border-border shadow-md overflow-y-auto pt-16 pb-6 px-2 transition-transform bg-card",
+          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r border-border shadow-float overflow-y-auto pt-16 pb-6 px-2 transition-transform bg-card",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ top: s.panel }}

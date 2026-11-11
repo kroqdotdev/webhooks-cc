@@ -92,7 +92,7 @@ function shown(locator: Locator) {
 
 async function openDashboard(page: Page, user: TestUser) {
   await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold", { hasText: "HTTP forwarding E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "HTTP forwarding E2E" })).toBeVisible({
     timeout: 15000,
   });
 }

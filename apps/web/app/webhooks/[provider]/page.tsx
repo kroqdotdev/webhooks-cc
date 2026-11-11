@@ -178,7 +178,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <div className="flex items-center gap-4 mb-6">
             {icon && (
               <span
-                className="w-14 h-14 border rounded-md flex items-center justify-center shrink-0 shadow-xs"
+                className="w-14 h-14 border rounded-md flex items-center justify-center shrink-0 shadow-surface"
                 style={{
                   backgroundColor: icon.background,
                   color: icon.foreground,
@@ -278,7 +278,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <ol className="space-y-4">
             {howToSteps.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-xs">
+                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                   {i + 1}
                 </span>
                 <div>

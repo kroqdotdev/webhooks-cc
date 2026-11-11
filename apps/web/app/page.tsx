@@ -268,8 +268,7 @@ export default async function Home() {
         {/* Title strip inside the app chrome: the page's H1 lives here */}
         <div className="shrink-0 border-b border-border bg-muted px-4 py-3 md:py-5 text-center">
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
-            The fastest way to{" "}
-            <span className="bg-transparent px-0 text-primary">test webhooks</span>
+            The fastest way to <span className="text-primary">test webhooks</span>
           </h1>
           <p className="hidden md:block group-has-[[data-landing-signed-in]]/landing:hidden! text-base text-muted-foreground mt-2">
             Get a free webhook URL below and point any service at it. No signup, no credit card.{" "}
@@ -321,7 +320,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card ui-card-static border-primary relative">
-              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border border-border rounded-md shadow-xs">
+              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border border-border rounded-md shadow-surface">
                 1 click away
               </div>
               <p className="text-xs font-bold text-muted-foreground mb-3">
@@ -411,7 +410,7 @@ export default async function Home() {
               },
             ].map((item) => (
               <div key={item.step} className="flex gap-4">
-                <div className="w-10 h-10 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-xs">
+                <div className="w-10 h-10 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-surface">
                   {item.step}
                 </div>
                 <div>
@@ -437,7 +436,7 @@ export default async function Home() {
           {/* Phones show the titles only, two to a row, to keep the page short. */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 max-md:[&_.ui-card>p]:hidden max-md:[&_h3]:text-base max-md:[&_h3]:mb-0">
             <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Eye className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">See requests the moment they arrive</h3>
@@ -448,7 +447,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Zap className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Send signed provider test webhooks</h3>
@@ -474,7 +473,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md bg-muted flex items-center justify-center mb-4 shadow-xs">
+              <div className="w-12 h-12 border border-border rounded-md bg-muted flex items-center justify-center mb-4 shadow-surface">
                 <Reply className="h-6 w-6" />
               </div>
               <h3 className="font-bold text-xl mb-2">Return custom mock responses</h3>
@@ -486,7 +485,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Terminal className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Forward to localhost. Assert in CI.</h3>
@@ -498,7 +497,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Bot className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Let your AI agent debug webhooks</h3>
@@ -510,12 +509,12 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Users className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">
                 Collaborate with your team{" "}
-                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border border-border rounded-md align-middle shadow-xs">
+                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border border-border rounded-md align-middle shadow-surface">
                   Teams
                 </span>
               </h3>
@@ -539,7 +538,7 @@ export default async function Home() {
 
             <div className="grid md:grid-cols-2 gap-6">
               <Link href="/email-testing" className="ui-card block group">
-                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                   <Mail className="h-6 w-6 text-foreground" />
                 </div>
                 <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
@@ -556,7 +555,7 @@ export default async function Home() {
               </Link>
 
               <Link href="/email-to-webhook" className="ui-card block group">
-                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                   <Webhook className="h-6 w-6 text-foreground" />
                 </div>
                 <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">

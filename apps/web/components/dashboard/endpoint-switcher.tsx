@@ -220,7 +220,7 @@ export function EndpointSwitcher() {
             : `Add ${endpointName} to favourites`
         }
       >
-        <Star className={isFavorite ? "h-4 w-4 fill-action text-primary" : "h-4 w-4"} />
+        <Star className={isFavorite ? "h-4 w-4 fill-primary text-primary" : "h-4 w-4"} />
       </Button>
     </div>
   );

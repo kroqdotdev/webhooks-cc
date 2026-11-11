@@ -197,7 +197,7 @@ export function RequestDiff({ left, right, onExit }: RequestDiffProps) {
 function DiffSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-xs font-bold text-muted-foreground mb-2">{title}</h3>
+      <h3 className="text-xs font-bold text-muted-foreground mb-2 tracking-normal">{title}</h3>
       <div className="ui-code p-3 space-y-0.5">{children}</div>
     </div>
   );

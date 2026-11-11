@@ -238,7 +238,7 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
                       <span
                         className={cn(
                           "font-mono text-xs font-medium",
-                          row.kind === "email" ? "text-kind-email-ink" : "text-method-post"
+                          row.kind === "email" ? "text-kind-email" : "text-method-post"
                         )}
                       >
                         {row.kind === "email" ? "EMAIL" : row.method}

@@ -205,7 +205,7 @@ async function openDashboard(page: Page, theme: "light" | "dark" = "light") {
     localStorage.setItem("theme", theme);
   }, theme);
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold", { hasText: "Mail E2E" })).toBeVisible({
+  await expect(page.getByRole("heading", { level: 1, name: "Mail E2E" })).toBeVisible({
     timeout: 15000,
   });
 }
@@ -226,6 +226,9 @@ function emailRow(page: Page) {
 for (const theme of ["light", "dark"] as const) {
   test(`email view works in ${theme}`, async ({ page }) => {
     await openDashboard(page, theme);
+    await (theme === "dark"
+      ? expect(page.locator("html")).toHaveClass(/\bdark\b/)
+      : expect(page.locator("html")).not.toHaveClass(/\bdark\b/));
 
     // The endpoint bar shows the email address next to the HTTP URL
     await expect(page.getByText(`${endpointSlug}@mailhooks.cc`).first()).toBeVisible();

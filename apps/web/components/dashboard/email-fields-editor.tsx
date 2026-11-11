@@ -199,7 +199,7 @@ export function EmailFieldsEditor({
                     <SelectTrigger aria-label={`Field ${n}: what it reads`} className={selectClass}>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="border border-border shadow-md">
+                    <SelectContent className="border border-border shadow-float">
                       {SOURCES.map((source) => (
                         <SelectItem key={source.value} value={source.value} className="text-[13px]">
                           {source.label}

@@ -20,7 +20,7 @@ export const STARS_FLOOR = 100;
 export function GitHubCard({ stars }: GitHubCardProps) {
   return (
     <div className="ui-card ui-card-static shrink-0 lg:mt-12 flex flex-col items-center text-center w-full lg:w-auto">
-      <div className="w-14 h-14 border border-border rounded-md bg-foreground flex items-center justify-center mb-4 shadow-xs">
+      <div className="w-14 h-14 border border-border rounded-md bg-foreground flex items-center justify-center mb-4 shadow-surface">
         <GitHubIcon className="h-7 w-7 text-background" />
       </div>
       <p className="text-xs font-bold text-muted-foreground mb-1">Open Source</p>

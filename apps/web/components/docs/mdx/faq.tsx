@@ -26,7 +26,7 @@ export function FAQItem({ question, children }: { question: string; children: Re
 
 export function FAQ({ children }: { children: React.ReactNode }) {
   return (
-    <div className="my-6 overflow-hidden rounded-lg border border-border bg-card shadow-xs">
+    <div className="my-6 overflow-hidden rounded-lg border border-border bg-card shadow-surface">
       {children}
     </div>
   );
