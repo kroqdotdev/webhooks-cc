@@ -10,6 +10,9 @@ import type { AllowanceUsage } from "@/lib/supabase/allowance-usage";
 
 const USAGE_REFRESH_INTERVAL_MS = 30_000;
 
+/** What a failed first usage read settles on: nothing to show beside requests. */
+const NO_ALLOWANCES: AllowanceUsage = { parsedPages: null, previewData: null, aiAssists: null };
+
 /**
  * The signed-in user's row. With `live`, it also follows plan, billing and
  * quota-state signals and re-reads the usage counter on an interval while the
@@ -54,17 +57,23 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
         .then((usage) => {
           if (read !== usageRead.current) return;
           setPeriodEmails(typeof usage?.emails === "number" ? usage.emails : null);
-          // A failed read keeps what is shown rather than blanking the meters.
-          if (usage) {
-            setAllowances({
-              parsedPages: usage.parsedPages ?? null,
-              previewData: usage.previewData ?? null,
-              aiAssists: usage.aiAssists ?? null,
-            });
-          }
+          // A failed read keeps what is shown rather than blanking the meters;
+          // a failed first read settles on none, so the panels below fall back
+          // to their own rows instead of waiting for meters that never come.
+          setAllowances((shown) =>
+            usage
+              ? {
+                  parsedPages: usage.parsedPages ?? null,
+                  previewData: usage.previewData ?? null,
+                  aiAssists: usage.aiAssists ?? null,
+                }
+              : (shown ?? NO_ALLOWANCES)
+          );
         })
         .catch(() => {
-          if (read === usageRead.current) setPeriodEmails(null);
+          if (read !== usageRead.current) return;
+          setPeriodEmails(null);
+          setAllowances((shown) => shown ?? NO_ALLOWANCES);
         });
     }
 
