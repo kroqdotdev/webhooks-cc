@@ -36,6 +36,7 @@ const ACCOUNT_ITEMS: NavItem[] = [
   { href: "/account/plan", label: "Plan and usage" },
   { href: "/account/api-keys", label: "API keys" },
   { href: "/account/agents", label: "Connected agents" },
+  { href: "/account/shares", label: "Shares" },
   { href: "/account/share-links", label: "Share links" },
   { href: "/account/domains", label: "Domains" },
   { href: "/account/security", label: "Security" },
@@ -122,17 +123,27 @@ function useTeamItems(): NavItem[] {
  * The account and team settings frame: a sticky side nav on wide screens, a
  * list to pick the same pages from on narrow ones, and the page beside it.
  */
-export function SettingsShell({ children }: { children: React.ReactNode }) {
+export function SettingsShell({
+  children,
+  sharing = true,
+}: {
+  children: React.ReactNode;
+  /** Whether this deployment offers sharing (EDGE_SECRET set); off hides Shares. */
+  sharing?: boolean;
+}) {
+  const accountItems = sharing
+    ? ACCOUNT_ITEMS
+    : ACCOUNT_ITEMS.filter((item) => item.href !== "/account/shares");
   const pathname = usePathname();
   const router = useRouter();
   const teamItems = useTeamItems();
   const site = useSite();
   // The page shown, for the narrow screens' list and the title: the most specific match.
-  const activeItem = [...ACCOUNT_ITEMS, ...teamItems]
+  const activeItem = [...accountItems, ...teamItems]
     .filter((item) => isActive(pathname, item))
     .sort((a, b) => b.href.length - a.href.length)[0];
   const activeHref = activeItem?.href ?? "";
-  const onAccount = !!activeItem && ACCOUNT_ITEMS.includes(activeItem);
+  const onAccount = !!activeItem && accountItems.includes(activeItem);
   // A team's name is its owner's own words and stays out of the title, which analytics read.
   const titleLabel = onAccount || activeItem?.href === "/teams" ? activeItem?.label : "Team";
 
@@ -144,7 +155,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
           ref={keepTitleFirst}
         >{`${titleLabel} | ${onAccount ? "Account" : "Teams"} | ${site.name}`}</title>
       )}
-      {/* Nine account pages and the teams do not fit a phone's width, so
+      {/* Ten account pages and the teams do not fit a phone's width, so
           narrow screens pick the page from a list. */}
       <nav aria-label="Settings" className="lg:hidden mb-6">
         <Select value={activeHref} onValueChange={(href) => router.push(href)}>
@@ -156,7 +167,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
               <SelectLabel className="text-xs font-medium text-muted-foreground">
                 Account
               </SelectLabel>
-              {ACCOUNT_ITEMS.map((item) => (
+              {accountItems.map((item) => (
                 <SelectItem key={item.href} value={item.href}>
                   {item.label}
                 </SelectItem>
@@ -185,7 +196,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
             <div className="space-y-1">
               <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">Account</p>
               <ul className="space-y-0.5">
-                {ACCOUNT_ITEMS.map((item) => (
+                {accountItems.map((item) => (
                   <li key={item.href}>
                     <NavLink item={item} pathname={pathname} />
                   </li>

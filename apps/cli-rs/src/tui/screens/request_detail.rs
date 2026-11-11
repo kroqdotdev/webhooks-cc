@@ -1,18 +1,19 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
-use crate::types::{CapturedRequest, ParsedEmail};
+use crate::tui::{keys, theme};
+use crate::types::{CapturedRequest, LiveResponse, ParsedEmail};
 use crate::util::format::{format_bytes, format_timestamp};
+use crate::util::live::live_response_lines;
 use crate::util::parsed::{Tone, parsed_lines};
 
 use super::{Action, Message, Screen};
@@ -152,7 +153,7 @@ impl Screen for RequestDetailScreen {
 
         let chunks = Layout::vertical([
             Constraint::Length(3), // Tab bar
-            Constraint::Min(0),   // Content
+            Constraint::Min(0),    // Content
         ])
         .split(area);
 
@@ -281,7 +282,10 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
 
     if !req.query_params.is_empty() {
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("  Query Parameters", theme::style_primary_bold())));
+        lines.push(Line::from(Span::styled(
+            "  Query Parameters",
+            theme::style_primary_bold(),
+        )));
         for (k, v) in &req.query_params {
             lines.push(Line::from(vec![
                 Span::styled(format!("    {k}"), theme::style_bold()),
@@ -295,14 +299,17 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
         lines.extend(parsed_overview(parsed, area.width as usize));
     }
 
+    if let Some(ref live) = req.live_response {
+        lines.extend(live_overview(live));
+    }
+
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  ID: ", theme::style_muted()),
         Span::styled(&req.id, theme::style_dim()),
     ]));
 
-    let p = Paragraph::new(lines)
-        .scroll((scroll, 0));
+    let p = Paragraph::new(lines).scroll((scroll, 0));
     frame.render_widget(p, area);
 }
 
@@ -330,6 +337,23 @@ fn parsed_overview(parsed: &ParsedEmail, width: usize) -> Vec<Line<'static>> {
     lines
 }
 
+/// The overview's "Live Response" section: what the sender got while
+/// `whk tunnel --live` relayed the request, the lines `whk requests get`
+/// prints.
+fn live_overview(live: &LiveResponse) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled("  Live Response", theme::style_primary_bold())),
+    ];
+    for text in live_response_lines(live) {
+        lines.push(Line::from(Span::styled(
+            format!("    {text}"),
+            theme::style(),
+        )));
+    }
+    lines
+}
+
 fn render_headers(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll: u16) {
     let mut headers: Vec<_> = req.headers.iter().collect();
     headers.sort_by_key(|(k, _)| k.to_lowercase());
@@ -344,11 +368,13 @@ fn render_headers(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll: 
     }
 
     if lines.len() == 1 {
-        lines.push(Line::from(Span::styled("  No headers.", theme::style_muted())));
+        lines.push(Line::from(Span::styled(
+            "  No headers.",
+            theme::style_muted(),
+        )));
     }
 
-    let p = Paragraph::new(lines)
-        .scroll((scroll, 0));
+    let p = Paragraph::new(lines).scroll((scroll, 0));
     frame.render_widget(p, area);
 }
 
@@ -370,9 +396,11 @@ fn render_body(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll: u16
     };
 
     let lines: Vec<Line> = std::iter::once(Line::from(""))
-        .chain(formatted.lines().map(|l| {
-            Line::from(Span::styled(format!("  {l}"), theme::style()))
-        }))
+        .chain(
+            formatted
+                .lines()
+                .map(|l| Line::from(Span::styled(format!("  {l}"), theme::style()))),
+        )
         .collect();
 
     let block = Block::default().padding(Padding::new(0, 0, 0, 0));
@@ -430,5 +458,18 @@ mod tests {
         assert!(rows.iter().any(|row| row == "  Parsed"), "{rows:#?}");
         assert!(rows.iter().any(|row| row == "    Layout: Acme orders"));
         assert!(rows.iter().any(|row| row == "      po: not found"));
+    }
+
+    #[test]
+    fn overview_shows_what_a_live_relay_answered() {
+        let live: LiveResponse = serde_json::from_value(serde_json::json!({
+            "status": 201, "headers": {"content-type": "application/json"},
+            "body": "{}", "bodyEncoding": "utf8", "ms": 7, "outcome": "answered"
+        }))
+        .unwrap();
+        let lines: Vec<String> = live_overview(&live).iter().map(text).collect();
+        assert_eq!(lines[1], "  Live Response");
+        assert_eq!(lines[2], "    Status: 201 (your app answered in 7 ms)");
+        assert_eq!(lines[3], "    content-type: application/json");
     }
 }

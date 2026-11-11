@@ -31,6 +31,8 @@ import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 import { PayloadSchemaView } from "./payload-schema-view";
 import { ShareRequestDialog } from "./share-request-dialog";
 import { ResponseAnswer } from "./response-answer";
+import { LiveResponseView } from "./live-response";
+import { readLiveResponse } from "@/lib/live-response";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -159,8 +161,11 @@ const BODY_VIEW_LABELS: Record<BodyView, string> = {
   schema: "Schema",
 };
 
-export type Tab = "body" | "headers" | "query" | "raw" | "signature" | "deliveries";
+export type Tab = "body" | "response" | "headers" | "query" | "raw" | "signature" | "deliveries";
+/** The tabs the number keys open, in order; the Response tab is shown only for live captures. */
 export const TABS: Tab[] = ["body", "headers", "query", "raw", "signature", "deliveries"];
+/** Every tab a URL may name. */
+export const ALL_TABS: Tab[] = [...TABS, "response"];
 
 export function RequestDetail({
   request,
@@ -177,8 +182,16 @@ export function RequestDetail({
 }: RequestDetailProps) {
   const [internalTab, setInternalTab] = useState<Tab>("body");
   const setTab = onTabChange ?? setInternalTab;
-  // The Deliveries tab exists once the endpoint has (or had) a forwarding URL.
-  const tabs = deliveries ? TABS : TABS.filter((entry) => entry !== "deliveries");
+  // What the app behind `whk tunnel --live` answered, for live captures only.
+  const liveResponse = useMemo(
+    () => readLiveResponse("liveResponse" in request ? request.liveResponse : undefined),
+    [request]
+  );
+  // The Deliveries tab exists once the endpoint has (or had) a forwarding URL;
+  // the Response tab, after Body, once the app behind a live tunnel answered.
+  const tabs = (deliveries ? TABS : TABS.filter((entry) => entry !== "deliveries")).flatMap(
+    (entry): Tab[] => (entry === "body" && liveResponse ? ["body", "response"] : [entry])
+  );
   const requested = activeTab ?? internalTab;
   const tab = tabs.includes(requested) ? requested : "body";
 
@@ -546,6 +559,8 @@ export function RequestDetail({
             </pre>
           </div>
         )}
+
+        {tab === "response" && liveResponse && <LiveResponseView response={liveResponse} />}
 
         {tab === "signature" && (
           <SignatureTab

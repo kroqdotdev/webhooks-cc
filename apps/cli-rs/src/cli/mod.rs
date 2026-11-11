@@ -6,6 +6,7 @@ pub mod replay;
 pub mod requests;
 pub mod sandbox;
 pub mod send;
+pub mod share;
 pub mod teams;
 pub mod tunnel;
 pub mod update;
@@ -155,7 +156,7 @@ pub enum Command {
 
     /// Forward webhooks to a local server
     Tunnel {
-        /// Target port and optional path (e.g. "8080" or "8080/api/webhooks")
+        /// Local target: a port and optional path ("8080", "8080/api/webhooks", "localhost:8080", "127.0.0.1:8080/api"); plain HTTP only
         target: String,
 
         /// Reuse an existing endpoint
@@ -190,6 +191,44 @@ pub enum Command {
         /// Skip captured emails instead of posting them to the target
         #[arg(long, conflicts_with_all = ["email_format", "email_path"])]
         no_email: bool,
+
+        /// Relay each webhook to the local server while the sender waits, so it gets your app's answer (the capture is kept either way; 502 when whk is not connected, 504 when your app takes over 25 s)
+        #[arg(long)]
+        live: bool,
+    },
+
+    /// Share a local port at a link anyone can open (https://<name>.sharehooks.cc)
+    Share {
+        /// Local port to share (e.g. "3000" or "localhost:3000")
+        target: String,
+
+        /// Share under a name you reserved (`whk names reserve`); a random one otherwise
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Ask visitors for a password (prompted, or from WHK_SHARE_PASSWORD)
+        #[arg(long)]
+        password: bool,
+
+        /// Do not draw the link as a QR code
+        #[arg(long)]
+        no_qr: bool,
+
+        /// Stop when stdin closes (for the SDK and MCP server)
+        #[arg(long, hide = true)]
+        until_stdin_closes: bool,
+    },
+
+    /// See and stop your shares
+    Shares {
+        #[command(subcommand)]
+        action: SharesAction,
+    },
+
+    /// Names to share under: reserve, release, and put a password on them
+    Names {
+        #[command(subcommand)]
+        action: NamesAction,
     },
 
     /// Stream incoming requests to terminal
@@ -275,6 +314,56 @@ pub enum Command {
     Completions {
         /// Shell type
         shell: clap_complete::Shell,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SharesAction {
+    /// List live shares (or, with --ended, earlier ones) and this month's data
+    #[command(alias = "list")]
+    Ls {
+        /// Earlier shares instead of live ones
+        #[arg(long)]
+        ended: bool,
+    },
+    /// Stop a live share (yours, or a teammate's under a team name)
+    Stop {
+        /// Share id or name
+        share: String,
+    },
+    /// The last requests visitors made to a live share (newest first)
+    #[command(alias = "requests")]
+    Log {
+        /// Share id or name
+        share: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum NamesAction {
+    /// List the names you can share under
+    #[command(alias = "list")]
+    Ls,
+    /// Keep a name to share under (paid plans)
+    Reserve {
+        /// The name: lowercase letters, digits and dashes
+        name: String,
+        /// Keep it inside a team (id or name), so every member may share under it
+        #[arg(long)]
+        team: Option<String>,
+    },
+    /// Let a name go
+    Release {
+        /// The name
+        name: String,
+    },
+    /// Set the password visitors need for every share under a name (prompted, or from WHK_SHARE_PASSWORD)
+    Password {
+        /// The name
+        name: String,
+        /// Take the password off instead
+        #[arg(long)]
+        clear: bool,
     },
 }
 
@@ -581,6 +670,125 @@ mod tests {
             }) => (email_format, email_path, mailgun_signing_key, no_email),
             other => panic!("expected tunnel, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn share_takes_a_port_and_its_flags() {
+        let cli = Cli::try_parse_from([
+            "whk",
+            "share",
+            "3000",
+            "--name",
+            "acme",
+            "--password",
+            "--no-qr",
+            "--json",
+        ])
+        .unwrap();
+        assert!(cli.json);
+        match cli.command {
+            Some(Command::Share {
+                target,
+                name,
+                password,
+                no_qr,
+                until_stdin_closes,
+            }) => {
+                assert_eq!(target, "3000");
+                assert_eq!(name.as_deref(), Some("acme"));
+                assert!(password && no_qr && !until_stdin_closes);
+            }
+            other => panic!("expected share, got {other:?}"),
+        }
+        let hidden = Cli::try_parse_from(["whk", "share", "5173", "--until-stdin-closes"]).unwrap();
+        assert!(matches!(
+            hidden.command,
+            Some(Command::Share {
+                until_stdin_closes: true,
+                ..
+            })
+        ));
+        assert!(
+            Cli::try_parse_from(["whk", "share"]).is_err(),
+            "a port is required"
+        );
+    }
+
+    #[test]
+    fn shares_and_names_have_their_subcommands() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(["whk"].iter().chain(args))
+                .unwrap()
+                .command
+        };
+        assert!(matches!(
+            parse(&["shares", "ls", "--ended"]),
+            Some(Command::Shares {
+                action: SharesAction::Ls { ended: true }
+            })
+        ));
+        assert!(matches!(
+            parse(&["shares", "list"]),
+            Some(Command::Shares {
+                action: SharesAction::Ls { ended: false }
+            })
+        ));
+        match parse(&["shares", "stop", "acme"]) {
+            Some(Command::Shares {
+                action: SharesAction::Stop { share },
+            }) => assert_eq!(share, "acme"),
+            other => panic!("expected shares stop, got {other:?}"),
+        }
+        assert!(matches!(
+            parse(&["names", "ls"]),
+            Some(Command::Names {
+                action: NamesAction::Ls
+            })
+        ));
+        match parse(&["names", "reserve", "acme"]) {
+            Some(Command::Names {
+                action: NamesAction::Reserve { name, team: None },
+            }) => assert_eq!(name, "acme"),
+            other => panic!("expected names reserve, got {other:?}"),
+        }
+        match parse(&["names", "reserve", "acme", "--team", "Acme Inc"]) {
+            Some(Command::Names {
+                action: NamesAction::Reserve { team, .. },
+            }) => assert_eq!(team.as_deref(), Some("Acme Inc")),
+            other => panic!("expected names reserve --team, got {other:?}"),
+        }
+        match parse(&["shares", "log", "acme"]) {
+            Some(Command::Shares {
+                action: SharesAction::Log { share },
+            }) => assert_eq!(share, "acme"),
+            other => panic!("expected shares log, got {other:?}"),
+        }
+        match parse(&["names", "release", "acme"]) {
+            Some(Command::Names {
+                action: NamesAction::Release { name },
+            }) => assert_eq!(name, "acme"),
+            other => panic!("expected names release, got {other:?}"),
+        }
+        assert!(matches!(
+            parse(&["names", "password", "acme", "--clear"]),
+            Some(Command::Names {
+                action: NamesAction::Password { clear: true, .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn tunnel_takes_live() {
+        let cli = Cli::try_parse_from(["whk", "tunnel", "3000", "--live"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Tunnel { live: true, .. })
+        ));
+        let cli = Cli::try_parse_from(["whk", "tunnel", "3000"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Tunnel { live: false, .. })
+        ));
     }
 
     #[test]

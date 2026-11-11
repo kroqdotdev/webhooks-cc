@@ -1,16 +1,16 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Row, Table, TableState},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 use crate::types::{CreateEndpointRequest, Endpoint, favorites_first};
 
 use super::{Action, Message, Screen, ScreenId, favorite_marker};
@@ -137,7 +137,9 @@ impl Screen for EndpointsScreen {
         }
 
         if keys::is_enter(key) {
-            if let Some(i) = self.table_state.selected() && let Some(ep) = self.endpoints.get(i) {
+            if let Some(i) = self.table_state.selected()
+                && let Some(ep) = self.endpoints.get(i)
+            {
                 return Some(Action::Navigate(ScreenId::EndpointDetail(ep.slug.clone())));
             }
             return None;
@@ -262,14 +264,14 @@ impl Screen for EndpointsScreen {
         }
 
         let chunks = Layout::vertical([
-            Constraint::Min(0),   // Table
+            Constraint::Min(0),    // Table
             Constraint::Length(2), // Footer
         ])
         .split(area);
 
         // Endpoint table
-        let header = Row::new(vec!["  SLUG", "NAME", "REQUESTS", "URL"])
-            .style(theme::style_muted());
+        let header =
+            Row::new(vec!["  SLUG", "NAME", "REQUESTS", "URL"]).style(theme::style_muted());
 
         let rows: Vec<Row> = self
             .endpoints

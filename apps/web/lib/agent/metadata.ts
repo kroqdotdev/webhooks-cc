@@ -297,9 +297,9 @@ Take the first option that fits.
    the remote server.** This is the default for coding agents (Claude Code,
    Cursor, VS Code, Codex) as much as for hosted ones (claude.ai, ChatGPT).
    The one exception is a task that sends to a handler on this machine
-   (\`send_to\`, \`replay_request\`, \`targetUrl\`), which the remote server
-   cannot reach: take option 2 for that, or send to a capture URL and
-   forward it with \`whk tunnel <port>\`. The server is \`${u.mcp}\` (streamable HTTP, OAuth). Your human signs in,
+   (\`send_to\`, \`replay_request\`, \`targetUrl\`) or shares a local site
+   (\`share_port\`), which the remote server cannot reach: take option 2 for
+   that, or send to a capture URL and forward it with \`whk tunnel <port>\`. The server is \`${u.mcp}\` (streamable HTTP, OAuth). Your human signs in,
    or signs up, and clicks Connect once in the browser: no code to type,
    nothing that expires after ${hours(UNCLAIMED_LIFETIME_SECONDS)}, and their account's tools (mock
    responses, forwarding, signature checks, email). Suggest it with the line

@@ -2,7 +2,10 @@ use anyhow::Result;
 use clap::Parser;
 
 use whk::api::ApiClient;
-use whk::cli::{self, AuthAction, Cli, Command, RequestsAction, SandboxAction, TeamsAction};
+use whk::cli::{
+    self, AuthAction, Cli, Command, NamesAction, RequestsAction, SandboxAction, SharesAction,
+    TeamsAction,
+};
 use whk::tui;
 
 #[tokio::main]
@@ -106,6 +109,7 @@ async fn main() -> Result<()> {
             email_path,
             mailgun_signing_key,
             no_email,
+            live,
         }) => {
             let emails =
                 cli::tunnel::email_options(email_format, email_path, mailgun_signing_key, no_email);
@@ -116,10 +120,49 @@ async fn main() -> Result<()> {
                 ephemeral,
                 headers,
                 emails,
+                live,
                 args.json,
             )
             .await?;
         }
+
+        Some(Command::Share {
+            target,
+            name,
+            password,
+            no_qr,
+            until_stdin_closes,
+        }) => {
+            cli::share::run(
+                &client,
+                cli::share::ShareOptions {
+                    target,
+                    name,
+                    password,
+                    no_qr,
+                    until_stdin_closes,
+                    json: args.json,
+                },
+            )
+            .await?;
+        }
+
+        Some(Command::Shares { action }) => match action {
+            SharesAction::Ls { ended } => cli::share::list(&client, ended, args.json).await?,
+            SharesAction::Stop { share } => cli::share::stop(&client, &share, args.json).await?,
+            SharesAction::Log { share } => cli::share::log(&client, &share, args.json).await?,
+        },
+
+        Some(Command::Names { action }) => match action {
+            NamesAction::Ls => cli::share::names(&client, args.json).await?,
+            NamesAction::Reserve { name, team } => {
+                cli::share::reserve(&client, &name, team.as_deref(), args.json).await?
+            }
+            NamesAction::Release { name } => cli::share::release(&client, &name, args.json).await?,
+            NamesAction::Password { name, clear } => {
+                cli::share::password(&client, &name, clear, args.json).await?
+            }
+        },
 
         Some(Command::Listen { slug }) => {
             cli::listen::run(&client, &slug, args.json).await?;

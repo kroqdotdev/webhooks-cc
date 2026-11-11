@@ -2,8 +2,10 @@ use anyhow::Result;
 use std::io::{self, Write};
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, print_request_detail, print_request_line, print_search_hit};
 use crate::cli::ExportFormat;
+use crate::cli::output::{
+    bold, dim, green, print_request_detail, print_request_line, print_search_hit,
+};
 
 pub async fn list(
     client: &ApiClient,
@@ -14,7 +16,9 @@ pub async fn list(
     json: bool,
 ) -> Result<()> {
     if let Some(ref c) = cursor {
-        let result = client.list_requests_paginated(slug, Some(limit), Some(c)).await?;
+        let result = client
+            .list_requests_paginated(slug, Some(limit), Some(c))
+            .await?;
         if json {
             println!("{}", serde_json::to_string_pretty(&result)?);
             return Ok(());
@@ -43,7 +47,10 @@ pub async fn list(
             print_request_line(req);
         }
         if let Some(count) = result.count {
-            println!("\n  {} {count} total", dim(&format!("Showing up to {limit} of")));
+            println!(
+                "\n  {} {count} total",
+                dim(&format!("Showing up to {limit} of"))
+            );
         }
     }
     Ok(())
@@ -76,7 +83,16 @@ pub async fn search(
     // page that actually came back.
     let limit = limit.clamp(1, 200);
     let result = client
-        .search_requests(slug, method, q, from, to, Some(limit), Some(offset), Some(order))
+        .search_requests(
+            slug,
+            method,
+            q,
+            from,
+            to,
+            Some(limit),
+            Some(offset),
+            Some(order),
+        )
         .await?;
 
     if json {
@@ -255,7 +271,12 @@ fn build_har_export(base_url: &str, requests: &[crate::types::CapturedRequest]) 
 }
 
 fn build_curl_export(base_url: &str, requests: &[crate::types::CapturedRequest]) -> String {
-    let sensitive = ["authorization", "cookie", "proxy-authorization", "set-cookie"];
+    let sensitive = [
+        "authorization",
+        "cookie",
+        "proxy-authorization",
+        "set-cookie",
+    ];
 
     requests
         .iter()

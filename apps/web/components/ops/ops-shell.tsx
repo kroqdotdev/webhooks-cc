@@ -23,6 +23,7 @@ const NAV = [
   { href: "/ops/tickets", label: "Tickets", count: "waiting" as const },
   { href: "/ops/accounts", label: "Accounts" },
   { href: "/ops/refunds", label: "Refunds" },
+  { href: "/ops/sharing", label: "Sharing", count: "reports" as const },
   { href: "/ops/saved-replies", label: "Saved replies" },
 ];
 
@@ -90,7 +91,12 @@ export function OpsShell({ children }: { children: React.ReactNode }) {
               const active = item.exact
                 ? pathname === item.href
                 : pathname === item.href || pathname.startsWith(`${item.href}/`);
-              const count = item.count === "waiting" ? staff.waiting : null;
+              const count =
+                item.count === "waiting"
+                  ? staff.waiting
+                  : item.count === "reports"
+                    ? (staff.reports ?? null)
+                    : null;
               return (
                 <li key={item.href}>
                   <Link

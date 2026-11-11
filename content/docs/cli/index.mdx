@@ -3,7 +3,7 @@ title: "CLI"
 description: "Install the webhooks.cc CLI (whk), log in, and use the interactive TUI or plain subcommands to tunnel webhooks to localhost, stream requests, and manage endpoints."
 section: cli
 order: 1
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords: ["webhook CLI", "whk", "webhook forward", "localhost webhook"]
 seo:
@@ -64,6 +64,16 @@ whk tunnel 3000
 
 Creates an endpoint, prints its URL, and forwards every incoming webhook to `localhost:3000` in real time.
 
+Add `--live` when the sender needs your app's response: each webhook is relayed while the sender waits ([live tunnels](/docs/live-tunnel)).
+
+### Share a site
+
+```bash
+whk share 3000
+```
+
+Puts your local site at a public link on sharehooks.cc, for showing work in progress in a browser. See [Share localhost](/docs/share).
+
 To disable the TUI entirely, pass `--nogui` or set `WHK_NOGUI=1`.
 
 ### For AI agents
@@ -89,4 +99,10 @@ whk sandbox wait <slug> --json
   href="/docs/cli/tunnel"
   title="Tunneling deep dive"
   description="Advanced tunneling configuration."
+/>
+
+<LinkCard
+  href="/docs/share"
+  title="Share localhost"
+  description="Your local site at a public link: names, passwords, limits."
 />

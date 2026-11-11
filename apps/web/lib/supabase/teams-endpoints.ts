@@ -10,6 +10,7 @@ import type {
   SharedEndpoint,
   TeamSharedEndpoint,
 } from "./teams-types";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -162,6 +163,7 @@ export async function unshareEndpointFromTeam(
     .maybeSingle();
 
   if (error) throw error;
+  if (data) await closeRunsWithoutAccess();
   return !!data;
 }
 

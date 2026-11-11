@@ -456,6 +456,10 @@ export interface Database {
           signing_secret_encrypted: string | null;
           signing_header: string | null;
           show_email_extracts: boolean;
+          /** The open `whk tunnel --live` run (migration 00091). */
+          live_session_id: string | null;
+          /** Until when a dropped live session keeps the endpoint live (00091). */
+          live_grace_until: string | null;
           site: string;
           /** Named fields picked out of every email (migration 00064). */
           email_fields: Json;
@@ -547,6 +551,8 @@ export interface Database {
           delete_after_delivery?: boolean;
           layouts?: Json;
           last_email_at?: string | null;
+          /** Only cleared: a stop ends the grace a drop started (lib/tunnels/stops.ts). */
+          live_grace_until?: null;
         };
         Relationships: [];
       };
@@ -556,6 +562,8 @@ export interface Database {
           endpoint_id: string;
           user_id: string | null;
           team_id: string | null;
+          /** What the app answered a live capture (migration 00091). */
+          live_response: Json | null;
           method: string;
           path: string;
           headers: Json;
@@ -689,6 +697,12 @@ export interface Database {
           extra_domains: number;
           /** Test accounts, left out of the ops metrics (migration 00087). */
           internal: boolean;
+          /** When the account first got a paid plan (migration 00091). */
+          paid_since: string | null;
+          /** Staff lifted the new-account visitor notice on previews (00091). */
+          tunnel_notice_lifted: boolean;
+          /** Staff took sharing away from the account (00091). */
+          tunnels_suspended: boolean;
         };
         Insert: {
           id: string;
@@ -761,6 +775,9 @@ export interface Database {
           requests_used?: number;
           request_limit?: number;
           created_at?: string;
+          paid_since?: string | null;
+          tunnel_notice_lifted?: boolean;
+          tunnels_suspended?: boolean;
           quota_email_sent_at?: string | null;
           quota_email_claimed_at?: string | null;
           welcome_email_sent_at?: string | null;
@@ -904,6 +921,8 @@ export interface Database {
           pending_checkout: Json | null;
           pending_seats: number | null;
           pending_seats_as_of: string | null;
+          /** When the team first had a subscription (migration 00091). */
+          paid_since: string | null;
           block_requests: number;
           credit_requests: number;
           overage_active: boolean;
@@ -1489,6 +1508,12 @@ export interface Database {
           annual_billing: boolean;
           /** Team keys: parsed pages and AI assists are per seat too (migration 00083). */
           per_seat: boolean;
+          /** Tunnels (migration 00091). */
+          share_slots: number;
+          share_session_minutes: number | null;
+          share_data_gb: number;
+          reserved_names: number;
+          share_passwords: boolean;
         };
         Insert: Record<string, never>;
         Update: Record<string, never>;
@@ -1506,6 +1531,166 @@ export interface Database {
           period_start: string;
         };
         Update: Record<string, never>;
+        Relationships: [];
+      };
+      // Tunnels (migration 00091): kept preview names.
+      tunnel_names: {
+        Row: {
+          name: string;
+          user_id: string;
+          team_id: string | null;
+          password_hash: string | null;
+          password_version: string | null;
+          created_at: string;
+        };
+        Insert: {
+          name: string;
+          user_id: string;
+          team_id?: string | null;
+          password_hash?: string | null;
+          password_version?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          team_id?: string | null;
+          password_hash?: string | null;
+          password_version?: string | null;
+        };
+        Relationships: [];
+      };
+      tunnel_shares: {
+        Row: {
+          id: string;
+          kind: "share" | "live";
+          user_id: string | null;
+          name: string | null;
+          endpoint_id: string | null;
+          free: boolean;
+          notice: boolean;
+          client: string;
+          key_id: string | null;
+          agent_registration_id: string | null;
+          instance: string | null;
+          client_address: string | null;
+          started_at: string;
+          expires_at: string | null;
+          ended_at: string | null;
+          end_reason: string | null;
+          password_hash: string | null;
+          password_version: string | null;
+          bytes: number;
+          requests: number;
+        };
+        Insert: Record<string, never>;
+        Update: {
+          expires_at?: string | null;
+          ended_at?: string | null;
+          end_reason?: string | null;
+          password_hash?: string | null;
+          password_version?: string | null;
+        };
+        Relationships: [];
+      };
+      tunnel_usage: {
+        Row: {
+          user_id: string;
+          month: string;
+          bytes: number;
+          requests: number;
+          paused_at: string | null;
+        };
+        Insert: Record<string, never>;
+        Update: {
+          paused_at?: string | null;
+        };
+        Relationships: [];
+      };
+      tunnel_usage_batches: {
+        Row: {
+          id: string;
+          applied_at: string;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      tunnel_blocked_names: {
+        Row: {
+          name: string;
+          reason: string;
+          blocked_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          name: string;
+          reason?: string;
+          blocked_by?: string | null;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      tunnel_blocked_words: {
+        Row: {
+          word: string;
+          reason: string;
+          blocked_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          word: string;
+          reason?: string;
+          blocked_by?: string | null;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      abuse_reports: {
+        Row: {
+          id: string;
+          source: "form" | "flag" | "reputation";
+          kind:
+            | "phishing"
+            | "malware"
+            | "csam"
+            | "illegal"
+            | "copyright"
+            | "spam"
+            | "privacy"
+            | "other";
+          url: string;
+          name: string | null;
+          user_id: string | null;
+          share_id: string | null;
+          details: string;
+          reporter_name: string | null;
+          reporter_email: string | null;
+          good_faith: boolean;
+          status: "open" | "resolved";
+          outcome: string | null;
+          statement_sent_at: string | null;
+          resolved_by: string | null;
+          resolved_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          source: "form" | "flag" | "reputation";
+          kind: Database["public"]["Tables"]["abuse_reports"]["Row"]["kind"];
+          url: string;
+          name?: string | null;
+          user_id?: string | null;
+          share_id?: string | null;
+          details?: string;
+          reporter_name?: string | null;
+          reporter_email?: string | null;
+          good_faith?: boolean;
+        };
+        Update: {
+          status?: "open" | "resolved";
+          outcome?: string | null;
+          statement_sent_at?: string | null;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+        };
         Relationships: [];
       };
       // API reads per account, UTC day and client (migration 00089).
@@ -2119,6 +2304,75 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      tunnel_open_share: {
+        Args: {
+          p_user_id: string;
+          p_kind: "share" | "live";
+          p_name: string | null;
+          p_endpoint_id: string | null;
+          p_slots: number;
+          p_session_minutes: number | null;
+          p_free: boolean;
+          p_client: string;
+          p_key_id: string | null;
+          p_instance: string | null;
+          p_client_address: string | null;
+          p_password_hash: string | null;
+          p_password_version: string | null;
+          p_agent_registration_id?: string | null;
+          p_notice?: boolean;
+          p_final_endings?: string[] | null;
+        };
+        Returns: Json;
+      };
+      tunnel_end_unheld: {
+        Args: { p_held: string[]; p_min_age_seconds?: number };
+        Returns: { id: string }[];
+      };
+      tunnel_move_name_to_team: {
+        Args: { p_user_id: string; p_team_id: string; p_name: string };
+        Returns: "ok" | "team_limit" | "gone";
+      };
+      tunnel_runs_without_access: {
+        Args: Record<string, never>;
+        Returns: { id: string; reason: string }[];
+      };
+      tunnel_end_shares: {
+        Args: { p_ids: string[]; p_reason: string };
+        Returns: {
+          id: string;
+          user_id: string;
+          kind: "share" | "live";
+          name: string | null;
+          endpoint_id: string | null;
+        }[];
+      };
+      tunnel_close_all_open: {
+        Args: { p_reason: string };
+        Returns: number;
+      };
+      tunnel_apply_usage_batch: {
+        Args: { p_batch_id: string; p_usage: Json; p_month: string };
+        Returns: boolean;
+      };
+      tunnel_reserve_name: {
+        Args: { p_user_id: string; p_team_id: string | null; p_name: string; p_limit: number };
+        Returns: "ok" | "limit" | "team_limit" | "taken";
+      };
+      /** Written by the receiver after a live relay (migration 00092). */
+      record_live_response: {
+        Args: {
+          p_request_id: string;
+          p_status: number;
+          p_headers: Json;
+          p_body: string;
+          p_body_truncated: boolean;
+          p_ms: number;
+          p_body_encoding?: "utf8" | "base64";
+          p_outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
+        };
+        Returns: boolean;
+      };
       is_staff: {
         Args: { p_user_id: string };
         Returns: boolean;

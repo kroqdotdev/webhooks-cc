@@ -1,17 +1,17 @@
-pub mod menu;
 pub mod auth;
-pub mod endpoints;
 pub mod endpoint_detail;
-pub mod tunnel;
+pub mod endpoints;
 pub mod listen;
+pub mod menu;
 pub mod request_detail;
 pub mod search;
 pub mod send;
-pub mod usage;
+pub mod tunnel;
 pub mod update;
+pub mod usage;
 
 use crossterm::event::KeyEvent;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{Frame, layout::Rect};
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;

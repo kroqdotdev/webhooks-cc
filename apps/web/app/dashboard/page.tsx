@@ -32,6 +32,7 @@ import { RequestList } from "@/components/dashboard/request-list";
 import {
   RequestDetail,
   RequestDetailEmpty,
+  ALL_TABS,
   TABS,
   type Tab,
 } from "@/components/dashboard/request-detail";
@@ -516,7 +517,7 @@ export default function DashboardPage() {
   const router = useAnnouncedRouter();
   const pathname = usePathname();
   const tabParam = searchParams.get("tab") as Tab | null;
-  const activeTab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : "body";
+  const activeTab: Tab = tabParam && ALL_TABS.includes(tabParam) ? tabParam : "body";
   // Sets (a string) or drops (null) query parameters and keeps the rest.
   // Through the History API, which Next syncs into useSearchParams: the URL
   // changes at once, so calls in quick succession (live follow, arrow keys)

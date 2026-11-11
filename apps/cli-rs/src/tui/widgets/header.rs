@@ -70,10 +70,7 @@ impl Widget for Header<'_> {
             if left_len + right_len + 2 < inner.width {
                 let gap = inner.width.saturating_sub(left_len + right_len);
                 spans.push(Span::raw(" ".repeat(gap as usize)));
-                spans.push(Span::styled(
-                    format!("● {email}"),
-                    theme::style_success(),
-                ));
+                spans.push(Span::styled(format!("● {email}"), theme::style_success()));
             }
         }
 

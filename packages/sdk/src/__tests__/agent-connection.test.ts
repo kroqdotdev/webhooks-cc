@@ -266,6 +266,10 @@ describe("sandbox in the credential file", () => {
       access_token: "whcc_account1",
     });
     await client.endpoints.list();
+    // shares.start() runs whk on the account connection just saved.
+    expect((client as unknown as { agentShare: { file: string } | null }).agentShare).toEqual({
+      file,
+    });
     await expect(sandbox.endpoints.list()).rejects.toMatchObject({ code: "sandbox_closed" });
   });
 
@@ -296,12 +300,20 @@ describe("WebhooksCC.connected", () => {
       email: "dev@example.com",
     });
     expect(pending.userCode).toBe("654321");
-    await pending.wait({ timeout: 5_000 });
+    const waited = await pending.wait({ timeout: 5_000 });
+    // The client the wait hands back shares through the same connection too.
+    expect((waited as unknown as { agentShare: { file: string } | null }).agentShare).toEqual({
+      file,
+    });
 
     const client = await WebhooksCC.connected({ baseUrl: BASE, credentialsFile: file });
     expect(client).toBeInstanceOf(WebhooksCC);
     // The cached token from the claim is still good: no exchange needed.
     expect(state.exchanges).toBe(0);
+    // shares.start() runs whk on this same connection, not the machine's login.
+    expect((client as unknown as { agentShare: { file: string } | null }).agentShare).toEqual({
+      file,
+    });
 
     // The human disconnects the agent: its tokens die and the assertion is refused.
     state.revokedTokens.add("whcc_account1");

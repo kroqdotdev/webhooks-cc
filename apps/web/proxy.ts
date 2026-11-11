@@ -63,6 +63,8 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/mcp",
     // Staff only. Never listed in robots.txt or the sitemap, which would advertise it.
     "/ops",
+    // The form for reporting a shared preview: reached from previews, not searches.
+    "/report",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
@@ -263,12 +265,13 @@ export async function proxy(request: NextRequest) {
 
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eu-assets.i.posthog.com https://f.webhooks.cc`,
+    // challenges.cloudflare.com: Cloudflare Turnstile on the report form (/report).
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eu-assets.i.posthog.com https://f.webhooks.cc https://challenges.cloudflare.com`,
     "style-src 'self' 'unsafe-inline'",
     imgSrcDirective(),
     "font-src 'self'",
     `connect-src 'self' ${supabaseOrigin} ${supabaseWsOrigin} ${webhookOrigin} https://eu-assets.i.posthog.com https://f.webhooks.cc https://ingest.statoss.com`,
-    "frame-src 'self'",
+    "frame-src 'self' https://challenges.cloudflare.com",
     "object-src 'none'",
     "worker-src 'self'",
     "frame-ancestors 'none'",

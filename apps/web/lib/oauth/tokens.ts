@@ -10,6 +10,7 @@ import {
 } from "@/lib/agent/constants";
 import { mintAccessToken, revokeAgentToken, type RegistrationRow } from "@/lib/agent/registrations";
 import { hashCode } from "./authorize";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
 /**
  * The authorization_code and refresh_token grants, and refresh token
@@ -176,5 +177,6 @@ export async function revokeRefreshToken(token: string): Promise<string | null> 
     p_refresh_hash: hashRefreshToken(token),
   });
   if (error) throw error;
+  if (data) await closeRunsWithoutAccess();
   return (data as string | null) ?? null;
 }

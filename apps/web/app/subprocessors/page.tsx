@@ -26,7 +26,7 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     name: "Hetzner",
     entity: "Hetzner Online GmbH, Germany",
     purpose:
-      "Hosts the server that runs webhooks.cc, its database, and its backups, the object storage that keeps the original message and attachments of each captured email, and the standby server of StatOSS, our error and log monitoring.",
+      "Hosts the server that runs webhooks.cc, its database, and its backups, the server that serves shared previews, the object storage that keeps the original message and attachments of each captured email, and the standby server of StatOSS, our error and log monitoring.",
     data: "All data described in our privacy policy, including captured webhooks.",
     location: "Falkenstein, Germany. Backups stay in Falkenstein, in a separate data center.",
   },
@@ -34,8 +34,8 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     name: "Cloudflare",
     entity: "Cloudflare, Inc., United States",
     purpose:
-      "DNS, attack protection, and secure delivery for every webhooks.cc address, the relay that sends endpoint notifications, and the network and backups of StatOSS.",
-    data: "All traffic in transit, including the webhooks sent to your endpoints and the notifications sent from them, and visitor IP addresses. StatOSS's backups of error reports and logs, kept in Western Europe.",
+      "DNS, attack protection, and secure delivery for every webhooks.cc address and for the previews shared on sharehooks.cc, the relay that sends endpoint notifications, the Turnstile check that keeps spam off the report form, and the network and backups of StatOSS.",
+    data: "All traffic in transit, including the webhooks sent to your endpoints, the notifications sent from them, and the pages visitors load from shared previews, and visitor IP addresses. The browser signals Turnstile reads when someone sends a report. StatOSS's backups of error reports and logs, kept in Western Europe.",
     location:
       "Cloudflare's global network: requests are handled at the data center nearest the sender, and logs and metadata are kept in the United States and Europe",
     safeguard: "EU-US Data Privacy Framework and Standard Contractual Clauses",

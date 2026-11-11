@@ -13,7 +13,7 @@ import {
   type Request,
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
-import { registerTools } from "../tools";
+import { registerTools, toolWords } from "../tools";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -64,6 +64,15 @@ const EXPECTED_TOOLS = [
   "test_forwarding",
   "list_deliveries",
   "redeliver",
+  "share_port",
+  "list_shares",
+  "stop_share",
+  "share_requests",
+  "list_names",
+  "reserve_name",
+  "release_name",
+  "set_name_password",
+  "clear_name_password",
 ];
 
 type RegisteredTool = {
@@ -171,6 +180,21 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
       invites: { list: vi.fn(), accept: vi.fn(), decline: vi.fn() },
       ...(overrides.teams ?? {}),
     },
+    shares: {
+      list: vi.fn(),
+      stop: vi.fn(),
+      requests: vi.fn(),
+      start: vi.fn(),
+      ...(overrides.shares ?? {}),
+    },
+    names: {
+      list: vi.fn(),
+      reserve: vi.fn(),
+      release: vi.fn(),
+      setPassword: vi.fn(),
+      clearPassword: vi.fn(),
+      ...(overrides.names ?? {}),
+    },
     emails: {
       address: vi.fn((slug: string, tag?: string) =>
         tag ? `${slug}+${tag}@mailhooks.cc` : `${slug}@mailhooks.cc`
@@ -233,9 +257,24 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(46);
+    expect(Object.keys(tools)).toHaveLength(54);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
+    expect(tools).not.toHaveProperty("share_port");
+    // Everything else about sharing works from the hosted server too: an
+    // agent never needs the dashboard for names, passwords or the log.
+    for (const name of [
+      "list_shares",
+      "stop_share",
+      "share_requests",
+      "list_names",
+      "reserve_name",
+      "release_name",
+      "set_name_password",
+      "clear_name_password",
+    ]) {
+      expect(tools).toHaveProperty(name);
+    }
 
     const render = await tools.render_email.handler({
       requestId: "req1",
@@ -273,7 +312,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(48);
+    expect(Object.keys(tools)).toHaveLength(57);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1207,6 +1246,293 @@ describe("registerTools", () => {
     await tools.list_endpoints.handler({ team: "Team A" });
 
     expect(list.mock.calls).toEqual([[{}], [{ team: "Team A" }]]);
+  });
+
+  it("shares a port once per port and returns the link with its notes", async () => {
+    let closeShare!: (value: { reason: string }) => void;
+    const live = {
+      url: "https://sample-preview-1234-free.sharehooks.cc",
+      name: "sample-preview-1234-free",
+      expiresAt: "2026-11-10T20:00:00Z",
+      notice: true,
+      password: false,
+      port: 3000,
+      stop: vi.fn(),
+      closed: new Promise<{ reason: string }>((r) => (closeShare = r)),
+    };
+    const start = vi.fn(async () => live);
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { start } as unknown as WebhooksCC["shares"] })
+    );
+
+    const first = parseJsonResult(await tools.share_port.handler({ port: 3000 }));
+    expect(first.url).toBe(live.url);
+    expect(first.notes).toContain("notice");
+    expect(first.notes).toContain("2026-11-10T20:00:00Z");
+    expect(start).toHaveBeenCalledWith({ port: 3000 });
+
+    const again = parseJsonResult(await tools.share_port.handler({ port: 3000 }));
+    expect(again.alreadyRunning).toBe(true);
+    expect(start).toHaveBeenCalledTimes(1);
+
+    closeShare({ reason: "you stopped it" });
+    await live.closed;
+    await new Promise((r) => setTimeout(r, 0));
+    await tools.share_port.handler({ port: 3000, name: "acme-demo", password: "correct-horse" });
+    expect(start).toHaveBeenLastCalledWith({
+      port: 3000,
+      name: "acme-demo",
+      password: "correct-horse",
+    });
+  });
+
+  it("stops the running share on a port before starting one with new options", async () => {
+    const running = {
+      url: "https://amber-otter-0042.sharehooks.cc",
+      name: "amber-otter-0042",
+      expiresAt: null,
+      notice: false,
+      password: false,
+      port: 4000,
+      stop: vi.fn(async () => undefined),
+      closed: new Promise<{ reason: string }>(() => undefined),
+    };
+    const named = { ...running, name: "acme-demo", url: "https://acme-demo.sharehooks.cc" };
+    const start = vi.fn().mockResolvedValueOnce(running).mockResolvedValueOnce(named);
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { start } as unknown as WebhooksCC["shares"] })
+    );
+
+    await tools.share_port.handler({ port: 4000 });
+    const second = parseJsonResult(
+      await tools.share_port.handler({ port: 4000, name: "acme-demo" })
+    );
+    expect(running.stop).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(second.name).toBe("acme-demo");
+    expect(second.alreadyRunning).toBeUndefined();
+    // The new share is the one tracked now.
+    const third = parseJsonResult(await tools.share_port.handler({ port: 4000 }));
+    expect(third.alreadyRunning).toBe(true);
+    expect(third.name).toBe("acme-demo");
+  });
+
+  it("adds the next steps when the plan's slots or data run out", async () => {
+    const full = {
+      shares: [
+        { id: "s1", kind: "share", endedAt: null },
+        { id: "s2", kind: "live", endedAt: null },
+      ],
+      usage: { month: "2026-11", bytes: 2, limitBytes: 1, over: true, resetsAt: "2026-12-01" },
+      limits: {
+        plan: "free",
+        shares: 1,
+        reservedNames: 0,
+        sessionMinutes: 120,
+        dataGb: 1,
+        passwords: false,
+        notice: true,
+      },
+    };
+    const list = vi.fn(async () => full);
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { list } as unknown as WebhooksCC["shares"] })
+    );
+    const listed = parseJsonResult(await tools.list_shares.handler({}));
+    const hints = (listed.hints as string[]).join(" ");
+    expect(hints).toContain("paused until 2026-12-01");
+    expect(hints).toContain("stop_share");
+    expect(hints).toContain("120 minutes");
+    expect(hints).toContain("Pro and Business");
+
+    const quiet = vi.fn(async () => ({
+      ...full,
+      shares: [],
+      usage: { ...full.usage, over: false },
+      limits: { ...full.limits, sessionMinutes: null, passwords: true },
+    }));
+    const calm = getRegisteredTools(
+      createMockClient({ shares: { list: quiet } as unknown as WebhooksCC["shares"] })
+    );
+    expect(parseJsonResult(await calm.list_shares.handler({})).hints).toBeUndefined();
+  });
+
+  it("never points the hosted server's agents at share_port, which it lacks", async () => {
+    const list = vi.fn(async () => ({
+      shares: [{ id: "s1", kind: "share", endedAt: null }],
+      usage: { over: false },
+      limits: { plan: "free", shares: 1, sessionMinutes: 120, passwords: false },
+      suspended: true,
+      hints: [
+        "Start another with whk share <port> --password, or stop one with whk shares stop <id>.",
+      ],
+    }));
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { list } as unknown as WebhooksCC["shares"] }),
+      { remote: true }
+    );
+    for (const name of ["list_shares", "list_names", "reserve_name"])
+      // share_port only ever as the local server's tool.
+      expect(tools[name].description).not.toMatch(/with share_port|so share_port|, share_port\)/);
+    expect(tools.list_names.description).toContain("whk share <port> --name <name>");
+    expect(tools.reserve_name.description).toContain("whk share <port>");
+    const listed = parseJsonResult(await tools.list_shares.handler({}));
+    const hints = (listed.hints as string[]).join(" ");
+    expect(hints).toContain("whk share <port>` on the person's computer");
+    expect(hints).toContain("whk share <port> --password");
+    expect(hints).toContain("stop_share");
+    expect(hints).toContain("new previews are refused");
+    expect(hints).not.toMatch(
+      /(?:before|use|with) share_port|share_port (?:again|is refused|with a password)/
+    );
+
+    // The local server keeps naming its own tool.
+    const local = getRegisteredTools(
+      createMockClient({ shares: { list } as unknown as WebhooksCC["shares"] })
+    );
+    const localHints = (
+      parseJsonResult(await local.list_shares.handler({})).hints as string[]
+    ).join(" ");
+    expect(localHints).toContain("share_port with a password");
+    expect(localHints).toContain("before share_port");
+    expect(local.list_names.description).toContain("share_port and its name");
+  });
+
+  it("returns the plan's limits with a new share, and next steps when whk refuses", async () => {
+    const live = {
+      url: "https://sample-preview-1234-free.sharehooks.cc",
+      name: "sample-preview-1234-free",
+      expiresAt: null,
+      notice: true,
+      password: false,
+      port: 5000,
+      stop: vi.fn(),
+      closed: new Promise<{ reason: string }>(() => undefined),
+    };
+    const limits = { plan: "free", shares: 1, sessionMinutes: 120, passwords: false };
+    const start = vi
+      .fn()
+      .mockResolvedValueOnce(live)
+      .mockRejectedValueOnce(new Error("Free allows 1 live share at a time."));
+    const list = vi.fn(async () => ({
+      shares: [{ id: "s1", kind: "share", endedAt: null }],
+      usage: { over: false },
+      limits,
+    }));
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { start, list } as unknown as WebhooksCC["shares"] })
+    );
+    const shared = parseJsonResult(await tools.share_port.handler({ port: 5000 }));
+    expect(shared.limits).toEqual(limits);
+    expect((shared.hints as string[]).join(" ")).toContain("stop_share");
+
+    const refused = await tools.share_port.handler({ port: 5001 });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain("Free allows 1 live share at a time.");
+    expect(refused.content[0].text).toContain("list_shares");
+  });
+
+  it("reads a share's request log and manages names without the dashboard", async () => {
+    const requests = vi.fn(async () => ({ available: true, requests: [{ method: "GET" }] }));
+    const nameList = { names: [{ name: "acme-demo", usable: true }], limit: 3, used: 1 };
+    const names = {
+      list: vi.fn(async () => nameList),
+      reserve: vi.fn(async (name: string) => ({ name })),
+      release: vi.fn(async () => undefined),
+      setPassword: vi.fn(async () => undefined),
+      clearPassword: vi.fn(async () => undefined),
+    };
+    const tools = getRegisteredTools(
+      createMockClient({
+        shares: { requests } as unknown as WebhooksCC["shares"],
+        names: names as unknown as WebhooksCC["names"],
+      })
+    );
+    expect(parseJsonResult(await tools.share_requests.handler({ id: "s1" })).available).toBe(true);
+    expect(requests).toHaveBeenCalledWith("s1");
+    expect(parseJsonResult(await tools.list_names.handler({}))).toEqual(nameList);
+    await tools.reserve_name.handler({ name: "acme-demo" });
+    expect(names.reserve).toHaveBeenLastCalledWith("acme-demo", {});
+    await tools.reserve_name.handler({ name: "acme-team", team: "Acme" });
+    expect(names.reserve).toHaveBeenLastCalledWith("acme-team", { team: "Acme" });
+    expect(parseJsonResult(await tools.release_name.handler({ name: "acme-demo" }))).toEqual({
+      released: "acme-demo",
+    });
+    const set = parseJsonResult(
+      await tools.set_name_password.handler({ name: "acme-demo", password: "correct-horse" })
+    );
+    expect(set).toEqual({ name: "acme-demo", password: true });
+    expect(JSON.stringify(set)).not.toContain("correct-horse");
+    expect(names.setPassword).toHaveBeenCalledWith("acme-demo", "correct-horse");
+    expect(parseJsonResult(await tools.clear_name_password.handler({ name: "acme-demo" }))).toEqual(
+      { name: "acme-demo", password: false }
+    );
+  });
+
+  it("lists and stops shares through the API", async () => {
+    const list = vi.fn(async () => ({ shares: [], usage: {}, limits: {} }));
+    const stop = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, stopped: true, edgeReached: true })
+      .mockResolvedValueOnce({ ok: true, stopped: false, edgeReached: true });
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { list, stop } as unknown as WebhooksCC["shares"] })
+    );
+    parseJsonResult(await tools.list_shares.handler({ state: "live" }));
+    expect(list).toHaveBeenCalledWith({ state: "live" });
+    parseJsonResult(await tools.list_shares.handler({}));
+    expect(list).toHaveBeenLastCalledWith({});
+    const stopped = parseJsonResult(await tools.stop_share.handler({ id: "s1" }));
+    expect(stopped).toMatchObject({ id: "s1", stopped: true, edgeReached: true });
+    expect(stop).toHaveBeenCalledWith("s1");
+    // "Already ended" is told apart from "stopped".
+    const again = parseJsonResult(await tools.stop_share.handler({ id: "s1" }));
+    expect(again).toMatchObject({ id: "s1", stopped: false });
+    expect(again.note).toContain("already ended");
+  });
+
+  it("counts only your own previews towards slots and keeps the server's hints", async () => {
+    const list = vi.fn(async () => ({
+      shares: [{ id: "t1", kind: "share", endedAt: null, mine: false }],
+      usage: { over: false },
+      limits: { plan: "pro", shares: 1, sessionMinutes: null, passwords: true },
+      suspended: true,
+      hints: [
+        "Sharing is suspended on this account. Write to support@webhooks.cc if this is a mistake.",
+        "Stop one with whk shares stop <id or name> to start another.",
+      ],
+    }));
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { list } as unknown as WebhooksCC["shares"] })
+    );
+    const listed = parseJsonResult(await tools.list_shares.handler({}));
+    const hints = listed.hints as string[];
+    // A teammate's preview does not fill your slot.
+    expect(hints.join(" ")).not.toContain("preview slots are in use");
+    // The server's suspension hint stays, in tool words.
+    expect(hints.join(" ")).toContain("suspended");
+    expect(hints.join(" ")).toContain("stop_share");
+    expect(hints.join(" ")).not.toContain("whk shares stop");
+  });
+
+  it("passes a live tunnel's answer through get_request", async () => {
+    const liveResponse = {
+      status: 201,
+      headers: { "content-type": "application/json" },
+      body: '{"ok":true}',
+      bodyTruncated: false,
+      bodyEncoding: "utf8" as const,
+      ms: 12,
+    };
+    const tools = getRegisteredTools(
+      createMockClient({
+        requests: {
+          get: vi.fn(async () => makeRequest({ id: "req1", liveResponse })),
+        } as unknown as WebhooksCC["requests"],
+      })
+    );
+    const request = parseJsonResult(await tools.get_request.handler({ requestId: "req1" }));
+    expect(request.liveResponse).toEqual(liveResponse);
   });
 
   it("lists teams with ISO period ends", async () => {
@@ -2295,5 +2621,28 @@ describe("createServer", () => {
         delete process.env.WHK_API_KEY;
       }
     }
+  });
+});
+
+describe("toolWords", () => {
+  it("names the tool for each whk command a hint gives", () => {
+    expect(toolWords("Run whk names password <name> --clear to open it.")).toBe(
+      "Run clear_name_password to open it."
+    );
+    expect(toolWords("Run whk names password <name> to set one.")).toBe(
+      "Run set_name_password to set one."
+    );
+    expect(toolWords("Stop one with whk shares stop <id or name>.")).toBe(
+      "Stop one with stop_share."
+    );
+  });
+
+  it("keeps whk share as a command on the hosted server, which has no share_port", () => {
+    expect(toolWords("Run whk share <port> --password to add one.", true)).toBe(
+      "Run whk share <port> --password to add one."
+    );
+    expect(toolWords("Run whk names ls, then whk share <port>.", true)).toBe(
+      "Run list_names, then whk share <port>."
+    );
   });
 });

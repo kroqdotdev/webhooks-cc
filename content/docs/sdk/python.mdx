@@ -1,9 +1,9 @@
 ---
 title: "Python SDK"
-description: "The webhooks-cc Python package captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes pytest fixtures."
+description: "The webhooks-cc Python package captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures, and shares a local port at a public link. Includes pytest fixtures."
 section: sdk
 order: 6
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords: ["python webhook sdk", "pytest webhooks", "webhook testing python", "verify webhook signature python", "webhooks-cc"]
 seo:
@@ -261,6 +261,48 @@ The event's `data` also carries `replyText` and, when the endpoint has named fie
 paid = verify_forwarded_json(body, headers, secret)
 print(paid["invoice"], paid["amount"])
 ```
+
+## Share a local port
+
+Put the site on this computer at a public link, for a teammate, a client, or a check that runs elsewhere. It runs the [`whk` CLI](/docs/share) underneath, so `whk` must be on the `PATH`:
+
+```python
+with client.shares.start(3000) as live:
+    print(live.url)  # https://sample-preview-1234-free.sharehooks.cc
+    run_checks_against(live.url)
+# leaving the block stops the share
+```
+
+`client.shares.start()` shares as the client's own account: a client with an API key passes it to `whk`, and one from `WebhooksCC.connected()` has `whk` read the same agent credential file. `share(port, ...)` (from `webhooks_cc`) does the same without a client, with `api_key=`, else `WHK_API_KEY` from the environment, else the CLI's own login; a key goes to `whk` as `WHK_API_KEY` with `WHK_AUTH=key`, the only way `whk` reads one. Both take `name=` (a name you reserved, Pro and Business), `password=` (8 to 200 characters, passed through the environment, never the command line), `on_request=`, `on_notice=`, `on_event=` and `timeout=`, and return a `LiveShare`:
+
+| Member | What it is |
+| --- | --- |
+| `url`, `name` | The public link and its name (a random one ending in `-free` on Free) |
+| `expires_at` | When a Free share's 2 hours run out (ISO 8601), or `None` |
+| `notice`, `password` | Whether visitors see a short notice first, and whether they need a password |
+| `events()` | Every event the CLI prints (requests, notices, reconnects) until the share ends |
+| `wait(timeout)`, `reason`, `running` | Block until it ends, and why it ended |
+| `stop()` | Close the CLI's input, wait for it to exit, and return why it ended |
+
+A refusal (no free slot, a name that is taken, the month's data used up) raises `WebhooksCCError` with the CLI's own words; a missing `whk` says how to install it (`whk_install_hint()`). The share also stops when your program exits.
+
+The rest of the [Shares page](/docs/share#for-agents) is on the client:
+
+```python
+listing = client.shares.list(state="live")  # shares, usage, limits, names, suspended, hints
+for share in listing.shares:
+    print(share.kind, share.url, share.bytes)
+visits = client.shares.requests(listing.shares[0].id)  # a preview's visitor log, no addresses
+result = client.shares.stop(listing.shares[0].id)  # result.stopped is False if it had already ended
+
+client.names.reserve("acme-demo")  # team="Payments" keeps it inside a team
+client.names.set_password("acme-demo", "a long passphrase")
+client.names.clear_password("acme-demo")
+names = client.names.list()  # names, limit and used (your own), teams (each team's count)
+client.names.release("acme-demo")
+```
+
+A request captured while [`whk tunnel --live`](/docs/live-tunnel) relayed the endpoint to your app has `live_response`: what your app answered and the sender got (`status`, `headers`, `body`, `body_truncated`, `body_encoding`, `ms`, and `outcome`, which is `"answered"` or why a stand-in answered instead).
 
 ## Stream requests as they arrive
 

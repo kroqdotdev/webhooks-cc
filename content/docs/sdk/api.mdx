@@ -1,9 +1,9 @@
 ---
 title: "API Reference"
-description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, streaming, matchers, and error handling with code examples."
+description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, sharing localhost, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -1122,6 +1122,124 @@ invites.decline(inviteId: string): Promise<void>
 
 </ApiMethod>
 
+## Sharing localhost
+
+Public links to ports on this computer ([`whk share`](/docs/share)) and live tunnels ([`whk tunnel --live`](/docs/live-tunnel)). Previews are served at `<name>.sharehooks.cc`; Free previews get a random name ending in `-free` and last 2 hours. Everything the dashboard's Shares page does is here, so an agent never needs it.
+
+<ApiMethod method="GET" path="/shares" title="client.shares.list">
+
+Your previews and live tunnels, live ones first, then the latest that ended, with this month's shared data and your plan's limits. Includes teammates' previews under your teams' names and teammates' live tunnels on endpoints you own.
+
+```ts
+list(options?: { state?: "live" | "ended" }): Promise<TunnelShareList>
+// Returns: { shares: TunnelShare[], usage: TunnelUsage, limits: TunnelLimits,
+//            names: TunnelNamesSummary, suspended: boolean, hints: string[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/shares/:id/stop" title="client.shares.stop">
+
+Stop a preview or live tunnel. The CLI running it is told why and exits. `stopped` is `false` when it had already ended; `edgeReached` is `false` when the edge could not be told at once, and it ends at the next sync (within half a minute).
+
+```ts
+stop(id: string): Promise<TunnelStopResult>
+// Returns: { ok: true, stopped: boolean, edgeReached: boolean }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/shares/:id/requests" title="client.shares.requests">
+
+The last visitor requests to a running preview, newest first: no addresses, a number per visitor.
+
+```ts
+requests(id: string): Promise<TunnelVisits>
+// Returns: { available: boolean, requests: TunnelVisit[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="RUN" path="whk share" title="client.shares.start">
+
+Share a local port at a public link as this client's account, by running the `whk` CLI (Node.js only, `whk` on the `PATH`). Resolves once the link is live. A client with an API key passes it to `whk`; a client from `WebhooksCC.connected()` makes `whk` use the same agent credential file, so the share belongs to the account the client sees. Any other client throws.
+
+```ts
+start(options: { port: number; name?: string; password?: string; whkPath?: string;
+  tunnelUrl?: string; onRequest?; onNotice?; onEvent?; timeout?: number }): Promise<LiveShare>
+
+const preview = await client.shares.start({ port: 3000 });
+console.log(preview.url); // https://sample-preview-1234-free.sharehooks.cc
+await preview.stop();
+```
+
+</ApiMethod>
+
+<ApiMethod method="RUN" path="whk share" title="share">
+
+The same, without a client: `whk` uses the key you pass (handed over as `WHK_API_KEY` with `WHK_AUTH=key`), else `WHK_API_KEY` from your environment, else its own login.
+
+```ts
+import { share } from "@webhooks-cc/sdk";
+
+const preview = await share({
+  port: 5173,
+  name: "acme-demo", // a name you reserved (Pro and Business)
+  password: process.env.PREVIEW_PASSWORD, // sent through the environment, never the command line
+  onRequest: ({ method, path, status }) => console.log(method, path, status),
+});
+// preview: { url, name, expiresAt, notice, password, port, stop(), closed }
+const { reason } = await preview.closed; // settles however it ends
+```
+
+`stop()` closes the CLI's input and waits for it to exit, so it ends cleanly on every platform. When `whk` is missing, the error says how to install it (`whkInstallHint()`; `WHK_INSTALL_COMMAND` on macOS and Linux, `WHK_INSTALL_WINDOWS` on Windows). A refusal (no free slot, a name that is taken, data used up) rejects with the CLI's own words.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/tunnel-names" title="client.names.list">
+
+Your reserved names and your teams', with how many your plan and each team allow. Own names count against your plan; names kept inside a team count against the team (its plan's names per seat times its seats).
+
+```ts
+list(): Promise<TunnelNameList>
+// Returns: { names: TunnelName[], limit, used, plan?, teams?: TunnelTeamNameCount[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/tunnel-names" title="client.names.reserve">
+
+Reserve a name (Pro and Business). With `team` (a team id, or a name that matches one of your teams) it belongs to that team and every member may share under it.
+
+```ts
+reserve(name: string, options?: { team?: string }): Promise<TunnelName>
+```
+
+</ApiMethod>
+
+<ApiMethod method="DELETE" path="/tunnel-names/:name" title="client.names.release">
+
+Release a name you reserved, or as a team's owner one of its names. A preview running under it stops.
+
+```ts
+release(name: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="PUT" path="/tunnel-names/:name/password" title="client.names.setPassword">
+
+Put a password (8 to 200 characters) on every preview under the name, a running one included. `clearPassword` removes it.
+
+```ts
+setPassword(name: string, password: string): Promise<void>
+clearPassword(name: string): Promise<void>
+```
+
+</ApiMethod>
+
+Requests captured while `whk tunnel --live` ran carry `liveResponse`: what the local app answered and the sender got. See [Requests](#requests) and the `LiveResponse` type below.
+
 ## Flow Builder
 
 <ApiMethod method="POST" path="(chained)" title="client.flow">
@@ -1509,6 +1627,101 @@ interface Request {
   kind?: "http" | "email";
   email?: EmailCapture | null; // the parsed message, for a captured email
   parsed?: ParsedEmail | null; // what the endpoint's layouts found, once parsed
+  liveResponse?: LiveResponse | null; // what the local app answered, under whk tunnel --live
+}
+
+// What the local app answered, on a request captured while whk tunnel --live ran
+interface LiveResponse {
+  status: number | null; // what the sender got: the app's status, or the stand-in's
+  headers: Record<string, string>; // as the sender got them (no Set-Cookie)
+  body: string; // the first 64 KB: text, or base64 when bodyEncoding is "base64"
+  bodyTruncated: boolean;
+  bodyEncoding: "utf8" | "base64";
+  ms: number | null;
+  // "refused": not passed back as it was (400 a path outside the endpoint,
+  // 502 a refused answer, or the app's status when cut off past 1 MB)
+  outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
+}
+
+// A whk share preview or a whk tunnel --live session
+interface TunnelShare {
+  id: string;
+  kind: "share" | "live";
+  name: string | null; // the preview's name; null for a live tunnel
+  url: string | null; // the preview link, or the capture URL of a live tunnel
+  endpointSlug: string | null; // a live tunnel's endpoint
+  client: string; // what it runs on: "laptop, macOS"
+  startedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  expiresAt: string | null; // a Free preview's 2 hours
+  bytes: number;
+  requests: number;
+  password: boolean;
+  mine: boolean; // false for a teammate's run
+  startedBy: { id: string; email: string } | null;
+  notice?: boolean; // visitors see the notice page first
+}
+
+interface TunnelUsage {
+  month: string; // "2026-11", UTC
+  bytes: number;
+  limitBytes: number;
+  over: boolean; // previews pause until resetsAt
+  resetsAt: string;
+  message?: string | null; // why previews are paused, and until when
+}
+
+interface TunnelLimits {
+  plan: string;
+  label?: string; // "Pro", "Team Business"
+  shares: number; // previews at once
+  reservedNames: number;
+  sessionMinutes: number | null;
+  dataGb: number;
+  passwords: boolean;
+  notice: boolean; // visitors see a short notice first
+}
+
+interface TunnelNamesSummary {
+  limit: number; // own names the plan allows
+  used: number; // own names reserved
+  usable: number; // names you may share under now, own and teams'
+}
+
+// TunnelShareList also carries suspended (sharing suspended on the account)
+// and hints: what to do next, as whk commands an agent can run.
+
+interface TunnelVisit {
+  method: string;
+  path: string;
+  status: number;
+  ms: number;
+  bytes: number;
+  at: string;
+  country: string | null;
+  device: "phone" | "tablet" | "computer" | "bot" | "unknown";
+  visitor: number; // 1 for the first visitor seen
+}
+
+interface TunnelName {
+  name: string;
+  url: string | null;
+  team: { id: string; name: string } | null;
+  reservedBy: { id: string; email: string } | null;
+  mine: boolean;
+  password: boolean;
+  live: boolean; // a preview runs under it now
+  usable?: boolean; // false when the plan no longer covers it
+  createdAt: string;
+}
+
+interface TunnelTeamNameCount {
+  id: string;
+  name: string;
+  active?: boolean; // false while the team has no subscription
+  limit: number; // the plan's names per seat times its seats
+  used: number;
 }
 
 // A captured email: method "EMAIL", path is the recipient address, body the raw message

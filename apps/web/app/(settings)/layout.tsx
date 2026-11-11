@@ -7,6 +7,7 @@ import { SiteProvider } from "@/components/providers/site-provider";
 import type { Metadata } from "next";
 import { SITES } from "@/lib/site";
 import { currentSite } from "@/lib/site-server";
+import { tunnelConfig } from "@/lib/tunnels/config";
 
 /** Settings pages' titles name the site they are shown on. */
 export async function generateMetadata(): Promise<Metadata> {
@@ -35,7 +36,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
             </Link>
           </SiteHeader>
           <SettingsDataProvider>
-            <SettingsShell>
+            <SettingsShell sharing={tunnelConfig() !== null}>
               <ErrorBoundary>{children}</ErrorBoundary>
             </SettingsShell>
           </SettingsDataProvider>

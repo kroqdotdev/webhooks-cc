@@ -9,7 +9,7 @@ vi.mock("./admin", () => ({
   createAdminClient: () => ({ from }),
 }));
 
-const { parseExtractsParam, withEmailExtracts } = await import("./requests");
+const { parseExtractsParam, toLiveResponse, withEmailExtracts } = await import("./requests");
 type RequestRecord = import("./requests").RequestRecord;
 
 function email(overrides: Partial<EmailCapture> = {}): EmailCapture {
@@ -64,6 +64,51 @@ const FOUND = {
   codes: ["482913"],
   links: [{ url: "https://app.acme.test/confirm?token=abc", label: "Confirm email", action: true }],
 };
+
+describe("toLiveResponse", () => {
+  it("returns null when a request has no live answer", () => {
+    expect(toLiveResponse(null)).toBeNull();
+    expect(toLiveResponse(undefined)).toBeNull();
+    expect(toLiveResponse("nope")).toBeNull();
+    expect(toLiveResponse([1])).toBeNull();
+  });
+
+  it("shapes the stored answer for the API", () => {
+    expect(
+      toLiveResponse({
+        status: 202,
+        headers: { "content-type": "application/json", bad: 1 },
+        body: '{"ok":true}',
+        bodyTruncated: false,
+        bodyEncoding: "utf8",
+        ms: 4,
+        outcome: "answered",
+      })
+    ).toEqual({
+      status: 202,
+      headers: { "content-type": "application/json" },
+      body: '{"ok":true}',
+      bodyTruncated: false,
+      bodyEncoding: "utf8",
+      ms: 4,
+      outcome: "answered",
+    });
+  });
+
+  it("keeps stand-in outcomes and reads unknown values safely", () => {
+    expect(toLiveResponse({ status: 502, outcome: "offline", bodyEncoding: "base64" })).toEqual({
+      status: 502,
+      headers: {},
+      body: "",
+      bodyTruncated: false,
+      bodyEncoding: "base64",
+      ms: null,
+      outcome: "offline",
+    });
+    expect(toLiveResponse({ status: "x", outcome: "weird" })?.outcome).toBe("answered");
+    expect(toLiveResponse({ status: "x" })?.status).toBeNull();
+  });
+});
 
 describe("parseExtractsParam", () => {
   it("is off unless asked for with true", () => {

@@ -9,6 +9,7 @@ import { apiFetch, shortDateTime, shortDay } from "@/lib/support/client";
 import type { AccountDetail, AccountSummary } from "@/lib/ops/accounts";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
+import { AccountSharingPanel } from "./sharing";
 
 const count = new Intl.NumberFormat("en-US");
 
@@ -423,6 +424,7 @@ export function AccountInspector({ id }: { id: string }) {
               {account.internal ? "Count it again" : "Mark internal"}
             </Button>
           </div>
+          <AccountSharingPanel userId={id} />
           {error && <p className="text-sm text-destructive-ink">{error}</p>}
         </aside>
       </div>

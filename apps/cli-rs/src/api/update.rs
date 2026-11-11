@@ -116,8 +116,10 @@ pub fn check_install_writability() -> Result<std::path::PathBuf> {
                 current_exe.display()
             )
         }
-        Err(e) => Err(anyhow::Error::new(e)
-            .context(format!("cannot check {} writability", parent.display()))),
+        Err(e) => {
+            Err(anyhow::Error::new(e)
+                .context(format!("cannot check {} writability", parent.display())))
+        }
     }
 }
 
@@ -150,7 +152,9 @@ pub async fn apply(release: &Release) -> Result<()> {
     let resp = client.get(&release.archive_url).send().await?;
 
     // Check Content-Length before downloading
-    if let Some(content_length) = resp.content_length() && content_length > MAX_BINARY_SIZE {
+    if let Some(content_length) = resp.content_length()
+        && content_length > MAX_BINARY_SIZE
+    {
         anyhow::bail!("archive too large ({content_length} bytes, max {MAX_BINARY_SIZE})");
     }
 
@@ -170,9 +174,7 @@ pub async fn apply(release: &Release) -> Result<()> {
     let actual_hash = hex::encode(hasher.finalize());
 
     if actual_hash != expected_hash {
-        anyhow::bail!(
-            "checksum mismatch:\n  expected: {expected_hash}\n  actual:   {actual_hash}"
-        );
+        anyhow::bail!("checksum mismatch:\n  expected: {expected_hash}\n  actual:   {actual_hash}");
     }
 
     // Extract binary
@@ -190,8 +192,7 @@ pub async fn apply(release: &Release) -> Result<()> {
 
     let old_path = current_exe.with_extension("old");
     let _ = std::fs::remove_file(&old_path);
-    std::fs::rename(&current_exe, &old_path)
-        .context("failed to move current binary aside")?;
+    std::fs::rename(&current_exe, &old_path).context("failed to move current binary aside")?;
     if let Err(e) = std::fs::rename(&tmp_path, &current_exe) {
         // Rollback: restore the old binary
         let _ = std::fs::rename(&old_path, &current_exe);
@@ -208,9 +209,7 @@ fn validate_github_url(url: &str) -> Result<()> {
     if parsed.scheme() != "https" {
         anyhow::bail!("download URL must use HTTPS: {url}");
     }
-    if host != ALLOWED_DOWNLOAD_HOST
-        && !host.ends_with(ALLOWED_DOWNLOAD_CDN)
-    {
+    if host != ALLOWED_DOWNLOAD_HOST && !host.ends_with(ALLOWED_DOWNLOAD_CDN) {
         anyhow::bail!("download URL must be from github.com: {url}");
     }
     Ok(())
@@ -226,7 +225,11 @@ fn archive_name_for_platform(tag: &str) -> String {
         os => format!("{arch}-unknown-{os}"),
     };
 
-    let ext = if std::env::consts::OS == "windows" { "zip" } else { "tar.gz" };
+    let ext = if std::env::consts::OS == "windows" {
+        "zip"
+    } else {
+        "tar.gz"
+    };
     format!("whk-{tag}-{target}.{ext}")
 }
 
@@ -273,7 +276,12 @@ mod tests {
 
     #[test]
     fn test_validate_github_url_accepts_valid() {
-        assert!(validate_github_url("https://github.com/kroqdotdev/webhooks-cc/releases/download/v1.0.0/whk.tar.gz").is_ok());
+        assert!(
+            validate_github_url(
+                "https://github.com/kroqdotdev/webhooks-cc/releases/download/v1.0.0/whk.tar.gz"
+            )
+            .is_ok()
+        );
         assert!(validate_github_url("https://objects.githubusercontent.com/some-asset").is_ok());
     }
 

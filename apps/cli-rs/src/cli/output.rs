@@ -36,19 +36,35 @@ fn no_color() -> bool {
 }
 
 pub fn bold(s: &str) -> String {
-    if no_color() { s.to_string() } else { format!("\x1b[1m{s}\x1b[0m") }
+    if no_color() {
+        s.to_string()
+    } else {
+        format!("\x1b[1m{s}\x1b[0m")
+    }
 }
 
 pub fn dim(s: &str) -> String {
-    if no_color() { s.to_string() } else { format!("\x1b[2m{s}\x1b[0m") }
+    if no_color() {
+        s.to_string()
+    } else {
+        format!("\x1b[2m{s}\x1b[0m")
+    }
 }
 
 pub fn green(s: &str) -> String {
-    if no_color() { s.to_string() } else { format!("\x1b[32m{s}\x1b[0m") }
+    if no_color() {
+        s.to_string()
+    } else {
+        format!("\x1b[32m{s}\x1b[0m")
+    }
 }
 
 pub fn red(s: &str) -> String {
-    if no_color() { s.to_string() } else { format!("\x1b[31m{s}\x1b[0m") }
+    if no_color() {
+        s.to_string()
+    } else {
+        format!("\x1b[31m{s}\x1b[0m")
+    }
 }
 
 pub fn method_color(method: &str) -> String {
@@ -112,7 +128,10 @@ pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
 fn endpoint_table_lines(endpoints: &[Endpoint], webhook_url: &str) -> Vec<String> {
     let mut out = vec![format!(
         "    {:<20} {:<20} {:<16} {}",
-        dim("SLUG"), dim("NAME"), dim("TEAM"), dim("URL"),
+        dim("SLUG"),
+        dim("NAME"),
+        dim("TEAM"),
+        dim("URL"),
     )];
     for ep in endpoints {
         let name = sanitize(ep.name.as_deref().unwrap_or("-"));
@@ -121,7 +140,14 @@ fn endpoint_table_lines(endpoints: &[Endpoint], webhook_url: &str) -> Vec<String
         let team = if let Some(ref from) = ep.from_team {
             format!("[-> {}]", sanitize(&from.team_name))
         } else if !ep.shared_with.is_empty() {
-            format!("[{}]", ep.shared_with.iter().map(|t| sanitize(&t.team_name)).collect::<Vec<_>>().join(", "))
+            format!(
+                "[{}]",
+                ep.shared_with
+                    .iter()
+                    .map(|t| sanitize(&t.team_name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         } else {
             String::new()
         };
@@ -164,10 +190,18 @@ pub fn print_request_line(req: &CapturedRequest) {
             dim(&time),
             method,
             sanitize_line(&req.path),
-            bold(&sanitize_line(email.subject.as_deref().unwrap_or("(no subject)"))),
+            bold(&sanitize_line(
+                email.subject.as_deref().unwrap_or("(no subject)")
+            )),
             dim(&size)
         ),
-        None => println!("  {} {} {} {}", dim(&time), method, sanitize(&req.path), dim(&size)),
+        None => println!(
+            "  {} {} {} {}",
+            dim(&time),
+            method,
+            sanitize(&req.path),
+            dim(&size)
+        ),
     }
 }
 
@@ -186,7 +220,11 @@ fn email_detail_lines(req: &CapturedRequest, email: &crate::types::EmailSummary)
     out.push(format!("  {} {}", dim("ID:"), sanitize(&req.id)));
     out.push(format!("  {} {}", dim("To:"), sanitize_line(&req.path)));
     if let Some(from) = email.from.first() {
-        out.push(format!("  {} {}", dim("From:"), sanitize_line(&from.to_string())));
+        out.push(format!(
+            "  {} {}",
+            dim("From:"),
+            sanitize_line(&from.to_string())
+        ));
     }
     out.push(format!(
         "  {} {}",
@@ -197,7 +235,11 @@ fn email_detail_lines(req: &CapturedRequest, email: &crate::types::EmailSummary)
         out.push(format!("  {} {}", dim("Tag:"), sanitize_line(tag)));
     }
     out.push(format!("  {} {}", dim("Size:"), format_bytes(req.size)));
-    out.push(format!("  {} {}", dim("Time:"), format_timestamp(req.received_at)));
+    out.push(format!(
+        "  {} {}",
+        dim("Time:"),
+        format_timestamp(req.received_at)
+    ));
     if !email.attachments.is_empty() {
         out.push(String::new());
         out.push(bold("Attachments"));
@@ -205,7 +247,9 @@ fn email_detail_lines(req: &CapturedRequest, email: &crate::types::EmailSummary)
             out.push(format!(
                 "  {} {} {}",
                 sanitize_line(attachment.filename.as_deref().unwrap_or("(unnamed)")),
-                dim(&sanitize_line(attachment.content_type.as_deref().unwrap_or(""))),
+                dim(&sanitize_line(
+                    attachment.content_type.as_deref().unwrap_or("")
+                )),
                 dim(&format_bytes(attachment.size as usize))
             ));
         }
@@ -264,7 +308,12 @@ pub fn print_request_detail(req: &CapturedRequest) {
     }
     println!("{}", bold("Request Details"));
     println!("  {} {}", dim("ID:"), sanitize(&req.id));
-    println!("  {} {} {}", dim("Method:"), method_color(&req.method), sanitize(&req.path));
+    println!(
+        "  {} {} {}",
+        dim("Method:"),
+        method_color(&req.method),
+        sanitize(&req.path)
+    );
     println!("  {} {}", dim("IP:"), sanitize(&req.ip));
     println!("  {} {}", dim("Size:"), format_bytes(req.size));
     println!("  {} {}", dim("Time:"), format_timestamp(req.received_at));
@@ -293,9 +342,19 @@ pub fn print_request_detail(req: &CapturedRequest) {
         println!("\n{}", bold("Body"));
         let sanitized_body = sanitize(body);
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&sanitized_body) {
-            println!("{}", serde_json::to_string_pretty(&val).unwrap_or(sanitized_body));
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&val).unwrap_or(sanitized_body)
+            );
         } else {
             println!("{sanitized_body}");
+        }
+    }
+
+    if let Some(ref live) = req.live_response {
+        println!("\n{}", bold("Live Response"));
+        for line in crate::util::live::live_response_lines(live) {
+            println!("  {line}");
         }
     }
 }
@@ -305,7 +364,10 @@ pub fn print_usage(usage: &UsageInfo) {
     println!("  {} {}", dim("Plan:"), usage.plan);
     println!(
         "  {} {}/{} ({} remaining)",
-        dim("Requests:"), usage.used, usage.limit, usage.remaining
+        dim("Requests:"),
+        usage.used,
+        usage.limit,
+        usage.remaining
     );
     if let Some(pe) = usage.period_end {
         println!("  {} {}", dim("Period ends:"), format_timestamp(pe));

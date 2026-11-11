@@ -3,7 +3,7 @@ title: Teams
 description: "Share webhook endpoints across your team. Invite members, assign roles, manage permissions, and inspect incoming requests together in a shared real-time dashboard."
 section: features
 order: 20
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 seo:
   ogTitle: "Team Collaboration for Webhooks"
@@ -123,6 +123,15 @@ const shared = await client.endpoints.list({ team: teams[0].name });
 Invites are deliberately not exposed as MCP tools: accepting one claims a paid seat and inviting sends real email, so those stay with people. Creating, renaming, or deleting teams, removing members, and billing remain dashboard actions; billing routes reject API keys.
 
 **Quota.** `whk usage` and the MCP `get_usage` tool show each subscribed team's pool under your personal plan. In the SDK, `teams.list()` returns `requestsUsed`, `requestLimit`, `seats`, and `periodEnd` per team.
+
+## Sharing localhost in a team
+
+[`whk share`](/docs/share) previews and [`whk tunnel --live`](/docs/live-tunnel) follow the team plan too:
+
+- **Limits per member**: a member of a subscribed team gets Teams' sharing limits (or Team Business's), unless their own plan gives more. Shares at once and data are counted per person.
+- **Team names**: a name reserved with `--team` (`whk names reserve acme-demo --team Payments`) belongs to the team, and every member may share under it, one preview at a time. Team names count against the team, not the person: the plan's names per seat times the team's seats (3 per seat on Teams, 20 on Team Business). The member who reserved a name, or the team's owner, may release it or change its password.
+- **Members who leave or are removed** hand their team names to the owner, and their previews under team names stop. When a team's subscription ends, previews under its names stop and its names wait, kept but unusable, until it is back.
+- **Teammates' runs**: `whk shares ls` and `GET /api/shares` list teammates' previews under the team's names and teammates' live tunnels on endpoints you own. You can stop either: a preview under a team name, and as an endpoint's owner a teammate's `--live` tunnel on it.
 
 ## How It Works
 

@@ -17,7 +17,7 @@ const FAQ_ITEMS = [
   {
     question: "Can I replace ngrok with webhooks.cc?",
     answer:
-      "For webhook testing, yes. webhooks.cc captures incoming webhooks, stores request history, and forwards to localhost via the CLI tunnel. If you use ngrok only to receive webhooks during development, webhooks.cc covers that workflow and adds inspection, replay, SDK assertions, and MCP support. If you use ngrok for general-purpose tunneling (exposing web apps, TCP services, databases), ngrok remains the better fit because webhooks.cc is purpose-built for webhooks.",
+      "For webhook testing and for showing a local site, yes. webhooks.cc captures incoming webhooks, stores request history, and forwards to localhost via the CLI tunnel; whk tunnel --live answers senders with your local app's response, and whk share puts a local web app at a public link on sharehooks.cc. If you use ngrok for TCP services, databases, your own domains or production traffic, ngrok remains the better fit.",
   },
   {
     question: "How does the webhooks.cc CLI tunnel compare to ngrok's tunnel?",
@@ -25,9 +25,14 @@ const FAQ_ITEMS = [
       "Both forward traffic to a local port. The difference is scope: ngrok exposes any local service over a public URL. The webhooks.cc CLI (whk tunnel) captures every incoming request in the dashboard with full headers, body, and metadata, then forwards it to localhost. You get inspection + tunnel in one step. ngrok's local inspector shows requests while the agent runs, but keeps no searchable history you can query from tests or replay to another URL.",
   },
   {
+    question: "Can webhooks.cc share a local site like ngrok http?",
+    answer:
+      "Yes. whk share 3000 puts your local site at an HTTPS link on sharehooks.cc, with WebSockets and live reload passing through. Free shares get a random name ending in -free, last 2 hours and include 1 GB a month; Pro ($8/month) keeps 3 reserved names, adds passwords and 25 GB a month. ngrok's free plan gives one assigned ngrok-free.app domain that stays the same across restarts, with 1 GB and 20,000 HTTP requests a month; its Hobbyist plan ($10/month) removes the interstitial page.",
+  },
+  {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan has every Pro feature: webhook and email capture, inspection, replay, mock responses, forwarding, CLI tunnel, SDKs, and MCP server. Paid plans raise request limits and retention, Business adds more parsed pages, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately from $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
+      "Yes. The free plan has every Pro feature: webhook and email capture, inspection, replay, mock responses, forwarding, CLI tunnel, SDKs, and MCP server, and it can share a local site within smaller limits. Paid plans raise request limits and retention, Business adds more parsed pages, more layouts, custom inbound domains and file drops, and Teams (invite members, share endpoints) is billed separately from $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
   },
   {
     question: "Does ngrok have a webhook testing SDK?",
@@ -59,6 +64,33 @@ const ROWS = [
     "Local inspector (localhost:4040), dashboard Traffic Inspector",
   ],
   ["CLI tunnel to localhost", "Yes (whk tunnel)", "Yes (ngrok http)"],
+  ["Share a local site at a public link", "Yes (whk share, on sharehooks.cc)", "Yes (ngrok http)"],
+  [
+    "Webhook sender gets your local app's answer",
+    "Yes, with whk tunnel --live, and the request is kept",
+    "Yes, the tunnel proxies the response",
+  ],
+  [
+    "Free plan link",
+    "A random -free name per session, 2-hour sessions",
+    "One assigned ngrok-free.app domain, kept across restarts",
+  ],
+  [
+    "Free plan allowance",
+    "1 GB shared data a month, plus 50 captured webhooks a day",
+    "1 GB data and 20,000 HTTP requests a month",
+  ],
+  ["Browser warning page on free", "Yes, once a week per browser", "Yes, once a week per browser"],
+  [
+    "Stable names, paid",
+    "Pro ($8/mo): 3 reserved names, 25 GB a month",
+    "Hobbyist ($10/mo): ngrok-branded domains, 5 GB included",
+  ],
+  [
+    "Password on a shared link",
+    "Pro and up (whk share --password)",
+    "Basic auth, OAuth and more through Traffic Policy",
+  ],
   ["Mock responses", "Yes, configurable per endpoint", "No"],
   ["Request replay", "Yes, to any URL", "Yes, to the local upstream"],
   ["SDKs", "TypeScript, Python and Go, for testing", "No webhook-testing SDK"],
@@ -69,7 +101,7 @@ const ROWS = [
     "Yes, for account and traffic operations",
   ],
   ["TCP / non-HTTP tunneling", "No TCP tunnels; captures email too", "Yes"],
-  ["Custom domains", "For inbound email, on Business", "Yes (paid)"],
+  ["Custom domains", "For inbound email, on Business", "Yes (Pay-as-you-go)"],
   ["Edge computing / traffic policy", "Response rules for mock answers", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent SDKs)"],
   ["Team collaboration", "From $12/seat/mo, pooled quota", "$20/mo incl. 3 seats, then $5/seat"],
@@ -79,7 +111,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "ngrok Alternative: vs Hookdeck & Webhook.site (2026)",
   description:
-    "Compare ngrok vs webhooks.cc, Hookdeck, and Webhook.site for webhook testing: stored request history, CLI tunnel to localhost, replay, CI SDK, and MCP server.",
+    "Compare ngrok vs webhooks.cc, Hookdeck, and Webhook.site for webhook testing and sharing localhost: stored request history, CLI tunnel, live replies, public links, CI SDK, and MCP server.",
   path: "/compare/ngrok",
   keywords: [
     "ngrok alternative",
@@ -92,6 +124,8 @@ export const metadata = createPageMetadata({
     "ngrok free alternative",
     "webhook tunnel alternative",
     "localhost webhook testing",
+    "share localhost",
+    "ngrok free plan limits",
   ],
 });
 
@@ -115,9 +149,11 @@ export default function CompareNgrokPage() {
         <p className="text-lg text-muted-foreground mb-10">
           If you use ngrok mainly for webhook development, webhooks.cc is a purpose-built
           alternative that captures, inspects, replays, and forwards webhooks to localhost, with
-          SDKs for TypeScript, Python and Go, a CLI tunnel, and an MCP server included. ngrok is a
-          general-purpose tunnel for exposing any local service to the internet. Different tools,
-          different focus.
+          SDKs for TypeScript, Python and Go, a CLI tunnel, and an MCP server included. Its CLI also
+          shares a local site at a public link (<code>whk share</code>) and lets webhook senders get
+          your local app&apos;s answer (<code>whk tunnel --live</code>). ngrok is a general-purpose
+          tunnel for exposing any local service to the internet, with TCP, your own domains and
+          traffic policies. Different tools, different focus.
         </p>
 
         {/* Feature table */}
@@ -179,6 +215,23 @@ export default function CompareNgrokPage() {
           </div>
 
           <div className="ui-card ui-card-static">
+            <h3 className="text-lg font-bold mb-2">Sharing a local site</h3>
+            <p className="text-muted-foreground">
+              Both put a local web app at a public HTTPS link. ngrok&apos;s free plan gives one
+              assigned ngrok-free.app domain that stays the same across restarts, shows an
+              interstitial page to browsers, and includes 1 GB of data and 20,000 HTTP requests a
+              month; its Hobbyist plan at $10 a month removes the interstitial. webhooks.cc includes{" "}
+              <Link href="/docs/share" className="font-semibold hover:text-primary-ink">
+                whk share
+              </Link>{" "}
+              on every plan: Free shares get a random name ending in -free and a short notice page,
+              for 2 hours at a time with 1 GB a month; Pro ($8 a month) keeps 3 reserved names, adds
+              passwords and 25 GB a month, with no extra subscription. Previews serve web pages
+              only: no downloads, video or TCP.
+            </p>
+          </div>
+
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Scope and complexity</h3>
             <p className="text-muted-foreground">
               ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and
@@ -202,13 +255,14 @@ export default function CompareNgrokPage() {
               <li>Mock responses returned to the webhook sender</li>
               <li>A tunnel that captures and inspects, not just forwards</li>
               <li>Email captured at its own address next to your webhooks</li>
+              <li>A quick link to your local site, included in the plan you have</li>
             </ul>
           </div>
           <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose ngrok when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>General-purpose tunneling for any protocol (HTTP, TCP, TLS)</li>
-              <li>Custom domains and static URLs for staging environments</li>
+              <li>Your own domains for staging environments</li>
               <li>Traffic policies, IP restrictions, or edge compute</li>
               <li>Broad infrastructure tunneling beyond webhook testing</li>
             </ul>

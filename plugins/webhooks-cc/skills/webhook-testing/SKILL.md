@@ -17,14 +17,15 @@ check stays switched on.
    `https://webhooks.cc/mcp` works in any client that can add a remote MCP
    server, coding agents included: the human adds it and approves it once
    in the browser, with no key and no code. It cannot reach the developer's
-   machine, so it has no `send_to` or `replay_request` and refuses
-   `targetUrl`; for localhost, the developer runs the local server
+   machine, so it has no `send_to`, `replay_request` or `share_port` and
+   refuses `targetUrl`; for localhost, the developer runs the local server
    (`npx -y @webhooks-cc/mcp`) or `whk tunnel`.
 2. **SDKs** (`@webhooks-cc/sdk`; `webhooks-cc` for Python, `webhooks.cc/go`
    for Go): for tests that run in CI, and when the MCP tools are missing.
    TypeScript recipes are in [references/sdk-tests.md](references/sdk-tests.md).
 3. **CLI** (`whk`): `whk tunnel <port>` forwards live deliveries to localhost
-   while the developer clicks through a provider dashboard, and
+   while the developer clicks through a provider dashboard, `whk tunnel
+<port> --live` makes the sender get the local app's real answer, and
    `whk sandbox create --json` captures without an account.
 
 Without an API key the local MCP server needs no setup. If the human
@@ -202,6 +203,30 @@ CloudMailin, test the handler with real mail in that provider's shape:
 3. `render_email` leaves attachments out; say so if the handler's
    attachment path needs another test (a destination in that provider's
    format with attachments sent inline carries them).
+
+### Show a local site to someone, or give a provider the app's real answer
+
+- To let a person open what you are building (a client, a teammate, a
+  phone), `share_port` with the port the dev server runs on: it returns a
+  `https://<name>.sharehooks.cc` link and keeps running until `stop_share`
+  or the end of the MCP server. It needs `whk` installed and the local MCP
+  server. Free shares get a random name ending in `-free`, two hours, and a
+  notice page before the site; say so when you hand over the link.
+  `list_shares` shows what runs, this month's shared data, the plan's
+  limits and `hints` for what to do when they run out; `stop_share` frees
+  a slot. `share_requests` shows whether the person opened the link and
+  what failed for them.
+- Reserved names and passwords (Pro and Business) need no dashboard:
+  `list_names`, `reserve_name` (with `team` to share it with a team),
+  `release_name`, `set_name_password` and `clear_name_password`. Then
+  `share_port` with that `name`. Give the person the password yourself; the
+  tools never echo it.
+- When a webhook provider needs a public URL and must get the local app's
+  own answer (Slack slash commands, Twilio replies, validation handshakes,
+  OAuth callbacks), the developer runs `whk tunnel <port> --live`: each
+  request is still captured, so `get_request` shows it with the app's
+  answer as `liveResponse`. Plain `whk tunnel` replays captures to
+  localhost afterwards, and the sender never sees the app's answer.
 
 ### Debug a failing delivery
 

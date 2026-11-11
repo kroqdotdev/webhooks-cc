@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::io::Read;
 
@@ -24,7 +24,8 @@ pub async fn send_to_endpoint(
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
             let mut limited = file.take(10 * 1024 * 1024 + 1);
             let mut contents = String::new();
-            limited.read_to_string(&mut contents)
+            limited
+                .read_to_string(&mut contents)
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
             if contents.len() > 10 * 1024 * 1024 {
                 bail!("file too large (max 10MB)");
@@ -39,7 +40,11 @@ pub async fn send_to_endpoint(
         method: method.to_uppercase(),
         slug: slug.to_string(),
         path: None,
-        headers: if header_map.is_empty() { None } else { Some(header_map) },
+        headers: if header_map.is_empty() {
+            None
+        } else {
+            Some(header_map)
+        },
         body,
     };
 
@@ -53,8 +58,16 @@ pub async fn send_to_endpoint(
         } else {
             red(&format!("{} {}", resp.status, resp.status_text))
         };
-        println!("  {} Sent {} to {} -> {}", green("✓"), bold(method), bold(slug), status_str);
-        if let Some(ref body) = resp.body && !body.is_empty() {
+        println!(
+            "  {} Sent {} to {} -> {}",
+            green("✓"),
+            bold(method),
+            bold(slug),
+            status_str
+        );
+        if let Some(ref body) = resp.body
+            && !body.is_empty()
+        {
             println!("\n{}", dim(&body.chars().take(500).collect::<String>()));
         }
     }
@@ -79,7 +92,8 @@ pub async fn send_to_url(
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
             let mut limited = file.take(10 * 1024 * 1024 + 1);
             let mut contents = String::new();
-            limited.read_to_string(&mut contents)
+            limited
+                .read_to_string(&mut contents)
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
             if contents.len() > 10 * 1024 * 1024 {
                 bail!("file too large (max 10MB)");
@@ -102,7 +116,13 @@ pub async fn send_to_url(
         } else {
             red(&format!("{} {}", resp.status, resp.status_text))
         };
-        println!("  {} Sent {} to {} -> {}", green("✓"), bold(method), dim(url), status_str);
+        println!(
+            "  {} Sent {} to {} -> {}",
+            green("✓"),
+            bold(method),
+            dim(url),
+            status_str
+        );
     }
 
     Ok(())

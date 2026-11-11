@@ -3,7 +3,7 @@ title: "AI Agents: Sandbox and Registration"
 description: "How AI agents use webhooks.cc: the remote MCP server with one-click OAuth, a 24-hour sandbox without an account through the auth.md protocol, connecting an agent to your account once, and the credential file every tool shares."
 section: getting-started
 order: 6
-lastUpdated: 2026-10-29
+lastUpdated: 2026-11-10
 schema: tech-article
 keywords:
   [
@@ -71,6 +71,10 @@ Sandbox endpoints only capture. They answer every webhook with a plain `200` and
 | Requests | 25 per endpoint, 100 in all | 25 in all | 50 per day |
 | Lifetime | 24 hours | 12 hours | Never expire |
 | Who can read captures | The agent's token | Anyone with the link | You and your team |
+
+## Sharing localhost from an agent
+
+An agent can put the site it is building on a public link and hand it back, without anyone opening the dashboard. The local MCP server's `share_port` starts [`whk share`](/docs/share) and returns the link with the plan's limits; `list_shares`, `stop_share`, `share_requests` and the name tools (`list_names`, `reserve_name`, `release_name`, `set_name_password`, `clear_name_password`) cover the rest, on the remote server as well. From code, the TypeScript SDK's `client.shares.start({ port })` does the same, and the CLI's `whk share`, `whk shares` and `whk names` print JSON with `--json`. Sharing needs an account: sandbox tokens are refused until you [connect the agent](#connecting-an-agent-to-your-account). See [For agents](/docs/share#for-agents).
 
 ## How registration works
 

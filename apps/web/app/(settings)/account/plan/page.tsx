@@ -33,6 +33,7 @@ import { planEntitlements } from "@/lib/entitlements";
 import { cn } from "@/lib/utils";
 import { longDate } from "@/components/settings/format";
 import { useSite } from "@/components/providers/site-provider";
+import { shareComparisonRows } from "@/lib/tunnels/plan-text";
 
 function ResetCountdown({ periodEnd }: { periodEnd: string }) {
   const [text, setText] = useState("");
@@ -118,6 +119,8 @@ const PLAN_ROWS: { label: string; free: string; pro: string; business: string }[
     business: "1, then $3 a month each",
   },
   { label: "File drops (SFTP, FTP, S3)", free: "No", pro: "No", business: "Yes" },
+  // Sharing localhost (whk share), from plan_entitlements.
+  ...shareComparisonRows(),
   {
     label: "Price",
     free: "Free",

@@ -1,0 +1,46 @@
+[package]
+name = "webhooks-edge"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+description = "The webhooks.cc tunnel edge: whk share previews on sharehooks.cc, and whk tunnel --live"
+
+[dependencies]
+anyhow = "1.0.104"
+bytes = "1.12.1"
+form_urlencoded = "1.2.2"
+futures = "0.3.34"
+hex = "0.4.3"
+hmac = "0.13.0"
+http = "1.5.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.11.1", features = ["server", "client", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio", "server", "http1"] }
+# The open-files limit, raised at start (accept.rs).
+libc = "0.2.191"
+whk-tunnel = { path = "../../crates/tunnel" }
+percent-encoding = "2.3.2"
+reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+# Errors and log lines to StatOSS, as the receiver sends them. ureq sends
+# from a thread of its own.
+statoss = { version = "0.1", default-features = false, features = ["ureq", "tracing"] }
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-tungstenite = "0.30.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+yamux = "0.14.1"
+async-compression = { version = "0.4", features = ["tokio", "gzip", "zlib", "brotli"] }
+tokio-util = { version = "0.7", features = ["io"] }
+
+[dev-dependencies]
+# Paused time, for the pacing tests.
+tokio = { version = "1.53.1", features = ["full", "test-util"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1

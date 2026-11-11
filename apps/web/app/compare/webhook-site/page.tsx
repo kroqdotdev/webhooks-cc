@@ -169,7 +169,7 @@ export default function CompareWebhookSitePage() {
               The remote MCP server at webhooks.cc/mcp connects with one OAuth approval in the
               browser, and the local{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/mcp</code>{" "}
-              package exposes 48 tools to create endpoints, send test payloads, inspect captured
+              package exposes 57 tools to create endpoints, send test payloads, inspect captured
               requests, replay, generate payload types and more, so Claude Code, Cursor, Codex, or
               any MCP-compatible agent can drive webhook workflows without leaving the editor.
               Webhook.site has no first-party MCP server.

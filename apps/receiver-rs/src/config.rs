@@ -37,6 +37,9 @@ pub struct Config {
     /// Where captured email (raw message and attachments) is stored. Unset:
     /// only the database copy is kept, as before object storage.
     pub object_store: Option<crate::object_store::ObjectStoreConfig>,
+    /// Live captures (`whk tunnel --live`): the edge's relay port and secret.
+    /// Unset, live endpoints are answered like any other.
+    pub live: Option<crate::handlers::live::LiveConfig>,
 }
 
 impl std::fmt::Debug for Config {
@@ -68,6 +71,7 @@ impl std::fmt::Debug for Config {
                 &self.inbound_domains_refresh_secs,
             )
             .field("object_store", &self.object_store)
+            .field("live", &self.live)
             .finish()
     }
 }
@@ -141,6 +145,7 @@ impl Config {
             .unwrap_or(60);
 
         let object_store = object_store_from_env();
+        let live = live_from_env(webhook_base_url.as_deref());
 
         Self {
             database_url,
@@ -160,8 +165,46 @@ impl Config {
             mail_domains,
             inbound_domains_refresh_secs,
             object_store,
+            live,
         }
     }
+}
+
+/// `EDGE_RELAY_URL` and `EDGE_SECRET` together turn live captures on;
+/// `LIVE_MAX_INFLIGHT_PER_ACCOUNT` (default 16) caps relays per account and
+/// `LIVE_MAX_INFLIGHT_TOTAL` (default 256) across all accounts. The public
+/// capture URL (`WEBHOOK_BASE_URL`, or `NEXT_PUBLIC_WEBHOOK_URL`, as read
+/// for the rest of the config) gives the host and scheme the app is told
+/// the sender used.
+fn live_from_env(webhook_base_url: Option<&str>) -> Option<crate::handlers::live::LiveConfig> {
+    let get = |name: &str| {
+        env::var(name)
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let relay_url = get("EDGE_RELAY_URL")?;
+    if !(relay_url.starts_with("http://") || relay_url.starts_with("https://")) {
+        panic!("EDGE_RELAY_URL must start with http:// or https://");
+    }
+    let secret = get("EDGE_SECRET")
+        .unwrap_or_else(|| panic!("EDGE_RELAY_URL is set but EDGE_SECRET is not"));
+    let public_url = webhook_base_url.and_then(|u| url::Url::parse(u).ok());
+    Some(crate::handlers::live::LiveConfig {
+        relay_url: relay_url.trim_end_matches('/').to_string(),
+        secret,
+        max_inflight_per_account: parse_env_or("LIVE_MAX_INFLIGHT_PER_ACCOUNT", 16),
+        max_inflight_total: parse_env_or("LIVE_MAX_INFLIGHT_TOTAL", 256),
+        public_host: public_url.as_ref().and_then(|u| {
+            let host = u.host_str()?.to_string();
+            Some(match u.port() {
+                Some(port) => format!("{host}:{port}"),
+                None => host,
+            })
+        }),
+        // https unless the public URL says otherwise (http in development).
+        public_https: public_url.as_ref().is_none_or(|u| u.scheme() == "https"),
+    })
 }
 
 /// The storage endpoint must be a full URL with a host, and HTTPS unless it
@@ -240,6 +283,7 @@ impl Config {
             inbound_domains_refresh_secs: 60,
             mail_domains: vec!["mailhooks.cc".into()],
             object_store: None,
+            live: None,
         }
     }
 }

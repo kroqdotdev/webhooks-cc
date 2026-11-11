@@ -76,6 +76,11 @@ type Client struct {
 	Forwarding *ForwardingService
 	// Destinations manages where an endpoint's captures go.
 	Destinations *DestinationsService
+	// Shares reads, stops and starts previews of local ports (whk share)
+	// and live tunnels (whk tunnel --live).
+	Shares *SharesService
+	// Names manages reserved preview names.
+	Names *NamesService
 }
 
 // RetryOptions controls how API calls are retried. By default they are not
@@ -209,6 +214,8 @@ func configure(opts []Option) (*Client, error) {
 	c.Emails = &EmailsService{c: c}
 	c.Forwarding = &ForwardingService{c: c}
 	c.Destinations = &DestinationsService{c: c}
+	c.Shares = &SharesService{c: c}
+	c.Names = &NamesService{c: c}
 	return c, nil
 }
 
@@ -312,7 +319,7 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 			continue
 		}
 		if response.status >= 300 {
-			apiErr := errorFromResponse(response)
+			apiErr := errorFromResponse(response, path)
 			if more && slices.Contains(c.retry.RetryOn, response.status) &&
 				(repeatable || response.status == http.StatusTooManyRequests) {
 				wait := backoff
@@ -418,7 +425,21 @@ func headerInt64(header http.Header, name string) (int64, bool) {
 	return value, err == nil
 }
 
-func errorFromResponse(response *apiResponse) *Error {
+// notFoundHint is what to try after a short 404, by the route that
+// answered: shares and names have their own lists, everything else is about
+// endpoints.
+func notFoundHint(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/shares"):
+		return "Use Shares.List to see your shares"
+	case strings.HasPrefix(path, "/tunnel-names"):
+		return "Use Names.List to see the names you can use"
+	default:
+		return "Use Endpoints.List to see your endpoints"
+	}
+}
+
+func errorFromResponse(response *apiResponse, path string) *Error {
 	message := string(response.body)
 	if utf8.RuneCountInString(message) > 200 {
 		message = string([]rune(message)[:200]) + "..."
@@ -432,7 +453,7 @@ func errorFromResponse(response *apiResponse) *Error {
 		}
 	case http.StatusNotFound:
 		if generic {
-			apiErr.Message = strings.TrimSpace(message + " Use Endpoints.List to see your endpoints")
+			apiErr.Message = strings.TrimSpace(message + " " + notFoundHint(path))
 		}
 	case http.StatusTooManyRequests:
 		if seconds, ok := headerInt(response.header, "Retry-After"); ok {

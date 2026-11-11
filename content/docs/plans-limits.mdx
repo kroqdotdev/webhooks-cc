@@ -3,7 +3,7 @@ title: "Plans & Limits"
 description: "Request quotas, data retention, parsed attachment pages, rate limits, and endpoint limits for webhooks.cc. Compare the Free, Pro, Business, and Teams plans side by side with exact numbers, billing periods, and plan changes."
 section: getting-started
 order: 4
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: faq
 keywords:
   [
@@ -21,6 +21,7 @@ keywords:
     "webhook overage",
     "extra webhook requests",
     "custom inbound domain",
+    "share localhost limits",
   ]
 seo:
   ogTitle: "Plans & Limits"
@@ -39,7 +40,7 @@ seo:
 | **Teams**         | 100,000 per seat | 1 month  | 31 days   | Endpoints shared to the team | $12/seat/month, from 2 seats     |
 | **Team Business** | 250,000 per seat | 1 month  | 90 days   | Endpoints shared to the team | $35/seat/month or $350/seat/year |
 
-Free has every Pro feature except extra requests (monthly blocks, one-time blocks and overage), which need a Pro or Business account or a subscribed team. Webhook and [email capture](/docs/email-capture), inspection, replay, mock responses and response rules, [forwarding destinations](/docs/forwarding) (Google Sheets included), attachment contents in deliveries, failure alerts, [layouts](/docs/layouts), CLI tunneling, the TypeScript, Python and Go SDKs, and the MCP server work on every plan. Paid plans raise the volume and the retention, and Business adds attachment parsing at volume, more layouts per endpoint, a [custom inbound domain](#custom-inbound-domains), [file drops](/docs/forwarding#file-drops) to SFTP, FTP and S3, and 90-day retention (see [Email parsing](#email-parsing)).
+Free has every Pro feature except extra requests (monthly blocks, one-time blocks and overage), which need a Pro or Business account or a subscribed team. Webhook and [email capture](/docs/email-capture), inspection, replay, mock responses and response rules, [forwarding destinations](/docs/forwarding) (Google Sheets included), attachment contents in deliveries, failure alerts, [layouts](/docs/layouts), CLI tunneling, [sharing localhost](#sharing-localhost) (with smaller limits on Free), the TypeScript, Python and Go SDKs, and the MCP server work on every plan. Paid plans raise the volume and the retention, and Business adds attachment parsing at volume, more layouts per endpoint, a [custom inbound domain](#custom-inbound-domains), [file drops](/docs/forwarding#file-drops) to SFTP, FTP and S3, and 90-day retention (see [Email parsing](#email-parsing)).
 
 **Teams** and **Team Business** are a separate, per-team subscription rather than a tier of your personal plan. Any account (Free, Pro or Business) can create a team, and the team's own subscription decides what it can do. See [Teams and shared endpoints](#teams-and-shared-endpoints) below.
 
@@ -190,6 +191,22 @@ When the pool is exhausted, the receiver returns `429 Too Many Requests` with a 
 
 **Without an active subscription** (never subscribed, or canceled and past the period end) a team is suspended: its data is kept, but invites, endpoint sharing, and member access to shared endpoints are all blocked until it subscribes again. Requests captured while a team is suspended fall back to the endpoint owner's personal quota.
 
+## Sharing localhost
+
+[`whk share`](/docs/share) puts a local port at a public link on sharehooks.cc. It comes with every plan:
+
+| Plan          | Shares at once | Reserved names            | Session length | Data a month      | Passwords |
+| ------------- | -------------- | ------------------------- | -------------- | ----------------- | --------- |
+| Free          | 1              | none                      | 2 hours        | 1 GB              | No        |
+| Pro           | 3              | 3                         | No limit       | 25 GB             | Yes       |
+| Business      | 10             | 20                        | No limit       | 150 GB            | Yes       |
+| Teams         | 3 per member   | 3 per seat, for the team  | No limit       | 25 GB per member  | Yes       |
+| Team Business | 10 per member  | 20 per seat, for the team | No limit       | 150 GB per member | Yes       |
+
+Data is what passes through your previews both ways (what visitors download and what they upload), counted per calendar month in UTC; past it, previews are paused until the month turns. Free previews get random names ending in `-free`, and Free previews and those of accounts in their first 7 days on a paid plan show visitors a short notice before the page. Your sharing limits are the best of your own plan and any subscribed team you belong to. Names kept inside a team count against the team (its plan's names per seat times its seats); your own names count against your plan.
+
+[Live tunnels](/docs/live-tunnel) (`whk tunnel --live`) count against the request quota like any capture, not against shared data; up to 5 can be open per account.
+
 ## Rate limits
 
 API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header.
@@ -212,24 +229,29 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 
 ## Other limits
 
-| Resource                        | Limit                                              |
-| ------------------------------- | -------------------------------------------------- |
-| API keys per user               | 10                                                 |
-| API key default TTL             | 365 days                                           |
-| Mock response delay             | 30,000ms (30 seconds)                              |
-| Test webhook body size          | 1 MB                                               |
-| Email message size              | 10 MB                                              |
-| Recipients per email            | 20                                                 |
-| Original email kept             | The whole message, up to 10 MB                     |
-| Forwarding answer timeout       | 15 seconds                                         |
-| Forwarding retries              | 8, over about a day (or 4 within an hour, or none) |
-| Deliveries waiting per endpoint | 1,000                                              |
-| Paginated request listing       | 100 per page                                       |
-| SSE stream connection           | 30 minutes max                                     |
-| SSE keepalive interval          | 30 seconds                                         |
-| Teams owned per user            | 10                                                 |
-| Members per team                | = purchased seats                                  |
-| Seats per team                  | 1,000                                              |
+| Resource                         | Limit                                              |
+| -------------------------------- | -------------------------------------------------- |
+| API keys per user                | 10                                                 |
+| API key default TTL              | 365 days                                           |
+| Mock response delay              | 30,000ms (30 seconds)                              |
+| Test webhook body size           | 1 MB                                               |
+| Email message size               | 10 MB                                              |
+| Recipients per email             | 20                                                 |
+| Original email kept              | The whole message, up to 10 MB                     |
+| Forwarding answer timeout        | 15 seconds                                         |
+| Forwarding retries               | 8, over about a day (or 4 within an hour, or none) |
+| Deliveries waiting per endpoint  | 1,000                                              |
+| Paginated request listing        | 100 per page                                       |
+| SSE stream connection            | 30 minutes max                                     |
+| SSE keepalive interval           | 30 seconds                                         |
+| Teams owned per user             | 10                                                 |
+| Shared response size             | 50 MB                                              |
+| Shared data per visitor          | 250 MB a day per share                             |
+| Live tunnel answer wait          | 25 seconds                                         |
+| Live response kept               | Status, headers and the first 64 KB of the body    |
+| Live answer passed to the sender | 1 MB; JSON, XML, form data or text, no downloads   |
+| Members per team                 | = purchased seats                                  |
+| Seats per team                   | 1,000                                              |
 
 <FAQ>
 <FAQItem question="Do sendTo calls count toward my quota?">

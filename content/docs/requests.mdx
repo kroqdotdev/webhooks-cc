@@ -33,6 +33,7 @@ Click a request to view its details. Tabs organize the data:
 - **Raw**: unformatted request body
 - **Signature**: verify the request's webhook signature (client-side or server-side)
 - **Deliveries**: each [forwarding](/docs/forwarding) destination's tries for this request, with **Redeliver** (once the endpoint has destinations)
+- **Response**: for a request captured while [`whk tunnel --live`](/docs/live-tunnel) ran, what your local app answered and the sender got: status, time, headers and the first 64 KB of the body, or why the sender got an error instead
 
 Above the tabs, beside the size and time, the request shows what the endpoint answered the sender with, such as **Answered 402 (Rule: Payment failed)**, or **Answered 200** when no rule matched. It is recorded when the request arrives, so it stays what the sender got even after the rules change. Emails, and requests captured before answers were recorded in November 2026, do not show it.
 

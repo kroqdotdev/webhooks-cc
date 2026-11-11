@@ -47,9 +47,7 @@ impl Widget for StatusBar<'_> {
             }
             spans.push(Span::styled(
                 format!(" {key} "),
-                Style::default()
-                    .fg(theme::SURFACE)
-                    .bg(theme::MUTED),
+                Style::default().fg(theme::SURFACE).bg(theme::MUTED),
             ));
             spans.push(Span::styled(format!(" {desc}"), theme::style_dim()));
         }

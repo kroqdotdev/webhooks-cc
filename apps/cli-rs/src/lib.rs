@@ -2,6 +2,7 @@ pub mod agent;
 pub mod api;
 pub mod auth;
 pub mod cli;
+pub mod share;
 pub mod tui;
 pub mod tunnel;
 pub mod types;

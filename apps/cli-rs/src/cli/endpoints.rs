@@ -72,7 +72,11 @@ pub async fn create(
         println!("{}", serde_json::to_string_pretty(&endpoint)?);
     } else {
         let url = client.webhook_url_for(&endpoint.slug);
-        println!("\n  {} Created endpoint {}", green("✓"), bold(&endpoint.slug));
+        println!(
+            "\n  {} Created endpoint {}",
+            green("✓"),
+            bold(&endpoint.slug)
+        );
         println!("  {} {}", dim("URL:"), url);
         if let Some(ref address) = endpoint.email_address {
             println!("  {} {}", dim("Email:"), address);
@@ -97,7 +101,10 @@ pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<
 
     if let Some(team) = &team {
         let tied = |ep: &crate::types::Endpoint| {
-            ep.from_teams.iter().chain(ep.from_team.iter()).chain(ep.shared_with.iter())
+            ep.from_teams
+                .iter()
+                .chain(ep.from_team.iter())
+                .chain(ep.shared_with.iter())
                 .any(|share| share.team_id == team.id)
         };
         list.owned.retain(tied);
@@ -117,7 +124,10 @@ pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<
                 bold(&team.name),
                 bold("whk teams share <slug> --team <team>")
             ),
-            None => println!("  No endpoints found. Create one with {}", bold("whk create")),
+            None => println!(
+                "  No endpoints found. Create one with {}",
+                bold("whk create")
+            ),
         }
         return Ok(());
     }
@@ -157,10 +167,19 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
         println!("  {} yes", dim("Favourite:"));
     }
     if let Some(ref mock) = endpoint.mock_response {
-        println!("  {} {} ({})", dim("Mock:"), mock.status, mock.body.chars().take(50).collect::<String>());
+        println!(
+            "  {} {} ({})",
+            dim("Mock:"),
+            mock.status,
+            mock.body.chars().take(50).collect::<String>()
+        );
     }
     if !endpoint.shared_with.is_empty() {
-        let teams: Vec<_> = endpoint.shared_with.iter().map(|t| t.team_name.as_str()).collect();
+        let teams: Vec<_> = endpoint
+            .shared_with
+            .iter()
+            .map(|t| t.team_name.as_str())
+            .collect();
         println!("  {} {}", dim("Shared with:"), teams.join(", "));
     }
 
@@ -292,4 +311,3 @@ fn build_mock_response(
         delay: None,
     }))
 }
-

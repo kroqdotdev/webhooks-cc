@@ -3,6 +3,7 @@ import { storedLayouts } from "@/lib/parsing/stored";
 import type { EmailField, Layout } from "@webhooks-cc/sdk/email";
 import { customAlphabet } from "nanoid";
 import { decryptOwnerHeaders, maskOwnerHeaders } from "@/lib/forwarding/owner-headers";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { createAdminClient } from "./admin";
 import {
   applyLegacyForwarding,
@@ -809,6 +810,8 @@ export async function deleteEndpointBySlugForUser(userId: string, slug: string):
     throw error;
   }
 
+  // A live tunnel on it ends now ("endpoint deleted"), not at the next sync.
+  if (data) await closeRunsWithoutAccess();
   return !!data;
 }
 

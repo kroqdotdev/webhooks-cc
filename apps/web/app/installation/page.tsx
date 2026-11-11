@@ -352,8 +352,9 @@ console.log(endpoint.url);`}
                       Runs <code className="font-mono font-bold">@webhooks-cc/mcp</code> on your
                       machine. Use it when your agent must send to localhost (
                       <code className="font-mono font-bold">send_to</code>,{" "}
-                      <code className="font-mono font-bold">replay_request</code>), to start in the
-                      agent sandbox without an account, or in CI with an API key.
+                      <code className="font-mono font-bold">replay_request</code>) or share a local
+                      site (<code className="font-mono font-bold">share_port</code>), to start in
+                      the agent sandbox without an account, or in CI with an API key.
                     </p>
                   </div>
 

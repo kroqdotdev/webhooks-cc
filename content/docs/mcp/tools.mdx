@@ -1,14 +1,14 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 48 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 57 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 48 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 57 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -568,6 +568,82 @@ Share an endpoint you own with a team. The team needs an active subscription; th
 ### unshare_endpoint
 
 Stop sharing an endpoint you own with a team. Same parameters as `share_endpoint`.
+
+## Sharing localhost
+
+Public links to a site on your computer ([Share localhost](/docs/share)) and live tunnels ([live tunnels](/docs/live-tunnel)).
+
+### share_port
+
+Share a local port at `https://<name>.sharehooks.cc` by running `whk share` on your computer, and return the link. The share runs until `stop_share`, the plan's session limit, or the end of the MCP server. Local server only, and `whk` must be installed: the remote server cannot reach your machine. Free accounts get a random name ending in `-free`, a 2-hour limit and a notice page before the site.
+
+| Parameter  | Type     | Required | Description                                                         |
+| ---------- | -------- | -------- | ------------------------------------------------------------------- |
+| `port`     | `number` | yes      | The local port the site runs on                                     |
+| `name`     | `string` | no       | A name you reserved (Pro and Business); a random one otherwise      |
+| `password` | `string` | no       | What visitors must type (Pro and Business), 8 to 200 characters     |
+
+### list_shares
+
+List your shares and live tunnels: running ones first, then the latest that ended, with this month's shared data, your plan's sharing limits, and `hints` with the next step: the server's own (a suspension, why data is paused) in tool names, and this server's when the plan's slots or data run out (stop a share with `stop_share`, or wait for the month). Only your own previews count against your slots, not a teammate's under a team name.
+
+| Parameter | Type     | Required | Description                                 |
+| --------- | -------- | -------- | ------------------------------------------- |
+| `state`   | `string` | no       | `"live"` or `"ended"`: only those           |
+
+### stop_share
+
+Stop a share or live tunnel by its id (from `list_shares`). The CLI running it is told why and exits. The result says `stopped: false` when it had already ended, and `edgeReached: false` when the edge could not be told at once (it ends within half a minute).
+
+| Parameter | Type     | Required | Description                        |
+| --------- | -------- | -------- | ---------------------------------- |
+| `id`      | `string` | yes      | The share's id, from `list_shares` |
+
+### share_requests
+
+The last requests visitors made to a running preview, newest first: method, path, status, time taken, size, country, device and a number per visitor, never an address. `available` is `false` when the log could not be read just now. Use it to see whether the person opened the link and what failed for them.
+
+| Parameter | Type     | Required | Description                        |
+| --------- | -------- | -------- | ---------------------------------- |
+| `id`      | `string` | yes      | The share's id, from `list_shares` |
+
+### list_names
+
+Your reserved preview names (Pro and Business) and your teams': each with its link, whether it has a password, whether a preview runs under it now, and whether your plan still covers it (`usable`), plus how many your plan allows and how many you hold. No parameters.
+
+### reserve_name
+
+Reserve a name so `share_port` can use `https://<name>.sharehooks.cc`. Lowercase letters, digits and dashes; names that look like random ones or end in `-free` are refused.
+
+| Parameter | Type     | Required | Description                                                              |
+| --------- | -------- | -------- | ------------------------------------------------------------------------ |
+| `name`    | `string` | yes      | The name                                                                 |
+| `team`    | `string` | no       | A team's id or name (from `list_teams`): every member may share under it |
+
+### release_name
+
+Release a name you reserved (or, for a team name, as the team's owner). A preview running under it stops.
+
+| Parameter | Type     | Required | Description                 |
+| --------- | -------- | -------- | --------------------------- |
+| `name`    | `string` | yes      | The name, from `list_names` |
+
+### set_name_password
+
+Put a password on every preview under a name (Pro and Business). The password is not returned; give it to the person yourself.
+
+| Parameter  | Type     | Required | Description                                  |
+| ---------- | -------- | -------- | -------------------------------------------- |
+| `name`     | `string` | yes      | The name, from `list_names`                  |
+| `password` | `string` | yes      | What visitors must type, 8 to 200 characters |
+
+### clear_name_password
+
+Take the password off a name.
+
+| Parameter | Type     | Required | Description                 |
+| --------- | -------- | -------- | --------------------------- |
+| `name`    | `string` | yes      | The name, from `list_names` |
 
 ## Utilities
 

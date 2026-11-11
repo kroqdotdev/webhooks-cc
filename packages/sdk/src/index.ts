@@ -1,4 +1,6 @@
 export { WebhooksCC, ApiError } from "./client";
+export { share, WHK_INSTALL_COMMAND, WHK_INSTALL_WINDOWS, whkInstallHint } from "./share";
+export type { ShareOptions, LiveShare, ShareEvent, ShareRequestEvent } from "./share";
 export {
   registerAnonymous,
   registerWithEmail,
@@ -272,6 +274,18 @@ export type {
   TeamMember,
   TeamInvite,
   TeamMembers,
+  LiveResponse,
+  TunnelShare,
+  TunnelUsage,
+  TunnelLimits,
+  TunnelShareList,
+  TunnelNamesSummary,
+  TunnelStopResult,
+  TunnelVisit,
+  TunnelVisits,
+  TunnelName,
+  TunnelNameList,
+  TunnelTeamNameCount,
   CreateEndpointOptions,
   EndpointSite,
   UpdateEndpointOptions,

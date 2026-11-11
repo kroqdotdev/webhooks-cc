@@ -8,20 +8,20 @@ use std::time::Duration;
 
 use anyhow::Result;
 use crossterm::{
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Constraint, Layout},
     widgets::Widget,
-    DefaultTerminal, Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
 use crate::auth;
 
-use self::event::{spawn_event_reader, AppEvent};
+use self::event::{AppEvent, spawn_event_reader};
 use self::screens::*;
 use self::widgets::header::Header;
 use self::widgets::status_bar::StatusBar;
@@ -155,9 +155,9 @@ impl App {
         let mut screen: Box<dyn Screen> = match screen_id {
             ScreenId::Auth => Box::new(screens::auth::AuthScreen::new(self.auth_email.clone())),
             ScreenId::Endpoints => Box::new(screens::endpoints::EndpointsScreen::new(webhook_url)),
-            ScreenId::EndpointDetail(slug) => {
-                Box::new(screens::endpoint_detail::EndpointDetailScreen::new(slug, webhook_url))
-            }
+            ScreenId::EndpointDetail(slug) => Box::new(
+                screens::endpoint_detail::EndpointDetailScreen::new(slug, webhook_url),
+            ),
             ScreenId::Tunnel => Box::new(screens::tunnel::TunnelScreen::new(webhook_url)),
             ScreenId::Listen => Box::new(screens::listen::ListenScreen::new(webhook_url)),
             ScreenId::RequestDetail(id) => {
@@ -179,7 +179,11 @@ impl App {
             screen.on_leave();
 
             // Refresh the menu auth email when returning
-            if let Some(menu) = self.screen_stack.last_mut() && let Some(menu_screen) = menu.as_any_mut().downcast_mut::<screens::menu::MenuScreen>() {
+            if let Some(menu) = self.screen_stack.last_mut()
+                && let Some(menu_screen) = menu
+                    .as_any_mut()
+                    .downcast_mut::<screens::menu::MenuScreen>()
+            {
                 menu_screen.set_auth_email(self.auth_email.clone());
             }
         }
@@ -199,16 +203,15 @@ impl App {
         );
 
         let chunks = Layout::vertical([
-            Constraint::Length(2),  // Header
+            Constraint::Length(2), // Header
             Constraint::Min(0),    // Content
-            Constraint::Length(2),  // Status bar
+            Constraint::Length(2), // Status bar
         ])
         .split(area);
 
         // Header
         let breadcrumb = self.current_screen().breadcrumb();
-        let header = Header::new(breadcrumb)
-            .auth_status(self.auth_email.as_deref());
+        let header = Header::new(breadcrumb).auth_status(self.auth_email.as_deref());
         header.render(chunks[0], frame.buffer_mut());
 
         // Content
@@ -234,19 +237,19 @@ fn render_help_overlay(frame: &mut Frame, area: ratatui::layout::Rect) {
     use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 
     let help_items: &[(&str, &str)] = &[
-        ("↑ / k",       "Move up"),
-        ("↓ / j",       "Move down"),
-        ("Enter",       "Select / confirm"),
-        ("Esc",         "Go back / cancel"),
-        ("Tab",         "Next field / tab"),
-        ("Shift+Tab",   "Previous field / tab"),
-        ("1-3",         "Jump to tab (detail view)"),
-        ("n",           "New endpoint"),
-        ("d",           "Delete endpoint"),
-        ("r",           "Refresh"),
-        ("c",           "Copy to clipboard"),
-        ("q / Ctrl+C",  "Quit"),
-        ("?",           "Toggle this help"),
+        ("↑ / k", "Move up"),
+        ("↓ / j", "Move down"),
+        ("Enter", "Select / confirm"),
+        ("Esc", "Go back / cancel"),
+        ("Tab", "Next field / tab"),
+        ("Shift+Tab", "Previous field / tab"),
+        ("1-3", "Jump to tab (detail view)"),
+        ("n", "New endpoint"),
+        ("d", "Delete endpoint"),
+        ("r", "Refresh"),
+        ("c", "Copy to clipboard"),
+        ("q / Ctrl+C", "Quit"),
+        ("?", "Toggle this help"),
     ];
 
     // Center the overlay

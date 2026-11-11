@@ -3,7 +3,7 @@ title: "Tunneling"
 description: "Forward webhooks and captured emails to your local development server in one command. No port forwarding, no deploy: inspect every request as it arrives."
 section: cli
 order: 3
-lastUpdated: 2026-10-26
+lastUpdated: 2026-11-10
 schema: howto
 keywords: ["webhook tunnel", "localhost forwarding", "webhook forward", "local development", "inbound email testing"]
 seo:
@@ -36,6 +36,16 @@ whk tunnel 3000
 ```
 
 Creates an endpoint, prints its URL and email address, and forwards every incoming request to `localhost:3000`, and every email it receives too ([emails](#emails)). The sender receives the mock response you configured (200 OK by default).
+
+## Answer with your app
+
+When the sender needs your app's response (a Slack slash command, Twilio's TwiML, a verification handshake), add `--live`: each webhook is relayed to your local server while the sender waits, and the sender gets your app's answer. The request is still captured, with your app's response stored next to it. See [live tunnels](/docs/live-tunnel).
+
+```bash
+whk tunnel 3000 --live
+```
+
+To show a whole site to people in a browser rather than deliver webhooks, use [`whk share`](/docs/share).
 
 ## Forward an existing endpoint
 
@@ -140,7 +150,7 @@ whk tunnel 3000 --no-email
 ## Tips
 
 - The tunnel reconnects on network interruptions.
-- Your local server's response does not affect what the webhook sender receives.
+- Your local server's response does not affect what the webhook sender receives, unless you add [`--live`](/docs/live-tunnel).
 - Multiple tunnels can run against different endpoints simultaneously.
 - Use `-e` for throwaway sessions that clean up on exit.
 - Pass `--nogui` or set `WHK_NOGUI=1` to disable the TUI and use plain text output.

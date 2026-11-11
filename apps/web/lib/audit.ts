@@ -93,7 +93,25 @@ export type AuditAction =
   | "ops.view_ended"
   | "ops.refund_approved"
   | "ops.refund_dismissed"
-  | "ops.saved_reply_changed";
+  | "ops.saved_reply_changed"
+  | "tunnel.share_stopped"
+  | "tunnel.name_reserved"
+  | "tunnel.name_released"
+  | "tunnel.name_password_set"
+  | "tunnel.name_password_cleared"
+  | "ops.share_stopped"
+  | "ops.account_shares_stopped"
+  | "ops.sharing_suspended"
+  | "ops.sharing_restored"
+  | "ops.share_notice_lifted"
+  | "ops.share_notice_restored"
+  | "ops.name_blocked"
+  | "ops.name_unblocked"
+  | "ops.word_blocked"
+  | "ops.word_unblocked"
+  | "ops.report_recorded"
+  | "ops.report_resolved"
+  | "ops.reputation_checked";
 
 /** Agent registration (auth.md) events: no signed-in user is behind most of them. */
 export type AgentAuditAction =
@@ -125,6 +143,14 @@ export interface AuditUserActionInput {
   targetUserId?: string | null;
   targetId?: string | null;
   metadata?: Record<string, unknown>;
+  /**
+   * The channel and client, when the request at hand is not the user's own:
+   * a call the tunnel edge makes for a CLI (/api/edge/open) carries the
+   * edge's secret and user agent, so the route names the user's key and
+   * the CLI instead.
+   */
+  via?: "session" | "api_key" | "agent_token";
+  userAgent?: string | null;
 }
 
 const MAX_USER_AGENT = 256;
@@ -195,8 +221,11 @@ export async function auditUserAction(
   await recordAuditEvent({
     actor_type: "user",
     actor_user_id: actorUserId,
-    via: requestVia(request),
-    user_agent: truncate(request.headers.get("user-agent"), MAX_USER_AGENT),
+    via: input.via ?? requestVia(request),
+    user_agent: truncate(
+      input.userAgent !== undefined ? input.userAgent : request.headers.get("user-agent"),
+      MAX_USER_AGENT
+    ),
     action: input.action,
     outcome: outcomeForStatus(input.status),
     team_id: input.teamId ?? null,

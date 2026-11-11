@@ -31,6 +31,8 @@ import type { Database } from "./database";
 import { removeMemberShares } from "./teams-endpoints";
 import { recordRefund } from "@/lib/billing/refunds";
 import { reportError } from "@/lib/observability";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
+import { handOverTeamNames } from "@/lib/tunnels/names";
 
 /** Pooled request allowance granted per Teams seat, per period. */
 export const TEAM_SEAT_REQUEST_LIMIT = ENTITLEMENTS.team.requestLimit;
@@ -1935,6 +1937,9 @@ async function applySeatRevocation(teamId: string, data: Record<string, unknown>
   // throws, the webhook answers 500, and Polar's redelivery retries the whole
   // removal, so cleanup cannot be silently lost.
   await removeMemberShares(teamId, memberUserId);
+  // Preview names they kept in the team stay the team's, with its owner;
+  // a failure retries with the rest, as above.
+  await handOverTeamNames(teamId, memberUserId);
 
   const { error } = await admin
     .from("team_members")
@@ -1945,6 +1950,9 @@ async function applySeatRevocation(teamId: string, data: Record<string, unknown>
   if (error) {
     throw error;
   }
+  // Tunnels opened on this access end with it (lib/tunnels/access.ts). Never
+  // throws: the next sync does the same.
+  await closeRunsWithoutAccess();
 }
 
 export async function applyTeamPolarWebhookEvent(
@@ -2026,6 +2034,8 @@ export async function applyTeamPolarWebhookEvent(
         block_requests: 0,
         overage_active: false,
       });
+      // Members' tunnels on the team's shared endpoints end with it.
+      await closeRunsWithoutAccess();
       return;
     }
 

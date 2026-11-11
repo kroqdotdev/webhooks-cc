@@ -222,6 +222,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "ops",
   "pricing",
   "privacy",
+  "report",
   "robots.txt",
   "s",
   "signup",

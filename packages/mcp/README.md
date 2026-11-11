@@ -34,7 +34,7 @@ For other agents, `npx skills add kroqdotdev/webhooks-cc` installs the same skil
 - **claude.ai and Claude Desktop**: Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`
 - **ChatGPT**: add it as a custom connector (developer mode)
 
-A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server has 46 tools: `send_to` and `replay_request` are left out and `targetUrl` is refused, because a hosted server cannot reach your machine, and waits are capped at 50 seconds. It needs an account (no sandbox), and serves tools only, without prompts or resources.
+A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server has 54 tools: `send_to`, `replay_request` and `share_port` are left out and `targetUrl` is refused, because a hosted server cannot reach your machine, and waits are capped at 50 seconds. It needs an account (no sandbox), and serves tools only, without prompts or resources.
 
 ### One-click
 
@@ -83,7 +83,7 @@ Leave out `env` to start without a key. Get your API key at [webhooks.cc/account
 
 ## What it exposes
 
-The server exposes `48` tools, `3` prompts, and `3` resource surfaces with an API key, the same `48` tools and the prompts with a saved connection, and `11` sandbox tools otherwise. The remote server exposes `46` tools.
+The server exposes `57` tools, `3` prompts, and `3` resource surfaces with an API key, the same `57` tools and the prompts with a saved connection, and `11` sandbox tools otherwise. The remote server exposes `54` tools.
 
 ### Endpoint tools
 
@@ -154,6 +154,17 @@ retried and logged (owner only):
 - `unshare_endpoint`
 
 Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) and work with every request tool except `clear_requests`, which stays with the owner. Invites are not exposed: accepting one claims a paid seat.
+
+### Sharing tools
+
+- `share_port`: shares a local port at a `https://<name>.sharehooks.cc` link by running `whk share` (local server only; needs [whk](https://webhooks.cc/installation) installed, or `WHK_PATH` naming it). The share runs until `stop_share`, the plan's session limit, or the end of the server. Free shares get a random name ending in `-free`, two hours, and a notice page before the site; Pro and Business can pass a reserved `name` and a `password`.
+- `list_shares`: running and recent previews and live tunnels, this month's shared data, the plan's sharing limits, and `hints` with the next step (the server's own in tool names, plus slots or data running out).
+- `stop_share`: stops a preview or live tunnel, and says whether it had already ended.
+- `share_requests`: the last requests visitors made to a running preview (no addresses).
+- `list_names`, `reserve_name` (optionally inside a team), `release_name`: reserved preview names (Pro and Business).
+- `set_name_password`, `clear_name_password`: the password visitors need for every preview under a name. The password is never echoed back.
+
+Everything the dashboard's Shares page does is here, so an agent never needs it; only `share_port` needs the local server.
 
 ### Discovery and account tools
 

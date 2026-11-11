@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-web dev-receiver dev-cli build build-receiver build-cli test test-full lint clean
+.PHONY: dev dev-all dev-web dev-receiver dev-edge dev-cli build build-receiver build-cli test test-full lint clean
 
 # Development
 dev:
@@ -9,6 +9,9 @@ dev-web:
 
 dev-receiver:
 	@set -a && . ./.env.local && set +a && export MAIL_INGEST_ADDR="$${MAIL_INGEST_ADDR:-127.0.0.1:3002}" && cd apps/receiver-rs && $$HOME/.cargo/bin/cargo run
+
+dev-edge:
+	@sh apps/edge-rs/dev.sh
 
 dev-cli:
 	cd apps/cli-rs && cargo run -- $(ARGS)
@@ -32,6 +35,8 @@ test:
 	pnpm test
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo test
 	cd apps/mx-rs && $$HOME/.cargo/bin/cargo test
+	cd crates/tunnel && $$HOME/.cargo/bin/cargo test
+	cd apps/edge-rs && $$HOME/.cargo/bin/cargo test
 	cd apps/cli-rs && cargo test
 
 test-full:
@@ -45,6 +50,8 @@ test-full:
 lint:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo clippy -- -D warnings
 	cd apps/mx-rs && $$HOME/.cargo/bin/cargo clippy --all-targets -- -D warnings
+	cd crates/tunnel && $$HOME/.cargo/bin/cargo clippy --all-targets -- -D warnings
+	cd apps/edge-rs && $$HOME/.cargo/bin/cargo clippy --all-targets -- -D warnings
 	cd apps/cli-rs && cargo clippy -- -D warnings
 
 # Clean
@@ -56,3 +63,5 @@ clean:
 	rm -rf packages/sdk/node_modules
 	rm -rf apps/receiver-rs/target
 	rm -rf apps/mx-rs/target
+	rm -rf apps/edge-rs/target
+	rm -rf crates/tunnel/target

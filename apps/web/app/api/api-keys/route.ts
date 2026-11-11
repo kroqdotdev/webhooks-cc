@@ -3,6 +3,9 @@ import { authenticateSessionRequest, type SessionAuthResult } from "@/lib/api-au
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "@/lib/supabase/api-keys";
 import { reportError } from "@/lib/observability";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
+import { tunnelConfig } from "@/lib/tunnels/config";
+import { stopShares } from "@/lib/tunnels/stops";
 
 const DEFAULT_TTL_DAYS = 365;
 
@@ -103,6 +106,13 @@ export async function DELETE(request: Request) {
   }
 
   const admin = createAdminClient();
+  // Shares the key opened stop with it (the CLI is told to log in again).
+  // Before the delete: the runs lose their key id when the key goes.
+  if (tunnelConfig()) {
+    await stopShares({ keyId, userId: auth.userId }, "revoked").catch((err) =>
+      reportError("Failed to stop the shares of a deleted API key", err)
+    );
+  }
   const { data: deletedKeys, error } = await admin
     .from("api_keys")
     .delete()
@@ -120,6 +130,10 @@ export async function DELETE(request: Request) {
     });
     return Response.json({ error: "Failed to delete API key" }, { status: 500 });
   }
+
+  // A run that opened with the key while it was being deleted lost its key id
+  // with the delete; tunnel_runs_without_access() ends it as "key revoked".
+  if (tunnelConfig() && deletedKeys && deletedKeys.length > 0) await closeRunsWithoutAccess();
 
   // The route answers 200 even when no key matched, so the audit row does too;
   // `deleted` records whether a key was actually removed.

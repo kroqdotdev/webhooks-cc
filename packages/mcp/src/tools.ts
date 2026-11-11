@@ -31,6 +31,8 @@ import {
   conditionIssues,
   type ConditionField,
   type EmailRequest,
+  type LiveShare,
+  type TunnelShareList,
   type PayloadSchemaFormat,
   type Request,
   type VerifyProvider,
@@ -1011,8 +1013,11 @@ export interface RegisterToolsOptions {
   remote?: boolean;
 }
 
-/** Tools that only make sense next to the caller: they post to a URL of the caller's choosing. */
-const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request"]);
+/**
+ * Tools that only make sense next to the caller: they post to a URL of the
+ * caller's choosing, or (share_port) run the whk CLI on the caller's machine.
+ */
+const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request", "share_port"]);
 /** Tools whose optional targetUrl posts somewhere of the caller's choosing. */
 const TARGET_URL_TOOLS = new Set(["render_email", "test_webhook_flow"]);
 /** Longest wait on the hosted server; Cloudflare ends a request after 100 seconds. */
@@ -1088,6 +1093,113 @@ function toolTarget(
   };
 }
 
+/** What share_port tells the agent about a running share. */
+function shareSummary(live: LiveShare): Record<string, unknown> {
+  const notes: string[] = [];
+  if (live.notice) {
+    notes.push(
+      "The first time each browser opens the link, it sees a short notice from webhooks.cc and clicks Open the preview (Free, and paid accounts in their first 7 days)."
+    );
+  }
+  if (live.password) notes.push("Visitors need the password.");
+  if (live.expiresAt) {
+    notes.push(
+      `The plan stops this share at ${live.expiresAt}; reconnecting does not extend it, and starting it again gives a new link.`
+    );
+  }
+  notes.push("It runs until stop_share or the end of this MCP server.");
+  return {
+    url: live.url,
+    name: live.name,
+    port: live.port,
+    expiresAt: live.expiresAt,
+    notice: live.notice,
+    password: live.password,
+    notes: notes.join(" "),
+  };
+}
+
+/**
+ * How the hosted server (no share_port: it cannot run whk on the person's
+ * computer) says to start a preview.
+ */
+const REMOTE_SHARE =
+  "`whk share <port>` on the person's computer (or the local MCP server, npx -y @webhooks-cc/mcp, which has share_port)";
+
+/**
+ * What an agent can do about the account's sharing limits, from a share
+ * list: the next step when slots or data run out, so it never has to send
+ * the person to the dashboard. `remote` for the hosted server, which has no
+ * share_port.
+ */
+export function shareHints(list: TunnelShareList, remote = false): string[] {
+  const start = remote ? REMOTE_SHARE : "share_port";
+  const hints: string[] = [];
+  const limits = list.limits;
+  const usage = list.usage;
+  // Only your own previews take your slots: a teammate's under a team name
+  // counts against theirs.
+  const previews = list.shares.filter((s) => s.kind !== "live" && !s.endedAt && s.mine !== false);
+  if (usage?.over) {
+    hints.push(
+      `This month's shared data is used up, so previews are paused until ${usage.resetsAt}. A larger plan (Pro 25 GB, Business 150 GB) raises it; the person upgrades on webhooks.cc.`
+    );
+  }
+  if (limits && previews.length >= limits.shares) {
+    hints.push(
+      `All ${limits.shares} of the plan's preview slots are in use: stop one with stop_share (its id is in shares) before ${start}.`
+    );
+  }
+  if (limits && limits.sessionMinutes) {
+    hints.push(
+      `Previews on this plan stop after ${limits.sessionMinutes} minutes; ${start} again gives a new link.`
+    );
+  }
+  if (limits && !limits.passwords) {
+    hints.push("Passwords and reserved names come with Pro and Business.");
+  }
+  return hints;
+}
+
+/**
+ * A server hint in this server's words: the whk commands it names become
+ * the tools that do the same, so an agent does not reach for a CLI. On the
+ * hosted server (`remote`) `whk share` stays a command for the person's
+ * computer, since that server has no share_port.
+ */
+export function toolWords(hint: string, remote = false): string {
+  const words = hint
+    .replace(/whk shares stop(?: <[^>]*>)?/g, "stop_share")
+    .replace(/whk shares (?:ls|list)/g, "list_shares")
+    .replace(/whk shares log(?: <[^>]*>)?/g, "share_requests")
+    .replace(/whk names reserve(?: <[^>]*>)?(?: --team <[^>]*>)?/g, "reserve_name")
+    .replace(/whk names release(?: <[^>]*>)?/g, "release_name")
+    .replace(/whk names password(?: <[^>]*>)? --clear/g, "clear_name_password")
+    .replace(/whk names password(?: <[^>]*>)?/g, "set_name_password")
+    .replace(/whk names ls/g, "list_names");
+  if (remote) return words;
+  return words
+    .replace(/whk share <port> --password/g, "share_port with a password")
+    .replace(/whk share <port>/g, "share_port");
+}
+
+/**
+ * A share list with hints for an agent, for list_shares and share_port: the
+ * server's own (in tool words) and this server's, without repeats, so
+ * nothing the server says (a suspension, a pause) is lost.
+ */
+export function withShareHints(list: TunnelShareList, remote = false): Record<string, unknown> {
+  const server = (list.hints ?? []).map((h) => toolWords(h, remote));
+  const ours = shareHints(list, remote);
+  if (list.suspended && !server.some((h) => /suspended/i.test(h))) {
+    ours.unshift(
+      `Sharing is suspended on this account: ${remote ? "new previews are" : "share_port is"} refused. The person can write to support@webhooks.cc.`
+    );
+  }
+  const hints = [...new Set([...server, ...ours])];
+  return hints.length > 0 ? { ...list, hints } : { ...list };
+}
+
 /**
  * Registers the webhooks.cc tools for an account client. Returns their
  * handles, so a caller can swap the tool set later.
@@ -1098,7 +1210,11 @@ export function registerTools(
   options: RegisterToolsOptions = {}
 ): RegisteredToolHandle[] {
   const handles: RegisteredToolHandle[] = [];
-  const server = toolTarget(target, options.remote === true, handles);
+  const remote = options.remote === true;
+  const server = toolTarget(target, remote, handles);
+  // How the tool descriptions say to start a preview: the hosted server has
+  // no share_port (it cannot run whk on the person's computer).
+  const shareWith = remote ? REMOTE_SHARE : "share_port";
 
   server.tool(
     "create_endpoint",
@@ -2477,6 +2593,181 @@ export function registerTools(
           ? await client.forwarding.redeliver(requestId, options)
           : await client.forwarding.redeliverFailed(endpointSlug!, options)
       );
+    })
+  );
+
+  // Shares this server started, by port, so asking again returns the same
+  // link. They run until stop_share, the plan's limit, or this server's end
+  // (whk stops when its stdin closes).
+  const started = new Map<number, LiveShare>();
+
+  server.tool(
+    "share_port",
+    "Share a port on this computer at a public link (https://<name>.sharehooks.cc) by running the webhooks.cc CLI (whk share), so a person can open the site you are building. Returns the link. It keeps running until stop_share, the plan's session limit, or the end of this MCP server. Asking again for the same port without a name or password returns the running link; with a name or password, the running share on that port stops and a new one starts. Free accounts get a random name ending in -free, a 2-hour limit and a notice page before the site; Pro and Business can use a reserved name and a password. Needs whk installed on this computer. For a webhook provider that must get your local app's real answer, use `whk tunnel <port> --live` instead.",
+    {
+      port: z.number().int().min(1).max(65535).describe("The local port the site runs on"),
+      name: z
+        .string()
+        .optional()
+        .describe("A name you reserved (Pro and Business); leave out for a random one"),
+      password: z
+        .string()
+        .min(8)
+        .max(200)
+        .optional()
+        .describe("What visitors must type (Pro and Business), 8 to 200 characters"),
+    },
+    withErrorHandling(async ({ port, name, password }) => {
+      const running = started.get(port);
+      if (running && !name && !password) {
+        return jsonContent({ ...shareSummary(running), alreadyRunning: true });
+      }
+      // New options for a port already shared: the running share stops first,
+      // so no whk run is left behind that this server no longer tracks.
+      if (running) {
+        started.delete(port);
+        await running.stop();
+      }
+      let live: LiveShare;
+      try {
+        live = await client.shares.start({
+          port,
+          ...(name ? { name } : {}),
+          ...(password ? { password } : {}),
+          ...(process.env.WHK_PATH ? { whkPath: process.env.WHK_PATH } : {}),
+        });
+      } catch (error) {
+        // whk's own words, plus what an agent can do here without the
+        // dashboard: see what runs and the plan's limits, free a slot.
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${message} With these tools: list_shares shows what runs and the plan's limits, stop_share frees a slot, list_names shows the names you can use.`
+        );
+      }
+      started.set(port, live);
+      void live.closed.then(() => {
+        if (started.get(port) === live) started.delete(port);
+      });
+      const summary: Record<string, unknown> = shareSummary(live);
+      // The plan's limits and this month's data, so the agent knows what is
+      // left; a failure here never hides the link.
+      try {
+        const list = await client.shares.list({ state: "live" });
+        summary.limits = list.limits;
+        summary.usage = list.usage;
+        const hints = shareHints(list);
+        if (hints.length > 0) summary.hints = hints;
+      } catch {
+        // The link is what matters.
+      }
+      return jsonContent(summary);
+    })
+  );
+
+  server.tool(
+    "list_shares",
+    `List your public previews of local ports (whk share${remote ? "" : ", share_port"}) and live tunnels (whk tunnel --live): live ones first, then the latest that ended, with this month's shared data and your plan's sharing limits. Not the same as share_endpoint, which shares an endpoint with a team.`,
+    {
+      state: z
+        .enum(["live", "ended"])
+        .optional()
+        .describe("Only the running ones, or only the ended ones"),
+    },
+    withErrorHandling(async ({ state }) => {
+      return jsonContent(withShareHints(await client.shares.list(state ? { state } : {}), remote));
+    })
+  );
+
+  server.tool(
+    "stop_share",
+    "Stop a public preview or live tunnel by its id (from list_shares). The CLI running it is told why and exits.",
+    {
+      id: z.string().describe("The share's id, from list_shares"),
+    },
+    withErrorHandling(async ({ id }) => {
+      const result = await client.shares.stop(id);
+      return jsonContent({
+        id,
+        stopped: result.stopped,
+        edgeReached: result.edgeReached,
+        note: result.stopped
+          ? result.edgeReached
+            ? "Stopped; its CLI was told and exits."
+            : "Stopped; the edge could not be told at once, so it ends within half a minute."
+          : "It had already ended.",
+      });
+    })
+  );
+
+  server.tool(
+    "share_requests",
+    "The last requests visitors made to a running preview (from list_shares), newest first: method, path, status, time, size, country, device and a number per visitor, never an address. Use it to see whether the person opened the link and what failed for them. `available` is false when the log could not be read just now.",
+    {
+      id: z.string().describe("The share's id, from list_shares"),
+    },
+    withErrorHandling(async ({ id }) => {
+      return jsonContent(await client.shares.requests(id));
+    })
+  );
+
+  server.tool(
+    "list_names",
+    `List the reserved preview names you can share under (Pro and Business): your own and your teams', each with its link, whether it has a password, whether a preview runs under it now, and whether your plan still covers it (usable). Includes how many your plan allows and how many you hold. Share under one with ${remote ? "`whk share <port> --name <name>` on the person's computer (or the local MCP server's share_port)" : "share_port and its name"}.`,
+    {},
+    withErrorHandling(async () => {
+      return jsonContent(await client.names.list());
+    })
+  );
+
+  server.tool(
+    "reserve_name",
+    `Reserve a preview name, so ${shareWith} can use the link https://<name>.sharehooks.cc (Pro and Business). Lowercase letters, digits and dashes; names that look like random ones or end in -free are refused. With team, the name belongs to that team and every member may share under it.`,
+    {
+      name: z.string().min(1).max(63).describe("The name: lowercase letters, digits and dashes"),
+      team: z
+        .string()
+        .optional()
+        .describe("A team's id or name (from list_teams), to keep the name inside that team"),
+    },
+    withErrorHandling(async ({ name, team }) => {
+      return jsonContent(await client.names.reserve(name, team ? { team } : {}));
+    })
+  );
+
+  server.tool(
+    "release_name",
+    "Release a reserved preview name you kept (or, for a team name, as the team's owner). A preview running under it stops, and the link stops working.",
+    {
+      name: z.string().min(1).max(63).describe("The name, from list_names"),
+    },
+    withErrorHandling(async ({ name }) => {
+      await client.names.release(name);
+      return jsonContent({ released: name });
+    })
+  );
+
+  server.tool(
+    "set_name_password",
+    "Put a password on every preview under a reserved name (Pro and Business): visitors must type it before the page opens. The password is not shown back; give it to the person yourself.",
+    {
+      name: z.string().min(1).max(63).describe("The name, from list_names"),
+      password: z.string().min(8).max(200).describe("What visitors must type, 8 to 200 characters"),
+    },
+    withErrorHandling(async ({ name, password }) => {
+      await client.names.setPassword(name, password);
+      return jsonContent({ name, password: true });
+    })
+  );
+
+  server.tool(
+    "clear_name_password",
+    "Take the password off a reserved name, so its previews open without one.",
+    {
+      name: z.string().min(1).max(63).describe("The name, from list_names"),
+    },
+    withErrorHandling(async ({ name }) => {
+      await client.names.clearPassword(name);
+      return jsonContent({ name, password: false });
     })
   );
 

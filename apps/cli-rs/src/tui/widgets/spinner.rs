@@ -1,10 +1,4 @@
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::Style,
-    text::Span,
-    widgets::Widget,
-};
+use ratatui::{buffer::Buffer, layout::Rect, style::Style, text::Span, widgets::Widget};
 
 use crate::tui::theme;
 

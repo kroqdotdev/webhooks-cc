@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { PaidPlanCTA, PricingCTA } from "@/components/landing/pricing-cta";
+import { shareFeatureLines } from "@/lib/tunnels/plan-text";
 
 /**
  * webhooks.cc's plan cards and the Teams strip, shown on the landing page's
@@ -16,6 +17,7 @@ const FREE_FEATURES = [
   "Email capture & destinations",
   "CLI, SDK & MCP access",
   "Mock responses & replay",
+  ...shareFeatureLines("free"),
 ];
 
 const PRO_FEATURES = [
@@ -23,6 +25,7 @@ const PRO_FEATURES = [
   "31-day data retention",
   "100 parsed attachment pages/month",
   "Extra requests in 25,000 blocks",
+  ...shareFeatureLines("pro"),
 ];
 
 const BUSINESS_FEATURES = [
@@ -32,6 +35,7 @@ const BUSINESS_FEATURES = [
   "Up to 50 layouts, 250 AI assists/30 days",
   "1 custom inbound domain, extra ones $3/mo",
   "File drops to SFTP, FTP/FTPS & S3",
+  ...shareFeatureLines("business"),
 ];
 
 function FeatureList({ features }: { features: readonly string[] }) {

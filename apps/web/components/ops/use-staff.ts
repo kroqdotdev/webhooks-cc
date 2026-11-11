@@ -10,6 +10,8 @@ export interface StaffStatus {
   hasFactor: boolean;
   /** Tickets waiting on support, when known. */
   waiting: number | null;
+  /** Open reports of shared previews, when known (absent from older answers). */
+  reports?: number | null;
 }
 
 const CACHE_KEY = "whk-staff";

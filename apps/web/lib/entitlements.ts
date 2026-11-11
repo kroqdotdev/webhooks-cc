@@ -33,6 +33,16 @@ export interface Entitlements {
   annualBilling: boolean;
   /** Team keys: parsed pages and AI assists are per seat too (requests always are). */
   perSeat: boolean;
+  /** Live `whk share` previews at once (per member on team keys). */
+  shareSlots: number;
+  /** How long one preview may run; null for as long as the CLI does. */
+  shareSessionMinutes: number | null;
+  /** What visitors may take from the account's previews a UTC month, in GB. */
+  shareDataGb: number;
+  /** Preview names the account may keep (random names only at 0). */
+  reservedNames: number;
+  /** Passwords on preview links. */
+  sharePasswords: boolean;
 }
 
 export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
@@ -51,6 +61,11 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     pageAddons: false,
     annualBilling: false,
     perSeat: false,
+    shareSlots: 1,
+    shareSessionMinutes: 120,
+    shareDataGb: 1,
+    reservedNames: 0,
+    sharePasswords: false,
   },
   pro: {
     key: "pro",
@@ -67,6 +82,11 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     pageAddons: false,
     annualBilling: false,
     perSeat: false,
+    shareSlots: 3,
+    shareSessionMinutes: null,
+    shareDataGb: 25,
+    reservedNames: 3,
+    sharePasswords: true,
   },
   business: {
     key: "business",
@@ -83,6 +103,11 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     pageAddons: true,
     annualBilling: true,
     perSeat: false,
+    shareSlots: 10,
+    shareSessionMinutes: null,
+    shareDataGb: 150,
+    reservedNames: 20,
+    sharePasswords: true,
   },
   team: {
     key: "team",
@@ -99,6 +124,11 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     pageAddons: false,
     annualBilling: false,
     perSeat: false,
+    shareSlots: 3,
+    shareSessionMinutes: null,
+    shareDataGb: 25,
+    reservedNames: 3,
+    sharePasswords: true,
   },
   team_business: {
     key: "team_business",
@@ -115,6 +145,11 @@ export const ENTITLEMENTS: Readonly<Record<PlanKey, Readonly<Entitlements>>> = {
     pageAddons: true,
     annualBilling: true,
     perSeat: true,
+    shareSlots: 10,
+    shareSessionMinutes: null,
+    shareDataGb: 150,
+    reservedNames: 20,
+    sharePasswords: true,
   },
 };
 

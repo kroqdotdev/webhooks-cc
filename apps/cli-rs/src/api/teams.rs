@@ -13,7 +13,10 @@ impl ApiClient {
     pub async fn list_team_members(&self, team_id: &str) -> Result<TeamMembersResponse> {
         self.require_auth()?;
         let resp = self
-            .get(&format!("/api/teams/{}/members", urlencoding::encode(team_id)))
+            .get(&format!(
+                "/api/teams/{}/members",
+                urlencoding::encode(team_id)
+            ))
             .await?;
         serde_json::from_str(&resp.body).context("failed to parse team members")
     }
@@ -23,8 +26,11 @@ impl ApiClient {
     pub async fn share_endpoint(&self, team_id: &str, endpoint_id: &str) -> Result<()> {
         self.require_auth()?;
         let body = serde_json::json!({ "endpointId": endpoint_id });
-        self.post(&format!("/api/teams/{}/endpoints", urlencoding::encode(team_id)), &body)
-            .await?;
+        self.post(
+            &format!("/api/teams/{}/endpoints", urlencoding::encode(team_id)),
+            &body,
+        )
+        .await?;
         Ok(())
     }
 
@@ -43,7 +49,10 @@ impl ApiClient {
         self.require_auth()?;
         let body = serde_json::json!({ "email": email });
         let resp = self
-            .post(&format!("/api/teams/{}/invite", urlencoding::encode(team_id)), &body)
+            .post(
+                &format!("/api/teams/{}/invite", urlencoding::encode(team_id)),
+                &body,
+            )
             .await?;
         serde_json::from_str(&resp.body).context("failed to parse invite")
     }
@@ -57,16 +66,22 @@ impl ApiClient {
     pub async fn accept_invite(&self, invite_id: &str) -> Result<()> {
         self.require_auth()?;
         let body = serde_json::json!({});
-        self.post(&format!("/api/invites/{}/accept", urlencoding::encode(invite_id)), &body)
-            .await?;
+        self.post(
+            &format!("/api/invites/{}/accept", urlencoding::encode(invite_id)),
+            &body,
+        )
+        .await?;
         Ok(())
     }
 
     pub async fn decline_invite(&self, invite_id: &str) -> Result<()> {
         self.require_auth()?;
         let body = serde_json::json!({});
-        self.post(&format!("/api/invites/{}/decline", urlencoding::encode(invite_id)), &body)
-            .await?;
+        self.post(
+            &format!("/api/invites/{}/decline", urlencoding::encode(invite_id)),
+            &body,
+        )
+        .await?;
         Ok(())
     }
 }

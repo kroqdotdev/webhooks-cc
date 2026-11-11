@@ -2,6 +2,8 @@ import { createAdminClient } from "./admin";
 import { revokeAllAddons } from "./capacity-billing";
 import { revokeTeamSubscription } from "./team-billing";
 import type { Team, TeamRow } from "./teams-types";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
+import { stopSharesUnderTeamNames } from "@/lib/tunnels/names";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -219,6 +221,9 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
     await revokeTeamSubscription(subscriptionId);
   }
 
+  // The team's preview names go with it: previews under them stop first.
+  await stopSharesUnderTeamNames([teamId]);
+
   const { data, error } = await admin
     .from("teams")
     .delete()
@@ -228,6 +233,8 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
 
   if (error) throw error;
   if (!data) return false;
+  // Tunnels opened on this access end with it (lib/tunnels/access.ts).
+  await closeRunsWithoutAccess();
 
   return true;
 }

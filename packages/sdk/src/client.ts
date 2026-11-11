@@ -72,7 +72,13 @@ import type {
   ListDeliveriesOptions,
   RenderEmailOptions,
   RenderedEmail,
+  TunnelName,
+  TunnelNameList,
+  TunnelShareList,
+  TunnelStopResult,
+  TunnelVisits,
 } from "./types";
+import { share as runShare, type LiveShare, type ShareOptions } from "./share";
 import type { EmailReceivedEvent, RequestKind } from "./email/types";
 import type { ParsedEmail } from "./email/layouts";
 import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/address";
@@ -193,8 +199,24 @@ const PROXY_HEADERS = new Set([
  */
 export const ApiError = WebhooksCCError;
 
+/**
+ * What to try after a short 404, by the route that answered: shares and
+ * names have their own lists, everything else is about endpoints.
+ */
+export function notFoundHint(path: string | undefined): string {
+  if (path?.startsWith("/shares")) return "Use client.shares.list() to see your shares.";
+  if (path?.startsWith("/tunnel-names"))
+    return "Use client.names.list() to see the names you can use.";
+  return "Use client.endpoints.list() to see available endpoints.";
+}
+
 /** Map HTTP status codes to typed errors with actionable recovery hints. */
-function mapStatusToError(status: number, message: string, response: Response): WebhooksCCError {
+function mapStatusToError(
+  status: number,
+  message: string,
+  response: Response,
+  path?: string
+): WebhooksCCError {
   // Append recovery hints when server message is generic (< 30 chars)
   const isGeneric = message.length < 30;
 
@@ -206,9 +228,7 @@ function mapStatusToError(status: number, message: string, response: Response): 
       return new UnauthorizedError(hint);
     }
     case 404: {
-      const hint = isGeneric
-        ? `${message} — Use client.endpoints.list() to see available endpoints.`
-        : message;
+      const hint = isGeneric ? `${message}: ${notFoundHint(path)}` : message;
       return new NotFoundError(hint);
     }
     case 429: {
@@ -693,6 +713,15 @@ export async function collectMatchingRequests(
 }
 
 /**
+ * Marks a client as reading its tokens from the agent credential file at
+ * `file`, so `shares.start()` runs whk on that same connection. Internal:
+ * set by `WebhooksCC.connected()`.
+ */
+export function markAgentClient(client: WebhooksCC, file: string): void {
+  (client as unknown as { agentShare: { file: string } | null }).agentShare = { file };
+}
+
+/**
  * Client for the webhooks.cc API.
  *
  * Provides methods to create endpoints, list captured requests, and wait
@@ -710,6 +739,8 @@ export class WebhooksCC {
   private readonly emailDomain: string;
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly userAgent: string | undefined;
+  /** For a client from the agent credential file: that file, so whk shares as the same account. */
+  private agentShare: { file: string } | null = null;
 
   constructor(options: ClientOptions) {
     if (typeof options.getAccessToken !== "function") {
@@ -880,7 +911,8 @@ export class WebhooksCC {
         throw mapStatusToError(
           response.status,
           text.length > 200 ? text.slice(0, 200) + "..." : text,
-          response
+          response,
+          path
         );
       }
       const disposition = response.headers.get("content-disposition") ?? "";
@@ -952,7 +984,7 @@ export class WebhooksCC {
           const errorText = await response.text();
           const sanitizedError =
             errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
-          const error = mapStatusToError(response.status, sanitizedError, response);
+          const error = mapStatusToError(response.status, sanitizedError, response, path);
           try {
             this.hooks.onError?.({ method, url, error, durationMs });
           } catch {
@@ -1583,6 +1615,48 @@ export class WebhooksCC {
           params: { inviteId: "string" },
         },
       },
+      shares: {
+        list: {
+          description:
+            "List your public previews (whk share) and live tunnels, this month's shared data and your plan's sharing limits",
+          params: { state: '"live" | "ended"?' },
+        },
+        stop: {
+          description:
+            "Stop a preview or live tunnel by id (yours, or a teammate's under a team name)",
+          params: { id: "string" },
+        },
+        requests: {
+          description: "The last visitor requests to a preview, from the tunnel edge's memory",
+          params: { id: "string" },
+        },
+        start: {
+          description:
+            "Share a local port at a public link by running the whk CLI (Node.js only, whk installed); resolves with the link",
+          params: {
+            port: "number",
+            name: "string? (a reserved name, Pro and Business)",
+            password: "string? (8 to 200 characters, Pro and Business)",
+            whkPath: "string?",
+          },
+        },
+      },
+      names: {
+        list: { description: "List your reserved preview names and your team's", params: {} },
+        reserve: {
+          description: "Reserve a preview name (Pro and Business): <name>.sharehooks.cc",
+          params: { name: "string", team: "string? (team id or unique name)" },
+        },
+        release: { description: "Release a reserved name", params: { name: "string" } },
+        setPassword: {
+          description: "Put a password on every preview under a name",
+          params: { name: "string", password: "string" },
+        },
+        clearPassword: {
+          description: "Remove a name's password",
+          params: { name: "string" },
+        },
+      },
     };
   }
 
@@ -1849,6 +1923,113 @@ export class WebhooksCC {
         validatePathSegment(inviteId, "inviteId");
         await this.request("POST", `/invites/${inviteId}/decline`);
       },
+    },
+  };
+
+  /**
+   * Public previews of local ports (`whk share`) and live tunnels (`whk
+   * tunnel --live`). Previews are served at `<name>.sharehooks.cc`; Free
+   * previews get a random name ending in `-free` and a time limit.
+   */
+  shares = {
+    /** Your previews and live tunnels (live first, then the latest that ended), with this month's data and your limits. */
+    list: async (options: { state?: "live" | "ended" } = {}): Promise<TunnelShareList> => {
+      const state = options.state;
+      if (state !== undefined && state !== "live" && state !== "ended") {
+        throw new Error('state must be "live" or "ended"');
+      }
+      return this.request<TunnelShareList>("GET", state ? `/shares?state=${state}` : "/shares");
+    },
+
+    /**
+     * Stop a preview or live tunnel. Its CLI is told why and exits.
+     * `stopped` is false when it had already ended; `edgeReached` is false
+     * when the edge could not be told at once (it ends at the next sync).
+     */
+    stop: async (id: string): Promise<TunnelStopResult> => {
+      validatePathSegment(id, "id");
+      const answer = await this.request<Partial<TunnelStopResult> | undefined>(
+        "POST",
+        `/shares/${id}/stop`,
+        {}
+      );
+      return {
+        ok: answer?.ok ?? true,
+        stopped: answer?.stopped ?? true,
+        edgeReached: answer?.edgeReached ?? true,
+      };
+    },
+
+    /** The last visitor requests to a preview (no addresses, a number per visitor), newest first. */
+    requests: async (id: string): Promise<TunnelVisits> => {
+      validatePathSegment(id, "id");
+      return this.request<TunnelVisits>("GET", `/shares/${id}/requests`);
+    },
+
+    /**
+     * Share a local port at a public link with this client's account, by
+     * running the whk CLI (Node.js only; see `share()`).
+     */
+    start: async (
+      options: Omit<ShareOptions, "apiKey" | "baseUrl" | "auth" | "agentFile">
+    ): Promise<LiveShare> => {
+      if (this.apiKey) {
+        return runShare({ ...options, apiKey: this.apiKey, baseUrl: this.baseUrl });
+      }
+      // An agent connection: whk reads the same credential file, so the
+      // share belongs to the account this client sees, not this machine's
+      // own whk login.
+      if (this.agentShare) {
+        return runShare({
+          ...options,
+          auth: "agent",
+          agentFile: this.agentShare.file,
+          baseUrl: this.baseUrl,
+        });
+      }
+      throw new Error(
+        "shares.start() needs a client with an API key or one from WebhooksCC.connected(): whk must share as the same account."
+      );
+    },
+  };
+
+  /** Reserved preview names (Pro and Business): `<name>.sharehooks.cc`. */
+  names = {
+    /** Your names and your teams' names, with how many your plan allows. */
+    list: async (): Promise<TunnelNameList> => {
+      return this.request<TunnelNameList>("GET", "/tunnel-names");
+    },
+
+    /**
+     * Reserve a name; with `team` (a team id, or a name that matches one of
+     * your teams) it belongs to that team and every member may share under it.
+     */
+    reserve: async (name: string, options: { team?: string } = {}): Promise<TunnelName> => {
+      validatePathSegment(name, "name");
+      const body: { name: string; team?: string } = { name };
+      if (options.team) body.team = resolveTeam(await this.teams.list(), options.team).id;
+      return (await this.request<{ name: TunnelName }>("POST", "/tunnel-names", body)).name;
+    },
+
+    /** Release a name you reserved (or, for a team name, as the team's owner). */
+    release: async (name: string): Promise<void> => {
+      validatePathSegment(name, "name");
+      await this.request("DELETE", `/tunnel-names/${name}`);
+    },
+
+    /** Put a password on every preview under this name. */
+    setPassword: async (name: string, password: string): Promise<void> => {
+      validatePathSegment(name, "name");
+      if (typeof password !== "string" || password.length < 8 || password.length > 200) {
+        throw new Error("password must be 8 to 200 characters");
+      }
+      await this.request("PUT", `/tunnel-names/${name}/password`, { password });
+    },
+
+    /** Remove the name's password. */
+    clearPassword: async (name: string): Promise<void> => {
+      validatePathSegment(name, "name");
+      await this.request("DELETE", `/tunnel-names/${name}/password`);
     },
   };
 

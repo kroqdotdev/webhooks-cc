@@ -22,9 +22,10 @@ Get a unique URL, point your webhook there, and see every request in real time. 
 - **Inspect in real time**: see requests the moment they arrive
 - **Configure responses**: return custom status codes, headers and bodies, chosen by rules, to test error paths
 - **Verify signatures**: check provider signatures (Stripe, GitHub, Shopify and more) on captured requests
-- **Forward**: tunnel webhooks to localhost during development, or forward them to other URLs, chat and file drops
+- **Forward**: tunnel webhooks to localhost during development (with `--live`, the sender gets your local app's answer), or forward them to other URLs, chat and file drops
+- **Share localhost**: put the site on your machine at a public link on sharehooks.cc with `whk share`
 - **CLI with interactive TUI**: manage endpoints, tunnel and stream requests from your terminal
-- **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI
+- **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI, and share a local port from code
 - **MCP server**: connect AI coding agents (Claude Code, Cursor, VS Code, Codex) to your webhooks
 
 ## Use Cases
@@ -108,6 +109,7 @@ All commands also work directly from the command line:
 
 ```bash
 whk tunnel 8080                       # Forward webhooks to localhost:8080
+whk share 3000                        # Share localhost:3000 at https://<name>.sharehooks.cc
 whk listen <slug>                     # Stream incoming requests
 whk create my-endpoint                # Create a new endpoint
 whk list                              # List your endpoints
@@ -138,7 +140,7 @@ await client.requests.replay(req.id, "http://localhost:3000/webhooks");
 
 ## MCP server
 
-The `@webhooks-cc/mcp` package exposes 48 tools that let AI agents manage endpoints, inspect webhooks, send test payloads, and replay requests through natural language.
+The `@webhooks-cc/mcp` package exposes 57 tools (54 on the remote server) that let AI agents manage endpoints, inspect webhooks, send test payloads, replay requests, and share a local site at a public link through natural language.
 
 ```
 You: "Create a webhook endpoint for testing Stripe"
@@ -170,7 +172,7 @@ webhooks.cc is built and run by one developer. The hosted service at [webhooks.c
 
 This project uses a split license:
 
-- **AGPL-3.0**: the web app, receiver, email-capture SMTP host, attachment parser and database schema (`apps/web/`, `apps/receiver-rs/`, `apps/mx-rs/`, `apps/parser-rs/`, `supabase/`). See [LICENSE](LICENSE).
-- **MIT**: the CLI, the TypeScript, Python and Go SDKs, the MCP server, the Zapier and Make apps, and the Claude Code plugin (`apps/cli-rs/`, `packages/sdk/`, `packages/sdk-python/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/`, `plugins/`). See the `LICENSE` file in each directory.
+- **AGPL-3.0**: the web app, receiver, email-capture SMTP host, tunnel edge, attachment parser and database schema (`apps/web/`, `apps/receiver-rs/`, `apps/mx-rs/`, `apps/edge-rs/`, `apps/parser-rs/`, `supabase/`). See [LICENSE](LICENSE).
+- **MIT**: the CLI and its tunnel protocol crate, the TypeScript, Python and Go SDKs, the MCP server, the Zapier and Make apps, and the Claude Code plugin (`apps/cli-rs/`, `crates/tunnel/`, `packages/sdk/`, `packages/sdk-python/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/`, `plugins/`). See the `LICENSE` file in each directory.
 
 The CLI, SDKs and MCP server are MIT so you can use them freely in your own projects, open or closed.

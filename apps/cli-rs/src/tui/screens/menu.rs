@@ -1,10 +1,10 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph},
-    Frame,
 };
 use tokio::sync::mpsc;
 
@@ -130,8 +130,8 @@ impl Screen for MenuScreen {
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::vertical([
-            Constraint::Length(5),  // Logo
-            Constraint::Length(1),  // Spacer
+            Constraint::Length(5), // Logo
+            Constraint::Length(1), // Spacer
             Constraint::Min(10),   // Menu items
             Constraint::Length(3), // Auth status
         ])
@@ -154,11 +154,7 @@ impl Screen for MenuScreen {
     }
 
     fn status_keys(&self) -> Vec<(&str, &str)> {
-        vec![
-            ("↑↓", "navigate"),
-            ("enter", "select"),
-            ("q", "quit"),
-        ]
+        vec![("↑↓", "navigate"), ("enter", "select"), ("q", "quit")]
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -168,21 +164,28 @@ impl Screen for MenuScreen {
 
 fn render_logo(frame: &mut Frame, area: Rect) {
     let logo = vec![
-        Line::from(vec![
-            Span::styled("  ╔══════════════════════════╗", Style::default().fg(theme::BORDER)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  ╔══════════════════════════╗",
+            Style::default().fg(theme::BORDER),
+        )]),
         Line::from(vec![
             Span::styled("  ║  ", Style::default().fg(theme::BORDER)),
             Span::styled("webhooks", theme::style_primary_bold()),
             Span::styled(".", theme::style_dim()),
             Span::styled("cc", theme::style_primary_bold()),
             Span::styled("  ", Style::default()),
-            Span::styled("cli", Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "cli",
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  ║", Style::default().fg(theme::BORDER)),
         ]),
-        Line::from(vec![
-            Span::styled("  ╚══════════════════════════╝", Style::default().fg(theme::BORDER)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  ╚══════════════════════════╝",
+            Style::default().fg(theme::BORDER),
+        )]),
     ];
 
     let p = Paragraph::new(logo);
@@ -190,8 +193,7 @@ fn render_logo(frame: &mut Frame, area: Rect) {
 }
 
 fn render_menu_items(frame: &mut Frame, area: Rect, selected: usize) {
-    let block = Block::default()
-        .padding(Padding::horizontal(2));
+    let block = Block::default().padding(Padding::horizontal(2));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -221,7 +223,14 @@ fn render_menu_items(frame: &mut Frame, area: Rect, selected: usize) {
 
         let line = Line::from(vec![
             Span::styled(indicator, ind_style),
-            Span::styled(item.icon, Style::default().fg(if is_selected { theme::PRIMARY } else { theme::MUTED })),
+            Span::styled(
+                item.icon,
+                Style::default().fg(if is_selected {
+                    theme::PRIMARY
+                } else {
+                    theme::MUTED
+                }),
+            ),
             Span::styled("  ", Style::default()),
             Span::styled(item.label, label_style),
             Span::styled("  ", Style::default()),

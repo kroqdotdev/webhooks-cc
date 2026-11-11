@@ -374,6 +374,72 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
         working-directory: apps/mx-rs
 
+  test-edge:
+    name: Test Rust Edge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/edge-rs/target
+            crates/tunnel/target
+          key: ${{ runner.os }}-cargo-edge-${{ hashFiles('apps/edge-rs/Cargo.lock', 'crates/tunnel/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-edge-
+
+      - name: Test the tunnel protocol crate
+        run: cargo test --locked
+        working-directory: crates/tunnel
+
+      - name: Run tests
+        run: cargo test --locked
+        working-directory: apps/edge-rs
+
+  lint-edge:
+    name: Lint Rust Edge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/edge-rs/target
+            crates/tunnel/target
+          key: ${{ runner.os }}-cargo-edge-${{ hashFiles('apps/edge-rs/Cargo.lock', 'crates/tunnel/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-edge-
+
+      - name: Check formatting (tunnel crate)
+        run: cargo fmt --check
+        working-directory: crates/tunnel
+
+      - name: Run clippy (tunnel crate)
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: crates/tunnel
+
+      - name: Check formatting
+        run: cargo fmt --check
+        working-directory: apps/edge-rs
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: apps/edge-rs
+
   # The integration tests run the built binary, so they also check that the
   # seccomp filter and the rlimits hold on the runner.
   test-parser:
@@ -472,6 +538,9 @@ jobs:
           - image: mx
             context: apps/mx-rs
             file: apps/mx-rs/Dockerfile
+          - image: edge
+            context: .
+            file: apps/edge-rs/Dockerfile
     steps:
       - uses: actions/checkout@v7
 

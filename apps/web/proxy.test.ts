@@ -82,7 +82,7 @@ describe("proxy", () => {
       const csp = res.headers.get("Content-Security-Policy") ?? "";
       expect(csp).toMatch(/img-src [^;]* https:(;|$)/);
       // Google's Drive picker opens in a pop-up of its own, never in a frame here.
-      expect(csp).toContain("frame-src 'self';");
+      expect(csp).toContain("frame-src 'self' https://challenges.cloudflare.com;");
       expect(csp).not.toContain("google.com");
     }
   });

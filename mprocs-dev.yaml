@@ -6,3 +6,5 @@ procs:
     shell: "pnpm --filter web dev"
   receiver:
     shell: 'set -a && . ./.env.local && set +a && export MAIL_INGEST_ADDR="${MAIL_INGEST_ADDR:-127.0.0.1:3002}" && cd apps/receiver-rs && $HOME/.cargo/bin/cargo run'
+  edge:
+    shell: "make dev-edge"

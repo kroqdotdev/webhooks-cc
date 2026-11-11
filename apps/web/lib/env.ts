@@ -171,6 +171,22 @@ const serverEnvSchema = z
         })
         .optional()
     ),
+    // Tunnels (lib/tunnels): the secret the edge (apps/edge-rs) and the web
+    // app share for /api/edge/* and the edge's control port, the control
+    // port's URL, and the origin previews are served under (a preview is
+    // that origin with its name before the host). Sharing is off unless the
+    // secret and the origin are set.
+    EDGE_SECRET: blankToUndefined(z.string().min(32).optional()),
+    EDGE_URL: blankToUndefined(z.string().url().default("http://127.0.0.1:4001")),
+    SHARE_PREVIEW_ORIGIN: blankToUndefined(z.string().url().optional()),
+    // Cloudflare Turnstile on the public report form (/report): both keys,
+    // or neither (no check, as in development without keys).
+    TURNSTILE_SITE_KEY: blankToUndefined(z.string().optional()),
+    TURNSTILE_SECRET_KEY: blankToUndefined(z.string().optional()),
+    // Google Web Risk (the commercial Safe Browsing): the daily check of the
+    // preview domain's reputation (lib/tunnels/reputation.ts) runs only
+    // with a key.
+    WEB_RISK_API_KEY: blankToUndefined(z.string().optional()),
     // AI setup and repair (lib/ai): the Anthropic API key; without it the
     // feature is not offered. AI_API_BASE_URL points tests at a fake model.
     ANTHROPIC_API_KEY: blankToUndefined(z.string().optional()),
@@ -350,6 +366,12 @@ export function serverEnv() {
       POLAR_AUTO_REFUND_MAX_CENTS: process.env.POLAR_AUTO_REFUND_MAX_CENTS,
       DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
       FILE_DROP_PROXY_URL: process.env.FILE_DROP_PROXY_URL,
+      EDGE_SECRET: process.env.EDGE_SECRET,
+      EDGE_URL: process.env.EDGE_URL,
+      SHARE_PREVIEW_ORIGIN: process.env.SHARE_PREVIEW_ORIGIN,
+      TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY,
+      TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
+      WEB_RISK_API_KEY: process.env.WEB_RISK_API_KEY,
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
       AI_API_BASE_URL: process.env.AI_API_BASE_URL,
       OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,

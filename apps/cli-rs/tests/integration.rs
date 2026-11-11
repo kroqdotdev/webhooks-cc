@@ -424,6 +424,7 @@ fn make_captured_request(
         kind: None,
         email: None,
         parsed: None,
+        live_response: None,
     }
 }
 

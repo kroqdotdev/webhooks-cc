@@ -227,6 +227,204 @@ export interface Request {
   email?: EmailCapture | null;
   /** What the endpoint's layouts found, once the parse is done (emails on endpoints with layouts) */
   parsed?: ParsedEmail | null;
+  /**
+   * What the local app answered, for a request captured while `whk tunnel
+   * --live` ran: the sender got this answer instead of the mock response.
+   */
+  liveResponse?: LiveResponse | null;
+}
+
+/** The answer a local app gave a request relayed through `whk tunnel --live`. */
+export interface LiveResponse {
+  /** The HTTP status the sender got: the app's, or the stand-in's (see `outcome`). */
+  status: number | null;
+  /** The response headers. */
+  headers: Record<string, string>;
+  /** The start of the body (up to 64 KB). */
+  body: string;
+  /** True when the body was longer than what is kept. */
+  bodyTruncated: boolean;
+  /** "utf8" for text, "base64" for bytes that are not UTF-8. */
+  bodyEncoding: "utf8" | "base64";
+  /** How long the app took, in milliseconds. */
+  ms: number | null;
+  /**
+   * "answered" when the app answered; otherwise what the sender got instead:
+   * "offline" (502, whk tunnel --live not connected), "timeout" (504),
+   * "unreachable" (502, nothing on the local port), "busy" (503) or
+   * "refused": the app's answer was not passed back as it was. 400 when
+   * the path left the endpoint; 502 when the answer was refused (a
+   * download, a script or another type an API does not answer with, or a
+   * stated size over 1 MB); or the app's own status when the answer
+   * streamed past 1 MB and was cut off, so the sender got a broken stream.
+   */
+  outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
+}
+
+/** A `whk share` preview or a `whk tunnel --live` session (GET /api/shares). */
+export interface TunnelShare {
+  id: string;
+  /** "share": a preview at a name; "live": an endpoint's captures relayed to a local app. */
+  kind: "share" | "live";
+  /** The preview's name, or null for a live session. */
+  name: string | null;
+  /** The preview's link, or the capture URL for a live session. */
+  url: string | null;
+  /** The endpoint, for a live session. */
+  endpointSlug: string | null;
+  /** What it runs on: "laptop, macOS". */
+  client: string;
+  startedAt: string;
+  /** Null while it runs. */
+  endedAt: string | null;
+  /** Why it ended, in words. */
+  endReason: string | null;
+  /** When the plan's session time runs out, or null without a limit. */
+  expiresAt: string | null;
+  /**
+   * Bytes visitors moved through a preview, both ways (downloads and uploads,
+   * WebSockets included). Live tunnels count captures instead.
+   */
+  bytes: number;
+  requests: number;
+  /** Whether visitors need a password. */
+  password: boolean;
+  /** False for a teammate's share under a team name. */
+  mine: boolean;
+  /** Who started it, for a teammate's share. */
+  startedBy: { id: string; email: string } | null;
+  /** Whether visitors see the notice page before the preview. */
+  notice?: boolean;
+}
+
+/** This month's shared data (UTC month). */
+export interface TunnelUsage {
+  /** "2026-11". */
+  month: string;
+  bytes: number;
+  limitBytes: number;
+  /** True once the month's data is used: previews pause until `resetsAt`. */
+  over: boolean;
+  resetsAt: string;
+  /** Why previews are paused and until when, when `over`. */
+  message?: string | null;
+}
+
+/** What the account's plan allows for sharing. */
+export interface TunnelLimits {
+  plan: string;
+  /** The plan's name for people: "Pro", "Team Business". */
+  label?: string;
+  /** Previews at once. */
+  shares: number;
+  reservedNames: number;
+  /** Minutes a preview may run, or null without a limit. */
+  sessionMinutes: number | null;
+  /** Data a month, in GB. */
+  dataGb: number;
+  passwords: boolean;
+  /** Whether visitors see a short notice before the page. */
+  notice: boolean;
+}
+
+/** Reserved names against the plan, for GET /api/shares. */
+export interface TunnelNamesSummary {
+  /** One's own names the plan allows. */
+  limit: number;
+  /** One's own names reserved. */
+  used: number;
+  /** Names one may share under now, own and teams'. */
+  usable: number;
+}
+
+export interface TunnelShareList {
+  shares: TunnelShare[];
+  usage: TunnelUsage;
+  limits: TunnelLimits;
+  /** Reserved names standing (newer servers). */
+  names?: TunnelNamesSummary;
+  /** True when sharing is suspended on this account. */
+  suspended?: boolean;
+  /** What to do next, as whk commands an agent can run. */
+  hints?: string[];
+}
+
+/** What `client.shares.stop()` reports (POST /api/shares/{id}/stop). */
+export interface TunnelStopResult {
+  ok: boolean;
+  /** False when it had already ended. */
+  stopped: boolean;
+  /** False when the edge could not be told at once; it ends at the next sync. */
+  edgeReached: boolean;
+}
+
+/** One visitor request to a preview, from the edge's memory (no addresses). */
+export interface TunnelVisit {
+  method: string;
+  path: string;
+  status: number;
+  ms: number;
+  bytes: number;
+  at: string;
+  country: string | null;
+  device: "phone" | "tablet" | "computer" | "bot" | "unknown";
+  /** 1 for the first visitor seen, 2 for the next. */
+  visitor: number;
+}
+
+export interface TunnelVisits {
+  /** False when the edge could not be asked just now. */
+  available: boolean;
+  /** Newest first. */
+  requests: TunnelVisit[];
+}
+
+/** A reserved preview name (GET /api/tunnel-names). */
+export interface TunnelName {
+  name: string;
+  /** The preview link it gives. */
+  url: string | null;
+  /** The team it belongs to, when reserved inside one. */
+  team: { id: string; name: string } | null;
+  reservedBy: { id: string; email: string } | null;
+  /** False for a teammate's name. */
+  mine: boolean;
+  /** Whether it has a password of its own. */
+  password: boolean;
+  /** Whether a preview runs under it now. */
+  live: boolean;
+  /**
+   * False when the plan no longer covers it (past the plan's count after a
+   * downgrade, or a team whose subscription ended): it is kept, but nothing
+   * can be shared under it until the plan grows or another name is
+   * released. Missing from older servers, which means usable.
+   */
+  usable?: boolean;
+  createdAt: string;
+}
+
+/** A team's own count of names: team names count against the team. */
+export interface TunnelTeamNameCount {
+  id: string;
+  name: string;
+  /** False while the team has no subscription: its names wait, unusable. */
+  active?: boolean;
+  /** Names the team may keep (its plan's names per seat). */
+  limit: number;
+  /** Names it keeps. */
+  used: number;
+}
+
+export interface TunnelNameList {
+  names: TunnelName[];
+  /** Your own names the plan allows. */
+  limit: number;
+  /** Your own names. */
+  used: number;
+  /** The plan your sharing limits come from ("pro", "team_business"). */
+  plan?: string;
+  /** Each of your teams' counts, when the server gives them. */
+  teams?: TunnelTeamNameCount[];
 }
 
 /**
@@ -977,6 +1175,10 @@ export interface SDKDescription {
   destinations: Record<string, OperationDescription>;
   alerts: Record<string, OperationDescription>;
   teams: Record<string, OperationDescription>;
+  /** Public previews of local ports (`whk share`) and live tunnels. */
+  shares: Record<string, OperationDescription>;
+  /** Reserved preview names. */
+  names: Record<string, OperationDescription>;
 }
 
 /** Which emails to match. Strings match exactly (subject: contains; addresses: case-insensitive). */

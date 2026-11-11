@@ -40,6 +40,11 @@ const PROXY_HEADERS: &[&str] = &[
     "x-webhooks-cc-test-send",
 ];
 
+/// Whether `name` (lowercase) is one of the headers our proxies add.
+pub(crate) fn is_proxy_header(name: &str) -> bool {
+    PROXY_HEADERS.contains(&name)
+}
+
 /// Blocked response headers that must not be forwarded from mock responses.
 const BLOCKED_HEADERS: &[&str] = &[
     "set-cookie",
@@ -61,7 +66,7 @@ pub fn is_valid_slug(slug: &str) -> bool {
 /// Extract the real client IP from proxy headers.
 /// Sanitizes the value to contain only valid IP characters (digits, dots, colons, hex)
 /// to prevent XSS via spoofed headers stored in the database.
-fn real_ip(headers: &HeaderMap) -> String {
+pub(crate) fn real_ip(headers: &HeaderMap) -> String {
     let raw = if let Some(ip) = headers
         .get("cf-connecting-ip")
         .and_then(|v| v.to_str().ok())
@@ -231,12 +236,21 @@ pub(crate) struct CaptureResult {
     /// The endpoint's name, for `{{ endpoint.name }}` in mock responses.
     #[serde(default)]
     endpoint_name: Option<String>,
+    /// The endpoint's id, which the edge knows a live session by (00092).
+    #[serde(default)]
+    endpoint_id: Option<String>,
+    /// Whether the endpoint has an open live session (`whk tunnel --live`,
+    /// migration 00092): the capture is relayed to the app.
+    #[serde(default)]
+    live: bool,
 }
 
 struct WebhookTarget {
     slug: String,
     path: String,
     raw_query: Option<String>,
+    /// The path after `/w/<slug>` as sent, still encoded, for a live relay.
+    raw_rest: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -542,6 +556,7 @@ pub async fn handle_webhook(
             slug,
             path,
             raw_query: uri.query().map(str::to_string),
+            raw_rest: super::live::path_after_slug(uri.path()).to_string(),
         },
         headers,
         query,
@@ -567,6 +582,7 @@ pub async fn handle_webhook_no_path(
             slug,
             path: String::new(),
             raw_query: uri.query().map(str::to_string),
+            raw_rest: "/".to_string(),
         },
         headers,
         query,
@@ -596,6 +612,7 @@ async fn handle_webhook_inner(
     // 2. Normalize path (axum percent-decodes %00, so strip NUL for Postgres)
     let path = target.path;
     let raw_query = target.raw_query;
+    let raw_rest = target.raw_rest;
     let req_path = if path.is_empty() {
         "/".to_string()
     } else if path.starts_with('/') {
@@ -948,6 +965,60 @@ async fn handle_webhook_inner(
                     state
                         .answers
                         .remember(&slug, parsed_rules.as_deref(), mock_response.as_ref());
+
+                    // A live endpoint: the app answers, not the mock or the
+                    // rules, and the row records what it said.
+                    if capture.live && state.live.is_none() {
+                        super::live::not_configured();
+                    }
+                    // Unless the edge has been gone for this endpoint past
+                    // the grace: then it is answered like any capture
+                    // (live.rs, EdgeHealth).
+                    if capture.live
+                        && let Some(ref live) = state.live
+                        && let Some(ref endpoint_id) = capture.endpoint_id
+                        && live.relays(endpoint_id)
+                    {
+                        let limit_key = capture
+                            .billing_key
+                            .clone()
+                            .unwrap_or_else(|| CaptureLimiter::slug_key(&slug));
+                        // In a task of its own, so a sender that hangs up
+                        // does not stop the row getting the app's answer.
+                        let pool = state.pool.clone();
+                        let request_id = capture.request_id.clone();
+                        let relayed = super::live::spawn_relay(
+                            live.clone(),
+                            super::live::OwnedLiveRequest {
+                                endpoint_id: endpoint_id.clone(),
+                                slug: slug.clone(),
+                                limit_key,
+                                method: method.clone(),
+                                rest: raw_rest.clone(),
+                                raw_query: raw_query.clone(),
+                                headers: headers.clone(),
+                                body: body.clone(),
+                                request_id: request_id.clone(),
+                            },
+                            move |record| {
+                                if let Some(request_id) = request_id {
+                                    super::live::record(&pool, &request_id, record);
+                                }
+                            },
+                        );
+                        match relayed.await {
+                            Ok(Some(response)) => return response,
+                            // The edge is gone past the grace: answered and
+                            // recorded below, as if not live.
+                            Ok(None) => {}
+                            Err(e) => {
+                                tracing::error!(error = %e, "live relay task failed");
+                                return (StatusCode::BAD_GATEWAY, "live tunnel unreachable")
+                                    .into_response();
+                            }
+                        }
+                    }
+
                     if predicted != sent
                         && let Some(ref request_id) = capture.request_id
                     {

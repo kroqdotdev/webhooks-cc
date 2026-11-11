@@ -1,16 +1,16 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Padding, Paragraph},
-    Frame,
 };
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::tui::{keys, theme};
 use crate::tui::widgets::spinner::Spinner;
+use crate::tui::{keys, theme};
 use crate::types::UsageInfo;
 
 use super::{Action, Message, Screen};
@@ -101,8 +101,8 @@ impl Screen for UsageScreen {
         };
 
         let chunks = Layout::vertical([
-            Constraint::Length(2),  // Title
-            Constraint::Length(8),  // Usage card
+            Constraint::Length(2), // Title
+            Constraint::Length(8), // Usage card
             Constraint::Min(0),    // Spacer
         ])
         .split(area);
@@ -140,20 +140,17 @@ impl Screen for UsageScreen {
         if card_inner.height >= 4 {
             // Usage stats
             let stats = Line::from(vec![
-                Span::styled(
-                    format!("{}", usage.used),
-                    theme::style_primary_bold(),
-                ),
-                Span::styled(
-                    format!(" / {} requests", usage.limit),
-                    theme::style_dim(),
-                ),
+                Span::styled(format!("{}", usage.used), theme::style_primary_bold()),
+                Span::styled(format!(" / {} requests", usage.limit), theme::style_dim()),
                 Span::styled(
                     format!("  ({} remaining)", usage.remaining),
                     theme::style_muted(),
                 ),
             ]);
-            frame.render_widget(Paragraph::new(stats), Rect::new(card_inner.x, card_inner.y, card_inner.width, 1));
+            frame.render_widget(
+                Paragraph::new(stats),
+                Rect::new(card_inner.x, card_inner.y, card_inner.width, 1),
+            );
 
             // Progress bar
             let ratio = if usage.limit > 0 {
