@@ -3,7 +3,8 @@
 //! here, on the private network only (never routed by Caddy), as
 //! `<method> /v1/live/<endpoint_id><rest>` with the original headers and
 //! exact body and `x-whk-relay-auth: <EDGE_SECRET>`. The edge removes that
-//! header, sends the request down the session's tunnel to
+//! header (and keeps the capture's `x-whk-request-id`, checked, for the CLI
+//! to read and remove), sends the request down the session's tunnel to
 //! `localhost:<port>` with `<rest>` as its path, and streams the app's
 //! answer back, so the sender gets what the app said.
 //!
@@ -308,26 +309,29 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             "No live tunnel is open for this endpoint.",
         );
     };
-    let Some(_hold) = session.door.live_streams.enter(LIVE_STREAMS) else {
-        return said(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "busy",
-            "Too many requests in flight through this live tunnel.",
-        );
-    };
     let started = Instant::now();
     let method = req.method().to_string();
     // The captured request's id, from the receiver, so the CLI knows which
     // captures this relay carried (and forwards none of them twice).
     let request_id = request_id_of(req.headers());
     let unreachable = |session: &crate::registry::Session, status: u16| {
-        session.notify(&EdgeMessage::Request {
+        session.notify_soon(&EdgeMessage::Request {
             method: method.clone(),
             path: rest.clone(),
             status,
             ms: started.elapsed().as_millis() as u64,
             request_id: request_id.clone(),
         });
+    };
+    let Some(_hold) = session.door.live_streams.enter(LIVE_STREAMS) else {
+        // The sender is told to retry; the CLI hears the capture was this
+        // relay's, so it does not forward it as well.
+        unreachable(&session, 503);
+        return said(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "busy",
+            "Too many requests in flight through this live tunnel.",
+        );
     };
     // Werkzeug's debugger answers these itself, and its console runs code
     // on the laptop: never passed on, as for a share (debugger.rs). The
@@ -365,7 +369,17 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     parts.uri = target;
     parts.version = http::Version::HTTP_11;
     parts.headers.remove(AUTH_HEADER);
+    // The capture's id rides down the tunnel, checked: the CLI marks the
+    // capture as relayed as soon as its stream arrives, even when the
+    // Request line below comes late, and takes the header off before the
+    // app sees the request.
     parts.headers.remove(HEADER_REQUEST_ID);
+    if let Some(id) = request_id
+        .as_deref()
+        .and_then(|id| HeaderValue::from_str(id).ok())
+    {
+        parts.headers.insert(HEADER_REQUEST_ID, id);
+    }
     // Webhooks do not upgrade: one request, one answer.
     crate::strip_hop_by_hop(&mut parts.headers, false);
     let local_host = format!("localhost:{}", session.port);
@@ -452,7 +466,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             );
         }
     };
-    session.notify(&EdgeMessage::Request {
+    session.notify_soon(&EdgeMessage::Request {
         method,
         path: rest.clone(),
         status: status.as_u16(),
@@ -661,8 +675,12 @@ mod tests {
         let state = state();
         let port = app(|req: Request<Incoming>| async move {
             let host = header_str(req.headers(), "host").unwrap_or("").to_string();
-            let auth = req.headers().contains_key(AUTH_HEADER)
-                || req.headers().contains_key(HEADER_REQUEST_ID);
+            let auth = req.headers().contains_key(AUTH_HEADER);
+            // The test's CLI pipes streams as they are: the id the real one
+            // reads and takes off is still there.
+            let id = header_str(req.headers(), HEADER_REQUEST_ID)
+                .unwrap_or("")
+                .to_string();
             let path = req.uri().to_string();
             let body = req.into_body().collect().await.unwrap().to_bytes();
             Response::builder()
@@ -670,7 +688,7 @@ mod tests {
                 .header("content-type", "text/plain")
                 .header("x-app", "yes")
                 .body(Full::new(Bytes::from(format!(
-                    "{host}|{auth}|{path}|{}",
+                    "{host}|{auth}|{id}|{path}|{}",
                     String::from_utf8_lossy(&body)
                 ))))
                 .unwrap()
@@ -691,7 +709,9 @@ mod tests {
         assert_eq!(response.headers()["x-app"], "yes");
         assert_eq!(
             response.text().await.unwrap(),
-            format!("localhost:{port}|false|/hooks/stripe?x=1|{{\"id\":\"evt_1\"}}")
+            format!(
+                "localhost:{port}|false|3f2a8c1e-0000-4000-8000-000000000001|/hooks/stripe?x=1|{{\"id\":\"evt_1\"}}"
+            )
         );
     }
 

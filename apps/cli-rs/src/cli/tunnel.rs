@@ -12,7 +12,9 @@ use crate::cli::output::{
 };
 use crate::share::{self, Kind, Rewrite, Session, Update};
 use crate::tunnel::{EMAIL_SKIPPED, EmailOptions, Tunnel, email_target_url, parse_target};
-use crate::types::{CapturedRequest, CreateEndpointRequest, EmailFormat, ForwardResult, SseEvent};
+use crate::types::{
+    CapturedRequest, CreateEndpointRequest, EmailFormat, ForwardResult, LiveResponse, SseEvent,
+};
 
 /// What the tunnel does with captured emails, from its flags: `None` skips
 /// them (`--no-email`).
@@ -138,6 +140,9 @@ pub async fn run(
     // shown, when the output falls behind) changes what is forwarded.
     let relay = Arc::new(Mutex::new(LiveRelay::default()));
     let session_relay = relay.clone();
+    let pipe_relay = relay.clone();
+    let on_relayed: share::OnRelayed =
+        Arc::new(move |id: &str| lock(&pipe_relay).relayed_request(id, Instant::now()));
     let mut live_task = live_target.map(|(local, base_path)| {
         let session = Session {
             tunnel_url: share::tunnel_url(),
@@ -155,6 +160,7 @@ pub async fn run(
                     .collect(),
             }),
             client: share::client_name(),
+            on_relayed: Some(on_relayed),
         };
         tokio::spawn(async move {
             let mut send = |update: Update| {
@@ -272,7 +278,14 @@ pub async fn run(
                 }
             }
             _ = held_check.tick(), if live => {
-                let due = lock(&relay).due(Instant::now());
+                let (due, dropped) = {
+                    let mut relay = lock(&relay);
+                    (relay.due(Instant::now()), relay.take_dropped())
+                };
+                if dropped > 0 {
+                    show_live_update(Update::Notice(dropped_note(dropped)), json);
+                }
+                let due = if due.is_empty() { due } else { undelivered(client, due).await };
                 if !due.is_empty() && !json {
                     println!("  {} {}", dim("●"), dim(&not_relayed(due.len())));
                 }
@@ -374,6 +387,14 @@ fn lock(relay: &Mutex<LiveRelay>) -> std::sync::MutexGuard<'_, LiveRelay> {
     relay.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// What `whk tunnel --live` says when it let stream copies go to keep its
+/// wait bounded.
+fn dropped_note(count: usize) -> String {
+    format!(
+        "Too many captures at once: {count} not forwarded from the stream, as the live relay most likely carried them."
+    )
+}
+
 /// What `whk tunnel --live` says before forwarding captures the relay never
 /// carried, which the stream brought while the relay was up.
 fn not_relayed(count: usize) -> String {
@@ -407,17 +428,33 @@ const ROUTES_KEPT: Duration = Duration::from_secs(30);
 /// At most this many remembered routes.
 const ROUTES_MAX: usize = 512;
 
-/// How long a stream copy that came while the relay was up waits for the
-/// edge to name it. The edge names a capture once the app answered, or
-/// after 25 s without an answer; a copy it has not named by then was never
-/// relayed (made while this computer was offline, or turned away at the
-/// edge) and is forwarded from the stream instead.
+/// How long a stream copy that came while the relay was up waits to be
+/// matched, from an edge that names captures only in its lines: it names a
+/// capture once the app answered, or after 25 s without an answer. A copy
+/// not named by then was never relayed (made while this computer was
+/// offline, or turned away at the edge) and, unless the API says the relay
+/// dealt with it, is forwarded from the stream instead.
 const HELD_FOR: Duration = Duration::from_secs(40);
 
+/// The same wait once the edge has shown it sends each capture's id with
+/// the relayed request itself: the id is marked as the request arrives,
+/// before the app is called, so the app's 25 s no longer count, only how
+/// long the relay takes to reach this computer.
+const HELD_FOR_WITH_IDS: Duration = Duration::from_secs(15);
+
 /// At most this many stream copies wait, and at most this many bytes of
-/// them; past either, the oldest is forwarded at once rather than lost.
+/// them. Past either, the oldest goes: forwarded (after the API check) when
+/// it has waited [`OVERFLOW_MIN_AGE`], since by then the relay would have
+/// marked it; otherwise dropped, as the relay most likely has it.
 const HELD_MAX: usize = 512;
 const HELD_BYTES: usize = 32 * 1024 * 1024;
+const OVERFLOW_MIN_AGE: Duration = Duration::from_secs(5);
+
+/// How long the API may take to say whether the relay dealt with a copy.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// At most this many of those checks run at once.
+const CHECKS_AT_ONCE: usize = 8;
 
 /// A stream copy waiting for the edge to name it.
 struct Held {
@@ -453,6 +490,10 @@ struct LiveRelay {
     held_bytes: usize,
     /// Copies let go early to keep `held` bounded, to forward next.
     released: Vec<CapturedRequest>,
+    /// Copies dropped to keep `held` bounded, not yet reported.
+    dropped: usize,
+    /// Whether relayed requests have carried their capture's id.
+    ids_in_requests: bool,
 }
 
 impl LiveRelay {
@@ -495,14 +536,9 @@ impl LiveRelay {
                 self.prune(now);
                 let path = path_only(path);
                 match request_id {
-                    Some(id) => {
-                        // The stream's copy came first: they are matched.
-                        if let Some(i) = self.held.iter().position(|h| &h.request.id == id) {
-                            self.take_held(i);
-                        } else if self.relayed_set.insert(id.clone()) {
-                            self.relayed_ids.push_back((id.clone(), now));
-                        }
-                    }
+                    // Whatever its status: a capture the edge turned away
+                    // as busy got the sender a 503, and its retry is relayed.
+                    Some(id) => self.relayed(id, now),
                     None => {
                         if let Some(i) = self.held.iter().position(|h| {
                             h.request.method.eq_ignore_ascii_case(method)
@@ -517,6 +553,32 @@ impl LiveRelay {
                 }
             }
             Update::Notice(_) => {}
+        }
+    }
+
+    /// The relay carried the capture `id` (the edge's line said so, or the
+    /// relayed request carried it): its copy on the stream is not
+    /// forwarded, whether it came already or comes later.
+    fn relayed(&mut self, id: &str, now: Instant) {
+        self.prune(now);
+        if let Some(i) = self.held.iter().position(|h| h.request.id == id) {
+            self.take_held(i);
+        } else if self.relayed_set.insert(id.to_string()) {
+            self.relayed_ids.push_back((id.to_string(), now));
+        }
+    }
+
+    /// A relayed request carried the capture's id, before the app got it.
+    fn relayed_request(&mut self, id: &str, now: Instant) {
+        self.ids_in_requests = true;
+        self.relayed(id, now);
+    }
+
+    fn held_for(&self) -> Duration {
+        if self.ids_in_requests {
+            HELD_FOR_WITH_IDS
+        } else {
+            HELD_FOR
         }
     }
 
@@ -553,22 +615,38 @@ impl LiveRelay {
             bytes,
         });
         while self.held.len() > HELD_MAX || (self.held_bytes > HELD_BYTES && self.held.len() > 1) {
+            let waited = self
+                .held
+                .front()
+                .is_some_and(|h| now.duration_since(h.at) >= OVERFLOW_MIN_AGE);
             if let Some(request) = self.take_held(0) {
-                self.released.push(request);
+                if waited {
+                    self.released.push(request);
+                } else {
+                    self.dropped += 1;
+                }
             }
         }
         None
     }
 
-    /// The stream copies the edge never named within [`HELD_FOR`] (and any
-    /// let go early), oldest first: they were not relayed, so they go to
-    /// the app from the stream, once each.
+    /// How many copies were dropped to keep the wait bounded since last
+    /// asked.
+    fn take_dropped(&mut self) -> usize {
+        std::mem::take(&mut self.dropped)
+    }
+
+    /// The stream copies never matched within [`LiveRelay::held_for`] (and
+    /// any let go early), oldest first: most likely not relayed, so they go
+    /// to the app from the stream, once each, after [`undelivered`] asked
+    /// the API.
     fn due(&mut self, now: Instant) -> Vec<CapturedRequest> {
         let mut due = std::mem::take(&mut self.released);
+        let held_for = self.held_for();
         while self
             .held
             .front()
-            .is_some_and(|h| now.duration_since(h.at) >= HELD_FOR)
+            .is_some_and(|h| now.duration_since(h.at) >= held_for)
         {
             if let Some(request) = self.take_held(0) {
                 due.push(request);
@@ -582,6 +660,34 @@ impl LiveRelay {
     fn announce(&mut self) -> bool {
         !std::mem::replace(&mut self.announced, true)
     }
+}
+
+/// Whether the relay dealt with a capture, by the record of what its
+/// sender got: an answer, a timeout, a refused answer or a busy refusal (the
+/// sender retries, and the retry is relayed). `offline` and `unreachable`,
+/// or no record, mean the app never got it.
+fn relay_dealt_with(live: Option<&LiveResponse>) -> bool {
+    live.is_some_and(|live| !matches!(live.outcome.as_str(), "offline" | "unreachable"))
+}
+
+/// Of the due stream copies, the ones to forward, in order: each read again
+/// from the API, and skipped when its record shows the relay dealt with it
+/// (an edge line lost under load). A read that fails or takes too long
+/// forwards it: at least once beats never.
+async fn undelivered(client: &ApiClient, due: Vec<CapturedRequest>) -> Vec<CapturedRequest> {
+    use futures::StreamExt;
+    futures::stream::iter(due)
+        .map(|request| async move {
+            let read = tokio::time::timeout(CHECK_TIMEOUT, client.get_request(&request.id)).await;
+            match read {
+                Ok(Ok(fresh)) if relay_dealt_with(fresh.live_response.as_deref()) => None,
+                _ => Some(request),
+            }
+        })
+        .buffered(CHECKS_AT_ONCE)
+        .filter_map(std::future::ready)
+        .collect()
+        .await
 }
 
 /// A path without its query.
@@ -990,24 +1096,131 @@ mod tests {
     }
 
     #[test]
-    fn held_copies_are_bounded_and_let_go_oldest_first() {
+    fn at_the_cap_an_old_copy_is_forwarded_and_a_young_one_dropped() {
         let mut relay = LiveRelay::default();
         relay.on_update(&Update::Reconnected);
         let now = Instant::now();
-        for i in 0..=HELD_MAX {
-            assert!(
-                relay
-                    .admit(capture(&format!("h{i}"), "POST", "/"), now)
-                    .is_none()
-            );
+        assert!(relay.admit(capture("old", "POST", "/"), now).is_none());
+        let later = now + OVERFLOW_MIN_AGE;
+        for i in 1..=HELD_MAX {
+            let copy = capture(&format!("h{i}"), "POST", "/");
+            assert!(relay.admit(copy, later).is_none());
         }
+        // The oldest had waited long enough to be unrelayed: it goes, after
+        // the API check.
         assert_eq!(relay.held.len(), HELD_MAX);
-        assert_eq!(ids(relay.due(now)), ["h0"]);
+        assert_eq!(ids(relay.due(later)), ["old"]);
+        assert_eq!(relay.take_dropped(), 0);
+        // One that came just now most likely is being relayed: dropped, and
+        // said so once.
+        assert!(relay.admit(capture("next", "POST", "/"), later).is_none());
+        assert!(relay.due(later).is_empty());
+        assert_eq!(relay.take_dropped(), 1);
+        assert_eq!(relay.take_dropped(), 0);
         let mut big = capture("big", "POST", "/");
         big.body = Some("x".repeat(HELD_BYTES));
-        assert!(relay.admit(big, now).is_none());
+        assert!(relay.admit(big, later).is_none());
         assert!(relay.held_bytes <= HELD_BYTES);
-        assert_eq!(relay.due(now).len(), 1, "the oldest made room");
+        assert_eq!(relay.take_dropped(), 1, "the oldest made room");
+    }
+
+    #[test]
+    fn a_capture_the_edge_turned_away_as_busy_is_handled() {
+        let mut relay = LiveRelay::default();
+        relay.on_update(&Update::Reconnected);
+        let now = Instant::now();
+        assert!(relay.admit(capture("b", "POST", "/hooks"), now).is_none());
+        relay.on_update(&Update::Request {
+            method: "POST".into(),
+            path: "/hooks".into(),
+            status: 503,
+            ms: 0,
+            request_id: Some("b".into()),
+        });
+        assert!(relay.due(now + HELD_FOR).is_empty());
+    }
+
+    #[test]
+    fn an_id_carried_by_the_relayed_request_marks_it_and_shortens_the_wait() {
+        let mut relay = LiveRelay::default();
+        relay.on_update(&Update::Reconnected);
+        let now = Instant::now();
+        // Before the copy arrives, and after.
+        relay.relayed_request("early", now);
+        assert!(relay.admit(capture("early", "POST", "/"), now).is_none());
+        assert!(relay.admit(capture("late", "POST", "/"), now).is_none());
+        relay.relayed_request("late", now);
+        // An edge that sends ids with the request needs no 25 s for the app.
+        assert!(relay.admit(capture("gap", "POST", "/"), now).is_none());
+        assert!(
+            relay
+                .due(now + HELD_FOR_WITH_IDS - Duration::from_secs(1))
+                .is_empty()
+        );
+        assert_eq!(ids(relay.due(now + HELD_FOR_WITH_IDS)), ["gap"]);
+    }
+
+    #[test]
+    fn the_relay_dealt_with_a_capture_unless_its_record_says_offline_or_unreachable() {
+        let record = |outcome: &str| LiveResponse {
+            outcome: outcome.into(),
+            ..LiveResponse::default()
+        };
+        for outcome in ["answered", "timeout", "refused", "busy"] {
+            assert!(relay_dealt_with(Some(&record(outcome))), "{outcome}");
+        }
+        for outcome in ["offline", "unreachable"] {
+            assert!(!relay_dealt_with(Some(&record(outcome))), "{outcome}");
+        }
+        assert!(!relay_dealt_with(None));
+    }
+
+    #[tokio::test]
+    async fn due_copies_are_checked_with_the_api_before_they_go() {
+        use axum::{Json, Router, extract::Path, http::StatusCode, routing::get};
+        let app = Router::new().route(
+            "/api/requests/{id}",
+            get(|Path(id): Path<String>| async move {
+                let outcome = match id.as_str() {
+                    "fails" => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+                    "none" => None,
+                    other => Some(other.trim_end_matches(char::is_numeric).to_string()),
+                };
+                let mut record = serde_json::json!({
+                    "id": id, "endpointId": "ep", "method": "POST", "path": "/hooks",
+                    "receivedAt": 1
+                });
+                if let Some(outcome) = outcome {
+                    record["liveResponse"] = serde_json::json!({
+                        "status": 200, "headers": {}, "body": "", "bodyTruncated": false,
+                        "bodyEncoding": "utf8", "ms": 3, "outcome": outcome
+                    });
+                }
+                Ok(Json(record))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client =
+            ApiClient::with_credentials(Some(&base), Some(&base), Some("whcc_test".into()), None)
+                .unwrap();
+        let due = [
+            "answered1",
+            "offline1",
+            "busy1",
+            "none",
+            "timeout1",
+            "unreachable1",
+            "refused1",
+            "fails",
+        ]
+        .map(|id| capture(id, "POST", "/hooks"))
+        .to_vec();
+        assert_eq!(
+            ids(undelivered(&client, due).await),
+            ["offline1", "none", "unreachable1", "fails"]
+        );
     }
 
     #[test]

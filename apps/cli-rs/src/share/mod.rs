@@ -25,7 +25,7 @@ use whk_tunnel::mux::{self, MuxStream};
 use whk_tunnel::{
     CONNECT_PATH, EdgeMessage, ErrorBody, HEADER_CLIENT, HEADER_ENDPOINT, HEADER_INSTANCE,
     HEADER_KIND, HEADER_NAME, HEADER_NOTHING_LISTENING, HEADER_PASSWORD, HEADER_PORT,
-    HEADER_VERSION, PROTOCOL_VERSION, splice, ws,
+    HEADER_REQUEST_ID, HEADER_VERSION, PROTOCOL_VERSION, splice, ws,
 };
 
 use crate::api::ApiClient;
@@ -85,6 +85,10 @@ impl Rewrite {
     }
 }
 
+/// Told the id of each capture the relay brings down the tunnel, before the
+/// local app gets it (`--live`, from an edge that sends the id).
+pub type OnRelayed = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
 pub struct Session {
     pub tunnel_url: String,
     pub api: ApiClient,
@@ -95,6 +99,8 @@ pub struct Session {
     pub rewrite: Option<Rewrite>,
     /// What the CLI runs on, for the dashboard: "laptop, Linux".
     pub client: String,
+    /// `--live`: see [`OnRelayed`].
+    pub on_relayed: Option<OnRelayed>,
 }
 
 /// What happened, for whoever shows it.
@@ -389,9 +395,12 @@ async fn once(
     let (_opener, mut inbound, mut mux_task) = mux::spawn(bytes, yamux::Mode::Server);
     // A live session always reads the head, to say where the request was
     // sent (X-Forwarded-Uri); a share only when there is something to change.
-    let rewrite = match session.kind {
-        Kind::Live { .. } => session.rewrite.clone(),
-        Kind::Share { .. } => session.rewrite.clone().filter(|r| !r.is_empty()),
+    let (rewrite, relayed) = match session.kind {
+        Kind::Live { .. } => (
+            Some(session.rewrite.clone().unwrap_or_default()),
+            Some(Relayed(session.on_relayed.clone())),
+        ),
+        Kind::Share { .. } => (session.rewrite.clone().filter(|r| !r.is_empty()), None),
     };
 
     loop {
@@ -399,7 +408,7 @@ async fn once(
             stream = inbound.recv() => match stream {
                 Some(stream) => {
                     let target = LocalTarget { host: session.host, port: session.port };
-                    tokio::spawn(pipe(stream, target, rewrite.clone()));
+                    tokio::spawn(pipe(stream, target, rewrite.clone(), relayed.clone()));
                 }
                 None => return Ok(Ended::Dropped),
             },
@@ -453,11 +462,22 @@ pub async fn local_answers(target: LocalTarget) -> bool {
     )
 }
 
+/// A live session's streams are relayed captures: their heads carry the
+/// capture's id ([`HEADER_REQUEST_ID`]), which is taken out and told to the
+/// callback, if there is one.
+#[derive(Clone)]
+struct Relayed(Option<OnRelayed>);
+
 /// Connects one stream from the edge to the local server and copies both
 /// ways until soon after either side ends (`splice`). With nothing
 /// listening there, it answers 502 itself, marked so the edge can show
 /// visitors its own page.
-async fn pipe(mut stream: MuxStream, target: LocalTarget, rewrite: Option<Rewrite>) {
+async fn pipe(
+    mut stream: MuxStream,
+    target: LocalTarget,
+    rewrite: Option<Rewrite>,
+    relayed: Option<Relayed>,
+) {
     let Ok(mut local) = connect_local(target).await else {
         let _ = stream.write_all(&nothing_listening(target)).await;
         let _ = stream.shutdown().await;
@@ -465,9 +485,14 @@ async fn pipe(mut stream: MuxStream, target: LocalTarget, rewrite: Option<Rewrit
     };
     let _ = local.set_nodelay(true);
     if let Some(rewrite) = rewrite {
-        match rewritten_head(&mut stream, &rewrite).await {
-            Ok(Head::Ready(head)) => {
-                if local.write_all(&head).await.is_err() {
+        match rewritten_head(&mut stream, &rewrite, relayed.is_some()).await {
+            Ok(Head::Ready { bytes, request_id }) => {
+                // Marked before the app has it, so its copy on the stream
+                // is never forwarded as well.
+                if let (Some(Relayed(Some(on_relayed))), Some(id)) = (&relayed, &request_id) {
+                    on_relayed(id);
+                }
+                if local.write_all(&bytes).await.is_err() {
                     return;
                 }
             }
@@ -513,18 +538,23 @@ pub fn nothing_listening(target: LocalTarget) -> Vec<u8> {
 enum Head {
     /// What to send the local server: the head as rewritten (or as it came,
     /// when it is not HTTP/1 or the stream ended first), then whatever of
-    /// the body came with it.
-    Ready(Vec<u8>),
+    /// the body came with it; and a relayed capture's id, taken out of it.
+    Ready {
+        bytes: Vec<u8>,
+        request_id: Option<String>,
+    },
     /// No end within [`MAX_HEAD`].
     TooLarge,
 }
 
 /// Reads a relayed request's head and gives it back with its path under
 /// the target's base path and the `-H` headers in place of any of the same
-/// name, followed by whatever of the body came with it.
+/// name, followed by whatever of the body came with it. With `take_id` (a
+/// live session), the capture's id comes out of the head.
 async fn rewritten_head<S: AsyncRead + Unpin>(
     stream: &mut S,
     rewrite: &Rewrite,
+    take_id: bool,
 ) -> std::io::Result<Head> {
     let mut buf = Vec::with_capacity(4096);
     let mut chunk = [0u8; 4096];
@@ -534,16 +564,20 @@ async fn rewritten_head<S: AsyncRead + Unpin>(
                 return Ok(Head::TooLarge);
             }
             let (head, rest) = buf.split_at(end);
-            let mut out = rewrite_head(head, rewrite).unwrap_or_else(|| head.to_vec());
-            out.extend_from_slice(rest);
-            return Ok(Head::Ready(out));
+            let (mut bytes, request_id) = rewrite_head_taking(head, rewrite, take_id)
+                .unwrap_or_else(|| (head.to_vec(), None));
+            bytes.extend_from_slice(rest);
+            return Ok(Head::Ready { bytes, request_id });
         }
         if buf.len() >= MAX_HEAD {
             return Ok(Head::TooLarge);
         }
         let n = stream.read(&mut chunk).await?;
         if n == 0 {
-            return Ok(Head::Ready(buf));
+            return Ok(Head::Ready {
+                bytes: buf,
+                request_id: None,
+            });
         }
         buf.extend_from_slice(&chunk[..n]);
     }
@@ -564,6 +598,28 @@ pub const FORWARDED_URI: &str = "X-Forwarded-Uri";
 /// came (any the sender sent dropped); `None` when it is not an HTTP/1
 /// request.
 pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
+    rewrite_head_taking(head, rewrite, false).map(|(bytes, _)| bytes)
+}
+
+/// A capture id as the receiver makes them: short, and only letters,
+/// digits and dashes.
+fn plain_id(value: &str) -> Option<String> {
+    let value = value.trim();
+    let plain = !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    plain.then(|| value.to_string())
+}
+
+/// [`rewrite_head`], and with `take_id` every [`HEADER_REQUEST_ID`] line
+/// taken out, the first one's value given back.
+fn rewrite_head_taking(
+    head: &[u8],
+    rewrite: &Rewrite,
+    take_id: bool,
+) -> Option<(Vec<u8>, Option<String>)> {
     let text = std::str::from_utf8(head).ok()?;
     let mut lines = text.split("\r\n");
     let request_line = lines.next()?;
@@ -579,6 +635,22 @@ pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
         join_path(&rewrite.base_path, target)
     };
     let mut out = format!("{method} {target} {version}\r\n");
+    let mut request_id = None;
+    let mut lines: Vec<&str> = lines.filter(|l| !l.is_empty()).collect();
+    if take_id {
+        lines.retain(|line| {
+            let Some((name, value)) = line.split_once(':') else {
+                return true;
+            };
+            if !name.trim().eq_ignore_ascii_case(HEADER_REQUEST_ID) {
+                return true;
+            }
+            if request_id.is_none() {
+                request_id = plain_id(value);
+            }
+            false
+        });
+    }
     let replaced = |line: &str| {
         line.split_once(':').is_some_and(|(name, _)| {
             let name = name.trim();
@@ -589,7 +661,7 @@ pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
                     .any(|(extra, _)| extra.eq_ignore_ascii_case(name))
         })
     };
-    for line in lines.filter(|l| !l.is_empty()) {
+    for line in lines {
         if !replaced(line) {
             out.push_str(line);
             out.push_str("\r\n");
@@ -604,7 +676,7 @@ pub fn rewrite_head(head: &[u8], rewrite: &Rewrite) -> Option<Vec<u8>> {
     }
     out.push_str(&format!("{FORWARDED_URI}: {original}\r\n"));
     out.push_str("\r\n");
-    Some(out.into_bytes())
+    Some((out.into_bytes(), request_id))
 }
 
 /// "2 h", "1 h 30 min", "45 min".

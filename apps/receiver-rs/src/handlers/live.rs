@@ -220,8 +220,21 @@ pub struct EdgeHealth {
 
 #[derive(Debug, Clone, Copy)]
 struct Failing {
+    /// When this outage began for the endpoint.
     since: Instant,
+    /// When a relay last went to the edge (failed, or a try in flight).
     tried: Instant,
+    /// When a relay last found the edge gone. Longer ago than the grace
+    /// ([`EdgeHealth::stale_after`]), the outage is over as far as anyone
+    /// knows: the entry is stale, and a new failure starts a new outage
+    /// with its own grace.
+    failed: Instant,
+}
+
+impl Failing {
+    fn is_stale(&self, now: Instant, stale_after: Duration) -> bool {
+        now.saturating_duration_since(self.failed) >= stale_after
+    }
 }
 
 impl Default for EdgeHealth {
@@ -240,6 +253,13 @@ impl EdgeHealth {
         }
     }
 
+    /// How long after its last failure an entry is stale: the grace, but
+    /// never less than two tries apart, so an endpoint answered as not live
+    /// does not lose its outage between two tries that both failed.
+    fn stale_after(&self) -> Duration {
+        self.grace.max(self.probe_every * 2)
+    }
+
     fn failing(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, Failing>> {
         self.failing.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -253,6 +273,10 @@ impl EdgeHealth {
         let Some(entry) = failing.get_mut(endpoint_id) else {
             return true;
         };
+        if entry.is_stale(now, self.stale_after()) {
+            failing.remove(endpoint_id);
+            return true;
+        }
         if now.saturating_duration_since(entry.since) < self.grace {
             return true;
         }
@@ -277,21 +301,34 @@ impl EdgeHealth {
                 false
             }
             Reach::Down => {
+                let stale_after = self.stale_after();
                 let mut failing = self.failing();
+                if failing
+                    .get(endpoint_id)
+                    .is_some_and(|f| f.is_stale(now, stale_after))
+                {
+                    failing.remove(endpoint_id);
+                }
                 if !failing.contains_key(endpoint_id) && failing.len() >= self.most {
-                    let oldest = failing
-                        .iter()
-                        .min_by_key(|(_, f)| f.tried)
-                        .map(|(id, _)| id.clone());
-                    if let Some(oldest) = oldest {
-                        failing.remove(&oldest);
+                    // Stale entries go first; then the one tried longest ago.
+                    failing.retain(|_, f| !f.is_stale(now, stale_after));
+                    if failing.len() >= self.most {
+                        let oldest = failing
+                            .iter()
+                            .min_by_key(|(_, f)| f.tried)
+                            .map(|(id, _)| id.clone());
+                        if let Some(oldest) = oldest {
+                            failing.remove(&oldest);
+                        }
                     }
                 }
                 let entry = failing.entry(endpoint_id.to_string()).or_insert(Failing {
                     since: now,
                     tried: now,
+                    failed: now,
                 });
                 entry.tried = now;
+                entry.failed = now;
                 now.saturating_duration_since(entry.since) >= self.grace
             }
         }
@@ -1197,6 +1234,44 @@ mod tests {
         // A new outage starts a new grace.
         assert!(!health.note("ep_1", Reach::Down, at(200)));
         assert!(health.should_relay("ep_1", at(201)));
+    }
+
+    #[test]
+    fn an_old_blip_does_not_cut_a_later_outages_grace_short() {
+        let health = EdgeHealth::default();
+        let t0 = Instant::now();
+        let at = |secs: u64| t0 + Duration::from_secs(secs);
+        // One capture found the CLI offline for a moment, an hour ago.
+        assert!(!health.note("ep_1", Reach::Down, t0));
+        // A new outage starts its own 2 minutes of trying.
+        assert!(!health.note("ep_1", Reach::Down, at(3600)));
+        assert!(health.should_relay("ep_1", at(3601)));
+        assert!(!health.note("ep_1", Reach::Down, at(3601)));
+        assert!(health.note("ep_1", Reach::Down, at(3720)));
+    }
+
+    #[test]
+    fn a_burst_on_a_healthy_endpoint_with_an_old_entry_is_all_relayed() {
+        let health = EdgeHealth::default();
+        let t0 = Instant::now();
+        assert!(!health.note("ep_1", Reach::Down, t0));
+        let later = t0 + Duration::from_secs(3600);
+        let burst: Vec<bool> = (0..3).map(|_| health.should_relay("ep_1", later)).collect();
+        assert_eq!(burst, [true, true, true]);
+        assert_eq!(health.len(), 0, "the stale entry is gone");
+    }
+
+    #[test]
+    fn stale_entries_make_room_before_a_live_one_goes() {
+        let health = EdgeHealth::new(EDGE_DOWN_GRACE, EDGE_PROBE_EVERY, 2);
+        let t0 = Instant::now();
+        health.note("old", Reach::Down, t0);
+        let later = t0 + Duration::from_secs(600);
+        health.note("a", Reach::Down, later);
+        health.note("b", Reach::Down, later + Duration::from_secs(1));
+        assert!(health.failing().contains_key("a"));
+        assert!(health.failing().contains_key("b"));
+        assert!(!health.failing().contains_key("old"));
     }
 
     #[test]

@@ -225,7 +225,8 @@ async fn the_head_is_read_whole_and_the_body_follows() {
             a.write_all(piece).await.unwrap();
         }
     });
-    let Head::Ready(out) = rewritten_head(&mut b, &rewrite).await.unwrap() else {
+    let Head::Ready { bytes: out, .. } = rewritten_head(&mut b, &rewrite, false).await.unwrap()
+    else {
         panic!("a head that ends is read");
     };
     assert_eq!(
@@ -370,6 +371,7 @@ async fn a_share_opens_pipes_a_visitor_and_stops_when_the_edge_says() {
         port,
         rewrite: None,
         client: "laptop, Linux".into(),
+        on_relayed: None,
     };
     let mut updates = Vec::new();
     let reason = tokio::time::timeout(
@@ -430,6 +432,7 @@ async fn a_live_session_names_its_endpoint_and_rewrites_the_path() {
             headers: vec![],
         }),
         client: "laptop, Linux".into(),
+        on_relayed: None,
     };
     let mut updates = Vec::new();
     tokio::time::timeout(
@@ -477,6 +480,7 @@ async fn a_refusal_ends_the_session_with_the_edges_words() {
         port: 1,
         rewrite: None,
         client: "test".into(),
+        on_relayed: None,
     };
     let err = tokio::time::timeout(Duration::from_secs(10), run(&session, &mut |_| {}))
         .await
@@ -498,7 +502,7 @@ async fn nothing_listening_gets_the_clis_own_502() {
     let mut stream = opener.open().await.unwrap();
     stream.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
     let local = inbound.recv().await.unwrap();
-    tokio::spawn(pipe(local, at(LocalHost::Localhost, port), None));
+    tokio::spawn(pipe(local, at(LocalHost::Localhost, port), None, None));
     let mut got = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut got)).await;
     let text = String::from_utf8_lossy(&got);
@@ -533,6 +537,7 @@ async fn a_head_over_the_limit_gets_431_and_never_reaches_the_app() {
             local,
             at(LocalHost::Localhost, port),
             Some(rewrite.clone()),
+            None,
         ));
         let got = writer.await.unwrap();
         let text = String::from_utf8_lossy(&got);
@@ -564,6 +569,7 @@ async fn an_edge_that_never_answers_the_upgrade_is_tried_again() {
         port: 1,
         rewrite: None,
         client: "test".into(),
+        on_relayed: None,
     };
     let started = Instant::now();
     let failed = once(&session, "instance", &mut None, false, &mut |_| {}).await;
@@ -576,4 +582,88 @@ async fn an_edge_that_never_answers_the_upgrade_is_tried_again() {
         )))
     );
     drop(listener);
+}
+
+/// A local server that answers with the head it got, and notes when a
+/// request first reached it.
+async fn echo_head_server(reached: Arc<Mutex<bool>>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let reached = reached.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 4096];
+                let mut got = Vec::new();
+                while find_head_end(&got).is_none() {
+                    let n = socket.read(&mut buf).await.unwrap_or(0);
+                    if n == 0 {
+                        return;
+                    }
+                    *reached.lock().unwrap() = true;
+                    got.extend_from_slice(&buf[..n]);
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    got.len()
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.write_all(&got).await;
+                let _ = socket.shutdown().await;
+            });
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn a_relayed_capture_is_marked_before_the_app_has_it_and_its_id_stays_out() {
+    let reached = Arc::new(Mutex::new(false));
+    let port = echo_head_server(reached.clone()).await;
+    // Each id told, with whether the app had the request by then.
+    let marked: Arc<Mutex<Vec<(String, bool)>>> = Arc::default();
+    let seen = marked.clone();
+    let app_reached = reached.clone();
+    let on_relayed: OnRelayed = Arc::new(move |id: &str| {
+        let reached = *app_reached.lock().unwrap();
+        seen.lock().unwrap().push((id.to_string(), reached));
+    });
+    let send = async |head: &str, relayed: Option<Relayed>| {
+        let (edge_end, cli_end) = tokio::io::duplex(1 << 16);
+        let (opener, _none, _edge) = mux::spawn(edge_end, yamux::Mode::Client);
+        let (_unused, mut inbound, _cli) = mux::spawn(cli_end, yamux::Mode::Server);
+        let mut stream = opener.open().await.unwrap();
+        stream.write_all(head.as_bytes()).await.unwrap();
+        let local = inbound.recv().await.unwrap();
+        tokio::spawn(pipe(
+            local,
+            at(LocalHost::Localhost, port),
+            Some(Rewrite::default()),
+            relayed,
+        ));
+        let mut got = Vec::new();
+        let _ = tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut got)).await;
+        String::from_utf8_lossy(&got).to_lowercase()
+    };
+    let live = Some(Relayed(Some(on_relayed)));
+    let app_saw = send(
+        "POST /hooks HTTP/1.1\r\nX-Whk-Request-Id: 3f2a8c1e-0000-4000-8000-000000000001\r\nx-whk-request-id: other\r\ncontent-length: 0\r\n\r\n",
+        live.clone(),
+    )
+    .await;
+    assert!(app_saw.contains("post /hooks http/1.1"), "{app_saw}");
+    assert!(!app_saw.contains(HEADER_REQUEST_ID), "{app_saw}");
+    assert_eq!(
+        *marked.lock().unwrap(),
+        [("3f2a8c1e-0000-4000-8000-000000000001".to_string(), false)]
+    );
+    // An older edge sends no id: nothing is marked, the request goes as before.
+    *reached.lock().unwrap() = false;
+    let app_saw = send("POST /old HTTP/1.1\r\ncontent-length: 0\r\n\r\n", live).await;
+    assert!(app_saw.contains("post /old http/1.1"), "{app_saw}");
+    assert_eq!(marked.lock().unwrap().len(), 1);
+    // A share is no relay: a visitor's header of that name is theirs.
+    let app_saw = send("GET / HTTP/1.1\r\nx-whk-request-id: visitor\r\n\r\n", None).await;
+    assert!(app_saw.contains("x-whk-request-id: visitor"), "{app_saw}");
+    assert_eq!(marked.lock().unwrap().len(), 1);
 }

@@ -44,8 +44,12 @@ pub const HEADER_KIND: &str = "x-whk-kind";
 /// the tunnel.
 pub const HEADER_ENDPOINT: &str = "x-whk-endpoint";
 /// On the receiver's relay call to the edge: the captured request's id. The
-/// edge takes it off before the app sees the request and names it in the
-/// [`EdgeMessage::Request`] it sends the CLI.
+/// edge names it in the [`EdgeMessage::Request`] it sends the CLI, and keeps
+/// it, checked, on the request it sends down a live tunnel, so the CLI knows
+/// the capture was relayed the moment its stream arrives (that line can
+/// come late); the CLI takes it off before the app sees the request. A
+/// share's visitor can never send one through: the edge removes every
+/// `x-whk-` header from a visitor's request.
 pub const HEADER_REQUEST_ID: &str = "x-whk-request-id";
 /// On the CLI's own 502 when nothing listens on the port; the edge shows
 /// visitors its page for that instead.

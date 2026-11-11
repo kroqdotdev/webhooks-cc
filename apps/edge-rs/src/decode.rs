@@ -17,15 +17,18 @@
 //! what servers use by default; larger windows are refused), and pages
 //! decoded at once are capped per account and for the edge ([`Decodes`]):
 //! 64 at most, 256 MiB all told, which held.rs counts on top of its own
-//! budget. A page holds its slot for [`DECODE_FOR`] at most: a laptop that
-//! sends a compressed page a byte now and then would otherwise keep one for
-//! as long as it liked, and 64 such pages turn every other compressed page
-//! away.
+//! budget. A page whose laptop sends nothing for [`DECODE_STALL`] while the
+//! decoder waits on it, or that is still coming after [`DECODE_MOST`], is
+//! broken off and gives its slot back: a laptop that sends a compressed
+//! page a byte now and then would otherwise keep one for as long as it
+//! liked, and 64 such pages turn every other compressed page away. Time
+//! spent waiting on the visitor does not count towards the stall (held.rs
+//! deals with slow visitors).
 
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, ready};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_compression::tokio::bufread::{BrotliDecoder, GzipDecoder, ZlibDecoder};
@@ -50,11 +53,13 @@ pub const DECODES_PER_ACCOUNT: usize = 8;
 /// Pages the edge decodes at once, all accounts together.
 pub const DECODES_TOTAL: usize = 64;
 
-/// How long a page may take to decode before it is broken off and its
-/// slot given back. A page of the most the edge passes (50 MB) goes in
-/// some 10 seconds at a share's pace; one still coming after this is
-/// stalled or dripping.
-pub const DECODE_FOR: Duration = Duration::from_secs(120);
+/// How long the decoder may wait on the laptop for the page's next piece.
+pub const DECODE_STALL: Duration = Duration::from_secs(60);
+
+/// The longest a page may take to decode, however it comes: well past
+/// what a page of the most the edge passes (50 MB) takes to a slow
+/// visitor, short of letting a drip hold a slot for good.
+pub const DECODE_MOST: Duration = Duration::from_secs(30 * 60);
 
 /// Frames read before giving up on a Brotli body that has not yet sent a
 /// byte (empty frames from a laptop that stalls the look).
@@ -167,65 +172,81 @@ where
     B: HttpBody<Data = Bytes> + Send + Sync + Unpin + 'static,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    let bytes = body
+    let bytes = Steady::new(body, DECODE_STALL, DECODE_MOST)
         .into_data_stream()
-        .map_err(|e| std::io::Error::other(e.into()));
+        .map_err(std::io::Error::other);
     let reader = StreamReader::new(bytes);
-    let decoded = match codec {
+    match codec {
         Codec::Gzip => frames(GzipDecoder::new(reader), slot),
         Codec::Deflate => frames(ZlibDecoder::new(reader), slot),
         Codec::Brotli => frames(BrotliDecoder::new(reader), slot),
-    };
-    Deadline::new(decoded, DECODE_FOR).boxed()
+    }
 }
 
-/// A decoded body that ends with an error once its time is up, letting go
-/// of the decoder (its window and its slot) at once.
-struct Deadline {
-    inner: Option<Body>,
-    deadline: Pin<Box<tokio::time::Sleep>>,
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// The laptop's side of a page being decoded: an error once it has kept
+/// the decoder waiting `stall` in one go, or once `most` has passed since
+/// the page began. Only time this body is waited on counts towards the
+/// stall: while the visitor is slow, it is not asked for more.
+struct Steady<B> {
+    inner: B,
+    stall: Duration,
+    /// Armed while the decoder waits on the laptop.
+    waiting: Option<Pin<Box<tokio::time::Sleep>>>,
+    most: Pin<Box<tokio::time::Sleep>>,
 }
 
-impl Deadline {
-    fn new(inner: Body, after: Duration) -> Self {
+impl<B> Steady<B> {
+    fn new(inner: B, stall: Duration, most: Duration) -> Self {
         Self {
-            inner: Some(inner),
-            deadline: Box::pin(tokio::time::sleep(after)),
+            inner,
+            stall,
+            waiting: None,
+            most: Box::pin(tokio::time::sleep(most)),
         }
     }
 }
 
-impl HttpBody for Deadline {
+impl<B> HttpBody for Steady<B>
+where
+    B: HttpBody<Data = Bytes> + Unpin,
+    B::Error: Into<BoxError>,
+{
     type Data = Bytes;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Error = BoxError;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
-        // First, so a page that keeps coming cannot outrun it either.
-        if self.inner.is_some() && self.deadline.as_mut().poll(cx).is_ready() {
-            self.inner = None;
+    ) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
+        if self.most.as_mut().poll(cx).is_ready() {
             return Poll::Ready(Some(Err("the page took too long to decode".into())));
         }
-        let Some(inner) = self.inner.as_mut() else {
-            return Poll::Ready(None);
-        };
-        let frame = ready!(Pin::new(inner).poll_frame(cx));
-        if frame.is_none() {
-            self.inner = None;
+        match Pin::new(&mut self.inner).poll_frame(cx) {
+            Poll::Ready(frame) => {
+                self.waiting = None;
+                Poll::Ready(frame.map(|f| f.map_err(Into::into)))
+            }
+            Poll::Pending => {
+                let stall = self.stall;
+                let waiting = self
+                    .waiting
+                    .get_or_insert_with(|| Box::pin(tokio::time::sleep(stall)));
+                if waiting.as_mut().poll(cx).is_ready() {
+                    return Poll::Ready(Some(Err("the laptop stopped sending the page".into())));
+                }
+                Poll::Pending
+            }
         }
-        Poll::Ready(frame)
     }
 
     fn is_end_stream(&self) -> bool {
-        self.inner.as_ref().is_none_or(|b| b.is_end_stream())
+        self.inner.is_end_stream()
     }
 
     fn size_hint(&self) -> hyper::body::SizeHint {
-        self.inner
-            .as_ref()
-            .map_or_else(|| hyper::body::SizeHint::with_exact(0), |b| b.size_hint())
+        self.inner.size_hint()
     }
 }
 
@@ -437,7 +458,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_page_that_stalls_gives_its_slot_back_after_its_time() {
+    async fn a_laptop_that_stalls_ends_the_page_and_its_slot() {
         let decodes = Decodes::new(1, 1);
         // The laptop sends the start of a gzipped page and then nothing.
         let page = gzip(&[b'a'; 64 * 1024]).await;
@@ -462,9 +483,58 @@ mod tests {
             }
         }
         assert!(failed, "broken off, not ended as if whole");
-        assert!(started.elapsed() >= DECODE_FOR);
-        assert_eq!(decodes.in_use(), 0, "the slot is given back at once");
-        assert!(body.frame().await.is_none());
+        assert!(started.elapsed() >= DECODE_STALL);
+        assert!(started.elapsed() < DECODE_STALL * 2);
+        drop(body);
+        assert_eq!(decodes.in_use(), 0, "the slot is given back");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_visitor_is_not_a_stalled_laptop() {
+        let decodes = Decodes::new(1, 1);
+        let page: Vec<u8> = (0..500_000u32).flat_map(|i| i.to_le_bytes()).collect();
+        let body = Full::new(Bytes::from(gzip(&page).await));
+        let mut body = decode(body, Codec::Gzip, decodes.take("a").unwrap());
+        let mut out = Vec::new();
+        let first = body.frame().await.unwrap().unwrap();
+        out.extend_from_slice(first.data_ref().unwrap());
+        // The visitor takes ten minutes over the rest: nothing waits on the
+        // laptop meanwhile.
+        tokio::time::sleep(DECODE_STALL * 10).await;
+        while let Some(frame) = body.frame().await {
+            out.extend_from_slice(frame.unwrap().data_ref().unwrap());
+        }
+        assert_eq!(out, page);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_drip_is_ended_at_the_most() {
+        // A page that does not compress, far longer than the drip gets to.
+        let noise: Vec<u8> = (0..16 * 1024u32)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
+            .collect();
+        let page = gzip(&noise).await;
+        // A byte every half a stall.
+        let drip = futures::stream::unfold(0usize, move |i| {
+            let byte = Bytes::copy_from_slice(&page[i..i + 1]);
+            async move {
+                tokio::time::sleep(DECODE_STALL / 2).await;
+                Some((Ok::<_, std::convert::Infallible>(Frame::data(byte)), i + 1))
+            }
+        });
+        let mut body = decode(
+            StreamBody::new(Box::pin(drip)),
+            Codec::Gzip,
+            Decodes::new(1, 1).take("a").unwrap(),
+        );
+        let started = tokio::time::Instant::now();
+        while let Some(frame) = body.frame().await {
+            if frame.is_err() {
+                break;
+            }
+        }
+        assert!(started.elapsed() >= DECODE_MOST);
+        assert!(started.elapsed() < DECODE_MOST + DECODE_STALL);
     }
 
     #[tokio::test]

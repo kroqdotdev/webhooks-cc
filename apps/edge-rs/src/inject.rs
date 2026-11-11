@@ -4,7 +4,9 @@
 //! a `<head>` in its first [`SEARCH_LIMIT`] bytes (HTML lets a page leave it
 //! out) gets the tag before its first element instead, after any doctype
 //! and comments, where a browser puts it in the head it makes up: every
-//! page gets the button.
+//! page gets the button. Except XHTML (`application/xhtml+xml`), which a
+//! browser parses as XML: a second root element would break the page, so
+//! one without `<head>` goes on untouched.
 //!
 //! The same pass keeps a copy of the page's start, up to [`SCAN_LIMIT`],
 //! and looks for what phishing pages have: a password or card field on a
@@ -26,6 +28,8 @@ use tokio::sync::oneshot;
 pub const BADGE_PATH: &str = "/__whk/badge.js";
 pub const FLAG_PATH: &str = "/__whk/flag";
 const TAG: &[u8] = b"<script src=\"/__whk/badge.js\" async></script>";
+/// The same for XHTML, where an attribute needs a value to be well-formed.
+const XHTML_TAG: &[u8] = b"<script src=\"/__whk/badge.js\" async=\"async\"></script>";
 
 const SEARCH_LIMIT: usize = 64 * 1024;
 /// Frames looked at for `<head` before giving up: a page whose start comes
@@ -249,6 +253,9 @@ pub struct Inject<B> {
     copy: BytesMut,
     scan: Option<oneshot::Sender<Bytes>>,
     tag: Vec<u8>,
+    /// Whether a page without `<head>` gets the tag before its first
+    /// element (not for XHTML).
+    fallback: bool,
 }
 
 impl<B> Inject<B> {
@@ -264,7 +271,17 @@ impl<B> Inject<B> {
             copy: BytesMut::new(),
             scan: Some(scan),
             tag: TAG.to_vec(),
+            fallback: true,
         }
+    }
+
+    /// The tag only after a `<head>`, and well-formed: for XHTML, where
+    /// anything before the root element, or an attribute with no value,
+    /// makes the page unreadable.
+    pub fn head_only(mut self) -> Self {
+        self.fallback = false;
+        self.tag = XHTML_TAG.to_vec();
+        self
     }
 
     /// The look for phishing alone: the body passes as it is, and only its
@@ -314,8 +331,14 @@ impl<B> Inject<B> {
         self.searching = false;
     }
 
-    /// No `<head>` to put the tag after: it goes before the first element.
+    /// No `<head>` to put the tag after: it goes before the first element,
+    /// or for XHTML nowhere.
     fn place_without_head(&mut self) {
+        if !self.fallback {
+            self.ready = Some(self.held.split().freeze());
+            self.searching = false;
+            return;
+        }
         let at = fallback_at(&self.held);
         self.place(at);
     }
@@ -515,6 +538,28 @@ mod tests {
         let long: &'static str = Box::leak(format!("<body>{}", "a".repeat(SEARCH_LIMIT)).into());
         let (out, _) = run(vec![long]).await;
         assert!(out.starts_with("<script src=\"/__whk/badge.js\" async></script><body>"));
+    }
+
+    #[tokio::test]
+    async fn xhtml_without_head_is_left_alone_and_with_one_gets_the_tag() {
+        let xhtml = |page: &'static str| async move {
+            let (tx, _rx) = oneshot::channel();
+            Inject::new(Full::new(Bytes::from(page)), tx)
+                .head_only()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+        };
+        let bare =
+            "<?xml version=\"1.0\"?><html xmlns=\"http://www.w3.org/1999/xhtml\"><body/></html>";
+        assert_eq!(&xhtml(bare).await[..], bare.as_bytes());
+        let headed = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head></head></html>";
+        assert!(
+            String::from_utf8(xhtml(headed).await.to_vec())
+                .unwrap()
+                .contains("<head><script src=\"/__whk/badge.js\" async=\"async\"></script>")
+        );
     }
 
     #[test]

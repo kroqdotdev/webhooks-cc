@@ -78,6 +78,12 @@ impl TextSender {
     pub fn try_send(&self, text: String) -> bool {
         self.0.try_send(Outgoing::Text(text)).is_ok()
     }
+
+    /// Sends, waiting for room in the queue. False once the WebSocket is
+    /// gone.
+    pub async fn send(&self, text: String) -> bool {
+        self.0.send(Outgoing::Text(text)).await.is_ok()
+    }
 }
 
 /// Splits a WebSocket into its byte and text halves. Two tasks run until

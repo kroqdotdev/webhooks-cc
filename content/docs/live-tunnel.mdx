@@ -62,7 +62,7 @@ Senders that retry on `5xx` will try again later, the way they would if your rea
 
 A connection that goes silent without closing (a laptop that sleeps, a network that changes) is noticed within about a minute, and `whk` reconnects. While the relay is not connected and `whk` is still running, it forwards each capture from the stream to your app like a plain tunnel, and says so once: your app still gets every request, after the sender has had its `502` or the mock response. Captures the relay already carried are not sent twice.
 
-When the computer was offline for a while (asleep, or off the network), the relay often reconnects before the stream has caught up. The stream then brings the captures made meanwhile, which the relay never carried: `whk` gives the relay 40 seconds to claim each one, then forwards the rest to your app, once each, and says how many. Captures made while `whk` was not running at all are not forwarded.
+When the computer was offline for a while (asleep, or off the network), the relay often reconnects before the stream has caught up. The stream then brings the captures made meanwhile, which the relay never carried. `whk` gives the relay up to 40 seconds to claim each one, skips any that webhooks.cc shows the relay dealt with after all (your app answered, or the sender got a `504` or `503` and retries), and then forwards the rest to your app, once each, and says how many. Captures made while `whk` was not running at all are not forwarded.
 
 ## What reaches the sender
 

@@ -82,6 +82,22 @@ impl Session {
         }
     }
 
+    /// Tells the CLI something a full queue must not lose (the line for a
+    /// relayed capture): when there is no room now, a task of its own waits
+    /// up to [`NOTIFY_WAIT`] for some, so the caller never waits.
+    pub fn notify_soon(&self, message: &EdgeMessage) {
+        let Ok(text) = serde_json::to_string(message) else {
+            return;
+        };
+        if self.notices.try_send(text.clone()) {
+            return;
+        }
+        let notices = self.notices.clone();
+        tokio::spawn(async move {
+            let _ = tokio::time::timeout(NOTIFY_WAIT, notices.send(text)).await;
+        });
+    }
+
     /// Ends the share. Its session task tells the CLI why (main.rs,
     /// run_session), waiting for room on the tunnel rather than dropping it.
     pub fn close(&self, reason: &str) {
@@ -92,6 +108,9 @@ impl Session {
         self.closing.subscribe()
     }
 }
+
+/// How long a line that must not be lost waits for room on the tunnel.
+const NOTIFY_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Default)]
 pub struct Registry {
@@ -438,6 +457,69 @@ mod tests {
         registry.close_share_at("share-1", "stopped", long_ago);
         let later = session(&registry, "share-1", "acme").await;
         assert!(registry.insert_unless_closed(later).is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_relayed_captures_line_waits_for_room_instead_of_being_dropped() {
+        use futures::StreamExt;
+        let registry = Registry::default();
+        let (edge_io, _cli_io) = tokio::io::duplex(1 << 16);
+        std::mem::forget(_cli_io);
+        let (opener, inbound, _task) = mux::spawn(edge_io, yamux::Mode::Client);
+        drop(inbound);
+        let (text_io, cli_text) = tokio::io::duplex(1 << 16);
+        let socket = WebSocketStream::from_raw_socket(text_io, Role::Server, None).await;
+        let (_bytes, text) = ws::split(socket);
+        std::mem::forget(_bytes);
+        let session = Session::new(
+            Opening {
+                share_id: "share-1".into(),
+                user_id: "user-1".into(),
+                name: "acme".into(),
+                port: 3000,
+                endpoint_id: Some("ep1".into()),
+                notice: false,
+                gate: None,
+                run: "run-1".into(),
+            },
+            opener,
+            text.sender(),
+            registry.account("user-1"),
+        );
+        std::mem::forget(text);
+        // The CLI is not reading: the socket and the queue fill, and what
+        // is only tried is dropped.
+        let filler = EdgeMessage::Notice {
+            text: "x".repeat(4096),
+        };
+        for _ in 0..2000 {
+            session.notify(&filler);
+            tokio::task::yield_now().await;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let line = |id: &str| EdgeMessage::Request {
+            method: "POST".into(),
+            path: "/hooks".into(),
+            status: 200,
+            ms: 1,
+            request_id: Some(id.into()),
+        };
+        session.notify(&line("dropped"));
+        session.notify_soon(&line("kept"));
+        // Then it reads everything.
+        let mut cli = WebSocketStream::from_raw_socket(cli_text, Role::Client, None).await;
+        let mut seen = Vec::new();
+        while let Ok(Some(Ok(message))) =
+            tokio::time::timeout(Duration::from_millis(500), cli.next()).await
+        {
+            if let Ok(text) = message.into_text()
+                && text.contains("requestId")
+            {
+                seen.push(text.to_string());
+            }
+        }
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert!(seen[0].contains("\"kept\""));
     }
 
     #[tokio::test]

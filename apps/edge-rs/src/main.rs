@@ -637,6 +637,21 @@ fn strip_hop_by_hop(headers: &mut HeaderMap, keep_upgrade: bool) {
     }
 }
 
+/// Removes every `x-whk-` header from a visitor's request: those are the
+/// tunnel's own, and the CLI reads some of them off what comes down a
+/// stream (`x-whk-request-id` marks a live relay's capture), so a visitor
+/// must never be able to send one.
+fn strip_tunnel_headers(headers: &mut HeaderMap) {
+    let ours: Vec<http::HeaderName> = headers
+        .keys()
+        .filter(|name| name.as_str().starts_with("x-whk-"))
+        .cloned()
+        .collect();
+    for name in ours {
+        headers.remove(name);
+    }
+}
+
 /// Dev servers refuse a hot-reload WebSocket from a host they do not know:
 /// Next.js (outside `allowedDevOrigins`) and webpack-dev-server check its
 /// Origin. A request from the preview's own page is same-origin to the
@@ -801,6 +816,7 @@ async fn proxy(
     let console = debugger::may_be_console(parts.uri.path());
     parts.version = http::Version::HTTP_11;
     strip_hop_by_hop(&mut parts.headers, upgrading);
+    strip_tunnel_headers(&mut parts.headers);
     notice::strip_request_cookies(&mut parts.headers);
     // The visitor's own cookies or credentials make a response theirs:
     // never cached by Cloudflare then.
@@ -1072,7 +1088,8 @@ async fn proxy(
     let page_url = format!("{public_origin}{path}");
     let body = if looked_at && html {
         parts.headers.remove(header::CONTENT_LENGTH);
-        with_badge(&state, &session.door, body, page_url)
+        let xhtml = kind == "application/xhtml+xml";
+        with_badge(&state, &session.door, body, page_url, xhtml)
     } else if looked_at {
         with_scan(&state, &session.door, body, page_url)
     } else {
@@ -1288,12 +1305,23 @@ pub(crate) async fn front_door(
 
 /// A page with the report button added, and a look at its start for
 /// phishing once that has passed (inject.rs).
-pub(crate) fn with_badge<B>(state: &State, door: &Arc<door::Door>, body: B, page: String) -> Body
+pub(crate) fn with_badge<B>(
+    state: &State,
+    door: &Arc<door::Door>,
+    body: B,
+    page: String,
+    xhtml: bool,
+) -> Body
 where
     B: hyper::body::Body<Data = Bytes> + Send + Sync + Unpin + 'static,
     B::Error: Into<inject::BoxError>,
 {
-    inject::Inject::new(body, scan(state, door, page)).boxed()
+    let body = inject::Inject::new(body, scan(state, door, page));
+    if xhtml {
+        body.head_only().boxed()
+    } else {
+        body.boxed()
+    }
 }
 
 /// The look for phishing alone, with nothing added: an SVG opened as a
@@ -1829,6 +1857,22 @@ mod tests {
         assert_eq!(live_without_endpoint.status(), 400);
         let body: serde_json::Value = live_without_endpoint.json().await.unwrap();
         assert!(body["error"].as_str().unwrap().contains("endpoint"));
+    }
+
+    #[test]
+    fn a_visitor_cannot_send_the_tunnels_own_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            whk_tunnel::HEADER_REQUEST_ID,
+            HeaderValue::from_static("3f2a8c1e-0000-4000-8000-000000000001"),
+        );
+        headers.insert("x-whk-nothing-listening", HeaderValue::from_static("1"));
+        headers.insert("X-Whk-Anything", HeaderValue::from_static("1"));
+        headers.insert("x-whkx", HeaderValue::from_static("kept"));
+        headers.insert("accept", HeaderValue::from_static("text/html"));
+        strip_tunnel_headers(&mut headers);
+        assert_eq!(headers.len(), 2, "{headers:?}");
+        assert!(headers.contains_key("x-whkx") && headers.contains_key("accept"));
     }
 
     #[test]

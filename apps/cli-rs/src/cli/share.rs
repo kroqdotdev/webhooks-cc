@@ -60,6 +60,7 @@ async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
         port: target.port,
         rewrite: None,
         client: share::client_name(),
+        on_relayed: None,
     };
     let json = options.json;
     let qr = !json && !options.no_qr && share::qr::wanted(std::io::stdout().is_terminal());
