@@ -539,17 +539,10 @@ export async function getCapacityState(
  * the same numbers a parse is charged against.
  */
 async function pageState(account: CapacityAccount, row: AccountRow): Promise<CapacityState> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc("parsed_pages_balance", accountIds(account));
-  if (error) throw error;
-  const balance = (Array.isArray(data) ? data[0] : data) as {
-    window_start: string | null;
-    allowance: number;
-    used: number;
-    credits: number;
-    overage_left: number;
-  } | null;
-  const subscriptions = await liveSubscriptions(account);
+  const [pages, subscriptions] = await Promise.all([
+    pageWindow(account, row),
+    liveSubscriptions(account),
+  ]);
   const blocks = liveOfKind(subscriptions, "page_blocks");
   const overage = liveOfKind(subscriptions, "page_overage");
   const overageMax = row.page_overage_max;
@@ -560,17 +553,12 @@ async function pageState(account: CapacityAccount, row: AccountRow): Promise<Cap
     // Team Business.
     planEnding:
       row.pages_active && row.last_period && (row.cancel_at_period_end || row.pages_ending),
-    periodStart: balance?.window_start ?? row.period_start,
-    periodEnd: row.pages_follow_period
-      ? row.period_end
-      : balance?.window_start && Number(balance.used) > 0
-        ? addMonthUtc(balance.window_start)
-        : null,
-    // The window's own pages, pro rata after a mid-period upgrade.
-    planRequests: balance ? Math.max(balance.allowance - row.page_block_pages, 0) : row.plan_pages,
-    blockRequests: row.page_block_pages,
-    used: Number(balance?.used ?? 0),
-    creditRequests: Number(row.credit_pages),
+    periodStart: pages.periodStart,
+    periodEnd: pages.periodEnd,
+    planRequests: pages.planPages,
+    blockRequests: pages.blockPages,
+    used: pages.used,
+    creditRequests: pages.creditPages,
     blocks: blocks
       ? {
           units: blocks.units,
@@ -586,9 +574,66 @@ async function pageState(account: CapacityAccount, row: AccountRow): Promise<Cap
       cancelAtPeriodEnd: overage?.cancel_at_period_end ?? false,
       pastDue: overage?.status === "past_due",
       maxRequests: overageMax,
-      usedRequests: Math.max(overageMax - Number(balance?.overage_left ?? overageMax), 0),
+      usedRequests: pages.overageUsed,
     },
   };
+}
+
+/** Parsed pages in the account's page window, as parsed_pages_balance() charges them. */
+export interface PageWindow {
+  periodStart: string | null;
+  periodEnd: string | null;
+  /** The window's own pages, pro rata after a mid-period upgrade. */
+  planPages: number;
+  blockPages: number;
+  used: number;
+  creditPages: number;
+  overageActive: boolean;
+  overageUsed: number;
+  overageMax: number;
+}
+
+async function pageWindow(account: CapacityAccount, row: AccountRow): Promise<PageWindow> {
+  const { data, error } = await createAdminClient().rpc(
+    "parsed_pages_balance",
+    accountIds(account)
+  );
+  if (error) throw error;
+  const balance = (Array.isArray(data) ? data[0] : data) as {
+    window_start: string | null;
+    allowance: number;
+    used: number;
+    credits: number;
+    overage_left: number;
+  } | null;
+  const overageMax = row.page_overage_max;
+  return {
+    periodStart: balance?.window_start ?? row.period_start,
+    periodEnd: row.pages_follow_period
+      ? row.period_end
+      : balance?.window_start && Number(balance.used) > 0
+        ? addMonthUtc(balance.window_start)
+        : null,
+    planPages: balance ? Math.max(balance.allowance - row.page_block_pages, 0) : row.plan_pages,
+    blockPages: row.page_block_pages,
+    used: Number(balance?.used ?? 0),
+    creditPages: Number(row.credit_pages),
+    overageActive: row.page_overage_active,
+    overageUsed: Math.max(overageMax - Number(balance?.overage_left ?? overageMax), 0),
+    overageMax,
+  };
+}
+
+/**
+ * Just the page window, for usage reads: the numbers of the capacity state
+ * without the add-on subscriptions, which only buying needs.
+ */
+export async function getPageWindow(account: CapacityAccount): Promise<PageWindow> {
+  const row = await readAccount(account);
+  if (!row) {
+    throw new CapacityError("not_found", "Account not found", 404);
+  }
+  return pageWindow(account, row);
 }
 
 /**

@@ -2045,7 +2045,7 @@ export function registerTools(
 
   server.tool(
     "get_usage",
-    "Check current request usage, remaining quota, plan, and period end, plus the pooled quota of every subscribed team you belong to.",
+    "Check current request usage, remaining quota, plan, and period end; parsed pages, preview data (whk share) and AI assists, each with when it resets; and the pooled quota of every subscribed team you belong to.",
     {},
     withErrorHandling(async () => {
       // Team pools are additive: a failing /api/teams must not turn a working

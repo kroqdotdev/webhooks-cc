@@ -100,10 +100,20 @@ impl Screen for UsageScreen {
             None => return,
         };
 
+        let allowances = allowance_rows(usage);
+        // Each row is a label line and a gauge, with a blank line between rows.
+        let allowance_height = if allowances.is_empty() {
+            0
+        } else {
+            // Only what the title and the request card leave: on a short
+            // terminal this card shrinks first, never the request card.
+            ((allowances.len() * 3 - 1 + 4) as u16).min(area.height.saturating_sub(2 + 8))
+        };
         let chunks = Layout::vertical([
-            Constraint::Length(2), // Title
-            Constraint::Length(8), // Usage card
-            Constraint::Min(0),    // Spacer
+            Constraint::Length(2),                // Title
+            Constraint::Length(8),                // Usage card
+            Constraint::Length(allowance_height), // Other allowances
+            Constraint::Min(0),                   // Spacer
         ])
         .split(area);
 
@@ -159,13 +169,7 @@ impl Screen for UsageScreen {
                 0.0
             };
 
-            let bar_color = if ratio > 0.9 {
-                theme::DANGER
-            } else if ratio > 0.7 {
-                theme::ACCENT
-            } else {
-                theme::SUCCESS
-            };
+            let bar_color = bar_color(ratio);
 
             let gauge = Gauge::default()
                 .ratio(ratio)
@@ -187,6 +191,65 @@ impl Screen for UsageScreen {
                     Paragraph::new(period_line),
                     Rect::new(card_inner.x, card_inner.y + 4, card_inner.width, 1),
                 );
+            }
+        }
+
+        if !allowances.is_empty() {
+            let card = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::BORDER))
+                .title(Span::styled(" Other Allowances ", theme::style_bold()))
+                .padding(Padding::new(2, 2, 1, 1));
+            let inner = card.inner(chunks[2]);
+            frame.render_widget(card, chunks[2]);
+            // A short terminal loses the blank lines, then the gauges, before it
+            // loses a row: the counts stay readable at one line each.
+            let rows = allowances.len();
+            if (inner.height as usize) < rows {
+                // Too short even for a line each: every allowance on one line.
+                if inner.height > 0 {
+                    // Short names and bare counts, so it fits an 80-column terminal.
+                    let summary = allowances
+                        .iter()
+                        .map(|row| format!("{} {}", row.short, row.amount.replace(" / ", "/")))
+                        .collect::<Vec<_>>()
+                        .join("   ");
+                    frame.render_widget(
+                        Paragraph::new(Line::from(Span::styled(summary, theme::style()))),
+                        Rect::new(inner.x, inner.y, inner.width, 1),
+                    );
+                }
+                return;
+            }
+            let stride: u16 = if inner.height as usize >= rows * 3 - 1 {
+                3
+            } else if inner.height as usize >= rows * 2 {
+                2
+            } else {
+                1
+            };
+            for (i, row) in allowances.iter().enumerate() {
+                let y = inner.y + (i as u16) * stride;
+                if y >= inner.y + inner.height {
+                    break;
+                }
+                let line = Line::from(vec![
+                    Span::styled(format!("{:<14}", row.label), theme::style_bold()),
+                    Span::styled(row.amount.clone(), theme::style()),
+                    Span::styled(format!("  {}", row.when), theme::style_muted()),
+                ]);
+                frame.render_widget(Paragraph::new(line), Rect::new(inner.x, y, inner.width, 1));
+                let gauge = Gauge::default()
+                    .ratio(row.ratio)
+                    .gauge_style(
+                        Style::default()
+                            .fg(bar_color(row.ratio))
+                            .bg(theme::SURFACE_RAISED),
+                    )
+                    .label("");
+                if stride > 1 {
+                    frame.render_widget(gauge, Rect::new(inner.x, y + 1, inner.width, 1));
+                }
             }
         }
     }
@@ -233,5 +296,194 @@ impl UsageScreen {
             });
             self.tasks.push(handle);
         }
+    }
+}
+
+fn bar_color(ratio: f64) -> ratatui::style::Color {
+    if ratio > 0.9 {
+        theme::DANGER
+    } else if ratio > 0.7 {
+        theme::ACCENT
+    } else {
+        theme::SUCCESS
+    }
+}
+
+/// One allowance beside requests, as the screen draws it.
+struct AllowanceRow {
+    label: &'static str,
+    /// The name in the one-line summary of a very short terminal.
+    short: &'static str,
+    ratio: f64,
+    amount: String,
+    when: String,
+}
+
+fn ratio(used: u64, limit: u64) -> f64 {
+    if limit > 0 {
+        (used as f64 / limit as f64).min(1.0)
+    } else if used > 0 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+/// Parsed pages, preview data and AI assists, each with when it frees up;
+/// ones the server did not report are left out.
+fn allowance_rows(usage: &UsageInfo) -> Vec<AllowanceRow> {
+    let mut rows = Vec::new();
+    if let Some(pages) = &usage.parsed_pages {
+        rows.push(AllowanceRow {
+            label: "Parsed pages",
+            short: "Pages",
+            ratio: ratio(pages.used, pages.limit),
+            amount: format!("{} / {} pages", pages.used, pages.limit),
+            when: match &pages.resets_at {
+                Some(at) => format!("resets {}", at.display()),
+                None => "a month from your first parse".to_string(),
+            },
+        });
+    }
+    if let Some(preview) = &usage.preview_data {
+        let at = preview.resets_at.as_ref().map(|t| t.display());
+        rows.push(AllowanceRow {
+            label: "Preview data",
+            short: "Preview",
+            ratio: if preview.over {
+                1.0
+            } else {
+                ratio(preview.bytes, preview.limit_bytes)
+            },
+            amount: format!(
+                "{} / {}",
+                crate::cli::share::data(preview.bytes),
+                crate::cli::share::data(preview.limit_bytes)
+            ),
+            when: match (preview.over, at) {
+                (true, Some(at)) => format!("previews paused until {at}"),
+                (true, None) => "previews paused".to_string(),
+                (false, Some(at)) => format!("resets {at}"),
+                (false, None) => String::new(),
+            },
+        });
+    }
+    if let Some(assists) = &usage.ai_assists {
+        rows.push(AllowanceRow {
+            label: "AI assists",
+            short: "AI",
+            ratio: ratio(assists.used, assists.allowed),
+            amount: format!("{} / {}", assists.used, assists.allowed),
+            when: match (&assists.next_at, assists.used >= assists.allowed) {
+                (Some(next), true) => format!("next one back {}", next.display()),
+                _ => "over the last 30 days".to_string(),
+            },
+        });
+    }
+    rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_screen_draws_the_other_allowances() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let usage: UsageInfo = serde_json::from_str(
+            r#"{"used":31420,"limit":50000,"remaining":18580,"plan":"pro",
+                "parsedPages":{"used":87,"limit":100,"creditPages":0,"resetsAt":null},
+                "previewData":{"bytes":1024,"limitBytes":1073741824,"over":false},
+                "aiAssists":{"used":3,"allowed":20,"nextAt":null}}"#,
+        )
+        .unwrap();
+        let mut screen = UsageScreen::new();
+        screen.usage = Some(usage);
+        screen.state = State::Loaded;
+        let mut terminal = Terminal::new(TestBackend::new(90, 30)).unwrap();
+        terminal
+            .draw(|frame| screen.render(frame, frame.area()))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text: String = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+                    + "\n"
+            })
+            .collect();
+        assert!(text.contains("Other Allowances"), "{text}");
+        assert!(
+            text.contains("Parsed pages  87 / 100 pages  a month from your first parse"),
+            "{text}"
+        );
+        assert!(text.contains("Preview data  1.0 KB / 1.00 GB"), "{text}");
+        assert!(
+            text.contains("AI assists    3 / 20  over the last 30 days"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_short_terminal_still_shows_every_allowance() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let usage: UsageInfo = serde_json::from_str(
+            r#"{"used":1,"limit":50,"remaining":49,"plan":"free",
+                "parsedPages":{"used":2,"limit":20},
+                "previewData":{"bytes":0,"limitBytes":1073741824},
+                "aiAssists":{"used":0,"allowed":5}}"#,
+        )
+        .unwrap();
+        let mut screen = UsageScreen::new();
+        screen.usage = Some(usage);
+        screen.state = State::Loaded;
+        // Title 2 + request card 8 leaves 7 lines: an inner card of 3.
+        let mut terminal = Terminal::new(TestBackend::new(90, 17)).unwrap();
+        terminal
+            .draw(|frame| screen.render(frame, frame.area()))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text: String = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+                    + "\n"
+            })
+            .collect();
+        for label in ["Parsed pages", "Preview data", "AI assists"] {
+            assert!(text.contains(label), "{label} missing:\n{text}");
+        }
+
+        // An 80x20 terminal less the TUI's header and status bar: 16 lines,
+        // a card of two inner lines, so the allowances share one line.
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        terminal
+            .draw(|frame| screen.render(frame, frame.area()))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text: String = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+                    + "\n"
+            })
+            .collect();
+        assert!(
+            text.contains("1 / 50 requests"),
+            "request card squeezed:\n{text}"
+        );
+        for part in ["Pages 2/20 pages", "Preview 0 B/1.00 GB", "AI 0/5"] {
+            assert!(text.contains(part), "{part} missing at 80x16:\n{text}");
+        }
+    }
+
+    #[test]
+    fn an_older_server_draws_no_allowance_card() {
+        let usage: UsageInfo =
+            serde_json::from_str(r#"{"used":1,"limit":50,"remaining":49,"plan":"free"}"#).unwrap();
+        assert!(allowance_rows(&usage).is_empty());
     }
 }

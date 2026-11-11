@@ -23,6 +23,7 @@ import {
   SettingsPageHeader,
   SettingsPageSkeleton,
 } from "@/components/settings/panel";
+import { AllowanceMeters } from "@/components/settings/allowance-meters";
 import { QuotaMeter } from "@/components/settings/quota-meter";
 import { useSettingsData } from "@/components/settings/settings-data";
 import { useAccountProfile } from "@/components/settings/use-account-profile";
@@ -291,7 +292,7 @@ function YourPlanPanel({
 }
 
 export default function PlanPage() {
-  const { profile, periodEmails, loading, refresh, accessToken } = useAccountProfile({
+  const { profile, periodEmails, allowances, loading, refresh, accessToken } = useAccountProfile({
     live: true,
   });
   const { teams } = useSettingsData();
@@ -370,19 +371,11 @@ export default function PlanPage() {
 
         <Panel
           id="usage"
-          title={
-            mailFirst
-              ? isFree
-                ? "Emails and webhooks today"
-                : "Emails and webhooks this period"
-              : isFree
-                ? "Requests today"
-                : "Requests this period"
-          }
+          title="Usage"
           description={
             mailFirst
-              ? "Emails and HTTP requests both count. Those to endpoints shared with an active team count against that team instead."
-              : "HTTP requests and emails both count. Requests to endpoints shared with an active team count against that team instead."
+              ? "Emails and webhooks share one allowance. Use on endpoints shared with an active team counts against that team instead."
+              : "HTTP requests and emails share one allowance. Use on endpoints shared with an active team counts against that team instead."
           }
         >
           <QuotaMeter
@@ -397,6 +390,7 @@ export default function PlanPage() {
               Includes {profile.block_requests.toLocaleString()} from monthly blocks.
             </p>
           )}
+          <AllowanceMeters allowances={allowances} showPreviewData={!mailFirst} />
         </Panel>
 
         {comped && (
@@ -436,6 +430,8 @@ export default function PlanPage() {
         <ParsedPagesPanel
           accessToken={accessToken}
           canManage
+          // The meter above shows the pages; the panel's own row stands in when it could not.
+          showUsage={allowances !== null && !allowances.parsedPages}
           reloadKey={[
             profile.plan,
             profile.subscription_status,

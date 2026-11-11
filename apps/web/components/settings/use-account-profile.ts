@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profile";
 import { identifyUser } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToUserProfileChanges } from "@/lib/supabase/realtime";
+import type { AllowanceUsage } from "@/lib/supabase/allowance-usage";
 
 const USAGE_REFRESH_INTERVAL_MS = 30_000;
+
+/** What a failed first usage read settles on: nothing to show beside requests. */
+const NO_ALLOWANCES: AllowanceUsage = { parsedPages: null, previewData: null, aiAssists: null };
 
 /**
  * The signed-in user's row. With `live`, it also follows plan, billing and
@@ -19,6 +23,10 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   /** Emails among this period's requests (from /api/usage); null until known. */
   const [periodEmails, setPeriodEmails] = useState<number | null>(null);
+  /** The plan's other allowances (from /api/usage); null until known. */
+  const [allowances, setAllowances] = useState<AllowanceUsage | null>(null);
+  // Refreshes overlap (interval, focus, signals): only the newest usage read applies.
+  const usageRead = useRef(0);
   const [loading, setLoading] = useState(true);
   const accessToken = session?.access_token ?? null;
 
@@ -41,10 +49,32 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
     setLoading(false);
 
     if (live && accessToken) {
+      const read = ++usageRead.current;
       void fetch("/api/usage", { headers: { Authorization: `Bearer ${accessToken}` } })
-        .then((res) => (res.ok ? (res.json() as Promise<{ emails?: number }>) : null))
-        .then((usage) => setPeriodEmails(typeof usage?.emails === "number" ? usage.emails : null))
-        .catch(() => setPeriodEmails(null));
+        .then((res) =>
+          res.ok ? (res.json() as Promise<Partial<AllowanceUsage> & { emails?: number }>) : null
+        )
+        .then((usage) => {
+          if (read !== usageRead.current) return;
+          setPeriodEmails(typeof usage?.emails === "number" ? usage.emails : null);
+          // A failed read keeps what is shown rather than blanking the meters;
+          // a failed first read settles on none, so the panels below fall back
+          // to their own rows instead of waiting for meters that never come.
+          setAllowances((shown) =>
+            usage
+              ? {
+                  parsedPages: usage.parsedPages ?? null,
+                  previewData: usage.previewData ?? null,
+                  aiAssists: usage.aiAssists ?? null,
+                }
+              : (shown ?? NO_ALLOWANCES)
+          );
+        })
+        .catch(() => {
+          if (read !== usageRead.current) return;
+          setPeriodEmails(null);
+          setAllowances((shown) => shown ?? NO_ALLOWANCES);
+        });
     }
 
     if (data) {
@@ -79,5 +109,14 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
     };
   }, [live, authUser, refresh]);
 
-  return { profile, setProfile, periodEmails, loading, refresh, accessToken, authUser };
+  return {
+    profile,
+    setProfile,
+    periodEmails,
+    allowances,
+    loading,
+    refresh,
+    accessToken,
+    authUser,
+  };
 }

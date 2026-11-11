@@ -316,7 +316,7 @@ Sharing moves the endpoint's requests onto the team's pooled quota. Only the end
 
 ## usage
 
-Show your plan's request usage and, below it, the pooled quota of every subscribed team you belong to. With `--json` the team pools are returned in a `teams` array.
+Show your plan's request usage, then parsed pages, preview data and AI assists with when each resets, and below them the pooled quota of every subscribed team you belong to. With `--json` you get the whole `/api/usage` answer (`parsedPages`, `previewData`, `aiAssists`), and the team pools in a `teams` array.
 
 ```bash
 whk usage

@@ -1445,6 +1445,20 @@ describe("WebhooksCC", () => {
         remaining: 8,
         plan: "free" as const,
         periodEnd: 1710460800000,
+        parsedPages: {
+          used: 3,
+          limit: 20,
+          creditPages: 0,
+          overage: { active: false, used: 0, max: 0 },
+          resetsAt: null,
+        },
+        previewData: {
+          bytes: 1024,
+          limitBytes: 1073741824,
+          over: false,
+          resetsAt: "2026-12-01T00:00:00.000Z",
+        },
+        aiAssists: { used: 1, allowed: 5, nextAt: "2026-12-05T10:00:00.000Z" },
       };
       const fetchMock = mockFetch({ body: usage });
       globalThis.fetch = fetchMock;

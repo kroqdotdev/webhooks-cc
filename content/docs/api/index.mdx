@@ -44,41 +44,41 @@ The machine-readable version of this page is the [OpenAPI document](/openapi.yam
 
 Every route an API key can call. Timestamps are Unix milliseconds unless a field says otherwise, and "owner only" routes answer `404` to anyone else.
 
-| Route | What it does |
-| ----- | ------------ |
-| `GET` `POST /api/endpoints` | [List](#list-endpoints) or [create](#create-endpoint) endpoints |
-| `GET` `PATCH` `DELETE /api/endpoints/:slug` | [Read](#get-endpoint), [change](#update-endpoint) or [delete](#delete-endpoint) one |
-| `PUT` `DELETE /api/endpoints/:slug/favorite` | [Favourite](#favourite-an-endpoint) it, or undo that |
-| `POST /api/endpoints/claim` | [Claim a guest endpoint](#claim-a-guest-endpoint) |
-| `GET` `DELETE /api/endpoints/:slug/requests` | [List](#list-requests) or [clear](#clear-requests) requests |
-| `GET /api/endpoints/:slug/requests/paginated` | [List requests page by page](#list-requests-paginated) |
-| `GET /api/requests/:id` | [One request](#get-single-request) |
-| `GET /api/requests/:id/raw` | [An email's exact message](#download-the-raw-email) |
-| `GET /api/requests/:id/attachments/:index` | [One attachment](#download-an-attachment) |
-| `POST /api/requests/:id/render` | [An email in a mail provider's shape](#render-an-email) |
-| `POST /api/endpoints/:slug/responses/preview` | [What a sender would get back](#preview-a-response) |
-| `POST /api/endpoints/:slug/email-fields/preview` | [Try email fields](#try-email-fields) |
-| `POST /api/endpoints/:slug/layouts/preview` | [Try layouts](#try-layouts) |
-| `POST /api/endpoints/:slug/layouts/template` | [Add a ready-made layout](#add-a-ready-made-layout) |
-| `GET` `PUT /api/endpoints/:slug/alerts` | [Alerts](#alerts) |
-| `GET` `POST /api/endpoints/:slug/destinations` and the routes under it | [Destinations](#destinations) |
-| `GET` `POST /api/endpoints/:slug/forwarding`, `POST .../forwarding/test` | The primary destination's [secret](#get-the-signing-secret) and [test](#send-a-test-delivery) |
-| `GET /api/endpoints/:slug/deliveries`, `GET .../deliveries/summary` | The [delivery log](#list-deliveries) and its [counts](#delivery-counts) |
-| `POST /api/endpoints/:slug/deliveries/redeliver-failed` | [Redeliver all failed](#redeliver-all-failed) |
-| `GET` `POST /api/requests/:id/deliveries` | [Deliveries of a request](#list-deliveries-of-a-request), [redeliver it](#redeliver-a-request) |
-| `POST /api/requests/:id/replay`, `POST /api/endpoints/:slug/replay` | [Replay](#replay) one request or a time range |
-| `GET /api/integrations/google/connections` | [Connected Google accounts](#connected-google-accounts) |
-| `POST /api/send-test`, `POST /api/send-test-email` | Send a [test webhook](#send-test-webhook) or [test email](#send-test-email) |
-| `GET /api/search/requests`, `GET /api/search/requests/count` | [Search](#search) |
-| `GET /api/stream/:slug` | [Real-time stream](#real-time-streaming-sse) |
-| `GET /api/usage` | [Usage](#usage) |
-| `/api/teams/...`, `/api/invites/...` | [Teams](#teams) and [invites](#invites) |
-| `GET /api/shares` | [Previews and live tunnels](#list-shares), with the month's data and the plan's limits |
-| `POST /api/shares/:id/stop` | [Stop a share](#stop-a-share) |
-| `GET /api/shares/:id/requests` | [A preview's visitor log](#a-previews-visitor-log) |
-| `GET` `POST /api/tunnel-names` | [List](#list-reserved-names) or [reserve](#reserve-a-name) preview names |
-| `DELETE /api/tunnel-names/:name` | [Release a name](#release-a-name) |
-| `PUT` `DELETE /api/tunnel-names/:name/password` | [Set or remove a name's password](#name-passwords) |
+| Route                                                                    | What it does                                                                                   |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `GET` `POST /api/endpoints`                                              | [List](#list-endpoints) or [create](#create-endpoint) endpoints                                |
+| `GET` `PATCH` `DELETE /api/endpoints/:slug`                              | [Read](#get-endpoint), [change](#update-endpoint) or [delete](#delete-endpoint) one            |
+| `PUT` `DELETE /api/endpoints/:slug/favorite`                             | [Favourite](#favourite-an-endpoint) it, or undo that                                           |
+| `POST /api/endpoints/claim`                                              | [Claim a guest endpoint](#claim-a-guest-endpoint)                                              |
+| `GET` `DELETE /api/endpoints/:slug/requests`                             | [List](#list-requests) or [clear](#clear-requests) requests                                    |
+| `GET /api/endpoints/:slug/requests/paginated`                            | [List requests page by page](#list-requests-paginated)                                         |
+| `GET /api/requests/:id`                                                  | [One request](#get-single-request)                                                             |
+| `GET /api/requests/:id/raw`                                              | [An email's exact message](#download-the-raw-email)                                            |
+| `GET /api/requests/:id/attachments/:index`                               | [One attachment](#download-an-attachment)                                                      |
+| `POST /api/requests/:id/render`                                          | [An email in a mail provider's shape](#render-an-email)                                        |
+| `POST /api/endpoints/:slug/responses/preview`                            | [What a sender would get back](#preview-a-response)                                            |
+| `POST /api/endpoints/:slug/email-fields/preview`                         | [Try email fields](#try-email-fields)                                                          |
+| `POST /api/endpoints/:slug/layouts/preview`                              | [Try layouts](#try-layouts)                                                                    |
+| `POST /api/endpoints/:slug/layouts/template`                             | [Add a ready-made layout](#add-a-ready-made-layout)                                            |
+| `GET` `PUT /api/endpoints/:slug/alerts`                                  | [Alerts](#alerts)                                                                              |
+| `GET` `POST /api/endpoints/:slug/destinations` and the routes under it   | [Destinations](#destinations)                                                                  |
+| `GET` `POST /api/endpoints/:slug/forwarding`, `POST .../forwarding/test` | The primary destination's [secret](#get-the-signing-secret) and [test](#send-a-test-delivery)  |
+| `GET /api/endpoints/:slug/deliveries`, `GET .../deliveries/summary`      | The [delivery log](#list-deliveries) and its [counts](#delivery-counts)                        |
+| `POST /api/endpoints/:slug/deliveries/redeliver-failed`                  | [Redeliver all failed](#redeliver-all-failed)                                                  |
+| `GET` `POST /api/requests/:id/deliveries`                                | [Deliveries of a request](#list-deliveries-of-a-request), [redeliver it](#redeliver-a-request) |
+| `POST /api/requests/:id/replay`, `POST /api/endpoints/:slug/replay`      | [Replay](#replay) one request or a time range                                                  |
+| `GET /api/integrations/google/connections`                               | [Connected Google accounts](#connected-google-accounts)                                        |
+| `POST /api/send-test`, `POST /api/send-test-email`                       | Send a [test webhook](#send-test-webhook) or [test email](#send-test-email)                    |
+| `GET /api/search/requests`, `GET /api/search/requests/count`             | [Search](#search)                                                                              |
+| `GET /api/stream/:slug`                                                  | [Real-time stream](#real-time-streaming-sse)                                                   |
+| `GET /api/usage`                                                         | [Usage](#usage)                                                                                |
+| `/api/teams/...`, `/api/invites/...`                                     | [Teams](#teams) and [invites](#invites)                                                        |
+| `GET /api/shares`                                                        | [Previews and live tunnels](#list-shares), with the month's data and the plan's limits         |
+| `POST /api/shares/:id/stop`                                              | [Stop a share](#stop-a-share)                                                                  |
+| `GET /api/shares/:id/requests`                                           | [A preview's visitor log](#a-previews-visitor-log)                                             |
+| `GET` `POST /api/tunnel-names`                                           | [List](#list-reserved-names) or [reserve](#reserve-a-name) preview names                       |
+| `DELETE /api/tunnel-names/:name`                                         | [Release a name](#release-a-name)                                                              |
+| `PUT` `DELETE /api/tunnel-names/:name/password`                          | [Set or remove a name's password](#name-passwords)                                             |
 
 Agents that register themselves use the routes in [/auth.md](/auth.md); they are in the OpenAPI document too.
 
@@ -121,27 +121,27 @@ curl -X POST https://webhooks.cc/api/endpoints \
 
 Email and forwarding fields on every endpoint:
 
-| Field               | Description                                                                                                         |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `emailAddress`      | The endpoint's [email address](/docs/email-capture). `null` for guest endpoints, which receive no email.            |
-| `showEmailExtracts` | Whether codes and links found in emails are shown in the dashboard, returned by the API (`extracts`), and included in forwarded JSON. Default `true`. |
-| `site`              | Which site's dashboard lists the endpoint: `webhooks`, `mailhooks` or `both`. Only the listing: both addresses capture either way. Send it when creating (`both` when left out; the dashboard sends the site it is on) or updating (owner only). |
-| `emailFields`       | Named fields picked out of every email: `[{ "name", "from", "header"?, "pattern" }]`, at most 20 ([Fields you pick out](/docs/email-capture#fields-you-pick-out)). `from` is `subject`, `text`, `html`, `from`, `to` or `header`; `pattern` is RE2, its first group the value. Owner only to change; send the whole list, or `[]` to remove them. |
-| `forwardEnabled`    | Whether captured requests are [forwarded](/docs/forwarding) to `forwardUrl`.                                        |
-| `forwardUrl`        | Where requests are forwarded. Only returned to the endpoint's owner.                                                |
-| `hasForwardSecret`  | Whether a forwarding secret exists. The secret itself is never included.                                            |
-| `forwardHttp`, `forwardEmail` | Which kinds are forwarded: HTTP requests, emails.                                                         |
-| `forwardFormat`     | `auto` (picked from the URL), `as_received`, `json` or `chat`. See [Formats](/docs/forwarding#formats).             |
-| `forwardHeaders`    | Your own headers, `[{ "name", "value" }]` with masked values. Only returned to the endpoint's owner.               |
-| `forwardAppendPath` | Whether the path after the slug is added to the URL for relayed requests.                                           |
-| `forwardRetrySeconds` | How long failed deliveries are retried: `0`, `3600` or `86400`.                                                  |
-| `forwardKeepOrder`  | One delivery at a time, in capture order.                                                                           |
-| `forwardSentField`  | The JSON body field holding the sender's own timestamp, or `null`. See [Timing](/docs/forwarding#timing).           |
-| `destinationCount`  | How many [destinations](#destinations) the endpoint has.                                                            |
-| `signingProvider`, `hasSigningSecret`, `signingHeader` | [Signature verification](/docs/requests#signature-verification) settings; the secret itself is never included. Send `signingProvider`, `signingSecret` and `signingHeader` (for `generic-hmac`) to change them, `null` to clear. |
-| `layouts`, `layoutsCap` | The endpoint's [layouts](/docs/layouts) and how many of them the plan applies. Send the whole list to change it, `null` or `[]` to remove them. |
-| `retentionDays`, `retentionCapDays` | The endpoint's own retention in days (`null`: the plan's) and the most it can be on the plan. |
-| `deleteAfterDelivery` | Whether requests are deleted once every destination has them ("deliver, then delete").                          |
+| Field                                                  | Description                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `emailAddress`                                         | The endpoint's [email address](/docs/email-capture). `null` for guest endpoints, which receive no email.                                                                                                                                                                                                                                          |
+| `showEmailExtracts`                                    | Whether codes and links found in emails are shown in the dashboard, returned by the API (`extracts`), and included in forwarded JSON. Default `true`.                                                                                                                                                                                             |
+| `site`                                                 | Which site's dashboard lists the endpoint: `webhooks`, `mailhooks` or `both`. Only the listing: both addresses capture either way. Send it when creating (`both` when left out; the dashboard sends the site it is on) or updating (owner only).                                                                                                  |
+| `emailFields`                                          | Named fields picked out of every email: `[{ "name", "from", "header"?, "pattern" }]`, at most 20 ([Fields you pick out](/docs/email-capture#fields-you-pick-out)). `from` is `subject`, `text`, `html`, `from`, `to` or `header`; `pattern` is RE2, its first group the value. Owner only to change; send the whole list, or `[]` to remove them. |
+| `forwardEnabled`                                       | Whether captured requests are [forwarded](/docs/forwarding) to `forwardUrl`.                                                                                                                                                                                                                                                                      |
+| `forwardUrl`                                           | Where requests are forwarded. Only returned to the endpoint's owner.                                                                                                                                                                                                                                                                              |
+| `hasForwardSecret`                                     | Whether a forwarding secret exists. The secret itself is never included.                                                                                                                                                                                                                                                                          |
+| `forwardHttp`, `forwardEmail`                          | Which kinds are forwarded: HTTP requests, emails.                                                                                                                                                                                                                                                                                                 |
+| `forwardFormat`                                        | `auto` (picked from the URL), `as_received`, `json` or `chat`. See [Formats](/docs/forwarding#formats).                                                                                                                                                                                                                                           |
+| `forwardHeaders`                                       | Your own headers, `[{ "name", "value" }]` with masked values. Only returned to the endpoint's owner.                                                                                                                                                                                                                                              |
+| `forwardAppendPath`                                    | Whether the path after the slug is added to the URL for relayed requests.                                                                                                                                                                                                                                                                         |
+| `forwardRetrySeconds`                                  | How long failed deliveries are retried: `0`, `3600` or `86400`.                                                                                                                                                                                                                                                                                   |
+| `forwardKeepOrder`                                     | One delivery at a time, in capture order.                                                                                                                                                                                                                                                                                                         |
+| `forwardSentField`                                     | The JSON body field holding the sender's own timestamp, or `null`. See [Timing](/docs/forwarding#timing).                                                                                                                                                                                                                                         |
+| `destinationCount`                                     | How many [destinations](#destinations) the endpoint has.                                                                                                                                                                                                                                                                                          |
+| `signingProvider`, `hasSigningSecret`, `signingHeader` | [Signature verification](/docs/requests#signature-verification) settings; the secret itself is never included. Send `signingProvider`, `signingSecret` and `signingHeader` (for `generic-hmac`) to change them, `null` to clear.                                                                                                                  |
+| `layouts`, `layoutsCap`                                | The endpoint's [layouts](/docs/layouts) and how many of them the plan applies. Send the whole list to change it, `null` or `[]` to remove them.                                                                                                                                                                                                   |
+| `retentionDays`, `retentionCapDays`                    | The endpoint's own retention in days (`null`: the plan's) and the most it can be on the plan.                                                                                                                                                                                                                                                     |
+| `deleteAfterDelivery`                                  | Whether requests are deleted once every destination has them ("deliver, then delete").                                                                                                                                                                                                                                                            |
 
 ### List endpoints
 
@@ -234,7 +234,13 @@ Runs [response rules](/docs/mock-responses) against a captured request and fills
   },
   "unknownPlaceholders": [],
   "email": false,
-  "request": { "id": "REQUEST_ID", "method": "POST", "path": "/", "receivedAt": 1791538201882, "sample": false }
+  "request": {
+    "id": "REQUEST_ID",
+    "method": "POST",
+    "path": "/",
+    "receivedAt": 1791538201882,
+    "sample": false
+  }
 }
 ```
 
@@ -278,16 +284,16 @@ curl -X PUT https://webhooks.cc/api/endpoints/abc123/alerts \
 
 [Alerts](/docs/forwarding#alerts) tell the endpoint's owner when emails keep missing a field, when no email arrives for a while, or when a delivery failed after every retry. `GET` returns `{ "settings": {...}, "events": [...] }`, the latest 50 alerts with open ones first; `PUT` changes the settings sent, leaves the rest, and returns `{ "settings": {...} }`. Owner only.
 
-| Setting                | Values                                                                                              |
-| ---------------------- | --------------------------------------------------------------------------------------------------- |
-| `enabled`              | `true` or `false` (default)                                                                         |
-| `fieldFailures`        | Emails in a row that miss a required field before an alert opens: 1 to 100, or `null` for off       |
-| `fieldFailureShare`    | Percent of the last 20 emails that missed one: 1 to 100, or `null` for off                          |
-| `requiredFields`       | Names of the fields that must be found (at most 50), or `null` for every field                      |
-| `silenceHours`         | Hours without an email before an alert opens: 1 to 720, or `null` for off                           |
-| `destinationFailures`  | `true` for an alert when a delivery fails for good                                                  |
-| `notifyEmail`          | `true` to email the account's address                                                               |
-| `notifyDestinationIds` | Ids of this endpoint's destinations (at most 10) that also get `alert.opened` and `alert.resolved`  |
+| Setting                | Values                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `enabled`              | `true` or `false` (default)                                                                        |
+| `fieldFailures`        | Emails in a row that miss a required field before an alert opens: 1 to 100, or `null` for off      |
+| `fieldFailureShare`    | Percent of the last 20 emails that missed one: 1 to 100, or `null` for off                         |
+| `requiredFields`       | Names of the fields that must be found (at most 50), or `null` for every field                     |
+| `silenceHours`         | Hours without an email before an alert opens: 1 to 720, or `null` for off                          |
+| `destinationFailures`  | `true` for an alert when a delivery fails for good                                                 |
+| `notifyEmail`          | `true` to email the account's address                                                              |
+| `notifyDestinationIds` | Ids of this endpoint's destinations (at most 10) that also get `alert.opened` and `alert.resolved` |
 
 Each event has `id`, `kind` (`fields`, `silence` or `destination`), `subject` (the destination, for a destination alert), `openedAt`, `resolvedAt` (`null` while open) and `details`.
 
@@ -372,13 +378,13 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
 }
 ```
 
-| Field           | Description |
-| --------------- | ----------- |
-| `status`        | The status the sender got: the app's, or the stand-in's below. `null` when none was recorded. |
-| `headers`       | The headers the sender got: the app's, without `Set-Cookie` and security headers, plus the `nosniff` and sandbox CSP headers the receiver adds. |
-| `body`          | The first 64 KB of the answer: text when `bodyEncoding` is `utf8`, base64 when it is `base64`. |
-| `bodyTruncated` | `true` when the answer was longer than what is kept, or was cut off past 1 MB. |
-| `ms`            | How long the app took, in milliseconds. |
+| Field           | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`        | The status the sender got: the app's, or the stand-in's below. `null` when none was recorded.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `headers`       | The headers the sender got: the app's, without `Set-Cookie` and security headers, plus the `nosniff` and sandbox CSP headers the receiver adds.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `body`          | The first 64 KB of the answer: text when `bodyEncoding` is `utf8`, base64 when it is `base64`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `bodyTruncated` | `true` when the answer was longer than what is kept, or was cut off past 1 MB.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ms`            | How long the app took, in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `outcome`       | `answered` when the app answered. Otherwise what stood in: `offline` (502, `whk` not connected), `timeout` (504, no answer within 25 seconds), `unreachable` (502, nothing on the local port), `busy` (503 with `Retry-After`, too many relays waiting) or `refused`: the answer was not passed back as it was. `400` when the path left the endpoint; `502` when the answer was refused (a download, a script or another type an API does not answer with, or a stated size over 1 MB); or the app's own status when the answer streamed past 1 MB and was cut off, so the sender got a broken stream. |
 
 `detectedProvider` and `detectedEvent` are best-effort metadata derived from headers and body shape. They power the provider icon and event badge in the dashboard. Signature fields are present when endpoint-level verification is configured.
@@ -498,16 +504,16 @@ curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
 
 The other settings, all optional:
 
-| Field                 | Values                                                                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `forwardHttp`         | `true` to forward HTTP requests. Default `false`.                                                                                           |
-| `forwardEmail`        | `true` to forward emails. Default `true`.                                                                                                   |
-| `forwardFormat`       | `auto` (default), `as_received`, `json` or `chat`.                                                                                          |
+| Field                 | Values                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `forwardHttp`         | `true` to forward HTTP requests. Default `false`.                                                                                                                              |
+| `forwardEmail`        | `true` to forward emails. Default `true`.                                                                                                                                      |
+| `forwardFormat`       | `auto` (default), `as_received`, `json` or `chat`.                                                                                                                             |
 | `forwardHeaders`      | The whole list of your headers, at most 10: `[{ "name": "Authorization", "value": "Bearer ..." }]`. A `null` value keeps the stored value of that name; `[]` removes them all. |
-| `forwardAppendPath`   | `false` to send relayed requests to the URL exactly as written. Default `true`.                                                             |
-| `forwardRetrySeconds` | `86400` (default), `3600`, or `0` for a single try.                                                                                         |
-| `forwardKeepOrder`    | `true` for one delivery at a time, in capture order. Default `false`.                                                                       |
-| `forwardSentField`    | A JSON body field with the sender's timestamp, such as `publishedAt` or `data.publishedAt`; `null` clears it.                               |
+| `forwardAppendPath`   | `false` to send relayed requests to the URL exactly as written. Default `true`.                                                                                                |
+| `forwardRetrySeconds` | `86400` (default), `3600`, or `0` for a single try.                                                                                                                            |
+| `forwardKeepOrder`    | `true` for one delivery at a time, in capture order. Default `false`.                                                                                                          |
+| `forwardSentField`    | A JSON body field with the sender's timestamp, such as `publishedAt` or `data.publishedAt`; `null` clears it.                                                                  |
 
 ### Get the signing secret
 
@@ -550,7 +556,12 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/forwarding/test \
   "format": "as_received",
   "url": "https://example.com/hooks/stripe/events",
   "target": "example.com/hooks/stripe/events",
-  "request": { "method": "POST", "path": "/stripe/events", "subject": null, "receivedAt": 1791538201882 },
+  "request": {
+    "method": "POST",
+    "path": "/stripe/events",
+    "subject": null,
+    "receivedAt": 1791538201882
+  },
   "sender": { "at": 1791538201685, "source": "publishedAt", "wholeSeconds": false }
 }
 ```
@@ -668,17 +679,17 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
   -d '{"url": "https://hooks.zapier.com/hooks/catch/123/abc", "email": false, "format": "template", "bodyTemplate": {"event": "{{ json.type }}"}, "filter": {"conditions": [{"field": "body_path", "op": "eq", "path": "type", "value": "invoice.paid"}]}}'
 ```
 
-| Route                                              | What it does                                                                                              |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `GET /api/endpoints/:slug/destinations`            | The destinations in order, header values masked; `?summary=true` adds each one's last 24 hours            |
-| `POST /api/endpoints/:slug/destinations`           | Add one (up to 10); returns it with its `id` and creates its signing secret                               |
-| `GET /api/endpoints/:slug/destinations/:id`        | One destination                                                                                           |
-| `PATCH /api/endpoints/:slug/destinations/:id`      | Change the fields sent; switching it off or taking a kind away fails what is waiting for it               |
-| `DELETE /api/endpoints/:slug/destinations/:id`     | Remove it; what is waiting is marked failed, the log stays                                                |
-| `PUT /api/endpoints/:slug/destinations/order`      | `{"ids": [...]}`, every id once: the new order                                                            |
-| `GET /api/endpoints/:slug/destinations/:id/secret` | `{ "secret": "whsec_..." }`; `POST` rotates it                                                            |
-| `POST /api/endpoints/:slug/destinations/:id/test`  | Send one delivery now (`kind`, `requestId`), as the forwarding test above, plus `filterPasses`            |
-| `POST /api/endpoints/:slug/destinations/preview`   | Dry run: `destinationId` and/or unsaved `destination` fields, optional `requestId`; nothing is sent       |
+| Route                                              | What it does                                                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `GET /api/endpoints/:slug/destinations`            | The destinations in order, header values masked; `?summary=true` adds each one's last 24 hours      |
+| `POST /api/endpoints/:slug/destinations`           | Add one (up to 10); returns it with its `id` and creates its signing secret                         |
+| `GET /api/endpoints/:slug/destinations/:id`        | One destination                                                                                     |
+| `PATCH /api/endpoints/:slug/destinations/:id`      | Change the fields sent; switching it off or taking a kind away fails what is waiting for it         |
+| `DELETE /api/endpoints/:slug/destinations/:id`     | Remove it; what is waiting is marked failed, the log stays                                          |
+| `PUT /api/endpoints/:slug/destinations/order`      | `{"ids": [...]}`, every id once: the new order                                                      |
+| `GET /api/endpoints/:slug/destinations/:id/secret` | `{ "secret": "whsec_..." }`; `POST` rotates it                                                      |
+| `POST /api/endpoints/:slug/destinations/:id/test`  | Send one delivery now (`kind`, `requestId`), as the forwarding test above, plus `filterPasses`      |
+| `POST /api/endpoints/:slug/destinations/preview`   | Dry run: `destinationId` and/or unsaved `destination` fields, optional `requestId`; nothing is sent |
 
 A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template`, `chat`, or a mail provider's shape for emails: `postmark`, `sendgrid`, `mailgun`, `cloudmailin`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `mailgunSigningKey` (for `mailgun`; write-only, the destination says `hasMailgunSigningKey`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600), `attachments` (how an email's files travel: `links`, `inline` or `none`) and `position`. A destination also says `id`, `hasSecret`, `role` (`forward` for the primary destination the endpoint's `forward*` fields stand for, `notify` for its `notificationUrl`, otherwise `null`), `createdAt` and `updatedAt`. A mistake in a template or a condition returns `400` naming the field, an eleventh destination `409`. Adding and changing destinations is rate limited to 60 requests per minute per account. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
 
@@ -695,19 +706,19 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
   -d '{"format": "file_drop", "http": false, "email": true, "name": "Orders to ERP", "config": {"protocol": "sftp", "host": "sftp.acme.example", "username": "orders", "folder": "incoming", "file": "csv", "rows": "line_items", "columns": [{"header": "Order", "value": "{{ parsed.fields.order }}"}, {"header": "SKU", "value": "{{ item.sku }}"}]}, "dropSecret": {"password": "..."}}'
 ```
 
-| `config` field                                   | Values                                                                                                   |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `protocol`                                       | `sftp`, `ftps`, `ftp` or `s3`                                                                            |
-| `host`, `port`, `username`                       | SFTP, FTPS and FTP: a public host name; `port` defaults to 22 (SFTP) or 21                               |
-| `endpoint`, `region`, `bucket`, `accessKeyId`    | S3: the storage endpoint's URL, the region (default `us-east-1`), the bucket and the access key id       |
-| `folder`                                         | The folder (it must exist, relative to the login's home folder) or the S3 key prefix                     |
-| `file`                                           | `csv` (default), `xml` or `json`                                                                         |
-| `rows`                                           | `email` (default, a row per email) or `line_items` (a row per line item)                                 |
-| `columns`                                        | CSV and XML: up to 50 of `{ "header", "value" }`, the value written with placeholders                    |
-| `prefix`                                         | Put before each file's name, at most 60 characters                                                       |
-| `batch`                                          | `true` for one file per batch; the destination's `delaySeconds` is the batch window                      |
-| `tlsFingerprint`                                 | FTPS and S3: a self-signed certificate's SHA-256 fingerprint, then the only one accepted                 |
-| `hostKey`                                        | SFTP: the server's host key fingerprint, pinned on the first connection; `null`, sent with `dropSecret`, forgets it |
+| `config` field                                | Values                                                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `protocol`                                    | `sftp`, `ftps`, `ftp` or `s3`                                                                                       |
+| `host`, `port`, `username`                    | SFTP, FTPS and FTP: a public host name; `port` defaults to 22 (SFTP) or 21                                          |
+| `endpoint`, `region`, `bucket`, `accessKeyId` | S3: the storage endpoint's URL, the region (default `us-east-1`), the bucket and the access key id                  |
+| `folder`                                      | The folder (it must exist, relative to the login's home folder) or the S3 key prefix                                |
+| `file`                                        | `csv` (default), `xml` or `json`                                                                                    |
+| `rows`                                        | `email` (default, a row per email) or `line_items` (a row per line item)                                            |
+| `columns`                                     | CSV and XML: up to 50 of `{ "header", "value" }`, the value written with placeholders                               |
+| `prefix`                                      | Put before each file's name, at most 60 characters                                                                  |
+| `batch`                                       | `true` for one file per batch; the destination's `delaySeconds` is the batch window                                 |
+| `tlsFingerprint`                              | FTPS and S3: a self-signed certificate's SHA-256 fingerprint, then the only one accepted                            |
+| `hostKey`                                     | SFTP: the server's host key fingerprint, pinned on the first connection; `null`, sent with `dropSecret`, forgets it |
 
 `dropSecret` is `{ "password" }` (FTP, FTPS, SFTP), `{ "privateKey" }` (SFTP, OpenSSH or PEM) or `{ "secretAccessKey" }` (S3). It is stored encrypted and never returned (the destination says `hasDropSecret`), and a change to the server, login, bucket, host key or certificate fingerprint needs it sent again. The destination's test (`POST .../destinations/:id/test`) logs in and writes `webhooks-cc-test.txt`, answering `{ "ok", "file", "hostKey", "delivered", "error", ... }`. Files arrive from `mx.mailhooks.cc`.
 
@@ -735,17 +746,17 @@ curl "https://webhooks.cc/api/search/requests?slug=abc123&method=POST&q=stripe&l
 
 **Query parameters:**
 
-| Param    | Type     | Description                        |
-| -------- | -------- | ---------------------------------- |
-| `slug`   | `string` | Filter by endpoint slug                       |
-| `method` | `string` | Filter by HTTP method (`EMAIL` for emails)    |
-| `kind`   | `string` | `http` or `email`                             |
-| `q`      | `string` | Free-text search                              |
-| `from`   | `number` | Start time (Unix timestamp in ms)             |
-| `to`     | `number` | End time (Unix timestamp in ms)               |
-| `limit`  | `number` | Max results (default: 50)                     |
-| `offset` | `number` | Pagination offset                             |
-| `order`  | `string` | `"asc"` or `"desc"` (default)                 |
+| Param    | Type     | Description                                |
+| -------- | -------- | ------------------------------------------ |
+| `slug`   | `string` | Filter by endpoint slug                    |
+| `method` | `string` | Filter by HTTP method (`EMAIL` for emails) |
+| `kind`   | `string` | `http` or `email`                          |
+| `q`      | `string` | Free-text search                           |
+| `from`   | `number` | Start time (Unix timestamp in ms)          |
+| `to`     | `number` | End time (Unix timestamp in ms)            |
+| `limit`  | `number` | Max results (default: 50)                  |
+| `offset` | `number` | Pagination offset                          |
+| `order`  | `string` | `"asc"` or `"desc"` (default)              |
 
 ### Search count
 
@@ -782,7 +793,7 @@ A stream message names the request id `_id` (not `id`) and has no `email` field.
 
 ## Usage
 
-Check your current request quota and usage.
+Check your current request quota and usage, and your plan's other allowances.
 
 ```bash
 curl https://webhooks.cc/api/usage \
@@ -802,11 +813,27 @@ curl https://webhooks.cc/api/usage \
   "plan": "free",
   "periodEnd": 1234567890000,
   "teamBilledEndpoints": 0,
-  "emails": 3
+  "emails": 3,
+  "parsedPages": {
+    "used": 4,
+    "limit": 20,
+    "creditPages": 0,
+    "overage": { "active": false, "used": 0, "max": 0 },
+    "resetsAt": "2026-12-01T09:30:00.000Z"
+  },
+  "previewData": {
+    "bytes": 52428800,
+    "limitBytes": 1073741824,
+    "over": false,
+    "resetsAt": "2026-12-01T00:00:00.000Z"
+  },
+  "aiAssists": { "used": 1, "allowed": 5, "nextAt": "2026-12-08T14:05:00.000Z" }
 }
 ```
 
 `limit` is the period's quota including monthly blocks (`blockRequests`), and `used` counts against it. `remaining` is how many more requests are accepted this period: what is left of `limit`, plus one-time blocks (`creditRequests`), plus overage up to its maximum. See [Extra requests](/docs/plans-limits#extra-requests). `emails` is how many of `used` were emails, and `teamBilledEndpoints` how many of your endpoints are shared with a subscribed team and bill its pooled quota instead.
+
+The other allowances each keep their own window. `parsedPages` counts attachment pages parsed by layouts (`limit` includes monthly page blocks, `creditPages` are one-time pages used after it), and `resetsAt` is null until a monthly window's first parse. `previewData` is what visitors downloaded from [`whk share`](/docs/share) previews this UTC month; past `limitBytes`, `over` is true and previews pause until `resetsAt`. `aiAssists` counts AI assists over a rolling 30 days on endpoints no team pays for, and `nextAt` is when the next counted one stops counting. Each is null where it is not offered or could not be read. Times are ISO 8601.
 
 ## Teams
 
@@ -930,11 +957,36 @@ curl https://webhooks.cc/api/teams/TEAM_ID/members \
 ```json
 {
   "members": [
-    { "id": "...", "userId": "...", "email": "owner@example.com", "name": "Ada", "image": null, "role": "owner", "joinedAt": 1791450602000 },
-    { "id": "...", "userId": "...", "email": "member@example.com", "name": null, "image": null, "role": "member", "joinedAt": 1791537002000 }
+    {
+      "id": "...",
+      "userId": "...",
+      "email": "owner@example.com",
+      "name": "Ada",
+      "image": null,
+      "role": "owner",
+      "joinedAt": 1791450602000
+    },
+    {
+      "id": "...",
+      "userId": "...",
+      "email": "member@example.com",
+      "name": null,
+      "image": null,
+      "role": "member",
+      "joinedAt": 1791537002000
+    }
   ],
   "pendingInvites": [
-    { "id": "...", "teamId": "TEAM_ID", "teamName": "My Team", "invitedEmail": "invited@example.com", "invitedBy": "...", "inviterEmail": "owner@example.com", "status": "pending", "createdAt": 1791537002000 }
+    {
+      "id": "...",
+      "teamId": "TEAM_ID",
+      "teamName": "My Team",
+      "invitedEmail": "invited@example.com",
+      "invitedBy": "...",
+      "inviterEmail": "owner@example.com",
+      "status": "pending",
+      "createdAt": 1791537002000
+    }
   ]
 }
 ```
@@ -1052,14 +1104,14 @@ curl "https://webhooks.cc/api/shares?state=live" \
 }
 ```
 
-| Field       | Description |
-| ----------- | ----------- |
+| Field       | Description                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shares`    | Previews (`kind: "share"`, with `name` and the preview `url`) and live tunnels (`kind: "live"`, with `endpointSlug` and the capture `url`). `endedAt` and `endReason` are `null` while one runs; `expiresAt` is when a Free preview's 2 hours run out. `bytes` (both ways, downloads and uploads) and `requests` are what visitors moved through it. `mine` is `false` for a teammate's run, with `startedBy` naming them. |
-| `usage`     | This UTC month's shared data against the plan. While `over`, previews are paused until `resetsAt` and `message` says so. Live tunnels count against requests, not data. |
-| `limits`    | The plan sharing follows: the best of your own plan and your subscribed teams'. `shares` at once, `reservedNames`, `sessionMinutes` (`null`: no time limit), `dataGb` a month, whether `passwords` are allowed and whether visitors see the `notice` page. |
-| `names`     | Your own reserved names against the plan (`limit`, `used`), and how many names, yours and your teams', you can share under now (`usable`). |
-| `suspended` | `true` when staff suspended sharing on the account. |
-| `hints`     | What you can do next, as `whk` commands, for agents and scripts. |
+| `usage`     | This UTC month's shared data against the plan. While `over`, previews are paused until `resetsAt` and `message` says so. Live tunnels count against requests, not data.                                                                                                                                                                                                                                                    |
+| `limits`    | The plan sharing follows: the best of your own plan and your subscribed teams'. `shares` at once, `reservedNames`, `sessionMinutes` (`null`: no time limit), `dataGb` a month, whether `passwords` are allowed and whether visitors see the `notice` page.                                                                                                                                                                 |
+| `names`     | Your own reserved names against the plan (`limit`, `used`), and how many names, yours and your teams', you can share under now (`usable`).                                                                                                                                                                                                                                                                                 |
+| `suspended` | `true` when staff suspended sharing on the account.                                                                                                                                                                                                                                                                                                                                                                        |
+| `hints`     | What you can do next, as `whk` commands, for agents and scripts.                                                                                                                                                                                                                                                                                                                                                           |
 
 ### Stop a share
 
@@ -1188,15 +1240,15 @@ All errors return a JSON body with an `error` field:
 { "error": "Invalid or missing API key" }
 ```
 
-| Status | Meaning                                                 |
-| ------ | ------------------------------------------------------- |
-| `400`  | Validation error: check request body and parameters     |
-| `401`  | Invalid or missing API key                              |
-| `403`  | Not allowed, for example an owner-only setting          |
-| `404`  | Resource not found                                      |
-| `409`  | Conflict, for example redelivering with forwarding off  |
-| `429`  | Rate limited: check `Retry-After` header for wait time  |
-| `500`  | Server error                                            |
+| Status | Meaning                                                                              |
+| ------ | ------------------------------------------------------------------------------------ |
+| `400`  | Validation error: check request body and parameters                                  |
+| `401`  | Invalid or missing API key                                                           |
+| `403`  | Not allowed, for example an owner-only setting                                       |
+| `404`  | Resource not found                                                                   |
+| `409`  | Conflict, for example redelivering with forwarding off                               |
+| `429`  | Rate limited: check `Retry-After` header for wait time                               |
+| `500`  | Server error                                                                         |
 | `503`  | Not available here, for example [sharing](#sharing-localhost) where it is not set up |
 
 ### Rate limit headers

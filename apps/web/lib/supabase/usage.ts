@@ -4,8 +4,10 @@ import type { UserPlan } from "./api-keys";
 import { isUserPlan, planEntitlements } from "@/lib/entitlements";
 import { reportError } from "@/lib/observability";
 import { getQuotaRejections, NO_QUOTA_REJECTIONS, type QuotaRejections } from "./quota-rejections";
+import { getAllowanceUsage, type AllowanceUsage } from "./allowance-usage";
 
-export interface UsageInfo {
+/** Requests, and beside them the plan's other allowances (AllowanceUsage). */
+export interface UsageInfo extends AllowanceUsage {
   /** Requests used of the period's allowance. */
   used: number;
   /** The period's allowance: the plan's requests plus monthly blocks. */
@@ -55,10 +57,10 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
     return null;
   }
 
-  const { data: teamBilledEndpoints, error: countError } = await admin.rpc(
-    "count_team_billed_endpoints",
-    { p_user_id: userId }
-  );
+  const [{ data: teamBilledEndpoints, error: countError }, allowances] = await Promise.all([
+    admin.rpc("count_team_billed_endpoints", { p_user_id: userId }),
+    getAllowanceUsage(userId),
+  ]);
   if (countError) {
     throw countError;
   }
@@ -103,5 +105,6 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
     teamBilledEndpoints: teamBilledEndpoints ?? 0,
     emails: Math.min(emails, used),
     quotaRejections,
+    ...allowances,
   };
 }
