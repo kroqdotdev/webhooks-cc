@@ -1,0 +1,6 @@
+{
+  "title": "New package releases",
+  "items": [
+    "The changelog lists whk 1.9.0, SDK 1.22.0, MCP 1.18.0, Python SDK 0.6.0 and Go SDK 0.6.0, which bring sharing a local port and live tunnels to the CLI, the SDKs and the MCP server"
+  ]
+}

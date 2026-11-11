@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.8.0";
-export const SDK_VERSION = "1.21.0";
-export const PYTHON_SDK_VERSION = "0.5.0";
-export const GO_SDK_VERSION = "0.5.0";
-export const MCP_VERSION = "1.17.0";
+export const CLI_VERSION = "1.9.0";
+export const SDK_VERSION = "1.22.0";
+export const PYTHON_SDK_VERSION = "0.6.0";
+export const GO_SDK_VERSION = "0.6.0";
+export const MCP_VERSION = "1.18.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.9.0",
+    date: "2026-11-11",
+    title: "Share Localhost and Live Tunnels",
+    track: "cli",
+    items: [
+      "`whk share <port>` puts a local site at a public link, `https://<name>.sharehooks.cc`, with WebSockets and live reload working, and draws the link as a QR code (`--no-qr` leaves it out). `--name` shares under a name you reserved and `--password` asks visitors for a password (prompted, or from `WHK_SHARE_PASSWORD`); Free shares get a random name ending in `-free`, last 2 hours and show visitors a notice first",
+      "`whk shares ls` lists your live shares (`--ended` the earlier ones) with this month's data, `whk shares stop` stops one, and `whk shares log` shows the last requests visitors made to it",
+      "`whk names ls`, `whk names reserve`, `whk names release` and `whk names password` manage the names you share under on paid plans; `whk names reserve --team` keeps a name inside a team, so every member may share under it",
+      "`whk tunnel --live` relays each webhook to your local app while the sender waits, so the sender gets your app's answer; the capture is kept either way, and `whk requests get` shows the answer under Live Response. The tunnel's target also takes `localhost:8080` and `127.0.0.1:8080/api`",
+      "`WHK_AUTH=key` makes whk use the API key in `WHK_API_KEY` instead of this machine's login, and `WHK_AUTH=agent` the agent credential file; without `WHK_AUTH`, a `WHK_API_KEY` kept for the SDKs is ignored, and `whk auth status` says so",
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-11-02",
     title: "Favourite Endpoints",
@@ -2384,6 +2397,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.22.0",
+    date: "2026-11-11",
+    title: "Share Localhost",
+    track: "sdk",
+    items: [
+      "`share()` puts a local port at a public link on sharehooks.cc by running the whk CLI (Node.js only) and resolves once the link works; `stop()` ends it, and it also ends with your process. `client.shares.start()` does the same with the client's account, and `whkInstallHint()` says how to install whk",
+      "`client.shares.list()`, `client.shares.stop()` and `client.shares.requests()` read and stop your previews and live tunnels and show the last requests visitors made; `client.names.list()`, `reserve()`, `release()`, `setPassword()` and `clearPassword()` manage reserved names",
+      "Requests relayed by `whk tunnel --live` carry `liveResponse`, the answer your local app gave the sender",
+      "An email's `auth` carries the deliverability report: `arc`, the ARC chain of a forwarded email, `setup`, what the sender's SPF, DMARC, DKIM, BIMI and HELO records said when it arrived, and DMARC's SPF and DKIM alignment; `emailAnchors()` lists every link in an email's HTML with its text",
+      "The agent credential file writer refuses prototype-named issuers and unknown slot names, so no issuer can write to `Object.prototype`",
+    ],
+  },
   {
     version: "1.21.0",
     date: "2026-11-02",
@@ -2754,6 +2780,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.6.0",
+    date: "2026-11-11",
+    title: "Share Localhost",
+    track: "python",
+    items: [
+      "`share()` puts a local port at a public link on sharehooks.cc by running the whk CLI and returns once the link works; `LiveShare.stop()` ends it, and `client.shares.start()` does the same with the client's account",
+      "`client.shares.list()`, `client.shares.stop()` and `client.shares.requests()` read and stop your previews and live tunnels and show the last requests visitors made; `client.names.list()`, `reserve()`, `release()`, `set_password()` and `clear_password()` manage reserved names",
+      "Requests relayed by `whk tunnel --live` carry `live_response`, the answer your local app gave the sender",
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-11-02",
     title: "Favourite Endpoints",
@@ -2845,6 +2882,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.6.0",
+    date: "2026-11-11",
+    title: "Share Localhost",
+    track: "go",
+    items: [
+      "`Share` puts a local port at a public link on sharehooks.cc by running the whk CLI and returns once the link works; `LiveShare.Stop` ends it, and `Shares.Start` does the same with the client's account",
+      "`Shares.List`, `Shares.Stop` and `Shares.Requests` read and stop your previews and live tunnels and show the last requests visitors made; `Names.List`, `Names.Reserve`, `Names.Release`, `Names.SetPassword` and `Names.ClearPassword` manage reserved names",
+      "Requests relayed by `whk tunnel --live` carry `LiveResponse`, the answer your local app gave the sender",
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-11-02",
     title: "Favourite Endpoints",
@@ -2913,6 +2961,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.18.0",
+    date: "2026-11-11",
+    title: "Share Localhost",
+    track: "mcp",
+    items: [
+      "`share_port` puts a port on this computer at a public link on sharehooks.cc by running whk (local server only); `list_shares`, `stop_share` and `share_requests` read and stop previews and live tunnels and show the last requests visitors made",
+      "`list_names`, `reserve_name`, `release_name`, `set_name_password` and `clear_name_password` manage reserved names",
+      "Requests relayed by `whk tunnel --live` carry `liveResponse`, the answer the local app gave the sender",
+      "An email too big for the output now loses the sender's DNS setup and the Authentication-Results header before anything else of its sender checks, keeping their verdicts",
+    ],
+  },
   {
     version: "1.17.0",
     date: "2026-11-02",
