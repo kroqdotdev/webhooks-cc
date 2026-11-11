@@ -13,8 +13,8 @@ export function Tabs({ items, children }: { items?: string[]; children: React.Re
   const labels = items ?? tabs.map((tab, i) => tab.props.label ?? `Tab ${i + 1}`);
 
   return (
-    <div className="my-6 rounded-lg border-strong border-line shadow-raised-sm clean:overflow-hidden">
-      <div className="flex border-b-strong border-line clean:overflow-x-auto">
+    <div className="my-6 rounded-lg border border-border shadow-xs overflow-hidden">
+      <div className="flex border-b border-border overflow-x-auto">
         {labels.map((label, i) => (
           <button
             key={label}

@@ -70,7 +70,7 @@ export default function MailhooksGuides() {
                 <Link href={guide.path} className="ui-card block h-full">
                   <p className="font-bold text-lg mb-2">{guide.title}</p>
                   <p className="text-muted-foreground mb-4">{guide.summary}</p>
-                  <span className="inline-flex items-center gap-1 text-sm font-bold text-primary-ink">
+                  <span className="inline-flex items-center gap-1 text-sm font-bold text-primary">
                     Read the guide
                     <ArrowRight aria-hidden className="h-4 w-4" />
                   </span>

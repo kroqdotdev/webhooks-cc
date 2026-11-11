@@ -105,7 +105,7 @@ export function RequestLog({
           <table className="ph-no-capture w-full text-xs">
             <caption className="sr-only">Recent requests to this preview</caption>
             <thead>
-              <tr className="border-b border-line/60 text-left text-muted-foreground">
+              <tr className="border-b border-border/60 text-left text-muted-foreground">
                 <th scope="col" className="px-5 py-2 font-medium">
                   Time
                 </th>
@@ -128,7 +128,7 @@ export function RequestLog({
             </thead>
             <tbody>
               {requests.map((r, index) => (
-                <tr key={`${r.at}-${index}`} className="border-b border-line/40 last:border-b-0">
+                <tr key={`${r.at}-${index}`} className="border-b border-border/40 last:border-b-0">
                   <td className="whitespace-nowrap px-5 py-1.5 font-mono text-muted-foreground">
                     {clock(r.at)}
                   </td>

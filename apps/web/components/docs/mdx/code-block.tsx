@@ -19,9 +19,9 @@ export function CodeBlock({
   }
 
   return (
-    <div className="relative my-6 rounded-lg border-strong border-line shadow-raised-sm overflow-hidden">
+    <div className="relative my-6 rounded-lg border border-border shadow-xs overflow-hidden">
       {/* The copy button sits in a header row, so it never covers the code. */}
-      <div className="flex items-center justify-between gap-2 border-b-strong border-line bg-muted px-4 py-1">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-1">
         <span className="text-xs font-mono font-bold text-muted-foreground truncate">
           {title ?? ""}
         </span>

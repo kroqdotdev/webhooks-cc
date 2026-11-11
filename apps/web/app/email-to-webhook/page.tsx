@@ -198,7 +198,7 @@ export default function EmailToWebhookPage() {
           <StartFreeCTA goCta={null} />
           <p className="text-sm text-muted-foreground mt-4">
             On every plan. Read the{" "}
-            <Link href="/docs/forwarding" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/forwarding" className="text-primary font-bold hover:underline">
               forwarding docs
             </Link>{" "}
             for the full payload and examples in Node and Python.
@@ -210,7 +210,7 @@ export default function EmailToWebhookPage() {
           <ol className="space-y-4">
             {STEPS.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border-strong border-line rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-raised-sm">
+                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-xs">
                   {i + 1}
                 </span>
                 <div>
@@ -261,17 +261,17 @@ export default function EmailToWebhookPage() {
             The official{" "}
             <a
               href="https://github.com/standard-webhooks/standard-webhooks"
-              className="text-primary-ink font-bold hover:underline"
+              className="text-primary font-bold hover:underline"
               rel="noopener"
             >
               Standard Webhooks libraries
             </a>{" "}
             verify the same headers in Ruby, Java, PHP, Rust, C# and more, and the webhooks.cc{" "}
-            <Link href="/docs/sdk/python" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/sdk/python" className="text-primary font-bold hover:underline">
               Python
             </Link>{" "}
             and{" "}
-            <Link href="/docs/sdk/go" className="text-primary-ink font-bold hover:underline">
+            <Link href="/docs/sdk/go" className="text-primary font-bold hover:underline">
               Go
             </Link>{" "}
             SDKs have the same check.
@@ -304,7 +304,7 @@ export default function EmailToWebhookPage() {
               "No extra quota: each email counted once when it arrived",
             ].map((item) => (
               <li key={item} className="flex items-start gap-3">
-                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" />
+                <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                 <span className="text-sm">{item}</span>
               </li>
             ))}
@@ -312,14 +312,14 @@ export default function EmailToWebhookPage() {
           <p className="text-sm text-muted-foreground mt-4">
             Want orders, bookings or reports read out of each email and its CSV, Excel or PDF
             attachments first? That is what layouts do; see{" "}
-            <a href={mailhooksUrl("/")} className="text-primary-ink font-bold hover:underline">
+            <a href={mailhooksUrl("/")} className="text-primary font-bold hover:underline">
               mailhooks.cc
             </a>
             , the mail-first side of the same account.
           </p>
           <p className="text-sm text-muted-foreground mt-4">
             Testing the emails your own app sends rather than handling inbound mail? See{" "}
-            <Link href="/email-testing" className="text-primary-ink font-bold hover:underline">
+            <Link href="/email-testing" className="text-primary font-bold hover:underline">
               email testing
               <ArrowRight className="inline-block ml-1 h-4 w-4" />
             </Link>

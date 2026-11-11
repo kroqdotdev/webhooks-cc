@@ -97,13 +97,13 @@ export function AddressPill({
     <span
       className={cn(
         // On a phone the value wraps rather than losing its end to an ellipsis.
-        "inline-flex items-stretch h-9 max-sm:h-auto max-sm:min-h-9 min-w-0 border-strong border-line rounded-md bg-background shadow-raised-sm overflow-hidden",
+        "inline-flex items-stretch h-9 max-sm:h-auto max-sm:min-h-9 min-w-0 border border-border rounded-md bg-background shadow-xs overflow-hidden",
         className
       )}
     >
       <span
         className={cn(
-          "flex items-center gap-1.5 px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold caps border-r-strong border-line shrink-0",
+          "flex items-center gap-1.5 px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r border-border shrink-0",
           hideLabelBelowXl && "max-xl:hidden"
         )}
       >
@@ -121,7 +121,7 @@ export function AddressPill({
       <button
         type="button"
         onClick={copy}
-        className="flex items-center justify-center w-9 shrink-0 border-l-strong border-line text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+        className="flex items-center justify-center w-9 shrink-0 border-l border-border text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
         aria-label={`Copy ${label === "HTTP" ? "webhook URL" : "email address"}`}
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -157,7 +157,7 @@ function SetupItems({
                 done && "text-muted-foreground line-through"
               )}
             >
-              <Icon className={cn("h-3.5 w-3.5", done && "text-primary-ink")} />
+              <Icon className={cn("h-3.5 w-3.5", done && "text-primary")} />
               {item.label}
             </span>
           );
@@ -237,7 +237,7 @@ function SetupMenu({
           {label}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64 border-strong border-line shadow-raised">
+      <DropdownMenuContent align="end" className="w-64 border border-border shadow-md">
         <SetupItems
           setup={setup}
           slug={slug}
@@ -363,7 +363,7 @@ function SendMenu({
           <ChevronDown className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72 border-strong border-line shadow-raised">
+      <DropdownMenuContent align="end" className="w-72 border border-border shadow-md">
         <SendItems send={send} canEmail={canEmail} mailFirst={mailFirst} />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -381,7 +381,7 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
           ? "sr-only"
           : // A toast at the foot of the screen where Send sits in Actions
             // (phones and tablets), inline text next to Send on wide screens.
-            "fixed inset-x-4 bottom-4 z-50 rounded-md border-strong border-line bg-card px-2.5 py-1.5 text-xs shadow-raised-sm md:inset-x-auto md:right-4 md:max-w-[320px] lg:static lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+            "fixed inset-x-4 bottom-4 z-50 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-xs md:inset-x-auto md:right-4 md:max-w-[320px] lg:static lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
         status?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
       )}
       title={status?.text}
@@ -463,7 +463,7 @@ function ActionsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="w-72 max-w-[calc(100vw-2rem)] border-strong border-line shadow-raised"
+        className="w-72 max-w-[calc(100vw-2rem)] border border-border shadow-md"
       >
         {copyItems.length > 0 && (
           <>
@@ -589,7 +589,7 @@ function EndpointAddresses({
             copyValue={url}
             className="min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]"
           />
-          <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md">
+          <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border border-border border-dashed rounded-md">
             <Lock className="h-3 w-3" />
             Endpoints on an account also receive email
           </span>
@@ -640,7 +640,7 @@ export function EndpointBar({
   };
 
   return (
-    <div className="border-b-strong border-line bg-card px-4 pt-3 max-md:pt-2 shrink-0">
+    <div className="border-b border-border bg-card px-4 pt-3 max-md:pt-2 shrink-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {/* On a phone the header's endpoint switcher already shows the name. */}
         <h1 className="font-bold text-sm tracking-normal shrink-0 order-1 max-md:sr-only">
@@ -690,18 +690,14 @@ export function EndpointBar({
             onClick={() => onTabChange(entry)}
             aria-current={tab === entry ? "page" : undefined}
             className={cn(
-              "relative h-9 px-3 text-sm font-semibold caps cursor-pointer transition-colors",
+              "relative h-9 px-3 text-sm font-semibold cursor-pointer transition-colors",
               tab === entry ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
             {entry === "requests" ? inboxLabel : "Settings"}
             {tab === entry && (
-              // Classic's bottom line is already foreground, so the marker sits on top of it;
-              // clean's line is light, so the marker covers it.
-              <span
-                aria-hidden
-                className="absolute inset-x-0 bottom-0 h-[3px] clean:-bottom-px clean:h-0.5 bg-foreground"
-              />
+              // The bar's bottom line is light, so the marker covers it.
+              <span aria-hidden className="absolute inset-x-0 -bottom-px h-0.5 bg-foreground" />
             )}
           </button>
         ))}

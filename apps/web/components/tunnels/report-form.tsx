@@ -119,7 +119,7 @@ export function ReportForm({ url, siteKey }: { url: string; siteKey: string | nu
             href="https://redbarnet.dk/anmelddet/anmeld/"
             target="_blank"
             rel="noreferrer"
-            className="text-primary-ink underline"
+            className="text-primary underline"
           >
             Red Barnet
           </a>

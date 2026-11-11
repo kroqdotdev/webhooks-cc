@@ -180,7 +180,7 @@ function DomainCard({
 
   return (
     <li
-      className="border-b border-line/60 last:border-b-0 px-5 py-5 space-y-4"
+      className="border-b border-border/60 last:border-b-0 px-5 py-5 space-y-4"
       aria-label={domain.domain}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -669,7 +669,7 @@ export function DomainsPanel({
         </ul>
       )}
       <div
-        className={`px-5 py-4 space-y-2 ${domains && domains.length > 0 ? "border-t border-line/60" : ""}`}
+        className={`px-5 py-4 space-y-2 ${domains && domains.length > 0 ? "border-t border-border/60" : ""}`}
       >
         {canAdd ? (
           <PanelRow label="Add a domain" htmlFor="add-domain">
@@ -707,7 +707,7 @@ export function DomainsPanel({
         {error && <InlineMessage tone="error">{error}</InlineMessage>}
       </div>
       {canAdd && accessToken && (
-        <div className="px-5 py-4 border-t border-line/60">
+        <div className="px-5 py-4 border-t border-border/60">
           <ExtraDomains
             accessToken={accessToken}
             teamId={teamId}

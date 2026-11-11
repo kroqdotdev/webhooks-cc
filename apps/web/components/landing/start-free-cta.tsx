@@ -32,10 +32,10 @@ function StartFreeCTAInner({
   const isAuthenticated = useIsAuthenticated();
   const alignClass = align === "center" ? "items-center text-center" : "items-start";
   // bg/text utilities repeated after ui-btn-primary so they survive the Button
-  // outline variant's bg-background (utilities beat the components-layer class).
-  // The clean: utilities restore the action border and hover tint those utilities mask.
+  // outline variant's bg-background (utilities beat the components-layer class),
+  // with the primary border and hover tint those utilities would otherwise mask.
   const primaryOverride =
-    "ui-btn-primary bg-action text-action-foreground hover:bg-action hover:text-action-foreground clean:border-action clean:hover:bg-action/90 cursor-pointer";
+    "ui-btn-primary bg-primary text-primary-foreground hover:text-primary-foreground cursor-pointer border-primary hover:bg-primary/90";
   const buttonClass =
     size === "lg"
       ? `h-12 text-base px-6 ${primaryOverride}`
@@ -78,7 +78,7 @@ function StartFreeCTAInner({
           No credit card &middot; 50 requests/day free &middot; or{" "}
           <Link
             href="/"
-            className="text-foreground font-bold hover:text-primary-ink transition-colors"
+            className="text-foreground font-bold hover:text-primary transition-colors"
             onClick={() => trackCTAClick("try_live")}
           >
             {goCta}

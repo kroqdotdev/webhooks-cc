@@ -221,7 +221,7 @@ function PresetPicker({
             disabled={unavailable}
             data-destination-preset=""
             className={cn(
-              "text-left border-strong border-line rounded-md p-3 bg-card transition-colors motion-reduce:transition-none space-y-1",
+              "text-left border border-border rounded-md p-3 bg-card transition-colors motion-reduce:transition-none space-y-1",
               unavailable ? "opacity-60 cursor-not-allowed" : "hover:bg-muted/60 cursor-pointer"
             )}
           >
@@ -411,7 +411,7 @@ export function DestinationsSection({
       {count > 0 && (
         <ul
           aria-label="Destinations"
-          className="border-strong border-line rounded-md divide-y divide-line/30 overflow-hidden"
+          className="border border-border rounded-md divide-y divide-border/30 overflow-hidden"
         >
           {destinations!.map((destination, index) => {
             const isOpen = open.has(destination.id);
@@ -448,7 +448,7 @@ export function DestinationsSection({
                       <span className="text-xs text-muted-foreground font-mono truncate max-w-[24rem]">
                         {destination.name ? hostOf(destination.url) : ""}
                       </span>
-                      <span className="ml-auto text-[11px] font-bold caps text-muted-foreground">
+                      <span className="ml-auto text-[11px] font-bold text-muted-foreground">
                         {formatName(destination)}
                       </span>
                     </span>
@@ -458,7 +458,7 @@ export function DestinationsSection({
                     <Health destination={destination} />
                     {notice?.added && notice.id === destination.id && (
                       // Shown where the eye lands; the status line under the list announces it.
-                      <span aria-hidden className="block text-xs font-semibold text-primary-ink">
+                      <span aria-hidden className="block text-xs font-semibold text-primary">
                         {notice.text}
                       </span>
                     )}
@@ -480,7 +480,7 @@ export function DestinationsSection({
                   </div>
                 </div>
                 {isOpen && (
-                  <div id={panelId} className="px-3 pb-4 pt-4 border-t border-line/20">
+                  <div id={panelId} className="px-3 pb-4 pt-4 border-t border-border/20">
                     <DestinationEditor
                       slug={endpoint.slug}
                       destination={destination}
@@ -506,7 +506,7 @@ export function DestinationsSection({
                       }}
                     />
                     {count > 1 && (
-                      <div className="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-line/20">
+                      <div className="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-border/20">
                         <span className="text-xs text-muted-foreground">Place in the list</span>
                         <button
                           type="button"
@@ -535,7 +535,7 @@ export function DestinationsSection({
       )}
 
       {adding && (
-        <div ref={addingRef} className="border-strong border-line rounded-md p-3 bg-card space-y-3">
+        <div ref={addingRef} className="border border-border rounded-md p-3 bg-card space-y-3">
           <p
             data-new-destination-title
             tabIndex={-1}

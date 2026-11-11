@@ -15,7 +15,7 @@ import {
  * ANTHROPIC_API_KEY and AI_API_BASE_URL=http://127.0.0.1:3199 (the fake
  * model this spec runs); skipped when the server does not offer AI setup.
  * The fake model listens on one fixed port, so the spec runs in one worker
- * (the chromium project) and covers the classic style itself.
+ * (the chromium project).
  */
 
 const FAKE_PORT = 3199;
@@ -46,7 +46,7 @@ test.describe.configure({ mode: "serial" });
 const ONLY = "chromium";
 // eslint-disable-next-line no-empty-pattern -- Playwright wants the fixtures destructured
 test.beforeEach(({}, testInfo) => {
-  test.skip(testInfo.project.name !== ONLY, "runs in one worker; covers the classic style itself");
+  test.skip(testInfo.project.name !== ONLY, "runs in one worker");
   // A production build always talks to the real API, never to the fake model.
   test.skip(process.env.PLAYWRIGHT_USE_PROD_SERVER === "1", "needs the fake model");
 });
@@ -138,7 +138,7 @@ async function setup(
 
 async function openSettings(page: Page, user: TestUser, endpointSlug: string) {
   await signInTestUser(page, user, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold.caps", { hasText: "AI E2E" })).toBeVisible({
+  await expect(page.locator("span.font-bold", { hasText: "AI E2E" })).toBeVisible({
     timeout: 15000,
   });
   await page
@@ -225,14 +225,6 @@ async function draftAndFind(page: Page) {
 }
 
 test("draft a layout from emails, then find another field for it", async ({ page }) => {
-  await draftAndFind(page);
-});
-
-test("the same in the classic style", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("ui-style", "classic");
-    localStorage.setItem("ui-style-source", "chosen");
-  });
   await draftAndFind(page);
 });
 

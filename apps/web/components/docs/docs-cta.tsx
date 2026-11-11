@@ -41,7 +41,7 @@ function DocsCTAInner() {
   if (isLoading || isAuthenticated) return null;
 
   return (
-    <div className="mt-16 pt-8 border-t-strong border-line">
+    <div className="mt-16 pt-8 border-t border-border">
       <div className="ui-card ui-card-static bg-muted">
         <p className="font-bold text-lg mb-1">{copy.title}</p>
         <p className="text-sm text-muted-foreground mb-4">{copy.text}</p>
@@ -56,7 +56,7 @@ function DocsCTAInner() {
           or{" "}
           <Link
             href={copy.other.href}
-            className="text-foreground font-bold hover:text-primary-ink transition-colors"
+            className="text-foreground font-bold hover:text-primary transition-colors"
             onClick={() => trackCTAClick(copy.other.event)}
           >
             {copy.other.label}

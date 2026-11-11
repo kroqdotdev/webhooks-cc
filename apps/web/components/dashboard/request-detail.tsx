@@ -300,7 +300,7 @@ export function RequestDetail({
     <div className="ph-no-capture flex flex-col h-full">
       {/* Summary bar */}
       {/* Sized by the pane, not the window: beside the list the pane can be narrow. */}
-      <div className="@container border-b-strong border-line px-4 py-3 shrink-0">
+      <div className="@container border-b border-border px-4 py-3 shrink-0">
         <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-4">
           <div className="min-w-0">
             <div className="font-mono font-bold text-sm break-all @xl:truncate">
@@ -366,7 +366,7 @@ export function RequestDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs. The strip scrolls when the tabs do not fit; a fade on the right says there is more. */}
-      <div className="shrink-0 border-b-strong border-line">
+      <div className="shrink-0 border-b border-border">
         <div
           ref={tabStripRef}
           className={cn(
@@ -404,10 +404,10 @@ export function RequestDetail({
                     ?.focus();
                 }}
                 className={cn(
-                  "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line last:border-r-0 cursor-pointer transition-colors whitespace-nowrap",
+                  "px-4 py-2 text-xs font-bold border-r border-border last:border-r-0 cursor-pointer transition-colors whitespace-nowrap capitalize",
                   // Clean's tint alone is too faint, so the active tab also gets a primary underline.
                   tab === t
-                    ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                    ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                     : "bg-background hover:bg-muted"
                 )}
               >
@@ -434,11 +434,11 @@ export function RequestDetail({
         {tab === "body" && (
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[11px] font-mono font-bold caps text-muted-foreground">
+              <span className="text-[11px] font-mono font-bold text-muted-foreground">
                 {getFormatLabel(bodyFormat)}
               </span>
               {bodyViews.length > 1 && (
-                <div className="flex items-center overflow-hidden rounded-sm border-strong border-line">
+                <div className="flex items-center overflow-hidden rounded-sm border border-border">
                   {bodyViews.map((view, i) => (
                     <button
                       key={view}
@@ -446,10 +446,10 @@ export function RequestDetail({
                       aria-pressed={bodyView === view}
                       onClick={() => setBodyView(view)}
                       className={cn(
-                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold caps cursor-pointer transition-colors",
-                        i > 0 && "border-l-strong border-line",
+                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold cursor-pointer transition-colors",
+                        i > 0 && "border-l border-border",
                         bodyView === view
-                          ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                          ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                           : "hover:bg-muted"
                       )}
                     >
@@ -691,7 +691,7 @@ function BodyCopyDropdown({
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised z-50 min-w-[180px]">
+        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border border-border bg-background shadow-md z-50 min-w-[180px]">
           {options.map((opt, i) => (
             <button
               key={opt.key}
@@ -700,8 +700,8 @@ function BodyCopyDropdown({
                 setOpen(false);
               }}
               className={cn(
-                "w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors",
-                i < options.length - 1 && "border-b-strong border-line"
+                "w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors",
+                i < options.length - 1 && "border-b border-border"
               )}
             >
               {opt.label}
@@ -746,7 +746,7 @@ export function NoteBar({
     return (
       <button
         onClick={() => setEditing(true)}
-        className="border-b-strong border-line px-4 py-1.5 max-md:py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
+        className="border-b border-border px-4 py-1.5 max-md:py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
       >
         <StickyNote className="h-3 w-3" />
         Add note...
@@ -756,7 +756,7 @@ export function NoteBar({
 
   if (editing) {
     return (
-      <div className="border-b-strong border-line px-4 py-1.5 max-md:min-h-9 flex items-center gap-2 shrink-0">
+      <div className="border-b border-border px-4 py-1.5 max-md:min-h-9 flex items-center gap-2 shrink-0">
         <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
         <input
           ref={inputRef}
@@ -782,7 +782,7 @@ export function NoteBar({
   }
 
   return (
-    <div className="border-b-strong border-line px-4 py-1.5 max-md:py-0 flex items-center gap-2 shrink-0 group">
+    <div className="border-b border-border px-4 py-1.5 max-md:py-0 flex items-center gap-2 shrink-0 group">
       <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
       <button
         type="button"
@@ -827,7 +827,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
   if (!slug) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p className="font-bold caps text-sm">Select a request to view details</p>
+        <p className="font-bold text-sm">Select a request to view details</p>
       </div>
     );
   }
@@ -835,9 +835,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
   return (
     <div className="flex items-center justify-center h-full p-6">
       <div className="max-w-sm w-full space-y-5 text-center">
-        <p className="font-bold caps text-sm text-muted-foreground">
-          Select a request to view details
-        </p>
+        <p className="font-bold text-sm text-muted-foreground">Select a request to view details</p>
 
         {/* Quick actions */}
         <div className="flex items-center justify-center gap-2 flex-wrap">
@@ -871,7 +869,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
         </div>
 
         {/* Keyboard hint */}
-        <p className="text-[11px] text-muted-foreground caps">
+        <p className="text-[11px] text-muted-foreground">
           Press{" "}
           <kbd className="px-1 py-0.5 rounded-sm border border-foreground/30 bg-muted font-mono text-[11px]">
             ?

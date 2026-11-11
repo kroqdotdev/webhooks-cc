@@ -211,7 +211,7 @@ export function TicketView({ number }: { number: string }) {
   if (notFound) {
     return (
       <main className="mx-auto max-w-3xl px-6 pb-16 pt-10 md:px-10">
-        <h1 className="mb-2 text-2xl font-bold clean:font-semibold">No such ticket</h1>
+        <h1 className="mb-2 text-2xl font-semibold">No such ticket</h1>
         <p className="mb-4 text-sm text-muted-foreground">
           Ticket #{number} is not one of yours. It may belong to another account you use.
         </p>
@@ -244,12 +244,12 @@ export function TicketView({ number }: { number: string }) {
   return (
     <main className="mx-auto max-w-5xl px-6 pb-16 pt-10 md:px-10">
       <p className="mb-2 text-xs text-muted-foreground">
-        <Link href="/support" className="text-primary-ink hover:underline">
+        <Link href="/support" className="text-primary hover:underline">
           Support
         </Link>{" "}
         / <span className="font-mono">#{ticket.number}</span>
       </p>
-      <h1 className="ph-no-capture mb-4 max-w-[40ch] text-2xl font-bold clean:font-semibold md:text-3xl">
+      <h1 className="ph-no-capture mb-4 max-w-[40ch] text-2xl md:text-3xl font-semibold">
         {ticket.subject}
       </h1>
       <TurnLine waitingOn={ticket.waitingOn} closed={closed} left="You" right="Support" />
@@ -281,7 +281,7 @@ export function TicketView({ number }: { number: string }) {
               {attachments && (
                 <ImagePicker files={images} onChange={setImages} disabled={sending} />
               )}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
                 <span className="text-xs text-muted-foreground">Markdown works.</span>
                 <div className="flex gap-2">
                   {!closed && (

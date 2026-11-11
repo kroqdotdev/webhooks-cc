@@ -68,7 +68,7 @@ export default function InstallationPage() {
               {/* Tab switcher */}
               <div
                 role="tablist"
-                className="border-strong border-line rounded-md overflow-hidden flex mb-8"
+                className="border border-border rounded-md overflow-hidden flex mb-8"
               >
                 {TABS.map((t) => (
                   <button
@@ -93,7 +93,7 @@ export default function InstallationPage() {
                       }
                     }}
                     className={cn(
-                      "flex-1 px-4 py-2.5 text-sm font-bold caps clean:uppercase cursor-pointer transition-colors border-r-strong border-line last:border-r-0",
+                      "flex-1 px-4 py-2.5 text-sm font-bold cursor-pointer transition-colors border-r border-border last:border-r-0 uppercase",
                       tab === t
                         ? "bg-selected text-selected-foreground"
                         : "bg-background hover:bg-muted"
@@ -140,7 +140,7 @@ export default function InstallationPage() {
                       href="https://github.com/kroqdotdev/webhooks-cc/releases"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary-ink hover:underline font-bold"
+                      className="text-primary hover:underline font-bold"
                     >
                       GitHub Releases
                     </a>
@@ -167,7 +167,7 @@ export default function InstallationPage() {
 whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
                   <p className="text-sm text-muted-foreground mt-2">
                     See the{" "}
-                    <Link href="/docs/cli" className="text-primary-ink hover:underline font-bold">
+                    <Link href="/docs/cli" className="text-primary hover:underline font-bold">
                       CLI docs
                     </Link>{" "}
                     for the full command reference.
@@ -221,14 +221,11 @@ console.log(endpoint.url);`}
 
                 <p className="text-sm text-muted-foreground">
                   Generate an API key from your{" "}
-                  <Link
-                    href="/account/api-keys"
-                    className="text-primary-ink hover:underline font-bold"
-                  >
+                  <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
                     API keys page
                   </Link>
                   . See the{" "}
-                  <Link href="/docs/sdk" className="text-primary-ink hover:underline font-bold">
+                  <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
                     SDK docs
                   </Link>{" "}
                   for the full API reference.
@@ -241,7 +238,7 @@ console.log(endpoint.url);`}
                     The same testing tools for Python, with pytest fixtures. See the{" "}
                     <Link
                       href="/docs/sdk/python"
-                      className="text-primary-ink hover:underline font-bold"
+                      className="text-primary hover:underline font-bold"
                     >
                       Python SDK docs
                     </Link>
@@ -254,10 +251,7 @@ console.log(endpoint.url);`}
                   <CodeBlock>{`go get webhooks.cc/go`}</CodeBlock>
                   <p className="text-sm text-muted-foreground mt-3">
                     The same testing tools for Go, with helpers for <code>testing.TB</code>. See the{" "}
-                    <Link
-                      href="/docs/sdk/go"
-                      className="text-primary-ink hover:underline font-bold"
-                    >
+                    <Link href="/docs/sdk/go" className="text-primary hover:underline font-bold">
                       Go SDK docs
                     </Link>
                     .
@@ -328,16 +322,13 @@ console.log(endpoint.url);`}
 
                   <p className="text-sm text-muted-foreground">
                     Disconnect it at any time under{" "}
-                    <Link
-                      href="/account/agents"
-                      className="text-primary-ink hover:underline font-bold"
-                    >
+                    <Link href="/account/agents" className="text-primary hover:underline font-bold">
                       Connected agents
                     </Link>
                     . The{" "}
                     <Link
                       href="/docs/mcp#remote-server"
-                      className="text-primary-ink hover:underline font-bold"
+                      className="text-primary hover:underline font-bold"
                     >
                       remote server docs
                     </Link>{" "}
@@ -345,7 +336,7 @@ console.log(endpoint.url);`}
                   </p>
                 </div>
 
-                <div className="space-y-6 border-t-strong border-line pt-10">
+                <div className="space-y-6 border-t border-border pt-10">
                   <div>
                     <h2 className="text-2xl font-bold mb-2">Local server</h2>
                     <p className="text-sm text-muted-foreground">
@@ -369,7 +360,7 @@ console.log(endpoint.url);`}
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                       placeholder="whcc_..."
-                      className="w-full px-3 py-2 border-strong border-line rounded-md bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                       autoComplete="off"
                       spellCheck={false}
                       aria-label="webhooks.cc API key"
@@ -378,7 +369,7 @@ console.log(endpoint.url);`}
                       Get your key from your{" "}
                       <Link
                         href="/account/api-keys"
-                        className="text-primary-ink hover:underline font-bold"
+                        className="text-primary hover:underline font-bold"
                       >
                         API keys page
                       </Link>
@@ -396,7 +387,7 @@ console.log(endpoint.url);`}
                           href={cursorUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 border-strong border-line rounded-md bg-background font-bold text-sm shadow-raised-sm hover:translate-x-(--press) hover:translate-y-(--press) hover:shadow-none clean:hover:bg-muted transition-all"
+                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-xs hover:shadow-none transition-all hover:bg-muted"
                         >
                           Add to Cursor
                         </a>
@@ -411,7 +402,7 @@ console.log(endpoint.url);`}
                           href={VSCODE_URL}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 border-strong border-line rounded-md bg-background font-bold text-sm shadow-raised-sm hover:translate-x-(--press) hover:translate-y-(--press) hover:shadow-none clean:hover:bg-muted transition-all"
+                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-xs hover:shadow-none transition-all hover:bg-muted"
                         >
                           Add to VS Code
                         </a>
@@ -474,7 +465,7 @@ console.log(endpoint.url);`}
 
                   <p className="text-sm text-muted-foreground">
                     See the{" "}
-                    <Link href="/docs/mcp" className="text-primary-ink hover:underline font-bold">
+                    <Link href="/docs/mcp" className="text-primary hover:underline font-bold">
                       MCP docs
                     </Link>{" "}
                     for the full tool reference.

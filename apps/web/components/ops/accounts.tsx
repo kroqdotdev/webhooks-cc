@@ -61,7 +61,7 @@ export function AccountSearch() {
       ) : (
         <ul className="ui-card ui-card-static p-0! overflow-hidden ph-no-capture">
           {results.map((account) => (
-            <li key={account.id} className="border-t border-line first:border-t-0">
+            <li key={account.id} className="border-t border-border first:border-t-0">
               <Link
                 href={`/ops/accounts/${account.id}`}
                 className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 px-4 py-2.5 text-sm hover:bg-muted/60"
@@ -163,7 +163,7 @@ export function AccountInspector({ id }: { id: string }) {
   return (
     <div className="max-w-6xl p-6 lg:p-8">
       <p className="text-xs text-muted-foreground">
-        <Link href="/ops/accounts" className="text-primary-ink hover:underline">
+        <Link href="/ops/accounts" className="text-primary hover:underline">
           Accounts
         </Link>{" "}
         / {account.email}
@@ -179,7 +179,10 @@ export function AccountInspector({ id }: { id: string }) {
         {account.internal ? ", internal" : ""}
       </p>
 
-      <div role="tablist" className="mt-5 flex gap-5 overflow-x-auto border-b border-line text-sm">
+      <div
+        role="tablist"
+        className="mt-5 flex gap-5 overflow-x-auto border-b border-border text-sm"
+      >
         {tabs.map((entry) => (
           <button
             key={entry.value}
@@ -228,7 +231,7 @@ export function AccountInspector({ id }: { id: string }) {
                   <tbody className="ph-no-capture">
                     {(tab === "overview" ? account.endpoints.slice(0, 8) : account.endpoints).map(
                       (endpoint) => (
-                        <tr key={endpoint.id} className="border-t border-line">
+                        <tr key={endpoint.id} className="border-t border-border">
                           <th scope="row" className="px-3 py-2 text-left font-normal">
                             <span className="font-mono text-xs">{endpoint.slug}</span>
                             {endpoint.name && (
@@ -311,7 +314,7 @@ export function AccountInspector({ id }: { id: string }) {
                 account.activity.map((entry, index) => (
                   <li
                     key={index}
-                    className="flex justify-between gap-4 border-t border-line px-4 py-2 first:border-t-0"
+                    className="flex justify-between gap-4 border-t border-border px-4 py-2 first:border-t-0"
                   >
                     <span className="font-mono text-xs">
                       {entry.action}
@@ -335,7 +338,7 @@ export function AccountInspector({ id }: { id: string }) {
                 <li className="p-4 text-muted-foreground">No tickets.</li>
               ) : (
                 account.tickets.map((ticket) => (
-                  <li key={ticket.id} className="border-t border-line first:border-t-0">
+                  <li key={ticket.id} className="border-t border-border first:border-t-0">
                     <Link
                       href={`/ops/tickets/${ticket.number}`}
                       className="flex justify-between gap-4 px-4 py-2 hover:bg-muted/60"

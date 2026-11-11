@@ -359,7 +359,7 @@ export function SheetsDestinationEditor({
         />
       </Field>
 
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">Spreadsheet</h3>
         <Field label="Google account">
           <div className="flex flex-wrap items-center gap-2">
@@ -466,7 +466,7 @@ export function SheetsDestinationEditor({
         )}
       </div>
 
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">Rows</h3>
         <Segmented<"email" | "line_items">
           name="Rows"
@@ -549,7 +549,7 @@ export function SheetsDestinationEditor({
         </div>
       </div>
 
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">What it gets</h3>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <label className="flex items-center gap-2 cursor-pointer text-sm">
@@ -588,7 +588,7 @@ export function SheetsDestinationEditor({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-line/20">
+      <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border/20">
         <button
           type="button"
           disabled={!!busy || tabsPending}

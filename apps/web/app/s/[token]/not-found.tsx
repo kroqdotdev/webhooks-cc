@@ -10,7 +10,7 @@ export default function SharedRequestNotFound() {
       <SiteHeader notFound />
       <main className="pt-24 pb-20 px-4">
         <div className="max-w-xl mx-auto text-center">
-          <p className="text-xs font-bold caps text-muted-foreground mb-2">Shared request</p>
+          <p className="text-xs font-bold text-muted-foreground mb-2">Shared request</p>
           <h1 className="text-3xl font-bold mb-3">This link no longer works</h1>
           <p className="text-muted-foreground mb-8">
             It expired, or the person who shared it revoked it. Ask them for a new link.

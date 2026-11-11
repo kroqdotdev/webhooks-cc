@@ -10,7 +10,7 @@ export const metadata: Metadata = createPageMetadata({
   path: "/subprocessors",
 });
 
-const linkClass = "text-primary-ink hover:underline font-bold";
+const linkClass = "text-primary hover:underline font-bold";
 
 interface Subprocessor {
   name: string;
@@ -96,7 +96,7 @@ export default function SubprocessorsPage() {
         </div>
 
         {SUBPROCESSORS.map((sub) => (
-          <section key={sub.name} className="border-t-strong border-line pt-8 mt-8">
+          <section key={sub.name} className="border-t border-border pt-8 mt-8">
             <h2 className="text-xl font-bold mb-3">{sub.name}</h2>
             <dl className="grid grid-cols-1 sm:grid-cols-[8rem_1fr] gap-x-4 gap-y-1 text-sm text-muted-foreground">
               <dt className="font-bold text-foreground">Company</dt>
@@ -117,7 +117,7 @@ export default function SubprocessorsPage() {
           </section>
         ))}
 
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Payments</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -140,7 +140,7 @@ export default function SubprocessorsPage() {
           </div>
         </section>
 
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Sign-In Providers</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -152,7 +152,7 @@ export default function SubprocessorsPage() {
           </div>
         </section>
 
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Software We Run Ourselves</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -163,7 +163,7 @@ export default function SubprocessorsPage() {
           </div>
         </section>
 
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Changes</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>

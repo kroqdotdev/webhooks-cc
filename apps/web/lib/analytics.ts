@@ -1,5 +1,4 @@
 import posthog from "posthog-js";
-import type { UiStyle } from "./ui-style";
 
 /**
  * Track custom analytics events via PostHog.
@@ -20,12 +19,6 @@ export function trackCTAClick(
   cta: "register" | "try_live" | "docs" | "faq" | "create_team" | "layout_gallery"
 ) {
   capture("landing_cta_clicked", { cta });
-}
-
-// ── Visual style ────────────────────────────────────────────────
-/** A pick on the Appearance page; the style itself also lands on the person. */
-export function trackUiStyleChanged(params: { from: UiStyle; to: UiStyle }) {
-  capture("ui_style_changed", { from: params.from, to: params.to, $set: { ui_style: params.to } });
 }
 
 // ── Auth ────────────────────────────────────────────────────────

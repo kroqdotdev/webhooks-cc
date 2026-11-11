@@ -112,17 +112,14 @@ function ResetPasswordContent() {
       </div>
 
       {done ? (
-        <div
-          className="rounded-lg border-strong border-line bg-background p-4 text-sm"
-          role="status"
-        >
+        <div className="rounded-lg border border-border bg-background p-4 text-sm" role="status">
           Password updated. Taking you to your dashboard...
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {error ? (
             <div
-              className="text-sm text-destructive-ink bg-destructive/10 border-strong border-destructive/40 rounded-md p-3"
+              className="text-sm text-destructive-ink bg-destructive/10 border border-destructive/40 rounded-md p-3"
               role="alert"
             >
               {error}

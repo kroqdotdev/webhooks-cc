@@ -275,7 +275,7 @@ export function FileDropDestinationEditor({
         />
       </Field>
 
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">Where the files go</h3>
         <Segmented<Protocol>
           name="Protocol"
@@ -458,7 +458,7 @@ export function FileDropDestinationEditor({
         )}
       </div>
 
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">What each file holds</h3>
         <Field label="Format">
           <Segmented<FileDropDestinationConfig["file"]>
@@ -589,7 +589,7 @@ export function FileDropDestinationEditor({
         </Field>
       </div>
 
-      <div className="pt-4 border-t border-line/20 space-y-3">
+      <div className="pt-4 border-t border-border/20 space-y-3">
         <h3 className="text-sm font-semibold">What it gets</h3>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <label className="flex items-center gap-2 cursor-pointer text-sm">
@@ -628,7 +628,7 @@ export function FileDropDestinationEditor({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-line/20">
+      <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border/20">
         <button
           type="button"
           disabled={!!busy}

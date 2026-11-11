@@ -50,7 +50,7 @@ function ComparisonCTAInner({ compact, heading }: { compact: boolean; heading: s
               or{" "}
               <Link
                 href="/"
-                className="text-foreground font-semibold hover:text-primary-ink transition-colors"
+                className="text-foreground font-semibold hover:text-primary transition-colors"
               >
                 try without an account
               </Link>
@@ -84,7 +84,7 @@ function ComparisonCTAInner({ compact, heading }: { compact: boolean; heading: s
             or{" "}
             <Link
               href="/"
-              className="text-foreground font-semibold hover:text-primary-ink transition-colors"
+              className="text-foreground font-semibold hover:text-primary transition-colors"
             >
               try without an account
               <ArrowRight className="inline-block ml-1 h-3.5 w-3.5" />

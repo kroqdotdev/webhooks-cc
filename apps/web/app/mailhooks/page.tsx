@@ -149,7 +149,7 @@ export default function MailhooksHome() {
                 {/* h-11: centred on the sign-up buttons beside it. */}
                 <Link
                   href="/parse"
-                  className="max-md:hidden sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+                  className="max-md:hidden sm:h-11 inline-flex items-center gap-1 font-bold text-primary hover:underline"
                 >
                   See the layout gallery
                   <ArrowRight className="h-4 w-4" />
@@ -161,7 +161,7 @@ export default function MailhooksHome() {
                 <span className="md:hidden">
                   {" "}
                   Or browse the{" "}
-                  <Link href="/parse" className="font-bold text-primary-ink underline">
+                  <Link href="/parse" className="font-bold text-primary underline">
                     layout gallery
                   </Link>
                   .
@@ -180,10 +180,8 @@ export default function MailhooksHome() {
             <ol className="grid md:grid-cols-3 gap-6">
               {STEPS.map((step, index) => (
                 <li key={step.title} className="ui-card ui-card-static">
-                  <step.icon className="h-6 w-6 text-primary-ink mb-4" aria-hidden />
-                  <p className="text-xs font-bold caps text-muted-foreground mb-2">
-                    Step {index + 1}
-                  </p>
+                  <step.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
+                  <p className="text-xs font-bold text-muted-foreground mb-2">Step {index + 1}</p>
                   <h3 className="font-bold text-xl mb-2">{step.title}</h3>
                   <p className="text-muted-foreground">{step.text}</p>
                 </li>
@@ -225,7 +223,7 @@ export default function MailhooksHome() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {FEATURES.map((feature) => (
                 <div key={feature.title} className="ui-card ui-card-static">
-                  <feature.icon className="h-6 w-6 text-primary-ink mb-4" aria-hidden />
+                  <feature.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
                   <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
                   <p className="text-muted-foreground">{feature.text}</p>
                 </div>
@@ -287,7 +285,7 @@ export default function MailhooksHome() {
                 className={`ui-card relative block ${plan.name === "Business" ? "border-primary" : ""}`}
               >
                 {plan.name === "Business" && (
-                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-xs">
                     Best for parsing
                   </span>
                 )}
@@ -296,7 +294,7 @@ export default function MailhooksHome() {
                 <ul className="space-y-2">
                   {plan.lines.map((line) => (
                     <li key={line} className="flex items-start gap-2">
-                      <Check className="h-5 w-5 text-primary-ink shrink-0" aria-hidden />
+                      <Check className="h-5 w-5 text-primary shrink-0" aria-hidden />
                       <span>{line}</span>
                     </li>
                   ))}
@@ -310,7 +308,7 @@ export default function MailhooksHome() {
               {/* A text link, so the sign-up button stays the one filled action here. */}
               <Link
                 href="/pricing"
-                className="sm:h-11 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+                className="sm:h-11 inline-flex items-center gap-1 font-bold text-primary hover:underline"
               >
                 Compare plans
                 <ArrowRight className="h-4 w-4" />

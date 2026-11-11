@@ -153,7 +153,7 @@ export function AiAssistPanel({
 
   return (
     <div
-      className="border-strong border-line rounded-md p-3 space-y-3 bg-card"
+      className="border border-border rounded-md p-3 space-y-3 bg-card"
       role="region"
       aria-label={title}
     >

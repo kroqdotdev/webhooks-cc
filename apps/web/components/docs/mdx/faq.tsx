@@ -8,7 +8,7 @@ export function FAQItem({ question, children }: { question: string; children: Re
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border-b-strong border-line last:border-b-0">
+    <div className="border-b border-border last:border-b-0">
       <button
         onClick={() => setOpen(!open)}
         type="button"
@@ -26,7 +26,7 @@ export function FAQItem({ question, children }: { question: string; children: Re
 
 export function FAQ({ children }: { children: React.ReactNode }) {
   return (
-    <div className="my-6 overflow-hidden rounded-lg border-strong border-line bg-card shadow-raised-sm">
+    <div className="my-6 overflow-hidden rounded-lg border border-border bg-card shadow-xs">
       {children}
     </div>
   );

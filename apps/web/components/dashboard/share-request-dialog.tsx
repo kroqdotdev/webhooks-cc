@@ -134,9 +134,9 @@ export function ShareRequestDialog({
           Share
         </button>
       </DialogTrigger>
-      <DialogContent className="border-strong border-line shadow-raised">
+      <DialogContent className="border border-border shadow-md">
         <DialogHeader>
-          <DialogTitle className="font-bold caps">Share request</DialogTitle>
+          <DialogTitle className="font-bold">Share request</DialogTitle>
           <DialogDescription>
             A read-only link to a copy of this request, for a pull request, a ticket or a chat.
             Anyone with the link can open it, no account needed.
@@ -145,7 +145,7 @@ export function ShareRequestDialog({
 
         <div className="space-y-4">
           <div>
-            <span className="text-sm font-bold caps mb-2 block">Expires after</span>
+            <span className="text-sm font-bold mb-2 block">Expires after</span>
             <Segmented
               name="Expires after"
               value={String(expiresInDays)}
@@ -165,7 +165,7 @@ export function ShareRequestDialog({
             onChange={setHideSensitive}
           />
 
-          <div className="rounded-md border-strong border-line bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
+          <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
             {hidden.length > 0 ? (
               <p className="flex items-start gap-1.5">
                 <EyeOff className="h-3.5 w-3.5 shrink-0 mt-px" />
@@ -182,7 +182,7 @@ export function ShareRequestDialog({
           </div>
 
           {error && (
-            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
+            <div className="border border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
               {error}
             </div>
           )}
@@ -201,12 +201,12 @@ export function ShareRequestDialog({
 
           {links && links.length > 0 && (
             <div>
-              <span className="text-sm font-bold caps mb-2 block">Live links</span>
+              <span className="text-sm font-bold mb-2 block">Live links</span>
               <ul className="space-y-2">
                 {links.map((link) => (
                   <li
                     key={link.id}
-                    className="flex items-center gap-2 rounded-md border-strong border-line px-2 py-1.5"
+                    className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5"
                   >
                     {/* ph-no-capture keeps the token out of session recordings. */}
                     <span className="ph-no-capture min-w-0 flex-1 truncate font-mono text-xs">

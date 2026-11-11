@@ -18,28 +18,8 @@ vi.mock("posthog-js", () => ({
 // The helpers no-op outside the browser, so give them a window to run in.
 vi.stubGlobal("window", {});
 
-const {
-  forgetIdentifiedUser,
-  identifyPendingUser,
-  reportAuthenticatedUser,
-  resetUser,
-  trackUiStyleChanged,
-} = await import("./analytics");
-
-describe("trackUiStyleChanged", () => {
-  beforeEach(() => {
-    capture.mockClear();
-  });
-
-  it("reports the switch and sets the style on the person", () => {
-    trackUiStyleChanged({ from: "clean", to: "classic" });
-    expect(capture).toHaveBeenCalledWith("ui_style_changed", {
-      from: "clean",
-      to: "classic",
-      $set: { ui_style: "classic" },
-    });
-  });
-});
+const { forgetIdentifiedUser, identifyPendingUser, reportAuthenticatedUser, resetUser } =
+  await import("./analytics");
 
 describe("reportAuthenticatedUser", () => {
   const user = { id: "user-1" };

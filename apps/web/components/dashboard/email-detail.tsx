@@ -171,16 +171,16 @@ function AddressLine({ addresses }: { addresses: EmailAddress[] }) {
 /** Pass and fail look like the method badges of each style; "none" is plain text. */
 function VerdictBadge({ verdict, label }: { verdict: Verdict; label: string }) {
   if (verdict === "none") {
-    return <span className="font-mono text-[11.5px] caps text-muted-foreground">{label}</span>;
+    return <span className="font-mono text-[11.5px] text-muted-foreground">{label}</span>;
   }
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 h-6 px-2 font-mono text-[11.5px] font-bold caps rounded-sm border-strong border-line",
-        "clean:border-transparent clean:font-medium",
+        "inline-flex items-center gap-1 h-6 px-2 font-mono text-[11.5px] font-bold rounded-sm border border-border",
+        "border-transparent font-medium",
         verdict === "pass"
-          ? "bg-primary text-primary-foreground clean:bg-method-get/15 clean:text-method-get"
-          : "bg-destructive text-destructive-foreground clean:bg-method-delete/15 clean:text-method-delete"
+          ? "bg-method-get/15 text-method-get"
+          : "bg-method-delete/15 text-method-delete"
       )}
     >
       {verdict === "pass" ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
@@ -345,7 +345,7 @@ function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
   const warnings = count("warn");
   return (
     <section className="ui-card ui-card-static p-4!">
-      <h3 className="text-sm font-bold caps mb-1">Deliverability</h3>
+      <h3 className="text-sm font-bold mb-1">Deliverability</h3>
       <p className="text-sm py-2">
         {fails + warnings === 0
           ? "Nothing to fix: this email is set up the way Gmail, Yahoo and Outlook expect."
@@ -365,17 +365,17 @@ function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
         if (findings.length === 0) return null;
         return (
           <div key={group} className="mt-3">
-            <h4 className="text-[11px] font-bold caps text-muted-foreground mb-1">{title}</h4>
+            <h4 className="text-[11px] font-bold text-muted-foreground mb-1">{title}</h4>
             <ul>
               {findings.map((finding: Finding) => (
                 <li
                   key={finding.id}
-                  className="flex gap-2.5 py-2 border-t border-line/15 first:border-t-0 text-sm"
+                  className="flex gap-2.5 py-2 border-t border-border/15 first:border-t-0 text-sm"
                 >
                   <FindingIcon status={finding.status} />
                   <span className="min-w-0">
                     <span className="font-semibold">{finding.title}</span>
-                    <span className="block text-muted-foreground clean:text-foreground/80 [overflow-wrap:anywhere]">
+                    <span className="block [overflow-wrap:anywhere] text-foreground/80">
                       {finding.detail}
                     </span>
                   </span>
@@ -407,14 +407,14 @@ function Pick({
   return (
     <span
       className={cn(
-        "inline-flex items-stretch h-8 min-w-0 max-w-full border-strong border-line rounded-md bg-card shadow-raised-sm overflow-hidden",
+        "inline-flex items-stretch h-8 min-w-0 max-w-full border border-border rounded-md bg-card shadow-xs overflow-hidden",
         wide && "md:max-w-[460px]"
       )}
     >
       <span
         className={cn(
-          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[220px] max-sm:max-w-[120px] max-sm:px-2",
-          exactLabel ? "font-mono" : "caps"
+          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r border-border shrink-0 max-w-[220px] max-sm:max-w-[120px] max-sm:px-2",
+          exactLabel ? "font-mono" : ""
         )}
         title={label}
       >
@@ -438,7 +438,7 @@ function PickButton({
   children: React.ReactNode;
 }) {
   const className =
-    "flex items-center justify-center w-8 shrink-0 border-l-strong border-line text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors";
+    "flex items-center justify-center w-8 shrink-0 border-l border-border text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors";
   if (href) {
     return (
       <a
@@ -608,7 +608,7 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
   return (
     <div>
       {remoteImages > 0 && !imagesLoaded && (
-        <div className="flex flex-wrap items-center gap-3 px-3 py-2 mb-4 text-sm bg-muted border-strong border-line rounded-md">
+        <div className="flex flex-wrap items-center gap-3 px-3 py-2 mb-4 text-sm bg-muted border border-border rounded-md">
           <ImageOff className="h-4 w-4 shrink-0" />
           <span className="flex-1 min-w-[200px]">
             {remoteImages === 1 ? "1 remote image is" : `${remoteImages} remote images are`}{" "}
@@ -631,9 +631,9 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
             : `${inlineImages} images are attached inside the message and show as broken here; download them from the Attachments tab.`}
         </p>
       )}
-      <div className="grid justify-items-center py-2 classic:py-1 clean:bg-muted/60 clean:rounded-lg clean:py-8 clean:px-4 grid-cols-[minmax(0,1fr)]">
+      <div className="grid justify-items-center grid-cols-[minmax(0,1fr)] bg-muted/60 rounded-lg py-8 px-4">
         <div
-          className="w-full bg-white border-strong border-line rounded-md shadow-raised-lg overflow-hidden"
+          className="w-full bg-white border border-border rounded-md shadow-lg overflow-hidden"
           style={{ maxWidth: width === "mobile" ? 390 : 680 }}
         >
           <iframe
@@ -663,14 +663,12 @@ function CheckRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[96px_1fr] md:grid-cols-[120px_120px_1fr] gap-x-3 gap-y-1 items-baseline py-2.5 border-t border-line/15 first:border-t-0 text-sm">
+    <div className="grid grid-cols-[96px_1fr] md:grid-cols-[120px_120px_1fr] gap-x-3 gap-y-1 items-baseline py-2.5 border-t border-border/15 first:border-t-0 text-sm">
       <span className="font-mono text-xs font-semibold">{name}</span>
       <span>
         <VerdictBadge verdict={verdict} label={label} />
       </span>
-      <span className="col-span-2 md:col-span-1 text-muted-foreground clean:text-foreground">
-        {children}
-      </span>
+      <span className="col-span-2 md:col-span-1 text-foreground">{children}</span>
     </div>
   );
 }
@@ -680,7 +678,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
   const scored = spam.score !== null && spam.required !== null && spam.action !== null;
   return (
     <section className="ui-card ui-card-static p-4!">
-      <h3 className="text-sm font-bold caps mb-1">Spam score</h3>
+      <h3 className="text-sm font-bold mb-1">Spam score</h3>
       {!scored ? (
         <p className="text-sm text-muted-foreground py-2">
           No score for this email{spam.error ? ` (${spam.error})` : ""}. It was captured as usual.
@@ -699,7 +697,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
           {spam.symbols.length > 0 && (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[11px] font-bold caps text-muted-foreground">
+                <tr className="text-left text-[11px] font-bold text-muted-foreground">
                   <th className="py-1.5 pr-3 font-bold">Rule</th>
                   <th className="py-1.5 pr-3 font-bold text-right">Score</th>
                   <th className="py-1.5 font-bold">Matched</th>
@@ -707,7 +705,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
               </thead>
               <tbody>
                 {spam.symbols.map((symbol) => (
-                  <tr key={symbol.name} className="border-t border-line/15 align-baseline">
+                  <tr key={symbol.name} className="border-t border-border/15 align-baseline">
                     <td className="py-1.5 pr-3 font-mono text-xs [overflow-wrap:anywhere]">
                       {symbol.name}
                     </td>
@@ -715,7 +713,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
                       className={cn(
                         "py-1.5 pr-3 font-mono text-xs text-right whitespace-nowrap",
                         symbol.score > 0 && "text-destructive-ink",
-                        symbol.score < 0 && "text-primary-ink"
+                        symbol.score < 0 && "text-primary"
                       )}
                     >
                       {symbol.score > 0 ? "+" : ""}
@@ -761,7 +759,7 @@ function AuthenticationPane({
   return (
     <div className="grid gap-4 max-w-[860px]">
       <section className="ui-card ui-card-static p-4!">
-        <h3 className="text-sm font-bold caps mb-1">Sender checks</h3>
+        <h3 className="text-sm font-bold mb-1">Sender checks</h3>
         {isTest ? (
           <p className="text-sm text-muted-foreground py-2">
             This is a test email sent from the dashboard, so SPF, DKIM and DMARC do not apply. Mail
@@ -853,7 +851,7 @@ function AuthenticationPane({
       {report && <DeliverabilitySection report={report} />}
       {email.spam && <SpamSection spam={email.spam} />}
       <section className="ui-card ui-card-static p-4!">
-        <h3 className="text-sm font-bold caps mb-1">Delivery</h3>
+        <h3 className="text-sm font-bold mb-1">Delivery</h3>
         {/* Two columns from sm up; on a phone each value goes under its label. */}
         <dl className="grid grid-cols-1 sm:grid-cols-[minmax(120px,200px)_1fr] text-sm">
           {[
@@ -886,7 +884,7 @@ function AuthenticationPane({
                 <dt
                   className={cn(
                     "pt-2 sm:py-2 pr-3 text-muted-foreground",
-                    index > 0 && "border-t border-line/15"
+                    index > 0 && "border-t border-border/15"
                   )}
                 >
                   {label}
@@ -894,7 +892,7 @@ function AuthenticationPane({
                 <dd
                   className={cn(
                     "pb-2 sm:py-2 [overflow-wrap:anywhere]",
-                    index > 0 && "sm:border-t sm:border-line/15",
+                    index > 0 && "sm:border-t sm:border-border/15",
                     mono && "font-mono text-[13px]"
                   )}
                 >
@@ -967,17 +965,17 @@ function EmailJsonPane({
         )}
       </p>
       <div className="flex items-center gap-2">
-        <div className="flex overflow-hidden rounded-sm border-strong border-line">
+        <div className="flex overflow-hidden rounded-sm border border-border">
           {(["formatted", "tree"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
               onClick={() => setView(mode)}
               className={cn(
-                "px-2 py-0.5 text-[11px] font-bold caps cursor-pointer transition-colors",
-                mode === "tree" && "border-l-strong border-line",
+                "px-2 py-0.5 text-[11px] font-bold cursor-pointer transition-colors",
+                mode === "tree" && "border-l border-border",
                 view === mode
-                  ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                  ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                   : "hover:bg-muted"
               )}
             >
@@ -1364,13 +1362,13 @@ export function EmailDetail({
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Envelope */}
-      <div className="@container border-b-strong border-line px-4 pt-3 pb-3 shrink-0 bg-card">
+      <div className="@container border-b border-border px-4 pt-3 pb-3 shrink-0 bg-card">
         {/* In a narrow pane the buttons go under the subject, which keeps the full width. */}
         <div className="flex flex-col gap-2 @xl:flex-row @xl:items-start @xl:gap-3">
           <div className="@xl:flex-1 min-w-0 flex items-start gap-2">
             <h2
               className={cn(
-                "min-w-0 text-lg font-bold clean:font-semibold leading-tight break-words",
+                "min-w-0 text-lg leading-tight break-words font-semibold",
                 !email.subject && "text-muted-foreground"
               )}
             >
@@ -1380,7 +1378,7 @@ export function EmailDetail({
             {isTest && (
               <span
                 title="Test email sent from the dashboard"
-                className="mt-0.5 shrink-0 px-1.5 py-0.5 text-xs font-bold caps leading-none rounded-sm border-strong border-line bg-muted text-muted-foreground"
+                className="mt-0.5 shrink-0 px-1.5 py-0.5 text-xs font-bold leading-none rounded-sm border border-border bg-muted text-muted-foreground"
               >
                 Test
               </span>
@@ -1480,7 +1478,7 @@ export function EmailDetail({
       <div
         ref={tabStripRef}
         className={cn(
-          "border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]",
+          "border-b border-border flex shrink-0 overflow-x-auto [scrollbar-width:none]",
           tabStripMore && "[mask-image:linear-gradient(to_right,#000_calc(100%-3rem),transparent)]"
         )}
       >
@@ -1508,9 +1506,9 @@ export function EmailDetail({
                   ?.focus();
               }}
               className={cn(
-                "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line cursor-pointer transition-colors whitespace-nowrap",
+                "px-4 py-2 text-xs font-bold border-r border-border cursor-pointer transition-colors whitespace-nowrap capitalize",
                 activeTab === entry.id
-                  ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                  ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                   : "bg-background hover:bg-muted"
               )}
             >
@@ -1657,7 +1655,7 @@ export function EmailDetail({
               <div
                 role="group"
                 aria-label="Preview width"
-                className="flex overflow-hidden rounded-sm border-strong border-line"
+                className="flex overflow-hidden rounded-sm border border-border"
               >
                 {(["desktop", "mobile"] as const).map((mode) => (
                   <button
@@ -1666,10 +1664,10 @@ export function EmailDetail({
                     aria-pressed={width === mode}
                     onClick={() => setWidth(mode)}
                     className={cn(
-                      "px-2.5 py-1 text-[11px] font-bold caps cursor-pointer transition-colors capitalize",
-                      mode === "mobile" && "border-l-strong border-line",
+                      "px-2.5 py-1 text-[11px] font-bold cursor-pointer transition-colors capitalize",
+                      mode === "mobile" && "border-l border-border",
                       width === mode
-                        ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                        ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                         : "bg-background hover:bg-muted"
                     )}
                   >
@@ -1696,7 +1694,7 @@ export function EmailDetail({
             {reply && (
               <div className="flex items-center justify-end gap-2 mb-3">
                 <div
-                  className="flex overflow-hidden rounded-sm border-strong border-line"
+                  className="flex overflow-hidden rounded-sm border border-border"
                   role="group"
                   aria-label="Text to show"
                 >
@@ -1712,10 +1710,10 @@ export function EmailDetail({
                       onClick={() => setTextView(mode)}
                       aria-pressed={textView === mode}
                       className={cn(
-                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold caps clean:capitalize cursor-pointer transition-colors whitespace-nowrap",
-                        mode === "reply" && "border-l-strong border-line",
+                        "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold cursor-pointer transition-colors whitespace-nowrap capitalize",
+                        mode === "reply" && "border-l border-border",
                         textView === mode
-                          ? "bg-selected text-selected-foreground clean:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+                          ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
                           : "bg-background hover:bg-muted"
                       )}
                     >
@@ -1787,7 +1785,7 @@ export function EmailDetail({
 
         {activeTab === "attachments" && (
           <div className="max-w-[760px]">
-            <ul className="ui-card ui-card-static p-0! divide-y divide-line/20">
+            <ul className="ui-card ui-card-static p-0! divide-y divide-border/20">
               {attachments.map((attachment, index) => (
                 <li
                   key={`${attachment.filename}-${index}`}

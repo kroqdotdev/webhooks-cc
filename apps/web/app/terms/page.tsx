@@ -29,7 +29,7 @@ export default function TermsPage() {
         </div>
 
         {/* The Service */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">The Service</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -40,7 +40,7 @@ export default function TermsPage() {
         </section>
 
         {/* Your Account */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Your Account</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -52,7 +52,7 @@ export default function TermsPage() {
         </section>
 
         {/* Acceptable Use */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Acceptable Use</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>You agree not to:</p>
@@ -67,7 +67,7 @@ export default function TermsPage() {
         </section>
 
         {/* Shared previews */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Shared Previews</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -91,7 +91,7 @@ export default function TermsPage() {
             <p>
               Anyone can report a preview, without an account, through the Report button on every
               preview or at{" "}
-              <Link href="/report" className="text-primary-ink hover:underline font-bold">
+              <Link href="/report" className="text-primary hover:underline font-bold">
                 webhooks.cc/report
               </Link>
               . We review each report and may stop a preview, block its name, or suspend sharing or
@@ -104,7 +104,7 @@ export default function TermsPage() {
         </section>
 
         {/* Webhook Data */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Webhook Data</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -112,7 +112,7 @@ export default function TermsPage() {
               information such as passwords, payment card numbers, or personal health data through
               the service. Where captured requests contain personal data, we process it on your
               behalf and only to provide the service. See our{" "}
-              <Link href="/privacy" className="text-primary-ink hover:underline font-bold">
+              <Link href="/privacy" className="text-primary hover:underline font-bold">
                 Privacy Policy
               </Link>{" "}
               for details on data handling.
@@ -121,7 +121,7 @@ export default function TermsPage() {
         </section>
 
         {/* Service Availability */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Service Availability</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -132,7 +132,7 @@ export default function TermsPage() {
         </section>
 
         {/* Governing Law */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Governing Law</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -145,7 +145,7 @@ export default function TermsPage() {
         </section>
 
         {/* Changes */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Changes</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -157,14 +157,14 @@ export default function TermsPage() {
         </section>
 
         {/* Contact */}
-        <section className="border-t-strong border-line pt-8 mt-8">
+        <section className="border-t border-border pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Contact</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               Questions about these terms? Email{" "}
               <a
                 href="mailto:support@webhooks.cc"
-                className="text-primary-ink hover:underline font-bold"
+                className="text-primary hover:underline font-bold"
               >
                 support@webhooks.cc
               </a>

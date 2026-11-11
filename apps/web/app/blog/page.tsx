@@ -67,12 +67,11 @@ export default async function BlogIndexPage() {
 
         {/* Featured post */}
         <section className="mb-8">
-          <p className="text-xs font-bold caps-wide text-muted-foreground mb-3">Featured</p>
+          <p className="text-xs font-bold text-muted-foreground mb-3">Featured</p>
           <Link href={`/blog/${featured.slug}`} className="ui-card block p-0 overflow-hidden group">
-            <div className="h-2 bg-primary clean:hidden" />
             <div className="p-6 md:p-8">
               <div className="flex flex-wrap items-center gap-3 mb-4">
-                <span className="text-xs font-bold caps border-strong border-line rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
+                <span className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
                   {featured.category}
                 </span>
                 {featured.publishedAt && (
@@ -101,22 +100,17 @@ export default async function BlogIndexPage() {
         {/* Latest two posts */}
         {latestTwo.length > 0 && (
           <section className="mb-10">
-            <p className="text-xs font-bold caps-wide text-muted-foreground mb-3">Latest</p>
+            <p className="text-xs font-bold text-muted-foreground mb-3">Latest</p>
             <div className="grid gap-4 md:grid-cols-2">
-              {latestTwo.map((post, index) => (
+              {latestTwo.map((post) => (
                 <Link
                   key={post.slug}
                   href={`/blog/${post.slug}`}
                   className="ui-card block p-0 overflow-hidden group"
                 >
-                  <div
-                    className={
-                      index === 0 ? "h-2 bg-secondary clean:hidden" : "h-2 bg-accent clean:hidden"
-                    }
-                  />
                   <div className="p-5">
                     <div className="flex flex-wrap items-center gap-3 mb-3">
-                      <span className="text-xs font-bold caps border-strong border-line rounded-md px-2 py-1 bg-background">
+                      <span className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-background">
                         {post.category}
                       </span>
                       {post.publishedAt && (
@@ -140,9 +134,8 @@ export default async function BlogIndexPage() {
         {/* All posts list */}
         {remaining.length > 0 && (
           <section>
-            <p className="text-xs font-bold caps-wide text-muted-foreground mb-3">All posts</p>
+            <p className="text-xs font-bold text-muted-foreground mb-3">All posts</p>
             <div className="ui-card ui-card-static p-0 overflow-hidden">
-              <div className="h-2 bg-gradient-to-r from-primary via-secondary to-accent clean:hidden" />
               {remaining.map((post, index) => (
                 <Link
                   key={post.slug}
@@ -154,7 +147,7 @@ export default async function BlogIndexPage() {
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
-                        <span className="text-xs font-bold caps border-strong border-line rounded-md px-2 py-0.5 bg-background shrink-0">
+                        <span className="text-xs font-bold border border-border rounded-md px-2 py-0.5 bg-background shrink-0">
                           {post.category}
                         </span>
                         <h3 className="text-base font-bold leading-snug group-hover:underline truncate">

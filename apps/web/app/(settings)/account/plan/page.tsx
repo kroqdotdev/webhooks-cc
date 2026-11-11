@@ -146,7 +146,7 @@ function PlanTable({ current, chooser }: { current: PlanKey; chooser: PlanChoose
     <table className="w-full text-sm">
       <caption className="sr-only">Free, Pro and Business plans compared</caption>
       <thead>
-        <tr className="border-b-strong border-line">
+        <tr className="border-b border-border">
           <th scope="col" className="px-5 py-3 text-left font-medium text-muted-foreground">
             <span className="sr-only">Feature</span>
           </th>
@@ -162,7 +162,7 @@ function PlanTable({ current, chooser }: { current: PlanKey; chooser: PlanChoose
       </thead>
       <tbody>
         {PLAN_ROWS.map((row) => (
-          <tr key={row.label} className="border-b border-line/60">
+          <tr key={row.label} className="border-b border-border/60">
             <th scope="row" className="px-5 py-3 text-left font-normal text-muted-foreground">
               {(mailFirst && MAIL_ROW_LABELS[row.label]) || row.label}
             </th>
@@ -208,7 +208,7 @@ function PlanList({ current, chooser }: { current: PlanKey; chooser: PlanChooser
         {PLAN_ROWS.map((row) => (
           <div
             key={row.label}
-            className="col-span-2 grid grid-cols-subgrid border-b border-line/60 py-2"
+            className="col-span-2 grid grid-cols-subgrid border-b border-border/60 py-2"
           >
             <dt className="text-muted-foreground">
               {(mailFirst && MAIL_ROW_LABELS[row.label]) || row.label}
@@ -452,7 +452,7 @@ export default function PlanPage() {
               {activeTeams.map((team) => (
                 <li
                   key={team.id}
-                  className="grid gap-3 border-b border-line/60 px-5 py-4 last:border-b-0 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] sm:items-center sm:gap-6"
+                  className="grid gap-3 border-b border-border/60 px-5 py-4 last:border-b-0 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] sm:items-center sm:gap-6"
                 >
                   <Link
                     href={`/teams/${team.id}`}

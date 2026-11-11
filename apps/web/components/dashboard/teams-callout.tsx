@@ -38,9 +38,9 @@ export function DashboardAnnouncement() {
   }
 
   return (
-    <div className="hidden md:block bg-card border-strong border-primary px-4 py-3">
+    <div className="hidden md:block bg-card border border-primary px-4 py-3">
       <div className="flex items-start gap-3">
-        <Megaphone className="h-5 w-5 text-primary-ink flex-shrink-0 mt-0.5" />
+        <Megaphone className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
         <p className="flex-1 text-sm font-medium">
           <span className="font-bold">New:</span> {text}{" "}
           <Link href={cta.href} className="underline font-medium text-foreground hover:opacity-80">

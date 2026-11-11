@@ -24,7 +24,7 @@ export function SupportHome() {
     <main className="mx-auto max-w-3xl px-6 pb-16 pt-10 md:px-10">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold clean:font-semibold md:text-4xl">Support</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold">Support</h1>
           <p className="max-w-[60ch] text-sm text-muted-foreground">
             {isAuthenticated
               ? "Ask about anything in your account. You get an answer here, and by email if you want one."
@@ -67,7 +67,7 @@ function TicketRows({ tickets }: { tickets: SupportTicketSummary[] }) {
         const closed = ticket.status === "closed";
         const yours = !closed && ticket.waitingOn === "user";
         return (
-          <li key={ticket.id} className="border-t border-line first:border-t-0">
+          <li key={ticket.id} className="border-t border-border first:border-t-0">
             <Link
               href={`/support/${ticket.number}`}
               className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 px-4 py-3.5 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -80,7 +80,7 @@ function TicketRows({ tickets }: { tickets: SupportTicketSummary[] }) {
               <span
                 className={cn(
                   "row-span-2 text-right text-xs",
-                  yours ? "font-semibold text-primary-ink" : "text-muted-foreground"
+                  yours ? "font-semibold text-primary" : "text-muted-foreground"
                 )}
               >
                 {yours && (
@@ -192,7 +192,7 @@ function SignedOut() {
   return (
     <div className="space-y-8">
       <div className="ui-card ui-card-static space-y-3">
-        <h2 className="text-lg font-bold clean:font-semibold">Open a ticket</h2>
+        <h2 className="text-lg font-semibold">Open a ticket</h2>
         <p className="text-sm text-muted-foreground">
           Sign in to open a ticket about your account. You can follow the answer here, get it by
           email, and let support look at your account while the ticket is open.

@@ -105,7 +105,7 @@ function StatusChip({ status }: { status: number }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center min-w-11 px-1.5 py-0.5 text-xs font-mono font-bold border-strong border-line rounded-sm",
+        "inline-flex items-center justify-center min-w-11 px-1.5 py-0.5 text-xs font-mono font-bold border border-border rounded-sm",
         statusTone(status)
       )}
     >
@@ -147,7 +147,7 @@ function RowHeader({
           dim && "opacity-55"
         )}
       >
-        <span className="w-16 shrink-0 text-xs font-bold caps text-muted-foreground">{marker}</span>
+        <span className="w-16 shrink-0 text-xs font-bold text-muted-foreground">{marker}</span>
         <span className="flex-1 min-w-0 truncate text-sm">{summary}</span>
         {answers && (
           <span className="hidden sm:inline shrink-0 text-xs font-semibold text-foreground">
@@ -268,7 +268,7 @@ function PreviewPanel({
   }
 
   return (
-    <div className="pt-4 border-t border-line/20 space-y-3">
+    <div className="pt-4 border-t border-border/20 space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <label htmlFor={`responses-preview-${slug}`} className="text-sm font-semibold">
           Preview with
@@ -517,7 +517,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
       <ol
         ref={listRef}
         aria-label="Responses in the order they are checked"
-        className="border-strong border-line rounded-md divide-y divide-line/30 overflow-hidden"
+        className="border border-border rounded-md divide-y divide-border/30 overflow-hidden"
       >
         {rules.map((rule, index) => {
           const isOpen = open.has(rule.key);
@@ -568,9 +568,9 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                 }
               />
               {isOpen && (
-                <div id={panelId} className="px-3 pb-4 pt-1 space-y-4 border-t border-line/20">
+                <div id={panelId} className="px-3 pb-4 pt-1 space-y-4 border-t border-border/20">
                   <div className="pt-3 space-y-1.5">
-                    <label htmlFor={`${panelId}-name`} className="block text-xs font-bold caps">
+                    <label htmlFor={`${panelId}-name`} className="block text-xs font-bold">
                       Name
                     </label>
                     <input
@@ -592,7 +592,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                       updateRule(rule.key, { conditions, logic })
                     }
                   />
-                  <div className="pt-3 border-t border-line/20 space-y-2">
+                  <div className="pt-3 border-t border-border/20 space-y-2">
                     <p className="text-sm font-semibold">Answer with</p>
                     <ResponseEditor
                       draft={rule.response}
@@ -601,7 +601,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                     />
                   </div>
                   {showProblems && <p className="text-xs text-destructive-ink">{problems[0]}</p>}
-                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-line/20">
+                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border/20">
                     {rules.length > 1 && (
                       <>
                         <button
@@ -663,7 +663,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
             controlsId="responses-fallback"
           />
           {open.has("fallback") && (
-            <div id="responses-fallback" className="px-3 pb-4 pt-3 border-t border-line/20">
+            <div id="responses-fallback" className="px-3 pb-4 pt-3 border-t border-border/20">
               <ResponseEditor
                 draft={fallback}
                 onChange={setFallback}

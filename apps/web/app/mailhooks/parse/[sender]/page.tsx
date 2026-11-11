@@ -51,7 +51,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
       </SiteHeader>
       <main className="py-16 px-4">
         <article className="max-w-6xl mx-auto">
-          <p className="text-xs font-bold caps text-muted-foreground mb-3">
+          <p className="text-xs font-bold text-muted-foreground mb-3">
             {template.sender} {template.kind}
           </p>
           <h1 className="text-4xl md:text-5xl font-bold mb-4">{template.title}</h1>
@@ -80,7 +80,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
               <div className="ui-card ui-card-static p-0! overflow-x-auto mb-4">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b-strong border-line text-left">
+                    <tr className="border-b border-border text-left">
                       <th scope="col" className="px-4 py-2 font-semibold">
                         Field
                       </th>
@@ -94,7 +94,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                   </thead>
                   <tbody>
                     {(template.layout.fields ?? []).map((field) => (
-                      <tr key={field.name} className="border-b border-line last:border-0">
+                      <tr key={field.name} className="border-b border-border last:border-0">
                         <td className="px-4 py-2 font-mono">{field.name}</td>
                         <td className="px-4 py-2 text-muted-foreground">
                           {field.from === "header"

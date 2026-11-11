@@ -85,7 +85,7 @@ export function BlogPostShell({
       )}
       <div className="max-w-6xl mx-auto">
         {isDraft && (
-          <div className="mb-5 border-strong border-yellow-500 rounded-lg bg-yellow-50 dark:bg-yellow-950 px-4 py-3 text-sm font-bold text-yellow-800 dark:text-yellow-200">
+          <div className="mb-5 border border-yellow-500 rounded-lg bg-yellow-50 dark:bg-yellow-950 px-4 py-3 text-sm font-bold text-yellow-800 dark:text-yellow-200">
             Draft: not published
           </div>
         )}
@@ -99,16 +99,15 @@ export function BlogPostShell({
         </Link>
 
         <header className="ui-card ui-card-static p-0 overflow-hidden mb-8">
-          <div className="h-2 bg-gradient-to-r from-primary via-secondary to-accent clean:hidden" />
           <div className="p-6 md:p-8">
             <div className="flex flex-wrap items-center gap-2 mb-4">
-              <span className="text-xs font-bold caps border-strong border-line rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
+              <span className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
                 {post.category}
               </span>
               {post.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="text-xs font-bold caps border-strong border-line rounded-md px-2 py-1 bg-background"
+                  className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-background"
                 >
                   {tag}
                 </span>
@@ -133,7 +132,6 @@ export function BlogPostShell({
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
           <article className="ui-card ui-card-static p-0 overflow-hidden min-w-0">
-            <div className="h-2 bg-gradient-to-r from-secondary via-primary to-secondary clean:hidden" />
             <div className="p-6 md:p-10">
               <div className="docs-content">{children}</div>
             </div>
@@ -141,7 +139,7 @@ export function BlogPostShell({
 
           <aside className="space-y-4 lg:sticky lg:top-28 self-start">
             <div className="ui-card ui-card-static p-4">
-              <p className="text-xs font-bold caps text-muted-foreground mb-3">On this page</p>
+              <p className="text-xs font-bold text-muted-foreground mb-3">On this page</p>
               <ul className="space-y-2">
                 {headings.map((heading) => (
                   <li key={heading.id}>
@@ -158,7 +156,7 @@ export function BlogPostShell({
 
             {relatedPosts.length > 0 && (
               <div className="ui-card ui-card-static p-4">
-                <p className="text-xs font-bold caps text-muted-foreground mb-3">More guides</p>
+                <p className="text-xs font-bold text-muted-foreground mb-3">More guides</p>
                 <div className="space-y-3">
                   {relatedPosts.map((related) => (
                     <Link key={related.slug} href={`/blog/${related.slug}`} className="block group">

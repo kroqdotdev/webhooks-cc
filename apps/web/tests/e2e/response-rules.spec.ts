@@ -70,7 +70,7 @@ async function pick(page: Page, picker: Locator, option: string) {
 
 async function openSettingsTab(page: Page) {
   // Wait for the endpoint bar to show the endpoint name
-  await expect(page.locator("span.font-bold.caps", { hasText: "Rules E2E Test" })).toBeVisible({
+  await expect(page.locator("span.font-bold", { hasText: "Rules E2E Test" })).toBeVisible({
     timeout: 15000,
   });
   await page

@@ -266,18 +266,16 @@ export default async function Home() {
       {/* A signed-in visitor gets a compact band instead of the full-height frame. */}
       <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] has-[[data-landing-signed-in]]:h-auto flex flex-col">
         {/* Title strip inside the app chrome: the page's H1 lives here */}
-        <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-3 md:py-5 text-center">
+        <div className="shrink-0 border-b border-border bg-muted px-4 py-3 md:py-5 text-center">
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
             The fastest way to{" "}
-            <span className="bg-primary text-primary-foreground px-1.5 clean:bg-transparent clean:px-0 clean:text-primary-ink">
-              test webhooks
-            </span>
+            <span className="bg-transparent px-0 text-primary">test webhooks</span>
           </h1>
           <p className="hidden md:block group-has-[[data-landing-signed-in]]/landing:hidden! text-base text-muted-foreground mt-2">
             Get a free webhook URL below and point any service at it. No signup, no credit card.{" "}
             <Link
               href="/login?mode=sign-up"
-              className="font-bold text-foreground hover:text-primary-ink"
+              className="font-bold text-foreground hover:text-primary"
             >
               Sign up free
             </Link>{" "}
@@ -305,7 +303,7 @@ export default async function Home() {
 
           <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
             <div className="ui-card ui-card-static">
-              <p className="text-xs font-bold caps text-muted-foreground mb-3">
+              <p className="text-xs font-bold text-muted-foreground mb-3">
                 Guest URL: what you have now
               </p>
               <ul className="space-y-2 text-sm">
@@ -323,10 +321,10 @@ export default async function Home() {
             </div>
 
             <div className="ui-card ui-card-static border-primary relative">
-              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
+              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border border-border rounded-md shadow-xs">
                 1 click away
               </div>
-              <p className="text-xs font-bold caps text-muted-foreground mb-3">
+              <p className="text-xs font-bold text-muted-foreground mb-3">
                 Free account: GitHub, Google, or email
               </p>
               <ul className="space-y-2 text-sm">
@@ -340,7 +338,7 @@ export default async function Home() {
                   "CLI tunnel, plus full SDK & MCP access",
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-primary-ink shrink-0" />
+                    <Check className="h-4 w-4 text-primary shrink-0" />
                     {item}
                   </li>
                 ))}
@@ -413,7 +411,7 @@ export default async function Home() {
               },
             ].map((item) => (
               <div key={item.step} className="flex gap-4">
-                <div className="w-10 h-10 border-strong border-line rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-raised-sm">
+                <div className="w-10 h-10 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-xs">
                   {item.step}
                 </div>
                 <div>
@@ -439,8 +437,8 @@ export default async function Home() {
           {/* Phones show the titles only, two to a row, to keep the page short. */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 max-md:[&_.ui-card>p]:hidden max-md:[&_h3]:text-base max-md:[&_h3]:mb-0">
             <div className="ui-card">
-              <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
-                <Eye className="h-6 w-6 text-primary-foreground clean:text-foreground" />
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                <Eye className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">See requests the moment they arrive</h3>
               <p className="text-muted-foreground">
@@ -450,34 +448,25 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border-strong border-line rounded-md bg-secondary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
-                <Zap className="h-6 w-6 text-secondary-foreground clean:text-foreground" />
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                <Zap className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Send signed provider test webhooks</h3>
               <p className="text-muted-foreground">
                 Realistic payloads with correct signature headers for{" "}
-                <Link
-                  href="/webhooks/stripe"
-                  className="text-primary-ink font-bold hover:underline"
-                >
+                <Link href="/webhooks/stripe" className="text-primary font-bold hover:underline">
                   Stripe
                 </Link>
                 ,{" "}
-                <Link
-                  href="/webhooks/github"
-                  className="text-primary-ink font-bold hover:underline"
-                >
+                <Link href="/webhooks/github" className="text-primary font-bold hover:underline">
                   GitHub
                 </Link>
                 ,{" "}
-                <Link
-                  href="/webhooks/shopify"
-                  className="text-primary-ink font-bold hover:underline"
-                >
+                <Link href="/webhooks/shopify" className="text-primary font-bold hover:underline">
                   Shopify
                 </Link>
                 , and{" "}
-                <Link href="/webhooks" className="text-primary-ink font-bold hover:underline">
+                <Link href="/webhooks" className="text-primary font-bold hover:underline">
                   30+ more
                 </Link>
                 . Test your verification code end-to-end.
@@ -485,7 +474,7 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border-strong border-line rounded-md bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+              <div className="w-12 h-12 border border-border rounded-md bg-muted flex items-center justify-center mb-4 shadow-xs">
                 <Reply className="h-6 w-6" />
               </div>
               <h3 className="font-bold text-xl mb-2">Return custom mock responses</h3>
@@ -497,8 +486,8 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border-strong border-line rounded-md bg-accent clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
-                <Terminal className="h-6 w-6 text-accent-foreground clean:text-foreground" />
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                <Terminal className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Forward to localhost. Assert in CI.</h3>
               <p className="text-muted-foreground">
@@ -509,8 +498,8 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border-strong border-line rounded-md bg-foreground clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
-                <Bot className="h-6 w-6 text-background clean:text-foreground" />
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                <Bot className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Let your AI agent debug webhooks</h3>
               <p className="text-muted-foreground">
@@ -521,12 +510,12 @@ export default async function Home() {
             </div>
 
             <div className="ui-card">
-              <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
-                <Users className="h-6 w-6 text-primary-foreground clean:text-foreground" />
+              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                <Users className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">
                 Collaborate with your team{" "}
-                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border-strong border-line rounded-md align-middle shadow-raised-sm">
+                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border border-border rounded-md align-middle shadow-xs">
                   Teams
                 </span>
               </h3>
@@ -542,7 +531,7 @@ export default async function Home() {
               Every endpoint on an account also has an email address. Test the emails your app
               sends, or turn inbound mail into signed JSON, Google Sheets rows or chat messages.
               Reading orders, bookings or reports out of mail and its attachments? Start at{" "}
-              <a href={mailhooksUrl("/")} className="text-primary-ink font-bold hover:underline">
+              <a href={mailhooksUrl("/")} className="text-primary font-bold hover:underline">
                 mailhooks.cc
               </a>
               , the mail-first side of the same account.
@@ -550,10 +539,10 @@ export default async function Home() {
 
             <div className="grid md:grid-cols-2 gap-6">
               <Link href="/email-testing" className="ui-card block group">
-                <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
-                  <Mail className="h-6 w-6 text-primary-foreground clean:text-foreground" />
+                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                  <Mail className="h-6 w-6 text-foreground" />
                 </div>
-                <h4 className="font-bold text-xl mb-2 group-hover:text-primary-ink transition-colors">
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
                   Test signup, login and reset emails
                 </h4>
                 <p className="text-muted-foreground mb-4">
@@ -567,10 +556,10 @@ export default async function Home() {
               </Link>
 
               <Link href="/email-to-webhook" className="ui-card block group">
-                <div className="w-12 h-12 border-strong border-line rounded-md bg-secondary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
-                  <Webhook className="h-6 w-6 text-secondary-foreground clean:text-foreground" />
+                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-xs bg-muted">
+                  <Webhook className="h-6 w-6 text-foreground" />
                 </div>
-                <h4 className="font-bold text-xl mb-2 group-hover:text-primary-ink transition-colors">
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
                   Turn inbound email into a webhook
                 </h4>
                 <p className="text-muted-foreground mb-4">
@@ -606,8 +595,8 @@ export default async function Home() {
               <code>
                 <span className="text-muted-foreground"># Send manually with curl</span>
                 {"\n"}
-                <span className="text-primary-ink">$</span> curl -X POST
-                https://go.webhooks.cc/w/abc123 \{"\n"}
+                <span className="text-primary">$</span> curl -X POST https://go.webhooks.cc/w/abc123
+                \{"\n"}
                 {"  "}-H{" "}
                 <span className="text-code-string">&quot;Content-Type: application/json&quot;</span>{" "}
                 \{"\n"}
@@ -663,7 +652,7 @@ export default async function Home() {
           <p className="mt-6">
             <Link
               href="/pricing"
-              className="inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+              className="inline-flex items-center gap-1 font-bold text-primary hover:underline"
             >
               Extra requests, annual billing and pricing questions
               <ArrowRight className="h-4 w-4" aria-hidden />
@@ -745,7 +734,7 @@ export default async function Home() {
           </div>
           <Link
             href="/compare"
-            className="md:hidden mt-6 inline-flex items-center gap-1 font-bold text-primary-ink hover:underline"
+            className="md:hidden mt-6 inline-flex items-center gap-1 font-bold text-primary hover:underline"
           >
             All comparisons
             <ArrowRight className="h-4 w-4" />
@@ -785,7 +774,7 @@ export default async function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t-strong border-line py-12 px-4">
+      <footer className="border-t border-border py-12 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-8">
             <div>
@@ -974,7 +963,7 @@ export default async function Home() {
               </ul>
             </div>
           </div>
-          <div className="border-t-strong border-line mt-12 pt-8 text-center text-muted-foreground text-sm">
+          <div className="border-t border-border mt-12 pt-8 text-center text-muted-foreground text-sm">
             <p>&copy; {new Date().getFullYear()} webhooks.cc. All rights reserved.</p>
           </div>
         </div>

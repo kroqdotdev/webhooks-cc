@@ -84,7 +84,7 @@ async function captureOrder(order: number) {
 
 async function openLayouts(page: Page) {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold.caps", { hasText: "Layouts E2E" })).toBeVisible({
+  await expect(page.locator("span.font-bold", { hasText: "Layouts E2E" })).toBeVisible({
     timeout: 15000,
   });
   await page

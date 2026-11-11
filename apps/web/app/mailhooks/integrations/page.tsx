@@ -85,7 +85,7 @@ export default function IntegrationsPage() {
           (as signed links by default), the sender checks and the headers; see{" "}
           <Link
             href="/docs/forwarding#signed-json"
-            className="text-primary-ink font-bold hover:underline"
+            className="text-primary font-bold hover:underline"
           >
             Signed JSON
           </Link>

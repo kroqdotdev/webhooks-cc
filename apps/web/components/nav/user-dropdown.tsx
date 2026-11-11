@@ -53,7 +53,7 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
       <img
         src={profile.image}
         alt=""
-        className="h-7 w-7 rounded-full border-strong border-line"
+        className="h-7 w-7 rounded-full border border-border"
         onError={() => setImgFailed(true)}
       />
     );
@@ -62,7 +62,7 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
   return (
     <div
       aria-hidden
-      className="h-7 w-7 rounded-full border-strong border-line bg-muted flex items-center justify-center text-xs font-bold leading-none"
+      className="h-7 w-7 rounded-full border border-border bg-muted flex items-center justify-center text-xs font-bold leading-none"
     >
       {initials}
     </div>

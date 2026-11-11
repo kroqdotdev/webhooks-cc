@@ -17,7 +17,7 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[repeat(2,minmax(0,1fr))] gap-6 items-stretch">
       <figure className="ui-card ui-card-static p-0! overflow-hidden flex flex-col">
-        <figcaption className="px-5 py-3 border-b-strong border-line text-xs font-bold caps text-muted-foreground">
+        <figcaption className="px-5 py-3 border-b border-border text-xs font-bold text-muted-foreground">
           The email
         </figcaption>
         <dl className="px-5 pt-4 text-sm grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
@@ -39,7 +39,7 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
         </pre>
       </figure>
       <figure className="ui-card ui-card-static p-0! overflow-hidden flex flex-col">
-        <figcaption className="px-5 py-3 border-b-strong border-line text-xs font-bold caps text-muted-foreground">
+        <figcaption className="px-5 py-3 border-b border-border text-xs font-bold text-muted-foreground">
           What your endpoint delivers
         </figcaption>
         {/* On phones the JSON scrolls in a shorter box, so the page reaches "How it works" sooner. */}

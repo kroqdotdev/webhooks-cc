@@ -107,7 +107,7 @@ export default function CompareStripeCliPage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold caps text-muted-foreground mb-3">
+        <p className="text-xs font-bold text-muted-foreground mb-3">
           Comparison · Updated November 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Stripe CLI</h1>
@@ -129,7 +129,7 @@ export default function CompareStripeCliPage() {
         <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-strong border-line">
+              <tr className="border-b border-border">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -258,33 +258,30 @@ export default function CompareStripeCliPage() {
           See also:{" "}
           <Link
             href="/webhooks/stripe"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             Stripe Webhook Tester
           </Link>
           {" · "}
           <Link
             href="/compare/ngrok"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs ngrok
           </Link>
           {" · "}
           <Link
             href="/compare/hookdeck"
-            className="font-semibold hover:text-primary-ink transition-colors"
+            className="font-semibold hover:text-primary transition-colors"
           >
             vs Hookdeck
           </Link>
           {" · "}
-          <Link
-            href="/compare/svix"
-            className="font-semibold hover:text-primary-ink transition-colors"
-          >
+          <Link href="/compare/svix" className="font-semibold hover:text-primary transition-colors">
             vs Svix
           </Link>
           {" · "}
-          <Link href="/compare" className="font-semibold hover:text-primary-ink transition-colors">
+          <Link href="/compare" className="font-semibold hover:text-primary transition-colors">
             All comparisons
           </Link>
         </p>

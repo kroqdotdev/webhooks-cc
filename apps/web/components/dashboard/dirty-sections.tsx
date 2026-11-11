@@ -248,7 +248,7 @@ export function DiscardChangesDialog({
     // Each way out says what it means: Escape and Keep editing keep, Discard discards.
     <AlertDialog open={open}>
       <AlertDialogContent
-        className="border-strong border-line shadow-raised"
+        className="border border-border shadow-md"
         // While a save runs the answer is already given: it leaves once saved.
         onEscapeKeyDown={(event) => {
           if (saving && !stuck) event.preventDefault();

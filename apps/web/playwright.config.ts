@@ -15,19 +15,6 @@ const receiverURL = process.env.WHK_WEBHOOK_URL ?? "http://localhost:3101";
 const receiverPort = Number(new URL(receiverURL).port || 80);
 const cargoBin = process.env.CARGO ?? `${process.env.HOME}/.cargo/bin/cargo`;
 
-// The classic style is stored per origin, so a build serving mailhooks.cc
-// (NEXT_PUBLIC_MAILHOOKS_URL) gets it there too; sessions and storage are per host.
-const classicOrigins = [
-  baseURL,
-  ...(process.env.NEXT_PUBLIC_MAILHOOKS_URL ? [process.env.NEXT_PUBLIC_MAILHOOKS_URL] : []),
-].map((url) => ({
-  origin: new URL(url).origin,
-  localStorage: [
-    { name: "ui-style", value: "classic" },
-    { name: "ui-style-source", value: "chosen" },
-  ],
-}));
-
 // E2E tests exercise encrypted signing-secret paths. Use a deterministic
 // test-only key when local development env does not provide one.
 const signingSecretKey = process.env.SIGNING_SECRET_KEY ?? Buffer.alloc(32, 7).toString("base64");
@@ -51,15 +38,6 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-    },
-    // The same specs in the classic style, picked the way Account > Appearance
-    // stores it (lib/ui-style.ts). `--project=chromium` runs the clean style only.
-    {
-      name: "chromium-classic",
-      use: {
-        ...devices["Desktop Chrome"],
-        storageState: { cookies: [], origins: classicOrigins },
-      },
     },
   ],
   webServer: [

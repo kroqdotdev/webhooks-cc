@@ -36,12 +36,12 @@ export default function SendersIndex() {
                     {group.templates.map((template) => (
                       <li key={template.id}>
                         <Link href={`/parse/${template.id}`} className="ui-card block h-full">
-                          <p className="text-xs font-bold caps text-muted-foreground mb-2">
+                          <p className="text-xs font-bold text-muted-foreground mb-2">
                             {template.sender}
                           </p>
                           <h3 className="font-bold text-lg mb-2">{template.title}</h3>
                           <p className="text-sm text-muted-foreground">{template.description}</p>
-                          <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary-ink">
+                          <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary">
                             See the layout
                             <ArrowRight className="h-4 w-4" aria-hidden />
                           </span>

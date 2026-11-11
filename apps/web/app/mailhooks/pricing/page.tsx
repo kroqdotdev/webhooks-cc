@@ -120,7 +120,7 @@ export default function MailhooksPricing() {
                 className={`ui-card relative flex flex-col ${plan.name === "Business" ? "border-primary" : ""}`}
               >
                 {plan.name === "Business" && (
-                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold caps border-strong border-line rounded-sm shadow-raised-sm">
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-xs">
                     Best for parsing
                   </span>
                 )}
@@ -132,7 +132,7 @@ export default function MailhooksPricing() {
                 <ul className="space-y-3 my-8 flex-1">
                   {plan.lines.map((line) => (
                     <li key={line} className="flex items-start gap-3">
-                      <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                      <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
                       <span>{line}</span>
                     </li>
                   ))}
@@ -159,14 +159,14 @@ export default function MailhooksPricing() {
             </p>
             <ul className="grid gap-3 md:grid-cols-2 mb-6">
               <li className="flex items-start gap-3">
-                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
                 <span>
                   <span className="font-bold">Teams, $12 a seat a month:</span> 100,000 pooled
                   emails or webhooks per seat, 31-day retention
                 </span>
               </li>
               <li className="flex items-start gap-3">
-                <Check className="h-5 w-5 text-primary-ink shrink-0 mt-0.5" aria-hidden />
+                <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden />
                 <span>
                   <span className="font-bold">
                     Team Business, $35 a seat a month or $350 a year:

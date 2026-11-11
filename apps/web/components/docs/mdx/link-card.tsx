@@ -13,7 +13,7 @@ export function LinkCard({
   return (
     <SiteLink
       href={href}
-      className="block my-3 p-4 rounded-lg border-strong border-line bg-card shadow-raised-sm hover:shadow-raised hover:-translate-x-(--press) hover:-translate-y-(--press) transition-all no-underline"
+      className="block my-3 p-4 rounded-lg border border-border bg-card shadow-xs hover:shadow-md transition-all no-underline"
     >
       <div className="flex items-center justify-between">
         <div>

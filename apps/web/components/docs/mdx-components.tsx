@@ -19,7 +19,7 @@ export const mdxComponents: MDXComponents = {
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
     if (href?.startsWith("#")) {
       return (
-        <Link href={href} className="text-primary-ink hover:underline font-bold" {...props}>
+        <Link href={href} className="text-primary hover:underline font-bold" {...props}>
           {children}
         </Link>
       );
@@ -27,7 +27,7 @@ export const mdxComponents: MDXComponents = {
     if (href?.startsWith("/")) {
       // On mailhooks.cc, pages only webhooks.cc has are linked there directly.
       return (
-        <SiteLink href={href} className="text-primary-ink hover:underline font-bold" {...props}>
+        <SiteLink href={href} className="text-primary hover:underline font-bold" {...props}>
           {children}
         </SiteLink>
       );
@@ -37,7 +37,7 @@ export const mdxComponents: MDXComponents = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-primary-ink hover:underline font-bold"
+        className="text-primary hover:underline font-bold"
         {...props}
       >
         {children}
@@ -46,12 +46,12 @@ export const mdxComponents: MDXComponents = {
   },
 
   table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
-    <div className="my-6 overflow-x-auto rounded-lg border-strong border-line shadow-raised-sm">
+    <div className="my-6 overflow-x-auto rounded-lg border border-border shadow-xs">
       <table className="w-full text-sm" {...props} />
     </div>
   ),
   th: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => (
-    <th className="text-left font-bold py-2 px-3 border-b-strong border-line bg-muted" {...props} />
+    <th className="text-left font-bold py-2 px-3 border-b border-border bg-muted" {...props} />
   ),
   td: (props: React.TdHTMLAttributes<HTMLTableCellElement>) => (
     <td className="py-2 px-3 border-b border-foreground/20" {...props} />

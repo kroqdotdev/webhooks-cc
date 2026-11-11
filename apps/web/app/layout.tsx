@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { mailhooksOrigin } from "@/lib/site";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import {
   DEFAULT_OG_IMAGE_PATH,
@@ -16,32 +16,19 @@ import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
 import { buildAuthMdUrl } from "@/lib/agent/metadata";
-import { appearanceBootstrapScript } from "@/lib/ui-style";
+import { themeBootstrapScript } from "@/lib/theme";
 
-// Font variables live on <html> so globals.css can pick the face for the active style.
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
-});
-
-// Only the clean style uses the Plex pair, so classic visitors never download it.
+// Font variables live on <html>; globals.css names them in --font-sans and --font-mono.
 const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-plex-sans",
-  preload: false,
 });
 
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
   variable: "--font-plex-mono",
-  preload: false,
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
 });
 
 const googleSiteVerification =
@@ -120,7 +107,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} ${plexSans.variable} ${plexMono.variable}`}
+      className={`${plexSans.variable} ${plexMono.variable}`}
       suppressHydrationWarning
     >
       <head>
@@ -141,7 +128,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: appearanceBootstrapScript(),
+            __html: themeBootstrapScript(),
           }}
         />
         {ANNOUNCEMENTS.length > 0 && (
@@ -156,7 +143,7 @@ export default function RootLayout({
       <body className="font-sans">
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-background focus:border-strong focus:border-line focus:px-4 focus:py-2 focus:font-bold"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-background focus:border focus:border-border focus:px-4 focus:py-2 focus:font-bold"
         >
           Skip to content
         </a>

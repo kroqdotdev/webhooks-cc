@@ -2,29 +2,18 @@
 @plugin "@tailwindcss/typography";
 
 /*
- * Two visual styles share one component tree. "clean" is the default, set by
- * data-style="clean" on <html> (see ThemeProvider and the inline script from
- * lib/ui-style.ts); "classic" (neobrutalist) is the other value. Light and dark
- * mode are a separate axis on the .dark class, so there are four token sets below.
+ * The look: paper and ink. A cool paper canvas with white surfaces on it,
+ * hairlines instead of shadows, and one pine green (the brand mint pulled
+ * down to ink) for buttons, links and selection alike. Light and dark mode
+ * are the .dark class on <html> (ThemeProvider and the inline script from
+ * lib/theme.ts), so there are two token sets below.
  *
- * Components never hardcode one style's look. Use the style-aware vocabulary:
- *   border-strong, border-{t,r,b,l,x,y}-strong   structural border width
- *   border-line (and side, divide, ring colors)   structural line color
- *   shadow-raised-sm | shadow-raised | shadow-raised-lg
- *   caps, caps-wide                               label casing and tracking
- *   rounded-sm | rounded-md | rounded-lg          zero in classic
- *   bg-action / text-action-foreground            primary buttons
- *   bg-selected / text-selected-foreground        active tab or toggle segment
- *   translate-x-(--press) / translate-y-(--press) hover press distance
- *   ui-card, ui-btn-*, ui-input, ui-code          component classes
- * For the rare case that differs by more than tokens, use the clean: and
- * classic: variants. lib/ui-style-contract.test.ts rejects classic-only
- * utilities such as border-2 or border-foreground.
+ * Resting surfaces carry shadow-xs at most; only floating layers (menus,
+ * dialogs, the docs navbar) lift with shadow-md or shadow-lg, which are
+ * tinted to the ink.
  */
 /* dark: follows the theme toggle (the .dark class ThemeProvider sets on <html>), not the OS */
 @custom-variant dark (&:where(.dark, .dark *));
-@custom-variant clean (&:where([data-style="clean"] *));
-@custom-variant classic (&:where(html:not([data-style="clean"]) *));
 
 /* Offset anchor scroll targets so they clear the fixed navbar */
 html {
@@ -42,9 +31,11 @@ body {
 }
 
 @theme {
-  /* Font families: next/font variables are set on <html>, the active style picks one */
-  --font-sans: var(--app-font-sans);
-  --font-mono: var(--app-font-mono);
+  /* next/font sets these variables on <html> */
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), monospace;
+  /* Bold renders as semibold; Plex at 700 is heavier than the look calls for */
+  --font-weight-bold: 600;
 
   /* Border radius */
   --radius-lg: var(--radius);
@@ -63,7 +54,6 @@ body {
 
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-primary-ink: hsl(var(--primary-ink));
 
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
@@ -82,10 +72,7 @@ body {
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
 
-  /* Style-aware roles */
-  --color-line: hsl(var(--line));
-  --color-action: hsl(var(--action));
-  --color-action-foreground: hsl(var(--action-foreground));
+  /* Active tab, toggle segment and list row */
   --color-selected: hsl(var(--selected));
   --color-selected-foreground: hsl(var(--selected-foreground));
   --color-method-get: hsl(var(--method-get));
@@ -98,136 +85,14 @@ body {
   --color-staff-wash: hsl(var(--staff-wash));
   --color-staff-line: hsl(var(--staff-line));
 
-  --border-width-strong: var(--line-width);
-
-  --shadow-raised-sm: var(--elevation-sm);
-  --shadow-raised: var(--elevation);
-  --shadow-raised-lg: var(--elevation-lg);
+  /* Shadows tinted to the ink, deeper in dark mode */
+  --shadow-xs: var(--elevation-sm);
+  --shadow-md: var(--elevation);
+  --shadow-lg: var(--elevation-lg);
 }
 
 @layer base {
   :root {
-    /* Classic light */
-    --background: 60 9% 98%;
-    --foreground: 0 0% 0%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 0%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 0%;
-    --primary: 162 100% 41%;
-    --primary-foreground: 0 0% 0%;
-    /* The primary as text or a thin mark on the page: the mint fill fails AA as text
-       on a light background, so classic light darkens it; the other sets reuse --primary. */
-    --primary-ink: 162 100% 21%;
-    --secondary: 52 100% 50%;
-    --secondary-foreground: 0 0% 0%;
-    --muted: 60 5% 90%;
-    --muted-foreground: 0 0% 35%;
-    --accent: 280 100% 65%;
-    --accent-foreground: 0 0% 0%;
-    --destructive: 0 72% 45%;
-    --destructive-foreground: 0 0% 100%;
-    /* Red as text on the page; the fill above carries white text. */
-    --destructive-ink: 0 72% 42%;
-    --border: 0 0% 0%;
-    --input: 0 0% 0%;
-    --ring: 162 100% 28%;
-    --radius: 0;
-    --shadow-color: 0 0% 0%;
-
-    /* Classic roles, resolved against the light or dark palette */
-    --line: var(--foreground);
-    --line-width: 2px;
-    --action: var(--primary);
-    --action-foreground: var(--primary-foreground);
-    --selected: var(--foreground);
-    --selected-foreground: var(--background);
-    --caps-transform: uppercase;
-    --caps-tracking: 0.025em;
-    --caps-tracking-wide: 0.1em;
-    --press: 2px;
-    --elevation-sm: 2px 2px 0 0 hsl(var(--shadow-color));
-    --elevation: 4px 4px 0 0 hsl(var(--shadow-color));
-    --elevation-lg: 6px 6px 0 0 hsl(var(--shadow-color));
-    --page-pattern: radial-gradient(
-      circle at center,
-      hsl(var(--foreground) / 0.05) 2px,
-      transparent 2px
-    );
-    /* Scrollbar thumb at rest and under the pointer; the track is always clear */
-    --scrollbar-thumb: hsl(var(--foreground) / 0.55);
-    --scrollbar-thumb-hover: hsl(var(--foreground));
-
-    --syntax-key: 162 100% 21%;
-    --syntax-string: 35 100% 27%;
-    --syntax-number: 280 70% 42%;
-    --syntax-punctuation: var(--muted-foreground);
-
-    /* HTTP method accents (badges use them only in clean; timeline dots in both) */
-    --method-get: 162 100% 41%;
-    --method-post: 52 100% 50%;
-    --method-put: 280 100% 65%;
-    --method-delete: 0 84% 60%;
-    /* Captured emails: the fill carries black text; the ink is the same blue,
-       dark enough to be text on the page (the fill as text fails contrast). */
-    --kind-email: 211 100% 60%;
-    --kind-email-ink: 211 100% 40%;
-    /* Staff: everything only staff see (notes, the support view band, ops). */
-    --staff: 36 85% 32%;
-    --staff-wash: 46 100% 90%;
-    --staff-line: 40 80% 55%;
-
-    --app-font-sans: var(--font-space-grotesk), system-ui, sans-serif;
-    --app-font-mono: var(--font-jetbrains-mono), monospace;
-  }
-
-  .dark {
-    /* Classic dark */
-    --background: 240 6% 10%;
-    --foreground: 60 9% 98%;
-    --card: 240 6% 14%;
-    --card-foreground: 60 9% 98%;
-    --popover: 240 6% 14%;
-    --popover-foreground: 60 9% 98%;
-    --primary: 162 100% 45%;
-    --primary-foreground: 0 0% 0%;
-    --primary-ink: var(--primary);
-    --secondary: 52 100% 50%;
-    --secondary-foreground: 0 0% 0%;
-    --muted: 240 5% 20%;
-    --muted-foreground: 60 5% 70%;
-    --accent: 280 100% 70%;
-    --accent-foreground: 0 0% 0%;
-    --destructive: 0 72% 45%;
-    --destructive-foreground: 0 0% 100%;
-    --destructive-ink: 0 85% 68%;
-    --border: 60 9% 80%;
-    --input: 60 9% 80%;
-    --ring: 162 100% 45%;
-    --radius: 0;
-    --shadow-color: 60 9% 70%;
-
-    --page-pattern: radial-gradient(
-      circle at center,
-      hsl(var(--foreground) / 0.08) 2px,
-      transparent 2px
-    );
-    --scrollbar-thumb: hsl(var(--foreground) / 0.4);
-    --scrollbar-thumb-hover: hsl(var(--foreground) / 0.7);
-    --syntax-key: var(--primary);
-    --syntax-string: var(--secondary);
-    --syntax-number: 280 100% 78%;
-    --kind-email: 211 100% 66%;
-    --kind-email-ink: 211 100% 66%;
-    --staff: 42 90% 62%;
-    --staff-wash: 38 50% 16%;
-    --staff-line: 40 60% 38%;
-  }
-
-  :root[data-style="clean"] {
-    /* Clean light: paper and ink. A cool paper canvas with white surfaces on
-       it, hairlines instead of shadows, and one pine green (the brand mint
-       pulled down to ink) for buttons, links and selection alike. */
     --background: 216 24% 97.5%;
     --foreground: 218 18% 11%;
     --card: 0 0% 100%;
@@ -236,7 +101,6 @@ body {
     --popover-foreground: 218 18% 11%;
     --primary: 164 76% 24%;
     --primary-foreground: 0 0% 100%;
-    --primary-ink: var(--primary);
     --secondary: 216 18% 93%;
     --secondary-foreground: 218 18% 14%;
     --muted: 216 20% 94.5%;
@@ -245,6 +109,7 @@ body {
     --accent-foreground: 218 18% 11%;
     --destructive: 2 70% 46%;
     --destructive-foreground: 0 0% 100%;
+    /* Red as text on the page; the fill above carries white text. */
     --destructive-ink: 2 70% 42%;
     --border: 216 16% 88%;
     /* Control boundaries (inputs, selects, segmented controls) need 3:1 on the page;
@@ -254,25 +119,15 @@ body {
     --radius: 0.5rem;
     --shadow-color: 218 30% 10%;
 
-    --line: var(--border);
-    --line-width: 1px;
-    --action: var(--primary);
-    --action-foreground: var(--primary-foreground);
     /* Active tab, toggle segment and list row: a mint wash with pine text */
     --selected: 164 45% 91%;
     --selected-foreground: 164 80% 17%;
-    --caps-transform: none;
-    --caps-tracking: normal;
-    --caps-tracking-wide: normal;
-    --press: 0px;
-    /* Resting surfaces carry no shadow; only floating layers (menus,
-       dialogs, the docs navbar) lift, with a shadow tinted to the ink */
     --elevation-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.04);
     --elevation:
       0 1px 2px 0 hsl(var(--shadow-color) / 0.06), 0 8px 24px -8px hsl(var(--shadow-color) / 0.14);
     --elevation-lg:
       0 2px 4px 0 hsl(var(--shadow-color) / 0.06), 0 16px 40px -12px hsl(var(--shadow-color) / 0.2);
-    --page-pattern: none;
+    /* Scrollbar thumb at rest and under the pointer; the track is always clear */
     --scrollbar-thumb: hsl(216 12% 78%);
     --scrollbar-thumb-hover: hsl(216 10% 60%);
 
@@ -285,23 +140,17 @@ body {
     --method-post: 28 85% 30%;
     --method-put: 262 60% 48%;
     --method-delete: 2 70% 40%;
+    /* Captured emails: a blue dark enough to be text on the page */
     --kind-email: 222 70% 45%;
     --kind-email-ink: 222 70% 45%;
     /* Staff: ochre, for what only staff see (notes, the support view band, ops). */
     --staff: 36 80% 30%;
     --staff-wash: 44 92% 93%;
     --staff-line: 42 70% 78%;
-
-    /* Bold renders as semibold; Plex at 700 is heavier than the look calls for */
-    --font-weight-bold: 600;
-    --app-font-sans: var(--font-plex-sans), system-ui, sans-serif;
-    --app-font-mono: var(--font-plex-mono), monospace;
   }
 
-  :root[data-style="clean"].dark {
-    /* Clean dark: the same ink and paper inverted, with the mint as the accent */
-    --scrollbar-thumb: hsl(222 10% 26%);
-    --scrollbar-thumb-hover: hsl(222 10% 40%);
+  .dark {
+    /* The same ink and paper inverted, with the mint as the accent */
     --background: 222 18% 7%;
     --foreground: 216 16% 92%;
     --card: 222 16% 10%;
@@ -324,8 +173,6 @@ body {
     --ring: 160 60% 52%;
     --shadow-color: 0 0% 0%;
 
-    --action: var(--primary);
-    --action-foreground: var(--primary-foreground);
     --selected: 162 40% 16%;
     --selected-foreground: 160 60% 72%;
     --elevation-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.3);
@@ -333,6 +180,8 @@ body {
       0 1px 2px 0 hsl(var(--shadow-color) / 0.4), 0 8px 24px -8px hsl(var(--shadow-color) / 0.5);
     --elevation-lg:
       0 2px 4px 0 hsl(var(--shadow-color) / 0.4), 0 16px 40px -12px hsl(var(--shadow-color) / 0.6);
+    --scrollbar-thumb: hsl(222 10% 26%);
+    --scrollbar-thumb-hover: hsl(222 10% 40%);
 
     --syntax-key: 160 60% 52%;
     --syntax-string: 40 85% 62%;
@@ -356,7 +205,7 @@ body {
     @apply border-border;
     scrollbar-width: thin;
   }
-  /* Scrollbars in the style's own colours. Browsers with the standard
+  /* Scrollbars in the page's own colours. Browsers with the standard
      properties use them and ignore the WebKit pseudo-elements, which only
      older Safari still needs, so the two never fight. */
   html {
@@ -404,28 +253,14 @@ body {
   }
   body {
     @apply bg-background text-foreground;
-    /* Ben-Day dots in classic, nothing in clean */
-    background-image: var(--page-pattern);
-    background-size: 8px 8px;
   }
   /* Plex Sans wants a little less air at display sizes; tracking-* utilities still win */
-  [data-style="clean"] :is(h1, h2) {
+  :is(h1, h2) {
     letter-spacing: -0.02em;
   }
-  [data-style="clean"] h3 {
+  h3 {
     letter-spacing: -0.01em;
   }
-}
-
-/* Label casing: uppercase and tracked in classic, sentence case in clean */
-@utility caps {
-  text-transform: var(--caps-transform);
-  letter-spacing: var(--caps-tracking);
-}
-
-@utility caps-wide {
-  text-transform: var(--caps-transform);
-  letter-spacing: var(--caps-tracking-wide);
 }
 
 @layer components {
@@ -463,58 +298,56 @@ body {
     @apply text-sm font-mono bg-muted px-1.5 py-0.5 border border-foreground/20 rounded-sm;
   }
 
-  /* Card: hard shadow that lifts on hover in classic, hairline and soft shadow in clean */
+  /* Card: a hairline on a white surface. One that can be clicked darkens
+     its hairline on hover instead of lifting. */
   .ui-card {
-    @apply border-strong border-line rounded-lg bg-card p-6;
-    box-shadow: var(--elevation);
+    @apply border border-border rounded-lg bg-card p-6 shadow-xs;
+    transition: border-color 150ms;
   }
 
   .ui-card:hover {
-    box-shadow: var(--elevation-lg);
-    transform: translate(calc(var(--press) * -1), calc(var(--press) * -1));
+    border-color: hsl(var(--foreground) / 0.22);
   }
 
   .ui-card-static:hover {
-    box-shadow: var(--elevation);
-    transform: none;
+    border-color: hsl(var(--border));
   }
 
-  /* Buttons: press into the shadow in classic */
   .ui-btn,
   .ui-btn-primary,
   .ui-btn-secondary,
   .ui-btn-outline {
     /* Not transition-all: the focus outline must appear at once, not fade in from currentColor. */
-    @apply border-strong border-line rounded-md px-6 py-3 font-bold caps transition-[background-color,color,box-shadow,transform,border-color] cursor-pointer;
-    box-shadow: var(--elevation);
-  }
-
-  :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline):hover {
-    box-shadow: var(--elevation-sm);
-    transform: translate(var(--press), var(--press));
-  }
-
-  :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline):active {
-    box-shadow: none;
-    transform: translate(calc(var(--press) * 2), calc(var(--press) * 2));
+    @apply border border-border rounded-md px-4 py-2 text-sm font-medium shadow-xs transition-[background-color,color,box-shadow,border-color] cursor-pointer;
   }
 
   .ui-btn-primary {
-    @apply bg-action text-action-foreground;
+    @apply bg-primary text-primary-foreground border-transparent;
+  }
+
+  .ui-btn-primary:hover {
+    background-color: color-mix(in oklab, hsl(var(--primary)), black 12%);
   }
 
   .ui-btn-secondary {
-    @apply bg-secondary text-secondary-foreground;
+    @apply bg-secondary text-secondary-foreground border-transparent shadow-none;
   }
 
-  .ui-btn-outline {
-    @apply bg-background;
+  .ui-btn-secondary:hover {
+    background-color: color-mix(in oklab, hsl(var(--secondary)), hsl(var(--foreground)) 6%);
+  }
+
+  :is(.ui-btn, .ui-btn-outline) {
+    @apply bg-card;
+  }
+
+  :is(.ui-btn, .ui-btn-outline):hover {
+    @apply bg-accent text-accent-foreground;
   }
 
   /* Code blocks */
   .ui-code {
-    @apply border-strong border-line rounded-lg bg-muted p-4 font-mono text-sm;
-    box-shadow: var(--elevation);
+    @apply border border-border rounded-lg bg-muted p-4 font-mono text-sm;
   }
 
   /* Input fields */
@@ -524,99 +357,24 @@ body {
   }
 
   .ui-input {
-    @apply border-strong border-line rounded-md bg-background px-4 py-3 outline-none;
-    box-shadow: var(--elevation);
-  }
-
-  .ui-input:focus {
-    box-shadow: var(--elevation-sm);
-    transform: translate(var(--press), var(--press));
-  }
-
-  /* Clean overrides for what tokens alone cannot express. Kept after the
-     classic rules so equal-specificity :hover and :active rules lose. */
-  [data-style="clean"] .ui-card {
-    box-shadow: var(--elevation-sm);
-    transition: border-color 150ms;
-  }
-
-  /* A card that can be clicked darkens its hairline instead of lifting */
-  [data-style="clean"] .ui-card:hover {
-    box-shadow: var(--elevation-sm);
-    border-color: hsl(var(--foreground) / 0.22);
-  }
-
-  [data-style="clean"] .ui-card-static:hover {
-    border-color: hsl(var(--line));
-  }
-
-  [data-style="clean"] :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline) {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    font-weight: 500;
-    box-shadow: var(--elevation-sm);
-  }
-
-  [data-style="clean"]
-    :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline):is(:hover, :active) {
-    box-shadow: var(--elevation-sm);
-    transform: none;
-  }
-
-  [data-style="clean"] .ui-btn-primary {
-    border-color: transparent;
-  }
-
-  [data-style="clean"] .ui-btn-primary:hover {
-    background-color: color-mix(in oklab, hsl(var(--action)), black 12%);
-  }
-
-  [data-style="clean"] .ui-btn-secondary {
-    border-color: transparent;
-    box-shadow: none;
-  }
-
-  [data-style="clean"] .ui-btn-secondary:hover {
-    background-color: color-mix(in oklab, hsl(var(--secondary)), hsl(var(--foreground)) 6%);
-  }
-
-  [data-style="clean"] :is(.ui-btn, .ui-btn-outline) {
-    background-color: hsl(var(--card));
-  }
-
-  [data-style="clean"] :is(.ui-btn, .ui-btn-outline):hover {
-    background-color: hsl(var(--accent));
-    color: hsl(var(--accent-foreground));
-  }
-
-  [data-style="clean"] .ui-code {
-    box-shadow: none;
-  }
-
-  [data-style="clean"] .ui-input {
-    padding: 0.5rem 0.75rem;
-    background-color: hsl(var(--card));
-    border-color: hsl(var(--input));
-    box-shadow: none;
+    @apply border border-input rounded-md bg-card px-3 py-2 outline-none;
     transition:
       border-color 150ms,
       box-shadow 150ms;
   }
 
-  [data-style="clean"] .ui-input:focus {
+  .ui-input:focus {
     border-color: hsl(var(--ring));
     box-shadow: 0 0 0 3px hsl(var(--ring) / 0.18);
-    transform: none;
   }
 }
 
-/* Form controls take the darker --input boundary in clean (3:1 against the page, as
-   WCAG 1.4.11 asks of a control's edge); cards and dividers keep the light hairline.
-   In the utilities layer, with higher specificity than border-line, so a call site's
-   border-line cannot thin a control back down. */
+/* Form controls take the darker --input boundary (3:1 against the page, as
+   WCAG 1.4.11 asks of a control's edge); cards and dividers keep the light
+   hairline. In the utilities layer, and more specific than border-border
+   through :root, so a call site's border-border cannot thin a control back down. */
 @layer utilities {
-  [data-style="clean"]
+  :root
     :is(
       .ui-input,
       select,

@@ -23,7 +23,7 @@ function buildCursorUrl(apiKey: string) {
 }
 
 const BTN =
-  "inline-flex items-center gap-2 px-4 py-2 rounded-md border-strong border-line bg-background font-bold text-sm shadow-raised-sm hover:translate-x-(--press) hover:translate-y-(--press) hover:shadow-none clean:hover:bg-muted transition-all";
+  "inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border bg-background font-bold text-sm shadow-xs hover:shadow-none transition-all hover:bg-muted";
 
 function CodeBlock({ children, copyText }: { children: string; copyText?: string }) {
   return (
@@ -56,14 +56,14 @@ export function McpInstallGuide() {
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="whcc_..."
-          className="w-full px-3 py-2 rounded-md border-strong border-line bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+          className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
           autoComplete="off"
           spellCheck={false}
           aria-label="webhooks.cc API key"
         />
         <p className="text-sm text-muted-foreground mt-2">
           Get your key from your{" "}
-          <Link href="/account/api-keys" className="text-primary-ink hover:underline font-bold">
+          <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
             API keys page
           </Link>
           .
