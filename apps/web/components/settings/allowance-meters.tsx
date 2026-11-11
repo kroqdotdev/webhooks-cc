@@ -16,8 +16,8 @@ function count(value: number): string {
 
 /**
  * One allowance: its name and when it frees up on the left, a slim bar and
- * the count on the right. The same grid as the team pools rows, so the
- * columns line up down the page.
+ * the count on the right. The same 13rem label column as PanelRow, so it
+ * lines up with the labelled rows in the other panels.
  */
 function AllowanceRow({
   name,
@@ -111,7 +111,6 @@ export function AllowanceMeters({
       {parsedPages && (
         <AllowanceRow
           name="Parsed pages"
-          href="#extra-pages"
           when={
             parsedPages.resetsAt
               ? `Resets ${longDate(parsedPages.resetsAt)}`

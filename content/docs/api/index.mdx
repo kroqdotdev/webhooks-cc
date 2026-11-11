@@ -782,7 +782,7 @@ A stream message names the request id `_id` (not `id`) and has no `email` field.
 
 ## Usage
 
-Check your current request quota and usage.
+Check your current request quota and usage, and your plan's other allowances.
 
 ```bash
 curl https://webhooks.cc/api/usage \
@@ -802,11 +802,27 @@ curl https://webhooks.cc/api/usage \
   "plan": "free",
   "periodEnd": 1234567890000,
   "teamBilledEndpoints": 0,
-  "emails": 3
+  "emails": 3,
+  "parsedPages": {
+    "used": 4,
+    "limit": 20,
+    "creditPages": 0,
+    "overage": { "active": false, "used": 0, "max": 0 },
+    "resetsAt": "2026-12-01T09:30:00.000Z"
+  },
+  "previewData": {
+    "bytes": 52428800,
+    "limitBytes": 1073741824,
+    "over": false,
+    "resetsAt": "2026-12-01T00:00:00.000Z"
+  },
+  "aiAssists": { "used": 1, "allowed": 5, "nextAt": null }
 }
 ```
 
 `limit` is the period's quota including monthly blocks (`blockRequests`), and `used` counts against it. `remaining` is how many more requests are accepted this period: what is left of `limit`, plus one-time blocks (`creditRequests`), plus overage up to its maximum. See [Extra requests](/docs/plans-limits#extra-requests). `emails` is how many of `used` were emails, and `teamBilledEndpoints` how many of your endpoints are shared with a subscribed team and bill its pooled quota instead.
+
+The other allowances each keep their own window. `parsedPages` counts attachment pages parsed by layouts (`limit` includes monthly page blocks, `creditPages` are one-time pages used after it), and `resetsAt` is null until a monthly window's first parse. `previewData` is what visitors downloaded from [`whk share`](/docs/share) previews this UTC month; past `limitBytes`, `over` is true and previews pause until `resetsAt`. `aiAssists` counts AI assists over a rolling 30 days on endpoints no team pays for, and `nextAt` is when the next counted one stops counting. Each is null where it is not offered or could not be read. Times are ISO 8601.
 
 ## Teams
 

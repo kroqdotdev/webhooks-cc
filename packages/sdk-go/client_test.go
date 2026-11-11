@@ -885,7 +885,7 @@ func TestUsageReadsTheOtherAllowances(t *testing.T) {
 			"parsedPages": map[string]any{
 				"used": 3, "limit": 20, "creditPages": 0,
 				"overage":  map[string]any{"active": false, "used": 0, "max": 0},
-				"resetsAt": nil,
+				"resetsAt": "2026-11-29T09:30:00.123Z",
 			},
 			"previewData": map[string]any{
 				"bytes": 1024, "limitBytes": 1073741824, "over": false,
@@ -898,7 +898,8 @@ func TestUsageReadsTheOtherAllowances(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := usage.ParsedPages; p == nil || p.Used != 3 || p.Limit != 20 || !p.ResetsAt.IsZero() {
+	resets := time.Date(2026, 11, 29, 9, 30, 0, 123_000_000, time.UTC)
+	if p := usage.ParsedPages; p == nil || p.Used != 3 || p.Limit != 20 || !p.ResetsAt.Equal(resets) {
 		t.Errorf("ParsedPages = %+v", usage.ParsedPages)
 	}
 	want := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)

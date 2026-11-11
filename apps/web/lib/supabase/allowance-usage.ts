@@ -4,7 +4,7 @@ import { tunnelConfig } from "@/lib/tunnels/config";
 import { tunnelPlanOf } from "@/lib/tunnels/plan";
 import { usageOf } from "@/lib/tunnels/usage";
 import { createAdminClient } from "./admin";
-import { getCapacityState } from "./capacity-billing";
+import { getPageWindow } from "./capacity-billing";
 
 /** Parsed attachment pages in the account's page window (parsed_pages_balance()). */
 export interface ParsedPagesUsage {
@@ -70,18 +70,21 @@ async function softly<T>(what: string, read: () => Promise<T | null>): Promise<T
 }
 
 async function parsedPagesOf(userId: string): Promise<ParsedPagesUsage> {
-  const state = await getCapacityState({ kind: "user", userId }, "pages");
+  const pages = await getPageWindow({ kind: "user", userId });
   return {
-    used: state.used,
-    limit: state.planRequests + state.blockRequests,
-    creditPages: state.creditRequests,
-    overage: {
-      active: state.overage.active,
-      used: state.overage.usedRequests,
-      max: state.overage.maxRequests,
-    },
-    resetsAt: state.periodEnd,
+    used: pages.used,
+    limit: pages.planPages + pages.blockPages,
+    creditPages: pages.creditPages,
+    overage: { active: pages.overageActive, used: pages.overageUsed, max: pages.overageMax },
+    resetsAt: isoOrNull(pages.periodEnd),
   };
+}
+
+/** Every time in the answer in one form: what toISOString() writes (milliseconds, Z). */
+function isoOrNull(value: string | null): string | null {
+  if (!value) return null;
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString();
 }
 
 async function previewDataOf(userId: string): Promise<PreviewDataUsage | null> {
@@ -102,10 +105,9 @@ async function aiAssistsOf(userId: string): Promise<AiAssistsUsage> {
   });
   if (error) throw error;
   const result = (data ?? {}) as { allowed?: number; used?: number; next_at?: string | null };
-  const nextAt = typeof result.next_at === "string" ? new Date(result.next_at) : null;
   return {
     used: result.used ?? 0,
     allowed: result.allowed ?? 0,
-    nextAt: nextAt && !Number.isNaN(nextAt.getTime()) ? nextAt.toISOString() : null,
+    nextAt: isoOrNull(typeof result.next_at === "string" ? result.next_at : null),
   };
 }
