@@ -2385,7 +2385,9 @@ paths:
       operationId: getUsage
       tags: [Usage]
       summary: Get usage
-      description: Returns current request quota and usage for the authenticated user.
+      description: >-
+        Returns the authenticated user's request quota and usage, and beside it parsed pages,
+        preview data and AI assists, each with its own window.
       responses:
         "200":
           description: Usage information
@@ -6424,6 +6426,67 @@ components:
                     type: string
                   rejected:
                     type: integer
+        parsedPages:
+          type: ["object", "null"]
+          description: |
+            Attachment pages parsed by layouts in the account's page window. Null when it could
+            not be read.
+          required: [used, limit, creditPages, overage, resetsAt]
+          properties:
+            used:
+              type: integer
+            limit:
+              type: integer
+              description: The window's pages, the plan's plus monthly page blocks
+            creditPages:
+              type: integer
+              description: One-time pages left, used once limit is gone
+            overage:
+              type: object
+              required: [active, used, max]
+              properties:
+                active:
+                  type: boolean
+                used:
+                  type: integer
+                max:
+                  type: integer
+            resetsAt:
+              type: ["string", "null"]
+              format: date-time
+              description: When the window ends, null until a monthly window's first parse
+        previewData:
+          type: ["object", "null"]
+          description: |
+            What visitors downloaded from `whk share` previews this UTC month. Null where sharing
+            is not offered.
+          required: [bytes, limitBytes, over, resetsAt]
+          properties:
+            bytes:
+              type: integer
+            limitBytes:
+              type: integer
+            over:
+              type: boolean
+              description: Past the allowance, previews are paused until resetsAt
+            resetsAt:
+              type: string
+              format: date-time
+        aiAssists:
+          type: ["object", "null"]
+          description: |
+            AI assists used over the rolling 30 days on endpoints no team pays for. Null where AI
+            assists are not offered.
+          required: [used, allowed, nextAt]
+          properties:
+            used:
+              type: integer
+            allowed:
+              type: integer
+            nextAt:
+              type: ["string", "null"]
+              format: date-time
+              description: When the next counted assist stops counting, null when none is counted
 
     TeamShare:
       type: object

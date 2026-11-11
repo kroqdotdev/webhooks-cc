@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { aiOffered } from "@/lib/ai/model";
+import { tunnelConfig } from "@/lib/tunnels/config";
 import { createClient } from "@supabase/supabase-js";
 import { hashApiKey, validateApiKeyWithMetadata } from "@/lib/supabase/api-keys";
 import {
@@ -293,6 +295,18 @@ describe("Supabase Control Plane Integration", () => {
       teamBilledEndpoints: 0,
       emails: 0,
       quotaRejections: { total: 0, endpointCount: 0, endpoints: [] },
+      parsedPages: {
+        used: 0,
+        limit: 20,
+        creditPages: 0,
+        overage: { active: false, used: 0, max: expect.any(Number) },
+        resetsAt: null,
+      },
+      // Offered only where sharing and AI assists are configured.
+      previewData: tunnelConfig()
+        ? { bytes: 0, limitBytes: 1024 ** 3, over: false, resetsAt: expect.any(String) }
+        : null,
+      aiAssists: aiOffered() ? { used: 0, allowed: 5, nextAt: null } : null,
     });
   });
 });

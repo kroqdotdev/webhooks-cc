@@ -1414,7 +1414,8 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// Usage is the requests used and left in the current period.
+// Usage is the requests used and left in the current period, and beside
+// them the plan's other allowances, each with its own window.
 type Usage struct {
 	Used      int
 	Limit     int
@@ -1422,7 +1423,54 @@ type Usage struct {
 	Plan      string
 	// PeriodEnd is zero until the period starts.
 	PeriodEnd time.Time
+	// ParsedPages is nil when it could not be read.
+	ParsedPages *ParsedPagesUsage
+	// PreviewData is nil where sharing is not offered.
+	PreviewData *PreviewDataUsage
+	// AIAssists is nil where AI assists are not offered.
+	AIAssists *AIAssistsUsage
 	Raw       json.RawMessage
+}
+
+// ParsedPagesUsage is the attachment pages parsed by layouts in the account's
+// page window.
+type ParsedPagesUsage struct {
+	Used int
+	// Limit is the window's pages: the plan's plus monthly page blocks.
+	Limit int
+	// CreditPages are one-time pages left, used once Limit is gone.
+	CreditPages int
+	// Overage is page overage this window, while Active.
+	Overage PageOverage
+	// ResetsAt is when the window ends; zero until a monthly window's first parse.
+	ResetsAt time.Time
+}
+
+// PageOverage is the metered pages counted this window, up to Max.
+type PageOverage struct {
+	Active bool
+	Used   int
+	Max    int
+}
+
+// PreviewDataUsage is what visitors downloaded from whk share previews this
+// UTC month.
+type PreviewDataUsage struct {
+	Bytes      int64
+	LimitBytes int64
+	// Over is true once the month's data is used: previews pause until
+	// ResetsAt.
+	Over     bool
+	ResetsAt time.Time
+}
+
+// AIAssistsUsage is the AI assists counted over a rolling 30 days, on
+// endpoints no team pays for.
+type AIAssistsUsage struct {
+	Used    int
+	Allowed int
+	// NextAt is when the next counted assist stops counting; zero when none is.
+	NextAt time.Time
 }
 
 // UnmarshalJSON reads usage as the API returns it.
@@ -1439,6 +1487,35 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 		PeriodEnd: o.millis("periodEnd"),
 		Raw:       bytes.Clone(data),
 	}
+	if p := o.object("parsedPages"); p != nil {
+		overage := p.object("overage")
+		u.ParsedPages = &ParsedPagesUsage{
+			Used:        int(p.num("used")),
+			Limit:       int(p.num("limit")),
+			CreditPages: int(p.num("creditPages")),
+			Overage: PageOverage{
+				Active: overage.boolean("active"),
+				Used:   int(overage.num("used")),
+				Max:    int(overage.num("max")),
+			},
+			ResetsAt: p.isoTime("resetsAt"),
+		}
+	}
+	if p := o.object("previewData"); p != nil {
+		u.PreviewData = &PreviewDataUsage{
+			Bytes:      int64(p.num("bytes")),
+			LimitBytes: int64(p.num("limitBytes")),
+			Over:       p.boolean("over"),
+			ResetsAt:   p.isoTime("resetsAt"),
+		}
+	}
+	if a := o.object("aiAssists"); a != nil {
+		u.AIAssists = &AIAssistsUsage{
+			Used:    int(a.num("used")),
+			Allowed: int(a.num("allowed")),
+			NextAt:  a.isoTime("nextAt"),
+		}
+	}
 	return nil
 }
 
@@ -1450,7 +1527,51 @@ func (u Usage) MarshalJSON() ([]byte, error) {
 		Remaining int    `json:"remaining"`
 		Plan      string `json:"plan"`
 		PeriodEnd *int64 `json:"periodEnd"`
-	}{u.Used, u.Limit, u.Remaining, u.Plan, millisOf(u.PeriodEnd)})
+		// The other allowances, null when the server did not report them.
+		ParsedPages any `json:"parsedPages"`
+		PreviewData any `json:"previewData"`
+		AIAssists   any `json:"aiAssists"`
+	}{u.Used, u.Limit, u.Remaining, u.Plan, millisOf(u.PeriodEnd),
+		u.parsedPagesJSON(), u.previewDataJSON(), u.aiAssistsJSON()})
+}
+
+// isoOrNull writes a time as the API does: RFC 3339 in UTC, or null when zero.
+func isoOrNull(t time.Time) *string {
+	if t.IsZero() {
+		return nil
+	}
+	s := t.UTC().Format("2006-01-02T15:04:05.000Z")
+	return &s
+}
+
+func (u Usage) parsedPagesJSON() any {
+	if u.ParsedPages == nil {
+		return nil
+	}
+	p := u.ParsedPages
+	return map[string]any{
+		"used": p.Used, "limit": p.Limit, "creditPages": p.CreditPages,
+		"overage":  map[string]any{"active": p.Overage.Active, "used": p.Overage.Used, "max": p.Overage.Max},
+		"resetsAt": isoOrNull(p.ResetsAt),
+	}
+}
+
+func (u Usage) previewDataJSON() any {
+	if u.PreviewData == nil {
+		return nil
+	}
+	p := u.PreviewData
+	return map[string]any{
+		"bytes": p.Bytes, "limitBytes": p.LimitBytes, "over": p.Over, "resetsAt": isoOrNull(p.ResetsAt),
+	}
+}
+
+func (u Usage) aiAssistsJSON() any {
+	if u.AIAssists == nil {
+		return nil
+	}
+	a := u.AIAssists
+	return map[string]any{"used": a.Used, "allowed": a.Allowed, "nextAt": isoOrNull(a.NextAt)}
 }
 
 // RequestPage is one page of captured requests. Pass Cursor to get the next.

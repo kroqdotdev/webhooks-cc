@@ -476,6 +476,76 @@ pub struct UsageInfo {
     pub plan: String,
     #[serde(rename = "periodEnd", default)]
     pub period_end: Option<i64>,
+    /// Parsed attachment pages this page window; None when not reported.
+    #[serde(rename = "parsedPages", default)]
+    pub parsed_pages: Option<ParsedPagesUsage>,
+    /// Preview data (`whk share`) this UTC month; None where sharing is not offered.
+    #[serde(rename = "previewData", default)]
+    pub preview_data: Option<PreviewDataUsage>,
+    /// AI assists over a rolling 30 days; None where they are not offered.
+    #[serde(rename = "aiAssists", default)]
+    pub ai_assists: Option<AiAssistsUsage>,
+    /// Everything else the API sends (blocks, overage, emails, ...), kept so
+    /// `--json` passes the whole answer on.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Attachment pages parsed by layouts in the account's page window.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParsedPagesUsage {
+    #[serde(default)]
+    pub used: u64,
+    /// The window's pages: the plan's plus monthly page blocks.
+    #[serde(default)]
+    pub limit: u64,
+    /// One-time pages left, used once `limit` is gone.
+    #[serde(default)]
+    pub credit_pages: u64,
+    #[serde(default)]
+    pub overage: Option<PageOverage>,
+    /// When the window ends; None until a monthly window's first parse.
+    #[serde(default)]
+    pub resets_at: Option<ApiTime>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PageOverage {
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub used: u64,
+    #[serde(default)]
+    pub max: u64,
+}
+
+/// What visitors downloaded from `whk share` previews this UTC month.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewDataUsage {
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub limit_bytes: u64,
+    /// True once the month's data is used: previews pause until `resets_at`.
+    #[serde(default)]
+    pub over: bool,
+    #[serde(default)]
+    pub resets_at: Option<ApiTime>,
+}
+
+/// AI assists counted over a rolling 30 days, on endpoints no team pays for.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAssistsUsage {
+    #[serde(default)]
+    pub used: u64,
+    #[serde(default)]
+    pub allowed: u64,
+    /// When the next counted assist stops counting; None when none is.
+    #[serde(default)]
+    pub next_at: Option<ApiTime>,
 }
 
 // ---------------------------------------------------------------------------
@@ -944,6 +1014,29 @@ mod tests {
         assert_eq!(u.plan, "free");
         assert_eq!(u.remaining, 99999);
         assert_eq!(u.period_end, Some(1774987719639));
+    }
+
+    #[test]
+    fn test_deserialize_usage_allowances_and_keeps_the_rest() {
+        let json = r#"{"used":0,"limit":50,"remaining":50,"plan":"free","periodEnd":null,
+            "blockRequests":0,
+            "parsedPages":{"used":3,"limit":20,"creditPages":0,
+                "overage":{"active":false,"used":0,"max":0},"resetsAt":null},
+            "previewData":{"bytes":1024,"limitBytes":1073741824,"over":false,
+                "resetsAt":"2026-12-01T00:00:00.000Z"},
+            "aiAssists":null}"#;
+        let u: UsageInfo = serde_json::from_str(json).unwrap();
+        let pages = u.parsed_pages.as_ref().unwrap();
+        assert_eq!((pages.used, pages.limit), (3, 20));
+        assert!(pages.resets_at.is_none());
+        let preview = u.preview_data.as_ref().unwrap();
+        assert_eq!(preview.limit_bytes, 1073741824);
+        assert!(u.ai_assists.is_none());
+        // --json passes on what the CLI does not read itself.
+        let back = serde_json::to_value(&u).unwrap();
+        assert_eq!(back["blockRequests"], 0);
+        assert_eq!(back["previewData"]["resetsAt"], "2026-12-01T00:00:00.000Z");
+        assert!(back["aiAssists"].is_null());
     }
 
     #[test]

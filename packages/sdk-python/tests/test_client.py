@@ -855,6 +855,42 @@ def test_retries_follow_the_options() -> None:
     assert len(calls) == 3
 
 
+def test_usage_reads_the_other_allowances() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "used": 0,
+                "limit": 50,
+                "remaining": 50,
+                "plan": "free",
+                "parsedPages": {
+                    "used": 3,
+                    "limit": 20,
+                    "creditPages": 0,
+                    "overage": {"active": False, "used": 0, "max": 0},
+                    "resetsAt": None,
+                },
+                "previewData": {
+                    "bytes": 1024,
+                    "limitBytes": 1073741824,
+                    "over": False,
+                    "resetsAt": "2026-12-01T00:00:00.000Z",
+                },
+                "aiAssists": None,
+            },
+        )
+
+    usage = make_client(handler).usage()
+    assert usage.parsed_pages is not None
+    assert (usage.parsed_pages.used, usage.parsed_pages.limit) == (3, 20)
+    assert usage.parsed_pages.resets_at is None
+    assert usage.preview_data is not None
+    assert usage.preview_data.limit_bytes == 1073741824
+    assert usage.preview_data.resets_at == "2026-12-01T00:00:00.000Z"
+    assert usage.ai_assists is None
+
+
 ENDPOINT = {"id": "e1", "slug": "acme", "createdAt": NOW_MS}
 
 

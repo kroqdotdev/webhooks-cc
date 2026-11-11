@@ -1048,7 +1048,10 @@ Get current request quota and usage.
 
 ```ts
 usage(): Promise<UsageInfo>
-// Returns: { used, limit, remaining, plan, periodEnd }
+// Returns: { used, limit, remaining, plan, periodEnd, parsedPages, previewData, aiAssists }
+// parsedPages: { used, limit, creditPages, overage, resetsAt }
+// previewData: { bytes, limitBytes, over, resetsAt } (null where sharing is not offered)
+// aiAssists: { used, allowed, nextAt } (rolling 30 days; null where not offered)
 ```
 
 </ApiMethod>

@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { GET, POST } from "@/app/api/endpoints/[slug]/layouts/assist/route";
+import { getUsageForUser } from "@/lib/supabase/usage";
 
 /**
  * AI setup and repair (migration 00075, lib/ai) against the local database
@@ -533,5 +534,39 @@ describe("AI setup and repair", () => {
       .data as { allowed: number; used: number; next_at: string };
     expect(answer).toMatchObject({ allowed: 5, used: 7 });
     expect(new Date(answer.next_at).getTime()).toBe(times[2].getTime() + 30 * 86_400_000);
+  });
+
+  it("counts a person's own assists the same way for the plan page and /api/usage", async () => {
+    const owner = await signedIn("free");
+    const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000);
+    await admin.from("ai_assist_uses").insert([
+      {
+        user_id: owner.userId,
+        actor_id: owner.userId,
+        kind: "field",
+        outcome: "proposed",
+        created_at: fiveDaysAgo.toISOString(),
+      },
+      // Abandoned before it finished: never counted (00075).
+      {
+        user_id: owner.userId,
+        actor_id: owner.userId,
+        kind: "field",
+        created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      },
+    ]);
+    const byEndpoint = (await admin.rpc("ai_assists_left", { p_endpoint_id: owner.endpointId }))
+      .data;
+    const byUser = (await admin.rpc("ai_assists_left_for_user", { p_user_id: owner.userId })).data;
+    expect(byUser).toEqual(byEndpoint);
+    expect(byUser).toMatchObject({ allowed: 5, used: 1 });
+
+    const usage = await getUsageForUser(owner.userId);
+    expect(usage?.aiAssists).toEqual({
+      used: 1,
+      allowed: 5,
+      nextAt: new Date(fiveDaysAgo.getTime() + 30 * 86_400_000).toISOString(),
+    });
+    expect(usage?.parsedPages).toMatchObject({ used: 0, limit: 20 });
   });
 });

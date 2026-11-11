@@ -36,11 +36,14 @@ export function ParsedPagesPanel({
   teamId,
   canManage,
   reloadKey,
+  showUsage = true,
 }: {
   accessToken: string | null;
   teamId?: string;
   canManage: boolean;
   reloadKey?: string;
+  /** False where a usage meter above already shows this month's pages. */
+  showUsage?: boolean;
 }) {
   const [state, setState] = useState<CapacityState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +123,9 @@ export function ParsedPagesPanel({
     ) : null;
   }
 
+  // Without its usage row and with no page blocks for sale, the panel has nothing to say.
+  if (!showUsage && !state.offered) return null;
+
   const allowance = state.planRequests + state.blockRequests;
   const monthlyBlocks = Number(monthly ?? 0);
   const monthlyValid =
@@ -141,31 +147,35 @@ export function ParsedPagesPanel({
           Your purchase shows here once Polar confirms it, usually within a minute.
         </Notice>
       )}
-      <PanelRow
-        label="This month"
-        hint={state.periodEnd ? `Until ${longDate(state.periodEnd)}` : undefined}
-      >
-        <p className="text-sm">
-          <span className="font-medium">{pages(state.used)}</span> of {pages(allowance)} pages used
-          {state.blockRequests > 0 && (
-            <span className="text-muted-foreground">
-              {" "}
-              ({pages(state.blockRequests)} from monthly blocks)
-            </span>
+      {showUsage && (
+        <PanelRow
+          label="This month"
+          hint={state.periodEnd ? `Until ${longDate(state.periodEnd)}` : undefined}
+        >
+          <p className="text-sm">
+            <span className="font-medium">{pages(state.used)}</span> of {pages(allowance)} pages
+            used
+            {state.blockRequests > 0 && (
+              <span className="text-muted-foreground">
+                {" "}
+                ({pages(state.blockRequests)} from monthly blocks)
+              </span>
+            )}
+          </p>
+          {state.creditRequests > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Plus {pages(state.creditRequests)} one-time pages, used after these.
+            </p>
           )}
-        </p>
-        {state.creditRequests > 0 && (
-          <p className="text-xs text-muted-foreground mt-1">
-            Plus {pages(state.creditRequests)} one-time pages, used after these.
-          </p>
-        )}
-        {state.overage.active && (
-          <p className="text-xs text-muted-foreground mt-1">
-            Overage: {pages(state.overage.usedRequests)} of up to {pages(state.overage.maxRequests)}{" "}
-            pages this period, at {formatCents(PAGE_OVERAGE_CENTS * 100)} per 100 pages.
-          </p>
-        )}
-      </PanelRow>
+          {state.overage.active && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Overage: {pages(state.overage.usedRequests)} of up to{" "}
+              {pages(state.overage.maxRequests)} pages this period, at{" "}
+              {formatCents(PAGE_OVERAGE_CENTS * 100)} per 100 pages.
+            </p>
+          )}
+        </PanelRow>
+      )}
 
       {!state.eligible && state.offered && (
         <p className="text-sm text-muted-foreground">

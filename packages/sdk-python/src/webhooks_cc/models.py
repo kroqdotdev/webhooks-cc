@@ -1311,22 +1311,117 @@ class DestinationTestResult:
 
 
 @dataclass(frozen=True)
+class PageOverage:
+    """Page overage this window, while ``active``."""
+
+    active: bool
+    used: int
+    max: int
+
+
+@dataclass(frozen=True)
+class ParsedPagesUsage:
+    """Attachment pages parsed by layouts in the account's page window."""
+
+    used: int
+    limit: int
+    """The window's pages: the plan's plus monthly page blocks."""
+    credit_pages: int
+    """One-time pages left, used once ``limit`` is gone."""
+    overage: PageOverage
+    resets_at: str | None
+    """When the window ends (ISO 8601); ``None`` until a monthly window's first parse."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> ParsedPagesUsage:
+        overage = data.get("overage")
+        overage = overage if isinstance(overage, Mapping) else {}
+        return cls(
+            used=int(_number(data.get("used"))),
+            limit=int(_number(data.get("limit"))),
+            credit_pages=int(_number(data.get("creditPages"))),
+            overage=PageOverage(
+                active=overage.get("active") is True,
+                used=int(_number(overage.get("used"))),
+                max=int(_number(overage.get("max"))),
+            ),
+            resets_at=_str_or_none(data.get("resetsAt")),
+        )
+
+
+@dataclass(frozen=True)
+class PreviewDataUsage:
+    """What visitors downloaded from ``whk share`` previews this UTC month."""
+
+    bytes: int
+    limit_bytes: int
+    over: bool
+    """``True`` once the month's data is used: previews pause until ``resets_at``."""
+    resets_at: str
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PreviewDataUsage:
+        return cls(
+            bytes=int(_number(data.get("bytes"))),
+            limit_bytes=int(_number(data.get("limitBytes"))),
+            over=data.get("over") is True,
+            resets_at=str(data.get("resetsAt") or ""),
+        )
+
+
+@dataclass(frozen=True)
+class AiAssistsUsage:
+    """AI assists counted over a rolling 30 days, on endpoints no team pays for."""
+
+    used: int
+    allowed: int
+    next_at: str | None
+    """When the next counted assist stops counting (ISO 8601); ``None`` when none is."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> AiAssistsUsage:
+        return cls(
+            used=int(_number(data.get("used"))),
+            allowed=int(_number(data.get("allowed"))),
+            next_at=_str_or_none(data.get("nextAt")),
+        )
+
+
+@dataclass(frozen=True)
 class UsageInfo:
     used: int
     limit: int
     remaining: int
     plan: str
     period_end: int | None
+    parsed_pages: ParsedPagesUsage | None = None
+    """``None`` when it could not be read, or from a server that does not report it."""
+    preview_data: PreviewDataUsage | None = None
+    """``None`` where sharing is not offered."""
+    ai_assists: AiAssistsUsage | None = None
+    """``None`` where AI assists are not offered."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> UsageInfo:
+        parsed_pages = data.get("parsedPages")
+        preview_data = data.get("previewData")
+        ai_assists = data.get("aiAssists")
         return cls(
             used=int(_number(data.get("used"))),
             limit=int(_number(data.get("limit"))),
             remaining=int(_number(data.get("remaining"))),
             plan=str(data.get("plan") or ""),
             period_end=_int_or_none(data.get("periodEnd")),
+            parsed_pages=ParsedPagesUsage.from_dict(parsed_pages)
+            if isinstance(parsed_pages, Mapping)
+            else None,
+            preview_data=PreviewDataUsage.from_dict(preview_data)
+            if isinstance(preview_data, Mapping)
+            else None,
+            ai_assists=AiAssistsUsage.from_dict(ai_assists)
+            if isinstance(ai_assists, Mapping)
+            else None,
             raw=dict(data),
         )
 

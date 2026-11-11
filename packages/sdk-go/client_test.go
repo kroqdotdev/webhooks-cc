@@ -876,3 +876,49 @@ func TestUpdateRefusesNullForSettingsThatAlwaysHaveAValue(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestUsageReadsTheOtherAllowances(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{
+			"used": 0, "limit": 50, "remaining": 50, "plan": "free", "periodEnd": nil,
+			"parsedPages": map[string]any{
+				"used": 3, "limit": 20, "creditPages": 0,
+				"overage":  map[string]any{"active": false, "used": 0, "max": 0},
+				"resetsAt": nil,
+			},
+			"previewData": map[string]any{
+				"bytes": 1024, "limitBytes": 1073741824, "over": false,
+				"resetsAt": "2026-12-01T00:00:00.000Z",
+			},
+			"aiAssists": nil,
+		})
+	})
+	usage, err := api.client().Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := usage.ParsedPages; p == nil || p.Used != 3 || p.Limit != 20 || !p.ResetsAt.IsZero() {
+		t.Errorf("ParsedPages = %+v", usage.ParsedPages)
+	}
+	want := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	if p := usage.PreviewData; p == nil || p.LimitBytes != 1073741824 || !p.ResetsAt.Equal(want) {
+		t.Errorf("PreviewData = %+v", usage.PreviewData)
+	}
+	if usage.AIAssists != nil {
+		t.Errorf("AIAssists = %+v, want nil", usage.AIAssists)
+	}
+
+	// Written and read back, it is the same usage.
+	written, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again webhookscc.Usage
+	if err := json.Unmarshal(written, &again); err != nil {
+		t.Fatal(err)
+	}
+	if *again.ParsedPages != *usage.ParsedPages || *again.PreviewData != *usage.PreviewData || again.AIAssists != nil {
+		t.Errorf("round trip = %s", written)
+	}
+}

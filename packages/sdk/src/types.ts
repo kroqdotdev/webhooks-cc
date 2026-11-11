@@ -490,6 +490,43 @@ export interface UsageInfo {
   plan: "free" | "pro" | "business";
   /** End of the current billing window, if active */
   periodEnd: number | null;
+  /** Attachment pages parsed by layouts this page window; null when it could not be read. */
+  parsedPages?: ParsedPagesUsage | null;
+  /** What visitors downloaded from `whk share` previews this UTC month; null where sharing is not offered. */
+  previewData?: PreviewDataUsage | null;
+  /** AI assists over the rolling 30 days on endpoints no team pays for; null where they are not offered. */
+  aiAssists?: AiAssistsUsage | null;
+}
+
+/** Parsed attachment pages in the account's page window. */
+export interface ParsedPagesUsage {
+  used: number;
+  /** The window's pages: the plan's plus monthly page blocks. */
+  limit: number;
+  /** One-time pages left, used once `limit` is gone. */
+  creditPages: number;
+  /** Page overage this window, while `active`. */
+  overage: { active: boolean; used: number; max: number };
+  /** When the window ends (ISO 8601); null until a monthly window's first parse. */
+  resetsAt: string | null;
+}
+
+/** Preview data (`whk share`) this UTC month. */
+export interface PreviewDataUsage {
+  bytes: number;
+  limitBytes: number;
+  /** True once the month's data is used: previews pause until `resetsAt`. */
+  over: boolean;
+  /** ISO 8601. */
+  resetsAt: string;
+}
+
+/** AI assists counted over a rolling 30 days. */
+export interface AiAssistsUsage {
+  used: number;
+  allowed: number;
+  /** When the next counted assist stops counting (ISO 8601); null when none is counted. */
+  nextAt: string | null;
 }
 
 /**

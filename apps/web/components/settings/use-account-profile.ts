@@ -6,6 +6,7 @@ import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profi
 import { identifyUser } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToUserProfileChanges } from "@/lib/supabase/realtime";
+import type { AllowanceUsage } from "@/lib/supabase/allowance-usage";
 
 const USAGE_REFRESH_INTERVAL_MS = 30_000;
 
@@ -19,6 +20,8 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   /** Emails among this period's requests (from /api/usage); null until known. */
   const [periodEmails, setPeriodEmails] = useState<number | null>(null);
+  /** The plan's other allowances (from /api/usage); null until known. */
+  const [allowances, setAllowances] = useState<AllowanceUsage | null>(null);
   const [loading, setLoading] = useState(true);
   const accessToken = session?.access_token ?? null;
 
@@ -42,8 +45,20 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
 
     if (live && accessToken) {
       void fetch("/api/usage", { headers: { Authorization: `Bearer ${accessToken}` } })
-        .then((res) => (res.ok ? (res.json() as Promise<{ emails?: number }>) : null))
-        .then((usage) => setPeriodEmails(typeof usage?.emails === "number" ? usage.emails : null))
+        .then((res) =>
+          res.ok ? (res.json() as Promise<Partial<AllowanceUsage> & { emails?: number }>) : null
+        )
+        .then((usage) => {
+          setPeriodEmails(typeof usage?.emails === "number" ? usage.emails : null);
+          // A failed read keeps what is shown rather than blanking the meters.
+          if (usage) {
+            setAllowances({
+              parsedPages: usage.parsedPages ?? null,
+              previewData: usage.previewData ?? null,
+              aiAssists: usage.aiAssists ?? null,
+            });
+          }
+        })
         .catch(() => setPeriodEmails(null));
     }
 
@@ -79,5 +94,14 @@ export function useAccountProfile({ live = false }: { live?: boolean } = {}) {
     };
   }, [live, authUser, refresh]);
 
-  return { profile, setProfile, periodEmails, loading, refresh, accessToken, authUser };
+  return {
+    profile,
+    setProfile,
+    periodEmails,
+    allowances,
+    loading,
+    refresh,
+    accessToken,
+    authUser,
+  };
 }

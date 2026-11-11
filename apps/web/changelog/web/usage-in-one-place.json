@@ -1,0 +1,8 @@
+{
+  "title": "All usage in one place",
+  "items": [
+    "Plan and usage shows parsed pages, preview data and AI assists under the request meter, each with when it resets",
+    "/api/usage returns parsedPages, previewData and aiAssists beside requests; the TypeScript, Python and Go SDKs type them, and whk usage and the MCP get_usage tool show them",
+    "New database function ai_assists_left_for_user() counts a person's own AI assists (migration 00094)"
+  ]
+}

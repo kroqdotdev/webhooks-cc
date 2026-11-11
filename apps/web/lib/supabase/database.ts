@@ -2551,6 +2551,10 @@ export interface Database {
         Args: { p_endpoint_id: string };
         Returns: Json;
       };
+      ai_assists_left_for_user: {
+        Args: { p_user_id: string };
+        Returns: Json;
+      };
       take_ai_assist: {
         Args: { p_endpoint_id: string; p_actor_id: string; p_kind: string };
         Returns: Json;

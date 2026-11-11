@@ -372,11 +372,89 @@ pub fn print_usage(usage: &UsageInfo) {
     if let Some(pe) = usage.period_end {
         println!("  {} {}", dim("Period ends:"), format_timestamp(pe));
     }
+    for (label, text) in allowance_lines(usage) {
+        println!("  {} {}", dim(label), text);
+    }
+}
+
+/// The plan's other allowances, one line each, with when each frees up:
+/// parsed pages (the page window), preview data (the UTC month) and AI
+/// assists (a rolling 30 days). Ones the server did not report are left out.
+pub fn allowance_lines(usage: &UsageInfo) -> Vec<(&'static str, String)> {
+    let mut lines = Vec::new();
+    if let Some(pages) = &usage.parsed_pages {
+        let mut text = format!("{}/{}", pages.used, pages.limit);
+        match &pages.overage {
+            Some(overage) if overage.active && overage.used > 0 => {
+                text.push_str(&format!(" (+{} in overage)", overage.used));
+            }
+            _ if pages.credit_pages > 0 => {
+                text.push_str(&format!(" (+{} one-time)", pages.credit_pages));
+            }
+            _ => {}
+        }
+        if let Some(resets) = &pages.resets_at {
+            text.push_str(&format!(", resets {}", resets.display()));
+        }
+        lines.push(("Parsed pages:", text));
+    }
+    if let Some(preview) = &usage.preview_data {
+        let mut text = format!(
+            "{} of {}",
+            crate::cli::share::data(preview.bytes),
+            crate::cli::share::data(preview.limit_bytes)
+        );
+        let resets = preview.resets_at.as_ref().map(|t| t.display());
+        match (preview.over, resets) {
+            (true, Some(at)) => text.push_str(&format!(", previews paused until {at}")),
+            (true, None) => text.push_str(", previews paused"),
+            (false, Some(at)) => text.push_str(&format!(", resets {at}")),
+            (false, None) => {}
+        }
+        lines.push(("Preview data:", text));
+    }
+    if let Some(assists) = &usage.ai_assists {
+        let mut text = format!("{}/{}", assists.used, assists.allowed);
+        match (&assists.next_at, assists.used >= assists.allowed) {
+            (Some(next), true) => text.push_str(&format!(", next one back {}", next.display())),
+            _ => text.push_str(" over the last 30 days"),
+        }
+        lines.push(("AI assists:", text));
+    }
+    lines
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn allowance_lines_say_when_each_frees_up() {
+        let usage: UsageInfo = serde_json::from_str(
+            r#"{"used":0,"limit":50,"remaining":50,"plan":"pro",
+                "parsedPages":{"used":87,"limit":100,"creditPages":1000,
+                    "overage":{"active":false,"used":0,"max":0},"resetsAt":null},
+                "previewData":{"bytes":3650722202,"limitBytes":26843545600,"over":true,
+                    "resetsAt":"not a time"},
+                "aiAssists":{"used":20,"allowed":20,"nextAt":"later"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            allowance_lines(&usage),
+            vec![
+                ("Parsed pages:", "87/100 (+1000 one-time)".to_string()),
+                (
+                    "Preview data:",
+                    "3.40 GB of 25.00 GB, previews paused until not a time".to_string()
+                ),
+                ("AI assists:", "20/20, next one back later".to_string()),
+            ]
+        );
+
+        let none: UsageInfo =
+            serde_json::from_str(r#"{"used":0,"limit":50,"remaining":50,"plan":"free"}"#).unwrap();
+        assert!(allowance_lines(&none).is_empty());
+    }
 
     #[test]
     fn sanitize_line_keeps_sender_text_on_one_line() {
