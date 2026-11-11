@@ -208,7 +208,7 @@ describe("edge routes", () => {
     expect(first.body.expiresIn).toBeLessThanOrEqual(7_200);
 
     const second = await open(free.key);
-    expect(second.status).toBe(429);
+    expect(second.status).toBe(403);
     expect(second.body.error).toMatch(/Free allows 1 live share/);
 
     expect((await open(free.key, { name: "nordic-bakery" })).body.error).toMatch(/random name/);
@@ -348,7 +348,7 @@ describe("edge routes", () => {
 
     await edge("close", { shareId, reason: "closed" });
     const refused = await open(free.key);
-    expect(refused.status).toBe(429);
+    expect(refused.status).toBe(403);
     expect(refused.body.error).toMatch(/paused/);
 
     const listed = (await (await api("/api/shares", "GET", free.key)).json()) as {
@@ -1037,6 +1037,12 @@ describe("round two: limits, names and access while runs are open", () => {
         })
       ).status
     ).toBe(201);
+    // Moving one's own name into the full team is the same plan limit: 403.
+    const moved = await api("/api/tunnel-names", "POST", owner.key, {
+      body: { name: `mine-${ts % 100_000}`, team: teamId },
+    });
+    expect(moved.status).toBe(403);
+    expect(((await moved.json()) as { error: string }).error).toMatch(/seats cover/);
     // Fewer seats: the newest team names wait, the oldest stay usable.
     await admin.from("teams").update({ seats: 1 }).eq("id", teamId);
     const listing = (await (await api("/api/tunnel-names", "GET", owner.key)).json()) as {
@@ -1258,6 +1264,18 @@ describe("round two: limits, names and access while runs are open", () => {
     });
     expect(await graceOf()).toBeNull();
     expect(await capture()).toBe(false);
+
+    // A stop that lands after a drop, before the reconnect, ends the grace too.
+    const third = await open(user.key, { kind: "live", endpoint: slug });
+    expect(third.status).toBe(200);
+    await edge("close", { shareId: third.body.shareId, reason: "closed" });
+    expect(await graceOf()).not.toBeNull();
+    const stop = await api("/api/shares/stop", "POST", user.key, {
+      params: { id: third.body.shareId as string },
+    });
+    expect(stop.status).toBe(200);
+    expect(await graceOf()).toBeNull();
+    expect(await capture()).toBe(false);
   });
 });
 
@@ -1304,7 +1322,7 @@ describe("round four: lost closes, team names on deletion, errors and races", ()
     const lost = await open(free.key);
     expect(lost.status).toBe(200);
     // Its close never arrived: the edge lists nothing.
-    expect((await open(free.key)).status).toBe(429);
+    expect((await open(free.key)).status).toBe(403);
     await age(lost.body.shareId, 120);
 
     const pro = await createUser({ plan: "pro" });
@@ -1529,7 +1547,7 @@ describe("pre-merge: sync input, refused shares and audit rows", () => {
     }
     const name = `premerge-${counterName()}`;
     const refused = await open(pro.key, { name });
-    expect(refused.status).toBe(429);
+    expect(refused.status).toBe(403);
     const { data: kept } = await admin.from("tunnel_names").select("name").eq("name", name);
     expect(kept).toEqual([]);
     for (const id of running) await edge("close", { shareId: id, reason: "closed" });
@@ -1551,7 +1569,88 @@ describe("pre-merge: sync input, refused shares and audit rows", () => {
       user_agent: "whk-cli/edge",
       actor_user_id: pro.id,
     });
+    // Its own key, so analytics keep the channel in `via`.
+    expect(data?.[0].metadata).toMatchObject({ source: "share" });
+    expect(data?.[0].metadata).not.toHaveProperty("via");
     await edge("close", { shareId: opened.body.shareId, reason: "closed" });
+  });
+});
+
+describe("review: big syncs, plan refusals and reconnects", () => {
+  it("answers a sync of 1,000 held runs, more than one PostgREST URL carries", async () => {
+    const pro = await createUser({ plan: "pro", request_limit: 100_000 });
+    const gated = await open(pro.key, { password: "a long run password" });
+    const expired = await open(pro.key);
+    const stopped = await open(pro.key);
+    for (const r of [gated, expired, stopped]) expect(r.status).toBe(200);
+    await admin
+      .from("tunnel_shares")
+      .update({ expires_at: new Date(Date.now() - 60_000).toISOString() } as never)
+      .eq("id", expired.body.shareId as string);
+    expect(
+      (
+        await api("/api/shares/stop", "POST", pro.key, {
+          params: { id: stopped.body.shareId as string },
+        })
+      ).status
+    ).toBe(200);
+
+    // Runs this database never had: answered as gone, like a deleted account's.
+    const unknown = Array.from({ length: 997 }, () => crypto.randomUUID());
+    const res = await edge("sync", {
+      shareIds: [gated.body.shareId, expired.body.shareId, stopped.body.shareId, ...unknown],
+      batches: [],
+    });
+    expect(res.status).toBe(200);
+    const synced = (await res.json()) as {
+      close: { shareId: string; reason: string }[];
+      gates: { shareId: string; gate: string | null }[];
+    };
+    const closeOf = new Map(synced.close.map((c) => [c.shareId, c.reason]));
+    expect(closeOf.get(expired.body.shareId as string)).toBe("it reached the plan's time limit");
+    expect(closeOf.get(stopped.body.shareId as string)).toMatch(/API/);
+    expect(closeOf.has(gated.body.shareId as string)).toBe(false);
+    expect(unknown.filter((id) => closeOf.has(id))).toHaveLength(997);
+    expect(synced.gates).toEqual([{ shareId: gated.body.shareId, gate: gated.body.gate }]);
+    expect(gated.body.gate).toEqual(expect.any(String));
+    await edge("close", { shareId: gated.body.shareId, reason: "closed" });
+  });
+
+  it("refuses a share past the plan's slots or data with 403, so the CLI stops retrying", async () => {
+    const free = await createUser();
+    const first = await open(free.key);
+    expect(first.status).toBe(200);
+    const second = await open(free.key);
+    expect(second.status).toBe(403);
+    expect(second.body.error).toMatch(/Free allows 1 live share/);
+    await edge("close", { shareId: first.body.shareId, reason: "closed" });
+  });
+
+  it("never counts a reconnect's own earlier run against the slots", async () => {
+    const free = await createUser();
+    const instance = `own-run-${counterName()}`;
+    const first = await open(free.key, { instance });
+    expect(first.status).toBe(200);
+    // The run is still open here (the edge has not seen the drop yet) and its
+    // name can no longer be handed back, so the reconnect draws another.
+    await admin
+      .from("tunnel_shares")
+      .update({ name: `gone-${counterName()}-free` })
+      .eq("id", first.body.shareId as string);
+    const again = await open(free.key, { instance });
+    expect(again.status).toBe(200);
+    expect(again.body.shareId).not.toBe(first.body.shareId);
+    const { data: old } = await admin
+      .from("tunnel_shares")
+      .select("ended_at, end_reason")
+      .eq("id", first.body.shareId as string)
+      .single();
+    expect(old?.ended_at).not.toBeNull();
+    expect(old?.end_reason).toBe("replaced");
+    // Another run of the same account is still held to the one slot.
+    const other = await open(free.key);
+    expect(other.status).toBe(403);
+    await edge("close", { shareId: again.body.shareId, reason: "closed" });
   });
 });
 

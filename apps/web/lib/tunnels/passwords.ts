@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inChunks } from "@/lib/supabase/in-chunks";
 import { nameManageRefusal, NAME_NOT_FOUND, type NameRefusal } from "./names";
 import { hashPassword, newPasswordVersion, verifyPassword } from "./password-hash";
 
@@ -62,22 +63,23 @@ export async function gateOf(share: ShareGateColumns): Promise<Gate | null> {
 
 /**
  * The versions the edge should hold for these live previews (sync, every 30
- * seconds): three queries whatever the number of previews, the same answer
- * gateOf() gives for each.
+ * seconds): three reads whatever the number of previews (each in chunks of
+ * at most 200, lib/supabase/in-chunks.ts), the same answer gateOf() gives
+ * for each.
  */
 export async function gateVersions(
   shareIds: string[]
 ): Promise<{ shareId: string; gate: string | null }[]> {
   if (shareIds.length === 0) return [];
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("tunnel_shares")
-    .select("id, name, user_id, password_hash, password_version")
-    .in("id", shareIds)
-    .eq("kind", "share")
-    .is("ended_at", null);
-  if (error) throw error;
-  const shares = data ?? [];
+  const shares = await inChunks(shareIds, (chunk) =>
+    admin
+      .from("tunnel_shares")
+      .select("id, name, user_id, password_hash, password_version")
+      .in("id", chunk)
+      .eq("kind", "share")
+      .is("ended_at", null)
+  );
   // Previews without a password of their own follow their name's.
   const followers = shares.filter((s) => !s.password_version && s.name && s.user_id);
   const names = [...new Set(followers.map((s) => s.name as string))];
@@ -86,13 +88,14 @@ export async function gateVersions(
     { user_id: string; team_id: string | null; password_version: string | null }
   >();
   if (names.length > 0) {
-    const { data: rows, error: namesError } = await admin
-      .from("tunnel_names")
-      .select("name, user_id, team_id, password_version")
-      .in("name", names)
-      .not("password_version", "is", null);
-    if (namesError) throw namesError;
-    for (const r of rows ?? []) kept.set(r.name, r);
+    const rows = await inChunks(names, (chunk) =>
+      admin
+        .from("tunnel_names")
+        .select("name, user_id, team_id, password_version")
+        .in("name", chunk)
+        .not("password_version", "is", null)
+    );
+    for (const r of rows) kept.set(r.name, r);
   }
   // Teammates under a team's name: one membership query for all of them.
   const teamAsks = followers.filter((s) => {
@@ -101,15 +104,13 @@ export async function gateVersions(
   });
   const member = new Set<string>();
   if (teamAsks.length > 0) {
-    const teamIds = [...new Set(teamAsks.map((s) => kept.get(s.name as string)!.team_id!))];
+    // By user only (an account is in few teams), so one list is chunked.
+    const teamIds = new Set(teamAsks.map((s) => kept.get(s.name as string)!.team_id!));
     const userIds = [...new Set(teamAsks.map((s) => s.user_id as string))];
-    const { data: rows, error: membersError } = await admin
-      .from("team_members")
-      .select("team_id, user_id")
-      .in("team_id", teamIds)
-      .in("user_id", userIds);
-    if (membersError) throw membersError;
-    for (const r of rows ?? []) member.add(`${r.team_id}:${r.user_id}`);
+    const rows = await inChunks(userIds, (chunk) =>
+      admin.from("team_members").select("team_id, user_id").in("user_id", chunk)
+    );
+    for (const r of rows) if (teamIds.has(r.team_id)) member.add(`${r.team_id}:${r.user_id}`);
   }
   return shares.map((s) => {
     if (s.password_version && s.password_hash) return { shareId: s.id, gate: s.password_version };

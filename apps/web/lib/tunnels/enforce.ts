@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inChunks } from "@/lib/supabase/in-chunks";
 import { oldestNames, teamNameCaps } from "./names";
 import { tunnelPlansOf, type TunnelPlan } from "./plan";
 import { STOPS } from "./stops";
@@ -130,34 +131,29 @@ export async function enforcePlans(now = Date.now()): Promise<Enforcement> {
   if (runs.length === 0) return { end: [] };
   const userIds = [...new Set(runs.map((r) => r.user_id))];
   const runNames = [...new Set(runs.flatMap((r) => (r.name ? [r.name] : [])))];
+  // Every list here grows with the runs, so each is read in chunks.
   const [plans, own, underRuns] = await Promise.all([
     tunnelPlansOf(userIds, now),
-    admin
-      .from("tunnel_names")
-      .select("name, user_id, team_id, created_at")
-      .in("user_id", userIds)
-      .is("team_id", null),
-    runNames.length > 0
-      ? admin.from("tunnel_names").select("team_id").in("name", runNames).not("team_id", "is", null)
-      : Promise.resolve({ data: [] as { team_id: string | null }[], error: null }),
+    inChunks(userIds, (chunk) =>
+      admin
+        .from("tunnel_names")
+        .select("name, user_id, team_id, created_at")
+        .in("user_id", chunk)
+        .is("team_id", null)
+    ),
+    inChunks(runNames, (chunk) =>
+      admin.from("tunnel_names").select("team_id").in("name", chunk).not("team_id", "is", null)
+    ),
   ]);
-  if (own.error) throw own.error;
-  if (underRuns.error) throw underRuns.error;
   // The teams whose names previews run under: all their names, for the cap.
-  const teamIds = [
-    ...new Set((underRuns.data ?? []).flatMap((n) => (n.team_id ? [n.team_id] : []))),
-  ];
+  const teamIds = [...new Set(underRuns.flatMap((n) => (n.team_id ? [n.team_id] : [])))];
   const [teamRows, caps] = await Promise.all([
-    teamIds.length > 0
-      ? admin
-          .from("tunnel_names")
-          .select("name, user_id, team_id, created_at")
-          .in("team_id", teamIds)
-      : Promise.resolve({ data: [] as KeptName[], error: null }),
+    inChunks(teamIds, (chunk) =>
+      admin.from("tunnel_names").select("name, user_id, team_id, created_at").in("team_id", chunk)
+    ),
     teamNameCaps(teamIds),
   ]);
-  if (teamRows.error) throw teamRows.error;
-  const names = [...((own.data ?? []) as KeptName[]), ...((teamRows.data ?? []) as KeptName[])];
+  const names = [...(own as KeptName[]), ...(teamRows as KeptName[])];
   const result = enforcement(runs, plans, names, caps);
   if (result.end.length > 0) {
     const { error: endError } = await admin.rpc("tunnel_end_shares", {

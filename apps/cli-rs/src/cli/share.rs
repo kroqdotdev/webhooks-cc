@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 
 use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, sanitize, sanitize_line};
-use crate::share::events::Event;
+use crate::share::events::{self, Event};
 use crate::share::{self, Kind, Session, Update, duration, printable};
 use crate::types::{
     NamesResponse, Share, ShareRequestsResponse, SharesResponse, TunnelLimits, TunnelName,
@@ -33,8 +33,11 @@ pub async fn run(client: &ApiClient, options: ShareOptions) -> Result<()> {
             message: &format!("{e:#}"),
         }
         .print();
+        events::flush(events::FINAL_WAIT);
         std::process::exit(1);
     }
+    // What the share printed is out before the error, or the exit.
+    events::flush(events::FINAL_WAIT);
     result
 }
 
@@ -68,7 +71,7 @@ async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
         if json {
             Event::Notice { text: &text }.print();
         } else {
-            println!("  {} {}", dim("●"), dim(&text));
+            events::out(format!("  {} {}", dim("●"), dim(&text)), false);
         }
     }
 
@@ -124,121 +127,136 @@ pub async fn shutdown_signal() {
     }
 }
 
-/// The last line of a share. Written without println!, which panics when
-/// nobody reads stdout any more.
+/// The last line of a share, once the lines before it are out (or a reader
+/// that stopped reading has had [`events::FINAL_WAIT`]).
 fn stopped(json: bool, reason: &str) {
-    use std::io::Write;
     if json {
         Event::Stopped { reason }.print();
     } else {
-        let _ = writeln!(
-            std::io::stdout(),
-            "\n  {} The share stopped: {}.",
-            dim("●"),
-            sanitize_line(reason)
+        events::out(
+            format!(
+                "\n  {} The share stopped: {}.",
+                dim("●"),
+                sanitize_line(reason)
+            ),
+            false,
         );
+    }
+    events::flush(events::FINAL_WAIT);
+}
+
+/// Shows what the session said. It runs on the session's own loop, so it
+/// only queues the text (see [`events::out`]): a stdout nobody reads never
+/// holds up visitors.
+fn show_share_update(update: Update, local: &str, json: bool, qr: bool) {
+    if json {
+        share_event(&update).print();
+    } else {
+        let (text, droppable) = share_text(update, local, qr);
+        events::out(text, droppable);
     }
 }
 
-fn show_share_update(update: Update, local: &str, json: bool, qr: bool) {
+/// The `--json` line for an update.
+fn share_event(update: &Update) -> Event<'_> {
     match update {
         Update::Ready {
             name,
             url,
             expires_at,
-            expires_in,
             notice,
             password,
-        } => {
-            if json {
-                Event::Live {
-                    url: &url,
-                    name: &name,
-                    expires_at: expires_at.as_deref(),
-                    notice,
-                    password,
-                }
-                .print();
-                return;
-            }
-            println!("\n  {} Sharing", green("●"));
-            println!("  {} {}", dim("Link:         "), bold(&sanitize_line(&url)));
-            println!("  {} {local}", dim("Forwarding to:"));
-            if let Some(seconds) = expires_in {
-                println!(
-                    "  {}",
-                    dim(&format!(
-                        "It stops in {}, the longest a share runs on your plan.",
-                        duration(seconds)
-                    ))
-                );
-            }
-            if notice {
-                println!(
-                    "  {}",
-                    dim("Visitors see a short notice from webhooks.cc before your page.")
-                );
-            }
-            if password {
-                println!("  {}", dim("Visitors need the password to open it."));
-            }
-            if qr {
-                println!();
-                share::qr::print(&url);
-            }
-            println!("  {}\n", dim("Press Ctrl+C to stop."));
-        }
-        Update::Reconnected => {
-            if json {
-                Event::Reconnected.print();
-            } else {
-                println!("  {} {}", green("●"), dim("Reconnected"));
-            }
-        }
+            ..
+        } => Event::Live {
+            url,
+            name,
+            expires_at: expires_at.as_deref(),
+            notice: *notice,
+            password: *password,
+        },
+        Update::Reconnected => Event::Reconnected,
         Update::Request {
             method,
             path,
             status,
             ms,
             ..
+        } => Event::Request {
+            method,
+            path,
+            status: *status,
+            ms: *ms,
+        },
+        Update::Notice(text) => Event::Notice { text },
+        Update::Retrying { message, seconds } => Event::Retrying {
+            message,
+            seconds: *seconds,
+        },
+    }
+}
+
+/// The text a person reads for an update, and whether it may be dropped
+/// when the reader falls behind (a visitor's request line may).
+fn share_text(update: Update, local: &str, qr: bool) -> (String, bool) {
+    let line = |text: String| (text, false);
+    match update {
+        Update::Ready {
+            url,
+            expires_in,
+            notice,
+            password,
+            ..
         } => {
-            if json {
-                Event::Request {
-                    method: &method,
-                    path: &path,
-                    status,
-                    ms,
-                }
-                .print();
-            } else {
-                println!("{}", request_line(&method, &path, status, ms));
-            }
-        }
-        Update::Notice(text) => {
-            if json {
-                Event::Notice { text: &text }.print();
-            } else {
-                println!("  {} {}", dim("●"), sanitize(&text));
-            }
-        }
-        Update::Retrying { message, seconds } => {
-            if json {
-                Event::Retrying {
-                    message: &message,
-                    seconds,
-                }
-                .print();
-            } else {
-                println!(
-                    "  {} {}",
-                    dim("●"),
+            let mut lines = vec![
+                format!("\n  {} Sharing", green("●")),
+                format!("  {} {}", dim("Link:         "), bold(&sanitize_line(&url))),
+                format!("  {} {local}", dim("Forwarding to:")),
+            ];
+            if let Some(seconds) = expires_in {
+                lines.push(format!(
+                    "  {}",
                     dim(&format!(
-                        "{} Trying again in {seconds}s.",
-                        sanitize_line(&message)
+                        "It stops in {}, the longest a share runs on your plan.",
+                        duration(seconds)
                     ))
-                );
+                ));
             }
+            if notice {
+                lines.push(format!(
+                    "  {}",
+                    dim("Visitors see a short notice from webhooks.cc before your page.")
+                ));
+            }
+            if password {
+                lines.push(format!(
+                    "  {}",
+                    dim("Visitors need the password to open it.")
+                ));
+            }
+            if qr && let Some(code) = share::qr::text(&url) {
+                lines.push(String::new());
+                lines.push(code);
+            }
+            lines.push(format!("  {}\n", dim("Press Ctrl+C to stop.")));
+            line(lines.join("\n"))
         }
+        Update::Reconnected => line(format!("  {} {}", green("●"), dim("Reconnected"))),
+        Update::Request {
+            method,
+            path,
+            status,
+            ms,
+            ..
+        } => (request_line(&method, &path, status, ms), true),
+        Update::Notice(text) => line(format!("  {} {}", dim("●"), sanitize(&text))),
+        Update::Retrying { message, seconds } => line(format!(
+            "  {} {}",
+            dim("●"),
+            dim(&format!(
+                "{} Trying again in {seconds}s.",
+                sanitize_line(&message)
+            ))
+        )),
     }
 }
 
@@ -1044,5 +1062,38 @@ mod tests {
             older.available,
             "an older server without the flag reads as available"
         );
+    }
+
+    #[test]
+    fn only_a_visitors_request_line_may_be_dropped() {
+        let ready = Update::Ready {
+            name: "acme".into(),
+            url: "https://acme.sharehooks.cc".into(),
+            expires_at: None,
+            expires_in: Some(7200),
+            notice: true,
+            password: false,
+        };
+        let (text, droppable) = share_text(ready, "localhost:3000", false);
+        assert!(!droppable);
+        assert!(text.contains("https://acme.sharehooks.cc"), "{text}");
+        assert!(text.contains("It stops in 2 h"), "{text}");
+        let request = Update::Request {
+            method: "GET".into(),
+            path: "/".into(),
+            status: 200,
+            ms: 4,
+            request_id: None,
+        };
+        assert!(share_text(request.clone(), "localhost:3000", false).1);
+        assert_eq!(
+            share_event(&request).line(),
+            r#"{"event":"request","method":"GET","path":"/","status":200,"ms":4}"#
+        );
+        let retrying = Update::Retrying {
+            message: "The connection dropped.".into(),
+            seconds: 2,
+        };
+        assert!(!share_text(retrying, "localhost:3000", false).1);
     }
 }

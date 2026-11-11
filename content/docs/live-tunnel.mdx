@@ -3,7 +3,7 @@ title: "Live tunnels"
 description: "whk tunnel --live relays each webhook to your local server while the sender waits, so the sender gets your app's real answer. The request is captured either way, with your app's response stored next to it."
 section: cli
 order: 5
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-11
 schema: howto
 keywords:
   [
@@ -62,6 +62,8 @@ Senders that retry on `5xx` will try again later, the way they would if your rea
 
 A connection that goes silent without closing (a laptop that sleeps, a network that changes) is noticed within about a minute, and `whk` reconnects. While the relay is not connected and `whk` is still running, it forwards each capture from the stream to your app like a plain tunnel, and says so once: your app still gets every request, after the sender has had its `502` or the mock response. Captures the relay already carried are not sent twice.
 
+When the computer was offline for a while (asleep, or off the network), the relay often reconnects before the stream has caught up. The stream then brings the captures made meanwhile, which the relay never carried: `whk` gives the relay 40 seconds to claim each one, then forwards the rest to your app, once each, and says how many. Captures made while `whk` was not running at all are not forwarded.
+
 ## What reaches the sender
 
 A live tunnel answers webhook senders, not browsers, so the answer is kept to what an API returns:
@@ -78,6 +80,7 @@ The stored response is what the sender got, not your app's raw answer: the heade
 - Live requests count against your request quota like any capture. They do not count against the [shared data](/docs/share#limits) of `whk share`.
 - An account can have up to 5 live tunnels open at once, one per endpoint.
 - An account's live requests waiting for an answer at the same time are capped, so one slow local app cannot hold up the rest of the account's captures, and live requests have room of their own that visitors to the account's previews cannot use up. Past the cap, the sender gets `503` with `Retry-After`.
+- A request whose headers come to more than 64 KB gets the sender a `431` from `whk` without reaching your app.
 - Your local app has 25 seconds to start answering. Slack, for one, gives a slash command 3 seconds, so answer fast and do slow work afterwards, as you would in production.
 
 ## Targets, paths and headers
@@ -88,7 +91,7 @@ The path after the endpoint's URL goes to your app: a request to `https://go.web
 
 ## JSON events
 
-With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`, and `request_id`, the capture's id, as in the dashboard and the API), `live_reconnected` and `live_retrying` around network trouble, `live_fallback` once when it starts forwarding captures from the stream while the relay is down (those arrive as `forwarded` events; a capture the relay already carried, matched by its id, is never sent twice), `notice`, and `live_stopped` when it ends, Ctrl-C and `SIGTERM` included ("you stopped it on this computer", status 0). Emails keep the plain tunnel's `forwarded` events.
+With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`, and `request_id`, the capture's id, as in the dashboard and the API), `live_reconnected` and `live_retrying` around network trouble, `live_fallback` once when it starts forwarding captures from the stream while the relay is down (those arrive as `forwarded` events, as do captures from while the computer was offline; a capture the relay already carried, matched by its id, is never sent twice), `notice`, and `live_stopped` when it ends, Ctrl-C and `SIGTERM` included ("you stopped it on this computer", status 0). Emails keep the plain tunnel's `forwarded` events.
 
 When the live session is refused before it ever opens (the account's live tunnels are all in use, or the endpoint is not yours), `whk` prints why and exits with status 1. Starting a second `whk tunnel --live` on the same endpoint takes the relay over: the first one is told it was replaced and ends. A session that was live and is then ended (stopped on webhooks.cc, replaced, the endpoint unshared) ends with `live_stopped` and status 0. Refusals that do not come from webhooks.cc itself (a proxy or firewall page, a rate limit) are retried, not taken as the end.
 

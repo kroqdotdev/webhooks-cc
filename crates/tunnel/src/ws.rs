@@ -113,7 +113,7 @@ where
                     Message::Ping(Bytes::new())
                 }
             };
-            if sink.send(message).await.is_err() {
+            if !send_unless_silent(&mut sink, message, &last).await {
                 break;
             }
         }
@@ -208,6 +208,36 @@ fn closed() -> io::Error {
     io::Error::new(io::ErrorKind::BrokenPipe, "the tunnel closed")
 }
 
+/// Sends one message, unless the peer goes silent for [`SILENT_AFTER`]
+/// first: a send waits while the socket is full, and the ping tick that
+/// checks for silence is not reached meanwhile, so a path that died in the
+/// middle of an upload would otherwise wait the kernel's quarter of an hour.
+/// The peer may still be heard while the send waits (its pings, its own
+/// bytes), which moves the deadline on. False when the send failed or the
+/// peer is taken as gone.
+async fn send_unless_silent<S>(
+    sink: &mut S,
+    message: Message,
+    heard: &Mutex<tokio::time::Instant>,
+) -> bool
+where
+    S: futures::Sink<Message> + Unpin,
+{
+    let send = sink.send(message);
+    tokio::pin!(send);
+    loop {
+        let deadline = *heard.lock().unwrap_or_else(|e| e.into_inner()) + SILENT_AFTER;
+        tokio::select! {
+            sent = &mut send => return sent.is_ok(),
+            () = tokio::time::sleep_until(deadline) => {
+                if silent_for(heard) >= SILENT_AFTER {
+                    return false;
+                }
+            }
+        }
+    }
+}
+
 /// How long since the peer last sent anything.
 fn silent_for(heard: &Mutex<tokio::time::Instant>) -> Duration {
     heard.lock().unwrap_or_else(|e| e.into_inner()).elapsed()
@@ -243,6 +273,76 @@ mod tests {
                 }
             }
         });
+    }
+
+    /// Copies one way until `dead` is set, then neither delivers nor reads:
+    /// a path whose packets vanish, so the sender's socket fills.
+    fn dying_relay(
+        mut from: tokio::io::ReadHalf<DuplexStream>,
+        mut to: tokio::io::WriteHalf<DuplexStream>,
+        dead: Arc<AtomicBool>,
+    ) {
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                if dead.load(Ordering::Relaxed) {
+                    // Both halves stay open, moving nothing.
+                    std::future::pending::<()>().await;
+                }
+                let Ok(n) = from.read(&mut buf).await else {
+                    return;
+                };
+                if n == 0 {
+                    return;
+                }
+                if dead.load(Ordering::Relaxed) {
+                    continue;
+                }
+                if to.write_all(&buf[..n]).await.is_err() {
+                    return;
+                }
+            }
+        });
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_peer_that_goes_silent_mid_upload_ends_the_tunnel_too() {
+        let dead = Arc::new(AtomicBool::new(false));
+        let (a, a_relay) = tokio::io::duplex(64 * 1024);
+        let (b_relay, b) = tokio::io::duplex(64 * 1024);
+        let (ar, aw) = tokio::io::split(a_relay);
+        let (br, bw) = tokio::io::split(b_relay);
+        dying_relay(ar, bw, dead.clone());
+        dying_relay(br, aw, dead.clone());
+        let a = WebSocketStream::from_raw_socket(a, Role::Client, Some(config())).await;
+        let b = WebSocketStream::from_raw_socket(b, Role::Server, Some(config())).await;
+        let (a_bytes, _a_text) = split(a);
+        let (mut b_bytes, _b_text) = split(b);
+        let (mut a_read, mut a_write) = tokio::io::split(a_bytes);
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 64 * 1024];
+            while let Ok(n) = b_bytes.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+            }
+        });
+        a_write.write_all(b"hello").await.unwrap();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        // The path dies while A is sending an answer larger than any buffer
+        // on the way: its send waits on a full socket from then on.
+        dead.store(true, Ordering::Relaxed);
+        tokio::spawn(async move {
+            let chunk = vec![1u8; 16 * 1024];
+            while a_write.write_all(&chunk).await.is_ok() {}
+        });
+        let started = tokio::time::Instant::now();
+        let mut rest = Vec::new();
+        let ended =
+            tokio::time::timeout(Duration::from_secs(900), a_read.read_to_end(&mut rest)).await;
+        assert!(matches!(ended, Ok(Ok(_))), "still open: {ended:?}");
+        let took = started.elapsed();
+        assert!(took <= SILENT_AFTER + PING_EVERY * 2, "{took:?}");
     }
 
     /// Two ends joined through a relay that can go silent.

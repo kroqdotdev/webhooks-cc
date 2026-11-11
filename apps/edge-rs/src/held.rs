@@ -355,8 +355,11 @@ impl Behind {
     }
 }
 
-/// One accepted connection, as its requests show it: one that has served
-/// a visitor is watched; a tunnel never is.
+/// One accepted connection, as its requests show it: one serving a visitor
+/// is watched; a tunnel never is. Caddy keeps its connections open and
+/// sends any host down any of them, so it is what the latest request was
+/// for that counts: a tunnel opened on a connection that carried a visitor
+/// before is a tunnel.
 #[derive(Debug, Default)]
 pub struct Conn {
     visitor: AtomicBool,
@@ -371,6 +374,13 @@ impl Conn {
     /// door says whose (`serves`).
     pub fn serves_visitors(&self) {
         self.visitor.store(true, Ordering::Relaxed);
+        *self.account.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// It serves something other than a visitor: a tunnel opening, the
+    /// edge's health or a redirect. Not watched from here on.
+    pub fn serves_no_visitor(&self) {
+        self.visitor.store(false, Ordering::Relaxed);
         *self.account.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
@@ -466,6 +476,10 @@ impl<T: Reset> Watched<T> {
     /// connection.
     fn waits(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
         if !self.conn.is_visitor() {
+            // Nothing of a visitor's is held up here any more.
+            self.stalled = None;
+            self.timer = None;
+            self.slot = None;
             return Poll::Pending;
         }
         loop {
@@ -889,6 +903,22 @@ mod tests {
         let (near, _far) = duplex(16);
         let held = Held::new(0);
         let mut socket = Watched::new(near, Arc::new(Conn::default()), held.clone());
+        socket.write_all(&[0u8; 16]).await.unwrap();
+        let waited = tokio::time::timeout(STALL * 2, socket.write_all(&[0u8; 16])).await;
+        assert!(waited.is_err(), "still waiting, not cut off");
+        assert_eq!(held.taken_stats(), Taken::default());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_tunnel_on_a_connection_that_served_a_visitor_is_not_watched() {
+        let (near, _far) = duplex(16);
+        let held = Held::new(0);
+        let conn = Arc::new(Conn::default());
+        // Caddy sent a visitor's request down this connection, then a
+        // tunnel's opening.
+        conn.serves_visitors();
+        conn.serves_no_visitor();
+        let mut socket = Watched::new(near, conn, held.clone());
         socket.write_all(&[0u8; 16]).await.unwrap();
         let waited = tokio::time::timeout(STALL * 2, socket.write_all(&[0u8; 16])).await;
         assert!(waited.is_err(), "still waiting, not cut off");

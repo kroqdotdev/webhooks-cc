@@ -477,4 +477,19 @@ describe("staff on shares, blocks and accounts", () => {
     expect((lifted.body.account as { noticeLifted: boolean }).noticeLifted).toBe(true);
     expect((await open(owner.key)).body.notice).toBe(false);
   });
+
+  it("never suspend a staff account from its account page either", async () => {
+    const refused = await ops("accounts", "POST", {
+      params: { id: staffId },
+      body: { action: "suspend", confirm: true },
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toMatch(/Staff accounts/);
+    const { data } = await admin
+      .from("users")
+      .select("tunnels_suspended")
+      .eq("id", staffId)
+      .single();
+    expect(data?.tunnels_suspended).toBe(false);
+  });
 });

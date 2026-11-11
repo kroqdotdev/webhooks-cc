@@ -551,6 +551,8 @@ export interface Database {
           delete_after_delivery?: boolean;
           layouts?: Json;
           last_email_at?: string | null;
+          /** Only cleared: a stop ends the grace a drop started (lib/tunnels/stops.ts). */
+          live_grace_until?: null;
         };
         Relationships: [];
       };

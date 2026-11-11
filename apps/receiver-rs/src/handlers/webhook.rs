@@ -971,9 +971,13 @@ async fn handle_webhook_inner(
                     if capture.live && state.live.is_none() {
                         super::live::not_configured();
                     }
+                    // Unless the edge has been gone for this endpoint past
+                    // the grace: then it is answered like any capture
+                    // (live.rs, EdgeHealth).
                     if capture.live
                         && let Some(ref live) = state.live
                         && let Some(ref endpoint_id) = capture.endpoint_id
+                        && live.relays(endpoint_id)
                     {
                         let limit_key = capture
                             .billing_key
@@ -1002,13 +1006,17 @@ async fn handle_webhook_inner(
                                 }
                             },
                         );
-                        return match relayed.await {
-                            Ok(response) => response,
+                        match relayed.await {
+                            Ok(Some(response)) => return response,
+                            // The edge is gone past the grace: answered and
+                            // recorded below, as if not live.
+                            Ok(None) => {}
                             Err(e) => {
                                 tracing::error!(error = %e, "live relay task failed");
-                                (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response()
+                                return (StatusCode::BAD_GATEWAY, "live tunnel unreachable")
+                                    .into_response();
                             }
-                        };
+                        }
                     }
 
                     if predicted != sent

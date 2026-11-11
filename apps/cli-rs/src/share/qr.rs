@@ -40,14 +40,17 @@ pub fn lines(text: &str) -> Option<Vec<String>> {
     Some(lines)
 }
 
-/// Prints the code for a link, indented like the lines around it, with
-/// what it is for.
-pub fn print(url: &str) {
-    let Some(lines) = lines(url) else { return };
-    for line in lines {
-        println!("  {line}");
+/// The code for a link, indented like the lines around it, with what it
+/// is for; None when the link is too long for one.
+pub fn text(url: &str) -> Option<String> {
+    let mut out = String::new();
+    for line in lines(url)? {
+        out.push_str("  ");
+        out.push_str(&line);
+        out.push('\n');
     }
-    println!("  Scan it to open the link on a phone.");
+    out.push_str("  Scan it to open the link on a phone.");
+    Some(out)
 }
 
 /// Whether to draw it: at a terminal that takes colours (term.rs), unless

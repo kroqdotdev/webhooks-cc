@@ -1120,11 +1120,20 @@ function shareSummary(live: LiveShare): Record<string, unknown> {
 }
 
 /**
+ * How the hosted server (no share_port: it cannot run whk on the person's
+ * computer) says to start a preview.
+ */
+const REMOTE_SHARE =
+  "`whk share <port>` on the person's computer (or the local MCP server, npx -y @webhooks-cc/mcp, which has share_port)";
+
+/**
  * What an agent can do about the account's sharing limits, from a share
  * list: the next step when slots or data run out, so it never has to send
- * the person to the dashboard.
+ * the person to the dashboard. `remote` for the hosted server, which has no
+ * share_port.
  */
-export function shareHints(list: TunnelShareList): string[] {
+export function shareHints(list: TunnelShareList, remote = false): string[] {
+  const start = remote ? REMOTE_SHARE : "share_port";
   const hints: string[] = [];
   const limits = list.limits;
   const usage = list.usage;
@@ -1138,12 +1147,12 @@ export function shareHints(list: TunnelShareList): string[] {
   }
   if (limits && previews.length >= limits.shares) {
     hints.push(
-      `All ${limits.shares} of the plan's preview slots are in use: stop one with stop_share (its id is in shares) before share_port.`
+      `All ${limits.shares} of the plan's preview slots are in use: stop one with stop_share (its id is in shares) before ${start}.`
     );
   }
   if (limits && limits.sessionMinutes) {
     hints.push(
-      `Previews on this plan stop after ${limits.sessionMinutes} minutes; share_port again gives a new link.`
+      `Previews on this plan stop after ${limits.sessionMinutes} minutes; ${start} again gives a new link.`
     );
   }
   if (limits && !limits.passwords) {
@@ -1154,10 +1163,12 @@ export function shareHints(list: TunnelShareList): string[] {
 
 /**
  * A server hint in this server's words: the whk commands it names become
- * the tools that do the same, so an agent does not reach for a CLI.
+ * the tools that do the same, so an agent does not reach for a CLI. On the
+ * hosted server (`remote`) `whk share` stays a command for the person's
+ * computer, since that server has no share_port.
  */
-export function toolWords(hint: string): string {
-  return hint
+export function toolWords(hint: string, remote = false): string {
+  const words = hint
     .replace(/whk shares stop(?: <[^>]*>)?/g, "stop_share")
     .replace(/whk shares (?:ls|list)/g, "list_shares")
     .replace(/whk shares log(?: <[^>]*>)?/g, "share_requests")
@@ -1165,7 +1176,9 @@ export function toolWords(hint: string): string {
     .replace(/whk names release(?: <[^>]*>)?/g, "release_name")
     .replace(/whk names password(?: <[^>]*>)? --clear/g, "clear_name_password")
     .replace(/whk names password(?: <[^>]*>)?/g, "set_name_password")
-    .replace(/whk names ls/g, "list_names")
+    .replace(/whk names ls/g, "list_names");
+  if (remote) return words;
+  return words
     .replace(/whk share <port> --password/g, "share_port with a password")
     .replace(/whk share <port>/g, "share_port");
 }
@@ -1175,12 +1188,12 @@ export function toolWords(hint: string): string {
  * server's own (in tool words) and this server's, without repeats, so
  * nothing the server says (a suspension, a pause) is lost.
  */
-export function withShareHints(list: TunnelShareList): Record<string, unknown> {
-  const server = (list.hints ?? []).map(toolWords);
-  const ours = shareHints(list);
+export function withShareHints(list: TunnelShareList, remote = false): Record<string, unknown> {
+  const server = (list.hints ?? []).map((h) => toolWords(h, remote));
+  const ours = shareHints(list, remote);
   if (list.suspended && !server.some((h) => /suspended/i.test(h))) {
     ours.unshift(
-      "Sharing is suspended on this account: share_port is refused. The person can write to support@webhooks.cc."
+      `Sharing is suspended on this account: ${remote ? "new previews are" : "share_port is"} refused. The person can write to support@webhooks.cc.`
     );
   }
   const hints = [...new Set([...server, ...ours])];
@@ -1197,7 +1210,11 @@ export function registerTools(
   options: RegisterToolsOptions = {}
 ): RegisteredToolHandle[] {
   const handles: RegisteredToolHandle[] = [];
-  const server = toolTarget(target, options.remote === true, handles);
+  const remote = options.remote === true;
+  const server = toolTarget(target, remote, handles);
+  // How the tool descriptions say to start a preview: the hosted server has
+  // no share_port (it cannot run whk on the person's computer).
+  const shareWith = remote ? REMOTE_SHARE : "share_port";
 
   server.tool(
     "create_endpoint",
@@ -2649,7 +2666,7 @@ export function registerTools(
 
   server.tool(
     "list_shares",
-    "List your public previews of local ports (whk share, share_port) and live tunnels (whk tunnel --live): live ones first, then the latest that ended, with this month's shared data and your plan's sharing limits. Not the same as share_endpoint, which shares an endpoint with a team.",
+    `List your public previews of local ports (whk share${remote ? "" : ", share_port"}) and live tunnels (whk tunnel --live): live ones first, then the latest that ended, with this month's shared data and your plan's sharing limits. Not the same as share_endpoint, which shares an endpoint with a team.`,
     {
       state: z
         .enum(["live", "ended"])
@@ -2657,7 +2674,7 @@ export function registerTools(
         .describe("Only the running ones, or only the ended ones"),
     },
     withErrorHandling(async ({ state }) => {
-      return jsonContent(withShareHints(await client.shares.list(state ? { state } : {})));
+      return jsonContent(withShareHints(await client.shares.list(state ? { state } : {}), remote));
     })
   );
 
@@ -2695,7 +2712,7 @@ export function registerTools(
 
   server.tool(
     "list_names",
-    "List the reserved preview names you can share under (Pro and Business): your own and your teams', each with its link, whether it has a password, whether a preview runs under it now, and whether your plan still covers it (usable). Includes how many your plan allows and how many you hold. Share under one with share_port and its name.",
+    `List the reserved preview names you can share under (Pro and Business): your own and your teams', each with its link, whether it has a password, whether a preview runs under it now, and whether your plan still covers it (usable). Includes how many your plan allows and how many you hold. Share under one with ${remote ? "`whk share <port> --name <name>` on the person's computer (or the local MCP server's share_port)" : "share_port and its name"}.`,
     {},
     withErrorHandling(async () => {
       return jsonContent(await client.names.list());
@@ -2704,7 +2721,7 @@ export function registerTools(
 
   server.tool(
     "reserve_name",
-    "Reserve a preview name, so share_port can use the link https://<name>.sharehooks.cc (Pro and Business). Lowercase letters, digits and dashes; names that look like random ones or end in -free are refused. With team, the name belongs to that team and every member may share under it.",
+    `Reserve a preview name, so ${shareWith} can use the link https://<name>.sharehooks.cc (Pro and Business). Lowercase letters, digits and dashes; names that look like random ones or end in -free are refused. With team, the name belongs to that team and every member may share under it.`,
     {
       name: z.string().min(1).max(63).describe("The name: lowercase letters, digits and dashes"),
       team: z

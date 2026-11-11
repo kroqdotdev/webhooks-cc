@@ -11,8 +11,13 @@
 // has a password or card field it sends the edge the page's title and which
 // fields there are, once a tab; the edge compares the title with its own
 // list of brand and lure words, which never comes to the browser.
+//
+// "Hide" only shrinks the button to its flag, for this tab: the page shares
+// the origin and can set any storage it likes, so storage may make the
+// button smaller but never takes it away. Nor does an element of the page's
+// own named whk-report: the button is always added.
 (() => {
-  if (window.top !== window || document.querySelector("whk-report")) return;
+  if (window.top !== window) return;
   const REPORT = "__REPORT_URL__";
   const HIDDEN = "whk-report-hidden";
   const FLAGGED = "whk-report-flagged";
@@ -35,6 +40,7 @@
     .go { display: inline-block; padding: 7px 11px; border-radius: 4px; background: #ecebe5;
       color: #161715; text-decoration: none; font-weight: 600; }
     .go:hover { background: #ffffff; }
+    .mini { padding: 6px; }
     .hide { padding: 7px 8px; background: transparent; color: #c9c8c2; }
     .hide:hover { color: #ecebe5; }
   `;
@@ -61,10 +67,15 @@
     return svg;
   };
 
-  const show = () => {
+  const hidden = () => {
     try {
-      if (sessionStorage.getItem(HIDDEN)) return;
-    } catch {}
+      return !!sessionStorage.getItem(HIDDEN);
+    } catch {
+      return false;
+    }
+  };
+
+  const show = () => {
     const host = document.createElement("whk-report");
     const root = host.attachShadow({ mode: "closed" });
     try {
@@ -77,12 +88,18 @@
     const wrap = el("div", { class: "wrap" });
     root.append(wrap);
 
+    // The button, or once hidden in this tab only its flag, still a button
+    // that opens the panel.
     const collapsed = () => {
-      const button = el(
-        "button",
-        { class: "open", type: "button", "aria-haspopup": "dialog" },
-        "Report"
-      );
+      const button = hidden()
+        ? el("button", {
+            class: "open mini",
+            type: "button",
+            "aria-haspopup": "dialog",
+            "aria-label": "Report this page",
+            title: "Report this page",
+          })
+        : el("button", { class: "open", type: "button", "aria-haspopup": "dialog" }, "Report");
       button.prepend(flag());
       button.addEventListener("click", expanded);
       wrap.replaceChildren(button);
@@ -92,7 +109,7 @@
     function expanded() {
       const href = `${REPORT}?url=${encodeURIComponent(location.href)}`;
       const go = el("a", { class: "go", href, target: "_blank", rel: "noopener" }, "Report it");
-      const hide = el("button", { class: "hide", type: "button" }, "Hide");
+      const hide = el("button", { class: "hide", type: "button" }, "Make smaller");
       const panel = el(
         "div",
         { class: "panel", role: "dialog", "aria-label": "Report this page" },
@@ -108,7 +125,7 @@
         try {
           sessionStorage.setItem(HIDDEN, "1");
         } catch {}
-        host.remove();
+        collapsed().focus();
       });
       panel.addEventListener("keydown", (e) => {
         if (e.key === "Escape") collapsed().focus();

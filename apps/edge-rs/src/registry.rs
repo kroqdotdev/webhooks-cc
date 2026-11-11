@@ -2,7 +2,7 @@
 //! (`whk tunnel --live`, relay.rs) by endpoint, and each account's streams
 //! in flight across the shares.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -117,12 +117,20 @@ pub struct Registry {
 /// How long a close for a share not open here is remembered.
 const EARLY_CLOSE_FOR: Duration = Duration::from_secs(120);
 
+/// How long an account's part is kept once nothing of it is open here:
+/// at least this, and as long as its bucket takes to fill again. A
+/// reconnect within it finds the same counts and the same bucket, so
+/// dropping a tunnel and opening it again starts nothing afresh.
+const ACCOUNT_KEPT_FOR: Duration = Duration::from_secs(60);
+
 /// What an account's shares have in common.
 #[derive(Clone)]
 struct Shared {
     streams: Arc<Streams>,
     live_streams: Arc<Streams>,
     pace: Option<Arc<Pace>>,
+    /// When a door last took it, or its last session here closed.
+    touched: Instant,
 }
 
 /// What a new share's or site's door gets from its account: the streams
@@ -183,9 +191,15 @@ impl Registry {
     }
 
     /// Removes the session, unless a newer one has taken its place. An
-    /// account left with no session here is forgotten, so the map does not
-    /// keep everyone who ever shared; its next share starts it afresh.
+    /// account left with no session here is forgotten once its streams are
+    /// done and [`Self::kept_for`] has passed, so the map does not keep
+    /// everyone who ever shared, while a reconnect cannot be used to start
+    /// its counts and its bucket afresh.
     pub fn remove(&self, session: &Arc<Session>) {
+        self.remove_at(session, Instant::now());
+    }
+
+    fn remove_at(&self, session: &Arc<Session>, now: Instant) {
         let (map, key) = self.place(session);
         {
             let mut sessions = map.write().unwrap();
@@ -194,9 +208,34 @@ impl Registry {
             }
         }
         let mut accounts = self.accounts.lock().unwrap();
-        if self.all().iter().all(|s| s.user_id != session.user_id) {
-            accounts.remove(&session.user_id);
+        if let Some(shared) = accounts.get_mut(&session.user_id) {
+            shared.touched = now;
         }
+        self.forget_idle(&mut accounts, now);
+    }
+
+    /// How long an account with nothing open is kept ([`ACCOUNT_KEPT_FOR`]).
+    fn kept_for(&self) -> Duration {
+        let rate = self.rates.account;
+        let refill = if rate.is_off() {
+            Duration::ZERO
+        } else {
+            Duration::from_secs_f64((rate.burst / rate.per_second).min(86_400.0))
+        };
+        ACCOUNT_KEPT_FOR.max(refill)
+    }
+
+    /// Forgets accounts with no session open here, no stream in flight, and
+    /// nothing done for [`Self::kept_for`].
+    fn forget_idle(&self, accounts: &mut HashMap<String, Shared>, now: Instant) {
+        let open: HashSet<String> = self.all().into_iter().map(|s| s.user_id.clone()).collect();
+        let kept_for = self.kept_for();
+        accounts.retain(|user, shared| {
+            open.contains(user)
+                || shared.streams.count() > 0
+                || shared.live_streams.count() > 0
+                || now.saturating_duration_since(shared.touched) < kept_for
+        });
     }
 
     /// Accounts with their part kept here.
@@ -220,17 +259,20 @@ impl Registry {
     /// What a new door of this account counts against and is paced by;
     /// the account's part is made on first use.
     pub fn account(&self, user_id: &str) -> Account {
-        let shared = self
-            .accounts
-            .lock()
-            .unwrap()
-            .entry(user_id.to_string())
-            .or_insert_with(|| Shared {
-                streams: Arc::default(),
-                live_streams: Arc::default(),
-                pace: Pace::new(self.rates.account),
-            })
-            .clone();
+        let now = Instant::now();
+        let shared = {
+            let mut accounts = self.accounts.lock().unwrap();
+            let shared = accounts
+                .entry(user_id.to_string())
+                .or_insert_with(|| Shared {
+                    streams: Arc::default(),
+                    live_streams: Arc::default(),
+                    pace: Pace::new(self.rates.account),
+                    touched: now,
+                });
+            shared.touched = now;
+            shared.clone()
+        };
         Account {
             streams: shared.streams,
             live_streams: shared.live_streams,
@@ -324,16 +366,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_account_with_nothing_open_is_forgotten() {
+    async fn an_account_with_nothing_open_is_forgotten_after_a_while() {
         let registry = Registry::default();
         let one = session(&registry, "share-1", "calm-otter").await;
         let two = session(&registry, "share-2", "brisk-heron").await;
         registry.insert(one.clone());
         registry.insert(two.clone());
         assert_eq!(registry.accounts_kept(), 1);
-        registry.remove(&one);
+        let now = Instant::now();
+        registry.remove_at(&one, now);
         assert_eq!(registry.accounts_kept(), 1, "its other share is still open");
-        registry.remove(&two);
+        registry.remove_at(&two, now);
+        assert_eq!(registry.accounts_kept(), 1, "kept for a reconnect");
+        let later = now + registry.kept_for();
+        registry.forget_idle(&mut registry.accounts.lock().unwrap(), later);
+        assert_eq!(registry.accounts_kept(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_reconnect_does_not_start_the_accounts_counts_afresh() {
+        let registry = Registry::default();
+        let before = session(&registry, "share-1", "acme").await;
+        registry.insert(before.clone());
+        // A visitor's request is in flight when the tunnel drops.
+        let in_flight = before.door.streams.enter(10).unwrap();
+        let now = Instant::now();
+        registry.remove_at(&before, now);
+        // The same account comes back: the request still counts.
+        let after = session(&registry, "share-2", "acme").await;
+        assert_eq!(after.door.streams.count(), 1);
+        registry.insert(after.clone());
+        registry.remove_at(&after, now);
+        // Long past the while, a stream still in flight keeps it.
+        let later = now + registry.kept_for() * 2;
+        registry.forget_idle(&mut registry.accounts.lock().unwrap(), later);
+        assert_eq!(registry.accounts_kept(), 1);
+        drop(in_flight);
+        registry.forget_idle(&mut registry.accounts.lock().unwrap(), later);
         assert_eq!(registry.accounts_kept(), 0);
     }
 

@@ -18,6 +18,15 @@
 //! When the edge itself cannot be reached the sender gets 502, and a capture
 //! past the account's live relays gets 503 with `Retry-After`.
 //!
+//! Runs end only through the edge (its close, sync or start), so an edge
+//! that is down, or up without the endpoint's session, would leave a live
+//! endpoint answering 502 for as long as that lasts. [`EdgeHealth`] stops
+//! that after [`EDGE_DOWN_GRACE`], the grace the web app gives a dropped
+//! CLI: from then on the endpoint's captures are answered as if it were not
+//! live (the mock response or the rules, recorded as such), and one capture
+//! every [`EDGE_PROBE_EVERY`] still tries the edge, so live resumes once it
+//! is back.
+//!
 //! The app's answer streams through to the sender as it arrives; only its
 //! first 64 KB are kept on the side. An answer that runs past
 //! [`MAX_ANSWER_BYTES`] is broken off, so the sender sees a failed answer
@@ -171,6 +180,127 @@ pub struct LiveRelay {
     limiter: CaptureLimiter,
     /// Relays in flight across all accounts.
     total: Option<Arc<Semaphore>>,
+    /// Endpoints whose relays find the edge gone.
+    health: EdgeHealth,
+}
+
+/// How long an endpoint's relays may find the edge gone (not reachable, or
+/// without the endpoint's session) before its captures are answered as if
+/// it were not live: the 2 minutes the web app gives a CLI that dropped
+/// (`endpoints.live_grace_until`).
+pub const EDGE_DOWN_GRACE: Duration = Duration::from_secs(120);
+/// How often, past the grace, one capture of such an endpoint still tries
+/// the edge.
+pub const EDGE_PROBE_EVERY: Duration = Duration::from_secs(30);
+/// Endpoints kept as failing; past it the one tried longest ago goes.
+const EDGE_DOWN_KEPT: usize = 10_000;
+
+/// Whether one relay got through to the edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// The edge answered with the endpoint's session there, whatever the
+    /// app did (a timeout included: the app is there, only slow).
+    Reached,
+    /// No answer from the edge, an `offline` (no session for the endpoint),
+    /// or a refusal of our own secret.
+    Down,
+    /// The edge was not asked (this receiver's caps, a bad path).
+    NotTried,
+}
+
+/// Per endpoint, since when its relays have found the edge gone and when
+/// one last tried. Kept in memory: each receiver learns it from its own
+/// relays, and a restart only starts the grace again.
+pub struct EdgeHealth {
+    grace: Duration,
+    probe_every: Duration,
+    most: usize,
+    failing: std::sync::Mutex<std::collections::HashMap<String, Failing>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Failing {
+    since: Instant,
+    tried: Instant,
+}
+
+impl Default for EdgeHealth {
+    fn default() -> Self {
+        Self::new(EDGE_DOWN_GRACE, EDGE_PROBE_EVERY, EDGE_DOWN_KEPT)
+    }
+}
+
+impl EdgeHealth {
+    pub fn new(grace: Duration, probe_every: Duration, most: usize) -> Self {
+        Self {
+            grace,
+            probe_every,
+            most: most.max(1),
+            failing: std::sync::Mutex::default(),
+        }
+    }
+
+    fn failing(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, Failing>> {
+        self.failing.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Whether to relay this endpoint's capture: yes, unless the edge has
+    /// been gone for it past the grace and the last try was under
+    /// `probe_every` ago. A yes past the grace is the try, so captures
+    /// arriving together send one.
+    pub fn should_relay(&self, endpoint_id: &str, now: Instant) -> bool {
+        let mut failing = self.failing();
+        let Some(entry) = failing.get_mut(endpoint_id) else {
+            return true;
+        };
+        if now.saturating_duration_since(entry.since) < self.grace {
+            return true;
+        }
+        if now.saturating_duration_since(entry.tried) >= self.probe_every {
+            entry.tried = now;
+            return true;
+        }
+        false
+    }
+
+    /// Notes how a relay went. True when the edge was gone and has been
+    /// for the endpoint past the grace: the capture is answered as if the
+    /// endpoint were not live.
+    fn note(&self, endpoint_id: &str, reach: Reach, now: Instant) -> bool {
+        match reach {
+            Reach::NotTried => false,
+            Reach::Reached => {
+                let mut failing = self.failing();
+                if !failing.is_empty() {
+                    failing.remove(endpoint_id);
+                }
+                false
+            }
+            Reach::Down => {
+                let mut failing = self.failing();
+                if !failing.contains_key(endpoint_id) && failing.len() >= self.most {
+                    let oldest = failing
+                        .iter()
+                        .min_by_key(|(_, f)| f.tried)
+                        .map(|(id, _)| id.clone());
+                    if let Some(oldest) = oldest {
+                        failing.remove(&oldest);
+                    }
+                }
+                let entry = failing.entry(endpoint_id.to_string()).or_insert(Failing {
+                    since: now,
+                    tried: now,
+                });
+                entry.tried = now;
+                now.saturating_duration_since(entry.since) >= self.grace
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.failing().len()
+    }
 }
 
 /// What to record for a relayed capture, delivered once the answer has gone
@@ -230,15 +360,19 @@ impl OwnedLiveRequest {
 /// still answering (Slack gives up after 3 seconds) drops the handler, not
 /// the relay: the row still gets the app's answer and the status it gave,
 /// and an answer cut short by the hang-up is recorded as cut.
+///
+/// `None` when the edge has been gone for the endpoint past the grace
+/// ([`EdgeHealth`]): nothing is recorded, and the caller answers the capture
+/// as if the endpoint were not live.
 pub fn spawn_relay(
     relay: Arc<LiveRelay>,
     request: OwnedLiveRequest,
     on_record: impl FnOnce(Recorded) + Send + 'static,
-) -> tokio::task::JoinHandle<Response> {
+) -> tokio::task::JoinHandle<Option<Response>> {
     tokio::spawn(async move {
-        let (response, recorded) = relay.relay(request.borrowed()).await;
+        let (response, recorded) = relay.relay_unless_edge_down(request.borrowed()).await?;
         on_record(recorded);
-        response
+        Some(response)
     })
 }
 
@@ -257,27 +391,55 @@ impl LiveRelay {
             total: (config.max_inflight_total > 0)
                 .then(|| Arc::new(Semaphore::new(config.max_inflight_total))),
             config,
+            health: EdgeHealth::default(),
         }
+    }
+
+    #[cfg(test)]
+    fn with_health(mut self, health: EdgeHealth) -> Self {
+        self.health = health;
+        self
+    }
+
+    /// Whether this live endpoint's capture goes to the edge, or is answered
+    /// as if it were not live because the edge has been gone for it past the
+    /// grace ([`EdgeHealth`]).
+    pub fn relays(&self, endpoint_id: &str) -> bool {
+        let relays = self.health.should_relay(endpoint_id, Instant::now());
+        if !relays {
+            metrics::live("edge_down_answered");
+        }
+        relays
     }
 
     /// Relays one capture and returns what the sender gets, and what to
     /// record on the row once the answer has gone out.
     pub async fn relay(&self, request: LiveRequest<'_>) -> (Response, Recorded) {
-        let (response, record) = self.relay_inner(request).await;
-        match record {
-            Ok(record) => {
-                let (tx, rx) = oneshot::channel();
-                let _ = tx.send(record);
-                (response, rx)
-            }
-            Err(rx) => (response, rx),
+        let endpoint_id = request.endpoint_id;
+        let (response, record, reach) = self.relay_inner(request).await;
+        self.health.note(endpoint_id, reach, Instant::now());
+        (response, recorded_of(record))
+    }
+
+    /// As [`Self::relay`], but `None` when the edge was gone and has been
+    /// for this endpoint past the grace.
+    pub async fn relay_unless_edge_down(
+        &self,
+        request: LiveRequest<'_>,
+    ) -> Option<(Response, Recorded)> {
+        let endpoint_id = request.endpoint_id;
+        let (response, record, reach) = self.relay_inner(request).await;
+        if self.health.note(endpoint_id, reach, Instant::now()) {
+            metrics::live("edge_down_answered");
+            return None;
         }
+        Some((response, recorded_of(record)))
     }
 
     async fn relay_inner(
         &self,
         request: LiveRequest<'_>,
-    ) -> (Response, Result<LiveRecord, Recorded>) {
+    ) -> (Response, Result<LiveRecord, Recorded>, Reach) {
         let started = Instant::now();
         let busy = || {
             metrics::live("receiver_busy");
@@ -286,7 +448,11 @@ impl LiveRelay {
                 "retry-after",
                 HeaderValue::from_static(BUSY_RETRY_AFTER_SECS),
             );
-            (response, Ok(stand_in(503, "busy", started)))
+            (
+                response,
+                Ok(stand_in(503, "busy", started)),
+                Reach::NotTried,
+            )
         };
         // No waiting: a sender over either cap is asked to retry, and its
         // capture is already stored. The permits ride with the answer's
@@ -316,6 +482,7 @@ impl LiveRelay {
             return (
                 (StatusCode::BAD_REQUEST, "bad path").into_response(),
                 Ok(stand_in(400, "refused", started)),
+                Reach::NotTried,
             );
         };
         let mut headers = relay_headers(request.headers);
@@ -364,15 +531,19 @@ impl LiveRelay {
                     "edge_unreachable"
                 });
                 tracing::warn!(timed_out, error = %e, "live relay: edge not reachable");
+                // The edge answers within 25 s itself (a 504 of its own), so
+                // no head at all is the edge gone, a timeout included.
                 return if timed_out {
                     (
                         (StatusCode::GATEWAY_TIMEOUT, "live tunnel timed out").into_response(),
                         Ok(stand_in(504, "timeout", started)),
+                        Reach::Down,
                     )
                 } else {
                     (
                         (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
                         Ok(stand_in(502, "unreachable", started)),
+                        Reach::Down,
                     )
                 };
             }
@@ -389,8 +560,15 @@ impl LiveRelay {
             return (
                 (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
                 Ok(stand_in(502, "unreachable", started)),
+                Reach::Down,
             );
         }
+        // No session there for the endpoint: as good as gone for it.
+        let reach = if outcome == "offline" {
+            Reach::Down
+        } else {
+            Reach::Reached
+        };
         metrics::live(outcome);
         let sent_headers = sent_answer_headers(answer.headers());
         let mut builder = axum::http::Response::builder().status(status);
@@ -427,12 +605,25 @@ impl LiveRelay {
         };
         let body = Body::from_stream(answer_stream(answer, recorder));
         match builder.body(body) {
-            Ok(response) => (response, Err(rx)),
+            Ok(response) => (response, Err(rx), reach),
             Err(_) => (
                 (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
                 Ok(stand_in(502, "unreachable", started)),
+                reach,
             ),
         }
+    }
+}
+
+/// What to record, now or once the answer has gone out.
+fn recorded_of(record: Result<LiveRecord, Recorded>) -> Recorded {
+    match record {
+        Ok(record) => {
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(record);
+            rx
+        }
+        Err(rx) => rx,
     }
 }
 
@@ -974,6 +1165,134 @@ mod tests {
                 mark
             );
         }
+    }
+
+    #[test]
+    fn an_endpoint_whose_edge_is_gone_is_answered_as_not_live_after_the_grace() {
+        let health = EdgeHealth::default();
+        let t0 = Instant::now();
+        let at = |secs: u64| t0 + Duration::from_secs(secs);
+        assert!(health.should_relay("ep_1", t0));
+        // The edge is gone: relayed (and answered 502) for the grace.
+        assert!(!health.note("ep_1", Reach::Down, t0));
+        assert!(health.should_relay("ep_1", at(60)));
+        assert!(!health.note("ep_1", Reach::Down, at(60)));
+        assert!(health.should_relay("ep_1", at(119)));
+        // Past it, the failed try itself is answered as not live...
+        assert!(health.note("ep_1", Reach::Down, at(120)));
+        // ...and so is every capture until the next try is due.
+        assert!(!health.should_relay("ep_1", at(121)));
+        assert!(!health.should_relay("ep_1", at(149)));
+        assert!(health.should_relay("ep_1", at(150)), "one try every 30 s");
+        assert!(!health.should_relay("ep_1", at(150)), "only one");
+        assert!(health.note("ep_1", Reach::Down, at(151)));
+        assert!(!health.should_relay("ep_1", at(170)));
+        // Another endpoint is its own.
+        assert!(health.should_relay("ep_2", at(170)));
+        // The edge is back: live again at once.
+        assert!(health.should_relay("ep_1", at(181)));
+        assert!(!health.note("ep_1", Reach::Reached, at(181)));
+        assert!(health.should_relay("ep_1", at(182)));
+        assert_eq!(health.len(), 0);
+        // A new outage starts a new grace.
+        assert!(!health.note("ep_1", Reach::Down, at(200)));
+        assert!(health.should_relay("ep_1", at(201)));
+    }
+
+    #[test]
+    fn what_never_reached_the_edge_changes_nothing() {
+        let health = EdgeHealth::default();
+        let t0 = Instant::now();
+        health.note("ep_1", Reach::NotTried, t0);
+        assert_eq!(health.len(), 0);
+        health.note("ep_1", Reach::Down, t0);
+        health.note("ep_1", Reach::NotTried, t0 + Duration::from_secs(10));
+        assert_eq!(
+            health.len(),
+            1,
+            "a busy receiver neither ends nor starts it"
+        );
+    }
+
+    #[test]
+    fn the_failing_endpoints_kept_are_bounded() {
+        let health = EdgeHealth::new(EDGE_DOWN_GRACE, EDGE_PROBE_EVERY, 3);
+        let t0 = Instant::now();
+        for (i, id) in ["a", "b", "c", "d"].into_iter().enumerate() {
+            health.note(id, Reach::Down, t0 + Duration::from_secs(i as u64));
+        }
+        assert_eq!(health.len(), 3);
+        // The one tried longest ago went.
+        assert!(!health.failing().contains_key("a"));
+        assert!(health.failing().contains_key("d"));
+    }
+
+    #[tokio::test]
+    async fn an_edge_that_is_down_past_the_grace_hands_the_capture_back() {
+        // Nothing listens on the edge's port.
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", closed.local_addr().unwrap());
+        drop(closed);
+        let relay = relay_to(base.clone(), 16).with_health(EdgeHealth::new(
+            Duration::ZERO,
+            Duration::from_secs(30),
+            16,
+        ));
+        let headers = HeaderMap::new();
+        assert!(relay.relays("ep_1"));
+        assert!(
+            relay
+                .relay_unless_edge_down(live_request(&headers, &Method::POST))
+                .await
+                .is_none(),
+            "answered as not live"
+        );
+        assert!(!relay.relays("ep_1"), "and the next ones without a try");
+        // Within the grace, the sender still gets the 502.
+        let fresh = relay_to(base, 16);
+        let (response, recorded) = fresh
+            .relay_unless_edge_down(live_request(&headers, &Method::POST))
+            .await
+            .expect("relayed within the grace");
+        assert!(response.status().is_server_error());
+        assert!(recorded.await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn an_edge_without_the_session_counts_as_gone_and_an_answer_ends_it() {
+        let offline = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let flag = offline.clone();
+        let base = fake_edge(move |_req: Request| {
+            let mark = if flag.load(std::sync::atomic::Ordering::SeqCst) {
+                "offline"
+            } else {
+                "answered"
+            };
+            axum::http::Response::builder()
+                .status(if mark == "offline" { 502 } else { 200 })
+                .header(LIVE_HEADER, mark)
+                .body(Body::from("{}"))
+                .unwrap()
+        })
+        .await;
+        let relay =
+            relay_to(base, 16).with_health(EdgeHealth::new(Duration::ZERO, Duration::ZERO, 16));
+        let headers = HeaderMap::new();
+        assert!(
+            relay
+                .relay_unless_edge_down(live_request(&headers, &Method::POST))
+                .await
+                .is_none()
+        );
+        assert_eq!(relay.health.len(), 1);
+        offline.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(relay.relays("ep_1"), "a try is due");
+        let (response, _) = relay
+            .relay_unless_edge_down(live_request(&headers, &Method::POST))
+            .await
+            .expect("live again");
+        assert_eq!(response.status(), 200);
+        assert_eq!(relay.health.len(), 0);
     }
 
     /// A fake edge on a local port; `answer` builds its reply.

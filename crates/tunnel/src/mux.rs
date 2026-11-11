@@ -27,9 +27,14 @@ pub const MAX_STREAMS: usize = 4096;
 /// stream that is read fast, by default up to 1 GiB a session, and keeps it
 /// grown: a visitor who read a big answer fast and then slowed down left
 /// the edge holding megabytes for that one stream, and a few hundred such
-/// visitors took the edge past its 512 MB (tools/load, slow.mjs). This
-/// still lets a big download over a long way grow to full speed.
-pub const WINDOW_EXTRA: usize = 16 * 1024 * 1024;
+/// visitors took the edge past its 512 MB (tools/load, slow.mjs). It was
+/// 16 MiB, and a modified CLI could grow one stream to that and then hold it
+/// with a visitor reading a few KB a minute: about 90 tunnels so held took
+/// the edge past its memory limit. 2 MiB bounds that to a tunnel's base
+/// windows plus 2 MiB, and buys nothing less: the edge sends a share at
+/// 5 MiB/s past its burst (pace.rs), which a window of 2.25 MiB keeps up
+/// with up to a round trip of some 450 ms.
+pub const WINDOW_EXTRA: usize = 2 * 1024 * 1024;
 
 /// A yamux stream with tokio's I/O traits.
 pub type MuxStream = Compat<yamux::Stream>;
@@ -159,6 +164,97 @@ mod tests {
         }
         got.sort();
         assert_eq!(got, (0..200u8).collect::<Vec<_>>(), "every stream arrives");
+    }
+
+    /// Copies one way, everything `delay` late: a long way, or a CLI that
+    /// answers yamux's pings late to make it grow windows.
+    fn delayed(
+        mut from: tokio::io::ReadHalf<tokio::io::DuplexStream>,
+        mut to: tokio::io::WriteHalf<tokio::io::DuplexStream>,
+        delay: Duration,
+    ) {
+        let (tx, mut rx) = mpsc::unbounded_channel::<(tokio::time::Instant, Vec<u8>)>();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                let Ok(n) = from.read(&mut buf).await else {
+                    return;
+                };
+                if n == 0 {
+                    return;
+                }
+                let at = tokio::time::Instant::now() + delay;
+                if tx.send((at, buf[..n].to_vec())).is_err() {
+                    return;
+                }
+            }
+        });
+        tokio::spawn(async move {
+            while let Some((at, bytes)) = rx.recv().await {
+                tokio::time::sleep_until(at).await;
+                if to.write_all(&bytes).await.is_err() {
+                    return;
+                }
+            }
+        });
+    }
+
+    /// What the edge is left holding for one stream whose reader read fast
+    /// for `reading` and then stopped, while the CLI kept writing: what it
+    /// wrote and the reader never took, `after` the stop.
+    async fn held_after_a_stall(delay: Duration, reading: Duration, after: Duration) -> usize {
+        let (edge_io, edge_relay) = tokio::io::duplex(1 << 20);
+        let (cli_relay, cli_io) = tokio::io::duplex(1 << 20);
+        let (er, ew) = tokio::io::split(edge_relay);
+        let (cr, cw) = tokio::io::split(cli_relay);
+        delayed(er, cw, delay);
+        delayed(cr, ew, delay);
+        let (opener, _none, _edge) = spawn(edge_io, Mode::Client);
+        let (_unused, mut inbound, _cli) = spawn(cli_io, Mode::Server);
+        let mut edge_stream = opener.open().await.unwrap();
+        edge_stream
+            .write_all(b"GET / HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        edge_stream.flush().await.unwrap();
+        let mut cli_stream = inbound.recv().await.unwrap();
+        let written = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = written.clone();
+        tokio::spawn(async move {
+            let chunk = vec![7u8; 16 * 1024];
+            while cli_stream.write_all(&chunk).await.is_ok() {
+                counted.fetch_add(chunk.len(), std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut read = 0usize;
+        let until = tokio::time::Instant::now() + reading;
+        while tokio::time::Instant::now() < until {
+            match tokio::time::timeout(Duration::from_secs(5), edge_stream.read(&mut buf)).await {
+                Ok(Ok(n)) if n > 0 => read += n,
+                _ => break,
+            }
+        }
+        tokio::time::sleep(after).await;
+        written.load(std::sync::atomic::Ordering::SeqCst) - read
+    }
+
+    // Real time: yamux times its round trips with the system clock. About
+    // 6 seconds.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_stalled_stream_holds_at_most_its_window_and_the_extra() {
+        // With pongs 300 ms late each way, one stream grew to some 8 MiB at
+        // the 16 MiB extra this had, which the edge then held for a visitor
+        // reading a few KB a minute.
+        let held = held_after_a_stall(
+            Duration::from_millis(300),
+            Duration::from_secs(4),
+            Duration::from_secs(2),
+        )
+        .await;
+        // Its 256 KiB, the extra, and what sits in the pipe on the way.
+        let most = yamux::DEFAULT_CREDIT as usize + WINDOW_EXTRA + (1 << 20);
+        assert!(held <= most, "{held} > {most}");
     }
 
     #[tokio::test]

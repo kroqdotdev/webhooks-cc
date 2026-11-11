@@ -50,6 +50,11 @@ _STOP_TIMEOUT_S = 5.0
 """How long :meth:`LiveShare.stop` waits after closing the CLI's stdin before it
 terminates it, and then again before it kills it."""
 
+_EVENT_BUFFER = 256
+"""How many events wait for a reader of :meth:`LiveShare.events`; past it, new
+ones are dropped (as the Go SDK does), so a share used only through callbacks
+never piles them up and never waits on its reader."""
+
 _NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 
 
@@ -127,8 +132,9 @@ class LiveShare:
     """A running share: its link, what the plan says about it, and :meth:`stop`.
 
     A context manager: leaving the ``with`` block stops the share. :meth:`events`
-    iterates every event the CLI prints until it ends; :meth:`wait` blocks until
-    it ends and returns why.
+    iterates the events the CLI prints until it ends (at most 256 unread are
+    held; the callbacks see every one); :meth:`wait` blocks until it ends and
+    returns why.
     """
 
     def __init__(
@@ -197,7 +203,10 @@ class LiveShare:
                     continue
                 event = ShareEvent(event=data["event"], data=data)
                 self._handle(event)
-                self._events.put(event)
+                # Bounded: this thread is the only one adding, so the check
+                # holds, and the end marker below always fits.
+                if self._events.qsize() < _EVENT_BUFFER:
+                    self._events.put_nowait(event)
                 self._call(self._on_event, event)
         self._child.wait()
         self._stderr_thread.join(timeout=1)
@@ -271,8 +280,14 @@ class LiveShare:
         return self._reason if self._done.is_set() else None
 
     def events(self) -> Iterator[ShareEvent]:
-        """Every event the CLI prints from now on (requests, notices, reconnects),
-        until the share ends. Meant for one consumer."""
+        """The events the CLI prints (requests, notices, reconnects), until the
+        share ends. Meant for one consumer.
+
+        At most 256 events wait to be read; while that many are unread, new ones
+        are dropped (the ending included; :meth:`wait` still says why it ended),
+        so a share never waits on its reader and one used only through the
+        ``on_event``, ``on_request`` and ``on_notice`` callbacks, which see every
+        event, holds no more than that."""
         while True:
             event = self._events.get()
             if event is None:

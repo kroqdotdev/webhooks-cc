@@ -1450,7 +1450,8 @@ class TunnelShare:
     expires_at: str | None
     """When the plan's session time runs out, or ``None`` without a limit."""
     bytes: int
-    """Data sent to visitors."""
+    """Bytes visitors moved through a preview, both ways (downloads and uploads,
+    WebSockets included). Live tunnels count captures instead."""
     requests: int
     password: bool
     """Whether visitors need a password."""

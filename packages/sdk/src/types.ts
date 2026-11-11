@@ -281,7 +281,10 @@ export interface TunnelShare {
   endReason: string | null;
   /** When the plan's session time runs out, or null without a limit. */
   expiresAt: string | null;
-  /** Data sent to visitors. */
+  /**
+   * Bytes visitors moved through a preview, both ways (downloads and uploads,
+   * WebSockets included). Live tunnels count captures instead.
+   */
   bytes: number;
   requests: number;
   /** Whether visitors need a password. */

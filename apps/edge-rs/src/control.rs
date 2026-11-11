@@ -51,11 +51,12 @@ const REQUESTS_AT_ONCE: usize = 100;
 pub async fn serve(state: State) -> anyhow::Result<()> {
     let listener = TcpListener::bind(state.config.control_listen).await?;
     tracing::info!(listen = %state.config.control_listen, "control up");
+    let mut failures = crate::accept::Failures::new("control");
     loop {
         let (stream, _) = match listener.accept().await {
             Ok(accepted) => accepted,
             Err(e) => {
-                tracing::warn!(error = %e, "control accept failed");
+                failures.failed(&e).await;
                 continue;
             }
         };

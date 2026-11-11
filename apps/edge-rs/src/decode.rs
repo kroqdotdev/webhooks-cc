@@ -17,10 +17,16 @@
 //! what servers use by default; larger windows are refused), and pages
 //! decoded at once are capped per account and for the edge ([`Decodes`]):
 //! 64 at most, 256 MiB all told, which held.rs counts on top of its own
-//! budget.
+//! budget. A page holds its slot for [`DECODE_FOR`] at most: a laptop that
+//! sends a compressed page a byte now and then would otherwise keep one for
+//! as long as it liked, and 64 such pages turn every other compressed page
+//! away.
 
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, ready};
+use std::time::Duration;
 
 use async_compression::tokio::bufread::{BrotliDecoder, GzipDecoder, ZlibDecoder};
 use bytes::Bytes;
@@ -43,6 +49,12 @@ pub const DECODES_PER_ACCOUNT: usize = 8;
 
 /// Pages the edge decodes at once, all accounts together.
 pub const DECODES_TOTAL: usize = 64;
+
+/// How long a page may take to decode before it is broken off and its
+/// slot given back. A page of the most the edge passes (50 MB) goes in
+/// some 10 seconds at a share's pace; one still coming after this is
+/// stalled or dripping.
+pub const DECODE_FOR: Duration = Duration::from_secs(120);
 
 /// Frames read before giving up on a Brotli body that has not yet sent a
 /// byte (empty frames from a laptop that stalls the look).
@@ -159,10 +171,61 @@ where
         .into_data_stream()
         .map_err(|e| std::io::Error::other(e.into()));
     let reader = StreamReader::new(bytes);
-    match codec {
+    let decoded = match codec {
         Codec::Gzip => frames(GzipDecoder::new(reader), slot),
         Codec::Deflate => frames(ZlibDecoder::new(reader), slot),
         Codec::Brotli => frames(BrotliDecoder::new(reader), slot),
+    };
+    Deadline::new(decoded, DECODE_FOR).boxed()
+}
+
+/// A decoded body that ends with an error once its time is up, letting go
+/// of the decoder (its window and its slot) at once.
+struct Deadline {
+    inner: Option<Body>,
+    deadline: Pin<Box<tokio::time::Sleep>>,
+}
+
+impl Deadline {
+    fn new(inner: Body, after: Duration) -> Self {
+        Self {
+            inner: Some(inner),
+            deadline: Box::pin(tokio::time::sleep(after)),
+        }
+    }
+}
+
+impl HttpBody for Deadline {
+    type Data = Bytes;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
+        // First, so a page that keeps coming cannot outrun it either.
+        if self.inner.is_some() && self.deadline.as_mut().poll(cx).is_ready() {
+            self.inner = None;
+            return Poll::Ready(Some(Err("the page took too long to decode".into())));
+        }
+        let Some(inner) = self.inner.as_mut() else {
+            return Poll::Ready(None);
+        };
+        let frame = ready!(Pin::new(inner).poll_frame(cx));
+        if frame.is_none() {
+            self.inner = None;
+        }
+        Poll::Ready(frame)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.as_ref().is_none_or(|b| b.is_end_stream())
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.inner
+            .as_ref()
+            .map_or_else(|| hyper::body::SizeHint::with_exact(0), |b| b.size_hint())
     }
 }
 
@@ -371,6 +434,37 @@ mod tests {
     async fn a_broken_stream_is_an_error() {
         let body = Full::new(Bytes::from_static(b"not gzip at all"));
         assert!(decode(body, Codec::Gzip, slot()).collect().await.is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_page_that_stalls_gives_its_slot_back_after_its_time() {
+        let decodes = Decodes::new(1, 1);
+        // The laptop sends the start of a gzipped page and then nothing.
+        let page = gzip(&[b'a'; 64 * 1024]).await;
+        let start = Bytes::copy_from_slice(&page[..page.len() / 2]);
+        let stream = futures::StreamExt::chain(
+            futures::stream::once(
+                async move { Ok::<_, std::convert::Infallible>(Frame::data(start)) },
+            ),
+            futures::stream::pending(),
+        );
+        let mut body = decode(
+            StreamBody::new(Box::pin(stream)),
+            Codec::Gzip,
+            decodes.take("a").unwrap(),
+        );
+        let started = tokio::time::Instant::now();
+        let mut failed = false;
+        while let Some(frame) = body.frame().await {
+            if frame.is_err() {
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed, "broken off, not ended as if whole");
+        assert!(started.elapsed() >= DECODE_FOR);
+        assert_eq!(decodes.in_use(), 0, "the slot is given back at once");
+        assert!(body.frame().await.is_none());
     }
 
     #[tokio::test]

@@ -40,21 +40,26 @@ impl Event<'_> {
         serde_json::to_string(self).expect("an event is always JSON")
     }
 
-    /// Prints the event. Lines go out from a thread of their own, so a
-    /// reader that falls behind never holds up the share: visitor request
-    /// lines are dropped once [`MAX_PENDING`] wait, every other event waits
-    /// its turn and is never dropped. When nobody reads them any more (the
-    /// program that started this has gone), there is no one to share for:
-    /// it stops.
+    /// Prints the event, through [`out`], so a reader that falls behind
+    /// never holds up the share.
     pub fn print(&self) {
         let droppable = matches!(self, Event::Request { .. });
-        stdout_lines().push(self.line(), droppable);
+        out(self.line(), droppable);
     }
 }
 
 /// Visitor request lines that may wait to be written before more are
 /// dropped.
 pub const MAX_PENDING: usize = 256;
+
+/// Lines of any kind that may wait before even the ones that are never
+/// dropped are let go: only a reader that has stopped reading gets there,
+/// and the share must not grow without bound for it.
+pub const MAX_QUEUED: usize = 4 * MAX_PENDING;
+
+/// How long the last line of a share waits for the lines before it to be
+/// written before the CLI exits anyway.
+pub const FINAL_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Lines written in order by a thread of their own.
 pub struct Lines {
@@ -82,13 +87,13 @@ impl Lines {
         Self { tx, pending }
     }
 
-    /// Queues a line. A droppable one is let go when [`MAX_PENDING`] lines
-    /// already wait; any other is queued and then waited for, so the last
-    /// line of a share is out before the CLI exits. Returns whether it was
-    /// queued.
+    /// Queues a line and returns at once, whether it was queued. A
+    /// droppable one is let go when [`MAX_PENDING`] lines already wait, any
+    /// other only past [`MAX_QUEUED`]. [`Lines::flush`] waits for them.
     pub fn push(&self, line: String, droppable: bool) -> bool {
         use std::sync::atomic::Ordering;
-        if droppable && self.pending.load(Ordering::SeqCst) >= MAX_PENDING {
+        let limit = if droppable { MAX_PENDING } else { MAX_QUEUED };
+        if self.pending.load(Ordering::SeqCst) >= limit {
             return false;
         }
         self.pending.fetch_add(1, Ordering::SeqCst);
@@ -96,10 +101,18 @@ impl Lines {
             self.pending.fetch_sub(1, Ordering::SeqCst);
             return false;
         }
-        if !droppable {
-            while self.pending.load(Ordering::SeqCst) > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(2));
+        true
+    }
+
+    /// Waits until every queued line is written, for up to `wait`; whether
+    /// they all were.
+    pub fn flush(&self, wait: std::time::Duration) -> bool {
+        let until = std::time::Instant::now() + wait;
+        while self.pending() > 0 {
+            if std::time::Instant::now() >= until {
+                return false;
             }
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
         true
     }
@@ -113,6 +126,20 @@ impl Lines {
 fn stdout_lines() -> &'static Lines {
     static LINES: std::sync::OnceLock<Lines> = std::sync::OnceLock::new();
     LINES.get_or_init(|| Lines::new(std::io::stdout(), || std::process::exit(0)))
+}
+
+/// Writes a line (it may hold several) to stdout from the writer thread,
+/// in order with everything else a share prints, without waiting for it.
+/// When nobody reads stdout any more (the program that started this has
+/// gone), there is no one to share for: it stops.
+pub fn out(text: String, droppable: bool) {
+    stdout_lines().push(text, droppable);
+}
+
+/// Waits for what [`out`] queued to be written, for up to `wait`: before
+/// the CLI exits, so its last lines are not lost.
+pub fn flush(wait: std::time::Duration) -> bool {
+    stdout_lines().flush(wait)
 }
 
 #[cfg(test)]
@@ -234,16 +261,31 @@ mod tests {
                 queued += 1;
             }
         }
+        // Lines that are never dropped do not wait on the reader either.
+        assert!(lines.push("reconnected".to_string(), false));
         // None of it waited on the reader, and the overflow was let go.
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         assert!(queued <= MAX_PENDING + 1, "{queued}");
         assert!(queued >= MAX_PENDING - 1, "{queued}");
+        // A reader that has stopped: a flush gives up.
+        assert!(!lines.flush(std::time::Duration::from_millis(50)));
+        // Not even the lines that are kept grow without bound.
+        let kept = (0..2 * MAX_QUEUED)
+            .filter(|_| lines.push("notice".to_string(), false))
+            .count();
+        assert!(kept < MAX_QUEUED, "{kept}");
         drop(closed);
-        // A line that must not be lost waits for everything before it.
+        // Once the reader reads again, everything kept goes out, and the
+        // last line comes after it.
+        assert!(lines.flush(std::time::Duration::from_secs(10)));
         assert!(lines.push("stopped".to_string(), false));
+        assert!(lines.flush(std::time::Duration::from_secs(10)));
         assert_eq!(lines.pending(), 0);
         let seen = seen.lock().unwrap();
-        assert!(seen.iter().any(|l| l.starts_with("stopped")));
-        assert!(seen.iter().position(|l| l.starts_with("stopped")).unwrap() >= queued);
+        let at = |what: &str| seen.iter().position(|l| l.starts_with(what)).unwrap();
+        assert!(at("reconnected") >= queued);
+        assert!(at("stopped") > at("reconnected"));
+        let last = seen.iter().rev().find(|l| !l.trim().is_empty());
+        assert_eq!(last.map(String::as_str), Some("stopped"));
     }
 }

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inChunks } from "@/lib/supabase/in-chunks";
 import { reportError } from "@/lib/observability";
 import { endRunsWithoutAccess } from "@/lib/tunnels/access";
 import { enforcePlans } from "@/lib/tunnels/enforce";
@@ -72,14 +73,18 @@ export async function POST(request: Request) {
   // seats).
   await enforcePlans().catch((err) => reportError("Failed to hold tunnel runs to their plan", err));
   // Runs past their plan's time end here, so the CLI hears why.
-  const { data: expired, error: expiredError } = await admin
-    .from("tunnel_shares")
-    .select("id")
-    .in("id", ids)
-    .is("ended_at", null)
-    .lt("expires_at", new Date().toISOString());
-  if (expiredError) throw expiredError;
-  if (expired && expired.length > 0) {
+  // The held lists are read in chunks (lib/supabase/in-chunks.ts): a box
+  // holds thousands of runs, more than one `.in()` URL carries.
+  const now = new Date().toISOString();
+  const expired = await inChunks(ids, (chunk) =>
+    admin
+      .from("tunnel_shares")
+      .select("id")
+      .in("id", chunk)
+      .is("ended_at", null)
+      .lt("expires_at", now)
+  );
+  if (expired.length > 0) {
     const { error } = await admin.rpc("tunnel_end_shares", {
       p_ids: expired.map((s) => s.id),
       p_reason: "time limit",
@@ -87,12 +92,10 @@ export async function POST(request: Request) {
     if (error) throw error;
   }
 
-  const { data: rows, error } = await admin
-    .from("tunnel_shares")
-    .select("id, ended_at, end_reason")
-    .in("id", ids);
-  if (error) throw error;
-  const known = new Map((rows ?? []).map((r) => [r.id, r]));
+  const rows = await inChunks(ids, (chunk) =>
+    admin.from("tunnel_shares").select("id, ended_at, end_reason").in("id", chunk)
+  );
+  const known = new Map(rows.map((r) => [r.id, r]));
   const close = ids.flatMap((id) => {
     const row = known.get(id);
     if (!row) return [{ shareId: id, reason: tellFor("account deleted") }];

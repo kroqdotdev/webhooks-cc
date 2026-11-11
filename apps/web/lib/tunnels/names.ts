@@ -1,5 +1,6 @@
 import { ENTITLEMENTS } from "@/lib/entitlements";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inChunks } from "@/lib/supabase/in-chunks";
 import { reportError } from "@/lib/observability";
 import {
   drawName,
@@ -66,12 +67,11 @@ export async function teamNameCaps(teamIds: string[]): Promise<Map<string, numbe
   const caps = new Map<string, number>();
   const ids = [...new Set(teamIds)];
   if (ids.length === 0) return caps;
-  const { data, error } = await createAdminClient()
-    .from("teams")
-    .select("id, seats, business")
-    .in("id", ids);
-  if (error) throw error;
-  for (const t of data ?? []) caps.set(t.id, teamNameCap(t.seats, t.business));
+  const admin = createAdminClient();
+  const data = await inChunks(ids, (chunk) =>
+    admin.from("teams").select("id, seats, business").in("id", chunk)
+  );
+  for (const t of data) caps.set(t.id, teamNameCap(t.seats, t.business));
   return caps;
 }
 
@@ -254,6 +254,13 @@ export async function nameStanding(
   return { name, yours: false };
 }
 
+/** A team at its names per seat, for a new name or one moved in. */
+const TEAM_FULL = {
+  error:
+    "That team keeps as many names as its seats cover. Release a team name with whk names release <name>, or add seats, first.",
+  status: 403,
+} as const;
+
 export type ReserveResult = { name: string; reserved: boolean } | { error: string; status: number };
 
 /**
@@ -294,12 +301,7 @@ export async function reserveName(
       error: `You have ${plan.limits.reservedNames} reserved ${plan.limits.reservedNames === 1 ? "name" : "names"}, the most on ${plan.label}. Release one with whk names release <name> first.`,
       status: 403,
     };
-  if (data === "team_limit")
-    return {
-      error:
-        "That team keeps as many names as its seats cover. Release a team name with whk names release <name>, or add seats, first.",
-      status: 403,
-    };
+  if (data === "team_limit") return TEAM_FULL;
   if (data === "taken") return { error: "That name is taken.", status: 409 };
   return { name, reserved: true };
 }
@@ -332,12 +334,8 @@ async function moveIntoTeam(userId: string, name: string, teamId: string): Promi
     p_name: name,
   });
   if (moveError) throw moveError;
-  if (data === "team_limit")
-    return {
-      error:
-        "That team keeps as many names as its seats cover. Release a team name with whk names release <name>, or add seats, first.",
-      status: 409,
-    };
+  // A plan limit, as when reserving a new name: 403, never 409 (taken).
+  if (data === "team_limit") return TEAM_FULL;
   if (data !== "ok") return { error: NAME_NOT_FOUND, status: 404 };
   return { name, reserved: true };
 }
@@ -556,17 +554,17 @@ export async function stopSharesUnderTeamNames(teamIds: string[]): Promise<void>
       .in("team_id", teamIds);
     if (error) throw error;
     if (!names || names.length === 0) return;
-    const { data: open, error: openError } = await admin
-      .from("tunnel_shares")
-      .select("id")
-      .eq("kind", "share")
-      .is("ended_at", null)
-      .in(
-        "name",
-        names.map((n) => n.name)
-      );
-    if (openError) throw openError;
-    await stopShares({ ids: (open ?? []).map((s) => s.id) }, "access");
+    const open = await inChunks(
+      names.map((n) => n.name),
+      (chunk) =>
+        admin
+          .from("tunnel_shares")
+          .select("id")
+          .eq("kind", "share")
+          .is("ended_at", null)
+          .in("name", chunk)
+    );
+    await stopShares({ ids: open.map((s) => s.id) }, "access");
   } catch (err) {
     reportError("Failed to stop previews under a deleted team's names", err);
   }

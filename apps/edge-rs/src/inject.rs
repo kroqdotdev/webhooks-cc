@@ -1,7 +1,10 @@
 //! What the edge adds to the HTML pages it passes on: one script tag, for
 //! the report button (badge.js), right after `<head>`. The page is streamed
-//! through; only its start is held until the tag is placed, and a page
-//! without a `<head>` in its first [`SEARCH_LIMIT`] bytes goes on untouched.
+//! through; only its start is held until the tag is placed. A page without
+//! a `<head>` in its first [`SEARCH_LIMIT`] bytes (HTML lets a page leave it
+//! out) gets the tag before its first element instead, after any doctype
+//! and comments, where a browser puts it in the head it makes up: every
+//! page gets the button.
 //!
 //! The same pass keeps a copy of the page's start, up to [`SCAN_LIMIT`],
 //! and looks for what phishing pages have: a password or card field on a
@@ -26,7 +29,8 @@ const TAG: &[u8] = b"<script src=\"/__whk/badge.js\" async></script>";
 
 const SEARCH_LIMIT: usize = 64 * 1024;
 /// Frames looked at for `<head` before giving up: a page whose start comes
-/// in tiny pieces passes untouched rather than costing a poll per byte.
+/// in tiny pieces gets the tag as a page without `<head>` does
+/// ([`fallback_at`]) rather than costing a poll per byte.
 const SEARCH_FRAMES: usize = 4096;
 const SCAN_LIMIT: usize = 256 * 1024;
 
@@ -101,6 +105,45 @@ impl HeadFinder {
             }
         }
     }
+}
+
+/// Where the tag goes in a page with no `<head>`: after the doctype, or
+/// before the first element when there is none, past leading whitespace,
+/// comments and processing instructions. A script before the doctype would
+/// put the page in quirks mode; one inside a comment would not run. A
+/// start that does not end within `html` (a comment longer than the
+/// search) takes the tag at its very beginning.
+fn fallback_at(html: &[u8]) -> usize {
+    let mut at = 0;
+    if html.starts_with(b"\xEF\xBB\xBF") {
+        at = 3;
+    }
+    loop {
+        while html.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        let rest = &html[at..];
+        let close: &[u8] = if rest.starts_with(b"<!--") {
+            b"-->"
+        } else if rest.starts_with(b"<?") {
+            b">"
+        } else if rest.len() >= 9 && rest[..9].eq_ignore_ascii_case(b"<!doctype") {
+            return match find(rest, b">") {
+                Some(end) => at + end + 1,
+                None => 0,
+            };
+        } else {
+            return at;
+        };
+        match find(rest, close) {
+            Some(end) => at += end + close.len(),
+            None => return 0,
+        }
+    }
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 /// Brand and lure words a phishing page puts in its title (words.rs).
@@ -254,17 +297,27 @@ impl<B> Inject<B> {
         self.held.extend_from_slice(&data);
         self.frames += 1;
         if let Some(at) = self.finder.advance(&self.held) {
-            let mut out = BytesMut::with_capacity(self.held.len() + self.tag.len());
-            out.extend_from_slice(&self.held[..at]);
-            out.extend_from_slice(&self.tag);
-            out.extend_from_slice(&self.held[at..]);
-            self.held.clear();
-            self.ready = Some(out.freeze());
-            self.searching = false;
+            self.place(at);
         } else if self.held.len() > SEARCH_LIMIT || self.frames >= SEARCH_FRAMES {
-            self.ready = Some(self.held.split().freeze());
-            self.searching = false;
+            self.place_without_head();
         }
+    }
+
+    /// Lets out what is held with the tag at `at`.
+    fn place(&mut self, at: usize) {
+        let mut out = BytesMut::with_capacity(self.held.len() + self.tag.len());
+        out.extend_from_slice(&self.held[..at]);
+        out.extend_from_slice(&self.tag);
+        out.extend_from_slice(&self.held[at..]);
+        self.held.clear();
+        self.ready = Some(out.freeze());
+        self.searching = false;
+    }
+
+    /// No `<head>` to put the tag after: it goes before the first element.
+    fn place_without_head(&mut self) {
+        let at = fallback_at(&self.held);
+        self.place(at);
     }
 }
 
@@ -306,7 +359,7 @@ where
                     if self.searching {
                         self.searching = false;
                         if !self.held.is_empty() {
-                            self.ready = Some(self.held.split().freeze());
+                            self.place_without_head();
                             continue;
                         }
                     }
@@ -372,7 +425,7 @@ mod tests {
     #[tokio::test]
     async fn a_body_that_ended_is_not_asked_again() {
         // A stream panics when polled after its end; a page without <head>
-        // is held to its end and then let out.
+        // is held to its end and then let out, with the tag.
         let stream = futures::stream::unfold(Some("<p>plain</p>"), |left| async move {
             left.map(|text| {
                 (
@@ -387,7 +440,10 @@ mod tests {
             .await
             .unwrap()
             .to_bytes();
-        assert_eq!(&out[..], b"<p>plain</p>");
+        assert_eq!(
+            &out[..],
+            b"<script src=\"/__whk/badge.js\" async></script><p>plain</p>"
+        );
     }
 
     #[test]
@@ -414,8 +470,8 @@ mod tests {
     #[tokio::test]
     async fn a_page_sent_a_byte_at_a_time_is_cheap() {
         // 64 KiB with no <head>, one byte per frame: the search gives up
-        // after SEARCH_FRAMES frames and lets the page through unchanged,
-        // looking at each byte once on the way.
+        // after SEARCH_FRAMES frames and lets the page through with the tag
+        // at its start, looking at each byte once on the way.
         let page = vec![b'a'; SEARCH_LIMIT];
         let stream = futures::stream::iter(
             page.clone()
@@ -429,7 +485,8 @@ mod tests {
             .await
             .unwrap()
             .to_bytes();
-        assert_eq!(&out[..], &page[..]);
+        assert_eq!(&out[..TAG.len()], TAG);
+        assert_eq!(&out[TAG.len()..], &page[..]);
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
@@ -443,9 +500,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pages_without_head_pass_untouched() {
+    async fn pages_without_head_get_the_tag_before_their_first_element() {
         let (out, _) = run(vec!["<p>plain</p>"]).await;
-        assert_eq!(out, "<p>plain</p>");
+        assert_eq!(
+            out,
+            "<script src=\"/__whk/badge.js\" async></script><p>plain</p>"
+        );
+        let (out, _) = run(vec!["<!DOCTYPE html>\n<title>t</title><p>x"]).await;
+        assert_eq!(
+            out,
+            "<!DOCTYPE html><script src=\"/__whk/badge.js\" async></script>\n<title>t</title><p>x"
+        );
+        // A page past the search with no <head> gets it too.
+        let long: &'static str = Box::leak(format!("<body>{}", "a".repeat(SEARCH_LIMIT)).into());
+        let (out, _) = run(vec![long]).await;
+        assert!(out.starts_with("<script src=\"/__whk/badge.js\" async></script><body>"));
+    }
+
+    #[test]
+    fn without_head_the_tag_goes_after_the_doctype_and_comments() {
+        assert_eq!(fallback_at(b"<p>x"), 0);
+        assert_eq!(fallback_at(b"  \n<body>"), 3);
+        assert_eq!(fallback_at(b"<!doctype html><body>"), 15);
+        assert_eq!(fallback_at(b"\xEF\xBB\xBF<!DOCTYPE html>x"), 18);
+        assert_eq!(fallback_at(b"<!-- a > b --><!doctype html><p>"), 29);
+        assert_eq!(fallback_at(b"<?xml version=\"1.0\"?>\n<!DOCTYPE html>"), 37);
+        assert_eq!(fallback_at(b"<!-- a comment <!doctype html> --><p>"), 34);
+        // A start that does not end in what was held: the very beginning.
+        assert_eq!(fallback_at(b"<!-- never closed"), 0);
+        assert_eq!(fallback_at(b"<!doctype html"), 0);
     }
 
     #[tokio::test]

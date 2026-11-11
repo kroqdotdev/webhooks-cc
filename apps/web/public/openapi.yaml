@@ -3139,6 +3139,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
+        "403":
+          description: A team name another member reserved, in a team you do not own, or an unclaimed agent sandbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Name not found
           content:
@@ -4990,7 +4996,7 @@ components:
           description: When a time-limited (Free) preview ends
         bytes:
           type: integer
-          description: Data sent to visitors
+          description: Data visitors moved through a preview, both ways (downloads and uploads, WebSockets included); live tunnels count captures instead
         requests:
           type: integer
         password:

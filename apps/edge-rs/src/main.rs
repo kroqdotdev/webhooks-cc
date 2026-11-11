@@ -14,6 +14,7 @@
 //! receiver's captures for endpoints with a live session and sends them
 //! down that session's tunnel.
 
+mod accept;
 mod access_log;
 mod config;
 mod content;
@@ -107,6 +108,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
+    let open_files = accept::raise_open_files();
     let config = Config::from_env()?;
     let words = words::load(config.words_file.as_deref())?;
     pages::set_app_url(&config.app_url);
@@ -148,11 +150,13 @@ async fn run() -> anyhow::Result<()> {
         pace = ?state.config.pace,
         held_up_max = state.config.held_up_max,
         words,
+        open_files,
         "edge up"
     );
 
     let stopping = stop_signal();
     tokio::pin!(stopping);
+    let mut failures = accept::Failures::new("visitors");
     loop {
         let accepted = tokio::select! {
             accepted = listener.accept() => accepted,
@@ -167,7 +171,7 @@ async fn run() -> anyhow::Result<()> {
         let (stream, remote) = match accepted {
             Ok(accepted) => accepted,
             Err(e) => {
-                tracing::warn!(error = %e, "accept failed");
+                failures.failed(&e).await;
                 continue;
             }
         };
@@ -313,6 +317,9 @@ async fn handle(
             None => response,
         };
     }
+    // Not a visitor's: a connection Caddy reuses is no longer watched as
+    // one (held.rs).
+    conn.serves_no_visitor();
     // The bare preview domain is no preview: it points at the docs.
     if state.config.is_bare_domain(&host) {
         return redirect(&format!("{}/docs/share", state.config.app_url));

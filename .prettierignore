@@ -9,6 +9,8 @@ dist/
 *.tsbuildinfo
 apps/cli-rs/target/
 apps/receiver-rs/target/
+apps/edge-rs/target/
+crates/tunnel/target/
 .claude/
 
 # Generated files

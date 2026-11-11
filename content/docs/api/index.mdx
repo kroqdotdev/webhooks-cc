@@ -73,6 +73,12 @@ Every route an API key can call. Timestamps are Unix milliseconds unless a field
 | `GET /api/stream/:slug` | [Real-time stream](#real-time-streaming-sse) |
 | `GET /api/usage` | [Usage](#usage) |
 | `/api/teams/...`, `/api/invites/...` | [Teams](#teams) and [invites](#invites) |
+| `GET /api/shares` | [Previews and live tunnels](#list-shares), with the month's data and the plan's limits |
+| `POST /api/shares/:id/stop` | [Stop a share](#stop-a-share) |
+| `GET /api/shares/:id/requests` | [A preview's visitor log](#a-previews-visitor-log) |
+| `GET` `POST /api/tunnel-names` | [List](#list-reserved-names) or [reserve](#reserve-a-name) preview names |
+| `DELETE /api/tunnel-names/:name` | [Release a name](#release-a-name) |
+| `PUT` `DELETE /api/tunnel-names/:name/password` | [Set or remove a name's password](#name-passwords) |
 
 Agents that register themselves use the routes in [/auth.md](/auth.md); they are in the OpenAPI document too.
 

@@ -696,6 +696,15 @@ The local server has 57 tools once it is connected to an account; the remote ser
 | `test_forwarding` | slug, destinationId?, kind?, requestId? | Send one delivery now and report the answer |
 | `list_deliveries` | endpointSlug? or requestId, limit?, status?, destinationId?, before? | The delivery log, or every try of one request |
 | `redeliver` | requestId? or endpointSlug, destinationId? | Forward again with the current settings |
+| `share_port` | port, name?, password? | Share a local port at https://<name>.sharehooks.cc by running whk share (local server only) |
+| `list_shares` | state? (live, ended) | Previews and live tunnels, with this month's shared data and the plan's sharing limits |
+| `stop_share` | id | Stop a preview or live tunnel; its CLI is told why and exits |
+| `share_requests` | id | The last requests visitors made to a running preview (no addresses) |
+| `list_names` | (none) | Reserved preview names, your own and your teams', with the plan's count |
+| `reserve_name` | name, team? | Reserve a preview name (Pro and Business), optionally inside a team |
+| `release_name` | name | Let a reserved name go; a preview under it stops |
+| `set_name_password` | name, password | Put a password on every preview under a name |
+| `clear_name_password` | name | Remove a name's password |
 | `describe` | (none) | Get SDK schema introspection |
 
 ### Supported Providers for Signed Webhooks
@@ -775,7 +784,7 @@ whk share <port>                       # Public link https://<name>.sharehooks.c
   --name <name>                        # A name you reserved (paid plans); random otherwise (Free: ends in -free)
   --password                           # Visitors need a password (prompted or WHK_SHARE_PASSWORD; paid plans)
   --no-qr / --json                     # No QR code / one JSON event per line
-whk shares ls [--ended] | stop <id|name>
+whk shares ls [--ended] | stop <id|name> | log <id|name>   # log: the last requests visitors made, no addresses
 whk names ls | reserve <name> | release <name> | password <name> [--clear]
 
 # Sending and replaying

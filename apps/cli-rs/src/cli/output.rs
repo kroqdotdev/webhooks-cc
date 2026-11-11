@@ -350,6 +350,13 @@ pub fn print_request_detail(req: &CapturedRequest) {
             println!("{sanitized_body}");
         }
     }
+
+    if let Some(ref live) = req.live_response {
+        println!("\n{}", bold("Live Response"));
+        for line in crate::util::live::live_response_lines(live) {
+            println!("  {line}");
+        }
+    }
 }
 
 pub fn print_usage(usage: &UsageInfo) {

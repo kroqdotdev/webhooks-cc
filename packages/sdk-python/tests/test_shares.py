@@ -317,6 +317,11 @@ say(event="notice", text="kept back a download")
 if mode == "ends":
     say(event="stopped", reason="the plan's time ran out")
     sys.exit(0)
+if mode == "flood":
+    for i in range(2000):
+        say(event="request", method="GET", path=f"/{i}", status=200, ms=1)
+    say(event="stopped", reason="the plan's time ran out")
+    sys.exit(0)
 sys.stdin.read()
 say(event="stopped", reason="you stopped it on this computer")
 """
@@ -406,6 +411,25 @@ def test_share_events_iterate_until_it_ends(
     names = [e.event for e in live.events()]
     assert names[-1] == "stopped"
     assert live.wait(5) == "the plan's time ran out"
+
+
+@pytestmark_posix
+def test_share_events_hold_at_most_256_unread_while_callbacks_see_all(
+    fake_whk: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script, _ = fake_whk
+    monkeypatch.setenv("FAKE_WHK_MODE", "flood")
+    paths: list[str] = []
+    live = share(3000, whk_path=str(script), on_request=lambda r: paths.append(r.path))
+    assert live.wait(10) == "the plan's time ran out"
+    # Nobody read events() while the share ran: the queue stayed bounded.
+    assert live._events.qsize() <= 257  # 256 events and the end marker
+    held = list(live.events())
+    assert len(held) == 256
+    # The oldest are kept and the rest dropped, as in the Go SDK.
+    assert [e.event for e in held[:4]] == ["retrying", "live", "request", "notice"]
+    assert held[-1].data["path"] == "/251"
+    assert len(paths) == 2001 and paths[-1] == "/1999"
 
 
 @pytestmark_posix

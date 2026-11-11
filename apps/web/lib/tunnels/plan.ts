@@ -1,5 +1,6 @@
 import { ENTITLEMENTS, type Entitlements, type PlanKey } from "@/lib/entitlements";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inChunks } from "@/lib/supabase/in-chunks";
 
 /*
  * Which plan an account's tunnels follow: the best of its own plan and the
@@ -105,21 +106,23 @@ export async function tunnelPlansOf(
   const ids = [...new Set(userIds)];
   if (ids.length === 0) return plans;
   const admin = createAdminClient();
-  const [{ data: users, error: userError }, { data: memberships, error: teamError }] =
-    await Promise.all([
-      admin.from("users").select("id, plan, paid_since, tunnel_notice_lifted").in("id", ids),
+  // In chunks: the sync asks for thousands of accounts at once.
+  const [users, memberships] = await Promise.all([
+    inChunks(ids, (chunk) =>
+      admin.from("users").select("id, plan, paid_since, tunnel_notice_lifted").in("id", chunk)
+    ),
+    inChunks(ids, (chunk) =>
       admin
         .from("team_members")
         .select("user_id, team_id, teams(subscription_status, business, paid_since)")
-        .in("user_id", ids),
-    ]);
-  if (userError) throw userError;
-  if (teamError) throw teamError;
+        .in("user_id", chunk)
+    ),
+  ]);
   const teamsOf = new Map<string, Membership[]>();
-  for (const m of (memberships ?? []) as unknown as Membership[])
+  for (const m of memberships as unknown as Membership[])
     teamsOf.set(m.user_id, [...(teamsOf.get(m.user_id) ?? []), m]);
 
-  for (const user of users ?? []) {
+  for (const user of users) {
     const own = (user.plan === "pro" || user.plan === "business" ? user.plan : "free") as PlanKey;
     const candidates: Candidate[] = [{ key: own, teamId: null, paidSince: user.paid_since }];
     const teamIds: string[] = [];

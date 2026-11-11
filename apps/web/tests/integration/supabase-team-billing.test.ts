@@ -721,6 +721,60 @@ describe("applyTeamPolarWebhookEvent — seat events", () => {
     expect(shares).toEqual([]);
   });
 
+  it("hands the revoked member's team names to the owner and ends their runs under them", async () => {
+    const teamId = await createSeatTeam(`TB Seat Names ${ts}`, "seat_names");
+    const name = `seat-names-${ts % 1_000_000}`;
+    const { error: nameError } = await admin
+      .from("tunnel_names")
+      .insert({ name, user_id: memberId, team_id: teamId });
+    if (nameError) throw nameError;
+    // A run opened with a key that still works, so only the lost team ends it.
+    const { data: key, error: keyError } = await admin
+      .from("api_keys")
+      .insert({
+        user_id: memberId,
+        key_hash: `seat-names-${ts}-${Math.random().toString(36).slice(2)}`,
+        key_prefix: "whcc_seatnam",
+        name: "seat names test key",
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      })
+      .select("id")
+      .single();
+    if (keyError) throw keyError;
+    const { data: run, error: runError } = await admin
+      .from("tunnel_shares")
+      // Runs are opened through tunnel_open_share(); the typed client has no insert.
+      .insert({ kind: "share", user_id: memberId, name, client: "test", key_id: key.id } as never)
+      .select("id")
+      .single();
+    if (runError) throw runError;
+
+    try {
+      await applyTeamPolarWebhookEvent("customer_seat.revoked", teamId, {
+        id: "seat_names",
+        seat_metadata: { userId: memberId, teamId },
+      });
+
+      expect(await getMembership(teamId, memberId)).toBeNull();
+      const { data: kept } = await admin
+        .from("tunnel_names")
+        .select("user_id, team_id")
+        .eq("name", name)
+        .single();
+      expect(kept).toEqual({ user_id: ownerId, team_id: teamId });
+      const { data: ended } = await admin
+        .from("tunnel_shares")
+        .select("ended_at, end_reason")
+        .eq("id", run.id)
+        .single();
+      expect(ended?.ended_at).not.toBeNull();
+      expect(ended?.end_reason).toBe("access ended");
+    } finally {
+      await admin.from("tunnel_shares").delete().eq("id", run.id);
+      await admin.from("api_keys").delete().eq("id", key.id);
+    }
+  });
+
   it("ignores a revoked event for a seat the member no longer holds", async () => {
     const teamId = await createSeatTeam(`TB Seat Stale Revoke ${ts}`, "seat_replacement");
 

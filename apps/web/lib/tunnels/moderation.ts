@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inChunks } from "@/lib/supabase/in-chunks";
 import { previewUrl } from "./config";
 import { BUILT_IN_BLOCKS } from "./name-rules";
 import type { ReportRow } from "./reports";
@@ -48,12 +49,11 @@ export interface OpsShare {
 async function emailsOf(ids: string[]): Promise<Map<string, string>> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return new Map();
-  const { data, error } = await createAdminClient()
-    .from("users")
-    .select("id, email")
-    .in("id", unique);
-  if (error) throw error;
-  return new Map((data ?? []).map((u) => [u.id, u.email]));
+  const admin = createAdminClient();
+  const data = await inChunks(unique, (chunk) =>
+    admin.from("users").select("id, email").in("id", chunk)
+  );
+  return new Map(data.map((u) => [u.id, u.email]));
 }
 
 type ShareSelect = {
@@ -331,29 +331,25 @@ async function describeReports(rows: ReportRow[]): Promise<OpsReport[]> {
   const userIds = [...new Set(rows.flatMap((r) => (r.user_id ? [r.user_id] : [])))];
   const shareIds = [...new Set(rows.flatMap((r) => (r.share_id ? [r.share_id] : [])))];
   const names = [...new Set(rows.flatMap((r) => (r.name ? [r.name] : [])))];
-  const [users, shares, blocked] = await Promise.all([
-    userIds.length
-      ? admin.from("users").select("id, email, tunnels_suspended").in("id", userIds)
-      : Promise.resolve({ data: [], error: null }),
-    shareIds.length
-      ? admin.from("tunnel_shares").select(SHARE_COLUMNS).in("id", shareIds)
-      : Promise.resolve({ data: [], error: null }),
-    names.length
-      ? admin.from("tunnel_blocked_names").select("name").in("name", names)
-      : Promise.resolve({ data: [], error: null }),
+  const [userRows, shareRows, blockedRows] = await Promise.all([
+    inChunks(userIds, (chunk) =>
+      admin.from("users").select("id, email, tunnels_suspended").in("id", chunk)
+    ),
+    inChunks(shareIds, (chunk) =>
+      admin.from("tunnel_shares").select(SHARE_COLUMNS).in("id", chunk)
+    ),
+    inChunks(names, (chunk) => admin.from("tunnel_blocked_names").select("name").in("name", chunk)),
   ]);
-  if (users.error) throw users.error;
-  if (shares.error) throw shares.error;
-  if (blocked.error) throw blocked.error;
   const userMap = new Map(
-    ((users.data ?? []) as { id: string; email: string | null; tunnels_suspended: boolean }[]).map(
-      (u) => [u.id, u]
-    )
+    (userRows as { id: string; email: string | null; tunnels_suspended: boolean }[]).map((u) => [
+      u.id,
+      u,
+    ])
   );
   const shareMap = new Map(
-    (await opsShares((shares.data ?? []) as ShareSelect[])).map((s) => [s.id, s])
+    (await opsShares(shareRows as unknown as ShareSelect[])).map((s) => [s.id, s])
   );
-  const blockedSet = new Set(((blocked.data ?? []) as { name: string }[]).map((b) => b.name));
+  const blockedSet = new Set((blockedRows as { name: string }[]).map((b) => b.name));
   return rows.map((r) => {
     const owner = r.user_id ? userMap.get(r.user_id) : undefined;
     return {

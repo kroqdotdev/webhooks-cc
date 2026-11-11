@@ -29,7 +29,9 @@
 -- tunnel_blocked_names / tunnel_blocked_words: staff's lists.
 --
 -- abuse_reports: reports of previews, from the public form, the edge's
---   phishing flags and the daily reputation check.
+--   phishing flags and the daily reputation check. The reporter's name and
+--   email are cleared 90 days after the report is resolved, and resolved
+--   reports are deleted a year after they were made.
 --
 -- users.paid_since / teams.paid_since: when the account (or team) first got a
 --   paid plan, set by triggers. New paid accounts' previews show the visitor
@@ -402,9 +404,12 @@ revoke all on table public.abuse_reports from anon, authenticated;
 -- ---------------------------------------------------------------------------
 
 -- Opens a run. A preview under a name the same account already runs replaces
--- that run (the newest connection wins); a live session replaces the
--- account's open one on the same endpoint. Otherwise the account's open runs
--- of the kind must stay under p_slots. A reconnect (p_instance) of a run that
+-- that run (the newest connection wins), and so does a preview of the same
+-- CLI run (p_instance) under another name, a reconnect that could not keep
+-- its random name: a reconnect never counts its own earlier run against the
+-- slots. A live session replaces the account's open one on the same
+-- endpoint. Otherwise the account's open runs of the kind must stay under
+-- p_slots. A reconnect (p_instance) of a run that
 -- ended for good (one of p_final_endings: a stop, the time limit) is refused
 -- here, under the account's lock, so a stop racing the reconnect cannot let
 -- it back. Answers {"shareId", "startedAt", "expiresAt"} or {"error":
@@ -464,6 +469,7 @@ begin
      and s.ended_at is null
      and s.kind = p_kind
      and not (p_kind = 'share' and s.name = p_name)
+     and not (p_kind = 'share' and p_instance is not null and s.instance = left(p_instance, 64))
      and not (p_kind = 'live' and s.endpoint_id = p_endpoint_id);
   if v_open >= p_slots then
     return jsonb_build_object('error', 'slots', 'open', v_open);
@@ -475,6 +481,7 @@ begin
      and s.ended_at is null
      and s.kind = p_kind
      and ((p_kind = 'share' and s.name = p_name)
+       or (p_kind = 'share' and p_instance is not null and s.instance = left(p_instance, 64))
        or (p_kind = 'live' and s.endpoint_id = p_endpoint_id));
 
   begin
@@ -867,6 +874,24 @@ select cron.schedule(
          select 1 from public.abuse_reports r
           where r.share_id = s.id and r.kind = 'csam'
             and r.created_at > now() - interval '365 days')$$
+);
+
+-- Reports: who reported, 90 days after the report was resolved (an open
+-- report keeps it, as staff may still answer); the report itself a year
+-- after it was made, once resolved. A year is how long a report of child
+-- sexual abuse holds its share's address above.
+select cron.unschedule(jobid) from cron.job where jobname = 'tunnel-reports-cleanup';
+select cron.schedule(
+  'tunnel-reports-cleanup',
+  '41 4 * * *',
+  $$update public.abuse_reports r
+       set reporter_name = null, reporter_email = null
+     where (r.reporter_name is not null or r.reporter_email is not null)
+       and r.status = 'resolved'
+       and r.resolved_at < now() - interval '90 days';
+    delete from public.abuse_reports r
+     where r.status = 'resolved'
+       and r.created_at < now() - interval '365 days'$$
 );
 
 -- Batch ids, kept against the edge sending one twice; none comes back later

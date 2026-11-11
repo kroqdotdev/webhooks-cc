@@ -1357,6 +1357,47 @@ describe("registerTools", () => {
     expect(parseJsonResult(await calm.list_shares.handler({})).hints).toBeUndefined();
   });
 
+  it("never points the hosted server's agents at share_port, which it lacks", async () => {
+    const list = vi.fn(async () => ({
+      shares: [{ id: "s1", kind: "share", endedAt: null }],
+      usage: { over: false },
+      limits: { plan: "free", shares: 1, sessionMinutes: 120, passwords: false },
+      suspended: true,
+      hints: [
+        "Start another with whk share <port> --password, or stop one with whk shares stop <id>.",
+      ],
+    }));
+    const tools = getRegisteredTools(
+      createMockClient({ shares: { list } as unknown as WebhooksCC["shares"] }),
+      { remote: true }
+    );
+    for (const name of ["list_shares", "list_names", "reserve_name"])
+      // share_port only ever as the local server's tool.
+      expect(tools[name].description).not.toMatch(/with share_port|so share_port|, share_port\)/);
+    expect(tools.list_names.description).toContain("whk share <port> --name <name>");
+    expect(tools.reserve_name.description).toContain("whk share <port>");
+    const listed = parseJsonResult(await tools.list_shares.handler({}));
+    const hints = (listed.hints as string[]).join(" ");
+    expect(hints).toContain("whk share <port>` on the person's computer");
+    expect(hints).toContain("whk share <port> --password");
+    expect(hints).toContain("stop_share");
+    expect(hints).toContain("new previews are refused");
+    expect(hints).not.toMatch(
+      /(?:before|use|with) share_port|share_port (?:again|is refused|with a password)/
+    );
+
+    // The local server keeps naming its own tool.
+    const local = getRegisteredTools(
+      createMockClient({ shares: { list } as unknown as WebhooksCC["shares"] })
+    );
+    const localHints = (
+      parseJsonResult(await local.list_shares.handler({})).hints as string[]
+    ).join(" ");
+    expect(localHints).toContain("share_port with a password");
+    expect(localHints).toContain("before share_port");
+    expect(local.list_names.description).toContain("share_port and its name");
+  });
+
   it("returns the plan's limits with a new share, and next steps when whk refuses", async () => {
     const live = {
       url: "https://sample-preview-1234-free.sharehooks.cc",
@@ -2593,6 +2634,15 @@ describe("toolWords", () => {
     );
     expect(toolWords("Stop one with whk shares stop <id or name>.")).toBe(
       "Stop one with stop_share."
+    );
+  });
+
+  it("keeps whk share as a command on the hosted server, which has no share_port", () => {
+    expect(toolWords("Run whk share <port> --password to add one.", true)).toBe(
+      "Run whk share <port> --password to add one."
+    );
+    expect(toolWords("Run whk names ls, then whk share <port>.", true)).toBe(
+      "Run list_names, then whk share <port>."
     );
   });
 });

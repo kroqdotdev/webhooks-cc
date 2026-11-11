@@ -266,6 +266,10 @@ describe("sandbox in the credential file", () => {
       access_token: "whcc_account1",
     });
     await client.endpoints.list();
+    // shares.start() runs whk on the account connection just saved.
+    expect((client as unknown as { agentShare: { file: string } | null }).agentShare).toEqual({
+      file,
+    });
     await expect(sandbox.endpoints.list()).rejects.toMatchObject({ code: "sandbox_closed" });
   });
 
@@ -296,7 +300,11 @@ describe("WebhooksCC.connected", () => {
       email: "dev@example.com",
     });
     expect(pending.userCode).toBe("654321");
-    await pending.wait({ timeout: 5_000 });
+    const waited = await pending.wait({ timeout: 5_000 });
+    // The client the wait hands back shares through the same connection too.
+    expect((waited as unknown as { agentShare: { file: string } | null }).agentShare).toEqual({
+      file,
+    });
 
     const client = await WebhooksCC.connected({ baseUrl: BASE, credentialsFile: file });
     expect(client).toBeInstanceOf(WebhooksCC);

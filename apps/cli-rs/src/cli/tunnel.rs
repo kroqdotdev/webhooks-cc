@@ -1,5 +1,7 @@
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
@@ -131,6 +133,11 @@ pub async fn run(
     // sender waits. The SSE stream below still brings every capture; only
     // emails, and HTTP captures while the relay is down, are forwarded from it.
     let (live_tx, mut live_rx) = mpsc::channel::<Update>(256);
+    // --live: whether the relay is up, and which captures it carried. The
+    // session updates it as things happen, so nothing shown late (or not
+    // shown, when the output falls behind) changes what is forwarded.
+    let relay = Arc::new(Mutex::new(LiveRelay::default()));
+    let session_relay = relay.clone();
     let mut live_task = live_target.map(|(local, base_path)| {
         let session = Session {
             tunnel_url: share::tunnel_url(),
@@ -151,6 +158,7 @@ pub async fn run(
         };
         tokio::spawn(async move {
             let mut send = |update: Update| {
+                lock(&session_relay).on_update(&update);
                 let _ = live_tx.try_send(update);
             };
             share::run(&session, &mut send).await
@@ -172,11 +180,16 @@ pub async fn run(
 
     let mut reconnecting = false;
     let mut interrupted = false;
-    // --live: whether the relay is up, and which captures it carried.
-    let mut relay = LiveRelay::default();
+    // --live: looks for stream copies the relay never carried.
+    let mut held_check = tokio::time::interval(Duration::from_secs(1));
     // --live refused before it was ever up (another relay, a limit, no
     // access): the tunnel ends with that as its error.
     let mut live_refused: Option<String> = None;
+
+    // One for the whole run, so a signal that arrives while an arm is busy
+    // (forwarding a capture) is still seen.
+    let shutdown = crate::cli::share::shutdown_signal();
+    tokio::pin!(shutdown);
 
     // Process events until Ctrl+C, endpoint deletion, or a terminal stream error
     loop {
@@ -184,25 +197,32 @@ pub async fn run(
             event = rx.recv() => {
                 let Some(event) = event else { break };
                 match event {
-                    // --live: HTTP captures come through the edge while the
-                    // relay is up; while it is not, they are forwarded from
-                    // the stream like a plain tunnel's.
-                    SseEvent::Request(req) if live && !req.is_email() && !relay.forward(&req.id, &req.method, &req.path) => {}
                     SseEvent::Request(req) => {
-                        if live && !req.is_email() && relay.announce() {
-                            if json {
-                                println!(
-                                    "{}",
-                                    serde_json::json!({ "event": "live_fallback" })
-                                );
-                            } else {
-                                println!(
-                                    "  {} {}",
-                                    dim("●"),
-                                    dim(LIVE_FALLBACK)
-                                );
+                        // --live: HTTP captures come through the edge while
+                        // the relay is up; while it is not, they are
+                        // forwarded from the stream like a plain tunnel's.
+                        let req = if live && !req.is_email() {
+                            let mut relay = lock(&relay);
+                            let Some(req) = relay.admit(*req, Instant::now()) else { continue };
+                            if relay.announce() {
+                                drop(relay);
+                                if json {
+                                    println!(
+                                        "{}",
+                                        serde_json::json!({ "event": "live_fallback" })
+                                    );
+                                } else {
+                                    println!(
+                                        "  {} {}",
+                                        dim("●"),
+                                        dim(LIVE_FALLBACK)
+                                    );
+                                }
                             }
-                        }
+                            req
+                        } else {
+                            *req
+                        };
                         // --no-email: the email is listed, not posted.
                         if req.is_email() && email_format.is_none() {
                             if json {
@@ -221,19 +241,7 @@ pub async fn run(
                             }
                             continue;
                         }
-
-                        let result = tunnel.forward(&req).await;
-
-                        if json {
-                            println!("{}", forwarded_event(&req, &result, email_format));
-                        } else {
-                            let status = if result.success {
-                                green(&result.to_string())
-                            } else {
-                                red(&result.to_string())
-                            };
-                            println!("{}", request_line(&req, &status));
-                        }
+                        deliver(&tunnel, &req, json, email_format).await;
                     }
                     SseEvent::EndpointDeleted => {
                         if json {
@@ -260,8 +268,16 @@ pub async fn run(
             }
             update = live_rx.recv(), if live_task.is_some() => {
                 if let Some(update) = update {
-                    relay.on_update(&update);
                     show_live_update(update, json);
+                }
+            }
+            _ = held_check.tick(), if live => {
+                let due = lock(&relay).due(Instant::now());
+                if !due.is_empty() && !json {
+                    println!("  {} {}", dim("●"), dim(&not_relayed(due.len())));
+                }
+                for req in due {
+                    deliver(&tunnel, &req, json, email_format).await;
                 }
             }
             ended = async { live_task.as_mut().expect("guarded").await }, if live_task.is_some() => {
@@ -277,7 +293,7 @@ pub async fn run(
                 }
                 break;
             }
-            _ = crate::cli::share::shutdown_signal() => {
+            _ = &mut shutdown => {
                 interrupted = true;
                 // Ctrl-C or SIGTERM ends a live relay as cleanly as the edge
                 // ending it: say so, the way `whk share` prints `stopped`.
@@ -331,58 +347,135 @@ pub fn live_target(target: &str) -> Result<(share::LocalTarget, String)> {
     Ok((local, path.trim_end_matches('/').to_string()))
 }
 
+/// Forwards a capture from the stream to the local app and prints how it
+/// went.
+async fn deliver(
+    tunnel: &Tunnel,
+    req: &CapturedRequest,
+    json: bool,
+    email_format: Option<EmailFormat>,
+) {
+    let result = tunnel.forward(req).await;
+    if json {
+        println!("{}", forwarded_event(req, &result, email_format));
+    } else {
+        let status = if result.success {
+            green(&result.to_string())
+        } else {
+            red(&result.to_string())
+        };
+        println!("{}", request_line(req, &status));
+    }
+}
+
+/// The relay's state, whoever held the lock last (it holds no invariant a
+/// panic could break halfway).
+fn lock(relay: &Mutex<LiveRelay>) -> std::sync::MutexGuard<'_, LiveRelay> {
+    relay.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// What `whk tunnel --live` says before forwarding captures the relay never
+/// carried, which the stream brought while the relay was up.
+fn not_relayed(count: usize) -> String {
+    let what = if count == 1 {
+        "1 capture".to_string()
+    } else {
+        format!("{count} captures")
+    };
+    format!(
+        "Forwarding {what} from the stream that the live relay did not carry (made while this computer was offline, or turned away at the edge)."
+    )
+}
+
 /// What `whk tunnel --live` says when the relay is down and captures come
 /// from the stream instead.
 const LIVE_FALLBACK: &str = "The live relay is not connected: forwarding captures from the stream like a plain tunnel until it is back (senders get 502 for 2 minutes, then the endpoint's mock).";
 
-/// How long a capture is remembered on either side (the edge's relay line
-/// or the stream's copy), so the two can be matched up.
-const RELAYED_KEPT: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long the edge's line for a relayed capture is remembered, for its
+/// copy on the stream to find. Long, since the stream can be down for a
+/// while (it waits 90 s on a silent connection) and replays what it missed
+/// when it is back.
+const RELAYED_KEPT: Duration = Duration::from_secs(15 * 60);
 
-/// At most this many remembered captures of each kind.
-const RELAYED_MAX: usize = 512;
+/// At most this many remembered relayed captures.
+const RELAYED_MAX: usize = 10_000;
+
+/// How long the route of a capture an older edge relayed (one that names no
+/// ids) is remembered, for its stream copy to match.
+const ROUTES_KEPT: Duration = Duration::from_secs(30);
+
+/// At most this many remembered routes.
+const ROUTES_MAX: usize = 512;
+
+/// How long a stream copy that came while the relay was up waits for the
+/// edge to name it. The edge names a capture once the app answered, or
+/// after 25 s without an answer; a copy it has not named by then was never
+/// relayed (made while this computer was offline, or turned away at the
+/// edge) and is forwarded from the stream instead.
+const HELD_FOR: Duration = Duration::from_secs(40);
+
+/// At most this many stream copies wait, and at most this many bytes of
+/// them; past either, the oldest is forwarded at once rather than lost.
+const HELD_MAX: usize = 512;
+const HELD_BYTES: usize = 32 * 1024 * 1024;
+
+/// A stream copy waiting for the edge to name it.
+struct Held {
+    request: CapturedRequest,
+    at: Instant,
+    bytes: usize,
+}
 
 /// `whk tunnel --live`'s view of its relay: whether it is up, and which
 /// captures it carried, so none is forwarded twice from the stream and none
 /// it did not carry is skipped.
 ///
-/// Every capture reaches the CLI twice: as the edge's line for the relay
-/// (after the app answered) and as a copy on the stream (whenever the web app
-/// sends it). Whichever comes first is remembered until the other matches
-/// it. An edge that names the capture's id is matched by id; an older one by
-/// method and path.
+/// Every capture the relay carries reaches the CLI twice: as the edge's
+/// line for the relay (after the app answered) and as a copy on the stream
+/// (whenever the web app sends it). Whichever comes first is remembered
+/// until the other matches it. An edge that names the capture's id is
+/// matched by id; an older one by method and path. A copy that came while
+/// the relay was up and is never named was not relayed, and goes to the app
+/// from the stream after [`HELD_FOR`].
 #[derive(Default)]
 struct LiveRelay {
     connected: bool,
     announced: bool,
-    /// Ids the edge said it relayed, not yet seen on the stream.
-    relayed_ids: Vec<(String, std::time::Instant)>,
+    /// Ids the edge said it relayed, not yet seen on the stream, oldest first.
+    relayed_ids: VecDeque<(String, Instant)>,
+    relayed_set: HashSet<String>,
     /// Method and path of captures an older edge relayed (no id), not yet
     /// seen on the stream.
-    relayed_routes: Vec<(String, String, std::time::Instant)>,
-    /// Stream copies skipped while the relay was up, not yet named by the
-    /// edge: by id and by route.
-    seen_ids: Vec<(String, std::time::Instant)>,
-    seen_routes: Vec<(String, String, std::time::Instant)>,
+    relayed_routes: VecDeque<(String, String, Instant)>,
+    /// Stream copies that came while the relay was up, not yet named by the
+    /// edge, oldest first.
+    held: VecDeque<Held>,
+    held_bytes: usize,
+    /// Copies let go early to keep `held` bounded, to forward next.
+    released: Vec<CapturedRequest>,
 }
 
 impl LiveRelay {
-    fn prune(&mut self, now: std::time::Instant) {
-        let fresh = |at: &std::time::Instant| now.duration_since(*at) < RELAYED_KEPT;
-        self.relayed_ids.retain(|(_, at)| fresh(at));
-        self.relayed_routes.retain(|(_, _, at)| fresh(at));
-        self.seen_ids.retain(|(_, at)| fresh(at));
-        self.seen_routes.retain(|(_, _, at)| fresh(at));
-        for list in [&mut self.relayed_ids, &mut self.seen_ids] {
-            if list.len() > RELAYED_MAX {
-                list.drain(..list.len() - RELAYED_MAX);
+    fn prune(&mut self, now: Instant) {
+        while let Some((id, at)) = self.relayed_ids.front() {
+            if now.duration_since(*at) < RELAYED_KEPT && self.relayed_ids.len() <= RELAYED_MAX {
+                break;
             }
+            self.relayed_set.remove(id);
+            self.relayed_ids.pop_front();
         }
-        for list in [&mut self.relayed_routes, &mut self.seen_routes] {
-            if list.len() > RELAYED_MAX {
-                list.drain(..list.len() - RELAYED_MAX);
+        while let Some((_, _, at)) = self.relayed_routes.front() {
+            if now.duration_since(*at) < ROUTES_KEPT && self.relayed_routes.len() <= ROUTES_MAX {
+                break;
             }
+            self.relayed_routes.pop_front();
         }
+    }
+
+    fn take_held(&mut self, i: usize) -> Option<CapturedRequest> {
+        let held = self.held.remove(i)?;
+        self.held_bytes -= held.bytes;
+        Some(held.request)
     }
 
     fn on_update(&mut self, update: &Update) {
@@ -398,28 +491,27 @@ impl LiveRelay {
                 request_id,
                 ..
             } => {
-                let now = std::time::Instant::now();
+                let now = Instant::now();
                 self.prune(now);
                 let path = path_only(path);
                 match request_id {
                     Some(id) => {
                         // The stream's copy came first: they are matched.
-                        if let Some(i) = self.seen_ids.iter().position(|(s, _)| s == id) {
-                            self.seen_ids.remove(i);
-                        } else {
-                            self.relayed_ids.push((id.clone(), now));
+                        if let Some(i) = self.held.iter().position(|h| &h.request.id == id) {
+                            self.take_held(i);
+                        } else if self.relayed_set.insert(id.clone()) {
+                            self.relayed_ids.push_back((id.clone(), now));
                         }
                     }
                     None => {
-                        if let Some(i) = self
-                            .seen_routes
-                            .iter()
-                            .position(|(m, p, _)| m.eq_ignore_ascii_case(method) && p == path)
-                        {
-                            self.seen_routes.remove(i);
+                        if let Some(i) = self.held.iter().position(|h| {
+                            h.request.method.eq_ignore_ascii_case(method)
+                                && path_only(&h.request.path) == path
+                        }) {
+                            self.take_held(i);
                         } else {
                             self.relayed_routes
-                                .push((method.clone(), path.to_string(), now));
+                                .push_back((method.clone(), path.to_string(), now));
                         }
                     }
                 }
@@ -428,33 +520,61 @@ impl LiveRelay {
         }
     }
 
-    /// Whether a capture from the stream goes to the local app: never one
-    /// the relay carried; otherwise only while the relay is down.
-    fn forward(&mut self, id: &str, method: &str, path: &str) -> bool {
-        let now = std::time::Instant::now();
+    /// A capture from the stream: given back to forward to the local app at
+    /// once, or kept. Never one the relay carried; while the relay is up, a
+    /// copy waits for the edge to name it (see [`LiveRelay::due`]); while it
+    /// is down, it goes now.
+    fn admit(&mut self, request: CapturedRequest, now: Instant) -> Option<CapturedRequest> {
         self.prune(now);
-        let path = path_only(path);
-        if let Some(i) = self.relayed_ids.iter().position(|(s, _)| s == id) {
-            self.relayed_ids.remove(i);
-            return false;
+        // Its entry in `relayed_ids` goes with the next prune.
+        if self.relayed_set.remove(&request.id) {
+            return None;
         }
+        let path = path_only(&request.path);
         if let Some(i) = self
             .relayed_routes
             .iter()
-            .position(|(m, p, _)| m.eq_ignore_ascii_case(method) && p == path)
+            .position(|(m, p, _)| m.eq_ignore_ascii_case(&request.method) && p == path)
         {
             self.relayed_routes.remove(i);
-            return false;
+            return None;
         }
-        if self.connected {
-            // The edge has it (its line comes once the app answered):
-            // remember the copy so that line finds it.
-            self.seen_ids.push((id.to_string(), now));
-            self.seen_routes
-                .push((method.to_string(), path.to_string(), now));
-            return false;
+        if !self.connected {
+            return Some(request);
         }
-        true
+        // The edge most likely has it (its line comes once the app
+        // answered): keep the copy until that line names it.
+        let bytes = request.body.as_ref().map_or(0, String::len)
+            + request.body_raw.as_ref().map_or(0, String::len);
+        self.held_bytes += bytes;
+        self.held.push_back(Held {
+            request,
+            at: now,
+            bytes,
+        });
+        while self.held.len() > HELD_MAX || (self.held_bytes > HELD_BYTES && self.held.len() > 1) {
+            if let Some(request) = self.take_held(0) {
+                self.released.push(request);
+            }
+        }
+        None
+    }
+
+    /// The stream copies the edge never named within [`HELD_FOR`] (and any
+    /// let go early), oldest first: they were not relayed, so they go to
+    /// the app from the stream, once each.
+    fn due(&mut self, now: Instant) -> Vec<CapturedRequest> {
+        let mut due = std::mem::take(&mut self.released);
+        while self
+            .held
+            .front()
+            .is_some_and(|h| now.duration_since(h.at) >= HELD_FOR)
+        {
+            if let Some(request) = self.take_held(0) {
+                due.push(request);
+            }
+        }
+        due
     }
 
     /// True the first time a capture is forwarded from the stream since the
@@ -721,6 +841,26 @@ mod tests {
         }
     }
 
+    fn capture(id: &str, method: &str, path: &str) -> CapturedRequest {
+        let mut request = email();
+        request.id = id.into();
+        request.kind = Some("http".into());
+        request.method = method.into();
+        request.path = path.into();
+        request
+    }
+
+    /// Whether the relay hands a stream copy over to forward at once.
+    fn forwards(relay: &mut LiveRelay, id: &str, method: &str, path: &str) -> bool {
+        relay
+            .admit(capture(id, method, path), Instant::now())
+            .is_some()
+    }
+
+    fn ids(requests: Vec<CapturedRequest>) -> Vec<String> {
+        requests.into_iter().map(|r| r.id).collect()
+    }
+
     fn dropped() -> Update {
         Update::Retrying {
             message: "The connection dropped.".into(),
@@ -732,19 +872,19 @@ mod tests {
     fn the_live_relay_skips_what_it_carried_and_forwards_the_rest() {
         let mut relay = LiveRelay::default();
         // Before it is up, captures go from the stream.
-        assert!(relay.forward("c0", "POST", "/hooks"));
+        assert!(forwards(&mut relay, "c0", "POST", "/hooks"));
         assert!(relay.announce());
         assert!(!relay.announce());
         relay.on_update(&Update::Reconnected);
         // Up: the edge carries them, whichever side arrives first.
-        assert!(!relay.forward("c1", "POST", "/hooks"));
+        assert!(!forwards(&mut relay, "c1", "POST", "/hooks"));
         relay.on_update(&relayed("POST", "/hooks?x=1", Some("c1")));
         relay.on_update(&relayed("POST", "/hooks", Some("c2")));
         relay.on_update(&dropped());
         // Down: the one it carried just before is not sent again, others are.
-        assert!(!relay.forward("c2", "POST", "/hooks"));
-        assert!(relay.forward("c3", "POST", "/hooks"));
-        assert!(relay.forward("c4", "GET", "/other"));
+        assert!(!forwards(&mut relay, "c2", "POST", "/hooks"));
+        assert!(forwards(&mut relay, "c3", "POST", "/hooks"));
+        assert!(forwards(&mut relay, "c4", "GET", "/other"));
         // It says so again after the next drop.
         assert!(relay.announce());
     }
@@ -761,16 +901,16 @@ mod tests {
                 let named = edge_names_ids.then_some(id.as_str());
                 if i % 2 == 0 {
                     relay.on_update(&relayed("POST", "/hooks", named));
-                    assert!(!relay.forward(&id, "POST", "/hooks"));
+                    assert!(!forwards(&mut relay, &id, "POST", "/hooks"));
                 } else {
-                    assert!(!relay.forward(&id, "POST", "/hooks"));
+                    assert!(!forwards(&mut relay, &id, "POST", "/hooks"));
                     relay.on_update(&relayed("POST", "/hooks", named));
                 }
             }
             relay.on_update(&dropped());
             for i in 0..10 {
                 assert!(
-                    relay.forward(&format!("n{i}"), "POST", "/hooks"),
+                    forwards(&mut relay, &format!("n{i}"), "POST", "/hooks"),
                     "capture {i} after the drop (ids from the edge: {edge_names_ids})"
                 );
             }
@@ -784,8 +924,100 @@ mod tests {
         relay.on_update(&relayed("POST", "/hooks", Some("a")));
         relay.on_update(&dropped());
         // Another capture to the same path is not mistaken for it.
-        assert!(relay.forward("b", "POST", "/hooks"));
+        assert!(forwards(&mut relay, "b", "POST", "/hooks"));
         // Its own copy, arriving late, is not sent twice.
-        assert!(!relay.forward("a", "POST", "/hooks"));
+        assert!(!forwards(&mut relay, "a", "POST", "/hooks"));
+    }
+
+    #[test]
+    fn captures_made_offline_are_forwarded_once_when_the_relay_reconnects_first() {
+        // The reviewer's case: both connections were down, the relay came
+        // back first, then the stream replayed what was captured meanwhile.
+        let mut relay = LiveRelay::default();
+        relay.on_update(&Update::Reconnected);
+        relay.on_update(&dropped());
+        relay.on_update(&Update::Reconnected);
+        let now = Instant::now();
+        for i in 0..5 {
+            let copy = capture(&format!("gap{i}"), "POST", "/hooks");
+            assert!(relay.admit(copy, now).is_none(), "held, not skipped");
+        }
+        // Not before the edge had its chance to name them.
+        assert!(relay.due(now + Duration::from_secs(1)).is_empty());
+        let later = now + HELD_FOR;
+        assert_eq!(
+            ids(relay.due(later)),
+            ["gap0", "gap1", "gap2", "gap3", "gap4"]
+        );
+        // Once each.
+        assert!(relay.due(later + HELD_FOR).is_empty());
+        assert!(relay.held.is_empty() && relay.held_bytes == 0);
+    }
+
+    #[test]
+    fn a_stream_copy_the_edge_names_is_never_forwarded() {
+        let mut relay = LiveRelay::default();
+        relay.on_update(&Update::Reconnected);
+        let now = Instant::now();
+        // The copy first, then the edge's line, by id and (older edge) by route.
+        assert!(relay.admit(capture("a", "POST", "/hooks"), now).is_none());
+        assert!(
+            relay
+                .admit(capture("b", "PUT", "/other?x=1"), now)
+                .is_none()
+        );
+        assert!(relay.admit(capture("c", "POST", "/hooks"), now).is_none());
+        relay.on_update(&relayed("POST", "/hooks", Some("a")));
+        relay.on_update(&relayed("PUT", "/other", None));
+        // Only the one it never named goes, and only after the wait.
+        assert_eq!(ids(relay.due(now + HELD_FOR)), ["c"]);
+    }
+
+    #[test]
+    fn a_relayed_capture_stays_matched_while_the_stream_catches_up() {
+        // The stream was down for a while with the relay up: the copies it
+        // replays later are still the ones the relay carried.
+        let mut relay = LiveRelay::default();
+        relay.on_update(&Update::Reconnected);
+        relay.on_update(&relayed("POST", "/hooks", Some("early")));
+        let much_later = Instant::now() + Duration::from_secs(120);
+        assert!(
+            relay
+                .admit(capture("early", "POST", "/hooks"), much_later)
+                .is_none()
+        );
+        assert!(relay.due(much_later + HELD_FOR).is_empty());
+    }
+
+    #[test]
+    fn held_copies_are_bounded_and_let_go_oldest_first() {
+        let mut relay = LiveRelay::default();
+        relay.on_update(&Update::Reconnected);
+        let now = Instant::now();
+        for i in 0..=HELD_MAX {
+            assert!(
+                relay
+                    .admit(capture(&format!("h{i}"), "POST", "/"), now)
+                    .is_none()
+            );
+        }
+        assert_eq!(relay.held.len(), HELD_MAX);
+        assert_eq!(ids(relay.due(now)), ["h0"]);
+        let mut big = capture("big", "POST", "/");
+        big.body = Some("x".repeat(HELD_BYTES));
+        assert!(relay.admit(big, now).is_none());
+        assert!(relay.held_bytes <= HELD_BYTES);
+        assert_eq!(relay.due(now).len(), 1, "the oldest made room");
+    }
+
+    #[test]
+    fn copies_go_at_once_while_the_relay_is_down() {
+        // The normal fallback path waits for nothing.
+        let mut relay = LiveRelay::default();
+        assert!(forwards(&mut relay, "d1", "POST", "/hooks"));
+        relay.on_update(&Update::Reconnected);
+        relay.on_update(&dropped());
+        assert!(forwards(&mut relay, "d2", "POST", "/hooks"));
+        assert!(relay.held.is_empty());
     }
 }

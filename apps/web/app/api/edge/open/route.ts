@@ -80,7 +80,7 @@ export async function POST(request: Request) {
 
   // Past the plan's data for the month, previews are paused.
   const month = await usageOf(plan, userId);
-  if (month.over) return Response.json({ error: overMessage(month) }, { status: 429 });
+  if (month.over) return Response.json({ error: overMessage(month) }, { status: 403 });
 
   const password = typeof body.password === "string" && body.password ? body.password : null;
   if (password && !plan.limits.sharePasswords)
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
       action: "tunnel.name_reserved",
       status: 201,
       targetId: named.name,
-      metadata: { via: "share" },
+      metadata: { source: "share" },
       via: account.agentRegistrationId ? "agent_token" : "api_key",
       userAgent: EDGE_CLIENT_AGENT,
     });

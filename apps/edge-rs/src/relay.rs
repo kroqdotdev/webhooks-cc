@@ -23,8 +23,10 @@
 //! - `timeout` (504): no answer's head within [`HEAD_TIMEOUT`].
 //! - `busy` (503, with `Retry-After`): the account has too many live
 //!   requests in flight ([`LIVE_STREAMS`], apart from its previews').
-//! - `refused` (502): the app's answer is not passed back ([`check`]); the
-//!   CLI hears why. (A 404 `refused` is a request without the secret.)
+//! - `refused` (502): the app's answer is not passed back ([`check`]), or
+//!   the request was for Werkzeug's debugger and never reached the app
+//!   (debugger.rs, as for a share); the CLI hears why. (A 404 `refused` is a
+//!   request without the secret.)
 //! - `answered`: on the app's own answer, whatever its status, so the
 //!   receiver can tell the app's 502 from the edge's.
 
@@ -99,11 +101,12 @@ pub async fn serve(state: State, address: SocketAddr) -> anyhow::Result<()> {
 }
 
 async fn serve_on(state: State, listener: TcpListener) {
+    let mut failures = crate::accept::Failures::new("relay");
     loop {
         let (stream, _) = match listener.accept().await {
             Ok(accepted) => accepted,
             Err(e) => {
-                tracing::warn!(error = %e, "relay accept failed");
+                failures.failed(&e).await;
                 continue;
             }
         };
@@ -256,6 +259,25 @@ fn said(status: StatusCode, live: &'static str, message: &str) -> Response<Body>
     response.body(pages::full(body)).unwrap()
 }
 
+/// Werkzeug's debugger, kept from the sender (debugger.rs): refused like an
+/// answer that is not passed back, and the CLI told once why.
+fn debugger_refused(
+    session: &crate::registry::Session,
+    unreachable: &impl Fn(&crate::registry::Session, u16),
+) -> Response<Body> {
+    unreachable(session, 502);
+    if session.limits.should_warn_debugger() {
+        session.notify(&EdgeMessage::Notice {
+            text: crate::debugger::LIVE_NOTICE.into(),
+        });
+    }
+    said(
+        StatusCode::BAD_GATEWAY,
+        "refused",
+        "The request was not passed to the app.",
+    )
+}
+
 /// The receiver's capture id ([`HEADER_REQUEST_ID`]), when it is a plain id
 /// (letters, digits and hyphens, at most 64).
 fn request_id_of(headers: &http::HeaderMap) -> Option<String> {
@@ -307,6 +329,15 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             request_id: request_id.clone(),
         });
     };
+    // Werkzeug's debugger answers these itself, and its console runs code
+    // on the laptop: never passed on, as for a share (debugger.rs). The
+    // capture is kept; only the app never sees it.
+    let target: http::Uri = rest.parse().unwrap_or_else(|_| http::Uri::from_static("/"));
+    if crate::debugger::asks_for_debugger(target.query()) {
+        return debugger_refused(&session, &unreachable);
+    }
+    // Where Werkzeug's console page would be.
+    let console = crate::debugger::may_be_console(target.path());
     let Ok(stream) = session.opener.open().await else {
         unreachable(&session, 502);
         return said(
@@ -331,7 +362,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     });
 
     let (mut parts, body) = req.into_parts();
-    parts.uri = rest.parse().unwrap_or_else(|_| http::Uri::from_static("/"));
+    parts.uri = target;
     parts.version = http::Version::HTTP_11;
     parts.headers.remove(AUTH_HEADER);
     parts.headers.remove(HEADER_REQUEST_ID);
@@ -379,6 +410,25 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
         );
     }
     let (mut parts, body) = response.into_parts();
+    // Werkzeug's console page, once its answer shows it is: a page that
+    // short is read whole, then passed on if it is the app's.
+    let body: Body = if console && crate::debugger::could_be_console_page(status, &parts.headers) {
+        let Ok(page) = body.collect().await.map(|b| b.to_bytes()) else {
+            unreachable(&session, 502);
+            return said(
+                StatusCode::BAD_GATEWAY,
+                "unreachable",
+                "The app closed the connection without an answer.",
+            );
+        };
+        if crate::debugger::is_console_page(&page) {
+            return debugger_refused(&session, &unreachable);
+        }
+        pages::full(page)
+    } else {
+        body.map_err(|e| -> crate::slow::BoxError { Box::new(e) })
+            .boxed()
+    };
     parts.version = http::Version::HTTP_11;
     crate::strip_hop_by_hop(&mut parts.headers, false);
     let pass = match check(status, &parts.headers) {
@@ -419,9 +469,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             header::CONTENT_TYPE,
             HeaderValue::from_static("text/plain; charset=utf-8"),
         );
-        crate::content::Capped::new(body, MAX_UNTYPED)
-            .map_err(|e| -> crate::slow::BoxError { Box::new(e) })
-            .boxed()
+        crate::content::Capped::new(body, MAX_UNTYPED).boxed()
     } else {
         Limited::new(body, STREAM_CUT).boxed()
     };
@@ -805,6 +853,72 @@ mod tests {
         assert_eq!(ok(&[]), Ok(Pass::AsText));
         assert_eq!(ok(&[("content-length", "70000")]), Err(Refusal::Untyped));
         assert_eq!(check(StatusCode::NO_CONTENT, &with(&[])), Ok(Pass::AsSent));
+    }
+
+    #[tokio::test]
+    async fn the_debugger_is_never_reached_through_a_live_tunnel() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let state = state();
+        let reached = Arc::new(AtomicUsize::new(0));
+        let counted = reached.clone();
+        let port = app(move |req: Request<Incoming>| {
+            let counted = counted.clone();
+            async move {
+                counted.fetch_add(1, Ordering::SeqCst);
+                // Werkzeug's console at /console; anything else the app's own.
+                let page = if req.uri().path() == "/console" {
+                    "<!doctype html><title>Console // Werkzeug Debugger</title><script>var CONSOLE_MODE = true, EVALEX = true;</script>"
+                } else {
+                    "<!doctype html><title>Console</title><p>the app's own"
+                };
+                Response::builder()
+                    .header("content-type", "text/html; charset=utf-8")
+                    .body(Full::new(Bytes::from_static(page.as_bytes())))
+                    .unwrap()
+            }
+        })
+        .await;
+        let session = live_session(&state, "ep-flask", port).await;
+        let base = relay(&state).await;
+        let client = reqwest::Client::new();
+        for query in [
+            "__debugger__=yes&cmd=import%20os&frm=0&s=Vg1lnxbB9U8tpd6dLMpN",
+            "x=1;__debugger__=yes&cmd=resource&f=debugger.js",
+            "__debugger__=y%65s&cmd=printpin&s=x",
+        ] {
+            let response = client
+                .post(format!("{base}/v1/live/ep-flask/hooks?{query}"))
+                .header(AUTH_HEADER, "s")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 502, "{query}");
+            assert_eq!(response.headers()[LIVE_HEADER], "refused", "{query}");
+        }
+        assert_eq!(reached.load(Ordering::SeqCst), 0, "never sent to the app");
+        assert!(
+            !session.limits.should_warn_debugger(),
+            "the CLI was told once"
+        );
+        // The console page itself is read and kept back.
+        let console = client
+            .get(format!("{base}/v1/live/ep-flask/console"))
+            .header(AUTH_HEADER, "s")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(console.status(), 502);
+        assert_eq!(console.headers()[LIVE_HEADER], "refused");
+        // A page of the app's own there is its answer.
+        let own = client
+            .get(format!("{base}/v1/live/ep-flask/console/"))
+            .header(AUTH_HEADER, "s")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(own.status(), 200);
+        assert_eq!(own.headers()[LIVE_HEADER], "answered");
+        assert!(own.text().await.unwrap().contains("the app's own"));
     }
 
     #[tokio::test]

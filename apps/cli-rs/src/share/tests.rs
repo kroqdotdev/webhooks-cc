@@ -225,7 +225,9 @@ async fn the_head_is_read_whole_and_the_body_follows() {
             a.write_all(piece).await.unwrap();
         }
     });
-    let out = rewritten_head(&mut b, &rewrite).await.unwrap();
+    let Head::Ready(out) = rewritten_head(&mut b, &rewrite).await.unwrap() else {
+        panic!("a head that ends is read");
+    };
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "POST /hooks/x HTTP/1.1\r\ncontent-length: 2\r\nX-Forwarded-Uri: /x\r\n\r\nhi"
@@ -501,4 +503,77 @@ async fn nothing_listening_gets_the_clis_own_502() {
     let _ = tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut got)).await;
     let text = String::from_utf8_lossy(&got);
     assert!(text.contains("x-whk-nothing-listening: 1"), "{text}");
+}
+
+#[tokio::test]
+async fn a_head_over_the_limit_gets_431_and_never_reaches_the_app() {
+    let port = hello_server().await;
+    let rewrite = Rewrite {
+        base_path: "/api".into(),
+        headers: vec![("x-extra".into(), "1".into())],
+    };
+    for padding in [70 * 1024, MAX_HEAD + 100] {
+        let (edge_end, cli_end) = tokio::io::duplex(1 << 16);
+        let (opener, _none, _edge) = mux::spawn(edge_end, yamux::Mode::Client);
+        let (_unused, mut inbound, _cli) = mux::spawn(cli_end, yamux::Mode::Server);
+        let mut stream = opener.open().await.unwrap();
+        let head = format!(
+            "POST /hooks HTTP/1.1\r\nx-big: {}\r\n\r\n",
+            "a".repeat(padding)
+        );
+        let writer = tokio::spawn(async move {
+            let _ = stream.write_all(head.as_bytes()).await;
+            let mut got = Vec::new();
+            let _ =
+                tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut got)).await;
+            got
+        });
+        let local = inbound.recv().await.unwrap();
+        tokio::spawn(pipe(
+            local,
+            at(LocalHost::Localhost, port),
+            Some(rewrite.clone()),
+        ));
+        let got = writer.await.unwrap();
+        let text = String::from_utf8_lossy(&got);
+        assert!(
+            text.starts_with("HTTP/1.1 431 Request Header Fields Too Large\r\n"),
+            "{padding}: {text}"
+        );
+        assert!(
+            text.ends_with("more than whk passes to the app.\n"),
+            "{text}"
+        );
+        assert!(!text.contains("hello"), "the app never saw it: {text}");
+    }
+}
+
+#[tokio::test]
+async fn an_edge_that_never_answers_the_upgrade_is_tried_again() {
+    // Accepts the connection (the kernel does) and never says a word.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let session = Session {
+        tunnel_url: format!("ws://{addr}"),
+        api: test_api(),
+        kind: Kind::Share {
+            name: None,
+            password: None,
+        },
+        host: LocalHost::Localhost,
+        port: 1,
+        rewrite: None,
+        client: "test".into(),
+    };
+    let started = Instant::now();
+    let failed = once(&session, "instance", &mut None, false, &mut |_| {}).await;
+    assert!(started.elapsed() < CONNECT_TIMEOUT * 3);
+    assert_eq!(
+        failed.err(),
+        Some(Failure::Transient(format!(
+            "The tunnel did not answer within {} s.",
+            CONNECT_TIMEOUT.as_secs()
+        )))
+    );
+    drop(listener);
 }

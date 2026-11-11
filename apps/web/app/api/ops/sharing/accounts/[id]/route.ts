@@ -1,6 +1,6 @@
 import { auditUserAction, type AuditAction } from "@/lib/audit";
 import { reportError } from "@/lib/observability";
-import { authenticateStaffRequest, opsJson } from "@/lib/staff";
+import { authenticateStaffRequest, isStaff, opsJson } from "@/lib/staff";
 import { accountSharing, setNoticeLifted, setSharingSuspended } from "@/lib/tunnels/moderation";
 import { describeStopped, opsBody, sharingOffForOps } from "@/lib/tunnels/ops-request";
 import { stopShares } from "@/lib/tunnels/stops";
@@ -60,6 +60,9 @@ export async function POST(request: Request, { params }: Params) {
       const r = await stopShares({ userId: id }, "staff");
       message = describeStopped(r.stopped, r.edgeReached);
     } else if (action === "suspend" || action === "restore") {
+      // As from a report: staff accounts are never suspended.
+      if (action === "suspend" && (await isStaff(id)))
+        return opsJson({ error: "Staff accounts are not suspended." }, { status: 400 });
       const r = await setSharingSuspended(id, action === "suspend");
       found = r !== null;
       message =

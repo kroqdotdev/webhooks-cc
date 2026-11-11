@@ -3,7 +3,7 @@ title: "Share localhost"
 description: "Share the site running on your machine at a public HTTPS link with whk share: random or reserved names on sharehooks.cc, passwords, plan limits, and what previews refuse to serve."
 section: cli
 order: 4
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-11
 schema: howto
 keywords:
   [
@@ -166,7 +166,9 @@ whk shares stop acme     # by name or id
 {"event":"stopped","reason":"you stopped it on webhooks.cc"}
 ```
 
-Other events are `reconnected`, `retrying` and `notice` (something the edge wants you to know). A share that ends for any reason after it was live (Ctrl-C, `SIGTERM`, a stop on webhooks.cc, the plan's time limit, a plan change) prints `stopped` and exits with status 0. A share refused before it ever opened (a name that is taken, the plan's limit, a bad key) prints `error` and exits with status 1.
+Other events are `reconnected`, `retrying` and `notice` (something the edge wants you to know). A share that ends for any reason after it was live (Ctrl-C, `SIGTERM`, a stop on webhooks.cc, the plan's time limit, a plan change, or a reconnect refused because the month's data is used up) prints `stopped` and exits with status 0. A share refused before it ever opened (a name that is taken, the plan's limit, a bad key) prints `error` and exits with status 1. Trouble that passes (the tunnel out of reach, a rate limit, a proxy's error page) is retried, never taken as the end.
+
+The events go out without holding up visitors: when the program reading them falls behind, `request` lines are dropped first, and the other events still arrive in order.
 
 The `--until-stdin-closes` flag stops the share when its standard input closes, which is how the SDK and the MCP server stop the shares they start on every platform.
 

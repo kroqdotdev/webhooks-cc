@@ -37,9 +37,17 @@ pub const DEFAULT_TUNNEL_URL: &str = "wss://tunnel.webhooks.cc";
 /// The longest a reconnect waits.
 const MAX_WAIT: Duration = Duration::from_secs(30);
 
-/// The most a relayed request's head may take before it is passed on
-/// unchanged (`--live` with a path or `-H` headers to add).
+/// The most a relayed request's head may take (`--live`, and a share with
+/// something to change); a longer one is answered 431 by the CLI itself.
 const MAX_HEAD: usize = 64 * 1024;
+
+/// How long opening the connection to the edge (TCP, TLS and the upgrade)
+/// may take before it counts as unreachable and is tried again.
+const CONNECT_TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_secs(1)
+} else {
+    Duration::from_secs(20)
+};
 
 /// The edge to connect to: `WHK_TUNNEL_URL`, else the default.
 pub fn tunnel_url() -> String {
@@ -350,22 +358,32 @@ async fn once(
     }
 
     ensure_crypto();
-    let socket =
-        match tokio_tungstenite::connect_async_with_config(request, Some(ws::config()), true).await
-        {
-            Ok((socket, _)) => socket,
-            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
-                return Err(refusal(
-                    response.status().as_u16(),
-                    response.body().as_deref(),
-                ));
-            }
-            Err(e) => {
-                return Err(Failure::Transient(format!(
-                    "Could not reach the tunnel ({e})."
-                )));
-            }
-        };
+    // A network that swallows packets would otherwise hold the connect
+    // until the kernel gives up, minutes later, with no retry meanwhile.
+    let connecting = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        tokio_tungstenite::connect_async_with_config(request, Some(ws::config()), true),
+    );
+    let socket = match connecting.await {
+        Ok(Ok((socket, _))) => socket,
+        Ok(Err(tokio_tungstenite::tungstenite::Error::Http(response))) => {
+            return Err(refusal(
+                response.status().as_u16(),
+                response.body().as_deref(),
+            ));
+        }
+        Ok(Err(e)) => {
+            return Err(Failure::Transient(format!(
+                "Could not reach the tunnel ({e})."
+            )));
+        }
+        Err(_) => {
+            return Err(Failure::Transient(format!(
+                "The tunnel did not answer within {} s.",
+                CONNECT_TIMEOUT.as_secs()
+            )));
+        }
+    };
 
     let (bytes, mut text) = ws::split(socket);
     let (_opener, mut inbound, mut mux_task) = mux::spawn(bytes, yamux::Mode::Server);
@@ -448,15 +466,36 @@ async fn pipe(mut stream: MuxStream, target: LocalTarget, rewrite: Option<Rewrit
     let _ = local.set_nodelay(true);
     if let Some(rewrite) = rewrite {
         match rewritten_head(&mut stream, &rewrite).await {
-            Ok(head) => {
+            Ok(Head::Ready(head)) => {
                 if local.write_all(&head).await.is_err() {
                     return;
                 }
+            }
+            // Passed on unchanged it would miss the base path and the -H
+            // headers, so the app would see a request it was not sent.
+            Ok(Head::TooLarge) => {
+                drop(local);
+                let _ = stream.write_all(&head_too_large()).await;
+                let _ = stream.shutdown().await;
+                return;
             }
             Err(_) => return,
         }
     }
     splice::splice(&mut stream, &mut local, splice::LINGER).await;
+}
+
+/// The CLI's own 431 for a request whose head is over [`MAX_HEAD`].
+pub fn head_too_large() -> Vec<u8> {
+    let body = format!(
+        "The request's headers are over {} KB, more than whk passes to the app.\n",
+        MAX_HEAD / 1024
+    );
+    format!(
+        "HTTP/1.1 431 Request Header Fields Too Large\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .into_bytes()
 }
 
 /// The CLI's own 502 when nothing listens on the port.
@@ -469,29 +508,42 @@ pub fn nothing_listening(target: LocalTarget) -> Vec<u8> {
     .into_bytes()
 }
 
+/// A relayed request's head, read.
+#[derive(Debug, PartialEq)]
+enum Head {
+    /// What to send the local server: the head as rewritten (or as it came,
+    /// when it is not HTTP/1 or the stream ended first), then whatever of
+    /// the body came with it.
+    Ready(Vec<u8>),
+    /// No end within [`MAX_HEAD`].
+    TooLarge,
+}
+
 /// Reads a relayed request's head and gives it back with its path under
 /// the target's base path and the `-H` headers in place of any of the same
-/// name, followed by whatever of the body came with it. A head that never
-/// ends within `MAX_HEAD` is passed on as it came.
+/// name, followed by whatever of the body came with it.
 async fn rewritten_head<S: AsyncRead + Unpin>(
     stream: &mut S,
     rewrite: &Rewrite,
-) -> std::io::Result<Vec<u8>> {
+) -> std::io::Result<Head> {
     let mut buf = Vec::with_capacity(4096);
     let mut chunk = [0u8; 4096];
     loop {
         if let Some(end) = find_head_end(&buf) {
+            if end > MAX_HEAD {
+                return Ok(Head::TooLarge);
+            }
             let (head, rest) = buf.split_at(end);
             let mut out = rewrite_head(head, rewrite).unwrap_or_else(|| head.to_vec());
             out.extend_from_slice(rest);
-            return Ok(out);
+            return Ok(Head::Ready(out));
         }
         if buf.len() >= MAX_HEAD {
-            return Ok(buf);
+            return Ok(Head::TooLarge);
         }
         let n = stream.read(&mut chunk).await?;
         if n == 0 {
-            return Ok(buf);
+            return Ok(Head::Ready(buf));
         }
         buf.extend_from_slice(&chunk[..n]);
     }

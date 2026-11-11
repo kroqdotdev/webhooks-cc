@@ -11,8 +11,9 @@ use tokio::sync::mpsc;
 use crate::api::ApiClient;
 use crate::tui::widgets::spinner::Spinner;
 use crate::tui::{keys, theme};
-use crate::types::{CapturedRequest, ParsedEmail};
+use crate::types::{CapturedRequest, LiveResponse, ParsedEmail};
 use crate::util::format::{format_bytes, format_timestamp};
+use crate::util::live::live_response_lines;
 use crate::util::parsed::{Tone, parsed_lines};
 
 use super::{Action, Message, Screen};
@@ -298,6 +299,10 @@ fn render_overview(frame: &mut Frame, area: Rect, req: &CapturedRequest, scroll:
         lines.extend(parsed_overview(parsed, area.width as usize));
     }
 
+    if let Some(ref live) = req.live_response {
+        lines.extend(live_overview(live));
+    }
+
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  ID: ", theme::style_muted()),
@@ -328,6 +333,23 @@ fn parsed_overview(parsed: &ParsedEmail, width: usize) -> Vec<Line<'static>> {
             Span::styled(text, style)
         }));
         lines.push(Line::from(spans));
+    }
+    lines
+}
+
+/// The overview's "Live Response" section: what the sender got while
+/// `whk tunnel --live` relayed the request, the lines `whk requests get`
+/// prints.
+fn live_overview(live: &LiveResponse) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled("  Live Response", theme::style_primary_bold())),
+    ];
+    for text in live_response_lines(live) {
+        lines.push(Line::from(Span::styled(
+            format!("    {text}"),
+            theme::style(),
+        )));
     }
     lines
 }
@@ -436,5 +458,18 @@ mod tests {
         assert!(rows.iter().any(|row| row == "  Parsed"), "{rows:#?}");
         assert!(rows.iter().any(|row| row == "    Layout: Acme orders"));
         assert!(rows.iter().any(|row| row == "      po: not found"));
+    }
+
+    #[test]
+    fn overview_shows_what_a_live_relay_answered() {
+        let live: LiveResponse = serde_json::from_value(serde_json::json!({
+            "status": 201, "headers": {"content-type": "application/json"},
+            "body": "{}", "bodyEncoding": "utf8", "ms": 7, "outcome": "answered"
+        }))
+        .unwrap();
+        let lines: Vec<String> = live_overview(&live).iter().map(text).collect();
+        assert_eq!(lines[1], "  Live Response");
+        assert_eq!(lines[2], "    Status: 201 (your app answered in 7 ms)");
+        assert_eq!(lines[3], "    content-type: application/json");
     }
 }

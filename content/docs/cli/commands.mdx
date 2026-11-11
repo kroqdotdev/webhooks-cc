@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-11
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -198,13 +198,16 @@ whk share <port>
 
 ## shares
 
-List and stop your shares, and a teammate's under a team name.
+List and stop your shares, and a teammate's under a team name, and see what visitors asked for.
 
 ```bash
 whk shares ls              # live shares and this month's data
 whk shares ls --ended      # earlier shares
+whk shares log <id|name>   # the last requests visitors made to a live share, newest first
 whk shares stop <id|name>
 ```
+
+`whk shares log` (also `whk shares requests`) lists each request's time, method, path, status, duration and data, with the visitor's number, device and country, never their address. `--json` prints the API's answer as it is.
 
 `whk shares stop` also stops a share whose CLI is reconnecting after a dropped connection (within 5 minutes), so it does not come back.
 
@@ -253,6 +256,8 @@ Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the ad
 ```
 2026-10-08 16:47:20 EMAIL acme+run-7@mailhooks.cc Confirm your email 1.2 KB
 ```
+
+`whk requests get` on a request a [live tunnel](/docs/live-tunnel) relayed adds the **Live Response**: the status the sender got and why, the first few headers and the start of the body (`--json` has the whole record as `liveResponse`).
 
 `whk requests get` on an email shows the sender, recipient, subject, tag, attachments, and text part instead of the raw message. Add `--json` for the headers and the raw message; the HTML and the sender checks are in the dashboard.
 

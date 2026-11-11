@@ -268,7 +268,9 @@ type TunnelShare struct {
 	// ExpiresAt is when the plan's session time runs out; zero without a
 	// limit.
 	ExpiresAt time.Time
-	// Bytes is the data sent to visitors.
+	// Bytes is what visitors moved through a preview, both ways (downloads
+	// and uploads, WebSockets included). Live tunnels count captures
+	// instead.
 	Bytes    int64
 	Requests int64
 	// Password is true when visitors need a password.

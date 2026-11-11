@@ -152,7 +152,7 @@ whk auth status      # Show login status
 whk auth logout      # Clear stored token
 whk tunnel <port>    # Forward webhooks to localhost (--live: the sender gets your app's answer)
 whk share <port>     # Share a local site at https://<name>.sharehooks.cc
-whk shares ls|stop   # See and stop shares
+whk shares ls|stop|log   # See and stop shares, and who opened them
 whk names ls|reserve|release|password   # Names to share under (paid plans)
 whk listen <slug>    # Stream requests to terminal
 whk create [name]    # Create endpoint
@@ -207,7 +207,7 @@ await client.endpoints.delete(endpoint.slug);
 
 ## MCP server setup
 
-The remote server at https://webhooks.cc/mcp is the recommended way in: no key and nothing to install, one approval in the browser. It has the same tools as the local server except `send_to` and `replay_request` (a hosted server cannot reach your machine), and no prompts or resources.
+The remote server at https://webhooks.cc/mcp is the recommended way in: no key and nothing to install, one approval in the browser. It has the same tools as the local server except `send_to`, `replay_request` and `share_port` (a hosted server cannot reach your machine; run `whk share <port>` there instead), and no prompts or resources.
 
 ```bash
 # Claude Code, remote MCP server (then /mcp in Claude Code to sign in)

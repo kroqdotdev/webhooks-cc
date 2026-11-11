@@ -288,13 +288,17 @@ function accountClient(input: AccountClientInput): WebhooksCC {
     undefined,
     input.userAgent
   );
-  return new WebhooksCC({
+  const client = new WebhooksCC({
     baseUrl: input.baseUrl,
     webhookUrl: input.webhookUrl,
     timeout: input.timeout,
     userAgent: input.userAgent,
     getAccessToken: (refresh) => tokens.get(refresh?.forceRefresh ?? false),
   });
+  // The claimed slot is in the credential file, so `shares.start()` runs whk
+  // on this same connection, as for a client from `WebhooksCC.connected()`.
+  if (input.store?.path) markAgentClient(client, input.store.path);
+  return client;
 }
 
 interface PendingClaim {

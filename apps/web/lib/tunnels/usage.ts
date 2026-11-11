@@ -1,5 +1,6 @@
 import { sendEmail } from "@/lib/email/mailer";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inChunks } from "@/lib/supabase/in-chunks";
 import { reportError } from "@/lib/observability";
 import { tunnelPlanOf, tunnelPlansOf, type TunnelPlan } from "./plan";
 
@@ -218,18 +219,22 @@ export async function overAllowance(now = Date.now()): Promise<string[]> {
 export async function tellPaused(userIds: string[], now = Date.now()): Promise<void> {
   if (userIds.length === 0) return;
   const admin = createAdminClient();
-  const { data: newly, error } = await admin
-    .from("tunnel_usage")
-    .update({ paused_at: new Date(now).toISOString() })
-    .eq("month", monthOf(now))
-    .in("user_id", userIds)
-    .is("paused_at", null)
-    .select("user_id");
-  if (error) {
+  let newly: { user_id: string }[];
+  try {
+    newly = await inChunks(userIds, (chunk) =>
+      admin
+        .from("tunnel_usage")
+        .update({ paused_at: new Date(now).toISOString() })
+        .eq("month", monthOf(now))
+        .in("user_id", chunk)
+        .is("paused_at", null)
+        .select("user_id")
+    );
+  } catch (error) {
     reportError("Failed to mark paused previews", error);
     return;
   }
-  for (const { user_id: userId } of newly ?? []) {
+  for (const { user_id: userId } of newly) {
     try {
       const [{ data: owner }, plan] = await Promise.all([
         admin.from("users").select("email").eq("id", userId).maybeSingle(),

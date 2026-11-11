@@ -92,7 +92,7 @@ export async function openShare(input: {
     };
   if (answer.error === "taken") return { error: "That name is taken.", status: 409, taken: true };
   if (answer.error === "slots")
-    return { error: slotsMessage(input.plan, input.kind, slots), status: 429 };
+    return { error: slotsMessage(input.plan, input.kind, slots), status: 403 };
   if (answer.error || !answer.shareId) return { error: "That account is gone.", status: 401 };
   return {
     shareId: answer.shareId,

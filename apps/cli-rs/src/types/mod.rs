@@ -172,6 +172,44 @@ pub struct CapturedRequest {
     /// request is moved around the TUI's messages.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parsed: Option<Box<ParsedEmail>>,
+    /// What the sender got while `whk tunnel --live` relayed the capture:
+    /// the local app's answer, or what stood in for it. Only from the REST
+    /// API, once the answer finished. Boxed like `parsed`.
+    #[serde(
+        rename = "liveResponse",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub live_response: Option<Box<LiveResponse>>,
+}
+
+/// `liveResponse` on a request, as the API sends it (`LiveResponse` in
+/// openapi.yaml).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveResponse {
+    /// The status the sender got, the app's or the stand-in's.
+    #[serde(default)]
+    pub status: Option<u16>,
+    /// The headers the sender got.
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    /// The first 64 KB of the answer, as text, or base64 when
+    /// `body_encoding` is "base64".
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub body_truncated: bool,
+    /// "utf8" or "base64".
+    #[serde(default)]
+    pub body_encoding: String,
+    /// How long the app took, in milliseconds.
+    #[serde(default)]
+    pub ms: Option<u64>,
+    /// "answered", or what stood in: "offline", "timeout", "unreachable",
+    /// "busy" or "refused".
+    #[serde(default)]
+    pub outcome: String,
 }
 
 /// `parsed` on a captured email, as the SDK's `ParsedEmail`
@@ -408,6 +446,7 @@ impl From<SearchHit> for CapturedRequest {
             kind: None,
             email: None,
             parsed: None,
+            live_response: None,
         }
     }
 }

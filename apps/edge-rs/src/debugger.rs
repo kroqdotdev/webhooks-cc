@@ -27,6 +27,9 @@ use crate::header_str;
 /// the debugger was refused.
 pub const NOTICE: &str = "Not passed to visitors: Werkzeug's debugger (flask run --debug), whose console runs Python on this computer. Its error pages still show to anyone with the link, with your code: share without --debug, or with --password.";
 
+/// The same, for a live tunnel: the captures' senders are kept from it.
+pub const LIVE_NOTICE: &str = "Not passed to your app: a request for Werkzeug's debugger (flask run --debug), whose console runs Python on this computer. Anyone with the capture URL can send one; tunnel without --debug.";
+
 /// The largest answer at `/console` read to see whether it is Werkzeug's
 /// console page, which is under 2 KB. A larger one is passed on as it
 /// streams, unread.

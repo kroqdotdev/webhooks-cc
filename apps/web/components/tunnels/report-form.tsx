@@ -170,7 +170,8 @@ export function ReportForm({ url, siteKey }: { url: string; siteKey: string | nu
       </div>
       <p className="-mt-3 text-xs text-muted-foreground">
         {csam ? "If you leave your email, we" : "We"} send a receipt and tell you what we decide.
-        The person who shared the preview does not see who reported it.
+        The person who shared the preview does not see who reported it. We delete your name and
+        email 90 days after we close the report, and the report a year after it was made.
       </p>
       <label className="flex items-start gap-3 text-sm">
         <input

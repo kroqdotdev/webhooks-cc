@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { chunked, IN_CHUNK } from "@/lib/supabase/in-chunks";
 import { closeOnEdge } from "./edge";
 
 /*
@@ -141,6 +142,16 @@ const RECONNECT_GAP_MS = 5 * 60_000;
 export async function stopShares(which: StopWhich, kind: StopKind): Promise<Stopped> {
   const admin = createAdminClient();
   if ("ids" in which && which.ids.length === 0) return { stopped: 0, edgeReached: true };
+  // A long list goes a chunk at a time, since `.in()` rides in the URL.
+  if ("ids" in which && which.ids.length > IN_CHUNK) {
+    const total: Stopped = { stopped: 0, edgeReached: true };
+    for (const ids of chunked(which.ids)) {
+      const r = await stopShares({ ids }, kind);
+      total.stopped += r.stopped;
+      total.edgeReached &&= r.edgeReached;
+    }
+    return total;
+  }
   const chosen = <Q extends { eq: (c: string, v: string) => Q; in: (c: string, v: string[]) => Q }>(
     query: Q
   ): Q => {
@@ -158,7 +169,7 @@ export async function stopShares(which: StopWhich, kind: StopKind): Promise<Stop
   // Runs that dropped a moment ago and may be reconnecting: the stop becomes
   // their ending, and runs of the same CLI run that reconnected already end.
   const { data: dropped, error: droppedError } = await chosen(
-    admin.from("tunnel_shares").select("id, user_id, instance")
+    admin.from("tunnel_shares").select("id, user_id, instance, kind, endpoint_id")
   )
     .not("ended_at", "is", null)
     .gt("ended_at", new Date(Date.now() - RECONNECT_GAP_MS).toISOString())
@@ -175,6 +186,22 @@ export async function stopShares(which: StopWhich, kind: StopKind): Promise<Stop
       )
       .in("end_reason", DROPPED_ENDINGS);
     if (markError) throw markError;
+    // The drop left its endpoint answering 502 for two minutes while the CLI
+    // reconnects; a stop means no reconnect, so senders get the endpoint's
+    // usual answer at once. One that went live again is ended below.
+    const endpoints = [
+      ...new Set(
+        caught.flatMap((r) => (r.kind === "live" && r.endpoint_id ? [r.endpoint_id] : []))
+      ),
+    ];
+    if (endpoints.length > 0) {
+      const { error: graceError } = await admin
+        .from("endpoints")
+        .update({ live_grace_until: null })
+        .in("id", endpoints)
+        .is("live_session_id", null);
+      if (graceError) throw graceError;
+    }
   }
 
   const { data: open, error } = await chosen(admin.from("tunnel_shares").select("id")).is(
