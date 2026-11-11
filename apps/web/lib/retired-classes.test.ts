@@ -78,8 +78,15 @@ describe("retired style classes", () => {
 
   it("keeps globals.css free of the retired tokens", () => {
     const css = readFileSync(path.join(ROOT, "app", "globals.css"), "utf8");
-    for (const token of ["--line", "--action", "--press", "--primary-ink", "data-style", "caps"]) {
-      expect(css, token).not.toMatch(new RegExp(`${token.replace(/[-]/g, "\\-")}(?![\\w-])`));
+    for (const token of [
+      /--line(?![\w-])/,
+      /--action(?![\w-])/,
+      /--press(?![\w-])/,
+      /--primary-ink(?![\w-])/,
+      /data-style/,
+      /(?<![\w-])caps(?![\w-])/,
+    ]) {
+      expect(css).not.toMatch(token);
     }
   });
 });

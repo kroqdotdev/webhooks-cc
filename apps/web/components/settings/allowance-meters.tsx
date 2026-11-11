@@ -107,7 +107,7 @@ export function AllowanceMeters({
   if (!parsedPages && !previewData && !aiAssists) return null;
 
   return (
-    <ul aria-label="Other allowances" className="mt-6 border-t border-line/60 pt-5">
+    <ul aria-label="Other allowances" className="mt-6 border-t border-border/60 pt-5">
       {parsedPages && (
         <AllowanceRow
           name="Parsed pages"
