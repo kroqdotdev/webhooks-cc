@@ -219,8 +219,9 @@ function httpRow(page: Page) {
   return page.getByRole("option", { name: /^POST \/hooks\/orders/ });
 }
 
+/** The email's row: "EMAIL <subject>" in the mixed list, the subject alone once the list shows only emails. */
 function emailRow(page: Page) {
-  return page.getByRole("option", { name: new RegExp(`EMAIL ${SUBJECT}`) });
+  return page.getByRole("option", { name: new RegExp(`^(EMAIL )?${SUBJECT}`) });
 }
 
 for (const theme of ["light", "dark"] as const) {
@@ -374,7 +375,7 @@ test("codes and links can be turned off for the endpoint", async ({ page }) => {
   }
   await receiving.getByRole("switch", { name: "Codes and links" }).click();
   await receiving.getByRole("button", { name: "Save changes" }).click();
-  await expect(receiving.getByText("Saved.")).toBeVisible({ timeout: 10000 });
+  await expect(receiving.getByText("Saved.", { exact: true })).toBeVisible({ timeout: 10000 });
 
   await expect
     .poll(async () => {
@@ -435,5 +436,6 @@ test("the email switch reaches emails older than the newest page", async ({ page
   await expect(emailRow(page)).toBeVisible();
 
   await show.getByRole("radio", { name: /^All/ }).click();
-  await expect(shown(page.getByRole("combobox", { name: "Method" }))).toHaveValue("ALL");
+  // A Radix Select: the trigger shows the picked method's label.
+  await expect(shown(page.getByRole("combobox", { name: "Method" }))).toHaveText("All methods");
 });

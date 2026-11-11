@@ -98,7 +98,7 @@ test("user with no teams sees the create form, not an upgrade wall", async ({ pa
 
   await expect(page.getByRole("button", { name: "New team" })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("You're not in a team yet")).toBeVisible();
-  await expect(page.getByText("Teams are $12 a seat each month")).toBeVisible();
+  await expect(page.getByText(/A Teams seat is \$12 a month/)).toBeVisible();
 
   // The Pro wall is gone — teams are gated by the team's own subscription
   await expect(page.getByText("Teams is a Pro feature")).not.toBeVisible();

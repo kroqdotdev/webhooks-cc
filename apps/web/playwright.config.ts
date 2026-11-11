@@ -52,7 +52,9 @@ export default defineConfig({
     ...(shouldManageReceiver
       ? [
           {
-            command: `cd ../receiver-rs && set -a && . ../../.env.local && set +a && PORT=${receiverPort} SIGNING_SECRET_KEY=${signingSecretKey} ${cargoBin} run`,
+            // The mail listener on 3002 too, as make dev-receiver opens it: the
+            // email specs deliver to it.
+            command: `cd ../receiver-rs && set -a && . ../../.env.local && set +a && PORT=${receiverPort} SIGNING_SECRET_KEY=${signingSecretKey} MAIL_INGEST_ADDR="\${MAIL_INGEST_ADDR:-127.0.0.1:3002}" ${cargoBin} run`,
             url: new URL("/health", receiverURL).toString(),
             reuseExistingServer: true,
             timeout: 120_000,

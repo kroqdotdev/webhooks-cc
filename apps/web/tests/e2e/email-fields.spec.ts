@@ -156,14 +156,14 @@ test("a field shows what it finds as it is typed, and saves", async ({ page }) =
 
 test("the email shows the field and the reply on its own", async ({ page }) => {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await shown(page.getByRole("button", { name: /Re: Invoice INV-2041/ }))
+  await shown(page.getByRole("option", { name: /Re: Invoice INV-2041/ }))
     .first()
     .click();
   const found = shown(page.getByText("Found in this email"));
   await expect(found).toBeVisible({ timeout: 15000 });
   await expect(shown(page.getByRole("button", { name: "Copy invoice" }))).toBeVisible();
 
-  await shown(page.getByRole("button", { name: "Text", exact: true })).click();
+  await shown(page.getByRole("tab", { name: "Text", exact: true })).click();
   await shown(page.getByRole("button", { name: "Reply only" })).click();
   await expect(shown(page.getByText("Paid this morning, thanks!", { exact: true }))).toBeVisible();
   await expect(shown(page.getByText("> Total: 42.00 EUR"))).toHaveCount(0);

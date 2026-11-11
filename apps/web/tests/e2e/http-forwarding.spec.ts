@@ -110,7 +110,7 @@ async function openSettings(page: Page) {
 
 async function saveDestination(section: Locator) {
   await section.getByRole("button", { name: "Save destination" }).click();
-  await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
+  await expect(section.getByText("Saved.", { exact: true })).toBeVisible({ timeout: 10000 });
 }
 
 /** Opens the destination's editor from its row. */

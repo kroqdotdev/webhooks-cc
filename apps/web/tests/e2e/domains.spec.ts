@@ -84,7 +84,7 @@ test("a Business account adds a domain, checks it, and routes an address once ve
   await card.getByRole("button", { name: "Add an address" }).click();
   await card.getByLabel("Address name").fill("orders");
   await card.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(card.getByText("Saved.")).toBeVisible();
+  await expect(card.getByText("Saved.", { exact: true })).toBeVisible();
   await expect(card.getByText("Receiving mail")).toBeVisible();
 
   // The route belongs to this test's domain, not another on the same endpoint.
@@ -106,6 +106,8 @@ test("a domain past the plan is refused, and extra domains go through a checkout
   page,
   baseURL,
 }) => {
+  // Extra domains are on sale only with the Polar domain products in .env.local.
+  test.skip(!process.env.POLAR_DOMAINS_PRODUCT_ID, "needs POLAR_DOMAINS_PRODUCT_ID");
   const user = await userWith({ plan: "business", subscription_status: "active" });
   const older = uniqueDomain("first");
   const newer = uniqueDomain("second");

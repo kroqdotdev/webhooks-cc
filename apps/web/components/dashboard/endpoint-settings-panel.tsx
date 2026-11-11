@@ -513,13 +513,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
       <Field
         id="settings-signing-provider"
         label="Provider"
-        help={
-          provider === "sendgrid"
-            ? "SendGrid uses IP allowlisting, so it is template-only for now."
-            : provider === "plaid"
-              ? "Plaid verification needs Plaid API credentials, so it is template-only for now."
-              : "Pick the provider that signs this endpoint's webhooks, and paste its secret."
-        }
+        help="Pick the provider that signs this endpoint's webhooks, and paste its secret."
       >
         {/* Radix items cannot carry an empty value, so None has its own. */}
         <Select

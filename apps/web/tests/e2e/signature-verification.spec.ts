@@ -165,7 +165,7 @@ async function insertServerVerifiedRequest({
 }
 
 function signatureTabButton(page: import("@playwright/test").Page) {
-  return page.getByRole("button", { name: /^signature$/i }).first();
+  return page.getByRole("tab", { name: /^signature$/i }).first();
 }
 
 /**
@@ -260,8 +260,9 @@ test("signing config section is visible in endpoint settings", async ({ page }) 
 test("provider dropdown lists providers", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
-  const select = page.locator("#settings-signing-provider");
-  const options = select.locator("option");
+  // A Radix Select: its options exist only while the list is open.
+  await page.locator("#settings-signing-provider").click();
+  const options = page.locator('[role="listbox"][data-state="open"]').getByRole("option");
   // None + 32 verifiable named providers + generic-hmac.
   // SendGrid and Plaid are excluded from endpoint signing configuration.
   await expect(options).toHaveCount(34);
@@ -269,13 +270,6 @@ test("provider dropdown lists providers", async ({ page }) => {
   await expect(options.filter({ hasText: "Telegram" })).toHaveCount(1);
   await expect(options.filter({ hasText: "Bitbucket" })).toHaveCount(1);
   await expect(options.filter({ hasText: "PayPal" })).toHaveCount(1);
-});
-
-test("SendGrid IP allowlisting info is shown", async ({ page }) => {
-  await openDashboard(page);
-  await openSettings(page);
-  // SendGrid is no longer in the dropdown but the info text is always visible
-  await expect(page.locator("text=IP allowlisting")).toBeVisible();
 });
 
 test("selecting Discord changes label to Public Key", async ({ page }) => {
@@ -300,7 +294,9 @@ test("configure signing secret and save", async ({ page }) => {
   await page.fill("#settings-signing-secret", TEST_SECRET);
   await verificationSection(page).getByRole("button", { name: "Save changes" }).click();
   // "Saved." shows once the endpoint list has been read again, which is slow under load.
-  await expect(verificationSection(page).getByText("Saved.")).toBeVisible({ timeout: 15000 });
+  await expect(verificationSection(page).getByText("Saved.", { exact: true })).toBeVisible({
+    timeout: 15000,
+  });
 
   await expect
     .poll(async () => {
@@ -324,7 +320,7 @@ test("configure signing secret and save", async ({ page }) => {
 
   // Reopen and verify status shows configured
   await openSettings(page);
-  await expect(page.locator("#settings-signing-provider")).toHaveValue("standard-webhooks");
+  await expect(page.locator("#settings-signing-provider")).toHaveText("Standard Webhooks");
   await expect(
     verificationSection(page).getByText("Verifying Standard Webhooks signatures")
   ).toBeVisible({ timeout: 5000 });
@@ -338,7 +334,7 @@ test("Signature tab is visible in request detail", async ({ page }) => {
 
   await openDashboard(page);
 
-  await page.locator("button").filter({ hasText: path }).first().click();
+  await page.getByRole("option").filter({ hasText: path }).first().click();
   await expect(signatureTabButton(page)).toBeVisible();
 });
 
@@ -348,7 +344,7 @@ test("Signature tab shows server-side valid result", async ({ page }) => {
 
   await openDashboard(page);
 
-  await page.locator("button").filter({ hasText: path }).first().click();
+  await page.getByRole("option").filter({ hasText: path }).first().click();
 
   // Click Signature tab
   await signatureTabButton(page).click();
@@ -364,7 +360,7 @@ test("invalid signature shows mismatch details", async ({ page }) => {
 
   await openDashboard(page);
 
-  await page.locator("button").filter({ hasText: path }).first().click();
+  await page.getByRole("option").filter({ hasText: path }).first().click();
   await signatureTabButton(page).click();
 
   await expect(
@@ -411,9 +407,12 @@ test("client-side verification form shown when no config", async ({ page }) => {
   await signatureTabButton(page).click();
 
   // Should show the client-side verification form
-  await expect(page.locator("text=Verify Signature")).toBeVisible({ timeout: 5000 });
+  // The detail renders for desktop and mobile; one panel is shown.
+  await expect(page.getByText("Verify signature").filter({ visible: true })).toBeVisible({
+    timeout: 5000,
+  });
   await expect(page.locator("#sig-provider").first()).toBeVisible();
-  await expect(page.locator("text=never sent to our servers")).toBeVisible();
+  await expect(page.getByText("never sent to our servers").filter({ visible: true })).toBeVisible();
 });
 
 test("detected provider preselects manual verification when server-side verification is not configured", async ({
@@ -437,7 +436,7 @@ test("detected provider preselects manual verification when server-side verifica
 
   await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
   await expect(page.locator("text=Standard Webhooks").first()).toBeVisible();
-  await expect(page.locator("#sig-provider").first()).toHaveValue("standard-webhooks");
+  await expect(page.locator("#sig-provider").first()).toHaveText("Standard Webhooks");
 });
 
 // ── Tier-1 providers: client-side detection + manual-verify preselect ──
@@ -462,11 +461,11 @@ test("Meta webhook is detected and preselects manual verification to meta", asyn
   await new Promise((r) => setTimeout(r, 1000));
 
   await openDashboard(page);
-  await page.locator("button").filter({ hasText: marker }).first().click();
+  await page.getByRole("option").filter({ hasText: marker }).first().click();
   await signatureTabButton(page).click();
 
   await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
-  await expect(page.locator("#sig-provider").first()).toHaveValue("meta");
+  await expect(page.locator("#sig-provider").first()).toHaveText("Meta");
 });
 
 test("Coinbase Commerce webhook is detected and preselects manual verification", async ({
@@ -490,11 +489,11 @@ test("Coinbase Commerce webhook is detected and preselects manual verification",
   await new Promise((r) => setTimeout(r, 1000));
 
   await openDashboard(page);
-  await page.locator("button").filter({ hasText: marker }).first().click();
+  await page.getByRole("option").filter({ hasText: marker }).first().click();
   await signatureTabButton(page).click();
 
   await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
-  await expect(page.locator("#sig-provider").first()).toHaveValue("coinbase-commerce");
+  await expect(page.locator("#sig-provider").first()).toHaveText("Coinbase Commerce");
 });
 
 // ── Tier-2 providers: end-to-end server-side verification through the receiver ──
@@ -578,7 +577,7 @@ test("Square manual verification (client-side) verifies with the prefilled URL",
   await new Promise((r) => setTimeout(r, 1000));
 
   await openDashboard(page);
-  await page.locator("button").filter({ hasText: marker }).first().click();
+  await page.getByRole("option").filter({ hasText: marker }).first().click();
   await signatureTabButton(page).click();
 
   // Manual-verify form is shown (no server-side config).
@@ -607,7 +606,7 @@ test("HubSpot manual verification (client-side) verifies with the URL + method",
   await new Promise((r) => setTimeout(r, 1000));
 
   await openDashboard(page);
-  await page.locator("button").filter({ hasText: marker }).first().click();
+  await page.getByRole("option").filter({ hasText: marker }).first().click();
   await signatureTabButton(page).click();
 
   await expect(page.locator("text=Verify Signature").first()).toBeVisible({ timeout: 5000 });

@@ -189,7 +189,7 @@ test("can save a rule with placeholders, and the preview shows it answering", as
     .fill('{"received": "{{ json.type }}", "path": "{{ path }}"}');
 
   await section.getByRole("button", { name: "Save changes" }).click();
-  await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
+  await expect(section.getByText("Saved.", { exact: true })).toBeVisible({ timeout: 10000 });
 
   await page.reload();
   await openSettingsTab(page);

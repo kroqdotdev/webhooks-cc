@@ -204,6 +204,10 @@ test("a held way out leaves the other endpoint's request alone", async ({ page }
     .getByRole("button", { name: "Settings" })
     .click();
   await page.locator("#settings-name").fill("Edited, then left by Back");
+  // Wait until the edit counts as unsaved, or Back can beat it.
+  await expect(
+    page.getByRole("region", { name: "Receiving" }).getByText("Save changes")
+  ).toBeVisible();
 
   // Back to the other endpoint is held; the question stays up a while.
   await page.goBack();

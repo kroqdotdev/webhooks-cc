@@ -1,0 +1,6 @@
+{
+  "title": "Small fixes",
+  "items": [
+    "The account menu's staff check closes its request when the answer is no, instead of leaving it open"
+  ]
+}

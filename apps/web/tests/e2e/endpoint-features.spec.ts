@@ -200,7 +200,7 @@ test("an endpoint keeps requests for fewer days, or until every destination has 
   await retention.getByRole("radio", { name: "Fewer days" }).click();
   await retention.getByLabel("Days to keep").fill("3");
   await retention.getByRole("button", { name: "Save changes" }).click();
-  await expect(retention.getByText("Saved.")).toBeVisible({ timeout: 15000 });
+  await expect(retention.getByText("Saved.", { exact: true })).toBeVisible({ timeout: 15000 });
   let row = (
     await admin
       .from("endpoints")
@@ -212,7 +212,7 @@ test("an endpoint keeps requests for fewer days, or until every destination has 
 
   await retention.getByRole("radio", { name: "Deliver, then delete" }).click();
   await retention.getByRole("button", { name: "Save changes" }).click();
-  await expect(retention.getByText("Saved.")).toBeVisible({ timeout: 15000 });
+  await expect(retention.getByText("Saved.", { exact: true })).toBeVisible({ timeout: 15000 });
   row = (
     await admin
       .from("endpoints")
@@ -225,7 +225,7 @@ test("an endpoint keeps requests for fewer days, or until every destination has 
   // Back to the plan's retention, so the emails below stay.
   await retention.getByRole("radio", { name: /^\d+ days$/ }).click();
   await retention.getByRole("button", { name: "Save changes" }).click();
-  await expect(retention.getByText("Saved.")).toBeVisible({ timeout: 15000 });
+  await expect(retention.getByText("Saved.", { exact: true })).toBeVisible({ timeout: 15000 });
 });
 
 test("alerts are set up, and an open alert replays its emails", async ({ page }) => {
@@ -242,7 +242,7 @@ test("alerts are set up, and an open alert replays its emails", async ({ page })
   await alerts.getByLabel("Quiet for (hours)").fill("12");
   await turnOn("Failed deliveries");
   await alerts.getByRole("button", { name: "Save changes" }).click();
-  await expect(alerts.getByText("Saved.")).toBeVisible({ timeout: 15000 });
+  await expect(alerts.getByText("Saved.", { exact: true })).toBeVisible({ timeout: 15000 });
   const { data: saved } = await admin
     .from("endpoint_alerts")
     .select("enabled, silence_hours, destination_failures")
@@ -274,6 +274,8 @@ test("alerts are set up, and an open alert replays its emails", async ({ page })
 test("an email's attachment and its exact message download from the dashboard", async ({
   page,
 }) => {
+  // Attachment contents and the exact message are kept only in object storage.
+  test.skip(!process.env.OBJECT_STORAGE_BUCKET, "needs OBJECT_STORAGE_* for the receiver");
   const subject = `Order attached ${ts}`;
   const { raw } = await deliverMail(subject, "sku,qty\r\nB-2,5");
   await openDashboard(page);
@@ -305,6 +307,8 @@ test("an email's attachment and its exact message download from the dashboard", 
 });
 
 test("a Google Sheets destination is set up with a new spreadsheet", async ({ page }) => {
+  // Sheets is offered only with the Google OAuth client in .env.local.
+  test.skip(!process.env.GOOGLE_OAUTH_CLIENT_ID, "needs GOOGLE_OAUTH_CLIENT_ID");
   // A connected Google account, as the OAuth callback stores it; the calls
   // that would reach Google are stubbed.
   const { data: connection, error } = await admin

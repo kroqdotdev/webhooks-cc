@@ -49,9 +49,12 @@ export function useStaff(
     }
     void fetch("/api/ops/me", { headers: { Authorization: `Bearer ${token}` } })
       .then(async (response) => {
-        const value: StaffStatus = response.ok
-          ? ((await response.json()) as StaffStatus)
-          : { staff: false, aal2: false, hasFactor: false, waiting: null };
+        // Read the body either way, so a 404 does not leave the response open.
+        const body = (await response.json().catch(() => null)) as StaffStatus | null;
+        const value: StaffStatus =
+          response.ok && body
+            ? body
+            : { staff: false, aal2: false, hasFactor: false, waiting: null };
         if (cancelled) return;
         setStatus({ userId, value });
         try {
