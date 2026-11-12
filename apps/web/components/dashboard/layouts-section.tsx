@@ -1351,6 +1351,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 return;
               }
               e.preventDefault();
+              // Or the menu's typeahead also takes the letter and moves focus.
+              e.preventBaseUIHandler();
               setMenuFilter((current) => current + e.key);
               input.focus();
             }}

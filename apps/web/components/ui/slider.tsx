@@ -15,6 +15,8 @@ function Slider<Value extends number | readonly number[]>({
       className={cn("relative w-full data-disabled:opacity-50", className)}
       // The thumb stays within the track at either end.
       thumbAlignment="edge"
+      // Page keys and Shift+Arrow move ten steps, whatever the step's size.
+      largeStep={(props.step ?? 1) * 10}
       {...props}
     >
       <SliderPrimitive.Control className="flex w-full touch-none select-none items-center">
