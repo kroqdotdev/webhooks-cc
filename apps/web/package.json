@@ -34,7 +34,7 @@
     "hast-util-to-string": "^3.0.1",
     "input-otp": "1.5.0",
     "ioredis": "^6.0.0",
-    "isbot": "^5.2.2",
+    "isbot": "^5.2.3",
     "jose": "^6.2.15",
     "lucide-react": "^1.70.0",
     "next": "16.4.5",
