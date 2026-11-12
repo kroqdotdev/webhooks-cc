@@ -17,6 +17,7 @@ import {
   Mail,
   Send,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
@@ -388,16 +389,34 @@ function SendMenu({
 
 /** The test email's result. Always in the accessibility tree so it is announced. */
 function SendStatus({ status }: { status: SendActions["status"] }) {
+  // Below the wide layout, Send sits in the Actions menu, so the result is a
+  // toast at the foot of the screen; on wide screens it is this text next to Send.
+  useEffect(() => {
+    if (!status || window.matchMedia("(min-width: 1024px)").matches) return;
+    toast.custom(
+      () => (
+        // The status line below announces it; the toast is only seen.
+        <div
+          aria-hidden
+          className={cn(
+            "ml-auto w-fit max-w-full rounded-md border bg-card px-2.5 py-1.5 text-xs shadow-surface",
+            status.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
+          )}
+        >
+          {status.text}
+        </div>
+      ),
+      { id: SEND_TOAST, duration: 6000 }
+    );
+  }, [status]);
+  useEffect(() => () => void toast.dismiss(SEND_TOAST), []);
+
   return (
     <span
       role="status"
       aria-live="polite"
       className={cn(
-        !status
-          ? "sr-only"
-          : // A toast at the foot of the screen where Send sits in Actions
-            // (phones and tablets), inline text next to Send on wide screens.
-            "fixed inset-x-4 bottom-4 z-50 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-surface md:inset-x-auto md:right-4 md:max-w-[320px] lg:static lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+        status ? "max-lg:sr-only text-xs max-w-[260px] truncate" : "sr-only",
         status?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
       )}
       title={status?.text}
@@ -406,6 +425,8 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
     </span>
   );
 }
+
+const SEND_TOAST = "send-status";
 
 /**
  * A phone's and a tablet's one menu for what the bar's Setup, Send and Export

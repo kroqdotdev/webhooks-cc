@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { InlineMessage, Panel } from "@/components/settings/panel";
+import { CodeInput } from "@/components/ui/code-input";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -222,13 +222,10 @@ export function TwoFactor() {
             <label htmlFor="totp-code" className="sr-only">
               Code
             </label>
-            <Input
+            <CodeInput
               id="totp-code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={7}
               value={code}
-              onChange={(event) => setCode(event.target.value)}
+              onChange={setCode}
               className="font-mono tracking-widest"
             />
             <Button type="submit" disabled={busy}>
@@ -286,13 +283,10 @@ export function TwoFactor() {
               <label htmlFor="step-up-code" className="w-full text-sm text-muted-foreground">
                 Enter the code from your authenticator app to turn it off.
               </label>
-              <Input
+              <CodeInput
                 id="step-up-code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={7}
                 value={stepUpCode}
-                onChange={(event) => setStepUpCode(event.target.value)}
+                onChange={setStepUpCode}
                 className="w-32 font-mono tracking-widest"
               />
               <Button variant="outline" disabled={busy} onClick={() => void turnOff()}>

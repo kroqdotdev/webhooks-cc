@@ -611,6 +611,17 @@ export default function DashboardPage() {
     (tab: Tab) => updateParams({ tab: tab === "body" ? null : tab }),
     [updateParams]
   );
+  // Counts the tab changes made here rather than in the request view (number
+  // keys, opening a delivery), so the view lets go of a tab picked in it even
+  // when the URL ends up where it started.
+  const [tabWrites, setTabWrites] = useState(0);
+  const showTab = useCallback(
+    (tab: Tab) => {
+      setTabWrites((count) => count + 1);
+      setActiveTab(tab);
+    },
+    [setActiveTab]
+  );
 
   // Retained request history state
   const [olderRequests, setOlderRequests] = useState<ClickHouseRequest[]>([]);
@@ -1600,6 +1611,7 @@ export default function DashboardPage() {
       setSelectedId(requestId);
       setMobileDetail(true);
       writtenRequestRef.current = requestId;
+      setTabWrites((count) => count + 1);
       updateParams({ view: null, section: null, request: requestId, tab: "deliveries" });
     },
     [recentRequests, accessToken, currentEndpoint, updateParams]
@@ -1737,7 +1749,7 @@ export default function DashboardPage() {
         case "5": {
           e.preventDefault();
           const tabIndex = parseInt(e.key) - 1;
-          setActiveTab(TABS[tabIndex]);
+          showTab(TABS[tabIndex]);
           break;
         }
         case "c":
@@ -1769,7 +1781,7 @@ export default function DashboardPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSelect, handleToggleLiveMode, setActiveTab, toggleCollapse]);
+  }, [handleSelect, handleToggleLiveMode, showTab, toggleCollapse]);
 
   if (authLoading || endpoints === undefined || allEndpoints === undefined) {
     return <DashboardSkeleton />;
@@ -2044,6 +2056,7 @@ export default function DashboardPage() {
                   <RequestDetail
                     request={displayRequest}
                     activeTab={activeTab}
+                    tabWrites={tabWrites}
                     onTabChange={setActiveTab}
                     curlBtnRef={curlBtnRef}
                     note={currentNote}
@@ -2094,6 +2107,7 @@ export default function DashboardPage() {
                       <RequestDetail
                         request={displayRequest}
                         activeTab={activeTab}
+                        tabWrites={tabWrites}
                         onTabChange={setActiveTab}
                         note={currentNote}
                         onNoteChange={handleNoteChange}

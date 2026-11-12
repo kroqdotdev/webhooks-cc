@@ -89,6 +89,19 @@ body {
   --shadow-surface: var(--elevation-sm);
   --shadow-float: var(--elevation);
   --shadow-float-lg: var(--elevation-lg);
+  /* The caret of a one-time code field (CodeInput), blinking like a text field's. */
+  --animate-caret-blink: caret-blink 1.1s ease-out infinite;
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
 @layer base {

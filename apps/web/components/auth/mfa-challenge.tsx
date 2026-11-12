@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
+import { CodeInput } from "@/components/ui/code-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -181,16 +182,28 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
         <label htmlFor="mfa-code" className="sr-only">
           Code
         </label>
-        <Input
-          ref={inputRef}
-          id="mfa-code"
-          inputMode={useRecovery ? "text" : "numeric"}
-          autoComplete={useRecovery ? "off" : "one-time-code"}
-          maxLength={useRecovery ? 16 : 7}
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          className="text-center font-mono text-lg tracking-[0.3em] uppercase"
-        />
+        {/* Recovery codes are letters and dashes; the authenticator's code is six digits. */}
+        {useRecovery ? (
+          <Input
+            ref={inputRef}
+            id="mfa-code"
+            inputMode="text"
+            autoComplete="off"
+            maxLength={16}
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            className="text-center font-mono text-lg tracking-[0.3em] uppercase"
+          />
+        ) : (
+          <CodeInput
+            ref={inputRef}
+            id="mfa-code"
+            align="center"
+            value={code}
+            onChange={setCode}
+            className="text-center font-mono text-lg tracking-[0.3em] uppercase"
+          />
+        )}
         {error && (
           <p role="alert" className="text-sm text-destructive-ink">
             {error}

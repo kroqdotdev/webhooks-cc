@@ -49,6 +49,8 @@ interface RequestDetailProps {
   activeTab?: Tab;
   /** Callback when tab changes. */
   onTabChange?: (tab: Tab) => void;
+  /** Changes whenever the owner sets the tab itself (not through onTabChange). */
+  tabWrites?: number;
   /** Ref forwarded to the cURL copy button (for keyboard shortcuts). */
   curlBtnRef?: React.RefObject<HTMLButtonElement | null>;
   /** Persisted note for this request. */
@@ -148,6 +150,7 @@ export const ALL_TABS: Tab[] = [...TABS, "response"];
 export function RequestDetail({
   request,
   activeTab,
+  tabWrites = 0,
   onTabChange,
   curlBtnRef,
   note,
@@ -170,12 +173,12 @@ export function RequestDetail({
   );
   // A tab picked here shows at once: the owner's value (the dashboard's URL)
   // arrives a render later, and a tab bar that is told late selects twice.
-  // Any change of the owner's value takes over again. Without an owner, the
-  // pick is the tab.
+  // Any change of the owner's value, or a tab the owner set itself, takes
+  // over again. Without an owner, the pick is the tab.
   const [picked, setPicked] = useState<Tab | null>(null);
-  const [ownerTab, setOwnerTab] = useState(activeTab);
-  if (ownerTab !== activeTab) {
-    setOwnerTab(activeTab);
+  const [owner, setOwner] = useState({ tab: activeTab, writes: tabWrites });
+  if (owner.tab !== activeTab || owner.writes !== tabWrites) {
+    setOwner({ tab: activeTab, writes: tabWrites });
     setPicked(null);
   }
   const requested = picked ?? activeTab ?? "body";
@@ -348,7 +351,7 @@ export function RequestDetail({
       />
 
       {/* Tab content */}
-      <TabsPanel value={tab} className="flex-1 overflow-auto p-4">
+      <TabsPanel value={tab} scroller className="flex-1 overflow-auto p-4">
         {tab === "body" && (
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">

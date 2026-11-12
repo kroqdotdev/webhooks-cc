@@ -1498,7 +1498,7 @@ export function EmailDetail({
         onReselect={openTab}
       />
 
-      <TabsPanel value={activeTab} className="flex-1 overflow-auto p-4 md:p-5">
+      <TabsPanel value={activeTab} scroller className="flex-1 overflow-auto p-4 md:p-5">
         {activeTab === "parsed" &&
           (reading ? (
             <p

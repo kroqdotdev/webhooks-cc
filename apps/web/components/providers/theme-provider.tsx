@@ -1,83 +1,57 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
-import { readStoredTheme, THEME_STORAGE_KEY, type Theme } from "@/lib/theme";
+import { useSyncExternalStore } from "react";
+import { ThemeProvider as NextThemesProvider, useTheme as useNextTheme } from "next-themes";
 
-export type { Theme };
+export type Theme = "light" | "dark" | "system";
 
-interface ThemeContextType {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
-  resolvedTheme: "light" | "dark";
-}
+/** Kept in localStorage under this key, so a browser's earlier choice still applies. */
+const STORAGE_KEY = "theme";
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
+/**
+ * Light or dark, chosen in the browser (Account > Appearance) and kept in
+ * localStorage, not on the account. next-themes sets the `dark` class on
+ * <html> from an inline script before first paint, so a page never flashes
+ * the wrong mode, and follows the system while the choice is System.
+ */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");
-
-  useEffect(() => {
-    setTheme(readStoredTheme());
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-
-    const applyTheme = (isDark: boolean) => {
-      if (isDark) {
-        root.classList.add("dark");
-        setResolvedTheme("dark");
-      } else {
-        root.classList.remove("dark");
-        setResolvedTheme("light");
-      }
-    };
-
-    if (theme === "system") {
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      applyTheme(mediaQuery.matches);
-
-      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches);
-      mediaQuery.addEventListener("change", handler);
-      return () => mediaQuery.removeEventListener("change", handler);
-    } else {
-      applyTheme(theme === "dark");
-    }
-  }, [theme]);
-
-  const handleSetTheme = (newTheme: Theme) => {
-    setTheme(newTheme);
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, newTheme);
-    } catch {
-      // Storage is blocked: the choice lasts for this page view.
-    }
-  };
-
   return (
-    <ThemeContext.Provider
-      value={{
-        theme,
-        setTheme: handleSetTheme,
-        resolvedTheme,
-      }}
+    <NextThemesProvider
+      attribute="class"
+      storageKey={STORAGE_KEY}
+      defaultTheme="system"
+      enableSystem
+      // The page's own CSS decides scrollbars and controls; no color-scheme on <html>.
+      enableColorScheme={false}
     >
       {children}
-    </ThemeContext.Provider>
+    </NextThemesProvider>
   );
 }
 
-// Next renders `app/not-found.tsx` without the root layout, and so without
-// ThemeProvider, when it answers some requests itself (a POST with a
-// `Next-Action` header and a form body gets a 404 page that way). Outside a
-// provider the hook hands back the defaults and the setters do nothing.
-const FALLBACK_THEME: ThemeContextType = {
-  theme: "system",
-  setTheme: () => {},
-  resolvedTheme: "dark",
-};
+const noSubscribe = () => () => {};
 
-export function useTheme() {
-  return useContext(ThemeContext) ?? FALLBACK_THEME;
+/**
+ * The choice and the mode it resolves to. Until hydration is done the server's
+ * answer holds (System, dark), so the first client render matches the HTML.
+ * Outside the provider (Next renders some 404s without the root layout) the
+ * setter does nothing.
+ */
+export function useTheme(): {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  resolvedTheme: "light" | "dark";
+} {
+  const { theme, setTheme, resolvedTheme } = useNextTheme();
+  const hydrated = useSyncExternalStore(
+    noSubscribe,
+    () => true,
+    () => false
+  );
+  const chosen: Theme = theme === "light" || theme === "dark" ? theme : "system";
+  return {
+    theme: hydrated ? chosen : "system",
+    setTheme,
+    resolvedTheme: hydrated && resolvedTheme === "light" ? "light" : "dark",
+  };
 }

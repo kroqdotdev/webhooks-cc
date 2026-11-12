@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { CodeInput } from "@/components/ui/code-input";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { MfaGate } from "@/components/auth/mfa-challenge";
 import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/ui/card";
-import { FieldControl } from "@/components/ui/field";
 
 /**
  * Where an agent sends its human to connect it to their account (auth.md
@@ -382,17 +382,13 @@ function AttemptPanel(props: {
       <form onSubmit={props.onConnect} className="space-y-3">
         <label className="block">
           <span className="text-sm font-medium">Code from the agent</span>
-          <FieldControl
+          <CodeInput
+            look="field"
+            align="center"
             className="mt-1 w-full text-center text-2xl tracking-[0.3em] font-mono px-4 py-3"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
             value={props.code}
-            onChange={(event) =>
-              props.setCode(event.target.value.replace(/[^\d]/g, "").slice(0, 6))
-            }
+            onChange={props.setCode}
             placeholder="123456"
-            maxLength={6}
             autoFocus
             disabled={props.submitting}
           />
