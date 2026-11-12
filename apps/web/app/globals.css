@@ -503,3 +503,9 @@ body {
     width: calc(100% - var(--mobile-offset-left) * 2);
   }
 }
+
+/* input-otp (CodeInput) hides its real input with transparent text; forced
+   colours (Windows High Contrast) would paint those digits over the drawn ones. */
+[data-input-otp] {
+  forced-color-adjust: none;
+}

@@ -405,7 +405,12 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
     () => true
   );
   useEffect(() => {
-    if (!status || wide) return;
+    if (wide) {
+      // Widened past the bar's own status line: that line shows it now.
+      toast.dismiss(SEND_TOAST);
+      return;
+    }
+    if (!status) return;
     toast.custom(
       () => (
         <div
@@ -427,7 +432,8 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
       role="status"
       aria-live="polite"
       className={cn(
-        status ? "text-xs max-w-[260px] truncate" : "sr-only",
+        // Out of the bar's flow unless it shows the result (wide screens only).
+        status && wide ? "text-xs max-w-[260px] truncate" : "sr-only",
         status?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
       )}
       title={status?.text}
