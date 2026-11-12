@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
@@ -12,7 +13,6 @@ import { trackEndpointCreated } from "@/lib/analytics";
 import { createDashboardEndpoint, emitDashboardEndpointsChanged } from "@/lib/dashboard-api";
 import { useSite } from "@/components/providers/site-provider";
 import { twoSites, type EndpointSite } from "@/lib/site";
-import { cn } from "@/lib/utils";
 import { EndpointSiteField } from "./endpoint-site-field";
 
 /** The line under "Create endpoint", in the dialog and on /endpoints/new alike. */
@@ -46,11 +46,9 @@ export function NewEndpointForm({
   // Listed on the site it is made on unless chosen otherwise.
   const [listedOn, setListedOn] = useState<EndpointSite>(site.key);
   // Where it is listed and the mock response wait behind "More options".
-  const [moreOpen, setMoreOpen] = useState(false);
   const showSites = twoSites();
   // A mail-first endpoint rarely answers HTTP; the same setting stays under Settings.
   const showMock = !mailFirst;
-  const moreId = useId();
   const [mockStatus, setMockStatus] = useState("200");
   const [mockBody, setMockBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -107,21 +105,15 @@ export function NewEndpointForm({
       {/* Where it is listed and the mock response are rarely set at creation, so the
           form opens as a name and Create. Collapsing keeps whatever was entered. */}
       {(showSites || showMock) && (
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => setMoreOpen((current) => !current)}
-            aria-expanded={moreOpen}
-            aria-controls={moreId}
-            className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
-          >
+        <Collapsible className="space-y-3">
+          <CollapsibleTrigger className="group inline-flex items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer">
             More options
             <ChevronDown
-              className={cn("h-3.5 w-3.5 transition-transform", moreOpen && "rotate-180")}
+              className="h-3.5 w-3.5 transition-transform group-data-panel-open:rotate-180"
               aria-hidden
             />
-          </button>
-          <div id={moreId} hidden={!moreOpen} className="space-y-4">
+          </CollapsibleTrigger>
+          <CollapsiblePanel keepMounted className="space-y-4">
             {showSites && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
             {showMock && (
               <div className="border border-border rounded-lg p-4 space-y-4">
@@ -159,8 +151,8 @@ export function NewEndpointForm({
                 </div>
               </div>
             )}
-          </div>
-        </div>
+          </CollapsiblePanel>
+        </Collapsible>
       )}
 
       {error && (

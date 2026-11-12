@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Tabs, TabsPanel } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   Copy,
@@ -25,6 +26,7 @@ import { trackRequestViewed, trackRequestDetailTabChanged } from "@/lib/analytic
 import { generatePayloadSchema, payloadSample } from "@webhooks-cc/sdk/schema";
 import { hasSchemaSample, schemaRootName, type SchemaSource } from "@/lib/payload-schema";
 import { JsonTree } from "./json-tree";
+import { SectionTabList } from "./section-tabs";
 import { SignatureTab, SignatureVerificationBadge } from "./signature-tab";
 import { ProviderBadge } from "./provider-badge";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
@@ -77,32 +79,6 @@ interface RequestDetailProps {
  * as control characters. For exact reproduction of bodies with newlines,
  * users should use the Replay feature instead.
  */
-/**
- * Whether a horizontally scrolling element has more content past its right
- * edge: a tab strip fades there only then, at any width.
- */
-export function useMoreToRight<T extends HTMLElement>() {
-  const [more, setMore] = useState(false);
-  const cleanup = useRef<(() => void) | null>(null);
-  const ref = useCallback((element: T | null) => {
-    cleanup.current?.();
-    cleanup.current = null;
-    if (!element) return;
-    const update = () =>
-      setMore(element.scrollWidth - element.clientWidth - element.scrollLeft > 1);
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    if (element.firstElementChild) observer.observe(element.firstElementChild);
-    element.addEventListener("scroll", update, { passive: true });
-    update();
-    cleanup.current = () => {
-      observer.disconnect();
-      element.removeEventListener("scroll", update);
-    };
-  }, []);
-  return [ref, more] as const;
-}
-
 function escapeForShellDoubleQuotes(str: string): string {
   return str
     .replace(/\\/g, "\\\\")
@@ -270,34 +246,15 @@ export function RequestDetail({
   );
   const bodyView = bodyViews.includes(bodyViewChoice) ? bodyViewChoice : "formatted";
 
-  // On a phone the tab strip scrolls; keep the active tab in view (clear of the
-  // fade) without moving the page itself, which scrollIntoView could do.
-  // The desktop and phone panes can both render this view, so ids are per instance.
-  const tabIds = useId();
-  const tablistRef = useRef<HTMLDivElement>(null);
-  const [tabStripMoreRef, tabStripMore] = useMoreToRight<HTMLDivElement>();
-  const tabStripRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      tablistRef.current = element;
-      tabStripMoreRef(element);
-    },
-    [tabStripMoreRef]
-  );
-  useEffect(() => {
-    const list = tablistRef.current;
-    const active = list?.querySelector<HTMLElement>(`[role="tab"][data-tab="${tab}"]`);
-    if (!list || !active || list.scrollWidth <= list.clientWidth) return;
-    const listBox = list.getBoundingClientRect();
-    const box = active.getBoundingClientRect();
-    const fade = 32;
-    if (box.left < listBox.left) list.scrollLeft += box.left - listBox.left;
-    else if (box.right > listBox.right - fade) {
-      list.scrollLeft += Math.min(box.right - listBox.right + fade, box.left - listBox.left);
-    }
-  }, [tab]);
-
   return (
-    <div className="ph-no-capture flex flex-col h-full">
+    <Tabs
+      value={tab}
+      onValueChange={(next: Tab) => {
+        setTab(next);
+        trackRequestDetailTabChanged(next);
+      }}
+      className="ph-no-capture flex flex-col h-full"
+    >
       {/* Summary bar */}
       {/* Sized by the pane, not the window: beside the list the pane can be narrow. */}
       <div className="@container border-b border-border px-4 py-3 shrink-0">
@@ -365,72 +322,18 @@ export function RequestDetail({
       {/* Note bar */}
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
-      {/* Tabs. The strip scrolls when the tabs do not fit; a fade on the right says there is more. */}
-      <div className="shrink-0 border-b border-border">
-        <div
-          ref={tabStripRef}
-          className={cn(
-            "flex overflow-x-auto [scrollbar-width:none]",
-            tabStripMore &&
-              "[mask-image:linear-gradient(to_right,#000_calc(100%-3rem),transparent)]"
-          )}
-        >
-          <div role="tablist" aria-label="Request sections" className="flex shrink-0">
-            {tabs.map((t, index) => (
-              <button
-                key={t}
-                type="button"
-                role="tab"
-                id={`${tabIds}-tab-${t}`}
-                data-tab={t}
-                aria-selected={tab === t}
-                aria-controls={`${tabIds}-panel`}
-                tabIndex={tab === t ? 0 : -1}
-                onClick={() => {
-                  if (tab === t) return;
-                  setTab(t);
-                  trackRequestDetailTabChanged(t);
-                }}
-                onKeyDown={(event) => {
-                  // Arrow keys move between tabs, as in any tab list.
-                  const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-                  if (!step) return;
-                  event.preventDefault();
-                  const next = tabs[(index + step + tabs.length) % tabs.length];
-                  setTab(next);
-                  trackRequestDetailTabChanged(next);
-                  event.currentTarget.parentElement
-                    ?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)
-                    ?.focus();
-                }}
-                className={cn(
-                  "px-4 py-2 text-xs font-bold border-r border-border last:border-r-0 cursor-pointer transition-colors whitespace-nowrap capitalize",
-                  // The tint alone is too faint, so the active tab also gets a primary underline.
-                  tab === t
-                    ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
-                    : "bg-background hover:bg-muted"
-                )}
-              >
-                {t}
-                {(t === "headers" || t === "query") && (
-                  <>
-                    <span className="sr-only">, </span>
-                    <span className="ml-1.5 font-mono opacity-70">{tabCounts[t]}</span>
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      <SectionTabList
+        label="Request sections"
+        tabs={tabs.map((t) => ({
+          id: t,
+          label: t,
+          count: t === "headers" || t === "query" ? tabCounts[t] : undefined,
+        }))}
+        active={tab}
+      />
 
       {/* Tab content */}
-      <div
-        role="tabpanel"
-        id={`${tabIds}-panel`}
-        aria-labelledby={`${tabIds}-tab-${tab}`}
-        className="flex-1 overflow-auto p-4"
-      >
+      <TabsPanel value={tab} className="flex-1 overflow-auto p-4">
         {tab === "body" && (
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
@@ -579,8 +482,8 @@ export function RequestDetail({
             onOpenForwarding={deliveries.onOpenForwarding}
           />
         )}
-      </div>
-    </div>
+      </TabsPanel>
+    </Tabs>
   );
 }
 

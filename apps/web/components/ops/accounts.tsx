@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
 import { apiFetch, shortDateTime, shortDay } from "@/lib/support/client";
 import type { AccountDetail, AccountSummary } from "@/lib/ops/accounts";
 import { cn } from "@/lib/utils";
@@ -161,7 +162,7 @@ export function AccountInspector({ id }: { id: string }) {
   const firstName = account.name?.trim().split(/\s+/)[0] ?? "this user";
 
   return (
-    <div className="max-w-6xl p-6 lg:p-8">
+    <Tabs value={tab} onValueChange={(next: Tab) => setTab(next)} className="max-w-6xl p-6 lg:p-8">
       <p className="text-xs text-muted-foreground">
         <Link href="/ops/accounts" className="text-primary hover:underline">
           Accounts
@@ -179,29 +180,19 @@ export function AccountInspector({ id }: { id: string }) {
         {account.internal ? ", internal" : ""}
       </p>
 
-      <div
-        role="tablist"
-        className="mt-5 flex gap-5 overflow-x-auto border-b border-border text-sm"
-      >
+      <TabsList className="mt-5 flex gap-5 overflow-x-auto border-b border-border text-sm">
         {tabs.map((entry) => (
-          <button
+          <TabsTab
             key={entry.value}
-            role="tab"
-            aria-selected={tab === entry.value}
-            onClick={() => setTab(entry.value)}
-            className={cn(
-              "whitespace-nowrap pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              tab === entry.value
-                ? "font-medium text-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
-                : "text-muted-foreground hover:text-foreground"
-            )}
+            value={entry.value}
+            className="whitespace-nowrap pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-muted-foreground not-data-active:hover:text-foreground data-active:font-medium data-active:text-foreground data-active:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
           >
             {entry.label}
-          </button>
+          </TabsTab>
         ))}
-      </div>
+      </TabsList>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <TabsPanel value={tab} className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-4">
           {(tab === "overview" || tab === "endpoints") && (
             <div className="ui-card ui-card-static p-0! overflow-x-auto">
@@ -431,7 +422,7 @@ export function AccountInspector({ id }: { id: string }) {
           <AccountSharingPanel userId={id} />
           {error && <p className="text-sm text-destructive-ink">{error}</p>}
         </aside>
-      </div>
-    </div>
+      </TabsPanel>
+    </Tabs>
   );
 }
