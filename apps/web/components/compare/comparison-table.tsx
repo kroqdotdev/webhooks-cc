@@ -2,6 +2,14 @@ import Link from "next/link";
 import { CodeBox } from "@/components/ui/code";
 import { cn } from "@/lib/utils";
 
+/**
+ * The faint pine that marks our own column or row in a comparison. Dark mode
+ * takes 60% of the selected tint, which reads as faint there as the full tint
+ * does in light mode. Exported so tables built by hand (the team pricing on
+ * /for-teams) match this one.
+ */
+export const OUR_TINT = "bg-selected dark:bg-selected/60";
+
 export type ComparisonTool = {
   name: string;
   /** Links the column header, usually to the tool's own comparison page. */
@@ -49,8 +57,7 @@ export function ComparisonTable({
                 className={cn(
                   "text-left py-2.5 px-3 font-bold border-b",
                   dense && "whitespace-nowrap",
-                  tool.ours &&
-                    "bg-selected dark:bg-selected/60 text-selected-foreground rounded-t-md"
+                  tool.ours && cn(OUR_TINT, "text-selected-foreground rounded-t-md")
                 )}
               >
                 {tool.href ? (
@@ -83,7 +90,7 @@ export function ComparisonTable({
                   className={cn(
                     "align-top py-2.5 px-3",
                     r !== last && "border-b border-foreground/20",
-                    tool.ours && "bg-selected dark:bg-selected/60",
+                    tool.ours && OUR_TINT,
                     tool.ours && r === last && "rounded-b-md"
                   )}
                 >

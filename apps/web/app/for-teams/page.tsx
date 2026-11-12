@@ -24,6 +24,7 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { TeamsCTA } from "@/components/landing/teams-cta";
 import { Card } from "@/components/ui/card";
 import { CodeBox } from "@/components/ui/code";
+import { OUR_TINT } from "@/components/compare/comparison-table";
 import { cn } from "@/lib/utils";
 
 const PATH = "/for-teams";
@@ -333,8 +334,7 @@ export default function ForTeamsPage() {
                         className={cn(
                           "text-left py-2 px-3 font-bold whitespace-nowrap",
                           rule,
-                          row.ours &&
-                            "bg-selected dark:bg-selected/60 text-selected-foreground rounded-l-md"
+                          row.ours && cn(OUR_TINT, "text-selected-foreground rounded-l-md")
                         )}
                       >
                         {row.href ? (
@@ -346,11 +346,7 @@ export default function ForTeamsPage() {
                         )}
                       </th>
                       <td
-                        className={cn(
-                          "py-2 px-3",
-                          rule,
-                          row.ours && "bg-selected dark:bg-selected/60 rounded-r-md"
-                        )}
+                        className={cn("py-2 px-3", rule, row.ours && cn(OUR_TINT, "rounded-r-md"))}
                       >
                         {row.team}
                       </td>
