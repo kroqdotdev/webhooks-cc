@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
+import { ComparisonTable } from "@/components/compare/comparison-table";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
-import { CodeBox, InlineCode } from "@/components/ui/code";
+import { InlineCode } from "@/components/ui/code";
 import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
@@ -116,32 +117,11 @@ export default function CompareSvixPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <CodeBox className="overflow-x-auto mb-10">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b">
-                <th scope="col" className="text-left py-2.5 pr-4 font-bold">
-                  Feature
-                </th>
-                <th scope="col" className="text-left py-2.5 pr-4 font-bold">
-                  webhooks.cc
-                </th>
-                <th scope="col" className="text-left py-2.5 font-bold">
-                  Svix / Svix Ingest / Svix Play
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {ROWS.map(([label, left, right]) => (
-                <tr key={label} className="border-b border-foreground/20 last:border-0">
-                  <td className="py-2.5 pr-4 font-medium">{label}</td>
-                  <td className="py-2.5 pr-4">{left}</td>
-                  <td className="py-2.5">{right}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CodeBox>
+        <ComparisonTable
+          tools={[{ name: "webhooks.cc", ours: true }, { name: "Svix / Svix Ingest / Svix Play" }]}
+          rows={ROWS}
+          className="mb-10"
+        />
 
         <ComparisonCTA compact />
 
