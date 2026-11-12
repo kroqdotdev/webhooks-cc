@@ -14,6 +14,7 @@ import { siteHeaderTop } from "@/lib/announcements";
 import { resetUser, trackSignOut } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface NavLink {
   href: string;
@@ -141,26 +142,38 @@ export function SiteHeader({
   // it swap for the dashboard link and their account menu after hydration.
   const authAction = isAuthenticated
     ? !inApp && (
-        <Link href="/dashboard" className="ui-btn-primary py-1.5! px-3.5! text-sm">
+        <Button
+          variant="primary"
+          className="py-1.5! px-3.5! text-sm"
+          render={<Link href="/dashboard" />}
+        >
           Dashboard
-        </Link>
+        </Button>
       )
     : !onAuthPage && (
         // Sign-up is the goal, so it is always one click away, not only in the hero.
         <span className="flex items-center gap-2">
-          <Link href="/login" className="ui-btn-outline py-1.5! px-3.5! text-sm">
+          <Button
+            variant="surface"
+            className="py-1.5! px-3.5! text-sm"
+            render={<Link href="/login" />}
+          >
             Sign in
-          </Link>
-          <Link href="/login?mode=sign-up" className="ui-btn-primary py-1.5! px-3.5! text-sm">
+          </Button>
+          <Button
+            variant="primary"
+            className="py-1.5! px-3.5! text-sm"
+            render={<Link href="/login?mode=sign-up" />}
+          >
             Sign up free
-          </Link>
+          </Button>
         </span>
       );
 
   return (
     <>
       <header
-        className="sticky z-50 shrink-0 border-b border-border bg-card"
+        className="sticky z-50 shrink-0 border-b bg-card"
         style={{ top: top ?? siteHeaderTop() }}
       >
         <div
@@ -229,7 +242,7 @@ export function SiteHeader({
             type="button"
             aria-controls={open ? "site-menu" : undefined}
             onClick={() => setOpen((prev) => !prev)}
-            className="md:hidden p-2 rounded-md border border-border hover:bg-muted transition-colors cursor-pointer"
+            className="md:hidden p-2 rounded-md border hover:bg-muted transition-colors cursor-pointer"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
           >
@@ -257,7 +270,7 @@ export function SiteHeader({
                 setOpen(false);
               }
             }}
-            className="md:hidden absolute top-full left-0 right-0 border-t border-border shadow-float bg-card"
+            className="md:hidden absolute top-full left-0 right-0 border-t shadow-float bg-card"
           >
             <div className="px-4 py-4 flex flex-col gap-3">
               <SiteSwitchRow onNavigate={() => setOpen(false)} />
@@ -324,20 +337,20 @@ export function SiteHeader({
               ) : (
                 !onAuthPage && (
                   <div className="pt-3 border-t border-foreground/20">
-                    <Link
-                      href="/login"
-                      className="ui-btn-outline inline-block text-sm"
-                      onClick={() => setOpen(false)}
+                    <Button
+                      variant="surface"
+                      className="inline-block text-sm"
+                      render={<Link href="/login" onClick={() => setOpen(false)} />}
                     >
                       Sign in
-                    </Link>
-                    <Link
-                      href="/login?mode=sign-up"
-                      className="ui-btn-primary inline-block text-sm ml-2"
-                      onClick={() => setOpen(false)}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="inline-block text-sm ml-2"
+                      render={<Link href="/login?mode=sign-up" onClick={() => setOpen(false)} />}
                     >
                       Sign up free
-                    </Link>
+                    </Button>
                   </div>
                 )
               )}

@@ -6,6 +6,7 @@ import { trackCTAClick } from "@/lib/analytics";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
+import { Card } from "@/components/ui/card";
 
 /**
  * Each site's pitch: guests on webhooks.cc can try a URL without an account,
@@ -41,15 +42,16 @@ function DocsCTAInner() {
   if (isLoading || isAuthenticated) return null;
 
   return (
-    <div className="mt-16 pt-8 border-t border-border">
-      <div className="ui-card ui-card-static bg-muted">
+    <div className="mt-16 pt-8 border-t">
+      <Card className="bg-muted">
         <p className="font-bold text-lg mb-1">{copy.title}</p>
         <p className="text-sm text-muted-foreground mb-4">{copy.text}</p>
         <div className="flex flex-wrap items-center gap-3">
           <OAuthSignInButtons
             redirectTo="/dashboard"
             layout="horizontal"
-            buttonClassName="h-9 text-sm px-4 ui-btn-outline cursor-pointer"
+            raised
+            buttonClassName="h-9 text-sm px-4"
           />
         </div>
         <p className="text-sm text-muted-foreground mt-3">
@@ -63,7 +65,7 @@ function DocsCTAInner() {
             <ArrowRight className="inline-block ml-1 h-3.5 w-3.5" />
           </Link>
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

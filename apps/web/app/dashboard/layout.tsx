@@ -7,6 +7,7 @@ import { NewEndpointDialog } from "@/components/dashboard/new-endpoint-dialog";
 import { DashboardAnnouncement } from "@/components/dashboard/teams-callout";
 import { QuotaBanner } from "@/components/dashboard/quota-banner";
 import { SiteProvider } from "@/components/providers/site-provider";
+import { Toaster } from "@/components/ui/toaster";
 import { createPageMetadata } from "@/lib/seo";
 import { SITES } from "@/lib/site";
 import { currentSite } from "@/lib/site-server";
@@ -45,6 +46,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
             {children}
           </main>
         </div>
+        {/* The endpoint bar's send results; the one page with toasts. */}
+        <Toaster />
       </RequireAuth>
     </SiteProvider>
   );

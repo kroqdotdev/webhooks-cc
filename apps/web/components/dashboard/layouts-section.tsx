@@ -61,6 +61,8 @@ import { EditPatternTrigger, EmailFieldsEditor } from "./email-fields-editor";
 import { SaveFooter, Section, Segmented, SwitchRow, useSave } from "./settings-primitives";
 import { stableStringify } from "@/lib/stable-json";
 import { describeCondition, takesValue } from "@/lib/condition-labels";
+import { Button } from "@/components/ui/button";
+import { FieldControl } from "@/components/ui/field";
 
 /**
  * Layouts: how this endpoint reads the emails of each sender or kind. The
@@ -72,8 +74,7 @@ import { describeCondition, takesValue } from "@/lib/condition-labels";
 
 type LineItemsMode = "none" | "text" | "html" | "attachment";
 
-const inputClass =
-  "ui-input text-[13px] font-mono [font-variant-ligatures:none] py-1.5! px-2! min-w-0";
+const inputClass = "text-[13px] font-mono [font-variant-ligatures:none] py-1.5! px-2! min-w-0";
 
 /**
  * A blank layout. Given the domain of the newest email's sender, it applies
@@ -185,14 +186,15 @@ function SampleEmailButton({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-      <button
+      <Button
+        variant="surface"
+        className="py-1! px-2.5! text-xs"
         type="button"
         onClick={() => onSend(template)}
         disabled={state?.kind === "sending" || state?.kind === "saving"}
-        className="ui-btn-outline py-1! px-2.5! text-xs"
       >
         {saveFirst ? "Save, then send" : "Send"} the {template.sender} sample email
-      </button>
+      </Button>
       {status && <SampleSendStatus state={state} />}
     </div>
   );
@@ -311,7 +313,7 @@ function LineItemsTable({
   return (
     // As wide as its columns need (at least the width on a phone, 60% wider up),
     // so a few narrow columns do not spread across the panel.
-    <div className="overflow-x-auto w-fit max-w-full min-w-full sm:min-w-[60%] border border-border rounded-md">
+    <div className="overflow-x-auto w-fit max-w-full min-w-full sm:min-w-[60%] border rounded-md">
       <table className="w-full text-xs" aria-label={label}>
         <thead>
           <tr className="bg-muted">
@@ -598,7 +600,7 @@ function LineItemsEditor({
             >
               Line item pattern (RE2)
             </label>
-            <input
+            <FieldControl
               id={`${patternId}-input`}
               aria-label={`Layout ${n}: line item pattern (RE2)`}
               value={spec.pattern ?? ""}
@@ -612,7 +614,7 @@ function LineItemsEditor({
                 <span className="block text-xs font-medium text-muted-foreground">
                   Start after (optional)
                 </span>
-                <input
+                <FieldControl
                   value={spec.start ?? ""}
                   onChange={(e) => onChange({ ...spec, start: e.target.value || undefined })}
                   placeholder="e.g. Items ordered"
@@ -624,7 +626,7 @@ function LineItemsEditor({
                 <span className="block text-xs font-medium text-muted-foreground">
                   Stop at (optional)
                 </span>
-                <input
+                <FieldControl
                   value={spec.end ?? ""}
                   onChange={(e) => onChange({ ...spec, end: e.target.value || undefined })}
                   placeholder="e.g. Subtotal"
@@ -643,7 +645,7 @@ function LineItemsEditor({
       {spec?.from === "attachment" && (
         <div className="space-y-1.5">
           <div className="flex flex-wrap gap-1.5">
-            <input
+            <FieldControl
               aria-label={`Layout ${n}: attachment name`}
               value={spec.attachment ?? ""}
               onChange={(e) => onChange({ ...spec, attachment: e.target.value || undefined })}
@@ -651,7 +653,7 @@ function LineItemsEditor({
               spellCheck={false}
               className={cn(inputClass, "flex-1 min-w-56")}
             />
-            <input
+            <FieldControl
               aria-label={`Layout ${n}: sheet`}
               value={spec.sheet ?? ""}
               onChange={(e) => onChange({ ...spec, sheet: e.target.value || undefined })}
@@ -662,7 +664,7 @@ function LineItemsEditor({
           </div>
           {columns.map((column, i) => (
             <div key={i} className="flex items-center gap-1.5">
-              <input
+              <FieldControl
                 aria-label={`Layout ${n}: column ${i + 1} name`}
                 value={column.name}
                 onChange={(e) =>
@@ -676,7 +678,7 @@ function LineItemsEditor({
                 className={cn(inputClass, "w-36")}
               />
               <span className="text-xs text-muted-foreground">from column</span>
-              <input
+              <FieldControl
                 aria-label={`Layout ${n}: column ${i + 1} source`}
                 value={column.column}
                 onChange={(e) =>
@@ -701,14 +703,15 @@ function LineItemsEditor({
               </button>
             </div>
           ))}
-          <button
+          <Button
+            variant="surface"
+            className="py-1! px-2! text-xs inline-flex items-center gap-1"
             type="button"
             onClick={() => onChange({ ...spec, columns: [...columns, { name: "", column: "" }] })}
             disabled={columns.length >= MAX_LINE_ITEM_COLUMNS}
-            className="ui-btn-outline py-1! px-2! text-xs inline-flex items-center gap-1"
           >
             <Plus className="h-3 w-3" /> Column
-          </button>
+          </Button>
           <p className="text-xs text-muted-foreground max-w-[62ch]">
             The first row is the header. Without columns, every column is kept under its header. The
             attachment is parsed, so it uses pages.
@@ -1025,16 +1028,17 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 basis-full">
               {replay?.kind !== "done" && (
                 <>
-                  <button
+                  <Button
+                    variant="surface"
+                    className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
                     type="button"
                     onClick={() => void readRecentAgain()}
                     disabled={replay?.kind === "sending"}
                     aria-describedby={replayNoteId}
-                    className="ui-btn-outline py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
                   >
                     <RotateCcw className="h-3 w-3" aria-hidden />
                     Read the last {REPLAY_DAYS} days of email again
-                  </button>
+                  </Button>
                   <span id={replayNoteId} className="text-xs text-muted-foreground">
                     {(endpoint.destinationCount ?? 0) > 0
                       ? "They are parsed with the saved layouts and sent to your destinations again."
@@ -1072,7 +1076,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 key={layout.id}
                 open={expanded}
                 onOpenChange={(next) => (next ? openEditor(index, layout.id) : setOpen(null))}
-                render={<li className="border border-border rounded-md bg-card" />}
+                render={<li className="border rounded-md bg-card" />}
               >
                 <div
                   id={`layout-${layout.id}-header`}
@@ -1153,7 +1157,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                       <CollapsibleTrigger
                         id={`layout-${layout.id}-edit`}
                         aria-label={`Edit layout ${n}`}
-                        className="ml-auto ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1"
+                        className="ml-auto py-1! px-2.5! text-xs inline-flex items-center gap-1"
+                        render={<Button variant="surface" />}
                       >
                         Edit layout
                         <ChevronDown className="h-3 w-3" aria-hidden />
@@ -1192,13 +1197,13 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                     </div>
                   )}
                   <div className="flex flex-wrap items-center gap-3">
-                    <input
+                    <FieldControl
+                      className="text-sm py-1.5! px-2! w-64"
                       id={`layout-${layout.id}-name`}
                       aria-label={`Layout ${n}: name`}
                       value={layout.name}
                       onChange={(e) => update(index, { name: e.target.value })}
                       maxLength={100}
-                      className="ui-input text-sm py-1.5! px-2! w-64"
                     />
                     <SwitchRow
                       id={`layout-${layout.id}-enabled`}
@@ -1297,13 +1302,11 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         >
           <DropdownMenuTrigger
             render={
-              <button
+              <Button
+                variant={layouts.length === 0 ? "primary" : "surface"}
                 type="button"
                 disabled={layouts.length >= MAX_LAYOUTS}
-                className={cn(
-                  layouts.length === 0 ? "ui-btn-primary" : "ui-btn-outline",
-                  "py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
-                )}
+                className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
               />
             }
           >
@@ -1319,7 +1322,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             collisionAvoidance={{ side: "none", align: "none", fallbackAxisSide: "none" }}
             // Focus goes to the added layout's name, not back to the trigger below it.
             finalFocus={false}
-            className="w-72 max-h-[min(24rem,var(--available-height))] overflow-y-auto! border border-border shadow-float"
+            className="w-72 max-h-[min(24rem,var(--available-height))] overflow-y-auto! border shadow-float"
             onKeyDown={(e) => {
               // Typing anywhere in the menu filters the senders (instead of
               // the menu's own jump to the item starting with that letter).
@@ -1358,7 +1361,8 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             </DropdownMenuLabel>
             {showFilter && (
               <div className="px-2 pb-1.5">
-                <input
+                <FieldControl
+                  className="text-xs py-1! px-2! w-full"
                   ref={filterRef}
                   type="search"
                   aria-label="Filter senders"
@@ -1386,7 +1390,6 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                     e.stopPropagation();
                   }}
                   spellCheck={false}
-                  className="ui-input text-xs py-1! px-2! w-full"
                 />
               </div>
             )}
@@ -1456,7 +1459,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))] border border-border shadow-float">
+                <SelectContent className="max-w-[min(32rem,calc(100vw-2rem))] border shadow-float">
                   <SelectItem value={NEWEST_SAMPLE} className="text-[13px]">
                     The newest email
                     {sampleId ? "" : `, "${preview.request.subject || "(no subject)"}"`}

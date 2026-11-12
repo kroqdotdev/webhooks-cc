@@ -18,6 +18,7 @@ import {
 } from "@/lib/analytics-account-consent";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
+import { Card } from "@/components/ui/card";
 
 /** The session's token, only while it is still the given account's. */
 async function currentAccessToken(userId: string): Promise<string | null> {
@@ -95,13 +96,13 @@ export function CookieConsent() {
   // Reachable only from Cookie settings: the banner never opens by itself here.
   if (browserDeclinesTracking()) {
     return (
-      <div
+      <Card
+        className="fixed bottom-4 left-4 right-4 z-[60] p-5 outline-none sm:right-auto sm:max-w-md"
         ref={dialogRef}
         role="dialog"
         tabIndex={-1}
         aria-live="polite"
         aria-labelledby="cookie-consent-title"
-        className="ui-card ui-card-static fixed bottom-4 left-4 right-4 z-[60] p-5 outline-none sm:right-auto sm:max-w-md"
       >
         <p id="cookie-consent-title" className="font-bold">
           Analytics stay off
@@ -122,7 +123,7 @@ export function CookieConsent() {
             Close
           </Button>
         </div>
-      </div>
+      </Card>
     );
   }
 
@@ -145,14 +146,14 @@ export function CookieConsent() {
   };
 
   return (
-    <div
+    <Card
+      className="fixed bottom-4 left-4 right-4 z-[60] p-5 outline-none sm:right-auto sm:max-w-md"
       ref={dialogRef}
       role="dialog"
       tabIndex={-1}
       aria-live="polite"
       aria-labelledby="cookie-consent-title"
       aria-describedby="cookie-consent-text"
-      className="ui-card ui-card-static fixed bottom-4 left-4 right-4 z-[60] p-5 outline-none sm:right-auto sm:max-w-md"
     >
       <p id="cookie-consent-title" className="font-bold">
         Analytics, for us only
@@ -175,7 +176,7 @@ export function CookieConsent() {
           Accept
         </Button>
       </div>
-    </div>
+    </Card>
   );
 }
 

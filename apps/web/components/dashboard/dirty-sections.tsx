@@ -253,7 +253,7 @@ export function DiscardChangesDialog({
         if (!next && details.reason === "escape-key" && !(saving && !stuck)) onKeep();
       }}
     >
-      <AlertDialogContent className="border border-border shadow-float">
+      <AlertDialogContent className="border shadow-float">
         <AlertDialogHeader>
           <AlertDialogTitle>
             Discard unsaved changes

@@ -77,6 +77,25 @@ describe("retired style classes", () => {
     expect(violations).toEqual([]);
   });
 
+  // The shared looks are drawn by components (Button, Card, CodeBox,
+  // FieldControl, and the field prop on Input, Textarea and SelectTrigger);
+  // their classes in globals.css belong to components/ui alone. A selector
+  // that reaches into one of them (`[&_.ui-card>p]`) is fine.
+  it("leaves the shared look classes to the components", () => {
+    const LOOK =
+      /(?<![\w.-])ui-(?:card(?:-static)?|btn(?:-primary|-secondary|-outline)?|code|input)(?![\w-])/;
+    const violations = files
+      .filter((file) => !file.includes(`${path.sep}components${path.sep}ui${path.sep}`))
+      .flatMap((file) =>
+        readFileSync(file, "utf8")
+          .split("\n")
+          .map((line, index) => ({ line, where: `${path.relative(ROOT, file)}:${index + 1}` }))
+          .filter(({ line }) => !COMMENT.test(line) && LOOK.test(line))
+          .map(({ line, where }) => `${where} has ${line.match(LOOK)![0]}; use its component`)
+      );
+    expect(violations).toEqual([]);
+  });
+
   it("keeps globals.css free of the retired tokens", () => {
     const css = readFileSync(path.join(ROOT, "app", "globals.css"), "utf8");
     for (const token of [

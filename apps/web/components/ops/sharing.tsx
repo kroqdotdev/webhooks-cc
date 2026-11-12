@@ -11,6 +11,8 @@ import { REPORT_KINDS } from "@/lib/tunnels/report-kinds";
 import type { ReputationResult } from "@/lib/tunnels/reputation";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
+import { Card } from "@/components/ui/card";
+import { FieldControl } from "@/components/ui/field";
 
 /*
  * Operations > Sharing: reports of shared previews (from the public form,
@@ -173,7 +175,7 @@ function Reports() {
           ))}
         </ul>
       )}
-      <div className="ui-card ui-card-static space-y-2 text-sm">
+      <Card className="space-y-2 text-sm">
         <h2 className="font-semibold">Record a Cloudflare CSAM match</h2>
         <p className="text-muted-foreground">
           Paste an address from Cloudflare&rsquo;s daily CSAM Scanning Tool email. It opens a report
@@ -190,7 +192,7 @@ function Reports() {
             Open a report
           </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -221,7 +223,7 @@ function ReportCard({ report, onChanged }: { report: OpsReport; onChanged: () =>
   };
 
   return (
-    <li className={cn("ui-card ui-card-static space-y-3", csam && "border-destructive")}>
+    <Card className={cn("space-y-3", csam && "border-destructive")} render={<li />}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="font-medium">
           {csam && <span className="text-destructive-ink">Urgent: </span>}
@@ -373,7 +375,7 @@ function ReportCard({ report, onChanged }: { report: OpsReport; onChanged: () =>
         </div>
       )}
       <Notice notice={n.notice} />
-    </li>
+    </Card>
   );
 }
 
@@ -436,9 +438,10 @@ function LiveShares() {
       ) : (
         <ul className="space-y-2">
           {shares.map((share) => (
-            <li
+            <Card
               key={share.id}
-              className="ui-card ui-card-static flex flex-wrap items-center justify-between gap-3 text-sm"
+              className="flex flex-wrap items-center justify-between gap-3 text-sm"
+              render={<li />}
             >
               <div className="ph-no-capture min-w-0 space-y-0.5">
                 <p className="font-mono text-xs">
@@ -467,7 +470,7 @@ function LiveShares() {
                   </Button>
                 )}
               </div>
-            </li>
+            </Card>
           ))}
         </ul>
       )}
@@ -527,22 +530,26 @@ function BlockedLists() {
 
   return (
     <div className="space-y-4">
-      <div className="ui-card ui-card-static space-y-2 text-sm">
+      <Card className="space-y-2 text-sm">
         <h2 className="font-semibold">Block</h2>
         <p className="text-muted-foreground">
           A blocked name stops whatever runs under it and can no longer be shared. A blocked word
           keeps new names that contain it, however they are written, from being reserved or drawn.
         </p>
         <div className="flex flex-wrap gap-2">
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as "name" | "word")}
-            className="ui-input h-9 rounded-md px-2 text-sm"
-            aria-label="Block a name or a word"
+          <FieldControl
+            className="h-9 rounded-md px-2 text-sm"
+            render={
+              <select
+                value={kind}
+                onChange={(e) => setKind(e.target.value as "name" | "word")}
+                aria-label="Block a name or a word"
+              />
+            }
           >
             <option value="name">Name</option>
             <option value="word">Word</option>
-          </select>
+          </FieldControl>
           <Input
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -563,7 +570,7 @@ function BlockedLists() {
             Block
           </Button>
         </div>
-      </div>
+      </Card>
       <Notice notice={n.notice} />
       {!blocks ? (
         <Skeleton className="h-32 w-full rounded-md" />
@@ -579,11 +586,11 @@ function BlockedLists() {
             rows={blocks.words.map((b) => ({ value: b.word, reason: b.reason, at: b.createdAt }))}
             onRemove={(v) => void remove("word", v)}
           />
-          <div className="ui-card ui-card-static space-y-1 text-xs text-muted-foreground md:col-span-2">
+          <Card className="space-y-1 text-xs text-muted-foreground md:col-span-2">
             <p className="font-medium text-foreground">Built in (in the code)</p>
             <p className="font-mono">{blocks.builtIn.names.join(", ")}</p>
             <p className="font-mono">{blocks.builtIn.words.join(", ")}</p>
-          </div>
+          </Card>
         </div>
       )}
     </div>
@@ -600,7 +607,7 @@ function BlockList({
   onRemove: (value: string) => void;
 }) {
   return (
-    <div className="ui-card ui-card-static space-y-2 text-sm">
+    <Card className="space-y-2 text-sm">
       <h2 className="font-semibold">{title}</h2>
       {rows.length === 0 ? (
         <p className="text-muted-foreground">None.</p>
@@ -625,7 +632,7 @@ function BlockList({
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -678,7 +685,7 @@ function Reputation() {
   if (!data) return <Skeleton className="h-32 w-full rounded-md" />;
   return (
     <div className="space-y-4">
-      <div className="ui-card ui-card-static space-y-2 text-sm">
+      <Card className="space-y-2 text-sm">
         <h2 className="font-semibold">Google Web Risk</h2>
         {!data.configured ? (
           <p className="text-muted-foreground">
@@ -709,7 +716,7 @@ function Reputation() {
             </Button>
           </>
         )}
-      </div>
+      </Card>
       <Notice notice={n.notice} />
       <div className="space-y-2">
         <h2 className="text-sm font-semibold">Listings</h2>
@@ -718,14 +725,14 @@ function Reputation() {
         ) : (
           <ul className="space-y-2">
             {data.listings.map((l) => (
-              <li key={l.id} className="ui-card ui-card-static text-sm">
+              <Card key={l.id} className="text-sm" render={<li />}>
                 <p>
                   {shortDateTime(l.createdAt)}: {l.details}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {l.status === "open" ? "Open in Reports" : `Resolved: ${l.outcome ?? ""}`}
                 </p>
-              </li>
+              </Card>
             ))}
           </ul>
         )}
@@ -780,7 +787,7 @@ export function AccountSharingPanel({ userId }: { userId: string }) {
 
   if (off) return null;
   return (
-    <div className="ui-card ui-card-static space-y-2 text-sm">
+    <Card className="space-y-2 text-sm">
       <h2 className="font-semibold">Sharing</h2>
       {!account ? (
         <Skeleton className="h-16 w-full rounded-md" />
@@ -842,6 +849,6 @@ export function AccountSharingPanel({ userId }: { userId: string }) {
         </>
       )}
       <Notice notice={n.notice} />
-    </div>
+    </Card>
   );
 }

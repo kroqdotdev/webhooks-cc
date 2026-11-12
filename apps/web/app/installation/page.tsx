@@ -9,6 +9,7 @@ import { DocsSidebar } from "@/components/docs/sidebar";
 import { DocsBreadcrumbs } from "@/components/docs/breadcrumbs";
 import { SearchModal } from "@/components/docs/search-modal";
 import { AgentSkillInstall } from "@/components/docs/agent-skill-install";
+import { CodeBox } from "@/components/ui/code";
 
 const TABS = ["cli", "sdk", "mcp"] as const;
 
@@ -34,9 +35,12 @@ function CodeBlock({ children, copyText }: { children: string; copyText?: string
   return (
     <div className="relative">
       <CopyButton text={copyText ?? children} />
-      <pre className="ui-code text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10">
+      <CodeBox
+        className="text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10"
+        render={<pre />}
+      >
         {children}
-      </pre>
+      </CodeBox>
     </div>
   );
 }
@@ -289,7 +293,7 @@ console.log(endpoint.url);`}
                   </p>
                 </div>
 
-                <div className="space-y-6 border-t border-border pt-10">
+                <div className="space-y-6 border-t pt-10">
                   <div>
                     <h2 className="text-2xl font-bold mb-2">Local server</h2>
                     <p className="text-sm text-muted-foreground">
@@ -313,7 +317,7 @@ console.log(endpoint.url);`}
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                       placeholder="whcc_..."
-                      className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-3 py-2 border rounded-md bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                       autoComplete="off"
                       spellCheck={false}
                       aria-label="webhooks.cc API key"
@@ -340,7 +344,7 @@ console.log(endpoint.url);`}
                           href={cursorUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-surface hover:shadow-none transition-all hover:bg-muted"
+                          className="inline-flex items-center gap-2 px-4 py-2 border rounded-md bg-background font-bold text-sm shadow-surface hover:shadow-none transition-all hover:bg-muted"
                         >
                           Add to Cursor
                         </a>
@@ -355,7 +359,7 @@ console.log(endpoint.url);`}
                           href={VSCODE_URL}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md bg-background font-bold text-sm shadow-surface hover:shadow-none transition-all hover:bg-muted"
+                          className="inline-flex items-center gap-2 px-4 py-2 border rounded-md bg-background font-bold text-sm shadow-surface hover:shadow-none transition-all hover:bg-muted"
                         >
                           Add to VS Code
                         </a>

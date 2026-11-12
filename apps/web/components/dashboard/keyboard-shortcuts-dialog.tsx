@@ -65,7 +65,7 @@ export function KeyboardShortcutsDialog({
                   <div key={s.key} className="flex items-center justify-between py-1">
                     <span className="text-sm">{s.label}</span>
                     {/* Sans, where "l" cannot be mistaken for "1". */}
-                    <kbd className="px-2 py-0.5 text-xs font-sans font-bold border border-border rounded-sm bg-muted">
+                    <kbd className="px-2 py-0.5 text-xs font-sans font-bold border rounded-sm bg-muted">
                       {s.key}
                     </kbd>
                   </div>

@@ -4,6 +4,7 @@ import { FeaturePage } from "@/components/mailhooks/feature-page";
 import { mailhooksFeature } from "@/lib/mailhooks-features";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { webhooksOrigin } from "@/lib/site";
+import { Card } from "@/components/ui/card";
 
 const feature = mailhooksFeature("/ai-setup");
 
@@ -36,7 +37,7 @@ export default function AiSetupPage() {
           is sent; a record of each ask holds who asked, when and how it went.
         </p>
         <div className="grid sm:grid-cols-2 gap-4">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="font-bold mb-3">Sent, when you ask</h3>
             <ul className="space-y-2">
               {SENT.map((item) => (
@@ -46,8 +47,8 @@ export default function AiSetupPage() {
                 </li>
               ))}
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h3 className="font-bold mb-3">Never sent</h3>
             <ul className="space-y-2">
               {NOT_SENT.map((item) => (
@@ -57,7 +58,7 @@ export default function AiSetupPage() {
                 </li>
               ))}
             </ul>
-          </div>
+          </Card>
         </div>
         <p className="text-sm text-muted-foreground mt-4">
           Anthropic is on our{" "}

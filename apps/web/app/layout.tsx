@@ -16,7 +16,6 @@ import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
 import { buildAuthMdUrl } from "@/lib/agent/metadata";
-import { themeBootstrapScript } from "@/lib/theme";
 
 // Font variables live on <html>; globals.css names them in --font-sans and --font-mono.
 const plexSans = IBM_Plex_Sans({
@@ -126,9 +125,11 @@ export default function RootLayout({
           title="Agent registration (auth.md)"
           href={buildAuthMdUrl()}
         />
+        {/* next-themes sets the mode from storage; where storage throws (site data
+            blocked) it sets nothing, so a dark system would paint light first. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: themeBootstrapScript(),
+            __html: `try{localStorage.getItem("theme")}catch(e){if(matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.classList.add("dark")}`,
           }}
         />
         {ANNOUNCEMENTS.length > 0 && (

@@ -7,6 +7,8 @@ import { RequestDetail } from "@/components/dashboard/request-detail";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
 import { snapshotToRequest } from "@/lib/request-share";
 import { getSharedRequest } from "@/lib/supabase/request-shares";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 // A revoked link must stop working at once, so nothing here is cached.
 export const dynamic = "force-dynamic";
@@ -65,17 +67,18 @@ export default async function SharedRequestPage({ params }: PageProps) {
               {formatDate(shared.expiresAt)}, or sooner if its owner revokes it.
             </p>
           </div>
-          <Link
-            href="/"
-            className="ui-btn-outline py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
+          <Button
+            variant="surface"
+            className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
+            render={<Link href="/" />}
           >
             Capture your own webhooks
             <ArrowRight className="h-3 w-3" />
-          </Link>
+          </Button>
         </div>
 
         {(hidden.length > 0 || snapshot.bodyTruncated || snapshot.bodyNotUtf8) && (
-          <div className="mb-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
+          <div className="mb-4 rounded-md border bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
             {hidden.length > 0 && (
               <p className="flex items-start gap-1.5">
                 <EyeOff className="h-3.5 w-3.5 shrink-0 mt-px" />
@@ -92,11 +95,11 @@ export default async function SharedRequestPage({ params }: PageProps) {
           </div>
         )}
 
-        <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-lg border border-border bg-background shadow-float">
+        <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-lg border bg-background shadow-float">
           <RequestDetail request={snapshotToRequest(snapshot, token)} />
         </div>
 
-        <div className="mt-8 ui-card ui-card-static flex flex-wrap items-center justify-between gap-4">
+        <Card className="mt-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="font-bold">Debug webhooks like this, for free</h2>
             <p className="text-sm text-muted-foreground">
@@ -104,14 +107,15 @@ export default async function SharedRequestPage({ params }: PageProps) {
               payload types, and shares a request with one link.
             </p>
           </div>
-          <Link
-            href="/"
-            className="ui-btn-primary py-2! px-4! text-sm inline-flex items-center gap-1.5"
+          <Button
+            variant="primary"
+            className="py-2! px-4! text-sm inline-flex items-center gap-1.5"
+            render={<Link href="/" />}
           >
             Get a webhook URL
             <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
+          </Button>
+        </Card>
       </main>
     </div>
   );

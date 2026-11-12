@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, ApiError, shortDateTime } from "@/lib/support/client";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
+import { CodeBox } from "@/components/ui/code";
 
 interface Session {
   id: string;
@@ -188,10 +189,7 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
         </div>
       ) : (
         <div className="grid flex-1 lg:grid-cols-[14rem_minmax(0,22rem)_minmax(0,1fr)]">
-          <nav
-            aria-label="Endpoints"
-            className="border-b border-border bg-card p-2 lg:border-b-0 lg:border-r"
-          >
+          <nav aria-label="Endpoints" className="border-b bg-card p-2 lg:border-b-0 lg:border-r">
             {endpoints.length === 0 ? (
               <p className="p-2 text-sm text-muted-foreground">No endpoints.</p>
             ) : (
@@ -216,10 +214,7 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
             )}
           </nav>
 
-          <section
-            aria-label="Requests"
-            className="border-b border-border lg:border-b-0 lg:border-r"
-          >
+          <section aria-label="Requests" className="border-b lg:border-b-0 lg:border-r">
             {requests === null ? (
               <div className="p-4">
                 <Skeleton className="h-20 w-full rounded-md" />
@@ -229,7 +224,7 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
             ) : (
               <ul className="ph-no-capture">
                 {requests.map((row) => (
-                  <li key={row.id} className="border-t border-border first:border-t-0">
+                  <li key={row.id} className="border-t first:border-t-0">
                     <button
                       type="button"
                       onClick={() => void openRequest(row.id)}
@@ -279,9 +274,12 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
                       From {detail.email.from.join(", ") || "unknown"} to{" "}
                       {detail.email.to.join(", ")}
                     </p>
-                    <pre className="ui-code max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-md border border-border p-3 font-mono text-xs">
+                    <CodeBox
+                      className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-md border p-3 font-mono text-xs"
+                      render={<pre />}
+                    >
                       {detail.email.text ?? "(no text part)"}
-                    </pre>
+                    </CodeBox>
                     {detail.email.attachments.length > 0 && (
                       <p className="text-xs text-muted-foreground">
                         Attachments:{" "}
@@ -299,18 +297,24 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
                     <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
                       Headers
                     </summary>
-                    <pre className="ui-code mt-2 max-h-64 overflow-auto rounded-md border border-border p-3 font-mono text-xs">
+                    <CodeBox
+                      className="mt-2 max-h-64 overflow-auto rounded-md border p-3 font-mono text-xs"
+                      render={<pre />}
+                    >
                       {Object.entries(detail.headers)
                         .map(([key, value]) => `${key}: ${value}`)
                         .join("\n")}
-                    </pre>
+                    </CodeBox>
                   </details>
                 )}
                 {detail.query && <p className="font-mono text-xs">?{detail.query}</p>}
                 {detail.body !== null && (
-                  <pre className="ui-code max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-md border border-border p-3 font-mono text-xs">
+                  <CodeBox
+                    className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-md border p-3 font-mono text-xs"
+                    render={<pre />}
+                  >
                     {detail.body || "(empty body)"}
-                  </pre>
+                  </CodeBox>
                 )}
               </div>
             )}

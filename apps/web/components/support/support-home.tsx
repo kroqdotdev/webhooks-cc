@@ -11,6 +11,7 @@ import { apiFetch, shortDay, timeAgo } from "@/lib/support/client";
 import type { SupportTicketSummary } from "@/lib/support/shared";
 import { subscribeToSupportTickets } from "@/lib/supabase/realtime";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
 
 /**
  * /support: signed in, the person's tickets; signed out, how to reach us
@@ -49,21 +50,21 @@ export function SupportHome() {
 
 function ListSkeleton() {
   return (
-    <div role="status" aria-label="Loading tickets" className="ui-card ui-card-static space-y-3">
+    <Card className="space-y-3" role="status" aria-label="Loading tickets">
       <Skeleton className="h-4 w-2/3 rounded-md" />
       <Skeleton className="h-4 w-1/3 rounded-md" />
-    </div>
+    </Card>
   );
 }
 
 function TicketRows({ tickets }: { tickets: SupportTicketSummary[] }) {
   return (
-    <ul className="ui-card ui-card-static p-0! overflow-hidden ph-no-capture">
+    <Card className="p-0! overflow-hidden ph-no-capture" render={<ul />}>
       {tickets.map((ticket) => {
         const closed = ticket.status === "closed";
         const yours = !closed && ticket.waitingOn === "user";
         return (
-          <li key={ticket.id} className="border-t border-border first:border-t-0">
+          <li key={ticket.id} className="border-t first:border-t-0">
             <Link
               href={`/support/${ticket.number}`}
               className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 px-4 py-3.5 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -103,7 +104,7 @@ function TicketRows({ tickets }: { tickets: SupportTicketSummary[] }) {
           </li>
         );
       })}
-    </ul>
+    </Card>
   );
 }
 
@@ -137,12 +138,12 @@ function TicketList({ token, userId }: { token: string | null; userId: string | 
 
   if (tickets === null) {
     return error ? (
-      <div className="ui-card ui-card-static flex flex-wrap items-center justify-between gap-3">
+      <Card className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-destructive-ink">{error}</p>
         <Button variant="outline" size="sm" onClick={() => void load()}>
           Try again
         </Button>
-      </div>
+      </Card>
     ) : (
       <ListSkeleton />
     );
@@ -153,7 +154,7 @@ function TicketList({ token, userId }: { token: string | null; userId: string | 
 
   if (tickets.length === 0) {
     return (
-      <div className="ui-card ui-card-static space-y-3">
+      <Card className="space-y-3">
         <p className="text-sm font-medium">No tickets yet.</p>
         <p className="text-sm text-muted-foreground">
           When something does not work as you expect, open a ticket and describe what happened. Most
@@ -167,7 +168,7 @@ function TicketList({ token, userId }: { token: string | null; userId: string | 
             Read the docs
           </Button>
         </div>
-      </div>
+      </Card>
     );
   }
 
@@ -187,7 +188,7 @@ function TicketList({ token, userId }: { token: string | null; userId: string | 
 function SignedOut() {
   return (
     <div className="space-y-8">
-      <div className="ui-card ui-card-static space-y-3">
+      <Card className="space-y-3">
         <h2 className="text-lg font-semibold">Open a ticket</h2>
         <p className="text-sm text-muted-foreground">
           Sign in to open a ticket about your account. You can follow the answer here, get it by
@@ -196,12 +197,13 @@ function SignedOut() {
         <Button render={<Link href="/login?redirect=/support/new" />}>
           Sign in to open a ticket
         </Button>
-      </div>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <a
-          href="mailto:support@webhooks.cc"
-          className="ui-card flex items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        <Card
+          interactive
+          className="flex items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          render={<a href="mailto:support@webhooks.cc" />}
         >
           <Mail className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
           <span>
@@ -210,10 +212,11 @@ function SignedOut() {
               No account, or cannot sign in? Write to support@webhooks.cc.
             </span>
           </span>
-        </a>
-        <Link
-          href="/docs"
-          className="ui-card flex items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        </Card>
+        <Card
+          interactive
+          className="flex items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          render={<Link href="/docs" />}
         >
           <BookOpen className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
           <span>
@@ -222,7 +225,7 @@ function SignedOut() {
               Setup, endpoints, email capture, the CLI and the SDKs.
             </span>
           </span>
-        </Link>
+        </Card>
       </div>
     </div>
   );

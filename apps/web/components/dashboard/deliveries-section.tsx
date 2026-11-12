@@ -29,6 +29,8 @@ import { getMethodColor } from "@/types/request";
 import { DeliveryChip, chipStatus } from "./delivery-pane";
 import { Section, Segmented } from "./settings-primitives";
 import { useDeliverySummary, useDocumentVisible, useOnScreen } from "./use-delivery-summary";
+import { FieldControl } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 50;
 
@@ -263,11 +265,15 @@ export function DeliveriesSection({
             ]}
           />
           {destinations.length > 1 && (
-            <select
-              aria-label="Destination"
-              value={destinationId}
-              onChange={(e) => setDestinationId(e.target.value)}
-              className="ui-input text-[13px] py-1.5! px-2! min-w-0 max-w-[16rem]"
+            <FieldControl
+              className="text-[13px] py-1.5! px-2! min-w-0 max-w-[16rem]"
+              render={
+                <select
+                  aria-label="Destination"
+                  value={destinationId}
+                  onChange={(e) => setDestinationId(e.target.value)}
+                />
+              }
             >
               <option value="">Every destination</option>
               {destinations.map((destination) => (
@@ -275,7 +281,7 @@ export function DeliveriesSection({
                   {destinationLabel({ ...destination, name: destination.name })}
                 </option>
               ))}
-            </select>
+            </FieldControl>
           )}
         </div>
         <span className="text-xs text-muted-foreground">Updates as deliveries happen.</span>
@@ -290,36 +296,36 @@ export function DeliveriesSection({
                 {failedCount === 1 ? "delivery" : "deliveries"} again with each destination&apos;s
                 current settings?
               </span>
-              <button
+              <Button
+                variant="primary"
+                className={cn("py-1! px-2.5! text-xs", queuing && "opacity-50 cursor-not-allowed")}
                 type="button"
                 onClick={() => void redeliverFailed()}
                 disabled={queuing}
-                className={cn(
-                  "ui-btn-primary py-1! px-2.5! text-xs",
-                  queuing && "opacity-50 cursor-not-allowed"
-                )}
               >
                 {queuing ? "Queuing..." : "Send them again"}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="surface"
+                className="py-1! px-2.5! text-xs"
                 type="button"
                 onClick={() => setConfirming(false)}
-                className="ui-btn-outline py-1! px-2.5! text-xs"
               >
                 Keep them
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
+              variant="surface"
+              className="py-1.5! px-3! text-xs"
               type="button"
               onClick={() => {
                 setResult(null);
                 setConfirming(true);
               }}
-              className="ui-btn-outline py-1.5! px-3! text-xs"
             >
               Redeliver all failed
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -498,17 +504,18 @@ export function DeliveriesSection({
                 : `Showing the latest ${formatCount(rows.length)}.`}
             </span>
             {!exhausted && (
-              <button
+              <Button
+                variant="surface"
+                className={cn(
+                  "py-1! px-2.5! text-xs",
+                  loadingOlder && "opacity-50 cursor-not-allowed"
+                )}
                 type="button"
                 onClick={() => void loadOlder()}
                 disabled={loadingOlder}
-                className={cn(
-                  "ui-btn-outline py-1! px-2.5! text-xs",
-                  loadingOlder && "opacity-50 cursor-not-allowed"
-                )}
               >
                 {loadingOlder ? "Loading..." : "Show older"}
-              </button>
+              </Button>
             )}
           </div>
         </>

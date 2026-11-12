@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FieldControl } from "@/components/ui/field";
 
 const STATUS_CODES = [
   {
@@ -135,7 +136,7 @@ export function StatusCodePicker({
           >
             <SelectValue placeholder="Select status" />
           </SelectTrigger>
-          <SelectContent className="border border-border shadow-float">
+          <SelectContent className="border shadow-float">
             {STATUS_CODES.map((group, i) => (
               <SelectGroup key={group.group}>
                 {i > 0 && <SelectSeparator className="bg-foreground/20" />}
@@ -163,13 +164,13 @@ export function StatusCodePicker({
         </Select>
 
         {isCustom && (
-          <input
+          <FieldControl
+            className="flex-1 text-sm font-mono"
             type="text"
             inputMode="numeric"
             value={customValue}
             onChange={(e) => handleCustomInput(e.target.value)}
             placeholder="418"
-            className="ui-input flex-1 text-sm font-mono"
             autoFocus
           />
         )}

@@ -1,17 +1,22 @@
 import Link from "next/link";
 import { CopyButton } from "@/components/ui/copy-button";
 import { cn } from "@/lib/utils";
+import { CodeBox } from "@/components/ui/code";
 
-export const CLAUDE_PLUGIN_INSTALL = "/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc";
+export const CLAUDE_PLUGIN_INSTALL =
+  "/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc";
 export const SKILLS_CLI_INSTALL = "npx skills add kroqdotdev/webhooks-cc";
 
 function Command({ children }: { children: string }) {
   return (
     <div className="relative">
       <CopyButton text={children} />
-      <pre className="ui-code text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10">
+      <CodeBox
+        className="text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10"
+        render={<pre />}
+      >
         {children}
-      </pre>
+      </CodeBox>
     </div>
   );
 }
@@ -24,10 +29,10 @@ export function AgentSkillInstall({ headingClassName }: { headingClassName?: str
       <section>
         <h3 className={heading}>Claude Code plugin</h3>
         <p className="text-sm text-muted-foreground mb-3">
-          Installs the MCP server together with the webhook testing skill, which tells Claude when to
-          reach for it: payload types from real captures, signed test sends to your local handler,
-          and email codes in tests. It runs the local server: Claude Code asks for your API key when
-          you enable it; leave it empty to start in the keyless sandbox.
+          Installs the MCP server together with the webhook testing skill, which tells Claude when
+          to reach for it: payload types from real captures, signed test sends to your local
+          handler, and email codes in tests. It runs the local server: Claude Code asks for your API
+          key when you enable it; leave it empty to start in the keyless sandbox.
         </p>
         <Command>{CLAUDE_PLUGIN_INSTALL}</Command>
       </section>

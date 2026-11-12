@@ -8,6 +8,7 @@ import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { MfaGate } from "@/components/auth/mfa-challenge";
 import { createClient } from "@/lib/supabase/client";
+import { Card } from "@/components/ui/card";
 
 /**
  * The OAuth authorization endpoint: where a remote MCP client (claude.ai,
@@ -179,9 +180,13 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
     <div className="text-center">
       <h1 className="text-2xl font-bold mb-3">{title}</h1>
       <p className="text-muted-foreground mb-6">{children}</p>
-      <Link href="/docs/mcp" className="ui-btn-outline text-sm py-2 px-4 inline-block">
+      <Button
+        variant="surface"
+        className="text-sm py-2 px-4 inline-block"
+        render={<Link href="/docs/mcp" />}
+      >
         How apps connect to webhooks.cc
-      </Link>
+      </Button>
     </div>
   );
 }
@@ -206,7 +211,7 @@ function RequestPanel(props: {
         <span className="font-mono">{view.signedInAs ?? "you"}</span>.
       </p>
 
-      <dl className="ui-card ui-card-static p-4 mb-6 space-y-2 text-sm">
+      <Card className="p-4 mb-6 space-y-2 text-sm" render={<dl />}>
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">App</dt>
           <dd className="text-right">
@@ -228,7 +233,7 @@ function RequestPanel(props: {
             API access to your webhooks.cc account: your endpoints and what they capture
           </dd>
         </div>
-      </dl>
+      </Card>
 
       <p className="text-sm text-muted-foreground mb-4">
         It cannot change your API keys, billing or account. It stays connected until you disconnect

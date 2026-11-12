@@ -84,7 +84,7 @@ function MobileToc({ headings, activeId }: { headings: TocItem[]; activeId: stri
   if (headings.length < 3) return null;
 
   return (
-    <div className="hidden md:block xl:hidden mb-6 rounded-lg border border-border bg-card">
+    <div className="hidden md:block xl:hidden mb-6 rounded-lg border bg-card">
       <button
         onClick={() => setOpen(!open)}
         type="button"
@@ -94,7 +94,7 @@ function MobileToc({ headings, activeId }: { headings: TocItem[]; activeId: stri
         <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
-        <nav className="px-4 pb-3 border-t border-border" aria-label="Table of contents">
+        <nav className="px-4 pb-3 border-t" aria-label="Table of contents">
           <ul className="space-y-1.5 text-sm pt-2">
             {headings.map((h) => (
               <li key={h.id}>

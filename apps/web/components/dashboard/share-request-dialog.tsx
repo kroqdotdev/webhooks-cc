@@ -130,13 +130,13 @@ export function ShareRequestDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <button className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5" />
+          <Button variant="surface" className="py-1.5! px-3! text-xs flex items-center gap-1.5" />
         }
       >
         <Link2 className="h-3 w-3" />
         Share
       </DialogTrigger>
-      <DialogContent className="border border-border shadow-float">
+      <DialogContent className="border shadow-float">
         <DialogHeader>
           <DialogTitle className="font-bold tracking-normal">Share request</DialogTitle>
           <DialogDescription>
@@ -167,7 +167,7 @@ export function ShareRequestDialog({
             onChange={setHideSensitive}
           />
 
-          <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
+          <div className="rounded-md border bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
             {hidden.length > 0 ? (
               <p className="flex items-start gap-1.5">
                 <EyeOff className="h-3.5 w-3.5 shrink-0 mt-px" />
@@ -189,7 +189,7 @@ export function ShareRequestDialog({
             </div>
           )}
 
-          <Button onClick={create} disabled={busy} className="w-full ui-btn-primary">
+          <Button onClick={create} disabled={busy} raised className="w-full">
             {busy ? "Creating..." : "Create link and copy it"}
           </Button>
 
@@ -208,7 +208,7 @@ export function ShareRequestDialog({
                 {links.map((link) => (
                   <li
                     key={link.id}
-                    className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5"
+                    className="flex items-center gap-2 rounded-md border px-2 py-1.5"
                   >
                     {/* ph-no-capture keeps the token out of session recordings. */}
                     <span className="ph-no-capture min-w-0 flex-1 truncate font-mono text-xs">

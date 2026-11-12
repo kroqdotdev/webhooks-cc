@@ -29,7 +29,7 @@ export default function TermsPage() {
         </div>
 
         {/* The Service */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">The Service</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -40,7 +40,7 @@ export default function TermsPage() {
         </section>
 
         {/* Your Account */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Your Account</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -52,7 +52,7 @@ export default function TermsPage() {
         </section>
 
         {/* Acceptable Use */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Acceptable Use</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>You agree not to:</p>
@@ -67,7 +67,7 @@ export default function TermsPage() {
         </section>
 
         {/* Shared previews */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Shared Previews</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -104,7 +104,7 @@ export default function TermsPage() {
         </section>
 
         {/* Webhook Data */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Webhook Data</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -121,7 +121,7 @@ export default function TermsPage() {
         </section>
 
         {/* Service Availability */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Service Availability</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -132,7 +132,7 @@ export default function TermsPage() {
         </section>
 
         {/* Governing Law */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Governing Law</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -145,7 +145,7 @@ export default function TermsPage() {
         </section>
 
         {/* Changes */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Changes</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -157,7 +157,7 @@ export default function TermsPage() {
         </section>
 
         {/* Contact */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Contact</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>

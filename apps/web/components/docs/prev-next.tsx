@@ -11,7 +11,7 @@ export function PrevNextNav({ prev, next }: { prev: NavLink | null; next: NavLin
   if (!prev && !next) return null;
 
   return (
-    <nav aria-label="Page navigation" className="mt-16 pt-8 border-t border-border">
+    <nav aria-label="Page navigation" className="mt-16 pt-8 border-t">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {prev ? (
           <SiteLink

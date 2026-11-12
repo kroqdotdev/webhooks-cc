@@ -36,6 +36,8 @@ import {
 } from "@/lib/forwarding/display";
 import type { DisplayableRequest } from "./request-detail";
 import { DeliveryJourney, type JourneyStop } from "./delivery-journey";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 /** What the pane needs to know about the endpoint's forwarding. */
 export interface DeliveryEndpoint {
@@ -488,7 +490,7 @@ function DeliveryCard({
   );
   const kind = isRedelivery ? "Redelivery" : "Delivery";
   return (
-    <section className="ui-card ui-card-static p-0! overflow-hidden" aria-label={kind}>
+    <Card className="p-0! overflow-hidden" render={<section aria-label={kind} />}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 border-b border-border/20">
         <DeliveryChip status={chipStatus(delivery.status, delivery.attempts)} />
         <span className="text-sm">{kind}</span>
@@ -499,7 +501,7 @@ function DeliveryCard({
         {journey.note && <p className="mt-3.5 text-[13px]">{journey.note}</p>}
         <TriesList delivery={delivery} utc={utc} now={now} />
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -756,19 +758,20 @@ export function DeliveriesPane({
                 ) : null}
               </p>
               {canSend && (takes || group.deliveries.length > 0) && (
-                <button
+                <Button
+                  variant="surface"
+                  className={cn(
+                    "py-1! px-2.5! text-xs flex items-center gap-1.5 shrink-0",
+                    (queuing !== null || !takes) && "opacity-50 cursor-not-allowed"
+                  )}
                   type="button"
                   onClick={() => void redeliver(group)}
                   disabled={queuing !== null || !takes}
                   title={!takes ? `This destination does not take ${what} now.` : undefined}
-                  className={cn(
-                    "ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5 shrink-0",
-                    (queuing !== null || !takes) && "opacity-50 cursor-not-allowed"
-                  )}
                 >
                   <RefreshCw className={cn("h-3 w-3", queuing === group.key && "animate-spin")} />
                   {queuing === group.key ? "Queuing..." : button}
-                </button>
+                </Button>
               )}
             </div>
             {group.deliveries.length === 0 && canSend && takes && (

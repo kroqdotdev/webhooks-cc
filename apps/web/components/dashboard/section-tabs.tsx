@@ -90,7 +90,7 @@ export function SectionTabList<T extends string>({
   }, [active]);
 
   return (
-    <div className="shrink-0 border-b border-border">
+    <div className="shrink-0 border-b">
       <div
         ref={ref}
         className={cn(

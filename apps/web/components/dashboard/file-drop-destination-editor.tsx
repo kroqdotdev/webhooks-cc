@@ -17,6 +17,8 @@ import {
 import { ConditionList } from "./condition-list";
 import { Field, Segmented, SwitchRow, useConfirmStep } from "./settings-primitives";
 import { useReportDirty } from "./dirty-sections";
+import { FieldControl } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
 
 type Protocol = FileDropDestinationConfig["protocol"];
 type Column = { header: string; value: string };
@@ -265,13 +267,13 @@ export function FileDropDestinationEditor({
   return (
     <div className="space-y-5">
       <Field id={`${idPrefix}-name`} label="Name">
-        <input
+        <FieldControl
+          className="w-full text-sm py-2!"
           id={`${idPrefix}-name`}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Orders to the ERP"
           maxLength={100}
-          className="ui-input w-full text-sm py-2!"
         />
       </Field>
 
@@ -301,69 +303,69 @@ export function FileDropDestinationEditor({
               label="Endpoint"
               help="The storage's address, like https://s3.eu-central-1.amazonaws.com."
             >
-              <input
+              <FieldControl
+                className="w-full text-sm py-2!"
                 id={`${idPrefix}-endpoint`}
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
                 placeholder="https://s3.eu-central-1.amazonaws.com"
-                className="ui-input w-full text-sm py-2!"
               />
             </Field>
             <Field id={`${idPrefix}-region`} label="Region">
-              <input
+              <FieldControl
+                className="w-full text-sm py-2!"
                 id={`${idPrefix}-region`}
                 value={region}
                 onChange={(e) => setRegion(e.target.value)}
                 placeholder="us-east-1"
-                className="ui-input w-full text-sm py-2!"
               />
             </Field>
             <Field id={`${idPrefix}-bucket`} label="Bucket">
-              <input
+              <FieldControl
+                className="w-full text-sm py-2!"
                 id={`${idPrefix}-bucket`}
                 value={bucket}
                 onChange={(e) => setBucket(e.target.value)}
                 placeholder="acme-orders"
-                className="ui-input w-full text-sm py-2!"
               />
             </Field>
             <Field id={`${idPrefix}-access-key`} label="Access key ID">
-              <input
+              <FieldControl
+                className="w-full text-sm py-2! font-mono"
                 id={`${idPrefix}-access-key`}
                 value={accessKeyId}
                 onChange={(e) => setAccessKeyId(e.target.value)}
                 autoComplete="off"
-                className="ui-input w-full text-sm py-2! font-mono"
               />
             </Field>
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
             <Field id={`${idPrefix}-host`} label="Host">
-              <input
+              <FieldControl
+                className="w-full text-sm py-2!"
                 id={`${idPrefix}-host`}
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
                 placeholder="files.acme.com"
-                className="ui-input w-full text-sm py-2!"
               />
             </Field>
             <Field id={`${idPrefix}-port`} label="Port">
-              <input
+              <FieldControl
+                className="w-full text-sm py-2!"
                 id={`${idPrefix}-port`}
                 value={port}
                 onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
-                className="ui-input w-full text-sm py-2!"
               />
             </Field>
             <Field id={`${idPrefix}-username`} label="Username">
-              <input
+              <FieldControl
+                className="w-full text-sm py-2!"
                 id={`${idPrefix}-username`}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="off"
-                className="ui-input w-full text-sm py-2!"
               />
             </Field>
           </div>
@@ -384,25 +386,29 @@ export function FileDropDestinationEditor({
           }
         >
           {protocol === "sftp" && useKey ? (
-            <textarea
-              id={`${idPrefix}-secret`}
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              rows={4}
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-              autoComplete="off"
-              spellCheck={false}
-              className="ui-input w-full text-xs py-2! font-mono"
+            <FieldControl
+              className="w-full text-xs py-2! font-mono"
+              render={
+                <textarea
+                  id={`${idPrefix}-secret`}
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  rows={4}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              }
             />
           ) : (
-            <input
+            <FieldControl
+              className="w-full text-sm py-2!"
               id={`${idPrefix}-secret`}
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               placeholder={hasSecret ? "Saved" : ""}
               autoComplete="new-password"
-              className="ui-input w-full text-sm py-2!"
             />
           )}
         </Field>
@@ -415,12 +421,12 @@ export function FileDropDestinationEditor({
               : "Relative to the login's home folder; it must exist. Empty writes to the home folder."
           }
         >
-          <input
+          <FieldControl
+            className="w-full text-sm py-2! font-mono"
             id={`${idPrefix}-folder`}
             value={folder}
             onChange={(e) => setFolder(e.target.value)}
             placeholder={protocol === "s3" ? "in/orders" : "upload/orders"}
-            className="ui-input w-full text-sm py-2! font-mono"
           />
         </Field>
         {(protocol === "ftps" || protocol === "s3") && (
@@ -429,12 +435,12 @@ export function FileDropDestinationEditor({
             label="Certificate fingerprint"
             help="Only for a self-signed certificate: its SHA-256 fingerprint, which is then the only certificate accepted."
           >
-            <input
+            <FieldControl
+              className="w-full text-xs py-2! font-mono"
               id={`${idPrefix}-fingerprint`}
               value={tlsFingerprint}
               onChange={(e) => setTlsFingerprint(e.target.value)}
               placeholder="AB:CD:..."
-              className="ui-input w-full text-xs py-2! font-mono"
             />
           </Field>
         )}
@@ -493,7 +499,8 @@ export function FileDropDestinationEditor({
             <div className="space-y-2">
               {columns.map((column, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <input
+                  <FieldControl
+                    className="w-40 text-sm py-1.5!"
                     aria-label={`Column ${index + 1} header`}
                     value={column.header}
                     onChange={(e) =>
@@ -502,9 +509,9 @@ export function FileDropDestinationEditor({
                       )
                     }
                     placeholder="Header"
-                    className="ui-input w-40 text-sm py-1.5!"
                   />
-                  <input
+                  <FieldControl
+                    className="flex-1 text-sm font-mono py-1.5!"
                     aria-label={`Column ${index + 1} value`}
                     value={column.value}
                     onChange={(e) =>
@@ -513,7 +520,6 @@ export function FileDropDestinationEditor({
                       )
                     }
                     placeholder="{{ subject }}"
-                    className="ui-input flex-1 text-sm font-mono py-1.5!"
                   />
                   <button
                     type="button"
@@ -526,13 +532,14 @@ export function FileDropDestinationEditor({
                 </div>
               ))}
               <div className="flex flex-wrap gap-2">
-                <button
+                <Button
+                  variant="surface"
+                  className="py-1! px-2! text-xs inline-flex items-center gap-1"
                   type="button"
                   onClick={() => setColumns([...columns, { header: "", value: "" }])}
-                  className="ui-btn-outline py-1! px-2! text-xs inline-flex items-center gap-1"
                 >
                   <Plus className="h-3 w-3" /> Column
-                </button>
+                </Button>
                 <button
                   type="button"
                   onClick={() => setColumns(defaultColumns(emailFieldNames))}
@@ -562,12 +569,12 @@ export function FileDropDestinationEditor({
             help="Minutes from the first email of a batch until its file is written, with everything that arrived meanwhile."
           >
             <div className="flex items-center gap-2">
-              <input
+              <FieldControl
+                className="w-20 text-sm py-2!"
                 id={`${idPrefix}-batch`}
                 value={batchMinutes}
                 onChange={(e) => setBatchMinutes(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
-                className="ui-input w-20 text-sm py-2!"
               />
               <span className="text-sm text-muted-foreground">minutes</span>
             </div>
@@ -578,13 +585,13 @@ export function FileDropDestinationEditor({
           label="File name prefix"
           help={`Files are named ${prefix.trim() || ""}20261029-173326-3f2a9c1e${batch ? "-batch" : ""}.${file}: the time and the first request's id, so a retry replaces its own file.`}
         >
-          <input
+          <FieldControl
+            className="w-56 text-sm py-2! font-mono"
             id={`${idPrefix}-prefix`}
             value={prefix}
             onChange={(e) => setPrefix(e.target.value)}
             maxLength={60}
             placeholder="orders-"
-            className="ui-input w-56 text-sm py-2! font-mono"
           />
         </Field>
       </div>
@@ -629,27 +636,26 @@ export function FileDropDestinationEditor({
       </div>
 
       <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border/20">
-        <button
+        <Button
+          variant="primary"
+          className="py-1.5! px-3! text-xs"
           type="button"
           disabled={!!busy}
           onClick={() => void save()}
-          className="ui-btn-primary py-1.5! px-3! text-xs"
         >
           {busy === "Saving..." ? busy : destination ? "Save destination" : "Add destination"}
-        </button>
+        </Button>
         {destination && (
-          <button
+          <Button
+            variant="surface"
+            className={cn("py-1.5! px-3! text-xs", dirty && "opacity-50 cursor-not-allowed")}
             type="button"
             disabled={!!busy || dirty}
             onClick={() => void test()}
             title={dirty ? "Save first: the test uses the saved settings." : undefined}
-            className={cn(
-              "ui-btn-outline py-1.5! px-3! text-xs",
-              dirty && "opacity-50 cursor-not-allowed"
-            )}
           >
             {busy === "Connecting..." ? busy : "Test the connection"}
-          </button>
+          </Button>
         )}
         {onCancel && (
           <button type="button" onClick={onCancel} className="text-sm text-muted-foreground">

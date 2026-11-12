@@ -39,7 +39,7 @@ export default function PrivacyPage() {
         </div>
 
         {/* Who We Are */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Who We Are</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -63,7 +63,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Where Your Data Is Stored */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Where Your Data Is Stored</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -99,7 +99,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* What We Collect */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">What We Collect</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -218,7 +218,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Why We Use It */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Why We Use It</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -251,7 +251,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Webhook Contents */}
-        <section id="webhook-contents" className="border-t border-border pt-8 mt-8">
+        <section id="webhook-contents" className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Webhook Contents</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -278,7 +278,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Third-Party Services */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Third-Party Services</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>We use these companies to run webhooks.cc:</p>
@@ -307,7 +307,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* International Transfers */}
-        <section id="international-transfers" className="border-t border-border pt-8 mt-8">
+        <section id="international-transfers" className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">International Transfers</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -321,7 +321,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Analytics */}
-        <section id="analytics" className="border-t border-border pt-8 mt-8">
+        <section id="analytics" className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Analytics</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -408,7 +408,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Data Retention */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Data Retention</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -493,7 +493,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Cookies & Storage */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Cookies & Storage</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -514,7 +514,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Your Rights */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Your Rights</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -548,7 +548,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Changes */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Changes</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>We update the date at the top of this page whenever this policy changes.</p>
@@ -556,7 +556,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Contact */}
-        <section className="border-t border-border pt-8 mt-8">
+        <section className="border-t pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Contact</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>

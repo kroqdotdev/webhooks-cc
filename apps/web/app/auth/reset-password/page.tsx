@@ -96,9 +96,13 @@ function ResetPasswordContent() {
           <p className="text-muted-foreground">
             Request a new one from the sign-in page with &ldquo;Forgot password?&rdquo;.
           </p>
-          <Link href="/login" className="ui-btn-outline inline-block text-sm py-2 px-4">
+          <Button
+            variant="surface"
+            className="inline-block text-sm py-2 px-4"
+            render={<Link href="/login" />}
+          >
             Go to sign in
-          </Link>
+          </Button>
         </div>
       </AuthPageShell>
     );
@@ -112,7 +116,7 @@ function ResetPasswordContent() {
       </div>
 
       {done ? (
-        <div className="rounded-lg border border-border bg-background p-4 text-sm" role="status">
+        <div className="rounded-lg border bg-background p-4 text-sm" role="status">
           Password updated. Taking you to your dashboard...
         </div>
       ) : (

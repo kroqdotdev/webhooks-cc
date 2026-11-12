@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { CopyButton } from "@/components/ui/copy-button";
 import { AgentSkillInstall } from "@/components/docs/agent-skill-install";
+import { CodeBox } from "@/components/ui/code";
 
 const KEY_PLACEHOLDER = "whcc_...";
 const KEY_REGEX = /^whcc_[A-Za-z0-9_-]+$/;
@@ -29,9 +30,12 @@ function CodeBlock({ children, copyText }: { children: string; copyText?: string
   return (
     <div className="relative">
       <CopyButton text={copyText ?? children} />
-      <pre className="ui-code text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10">
+      <CodeBox
+        className="text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10"
+        render={<pre />}
+      >
         {children}
-      </pre>
+      </CodeBox>
     </div>
   );
 }

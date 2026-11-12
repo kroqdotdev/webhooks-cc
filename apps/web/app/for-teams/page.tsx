@@ -22,6 +22,8 @@ import {
 import { TeamsVideo } from "@/components/landing/teams-video";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { TeamsCTA } from "@/components/landing/teams-cta";
+import { Card } from "@/components/ui/card";
+import { CodeBox } from "@/components/ui/code";
 
 const PATH = "/for-teams";
 
@@ -203,19 +205,19 @@ export default function ForTeamsPage() {
           </p>
         </div>
 
-        <div className="ui-card ui-card-static p-0! overflow-hidden mb-12">
+        <Card className="p-0! overflow-hidden mb-12">
           <TeamsVideo />
-        </div>
+        </Card>
 
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-6">What teams use it for</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             {USE_CASES.map((item) => (
-              <div key={item.title} className="ui-card ui-card-static">
+              <Card key={item.title}>
                 <item.icon className="h-5 w-5 text-primary mb-3" aria-hidden="true" />
                 <h3 className="font-bold mb-1.5">{item.title}</h3>
                 <p className="text-sm text-muted-foreground">{item.text}</p>
-              </div>
+              </Card>
             ))}
           </div>
         </section>
@@ -237,7 +239,7 @@ export default function ForTeamsPage() {
           <ol className="space-y-4">
             {STEPS.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
+                <span className="w-9 h-9 border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                   {i + 1}
                 </span>
                 <div>
@@ -251,10 +253,10 @@ export default function ForTeamsPage() {
 
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Who can do what</h2>
-          <div className="ui-card ui-card-static overflow-x-auto">
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border">
+                <tr className="border-b">
                   <th scope="col" className="text-left py-2 pr-6 font-bold">
                     Action
                   </th>
@@ -276,7 +278,7 @@ export default function ForTeamsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
           <p className="text-sm text-muted-foreground mt-3 flex items-start gap-2">
             <Lock className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
             Shared endpoints are only readable by signed-in members. Members cannot delete an
@@ -293,11 +295,11 @@ export default function ForTeamsPage() {
           </p>
           <div className="grid sm:grid-cols-3 gap-4 mb-6">
             {PRICE_EXAMPLES.map((example) => (
-              <div key={example.seats} className="ui-card ui-card-static text-center">
+              <Card key={example.seats} className="text-center">
                 <p className="text-sm text-muted-foreground mb-1">{example.seats} seats</p>
                 <p className="text-3xl font-bold mb-1">${example.price}/mo</p>
                 <p className="text-sm text-muted-foreground">{example.requests} requests a month</p>
-              </div>
+              </Card>
             ))}
           </div>
           <p className="text-muted-foreground mb-8">
@@ -316,7 +318,7 @@ export default function ForTeamsPage() {
             </Link>
           </p>
           <h3 className="text-lg font-bold mb-3">Team plans compared</h3>
-          <div className="ui-card ui-card-static overflow-x-auto">
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
                 {TEAM_PRICING.map((row) => (
@@ -335,7 +337,7 @@ export default function ForTeamsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
           <p className="text-sm text-muted-foreground mt-3">
             Other tools&apos; prices as listed on their sites when we compared; check them before
             you buy.{" "}
@@ -346,14 +348,14 @@ export default function ForTeamsPage() {
         </section>
 
         <section className="mb-12">
-          <div className="ui-card ui-card-static">
+          <Card>
             <Radio className="h-5 w-5 text-primary mb-3" aria-hidden="true" />
             <h2 className="text-xl md:text-2xl font-bold mb-2">Shared endpoints from the CLI</h2>
             <p className="text-muted-foreground mb-4">
               An API key carries the team access of its account, so shared endpoints work like your
               own in the CLI, the SDK and the MCP server.
             </p>
-            <div className="ui-code overflow-x-auto">
+            <CodeBox className="overflow-x-auto">
               <pre className="text-sm">
                 <code>
                   whk list --team Payments{"\n"}
@@ -362,8 +364,8 @@ export default function ForTeamsPage() {
                   whk teams share my-stripe --team Payments
                 </code>
               </pre>
-            </div>
-          </div>
+            </CodeBox>
+          </Card>
         </section>
 
         <section className="mb-12">
@@ -371,14 +373,14 @@ export default function ForTeamsPage() {
           <FAQAccordion items={FAQ_ITEMS} />
         </section>
 
-        <div className="ui-card bg-foreground text-background text-center py-12">
+        <Card interactive className="bg-foreground text-background text-center py-12">
           <UserPlus className="h-8 w-8 mx-auto mb-4" aria-hidden="true" />
           <h2 className="text-2xl md:text-3xl font-bold mb-3">Bring your team in</h2>
           <p className="opacity-80 mb-6 max-w-md mx-auto">
             Create a team, pick your seats, and share your first endpoint.
           </p>
           <div className="flex justify-center text-foreground">
-            <TeamsCTA className="ui-btn-primary inline-block" />
+            <TeamsCTA />
           </div>
           <p className="text-sm opacity-80 mt-6">
             <Link href="/docs/teams" className="font-bold underline hover:no-underline">
@@ -386,7 +388,7 @@ export default function ForTeamsPage() {
               <ArrowRight className="inline-block ml-1 h-4 w-4" />
             </Link>
           </p>
-        </div>
+        </Card>
       </div>
     </main>
   );

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -101,10 +103,10 @@ export default function CompareLocalTunnelPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -126,14 +128,14 @@ export default function CompareLocalTunnelPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
 
         <ComparisonCTA compact />
 
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Tunnel vs testing platform</h3>
             <p className="text-muted-foreground">
               LocalTunnel opens a pipe from the internet to your local port. What goes through the
@@ -141,9 +143,9 @@ export default function CompareLocalTunnelPage() {
               arrives: you can search headers, inspect JSON bodies, export to CSV, and replay
               requests days later. The tunnel is one feature; the platform builds on top of it.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Reliability</h3>
             <p className="text-muted-foreground">
               LocalTunnel&apos;s public server is community-run and can be unreliable, and the
@@ -152,9 +154,9 @@ export default function CompareLocalTunnelPage() {
               on managed infrastructure, so you can configure a webhook sender once and keep
               receiving.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Beyond the tunnel</h3>
             <p className="text-muted-foreground">
               webhooks.cc adds SDKs for CI test assertions in TypeScript, Python and Go, an MCP
@@ -164,12 +166,12 @@ export default function CompareLocalTunnelPage() {
               single-purpose tool, and that simplicity is its strength for quick, throwaway
               tunneling.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Persistent request history, not just forwarding</li>
@@ -179,8 +181,8 @@ export default function CompareLocalTunnelPage() {
               <li>Stable endpoint URLs that persist across sessions</li>
               <li>MCP tooling for AI-assisted webhook workflows</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose LocalTunnel when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>The simplest, fastest localhost tunnel with no signup</li>
@@ -188,17 +190,17 @@ export default function CompareLocalTunnelPage() {
               <li>Zero-dependency, fully open-source MIT tunnel</li>
               <li>Non-webhook use cases (sharing local web apps)</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

@@ -15,6 +15,7 @@ import {
   shareCommand,
   type ShareFrameworkPage,
 } from "@/lib/share-framework-pages";
+import { Card } from "@/components/ui/card";
 
 interface PageProps {
   params: Promise<{ framework: string }>;
@@ -102,7 +103,7 @@ export default async function ShareFrameworkPageRoute({ params }: PageProps) {
 
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-6">{page.label} at a glance</h2>
-          <dl className="ui-card ui-card-static text-sm divide-y divide-foreground/10">
+          <Card className="text-sm divide-y divide-foreground/10" render={<dl />}>
             {glance.map(([label, value]) => (
               <div
                 key={label}
@@ -114,7 +115,7 @@ export default async function ShareFrameworkPageRoute({ params }: PageProps) {
                 </dd>
               </div>
             ))}
-          </dl>
+          </Card>
           <p className="text-sm text-muted-foreground mt-3">
             Your dev server gets each request with{" "}
             <code className="font-mono">Host: localhost:{page.port}</code>; the public name travels
@@ -188,14 +189,19 @@ export default async function ShareFrameworkPageRoute({ params }: PageProps) {
           <h2 className="text-2xl font-bold mb-6">Other frameworks</h2>
           <div className="grid sm:grid-cols-3 gap-4">
             {related.map((other) => (
-              <Link key={other.slug} href={`/share/${other.slug}`} className="ui-card block group">
+              <Card
+                interactive
+                key={other.slug}
+                className="block group"
+                render={<Link href={`/share/${other.slug}`} />}
+              >
                 <h3 className="font-bold group-hover:text-primary transition-colors">
                   {other.label}
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1 font-mono">
                   {shareCommand(other)}
                 </p>
-              </Link>
+              </Card>
             ))}
           </div>
           <p className="mt-4 text-sm">
@@ -206,7 +212,7 @@ export default async function ShareFrameworkPageRoute({ params }: PageProps) {
           </p>
         </section>
 
-        <div className="ui-card bg-foreground text-background text-center py-12">
+        <Card interactive className="bg-foreground text-background text-center py-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-3">
             Send someone your {page.label} app
           </h2>
@@ -217,7 +223,7 @@ export default async function ShareFrameworkPageRoute({ params }: PageProps) {
             <PricingCTA inverted />
           </div>
           <p className="text-sm opacity-80 mt-6">No credit card</p>
-        </div>
+        </Card>
       </div>
     </main>
   );

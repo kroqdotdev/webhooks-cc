@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -121,10 +123,10 @@ export default function CompareHookdeckPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -146,14 +148,14 @@ export default function CompareHookdeckPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
 
         <ComparisonCTA compact />
 
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">
               Development testing vs production reliability
             </h3>
@@ -166,9 +168,9 @@ export default function CompareHookdeckPage() {
               retries, rate limiting, and routing rules, then delivers them to your server. One is
               for building; the other is for running.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">AI agent integration</h3>
             <p className="text-muted-foreground">
               Both ship an MCP server, for different jobs. The webhooks.cc MCP server is for
@@ -180,9 +182,9 @@ export default function CompareHookdeckPage() {
               connections, events, delivery attempts, issues, and metrics to diagnose production
               traffic.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Complementary tools</h3>
             <p className="text-muted-foreground">
               These tools are not mutually exclusive. A common pattern: use webhooks.cc during
@@ -191,12 +193,12 @@ export default function CompareHookdeckPage() {
               limiting. For teams, webhooks.cc costs $12/seat/month ($35 for Team Business), while
               Hookdeck&apos;s Team plan starts at $39/month with unlimited seats.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Inspect and debug webhook payloads during development</li>
@@ -206,8 +208,8 @@ export default function CompareHookdeckPage() {
               <li>Mock responses returned to webhook senders</li>
               <li>Inbound email captured, parsed and forwarded as JSON</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose Hookdeck when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Production webhook reliability with retries</li>
@@ -216,17 +218,17 @@ export default function CompareHookdeckPage() {
               <li>Dead-letter queues for failed deliveries</li>
               <li>Infrastructure-grade webhook management</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

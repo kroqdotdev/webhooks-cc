@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { WEB_VERIFICATION_PROVIDER_OPTIONS } from "@/lib/provider-catalog";
+import { Button } from "@/components/ui/button";
 
 interface Section {
   id: string;
@@ -494,7 +495,7 @@ const SECTIONS: Section[] = [
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="px-1.5 py-0.5 text-[11px] font-mono font-bold border border-border rounded-sm bg-muted inline-block">
+    <kbd className="px-1.5 py-0.5 text-[11px] font-mono font-bold border rounded-sm bg-muted inline-block">
       {children}
     </kbd>
   );
@@ -530,9 +531,10 @@ export function DashboardGuideDialog({
       {open === undefined && (
         <DialogTrigger
           render={
-            <button
+            <Button
+              variant="surface"
+              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               data-shortcut="guide"
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             />
           }
         >
@@ -544,7 +546,7 @@ export function DashboardGuideDialog({
       <DialogContent className="max-w-3xl max-h-[85vh] p-0 overflow-hidden">
         <div className="flex max-h-[85vh] min-h-0">
           {/* Sidebar */}
-          <nav className="w-52 shrink-0 border-r border-border overflow-y-auto py-4">
+          <nav className="w-52 shrink-0 border-r overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
               <DialogTitle className="text-sm tracking-normal">Dashboard guide</DialogTitle>
             </DialogHeader>

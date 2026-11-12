@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { InlineMessage, Panel } from "@/components/settings/panel";
+import { CodeInput } from "@/components/ui/code-input";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { apiFetch } from "@/lib/support/client";
 import { copyToClipboard } from "@/lib/clipboard";
+import { CodeBox } from "@/components/ui/code";
 
 interface Factor {
   id: string;
@@ -205,26 +206,26 @@ export function TwoFactor() {
             <img
               src={enrollment.qr}
               alt="QR code for your authenticator app"
-              className="h-40 w-40 rounded-md border border-border bg-white p-2"
+              className="h-40 w-40 rounded-md border bg-white p-2"
             />
             <div className="min-w-0 space-y-1 text-sm">
               <p className="text-muted-foreground">Cannot scan? Enter this key instead:</p>
-              <code className="ui-code block break-all rounded-md px-2 py-1 font-mono text-xs">
+              <CodeBox
+                className="block break-all rounded-md px-2 py-1 font-mono text-xs"
+                render={<code />}
+              >
                 {enrollment.secret}
-              </code>
+              </CodeBox>
             </div>
           </div>
           <div className="flex max-w-xs gap-2">
             <label htmlFor="totp-code" className="sr-only">
               Code
             </label>
-            <Input
+            <CodeInput
               id="totp-code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={7}
               value={code}
-              onChange={(event) => setCode(event.target.value)}
+              onChange={setCode}
               className="font-mono tracking-widest"
             />
             <Button type="submit" disabled={busy}>
@@ -282,13 +283,10 @@ export function TwoFactor() {
               <label htmlFor="step-up-code" className="w-full text-sm text-muted-foreground">
                 Enter the code from your authenticator app to turn it off.
               </label>
-              <Input
+              <CodeInput
                 id="step-up-code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={7}
                 value={stepUpCode}
-                onChange={(event) => setStepUpCode(event.target.value)}
+                onChange={setStepUpCode}
                 className="w-32 font-mono tracking-widest"
               />
               <Button variant="outline" disabled={busy} onClick={() => void turnOff()}>
@@ -329,7 +327,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
           are shown only now.
         </p>
       </div>
-      <ol className="ph-no-capture grid max-w-sm grid-cols-2 gap-x-6 gap-y-1 rounded-md border border-border p-4 font-mono text-sm tabular-nums">
+      <ol className="ph-no-capture grid max-w-sm grid-cols-2 gap-x-6 gap-y-1 rounded-md border p-4 font-mono text-sm tabular-nums">
         {codes.map((code) => (
           <li key={code}>{code}</li>
         ))}

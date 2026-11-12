@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { trackCTAClick } from "@/lib/analytics";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
@@ -31,11 +32,9 @@ function StartFreeCTAInner({
 }: StartFreeCTAProps) {
   const isAuthenticated = useIsAuthenticated();
   const alignClass = align === "center" ? "items-center text-center" : "items-start";
-  // bg/text utilities repeated after ui-btn-primary so they survive the Button
-  // outline variant's bg-background (utilities beat the components-layer class),
-  // with the primary border and hover tint those utilities would otherwise mask.
+  // The sign-in buttons are outline controls filled in the primary colour.
   const primaryOverride =
-    "ui-btn-primary bg-primary text-primary-foreground hover:text-primary-foreground cursor-pointer border-primary hover:bg-primary/90";
+    "bg-primary text-primary-foreground hover:text-primary-foreground border-primary hover:bg-primary/90";
   const buttonClass =
     size === "lg"
       ? `h-12 text-base px-6 ${primaryOverride}`
@@ -46,13 +45,14 @@ function StartFreeCTAInner({
   if (isAuthenticated) {
     return (
       <div className={`flex flex-col gap-3 ${alignClass}`}>
-        <Link
-          href="/dashboard"
-          className={`ui-btn-primary inline-block ${size === "lg" ? "text-lg px-6 py-3" : ""}`}
+        <Button
+          variant="primary"
+          className={`inline-block ${size === "lg" ? "text-lg px-6 py-3" : ""}`}
+          render={<Link href="/dashboard" />}
         >
           Go to Dashboard
           <ArrowRight className="inline-block ml-2 h-5 w-5" />
-        </Link>
+        </Button>
       </div>
     );
   }
@@ -64,6 +64,7 @@ function StartFreeCTAInner({
         <OAuthSignInButtons
           redirectTo="/dashboard"
           layout="horizontal"
+          raised
           buttonClassName={buttonClass}
         />
         <Link

@@ -7,6 +7,8 @@ import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { UseTemplateButton } from "@/components/mailhooks/use-template-button";
 import { LAYOUT_TEMPLATES, layoutTemplate } from "@/lib/layout-templates";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 // Only the senders in the catalogue are pages. An unknown one is never
 // rendered here: rendered on demand, each made-up slug was written to the
@@ -41,13 +43,14 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
   return (
     <>
       <SiteHeader>
-        <Link
-          href="/parse"
-          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+        <Button
+          variant="surface"
+          className="py-1.5! px-3! text-xs flex items-center gap-1.5"
+          render={<Link href="/parse" />}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Layout gallery
-        </Link>
+        </Button>
       </SiteHeader>
       <main className="py-16 px-4">
         <article className="max-w-6xl mx-auto">
@@ -77,10 +80,10 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
               </p>
               <p className="mb-4">{matchSentence(template.layout.match?.conditions ?? [])}</p>
               {/* What it reads, as a table; the patterns stay one click away, as JSON. */}
-              <div className="ui-card ui-card-static p-0! overflow-x-auto mb-4">
+              <Card className="p-0! overflow-x-auto mb-4">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-border text-left">
+                    <tr className="border-b text-left">
                       <th scope="col" className="px-4 py-2 font-semibold">
                         Field
                       </th>
@@ -94,7 +97,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                   </thead>
                   <tbody>
                     {(template.layout.fields ?? []).map((field) => (
-                      <tr key={field.name} className="border-b border-border last:border-0">
+                      <tr key={field.name} className="border-b last:border-0">
                         <td className="px-4 py-2 font-mono">{field.name}</td>
                         <td className="px-4 py-2 text-muted-foreground">
                           {field.from === "header"
@@ -108,8 +111,8 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                     ))}
                   </tbody>
                 </table>
-              </div>
-              <details className="group ui-card ui-card-static">
+              </Card>
+              <Card className="group" render={<details />}>
                 <summary className="cursor-pointer font-semibold list-none [&::-webkit-details-marker]:hidden flex items-center gap-2">
                   <ChevronRight
                     aria-hidden
@@ -120,7 +123,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
                 <pre className="mt-3 text-xs font-mono overflow-x-auto leading-relaxed">
                   {JSON.stringify(template.layout, null, 2)}
                 </pre>
-              </details>
+              </Card>
             </section>
             <aside className="min-w-0">
               <h2 className="text-2xl font-bold mb-4">Before you rely on it</h2>
@@ -147,9 +150,13 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
             <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {others.map((other) => (
                 <li key={other.id}>
-                  <Link href={`/parse/${other.id}`} className="ui-card block h-full">
+                  <Card
+                    interactive
+                    className="block h-full"
+                    render={<Link href={`/parse/${other.id}`} />}
+                  >
                     <p className="font-bold">{other.title}</p>
-                  </Link>
+                  </Card>
                 </li>
               ))}
             </ul>

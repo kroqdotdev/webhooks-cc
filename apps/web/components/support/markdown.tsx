@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import { CodeBox } from "@/components/ui/code";
 
 /**
  * The little markdown a ticket message needs: paragraphs, line breaks,
@@ -89,9 +90,13 @@ export function renderInline(text: string): ReactNode[] {
     if (index > last) nodes.push(text.slice(last, index));
     if (match[1]) {
       nodes.push(
-        <code key={key++} className="ui-code rounded-sm px-1 py-0.5 font-mono text-[0.85em]">
+        <CodeBox
+          key={key++}
+          className="rounded-sm px-1 py-0.5 font-mono text-[0.85em]"
+          render={<code />}
+        >
           {match[1].slice(1, -1)}
-        </code>
+        </CodeBox>
       );
     } else if (match[2]) {
       nodes.push(<strong key={key++}>{match[2].slice(2, -2)}</strong>);
@@ -123,12 +128,13 @@ export function Markdown({ source, className }: { source: string; className?: st
       {blocks.map((block, index) => {
         if (block.type === "code") {
           return (
-            <pre
+            <CodeBox
               key={index}
-              className="ui-code overflow-x-auto rounded-md border border-border p-3 font-mono text-xs leading-relaxed"
+              className="overflow-x-auto rounded-md border p-3 font-mono text-xs leading-relaxed"
+              render={<pre />}
             >
               {block.text}
-            </pre>
+            </CodeBox>
           );
         }
         if (block.type === "list") {

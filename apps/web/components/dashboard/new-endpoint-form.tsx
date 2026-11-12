@@ -14,6 +14,7 @@ import { createDashboardEndpoint, emitDashboardEndpointsChanged } from "@/lib/da
 import { useSite } from "@/components/providers/site-provider";
 import { twoSites, type EndpointSite } from "@/lib/site";
 import { EndpointSiteField } from "./endpoint-site-field";
+import { FieldControl } from "@/components/ui/field";
 
 /** The line under "Create endpoint", in the dialog and on /endpoints/new alike. */
 export function newEndpointDescription(mailFirst: boolean): string {
@@ -92,13 +93,13 @@ export function NewEndpointForm({
         <Label htmlFor="ep-name" className="font-bold text-xs">
           Name (optional)
         </Label>
-        <input
+        <FieldControl
+          className="w-full text-sm"
           id="ep-name"
           autoFocus={autoFocusName}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={mailFirst ? "Acme orders" : "My webhook"}
-          className="ui-input w-full text-sm"
         />
       </div>
 
@@ -116,7 +117,7 @@ export function NewEndpointForm({
           <CollapsiblePanel keepMounted className="space-y-4">
             {showSites && <EndpointSiteField value={listedOn} onChange={setListedOn} />}
             {showMock && (
-              <div className="border border-border rounded-lg p-4 space-y-4">
+              <div className="border rounded-lg p-4 space-y-4">
                 <div>
                   <p className="font-bold text-xs mb-1">Mock response (optional)</p>
                   <p className="text-xs text-muted-foreground">
@@ -168,7 +169,8 @@ export function NewEndpointForm({
         <Button
           type="submit"
           disabled={isSubmitting || !session?.access_token}
-          className="ui-btn-primary flex-1"
+          raised
+          className="flex-1"
         >
           {isSubmitting ? "Creating..." : "Create endpoint"}
         </Button>

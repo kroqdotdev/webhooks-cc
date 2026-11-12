@@ -21,6 +21,7 @@ import { LAYOUT_TEMPLATES, layoutTemplate } from "@/lib/layout-templates";
 import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
+import { Card } from "@/components/ui/card";
 
 export const metadata = mailhooksMetadata({
   title: "mailhooks.cc: Parse emails into JSON, from orders to reports",
@@ -179,12 +180,12 @@ export default function MailhooksHome() {
             <h2 className="text-3xl md:text-4xl font-bold mb-10">How it works</h2>
             <ol className="grid md:grid-cols-3 gap-6">
               {STEPS.map((step, index) => (
-                <li key={step.title} className="ui-card ui-card-static">
+                <Card key={step.title} render={<li />}>
                   <step.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
                   <p className="text-xs font-bold text-muted-foreground mb-2">Step {index + 1}</p>
                   <h3 className="font-bold text-xl mb-2">{step.title}</h3>
                   <p className="text-muted-foreground">{step.text}</p>
-                </li>
+                </Card>
               ))}
             </ol>
           </div>
@@ -200,10 +201,14 @@ export default function MailhooksHome() {
             <ul className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               {LAYOUT_TEMPLATES.slice(0, 8).map((template) => (
                 <li key={template.id}>
-                  <Link href={`/parse/${template.id}`} className="ui-card block h-full">
+                  <Card
+                    interactive
+                    className="block h-full"
+                    render={<Link href={`/parse/${template.id}`} />}
+                  >
                     <p className="font-bold mb-1">{template.sender}</p>
                     <p className="text-sm text-muted-foreground">{template.kind}</p>
-                  </Link>
+                  </Card>
                 </li>
               ))}
             </ul>
@@ -222,11 +227,11 @@ export default function MailhooksHome() {
             <h2 className="text-3xl md:text-4xl font-bold mb-10">Built for mail that matters</h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {FEATURES.map((feature) => (
-                <div key={feature.title} className="ui-card ui-card-static">
+                <Card key={feature.title}>
                   <feature.icon className="h-6 w-6 text-primary mb-4" aria-hidden />
                   <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
                   <p className="text-muted-foreground">{feature.text}</p>
-                </div>
+                </Card>
               ))}
             </div>
             <h3 className="text-xl font-bold mt-12 mb-4">More features</h3>
@@ -237,10 +242,10 @@ export default function MailhooksHome() {
                   key={feature.path}
                   className="w-full sm:w-[calc(50%-0.75rem)] lg:w-[calc((100%-3rem)/3)]"
                 >
-                  <Link href={feature.path} className="ui-card block h-full">
+                  <Card interactive className="block h-full" render={<Link href={feature.path} />}>
                     <p className="font-bold mb-1">{feature.name}</p>
                     <p className="text-sm text-muted-foreground">{feature.summary}</p>
-                  </Link>
+                  </Card>
                 </li>
               ))}
             </ul>
@@ -279,13 +284,14 @@ export default function MailhooksHome() {
                 ],
               },
             ].map((plan) => (
-              <Link
+              <Card
                 key={plan.name}
-                href="/pricing"
-                className={`ui-card relative block ${plan.name === "Business" ? "border-primary" : ""}`}
+                interactive
+                className={`relative block ${plan.name === "Business" ? "border-primary" : ""}`}
+                render={<Link href="/pricing" />}
               >
                 {plan.name === "Business" && (
-                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-surface">
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border rounded-sm shadow-surface">
                     Best for parsing
                   </span>
                 )}
@@ -299,7 +305,7 @@ export default function MailhooksHome() {
                     </li>
                   ))}
                 </ul>
-              </Link>
+              </Card>
             ))}
             <div className="md:col-span-3 flex flex-wrap items-start gap-4">
               <div className="w-full sm:w-auto sm:min-w-80">

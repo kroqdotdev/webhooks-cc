@@ -89,6 +89,19 @@ body {
   --shadow-surface: var(--elevation-sm);
   --shadow-float: var(--elevation);
   --shadow-float-lg: var(--elevation-lg);
+  /* The caret of a one-time code field (CodeInput), blinking like a text field's. */
+  --animate-caret-blink: caret-blink 1.1s ease-out infinite;
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
 @layer base {
@@ -471,4 +484,28 @@ body {
 
 @utility animate-slide-in-left {
   animation: slide-in-left 200ms ease-out;
+}
+
+/* Sonner's toaster (components/ui/toaster.tsx) below the md width: a bar
+   across the foot of the screen, as on phones, up to 767px rather than
+   Sonner's 600px. Unlayered and a little more specific, as Sonner's own
+   stylesheet is unlayered. */
+@media (max-width: 767px) {
+  html [data-sonner-toaster][data-x-position] {
+    left: var(--mobile-offset-left);
+    right: var(--mobile-offset-right);
+    bottom: var(--mobile-offset-bottom);
+    width: 100%;
+  }
+  html [data-sonner-toaster] [data-sonner-toast] {
+    left: 0;
+    right: 0;
+    width: calc(100% - var(--mobile-offset-left) * 2);
+  }
+}
+
+/* input-otp (CodeInput) hides its real input with transparent text; forced
+   colours (Windows High Contrast) would paint those digits over the drawn ones. */
+[data-input-otp] {
+  forced-color-adjust: none;
 }

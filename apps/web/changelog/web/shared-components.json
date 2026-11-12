@@ -1,0 +1,9 @@
+{
+  "title": "Shared components under the hood",
+  "items": [
+    "Cards, buttons, code boxes and form fields are drawn by shared components instead of repeated style classes; pages look and work as before",
+    "Light and dark mode run on next-themes, keeping the choice this browser already made",
+    "Two-factor and agent codes accept a pasted code with spaces and the browser's one-time code autofill",
+    "A long Headers or Query tab can be reached and scrolled from the keyboard in every browser, Safari included"
+  ]
+}

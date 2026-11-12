@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { REPORT_KINDS } from "@/lib/tunnels/report-kinds";
 import { Turnstile } from "./turnstile";
+import { Card } from "@/components/ui/card";
 
 interface Values {
   url: string;
@@ -41,11 +42,11 @@ export function ReportForm({ url, siteKey }: { url: string; siteKey: string | nu
 
   if (done) {
     return (
-      <p role="status" className="ui-card ui-card-static mt-8 text-sm">
+      <Card className="mt-8 text-sm" render={<p role="status" />}>
         {done.receiptTo
           ? `Thanks, the report is in. We sent a receipt to ${done.receiptTo} and will write again when we have decided what to do.`
           : "Thanks, the report is in. Someone at webhooks.cc will look at it."}
-      </p>
+      </Card>
     );
   }
 
@@ -111,7 +112,7 @@ export function ReportForm({ url, siteKey }: { url: string; siteKey: string | nu
         </div>
       </fieldset>
       {csam && (
-        <p className="ui-card ui-card-static text-sm">
+        <Card className="text-sm" render={<p />}>
           Don&rsquo;t save, copy or describe the material: the address is enough. Your name and
           email are optional for this report. You can also report it to your local police, or in
           Denmark anonymously to{" "}
@@ -124,7 +125,7 @@ export function ReportForm({ url, siteKey }: { url: string; siteKey: string | nu
             Red Barnet
           </a>
           .
-        </p>
+        </Card>
       )}
       <div className="space-y-2">
         <Label htmlFor="report-details">What did you see{optional}</Label>

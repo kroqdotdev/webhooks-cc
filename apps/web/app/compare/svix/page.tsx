@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { CodeBox, InlineCode } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -114,10 +116,10 @@ export default function CompareSvixPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -139,14 +141,14 @@ export default function CompareSvixPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
 
         <ComparisonCTA compact />
 
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">
               Developer testing platform vs production webhook infrastructure
             </h3>
@@ -156,47 +158,40 @@ export default function CompareSvixPage() {
               production events via Svix Ingest. webhooks.cc is built specifically for local
               development, staging, and CI testing: it generates properly signed test payloads and
               verifies signatures for 32 providers out of the box (including Svix&apos;s own{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">svix-signature</code> and{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">webhook-signature</code>{" "}
+              <InlineCode>svix-signature</InlineCode> and <InlineCode>webhook-signature</InlineCode>{" "}
               headers).
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">CI/CD assertions vs manual browser bins</h3>
             <p className="text-muted-foreground">
               Svix Play gives you a browser bin for quick manual checks, similar to RequestBin.
-              webhooks.cc adds{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/sdk</code>{" "}
-              with <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">withEndpoint()</code>
-              , <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code>, and{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">sendTo()</code> so your
-              Vitest, Jest, or Playwright suite can verify webhook handlers deterministically in CI
-              without running a tunnel.
+              webhooks.cc adds <InlineCode>@webhooks-cc/sdk</InlineCode> with{" "}
+              <InlineCode>withEndpoint()</InlineCode>, <InlineCode>waitFor()</InlineCode>, and{" "}
+              <InlineCode>sendTo()</InlineCode> so your Vitest, Jest, or Playwright suite can verify
+              webhook handlers deterministically in CI without running a tunnel.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">AI agent MCP server and email capture</h3>
             <p className="text-muted-foreground">
               Every webhooks.cc endpoint also receives email at{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
-                {"{slug}"}@mailhooks.cc
-              </code>{" "}
-              with automatic OTP and magic-link extraction, and the{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/mcp</code>{" "}
-              server exposes 57 testing tools to Claude Code, Cursor, and Codex (creating endpoints,
-              sending signed provider templates, waiting for deliveries, and replaying to
-              localhost), and the remote server at webhooks.cc/mcp connects with one OAuth approval.
-              Svix offers an App Portal MCP that lets its customers&apos; users inspect, resend and
-              recover messages on their Svix endpoints, and does not capture inbound email.
+              <InlineCode>{"{slug}"}@mailhooks.cc</InlineCode> with automatic OTP and magic-link
+              extraction, and the <InlineCode>@webhooks-cc/mcp</InlineCode> server exposes 57
+              testing tools to Claude Code, Cursor, and Codex (creating endpoints, sending signed
+              provider templates, waiting for deliveries, and replaying to localhost), and the
+              remote server at webhooks.cc/mcp connects with one OAuth approval. Svix offers an App
+              Portal MCP that lets its customers&apos; users inspect, resend and recover messages on
+              their Svix endpoints, and does not capture inbound email.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Capture, inspect, and replay inbound webhooks from 32+ providers</li>
@@ -205,8 +200,8 @@ export default function CompareSvixPage() {
               <li>CLI localhost forwarding (whk tunnel) with stored history</li>
               <li>MCP tools for AI coding agents (Claude Code, Cursor, Codex)</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose Svix when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>An outbound webhook delivery service for your own SaaS product</li>
@@ -214,17 +209,17 @@ export default function CompareSvixPage() {
               <li>Managed production webhook queuing and retries (Svix Outbound / Ingest)</li>
               <li>A quick unauthenticated browser bin (Svix Play) with no test SDK needed</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

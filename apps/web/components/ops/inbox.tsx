@@ -12,6 +12,7 @@ import { BODY_MAX, type SupportTicketDetail } from "@/lib/support/shared";
 import type { QueueItem, QueueView } from "@/lib/ops/tickets";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
+import { Card } from "@/components/ui/card";
 
 const VIEWS: { value: QueueView; label: string }[] = [
   { value: "waiting", label: "Waiting on you" },
@@ -158,11 +159,8 @@ export function OpsInbox({ number }: { number: string | null }) {
 
   return (
     <div className="lg:grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[17rem_minmax(0,1fr)]">
-      <section
-        aria-label="Tickets"
-        className="border-b border-border bg-card lg:border-b-0 lg:border-r"
-      >
-        <div className="flex flex-wrap gap-1 border-b border-border p-2">
+      <section aria-label="Tickets" className="border-b bg-card lg:border-b-0 lg:border-r">
+        <div className="flex flex-wrap gap-1 border-b p-2">
           {VIEWS.map((entry) => (
             <button
               key={entry.value}
@@ -199,7 +197,7 @@ export function OpsInbox({ number }: { number: string | null }) {
               const hours = (now - new Date(item.waitingSince).getTime()) / 3_600_000;
               const late = view === "waiting" && hours >= 24;
               return (
-                <li key={item.id} className="border-t border-border first:border-t-0">
+                <li key={item.id} className="border-t first:border-t-0">
                   <Link
                     href={`/ops/tickets/${item.number}`}
                     aria-current={active ? "page" : undefined}
@@ -418,11 +416,8 @@ function TicketPane({
           </p>
         )}
 
-        <div
-          className={cn(
-            "ui-card ui-card-static space-y-3 p-3!",
-            mode === "note" && "border-staff-line bg-staff-wash"
-          )}
+        <Card
+          className={cn("space-y-3 p-3!", mode === "note" && "border-staff-line bg-staff-wash")}
         >
           <div className="flex items-center gap-1 text-xs">
             <button
@@ -459,7 +454,7 @@ function TicketPane({
                 Saved replies <kbd className="font-mono">/</kbd>
               </button>
               {pickerOpen && (
-                <div className="absolute right-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-float">
+                <div className="absolute right-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border bg-popover p-1 shadow-float">
                   {saved === null ? (
                     <p className="p-2 text-xs text-muted-foreground">Loading...</p>
                   ) : saved.length === 0 ? (
@@ -516,7 +511,7 @@ function TicketPane({
           {mode === "message" && (
             <ImagePicker files={images} onChange={setImages} disabled={sending} />
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
             <span className="text-xs text-muted-foreground">
               {mode === "note"
                 ? "Only staff see notes."
@@ -546,7 +541,7 @@ function TicketPane({
               </Button>
             </div>
           </div>
-        </div>
+        </Card>
         {error && (
           <p role="alert" className="text-sm text-destructive-ink">
             {error}
@@ -559,7 +554,7 @@ function TicketPane({
         </p>
       </div>
 
-      <aside className="space-y-4 border-t border-border bg-card p-5 text-sm xl:border-l xl:border-t-0">
+      <aside className="space-y-4 border-t bg-card p-5 text-sm xl:border-l xl:border-t-0">
         {account ? (
           <div className="ph-no-capture space-y-1">
             <h2 className="font-semibold">{account.name?.trim() || account.email}</h2>
@@ -628,7 +623,7 @@ function TicketPane({
           </p>
         )}
 
-        <div className="space-y-2 border-t border-border pt-4">
+        <div className="space-y-2 border-t pt-4">
           <p className="text-xs font-medium text-muted-foreground">
             {snoozed ? `Snoozed until ${shortDateTime(ticket.snoozedUntil!)}` : "Snooze"}
           </p>
@@ -662,7 +657,7 @@ function TicketPane({
         </div>
 
         {(context.from || context.appVersion || context.userAgent) && (
-          <dl className="space-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
+          <dl className="space-y-1 border-t pt-4 text-xs text-muted-foreground">
             {context.from && (
               <div>
                 <dt className="inline">Sent from </dt>

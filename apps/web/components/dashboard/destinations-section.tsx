@@ -32,6 +32,7 @@ import { StatusDot } from "./delivery-journey";
 import { DestinationEditor, type DestinationPreset } from "./destination-editor";
 import { Section, Switch } from "./settings-primitives";
 import { useDocumentVisible, useOnScreen } from "./use-delivery-summary";
+import { Button } from "@/components/ui/button";
 
 /**
  * Where an endpoint's captures go: a list of destinations, each a row that
@@ -222,7 +223,7 @@ function PresetPicker({
             disabled={unavailable}
             data-destination-preset=""
             className={cn(
-              "text-left border border-border rounded-md p-3 bg-card transition-colors motion-reduce:transition-none space-y-1",
+              "text-left border rounded-md p-3 bg-card transition-colors motion-reduce:transition-none space-y-1",
               unavailable ? "opacity-60 cursor-not-allowed" : "hover:bg-muted/60 cursor-pointer"
             )}
           >
@@ -412,7 +413,7 @@ export function DestinationsSection({
       {count > 0 && (
         <ul
           aria-label="Destinations"
-          className="border border-border rounded-md divide-y divide-border/30 overflow-hidden"
+          className="border rounded-md divide-y divide-border/30 overflow-hidden"
         >
           {destinations!.map((destination, index) => {
             const isOpen = open.has(destination.id);
@@ -503,22 +504,24 @@ export function DestinationsSection({
                   {count > 1 && (
                     <div className="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-border/20">
                       <span className="text-xs text-muted-foreground">Place in the list</span>
-                      <button
+                      <Button
+                        variant="surface"
+                        className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => void move(index, -1)}
                         disabled={index === 0}
-                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <ArrowUp className="h-3 w-3" /> Up
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="surface"
+                        className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => void move(index, 1)}
                         disabled={index === count - 1}
-                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <ArrowDown className="h-3 w-3" /> Down
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </CollapsiblePanel>
@@ -529,7 +532,7 @@ export function DestinationsSection({
       )}
 
       {adding && (
-        <div ref={addingRef} className="border border-border rounded-md p-3 bg-card space-y-3">
+        <div ref={addingRef} className="border rounded-md p-3 bg-card space-y-3">
           <p
             data-new-destination-title
             tabIndex={-1}
@@ -575,17 +578,18 @@ export function DestinationsSection({
             </>
           ) : (
             <div className="flex flex-wrap items-center gap-3">
-              <button
+              <Button
+                variant="surface"
+                className={cn(
+                  "py-1.5! px-3! text-xs",
+                  count >= 10 && "opacity-50 cursor-not-allowed"
+                )}
                 type="button"
                 onClick={() => setPicking(true)}
                 disabled={count >= 10}
-                className={cn(
-                  "ui-btn-outline py-1.5! px-3! text-xs",
-                  count >= 10 && "opacity-50 cursor-not-allowed"
-                )}
               >
                 Add destination
-              </button>
+              </Button>
               {count >= 10 && (
                 <span className="text-xs text-muted-foreground">
                   An endpoint can send to at most 10 destinations.

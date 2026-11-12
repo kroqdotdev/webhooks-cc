@@ -146,7 +146,7 @@ function PlanTable({ current, chooser }: { current: PlanKey; chooser: PlanChoose
     <table className="w-full text-sm">
       <caption className="sr-only">Free, Pro and Business plans compared</caption>
       <thead>
-        <tr className="border-b border-border">
+        <tr className="border-b">
           <th scope="col" className="px-5 py-3 text-left font-medium text-muted-foreground">
             <span className="sr-only">Feature</span>
           </th>

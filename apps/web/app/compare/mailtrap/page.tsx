@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { CodeBox, InlineCode } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -143,10 +145,10 @@ export default function CompareMailtrapPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-3">
+        <CodeBox className="overflow-x-auto mb-3">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -168,7 +170,7 @@ export default function CompareMailtrapPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
         <p className="text-sm text-muted-foreground mb-10">
           Mailtrap as listed on mailtrap.io and docs.mailtrap.io in November 2026, monthly billing;
           &quot;not documented&quot; means we did not find it there. Check its pricing before you
@@ -180,36 +182,34 @@ export default function CompareMailtrapPage() {
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">A real address or a fake SMTP server</h3>
             <p className="text-muted-foreground">
               With Mailtrap you swap your app&apos;s SMTP settings for a sandbox&apos;s credentials,
               and every message the app sends is trapped there whoever it is addressed to. That is
               safe for staging, and it means the test does not exercise your real mail provider.
               With webhooks.cc nothing in the app changes: the test signs up with{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
-                my-app+run-42@mailhooks.cc
-              </code>
-              , the app sends through Resend, Postmark, SES or whatever it uses in production, and
-              the email is captured as it really arrived, sender checks included.
+              <InlineCode>my-app+run-42@mailhooks.cc</InlineCode>, the app sends through Resend,
+              Postmark, SES or whatever it uses in production, and the email is captured as it
+              really arrived, sender checks included.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Built for the test, or for the template</h3>
             <p className="text-muted-foreground">
               webhooks.cc is built around what an automated test needs: a tag per test run,{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">emails.waitFor()</code> in
-              the TypeScript, Python and Go SDKs, and the code or the link already picked out.
-              Mailtrap is stronger on the message itself: HTML Check lists the email clients that
-              lack support for each element, the spam report runs SpamAssassin and a blacklist
-              lookup, and Device Previews (an add-on on Business and Enterprise) screenshots the
-              email in more than 100 client configurations. webhooks.cc has a spam score and a
-              deliverability report, but no client support check and no screenshots.
+              <InlineCode>emails.waitFor()</InlineCode> in the TypeScript, Python and Go SDKs, and
+              the code or the link already picked out. Mailtrap is stronger on the message itself:
+              HTML Check lists the email clients that lack support for each element, the spam report
+              runs SpamAssassin and a blacklist lookup, and Device Previews (an add-on on Business
+              and Enterprise) screenshots the email in more than 100 client configurations.
+              webhooks.cc has a spam score and a deliverability report, but no client support check
+              and no screenshots.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Volume and price</h3>
             <p className="text-muted-foreground">
               Mailtrap&apos;s free sandbox takes 50 test emails a month and keeps 10; its paid plans
@@ -219,9 +219,9 @@ export default function CompareMailtrapPage() {
               each plan (3 on Basic, 5 on Team); webhooks.cc shares endpoints through Teams at $12
               per seat.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Email and webhooks in one place</h3>
             <p className="text-muted-foreground">
               A signup usually sends a confirmation email and fires a webhook. On webhooks.cc both
@@ -230,12 +230,12 @@ export default function CompareMailtrapPage() {
               Make. Mailtrap covers the other direction too: the same account sends production email
               through its Email API, with one SDK that switches to the sandbox by a flag.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Signup, magic link and password reset tests in Playwright, Cypress or CI</li>
@@ -246,8 +246,8 @@ export default function CompareMailtrapPage() {
               <li>A webhook or a Slack message when an email arrives</li>
               <li>Open-source code you can inspect</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose Mailtrap when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>A fake SMTP server that traps everything staging sends</li>
@@ -257,17 +257,17 @@ export default function CompareMailtrapPage() {
               <li>Sending and testing from one vendor</li>
               <li>SSO and audit logs on Enterprise</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

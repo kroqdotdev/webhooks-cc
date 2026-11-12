@@ -169,7 +169,7 @@ export function ShareLinks({ accessToken }: { accessToken: string | null }) {
         </ul>
       )}
       {error && links !== null && (
-        <div className="border-t border-border px-5 py-3">
+        <div className="border-t px-5 py-3">
           <InlineMessage tone="error">{error}</InlineMessage>
         </div>
       )}

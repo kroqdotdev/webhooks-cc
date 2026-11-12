@@ -83,7 +83,7 @@ export function OpsShell({ children }: { children: React.ReactNode }) {
       <div className="lg:grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[12rem_minmax(0,1fr)]">
         <nav
           aria-label="Operations"
-          className="border-b border-border bg-card px-3 py-3 lg:border-b-0 lg:border-r lg:py-5"
+          className="border-b bg-card px-3 py-3 lg:border-b-0 lg:border-r lg:py-5"
         >
           <p className="mb-2 hidden px-3 text-xs font-medium text-staff lg:block">Operations</p>
           <ul className="flex gap-1 overflow-x-auto lg:flex-col lg:gap-0.5">

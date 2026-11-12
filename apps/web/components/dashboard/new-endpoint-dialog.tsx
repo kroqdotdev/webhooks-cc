@@ -43,9 +43,10 @@ export function NewEndpointDialog({
       {!controlled && (
         <DialogTrigger
           render={
-            <button
+            <Button
+              variant="primary"
+              className="py-1.5! px-3! text-xs max-md:min-h-9 flex shrink-0 items-center gap-1.5 whitespace-nowrap"
               data-shortcut="new-endpoint"
-              className="ui-btn-primary py-1.5! px-3! text-xs max-md:min-h-9 flex shrink-0 items-center gap-1.5 whitespace-nowrap"
             />
           }
         >
@@ -53,7 +54,7 @@ export function NewEndpointDialog({
           New endpoint
         </DialogTrigger>
       )}
-      <DialogContent className="border border-border shadow-float">
+      <DialogContent className="border shadow-float">
         <DialogHeader>
           <DialogTitle className="font-bold tracking-normal">Create endpoint</DialogTitle>
           <DialogDescription>{newEndpointDescription(mailFirst)}</DialogDescription>
@@ -66,12 +67,7 @@ export function NewEndpointDialog({
             router.push(`/dashboard?endpoint=${slug}`);
           }}
           cancel={
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-              className="ui-btn-outline"
-            >
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} raised>
               Cancel
             </Button>
           }

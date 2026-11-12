@@ -3,6 +3,7 @@ import { ArrowRight, CalendarDays, Clock3 } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 import { listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
+import { Card } from "@/components/ui/card";
 
 export const revalidate = 3600;
 
@@ -68,10 +69,14 @@ export default async function BlogIndexPage() {
         {/* Featured post */}
         <section className="mb-8">
           <p className="text-xs font-bold text-muted-foreground mb-3">Featured</p>
-          <Link href={`/blog/${featured.slug}`} className="ui-card block p-0 overflow-hidden group">
+          <Card
+            interactive
+            className="block p-0 overflow-hidden group"
+            render={<Link href={`/blog/${featured.slug}`} />}
+          >
             <div className="p-6 md:p-8">
               <div className="flex flex-wrap items-center gap-3 mb-4">
-                <span className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
+                <span className="text-xs font-bold border rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
                   {featured.category}
                 </span>
                 {featured.publishedAt && (
@@ -94,7 +99,7 @@ export default async function BlogIndexPage() {
                 <ArrowRight className="h-4 w-4" />
               </span>
             </div>
-          </Link>
+          </Card>
         </section>
 
         {/* Latest two posts */}
@@ -103,14 +108,15 @@ export default async function BlogIndexPage() {
             <p className="text-xs font-bold text-muted-foreground mb-3">Latest</p>
             <div className="grid gap-4 md:grid-cols-2">
               {latestTwo.map((post) => (
-                <Link
+                <Card
+                  interactive
                   key={post.slug}
-                  href={`/blog/${post.slug}`}
-                  className="ui-card block p-0 overflow-hidden group"
+                  className="block p-0 overflow-hidden group"
+                  render={<Link href={`/blog/${post.slug}`} />}
                 >
                   <div className="p-5">
                     <div className="flex flex-wrap items-center gap-3 mb-3">
-                      <span className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-background">
+                      <span className="text-xs font-bold border rounded-md px-2 py-1 bg-background">
                         {post.category}
                       </span>
                       {post.publishedAt && (
@@ -125,7 +131,7 @@ export default async function BlogIndexPage() {
                     </h3>
                     <p className="text-muted-foreground">{post.description}</p>
                   </div>
-                </Link>
+                </Card>
               ))}
             </div>
           </section>
@@ -135,7 +141,7 @@ export default async function BlogIndexPage() {
         {remaining.length > 0 && (
           <section>
             <p className="text-xs font-bold text-muted-foreground mb-3">All posts</p>
-            <div className="ui-card ui-card-static p-0 overflow-hidden">
+            <Card className="p-0 overflow-hidden">
               {remaining.map((post, index) => (
                 <Link
                   key={post.slug}
@@ -147,7 +153,7 @@ export default async function BlogIndexPage() {
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
-                        <span className="text-xs font-bold border border-border rounded-md px-2 py-0.5 bg-background shrink-0">
+                        <span className="text-xs font-bold border rounded-md px-2 py-0.5 bg-background shrink-0">
                           {post.category}
                         </span>
                         <h3 className="text-base font-bold leading-snug group-hover:underline truncate">
@@ -165,7 +171,7 @@ export default async function BlogIndexPage() {
                   </div>
                 </Link>
               ))}
-            </div>
+            </Card>
           </section>
         )}
       </div>

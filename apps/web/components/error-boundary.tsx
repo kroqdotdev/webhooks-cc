@@ -6,6 +6,7 @@ import {
   reportBoundaryError,
   tryReloadOnChunkError,
 } from "@/lib/observability-browser";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   children: ReactNode;
@@ -64,13 +65,14 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-muted-foreground">
               An unexpected error occurred. Please try again.
             </p>
-            <button
+            <Button
+              variant="primary"
+              className="py-2! px-4! text-sm"
               type="button"
               onClick={this.handleRetry}
-              className="ui-btn-primary py-2! px-4! text-sm"
             >
               {isChunk ? "Reload page" : "Try again"}
-            </button>
+            </Button>
           </div>
         </div>
       );

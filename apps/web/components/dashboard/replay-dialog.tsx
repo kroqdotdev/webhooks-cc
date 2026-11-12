@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Play } from "lucide-react";
 import { SKIP_HEADERS_FOR_REPLAY } from "@/lib/constants";
 import { trackRequestReplayed } from "@/lib/analytics";
+import { FieldControl } from "@/components/ui/field";
+import { CodeBox } from "@/components/ui/code";
 
 /** Props for the ReplayDialog component. */
 interface ReplayDialogProps {
@@ -132,16 +134,17 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
-          <button
+          <Button
+            variant="surface"
+            className="py-1.5! px-3! text-xs flex items-center gap-1.5"
             data-shortcut="replay"
-            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
           />
         }
       >
         <Play className="h-3 w-3" />
         Replay
       </DialogTrigger>
-      <DialogContent className="border border-border shadow-float">
+      <DialogContent className="border shadow-float">
         <DialogHeader>
           <DialogTitle className="font-bold tracking-normal">Replay request</DialogTitle>
           <DialogDescription>
@@ -155,14 +158,14 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
             <label htmlFor="replay-url" className="text-sm font-bold mb-2 block">
               Target URL
             </label>
-            <input
+            <FieldControl
+              className="w-full text-sm"
               id="replay-url"
               type="url"
               value={targetUrl}
               onChange={(e) => setTargetUrl(e.target.value)}
               placeholder="http://localhost:3000/webhook"
               aria-describedby="replay-url-hint"
-              className="ui-input w-full text-sm"
             />
             <p id="replay-url-hint" className="mt-1.5 text-xs text-muted-foreground">
               The URL to send this request to, for example your local server. It is sent from your
@@ -176,9 +179,9 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
           </div>
 
           {status === "done" && response && (
-            <div className="ui-code p-3!">
+            <CodeBox className="p-3!">
               <span className="font-bold">{response.status}</span> {response.statusText}
-            </div>
+            </CodeBox>
           )}
 
           {status === "error" && (
@@ -190,7 +193,8 @@ export function ReplayDialog({ method, headers, body, bodyBytes }: ReplayDialogP
           <Button
             onClick={handleReplay}
             disabled={!targetUrl || status === "sending"}
-            className="w-full ui-btn-primary"
+            raised
+            className="w-full"
           >
             {status === "sending" ? "Sending..." : "Send request"}
           </Button>

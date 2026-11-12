@@ -20,6 +20,7 @@ import { BODY_MAX, SUBJECT_MAX, SUPPORT_CATEGORIES } from "@/lib/support/shared"
 import type { SupportCategory } from "@/lib/supabase/database";
 import { cn } from "@/lib/utils";
 import { CheckRow, ImagePicker, supportBody } from "./thread";
+import { Card } from "@/components/ui/card";
 
 interface Endpoint {
   id: string;
@@ -216,7 +217,7 @@ export function NewTicketForm() {
         Tell us what happened and what you expected. Request ids and endpoint names help.
       </p>
 
-      <form onSubmit={submit} className="ui-card ui-card-static ph-no-capture space-y-6" noValidate>
+      <Card className="ph-no-capture space-y-6" render={<form onSubmit={submit} noValidate />}>
         <fieldset className="space-y-2">
           <legend className="mb-2 text-sm font-medium">What is it about?</legend>
           <div className="flex flex-wrap gap-2" role="radiogroup">
@@ -252,7 +253,7 @@ export function NewTicketForm() {
             placeholder="Stripe signature fails after rotating the secret"
           />
           {suggestions.length > 0 && (
-            <div className="border-l border-border pl-3 text-sm" aria-live="polite">
+            <div className="border-l pl-3 text-sm" aria-live="polite">
               <p className="text-muted-foreground">These docs might answer it:</p>
               <ul className="mt-1 space-y-0.5">
                 {suggestions.map((suggestion) => (
@@ -345,7 +346,7 @@ export function NewTicketForm() {
           </div>
         )}
 
-        <div className="space-y-4 border-t border-border pt-5">
+        <div className="space-y-4 border-t pt-5">
           <CheckRow
             id="ticket-notify"
             checked={notifyEmail}
@@ -380,7 +381,7 @@ export function NewTicketForm() {
             {sending ? "Sending..." : "Send ticket"}
           </Button>
         </div>
-      </form>
+      </Card>
     </main>
   );
 }

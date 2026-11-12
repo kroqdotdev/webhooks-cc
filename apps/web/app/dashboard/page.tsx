@@ -91,6 +91,9 @@ import type {
 } from "@/types/request";
 import type { KindFilter } from "@/types/request";
 import { toEmailSummary } from "@/lib/email-capture";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { CodeBox } from "@/components/ui/code";
 
 const CLICKHOUSE_PAGE_SIZE = 50;
 const PANE_MIN = 240;
@@ -607,6 +610,17 @@ export default function DashboardPage() {
   const setActiveTab = useCallback(
     (tab: Tab) => updateParams({ tab: tab === "body" ? null : tab }),
     [updateParams]
+  );
+  // Counts the tab changes made here rather than in the request view (number
+  // keys, opening a delivery), so the view lets go of a tab picked in it even
+  // when the URL ends up where it started.
+  const [tabWrites, setTabWrites] = useState(0);
+  const showTab = useCallback(
+    (tab: Tab) => {
+      setTabWrites((count) => count + 1);
+      setActiveTab(tab);
+    },
+    [setActiveTab]
   );
 
   // Retained request history state
@@ -1597,6 +1611,7 @@ export default function DashboardPage() {
       setSelectedId(requestId);
       setMobileDetail(true);
       writtenRequestRef.current = requestId;
+      setTabWrites((count) => count + 1);
       updateParams({ view: null, section: null, request: requestId, tab: "deliveries" });
     },
     [recentRequests, accessToken, currentEndpoint, updateParams]
@@ -1734,7 +1749,7 @@ export default function DashboardPage() {
         case "5": {
           e.preventDefault();
           const tabIndex = parseInt(e.key) - 1;
-          setActiveTab(TABS[tabIndex]);
+          showTab(TABS[tabIndex]);
           break;
         }
         case "c":
@@ -1766,7 +1781,7 @@ export default function DashboardPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSelect, handleToggleLiveMode, setActiveTab, toggleCollapse]);
+  }, [handleSelect, handleToggleLiveMode, showTab, toggleCollapse]);
 
   if (authLoading || endpoints === undefined || allEndpoints === undefined) {
     return <DashboardSkeleton />;
@@ -1863,7 +1878,7 @@ export default function DashboardPage() {
       />
 
       {missingSlug && missingVerified === missingSlug && missingDismissed !== missingSlug && (
-        <div className="shrink-0 border-b border-border bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex items-center gap-3">
+        <div className="shrink-0 border-b bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex items-center gap-3">
           <span className="flex-1 min-w-0">
             No endpoint named <span className="font-mono text-foreground">{missingSlug}</span> in
             this account. Showing {currentEndpoint.name || currentEndpoint.slug} instead.
@@ -1998,7 +2013,7 @@ export default function DashboardPage() {
               aria-valuenow={Math.min(paneWidth, paneMaxWidthNow)}
               aria-valuetext={paneCollapsed ? "Collapsed" : `${paneWidth} pixels`}
               tabIndex={0}
-              className="shrink-0 border-r border-border relative group cursor-col-resize select-none touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="shrink-0 border-r relative group cursor-col-resize select-none touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               onPointerDown={handleDragStart}
               onDoubleClick={toggleCollapse}
               onKeyDown={handleDividerKeyDown}
@@ -2041,6 +2056,7 @@ export default function DashboardPage() {
                   <RequestDetail
                     request={displayRequest}
                     activeTab={activeTab}
+                    tabWrites={tabWrites}
                     onTabChange={setActiveTab}
                     curlBtnRef={curlBtnRef}
                     note={currentNote}
@@ -2064,7 +2080,7 @@ export default function DashboardPage() {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <button
                   onClick={handleBackToList}
-                  className="border-b border-border px-4 py-2 text-sm font-bold hover:bg-muted cursor-pointer transition-colors shrink-0"
+                  className="border-b px-4 py-2 text-sm font-bold hover:bg-muted cursor-pointer transition-colors shrink-0"
                 >
                   &larr; Back to list
                 </button>
@@ -2091,6 +2107,7 @@ export default function DashboardPage() {
                       <RequestDetail
                         request={displayRequest}
                         activeTab={activeTab}
+                        tabWrites={tabWrites}
                         onTabChange={setActiveTab}
                         note={currentNote}
                         onNoteChange={handleNoteChange}
@@ -2167,10 +2184,11 @@ function ExportDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <button
+          <Button
+            variant="surface"
+            className="py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
             type="button"
             aria-label="Export"
-            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
           />
         }
       >
@@ -2179,7 +2197,7 @@ function ExportDropdown({
         <span className="hidden sm:inline">Export</span>
         <ChevronDown className="h-3 w-3 hidden sm:block" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="border border-border shadow-float">
+      <DropdownMenuContent align="end" className="border shadow-float">
         <DropdownMenuItem onClick={onExportJson}>
           <Download className="h-3.5 w-3.5" />
           Export JSON
@@ -2197,7 +2215,7 @@ function DashboardSkeleton() {
   return (
     <div className="flex-1 flex flex-col">
       {/* URL bar skeleton */}
-      <div className="border-b border-border bg-card px-4 py-3 shrink-0">
+      <div className="border-b bg-card px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
           <Skeleton className="h-5 w-24" />
           <Skeleton className="h-5 flex-1 max-w-md" />
@@ -2214,8 +2232,8 @@ function RequestsSkeleton() {
     <div className="flex-1 flex flex-col" data-testid="requests-loading">
       <div className="flex-1 flex">
         {/* List skeleton */}
-        <div className="w-80 shrink-0 border-r border-border hidden md:block">
-          <div className="border-b border-border px-3 py-2">
+        <div className="w-80 shrink-0 border-r hidden md:block">
+          <div className="border-b px-3 py-2">
             <Skeleton className="h-5 w-20" />
           </div>
           <div className="p-3 space-y-3">
@@ -2264,9 +2282,9 @@ function NoMatchingRequest({
             ? `No ${noun} matches this search. Clear the search to see all ${noun}s.`
             : `The ${noun} that was open does not match this search. Pick one from the list, or clear the search to see all ${noun}s.`}
         </p>
-        <button type="button" onClick={onClear} className="ui-btn-outline py-1.5! px-3! text-xs">
+        <Button variant="surface" className="py-1.5! px-3! text-xs" type="button" onClick={onClear}>
           Clear
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -2363,17 +2381,15 @@ function WaitingForRequests({
   };
 
   const emailButton = (primary: boolean) => (
-    <button
+    <Button
+      variant={primary ? "primary" : "surface"}
       onClick={() => void handleSendEmail()}
       disabled={sending === "email"}
-      className={cn(
-        primary ? "ui-btn-primary" : "ui-btn-outline",
-        "self-start flex items-center gap-2 py-2! px-4! text-sm"
-      )}
+      className="self-start flex items-center gap-2 py-2! px-4! text-sm"
     >
       <Mail className="h-4 w-4" />
       {sending === "email" ? "Sending..." : sent === "email" ? "Sent" : "Send test email"}
-    </button>
+    </Button>
   );
 
   // mailhooks.cc: the address is the one card; HTTP and layouts are a line each below it.
@@ -2389,7 +2405,7 @@ function WaitingForRequests({
             <p className="font-bold">Waiting for the first email</p>
           </div>
 
-          <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
+          <Card className="p-5! flex flex-col gap-3 min-w-0">
             <div className="flex items-center justify-between">
               <p className="font-bold">Send an email</p>
               <button
@@ -2400,9 +2416,12 @@ function WaitingForRequests({
                 <CopyLabel done={copied === "email"} />
               </button>
             </div>
-            <pre className="ui-code text-sm whitespace-pre-wrap break-words text-left shadow-none!">
+            <CodeBox
+              className="text-sm whitespace-pre-wrap break-words text-left shadow-none!"
+              render={<pre />}
+            >
               {emailAddress}
-            </pre>
+            </CodeBox>
             <p className="text-xs text-muted-foreground">
               Forward a sender&apos;s emails here with a rule in your mailbox, or give this address
               to the sender.
@@ -2430,7 +2449,7 @@ function WaitingForRequests({
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
 
           <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground text-center">
             <span className="min-w-0 break-all">
@@ -2484,7 +2503,7 @@ function WaitingForRequests({
             emailAddress && "xl:grid-cols-[repeat(2,minmax(0,1fr))]"
           )}
         >
-          <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
+          <Card className="p-5! flex flex-col gap-3 min-w-0">
             <div className="flex items-center justify-between">
               <p className="font-bold">Send an HTTP request</p>
               <button
@@ -2495,25 +2514,25 @@ function WaitingForRequests({
               </button>
             </div>
             {/* Focusable, so the keyboard can scroll a line that does not fit. */}
-            <pre
-              tabIndex={0}
-              aria-label="curl command"
-              className="ui-code text-sm whitespace-pre overflow-x-auto text-left shadow-none!"
+            <CodeBox
+              className="text-sm whitespace-pre overflow-x-auto text-left shadow-none!"
+              render={<pre tabIndex={0} aria-label="curl command" />}
             >
               {curlCmd}
-            </pre>
-            <button
+            </CodeBox>
+            <Button
+              variant="primary"
+              className="self-start flex items-center gap-2 py-2! px-4! text-sm"
               onClick={() => void handleSendTest()}
               disabled={sending === "http"}
-              className="ui-btn-primary self-start flex items-center gap-2 py-2! px-4! text-sm"
             >
               <Send className="h-4 w-4" />
               {sending === "http" ? "Sending..." : sent === "http" ? "Sent" : "Send test request"}
-            </button>
-          </div>
+            </Button>
+          </Card>
 
           {emailAddress && (
-            <div className="ui-card ui-card-static p-5! flex flex-col gap-3 min-w-0">
+            <Card className="p-5! flex flex-col gap-3 min-w-0">
               <div className="flex items-center justify-between">
                 <p className="font-bold">Send an email</p>
                 <button
@@ -2523,15 +2542,18 @@ function WaitingForRequests({
                   <CopyLabel done={copied === "email"} />
                 </button>
               </div>
-              <pre className="ui-code text-sm whitespace-pre-wrap break-words text-left shadow-none!">
+              <CodeBox
+                className="text-sm whitespace-pre-wrap break-words text-left shadow-none!"
+                render={<pre />}
+              >
                 {emailAddress}
-              </pre>
+              </CodeBox>
               <p className="text-xs text-muted-foreground">
                 Put this address in your app&apos;s signup form, or send to it from any mail client.
               </p>
               {emailButton(false)}
               {emailError && <p className="text-xs text-destructive-ink">{emailError}</p>}
-            </div>
+            </Card>
           )}
         </div>
 
@@ -2589,14 +2611,14 @@ function AutoCreateEndpoint({
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-md border border-border bg-muted flex items-center justify-center mx-auto mb-2">
+          <div className="w-16 h-16 rounded-md border bg-muted flex items-center justify-center mx-auto mb-2">
             <Send className="h-8 w-8 text-muted-foreground" />
           </div>
           <h2 className="text-xl font-bold tracking-normal">No endpoints yet</h2>
           <p className="text-muted-foreground max-w-sm">{error}</p>
-          <button onClick={handleRetry} className="ui-btn-primary">
+          <Button variant="primary" onClick={handleRetry}>
             Try again
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -2652,7 +2674,7 @@ function NoEndpointsHere({
   return (
     <div className="flex-1 overflow-y-auto flex p-8">
       <div className="m-auto text-center space-y-4 max-w-md">
-        <div className="w-16 h-16 rounded-md border border-border bg-muted flex items-center justify-center mx-auto mb-2">
+        <div className="w-16 h-16 rounded-md border bg-muted flex items-center justify-center mx-auto mb-2">
           {site.key === "mailhooks" ? (
             <Inbox className="h-8 w-8 text-muted-foreground" />
           ) : (
@@ -2689,11 +2711,11 @@ function NoEndpointsHere({
           .
         </p>
         {error && <p className="text-sm text-destructive-ink">{error}</p>}
-        <button type="button" onClick={() => setCreating(true)} className="ui-btn-primary">
+        <Button variant="primary" type="button" onClick={() => setCreating(true)}>
           {site.key === "mailhooks"
             ? "Create an email endpoint"
             : `Create an endpoint on ${site.name}`}
-        </button>
+        </Button>
         <NewEndpointDialog open={creating} onOpenChange={setCreating} />
         <div className="flex flex-col items-center gap-2">
           {ownedElsewhere.length > 0 && (
@@ -2756,7 +2778,7 @@ function ListedElsewhereNotice({
       });
   };
   return (
-    <div className="shrink-0 border-b border-border bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="shrink-0 border-b bg-muted/60 px-4 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
       <span>Listed on {home.name}.</span>
       {canList && (
         <button

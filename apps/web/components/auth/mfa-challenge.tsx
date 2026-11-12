@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
+import { CodeInput } from "@/components/ui/code-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
+import { Card } from "@/components/ui/card";
 
 /**
  * Whether the signed-in session still owes its second factor: the account
@@ -140,7 +142,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
   if (recovered) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center px-6">
-        <div className="ui-card ui-card-static w-full max-w-sm space-y-4">
+        <Card className="w-full max-w-sm space-y-4">
           <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
           <h1 className="text-xl font-semibold">You are signed in</h1>
           <p className="text-sm text-muted-foreground">
@@ -160,14 +162,14 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
               Later
             </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-6">
-      <form onSubmit={verify} className="ui-card ui-card-static w-full max-w-sm space-y-4">
+      <Card className="w-full max-w-sm space-y-4" render={<form onSubmit={verify} />}>
         <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">Two-factor sign-in</h1>
@@ -180,16 +182,28 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
         <label htmlFor="mfa-code" className="sr-only">
           Code
         </label>
-        <Input
-          ref={inputRef}
-          id="mfa-code"
-          inputMode={useRecovery ? "text" : "numeric"}
-          autoComplete={useRecovery ? "off" : "one-time-code"}
-          maxLength={useRecovery ? 16 : 7}
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          className="text-center font-mono text-lg tracking-[0.3em] uppercase"
-        />
+        {/* Recovery codes are letters and dashes; the authenticator's code is six digits. */}
+        {useRecovery ? (
+          <Input
+            ref={inputRef}
+            id="mfa-code"
+            inputMode="text"
+            autoComplete="off"
+            maxLength={16}
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            className="text-center font-mono text-lg tracking-[0.3em] uppercase"
+          />
+        ) : (
+          <CodeInput
+            ref={inputRef}
+            id="mfa-code"
+            align="center"
+            value={code}
+            onChange={setCode}
+            className="text-center font-mono text-lg tracking-[0.3em] uppercase"
+          />
+        )}
         {error && (
           <p role="alert" className="text-sm text-destructive-ink">
             {error}
@@ -224,7 +238,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
           </button>
           .
         </p>
-      </form>
+      </Card>
     </div>
   );
 }

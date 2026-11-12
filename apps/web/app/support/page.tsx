@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SupportHome } from "@/components/support/support-home";
 import { createPageMetadata } from "@/lib/seo";
+import { Button } from "@/components/ui/button";
 
 export const metadata = createPageMetadata({
   title: "Support",
@@ -16,13 +17,14 @@ export default function SupportPage() {
     <div className="min-h-screen">
       {/* The same header as the account pages (and their way back), so support reads as part of the app. */}
       <SiteHeader>
-        <Link
-          href="/dashboard"
-          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+        <Button
+          variant="surface"
+          className="py-1.5! px-3! text-xs flex items-center gap-1.5"
+          render={<Link href="/dashboard" />}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Dashboard
-        </Link>
+        </Button>
       </SiteHeader>
       <SupportHome />
     </div>

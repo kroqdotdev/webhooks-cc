@@ -8,6 +8,7 @@ import { apiFetch, waitLabel } from "@/lib/support/client";
 import type { MetricLine, OpsOverview as Overview } from "@/lib/ops/metrics";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
+import { Card } from "@/components/ui/card";
 
 const count = new Intl.NumberFormat("en-US");
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
@@ -147,11 +148,11 @@ export function OpsOverview() {
           {needs === 0 ? "Nothing needs you" : "Needs you"}
         </h1>
         {needs > 0 && (
-          <ul className="ui-card ui-card-static p-0! overflow-hidden ph-no-capture">
+          <Card className="p-0! overflow-hidden ph-no-capture" render={<ul />}>
             {data.needs.tickets.map((ticket) => {
               const late = now - new Date(ticket.waitingSince).getTime() > 24 * 3_600_000;
               return (
-                <li key={ticket.number} className="border-t border-border first:border-t-0">
+                <li key={ticket.number} className="border-t first:border-t-0">
                   <Link
                     href={`/ops/tickets/${ticket.number}`}
                     className="flex items-center justify-between gap-4 px-4 py-2.5 text-sm hover:bg-muted/60"
@@ -178,7 +179,7 @@ export function OpsOverview() {
               );
             })}
             {data.needs.refunds.map((refund) => (
-              <li key={refund.id} className="border-t border-border first:border-t-0">
+              <li key={refund.id} className="border-t first:border-t-0">
                 <Link
                   href="/ops/refunds"
                   className="flex items-center justify-between gap-4 px-4 py-2.5 text-sm hover:bg-muted/60"
@@ -202,7 +203,7 @@ export function OpsOverview() {
                 </Link>
               </li>
             ))}
-          </ul>
+          </Card>
         )}
       </section>
 
@@ -237,7 +238,7 @@ export function OpsOverview() {
             Last 7 days against the 7 before, UTC
           </span>
         </div>
-        <div className="ui-card ui-card-static p-0! overflow-x-auto">
+        <Card className="p-0! overflow-x-auto">
           <table className="w-full text-sm tabular-nums">
             <thead>
               <tr className="bg-muted/60 text-xs text-muted-foreground">
@@ -267,10 +268,7 @@ export function OpsOverview() {
                 return (
                   <tr
                     key={line.key}
-                    className={cn(
-                      "border-t border-border",
-                      index === firstMoney && "border-t-foreground/25"
-                    )}
+                    className={cn("border-t", index === firstMoney && "border-t-foreground/25")}
                   >
                     <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-normal">
                       {line.label}
@@ -298,7 +296,7 @@ export function OpsOverview() {
               })}
             </tbody>
           </table>
-        </div>
+        </Card>
         <p className="max-w-[80ch] text-xs text-muted-foreground">
           Staff and internal test accounts are left out. Paying accounts and MRR are levels, so
           their averages show the last value of each week. MRR and subscriptions come from Polar and
