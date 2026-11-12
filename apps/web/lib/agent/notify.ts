@@ -29,6 +29,7 @@ export async function notifyAgentConnected(input: {
   try {
     await sendEmail({
       to: input.email,
+      kind: "agent_connected",
       subject: "An agent was connected to your webhooks.cc account",
       text: lines.join("\n"),
     });

@@ -50,7 +50,6 @@
     "rehype-pretty-code": "^0.14.6",
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "resend": "^6.37.0",
     "shiki": "^4.6.0",
     "simple-icons": "^16.35.0",
     "sonner": "2.0.8",

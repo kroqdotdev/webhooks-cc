@@ -244,6 +244,7 @@ export async function tellPaused(userIds: string[], now = Date.now()): Promise<v
       const u = await usageOf(plan, userId, now);
       await sendEmail({
         to: owner.email,
+        kind: "previews_paused",
         subject: "Your previews are paused until the month turns",
         text: `${overMessage(u)}\n\nLive webhook tunnels (whk tunnel --live) keep working.\n`,
         headers: { "Auto-Submitted": "auto-generated" },

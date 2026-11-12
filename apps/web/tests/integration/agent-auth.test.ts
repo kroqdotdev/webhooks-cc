@@ -7,13 +7,12 @@
  * Needs the local Supabase stack. Run with:
  *   cd apps/web && npx vitest run --config vitest.config.ts tests/integration/agent-auth.test.ts
  *
- * The OTP is read from the dev email transport (RESEND_API_KEY unset and a
- * non-production NODE_ENV), so nothing is delivered.
+ * The OTP is read from the dev email transport (a non-production NODE_ENV
+ * always uses it), so nothing is delivered.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { adminClient, APP, configureAgentEnv, jsonPost, sha256Hex } from "./agent-helpers";
 
-delete process.env.RESEND_API_KEY;
 configureAgentEnv();
 
 const admin = adminClient();

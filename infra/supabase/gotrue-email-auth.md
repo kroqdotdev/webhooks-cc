@@ -25,15 +25,37 @@ ENABLE_PHONE_AUTOCONFIRM=false    # fails on users.email (NOT NULL) with a 500 t
 SITE_URL=<app origin>             # e.g. https://webhooks.cc (used as {{ .SiteURL }} in templates)
 
 SMTP_ADMIN_EMAIL=noreply@webhooks.cc
-SMTP_HOST=<smtp host>             # prod: the same SMTP host the web app uses (SMTP_HOST in .env.local)
+SMTP_HOST=<smtp host>             # prod: email-smtp.eu-central-1.amazonaws.com, as for the web app
 SMTP_PORT=<smtp port>             # prod: 587 (STARTTLS)
 SMTP_USER=<smtp user>             # prod: same as the web app's SMTP_USER; dev (Inbucket): empty
 SMTP_PASS=<smtp pass>             # prod: same as the web app's SMTP_PASS; dev (Inbucket): empty
 SMTP_SENDER_NAME=webhooks.cc
 ```
 
-Deliverability on prod is already proven for this host/user pair: team invite
-emails and agent OTP emails send through it from the web app.
+### Amazon SES in production
+
+GoTrue and the web app send through SES's SMTP endpoint with one IAM user,
+`ses-webhooks-cc-app` (eu-central-1). Its only permission is
+`ses:SendRawEmail` on the identities `webhooks.cc` and `noreply@webhooks.cc`
+and the configuration set `webhooks-cc-app`, from `noreply@webhooks.cc`
+(`ses:FromAddress`) and the production host's addresses (`aws:SourceIp`), so
+the credentials send nothing from anywhere else. `SMTP_PASS` is the SES SMTP
+password derived from the user's secret access key (SigV4, version byte 4);
+rotating the key means deriving it again and changing both env files.
+
+GoTrue cannot add headers, so its mail picks the configuration set another
+way: `noreply@webhooks.cc` is an SES email address identity of its own whose
+default configuration set is `webhooks-cc-app`, and an address identity's
+default overrides the domain's (`webhooks.cc` keeps `mailcow-relay` for mail
+people write from other addresses). The web app names the set itself
+(`SES_CONFIGURATION_SET`) and adds a `kind` message tag. The set sends
+BOUNCE, COMPLAINT, REJECT and DELIVERY_DELAY events to the SNS topic
+`webhooks-cc-ses-events`; bounces and complaints also land on the account's
+suppression list, after which SES drops sends to that address and reports
+them as bounces.
+
+There is no queue in front of SES: a send that fails fails the request (sign
+up, password reset) and the person tries again.
 
 ## 2. `docker-compose.override.yml` (next to `docker-compose.yml`)
 

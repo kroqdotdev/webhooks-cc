@@ -171,6 +171,7 @@ export async function issueVerifiedEmailClaim(args: {
   try {
     await sendEmail({
       to: email,
+      kind: "agent_code",
       subject: "Your webhooks.cc verification code",
       text: `Your webhooks.cc verification code is ${otp}. It expires in 10 minutes.`,
     });

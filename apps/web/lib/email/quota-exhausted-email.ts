@@ -203,6 +203,7 @@ export function buildQuotaExhaustedEmail(params: {
 
   return {
     to,
+    kind: "quota_exhausted",
     subject: "Your webhooks.cc endpoints are rejecting webhooks",
     text: [
       ...intro,

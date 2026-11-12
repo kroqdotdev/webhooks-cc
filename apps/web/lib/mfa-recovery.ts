@@ -118,6 +118,7 @@ export function buildTwoFactorOffEmail(params: {
   const notYou = "If this was not you, reset your password now and email support@webhooks.cc.";
   return {
     to: params.to,
+    kind: "two_factor_off",
     subject: "Two-factor sign-in was turned off",
     text: `${what}\n\nSet it up again: ${link}\n\n${notYou}`,
     html:

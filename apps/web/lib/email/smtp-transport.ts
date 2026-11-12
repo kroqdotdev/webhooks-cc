@@ -2,23 +2,27 @@ import { serverEnv } from "@/lib/env";
 import type { EmailMessage } from "./mailer";
 
 /**
- * SMTP email transport (nodemailer). The `nodemailer` package is
- * dynamic-imported so the dependency is only loaded when SMTP delivery is
- * actually used. On failure it throws so the route maps to a 500 — the OTP row
- * is already created, so the user can re-trigger.
+ * SMTP email transport (nodemailer), in production Amazon SES's SMTP endpoint
+ * (see infra/supabase/gotrue-email-auth.md for the SES side). The `nodemailer`
+ * package is dynamic-imported so it only loads when mail is sent.
  *
  * Connection modes (per RFC):
  *   - STARTTLS: port 587, SMTP_SECURE=false (plaintext upgraded to TLS)
  *   - Implicit TLS: port 465, SMTP_SECURE=true (TLS from the first byte)
  *
- * Auth user is SMTP_USER (e.g. postmaster@webhooks.cc); the visible From header
- * is EMAIL_FROM, falling back to the legacy AGENT_EMAIL_FROM (e.g.
- * webhooks.cc <noreply@webhooks.cc>). Secrets are read only from the validated
- * server env / process.env and are never logged.
+ * The visible From header is EMAIL_FROM, falling back to the legacy
+ * AGENT_EMAIL_FROM (webhooks.cc <noreply@webhooks.cc>). Secrets are read only
+ * from the validated server env and are never logged.
  *
- * `sendViaSmtp` / `verifySmtp` send/connect via SMTP regardless of NODE_ENV so
- * the deliverability test can exercise real delivery directly. Routine OTP
- * delivery is gated by the mailer (production + SMTP_HOST set) — see mailer.ts.
+ * With SES_CONFIGURATION_SET, each message names that configuration set and
+ * carries its kind as a message tag (`X-SES-CONFIGURATION-SET`,
+ * `X-SES-MESSAGE-TAGS`; SES removes both before delivery). The set's event
+ * destinations then report bounces and complaints with the kind they were
+ * about.
+ *
+ * A failed send is not retried here. SMTP cannot tell whether a message the
+ * connection broke on was taken, and some mail (the welcome email) must never
+ * go out twice, so the callers decide.
  */
 
 interface SmtpConfig {
@@ -49,6 +53,34 @@ function resolveSmtpConfig(): SmtpConfig {
   };
 }
 
+/** SES tag values allow letters, digits, `_`, `-`, `.` and `@`; anything else is dropped. */
+function sesTagValue(value: string): string {
+  return value.replace(/[^A-Za-z0-9_.@-]/g, "").slice(0, 256) || "unknown";
+}
+
+/** The SES headers for a message, empty without a configuration set. */
+export function sesHeaders(
+  message: Pick<EmailMessage, "kind">,
+  configurationSet: string | undefined
+): Record<string, string> {
+  if (!configurationSet) return {};
+  return {
+    "X-SES-CONFIGURATION-SET": configurationSet,
+    "X-SES-MESSAGE-TAGS": `kind=${sesTagValue(message.kind)}`,
+  };
+}
+
+/**
+ * The id SES gave the message, from its reply to the message ("250 Ok <id>").
+ * SES also rewrites the Message-ID header to `<id>@<region>.amazonses.com`, and
+ * its bounce and complaint events name the same id. Other servers answer
+ * differently, so this falls back to the Message-ID nodemailer generated.
+ */
+export function sesMessageId(response: string | undefined, fallback: string): string {
+  const match = /^250 Ok (\S+)/.exec(response ?? "");
+  return match ? match[1] : fallback;
+}
+
 async function createTransport() {
   const { host, port, secure, user, pass } = resolveSmtpConfig();
   const nodemailer = await import("nodemailer");
@@ -64,50 +96,31 @@ async function createTransport() {
 }
 
 /**
- * Send a message via SMTP. Sends regardless of NODE_ENV — callers that should
+ * Send a message via SMTP. Sends regardless of NODE_ENV; callers that should
  * only send in production must gate the call themselves (see mailer.ts).
- *
- * Returns the provider message id and the array of accepted recipients so
- * operational checks / the deliverability test can report per-send acceptance.
  */
 export async function sendViaSmtp(
   message: EmailMessage
 ): Promise<{ messageId: string; accepted: string[] }> {
+  const env = serverEnv();
   const transport = await createTransport();
 
   try {
     const info = await transport.sendMail({
-      from: serverEnv().EMAIL_FROM ?? serverEnv().AGENT_EMAIL_FROM,
+      from: env.EMAIL_FROM ?? env.AGENT_EMAIL_FROM,
       to: message.to,
       subject: message.subject,
       text: message.text,
       ...(message.html ? { html: message.html } : {}),
-      ...(message.headers ? { headers: message.headers } : {}),
+      headers: { ...message.headers, ...sesHeaders(message, env.SES_CONFIGURATION_SET) },
     });
     return {
-      messageId: info.messageId,
-      accepted: info.accepted ?? [],
+      messageId: sesMessageId(info.response, info.messageId),
+      accepted: (info.accepted ?? []).map(String),
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`SMTP delivery failed: ${reason}`);
-  } finally {
-    transport.close();
-  }
-}
-
-/**
- * Verify SMTP connectivity and authentication without sending a message.
- * Throws on failure. Used by the deliverability test and operational checks.
- */
-export async function verifySmtp(): Promise<void> {
-  const transport = await createTransport();
-
-  try {
-    await transport.verify();
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`SMTP verification failed: ${reason}`);
   } finally {
     transport.close();
   }

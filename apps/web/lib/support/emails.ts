@@ -92,6 +92,7 @@ export function buildReplyEmail(params: {
   const end = footer(link);
   return {
     to: params.to,
+    kind: "support_reply",
     subject: `[#${ticket.number}] Support replied to your ticket`,
     text: `Support answered your ticket #${ticket.number}.\n\n${repliesText(replies)}\n\n${end.text}`,
     html: layout(
@@ -126,6 +127,7 @@ export function buildClosedEmail(params: {
   const end = footer(link);
   return {
     to: params.to,
+    kind: "support_closed",
     subject: `[#${ticket.number}] Your ticket is closed`,
     text:
       `${why}\n\n` +
@@ -157,6 +159,7 @@ export function buildReminderEmail(params: {
   const end = footer(link);
   return {
     to: params.to,
+    kind: "support_reminder",
     subject: `[#${ticket.number}] Support is waiting for your answer`,
     text: `${line}\n\n${end.text}`,
     html: layout(`<p>${escapeHtml(line)}</p>${end.html}`),
@@ -181,6 +184,7 @@ export function buildStaffAlert(params: {
   const line = `${what} #${params.number}: ${topic}, ${plan}${urgent}.`;
   return {
     to: params.to,
+    kind: "support_staff_alert",
     subject: `${what} #${params.number} (${topic}${urgent})`,
     text: `${line}\n\n${params.link}`,
     html: layout(

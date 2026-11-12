@@ -5,8 +5,8 @@ import type { EmailMessage } from "./mailer";
  *
  * It logs the message (including any OTP) for local development and records the
  * last message per recipient so the integration test can read the OTP via
- * `getLastOtpForEmail` without DNS/SPF/Resend. Production never imports the
- * test hooks (it uses the Resend transport instead).
+ * `getLastOtpForEmail` without sending anything. Production never imports the
+ * test hooks (it sends over SMTP instead).
  */
 
 /** Last delivered message keyed by lower-cased recipient email. */

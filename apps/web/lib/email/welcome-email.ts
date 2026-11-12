@@ -106,6 +106,7 @@ export function buildWelcomeEmail(params: {
 
   return {
     to,
+    kind: "welcome",
     subject: `Getting started with ${name}`,
     headers: AUTOMATIC,
     text: [
