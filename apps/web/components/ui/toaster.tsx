@@ -3,10 +3,11 @@
 import { Toaster as SonnerToaster } from "sonner";
 
 /**
- * Where toasts appear: the foot of the screen on a phone (16px from its
- * edges), the bottom right corner from Sonner's tablet width up, at most
+ * Where toasts appear: a bar across the foot of the screen, 16px from its
+ * edges, below the md width (globals.css stretches Sonner's own phone layout,
+ * which stops at 600px, that far); from md up the bottom right corner, at most
  * 320px wide. Toasts are drawn by their callers (`toast.custom`), so they
- * carry the app's own surface look.
+ * carry the app's own surface look and font.
  */
 export function Toaster() {
   return (
@@ -14,7 +15,7 @@ export function Toaster() {
       position="bottom-right"
       offset={16}
       mobileOffset={16}
-      style={{ "--width": "320px" } as React.CSSProperties}
+      style={{ "--width": "320px", fontFamily: "inherit" } as React.CSSProperties}
     />
   );
 }

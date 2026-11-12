@@ -126,6 +126,13 @@ export default function RootLayout({
           title="Agent registration (auth.md)"
           href={buildAuthMdUrl()}
         />
+        {/* next-themes sets the mode from storage; where storage throws (site data
+            blocked) it sets nothing, so a dark system would paint light first. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{localStorage.getItem("theme")}catch(e){if(matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.classList.add("dark")}`,
+          }}
+        />
         {ANNOUNCEMENTS.length > 0 && (
           <script
             dangerouslySetInnerHTML={{

@@ -399,7 +399,7 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
         <div
           aria-hidden
           className={cn(
-            "ml-auto w-fit max-w-full rounded-md border bg-card px-2.5 py-1.5 text-xs shadow-surface",
+            "w-full md:ml-auto md:w-fit max-w-full rounded-md border bg-card px-2.5 py-1.5 text-xs shadow-surface [overflow-wrap:normal]",
             status.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
           )}
         >

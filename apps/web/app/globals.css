@@ -485,3 +485,21 @@ body {
 @utility animate-slide-in-left {
   animation: slide-in-left 200ms ease-out;
 }
+
+/* Sonner's toaster (components/ui/toaster.tsx) below the md width: a bar
+   across the foot of the screen, as on phones, up to 767px rather than
+   Sonner's 600px. Unlayered and a little more specific, as Sonner's own
+   stylesheet is unlayered. */
+@media (max-width: 767px) {
+  html [data-sonner-toaster][data-x-position] {
+    left: var(--mobile-offset-left);
+    right: var(--mobile-offset-right);
+    bottom: var(--mobile-offset-bottom);
+    width: 100%;
+  }
+  html [data-sonner-toaster] [data-sonner-toast] {
+    left: 0;
+    right: 0;
+    width: calc(100% - var(--mobile-offset-left) * 2);
+  }
+}
