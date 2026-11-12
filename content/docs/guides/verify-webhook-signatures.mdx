@@ -3,7 +3,7 @@ title: "How to Verify Webhook Signatures"
 description: "Step-by-step guide to verifying webhook signatures for Stripe, GitHub, Shopify, Slack, Discord, and 32 providers using HMAC-SHA256, Ed25519, and RSA-SHA256."
 section: guides
 order: 5
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-12
 schema: howto
 keywords:
   [
@@ -30,6 +30,8 @@ Before writing verification code, you can verify signatures directly in the dash
 2. **Automatic** -- configure a signing secret in endpoint settings. Every incoming webhook is verified server-side and the result (valid/invalid) appears as a badge in the request list.
 
 See [Dashboard Features: Signature Verification](/docs/dashboard-features#signature-verification) for the full walkthrough.
+
+Without an endpoint or an account, the [webhook signature checker](/tools/webhook-signature-checker) does the same check on a request you paste in: body, headers and secret, with the schemes of Stripe, GitHub, Shopify, Slack and other providers built in and a plain HMAC calculator for the rest. It runs in your browser too.
 
 ## What you'll build
 

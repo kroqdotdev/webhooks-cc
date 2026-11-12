@@ -9,6 +9,7 @@ import {
   getShareFrameworksLastModified,
 } from "@/lib/share-framework-pages";
 import { listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
+import { TOOLS, TOOLS_PATH, toolPath, toolsLastModified } from "@/lib/tools/catalog";
 import {
   getAllWebhookProviderPages,
   getWebhookProvidersLastModified,
@@ -61,6 +62,22 @@ export async function webhooksSitemapEntries(): Promise<SitemapEntry[]> {
     priority: 0.7,
   }));
 
+  // The free browser tools: the index changes whenever one of them does.
+  const tools: SitemapEntry[] = [
+    {
+      url: `${SITE_URL}${TOOLS_PATH}`,
+      lastModified: toolsLastModified(),
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    ...TOOLS.map((tool): SitemapEntry => ({
+      url: `${SITE_URL}${toolPath(tool.slug)}`,
+      lastModified: new Date(`${tool.updated}T00:00:00.000Z`),
+      changeFrequency: "monthly",
+      priority: 0.8,
+    })),
+  ];
+
   const docSlugs = await getAllDocSlugs();
   const docEntries = await Promise.all(
     docSlugs.map(async (slug): Promise<SitemapEntry | null> => {
@@ -108,7 +125,7 @@ export async function webhooksSitemapEntries(): Promise<SitemapEntry[]> {
     })),
   ];
 
-  return [...pages, ...providers, ...frameworks, ...docs, ...blog];
+  return [...pages, ...providers, ...frameworks, ...tools, ...docs, ...blog];
 }
 
 /** When the sender pages last changed. */

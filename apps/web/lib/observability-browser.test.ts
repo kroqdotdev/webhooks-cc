@@ -216,6 +216,39 @@ describe("prepareBrowserEvent", () => {
     expect(sent).toContain("https://webhooks.cc/s/[token]");
   });
 
+  it("keeps Discord and Slack webhook URLs out of breadcrumbs and messages", () => {
+    // What the free tools under /tools call from the browser; both made up.
+    const discord = "https://discord.com/api/webhooks/123456789012345678/abcDEF123_-xyz";
+    const slack = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX";
+    const event: Event = {
+      ...exception("TypeError", `could not post to ${discord}?wait=true or ${slack}`),
+      request: { url: "https://webhooks.cc/tools/discord-webhook-tester" },
+      breadcrumbs: {
+        values: [
+          { category: "fetch", data: { method: "POST", url: `${discord}?wait=true` } },
+          { category: "fetch", data: { method: "POST", url: slack } },
+          { category: "xhr", data: { url: "https://discord.com/api/v10/webhooks/42/tok-en" } },
+          { category: "console", message: `sent ${slack}` },
+        ],
+      },
+    };
+    const sent = JSON.stringify(prepareBrowserEvent(event));
+    for (const secret of [
+      "123456789012345678",
+      "abcDEF123_-xyz",
+      "T00000000",
+      "B00000000",
+      "XXXX",
+    ]) {
+      expect(sent).not.toContain(secret);
+    }
+    expect(sent).not.toContain("tok-en");
+    expect(sent).toContain("https://discord.com/api/webhooks/[webhook]");
+    expect(sent).toContain("https://hooks.slack.com/services/[webhook]");
+    // The page's own address is not a webhook URL.
+    expect(sent).toContain("https://webhooks.cc/tools/discord-webhook-tester");
+  });
+
   it("drops noise", () => {
     expect(prepareBrowserEvent(exception("TypeError", "Failed to fetch"))).toBeNull();
   });

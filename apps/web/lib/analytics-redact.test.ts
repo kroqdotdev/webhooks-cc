@@ -68,6 +68,37 @@ describe("redactUrls", () => {
   });
 });
 
+describe("webhook URLs", () => {
+  it("keeps a Discord or Slack webhook's secret out of every property", () => {
+    // Made up, in the shape the free tools under /tools send to.
+    const discord = "https://discord.com/api/webhooks/123456789012345678/abcDEF123_-xyz";
+    const slack = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX";
+    const event = redactAnalyticsEvent({
+      event: "$exception",
+      properties: {
+        $current_url: "https://webhooks.cc/tools/slack-webhook-tester",
+        $exception_message: `Failed to post to ${discord}?wait=true`,
+        $exception_list: [{ value: `fetch ${slack} failed` }],
+        $referrer: "https://discordapp.com/api/v9/webhooks/42/tok-en/slack",
+        workflow: "https://hooks.slack.com/triggers/T00000000/123/abcdef",
+      },
+    });
+    const text = JSON.stringify(event);
+    for (const secret of ["123456789012345678", "abcDEF123_-xyz", "T00000000", "XXXX", "tok-en"]) {
+      expect(text).not.toContain(secret);
+    }
+    expect(event.properties.$exception_message).toBe(
+      "Failed to post to https://discord.com/api/webhooks/[webhook]"
+    );
+    expect(event.properties.$exception_list[0].value).toBe(
+      "fetch https://hooks.slack.com/services/[webhook] failed"
+    );
+    expect(event.properties.$referrer).toBe("https://discordapp.com/api/webhooks/[webhook]");
+    expect(event.properties.workflow).toBe("https://hooks.slack.com/triggers/[webhook]");
+    expect(event.properties.$current_url).toBe("https://webhooks.cc/tools/slack-webhook-tester");
+  });
+});
+
 describe("staff pages", () => {
   it("sends nothing from the operations center", async () => {
     const { analyticsBeforeSend, isUntrackedPath } = await import("./analytics-redact");

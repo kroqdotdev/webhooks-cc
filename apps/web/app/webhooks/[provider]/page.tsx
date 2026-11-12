@@ -9,6 +9,7 @@ import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import { PricingCTA } from "@/components/landing/pricing-cta";
 import { ProviderIcon } from "@/components/dashboard/provider-icon";
 import { CopyButton } from "@/components/ui/copy-button";
+import { ToolLink } from "@/components/tools/tool-page";
 import { highlightCode } from "@/lib/highlight";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
 import { providerSecretEnv, providerTestSnippet } from "@/lib/provider-test-snippet";
@@ -65,7 +66,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     path: `/webhooks/${page.slug}`,
     keywords: [
       `test ${page.label.toLowerCase()} webhooks`,
-      `${page.label.toLowerCase()} webhook tester`,
+      // A provider with a tool of its own under /tools leaves this search to it.
+      ...(page.seo?.tool ? [] : [`${page.label.toLowerCase()} webhook tester`]),
       `${page.label.toLowerCase()} webhook url`,
       `${page.label.toLowerCase()} webhook example`,
       `${page.label.toLowerCase()} webhook signature verification`,
@@ -112,7 +114,9 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
   }
 
   items.push({
-    question: `Is the ${page.label} webhook tester free?`,
+    question: page.seo?.tool
+      ? `Is capturing ${page.label} webhooks free?`
+      : `Is the ${page.label} webhook tester free?`,
     answer: `Yes. A free account gets you persistent endpoints, 50 requests per day, 7-day retention, and full CLI, SDK, and MCP access, with no credit card. You can also try a guest endpoint without an account: up to 25 requests for 12 hours.`,
   });
 
@@ -206,6 +210,18 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               <>, then replay deliveries or forward them to your local handler.</>
             )}
           </p>
+          {page.seo?.tool && (
+            <p className="mb-6 border-l-2 border-primary pl-4 text-muted-foreground">
+              {page.seo.tool.pitch} That is the other direction, and the free{" "}
+              <ToolLink
+                slug={page.seo.tool.slug}
+                className="text-primary font-bold hover:underline"
+              >
+                {page.seo.tool.label}
+              </ToolLink>{" "}
+              does it from your browser.
+            </p>
+          )}
           <StartFreeCTA goCta="get a guest URL without an account" />
           <p className="text-sm text-muted-foreground mt-4">
             Prefer a walkthrough? Read the{" "}
@@ -343,6 +359,18 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                 Capture a real delivery to inspect exactly what is sent.
               </p>
             )
+          )}
+          {page.signatureChecker && (
+            <p className="text-sm text-muted-foreground mt-3">
+              Checking one request by hand? Paste its body and headers into the{" "}
+              <Link
+                href={`/tools/webhook-signature-checker?scheme=${page.slug}`}
+                className="text-primary font-bold hover:underline"
+              >
+                webhook signature checker
+              </Link>
+              , which has the {page.label} scheme built in and runs in your browser.
+            </p>
           )}
           <p className="text-sm text-muted-foreground mt-3">
             New to signature verification? Read the{" "}

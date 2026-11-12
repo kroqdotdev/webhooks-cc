@@ -236,6 +236,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "support",
   "teams",
   "terms",
+  "tools",
   "video",
   "webhooks",
 ] as const;
