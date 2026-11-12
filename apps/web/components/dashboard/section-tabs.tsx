@@ -76,7 +76,9 @@ export function SectionTabList<T extends string>({
     // Shown from elsewhere (a number key, a parse finishing) while the bar has
     // focus: focus follows, so Shift+Tab back does not land on, and show, the old tab.
     const focused = document.activeElement;
-    if (focused !== tab && focused instanceof HTMLElement && strip.contains(focused)) tab.focus();
+    if (focused !== tab && focused instanceof HTMLElement && strip.contains(focused)) {
+      tab.focus({ preventScroll: true });
+    }
     if (strip.scrollWidth <= strip.clientWidth) return;
     const stripBox = strip.getBoundingClientRect();
     const box = tab.getBoundingClientRect();
@@ -107,9 +109,9 @@ export function SectionTabList<T extends string>({
               }}
               onClick={(event) => {
                 // Enter or Space (no pointer) clicks the focused tab, which is the one shown.
-                if (event.detail === 0 ? tab.id === active : pressedShown.current) {
-                  onReselect?.(tab.id);
-                }
+                const reselected = event.detail === 0 ? tab.id === active : pressedShown.current;
+                pressedShown.current = false;
+                if (reselected) onReselect?.(tab.id);
               }}
               className={cn(
                 "px-4 py-2 text-xs font-bold border-r border-border cursor-pointer transition-colors whitespace-nowrap capitalize",

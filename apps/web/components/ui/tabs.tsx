@@ -17,11 +17,13 @@ function TabsList(props: TabsPrimitive.List.Props) {
 const TabsTab = TabsPrimitive.Tab;
 
 /**
- * Not a stop of its own when tabbing: Tab goes from the bar into the panel's
- * content, as it did before Base UI.
+ * No tabindex, as before Base UI (which would make every panel a Tab stop):
+ * Tab goes from the bar into the panel's content, and a panel that scrolls
+ * with nothing focusable inside stays reachable, as the browser makes such
+ * a scroller focusable itself. A negative tabindex would turn that off.
  */
 function TabsPanel(props: TabsPrimitive.Panel.Props) {
-  return <TabsPrimitive.Panel tabIndex={-1} {...props} />;
+  return <TabsPrimitive.Panel tabIndex={undefined} {...props} />;
 }
 
 export { Tabs, TabsList, TabsTab, TabsPanel };

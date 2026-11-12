@@ -156,8 +156,6 @@ export function RequestDetail({
   schemaCandidates,
   share,
 }: RequestDetailProps) {
-  const [internalTab, setInternalTab] = useState<Tab>("body");
-  const setTab = onTabChange ?? setInternalTab;
   // What the app behind `whk tunnel --live` answered, for live captures only.
   const liveResponse = useMemo(
     () => readLiveResponse("liveResponse" in request ? request.liveResponse : undefined),
@@ -170,15 +168,20 @@ export function RequestDetail({
   );
   // A tab picked here shows at once: the owner's value (the dashboard's URL)
   // arrives a render later, and a tab bar that is told late selects twice.
-  // Any change of the owner's value takes over again.
+  // Any change of the owner's value takes over again. Without an owner, the
+  // pick is the tab.
   const [picked, setPicked] = useState<Tab | null>(null);
   const [ownerTab, setOwnerTab] = useState(activeTab);
   if (ownerTab !== activeTab) {
     setOwnerTab(activeTab);
     setPicked(null);
   }
-  const requested = picked ?? activeTab ?? internalTab;
+  const requested = picked ?? activeTab ?? "body";
   const tab = tabs.includes(requested) ? requested : "body";
+  const showTab = (next: Tab) => {
+    setPicked(next);
+    onTabChange?.(next);
+  };
 
   const [copied, setCopied] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -259,8 +262,7 @@ export function RequestDetail({
     <Tabs
       value={tab}
       onValueChange={(next: Tab) => {
-        setPicked(next);
-        setTab(next);
+        showTab(next);
         trackRequestDetailTabChanged(next);
       }}
       className="ph-no-capture flex flex-col h-full"
@@ -286,7 +288,7 @@ export function RequestDetail({
                   signatureVerified={request.signatureVerified}
                   signatureError={request.signatureError}
                   signingProvider={request.signingProvider}
-                  onClick={() => setTab("signature")}
+                  onClick={() => showTab("signature")}
                 />
               )}
               <ResponseAnswer request={request} />
