@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { Tabs, TabsPanel } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes, formatFullTimestamp } from "@/types/request";
@@ -45,7 +46,8 @@ import {
   type FindingStatus,
 } from "@/lib/deliverability";
 import { JsonTree } from "./json-tree";
-import { NoteBar, useMoreToRight, type DisplayableRequest } from "./request-detail";
+import { NoteBar, type DisplayableRequest } from "./request-detail";
+import { SectionTabList } from "./section-tabs";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 import { ParsedResult } from "./layouts-section";
 
@@ -1023,9 +1025,6 @@ export function EmailDetail({
   // webhooks.cc leads with JSON: it is what forwarding sends and what a handler is
   // written against. mailhooks.cc leads with the email as people read it.
   const mailFirst = useSite().key === "mailhooks";
-  // The page can show this view twice (desktop and phone), so ids are per instance.
-  const tabIds = useId();
-  const [tabStripRef, tabStripMore] = useMoreToRight<HTMLDivElement>();
   const hasLayouts = (endpoint.layouts?.length ?? 0) > 0;
   // A tab the person picked stays: a parse that finishes later does not move them.
   const tabPicked = useRef(initialTab !== undefined);
@@ -1359,7 +1358,11 @@ export function EmailDetail({
   const rawAvailable = stored || (!!raw && !email.truncated.raw);
 
   return (
-    <div className="ph-no-capture flex flex-col h-full">
+    <Tabs
+      value={activeTab}
+      onValueChange={(next: EmailTab) => openTab(next)}
+      className="ph-no-capture flex flex-col h-full"
+    >
       {/* Envelope */}
       <div className="@container border-b border-border px-4 pt-3 pb-3 shrink-0 bg-card">
         {/* In a narrow pane the buttons go under the subject, which keeps the full width. */}
@@ -1472,63 +1475,17 @@ export function EmailDetail({
 
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
-      {/* Tabs: the same bar as the HTTP view */}
-      {/* The strip scrolls when the tabs do not fit; a fade on the right says there is more. */}
-      <div
-        ref={tabStripRef}
-        className={cn(
-          "border-b border-border flex shrink-0 overflow-x-auto [scrollbar-width:none]",
-          tabStripMore && "[mask-image:linear-gradient(to_right,#000_calc(100%-3rem),transparent)]"
-        )}
-      >
-        <div role="tablist" aria-label="Email sections" className="flex shrink-0">
-          {tabs.map((entry, index) => (
-            <button
-              key={entry.id}
-              type="button"
-              role="tab"
-              id={`${tabIds}-tab-${entry.id}`}
-              data-tab={entry.id}
-              aria-selected={activeTab === entry.id}
-              aria-controls={`${tabIds}-panel`}
-              tabIndex={activeTab === entry.id ? 0 : -1}
-              onClick={() => openTab(entry.id)}
-              onKeyDown={(event) => {
-                // Arrow keys move between tabs, as in any tab list.
-                const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-                if (!step) return;
-                event.preventDefault();
-                const next = tabs[(index + step + tabs.length) % tabs.length];
-                openTab(next.id);
-                event.currentTarget.parentElement
-                  ?.querySelector<HTMLButtonElement>(`[data-tab="${next.id}"]`)
-                  ?.focus();
-              }}
-              className={cn(
-                "px-4 py-2 text-xs font-bold border-r border-border cursor-pointer transition-colors whitespace-nowrap capitalize",
-                activeTab === entry.id
-                  ? "bg-selected text-selected-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))]"
-                  : "bg-background hover:bg-muted"
-              )}
-            >
-              {entry.label}
-              {entry.count !== undefined && (
-                <>
-                  <span className="sr-only">, </span>
-                  <span className="ml-1.5 font-mono opacity-70">{entry.count}</span>
-                </>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* The same bar as the HTTP view */}
+      <SectionTabList
+        label="Email sections"
+        tabs={tabs}
+        active={activeTab}
+        trailingDivider
+        // Raw again retries a stored message that failed to load.
+        onReselect={openTab}
+      />
 
-      <div
-        role="tabpanel"
-        id={`${tabIds}-panel`}
-        aria-labelledby={`${tabIds}-tab-${activeTab}`}
-        className="flex-1 overflow-auto p-4 md:p-5"
-      >
+      <TabsPanel value={activeTab} className="flex-1 overflow-auto p-4 md:p-5">
         {activeTab === "parsed" &&
           (reading ? (
             <p
@@ -1862,7 +1819,7 @@ export function EmailDetail({
               and attachment list are in the other tabs.
             </p>
           ))}
-      </div>
-    </div>
+      </TabsPanel>
+    </Tabs>
   );
 }

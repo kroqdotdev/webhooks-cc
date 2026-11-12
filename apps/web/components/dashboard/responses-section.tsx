@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { conditionIssues, type Condition } from "@webhooks-cc/sdk";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { useSite } from "@/components/providers/site-provider";
 import { describeConditions } from "@/lib/condition-labels";
@@ -118,32 +119,22 @@ function RowHeader({
   marker,
   summary,
   status,
-  open,
   answers,
-  onToggle,
-  controlsId,
   trailing,
   dim,
 }: {
   marker: string;
   summary: React.ReactNode;
   status: number;
-  open: boolean;
   answers: boolean;
-  onToggle: () => void;
-  controlsId: string;
   trailing?: React.ReactNode;
   dim?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2 pr-2">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={controlsId}
+      <CollapsibleTrigger
         className={cn(
-          "flex-1 min-w-0 flex items-center gap-3 text-left px-3 py-2.5 cursor-pointer",
+          "group flex-1 min-w-0 flex items-center gap-3 text-left px-3 py-2.5 cursor-pointer",
           dim && "opacity-55"
         )}
       >
@@ -158,10 +149,10 @@ function RowHeader({
         <ChevronDown
           className={cn(
             "h-4 w-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-            open && "rotate-180"
+            "group-data-panel-open:rotate-180"
           )}
         />
-      </button>
+      </CollapsibleTrigger>
       {trailing}
     </div>
   );
@@ -401,11 +392,11 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
     ruleProblems.reduce((count, list) => count + (list.length > 0 ? 1 : 0), 0) +
     (fallbackProblems.length > 0 ? 1 : 0);
 
-  const toggle = (key: string) =>
+  const setRowOpen = (key: string, isOpen: boolean) =>
     setOpen((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (isOpen) next.add(key);
+      else next.delete(key);
       return next;
     });
 
@@ -527,15 +518,21 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
           const panelId = `responses-rule-${rule.key}`;
           const summary = rule.name.trim() || describeConditions(rule.conditions, rule.logic);
           return (
-            <li
+            <Collapsible
               key={rule.key}
-              className={cn(
-                "relative bg-card",
-                answering === index &&
-                  "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-primary",
-                showProblems &&
-                  "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-destructive"
-              )}
+              open={isOpen}
+              onOpenChange={(next) => setRowOpen(rule.key, next)}
+              render={
+                <li
+                  className={cn(
+                    "relative bg-card",
+                    answering === index &&
+                      "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-primary",
+                    showProblems &&
+                      "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-destructive"
+                  )}
+                />
+              }
             >
               <RowHeader
                 marker={`Rule ${index + 1}`}
@@ -553,10 +550,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                   </>
                 }
                 status={status}
-                open={isOpen}
                 answers={answering === index}
-                onToggle={() => toggle(rule.key)}
-                controlsId={panelId}
                 dim={!rule.enabled}
                 trailing={
                   <Switch
@@ -567,83 +561,88 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                   />
                 }
               />
-              {isOpen && (
-                <div id={panelId} className="px-3 pb-4 pt-1 space-y-4 border-t border-border/20">
-                  <div className="pt-3 space-y-1.5">
-                    <label htmlFor={`${panelId}-name`} className="block text-xs font-bold">
-                      Name
-                    </label>
-                    <input
-                      id={`${panelId}-name`}
-                      value={rule.name}
-                      onChange={(e) => updateRule(rule.key, { name: e.target.value })}
-                      placeholder="Optional, for example Payment failed"
-                      maxLength={200}
-                      className="ui-input w-full text-sm py-1.5!"
-                    />
-                  </div>
-                  <ConditionList
-                    conditions={rule.conditions}
-                    logic={rule.logic}
-                    use="response"
-                    idPrefix={panelId}
-                    showRequired={submitted}
-                    onChange={({ conditions, logic }) =>
-                      updateRule(rule.key, { conditions, logic })
-                    }
+              <CollapsiblePanel
+                id={panelId}
+                className="px-3 pb-4 pt-1 space-y-4 border-t border-border/20"
+              >
+                <div className="pt-3 space-y-1.5">
+                  <label htmlFor={`${panelId}-name`} className="block text-xs font-bold">
+                    Name
+                  </label>
+                  <input
+                    id={`${panelId}-name`}
+                    value={rule.name}
+                    onChange={(e) => updateRule(rule.key, { name: e.target.value })}
+                    placeholder="Optional, for example Payment failed"
+                    maxLength={200}
+                    className="ui-input w-full text-sm py-1.5!"
                   />
-                  <div className="pt-3 border-t border-border/20 space-y-2">
-                    <p className="text-sm font-semibold">Answer with</p>
-                    <ResponseEditor
-                      draft={rule.response}
-                      onChange={(response) => updateRule(rule.key, { response })}
-                      idPrefix={panelId}
-                    />
-                  </div>
-                  {showProblems && <p className="text-xs text-destructive-ink">{problems[0]}</p>}
-                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border/20">
-                    {rules.length > 1 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => move(index, -1)}
-                          disabled={index === 0}
-                          className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <ArrowUp className="h-3 w-3" /> Check earlier
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => move(index, 1)}
-                          disabled={index === rules.length - 1}
-                          className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <ArrowDown className="h-3 w-3" /> Check later
-                        </button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setRules((prev) => prev.filter((r) => r.key !== rule.key))}
-                      className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive-ink"
-                    >
-                      <Trash2 className="h-3 w-3" /> Delete rule
-                    </button>
-                  </div>
                 </div>
-              )}
-            </li>
+                <ConditionList
+                  conditions={rule.conditions}
+                  logic={rule.logic}
+                  use="response"
+                  idPrefix={panelId}
+                  showRequired={submitted}
+                  onChange={({ conditions, logic }) => updateRule(rule.key, { conditions, logic })}
+                />
+                <div className="pt-3 border-t border-border/20 space-y-2">
+                  <p className="text-sm font-semibold">Answer with</p>
+                  <ResponseEditor
+                    draft={rule.response}
+                    onChange={(response) => updateRule(rule.key, { response })}
+                    idPrefix={panelId}
+                  />
+                </div>
+                {showProblems && <p className="text-xs text-destructive-ink">{problems[0]}</p>}
+                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border/20">
+                  {rules.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => move(index, -1)}
+                        disabled={index === 0}
+                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <ArrowUp className="h-3 w-3" /> Check earlier
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => move(index, 1)}
+                        disabled={index === rules.length - 1}
+                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <ArrowDown className="h-3 w-3" /> Check later
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setRules((prev) => prev.filter((r) => r.key !== rule.key))}
+                    className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive-ink"
+                  >
+                    <Trash2 className="h-3 w-3" /> Delete rule
+                  </button>
+                </div>
+              </CollapsiblePanel>
+            </Collapsible>
           );
         })}
-        <li
-          className={cn(
-            "relative bg-muted/30",
-            answering === "fallback" &&
-              "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-primary",
-            submitted &&
-              fallbackProblems.length > 0 &&
-              "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-destructive"
-          )}
+        <Collapsible
+          open={open.has("fallback")}
+          onOpenChange={(next) => setRowOpen("fallback", next)}
+          render={
+            <li
+              className={cn(
+                "relative bg-muted/30",
+                answering === "fallback" &&
+                  "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-primary",
+                submitted &&
+                  fallbackProblems.length > 0 &&
+                  "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-destructive"
+              )}
+            />
+          }
         >
           <RowHeader
             marker={rules.length > 0 ? "Otherwise" : "Always"}
@@ -657,21 +656,15 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
               )
             }
             status={fromDraft(fallback).status}
-            open={open.has("fallback")}
             answers={answering === "fallback"}
-            onToggle={() => toggle("fallback")}
-            controlsId="responses-fallback"
           />
-          {open.has("fallback") && (
-            <div id="responses-fallback" className="px-3 pb-4 pt-3 border-t border-border/20">
-              <ResponseEditor
-                draft={fallback}
-                onChange={setFallback}
-                idPrefix="responses-fallback"
-              />
-            </div>
-          )}
-        </li>
+          <CollapsiblePanel
+            id="responses-fallback"
+            className="px-3 pb-4 pt-3 border-t border-border/20"
+          >
+            <ResponseEditor draft={fallback} onChange={setFallback} idPrefix="responses-fallback" />
+          </CollapsiblePanel>
+        </Collapsible>
       </ol>
 
       {rules.length < MAX_RULES && (

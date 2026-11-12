@@ -14,6 +14,7 @@ import {
   FolderUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   emitDashboardEndpointsChanged,
@@ -306,11 +307,11 @@ export function DestinationsSection({
     return () => clearInterval(timer);
   }, [onScreen, documentVisible, load]);
 
-  const toggle = (id: string) =>
+  const setRowOpen = (id: string, isOpen: boolean) =>
     setOpen((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (isOpen) next.add(id);
+      else next.delete(id);
       return next;
     });
 
@@ -418,11 +419,17 @@ export function DestinationsSection({
             const panelId = `destination-panel-${destination.id}`;
             const title = titleOf(destination);
             return (
-              <li
+              <Collapsible
                 key={destination.id}
-                id={`destination-${destination.id}`}
-                tabIndex={-1}
-                className="bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                open={isOpen}
+                onOpenChange={(next) => setRowOpen(destination.id, next)}
+                render={
+                  <li
+                    id={`destination-${destination.id}`}
+                    tabIndex={-1}
+                    className="bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  />
+                }
               >
                 <div className="flex items-start gap-3 px-3 py-3">
                   <div className="pt-0.5">
@@ -433,11 +440,7 @@ export function DestinationsSection({
                       label={`${title} on`}
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => toggle(destination.id)}
-                    aria-expanded={isOpen}
-                    aria-controls={panelId}
+                  <CollapsibleTrigger
                     className={cn(
                       "flex-1 min-w-0 text-left space-y-1 cursor-pointer",
                       !destination.enabled && "opacity-60"
@@ -462,73 +465,64 @@ export function DestinationsSection({
                         {notice.text}
                       </span>
                     )}
-                  </button>
+                  </CollapsibleTrigger>
                   <div className="flex flex-col items-center gap-1 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => toggle(destination.id)}
+                    <CollapsibleTrigger
                       aria-label={`${isOpen ? "Close" : "Open"} ${title}`}
-                      className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                      className="group inline-flex items-center justify-center h-7 w-7 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
                     >
-                      <ChevronDown
-                        className={cn(
-                          "h-4 w-4 transition-transform motion-reduce:transition-none",
-                          isOpen && "rotate-180"
-                        )}
-                      />
-                    </button>
+                      <ChevronDown className="h-4 w-4 transition-transform motion-reduce:transition-none group-data-panel-open:rotate-180" />
+                    </CollapsibleTrigger>
                   </div>
                 </div>
-                {isOpen && (
-                  <div id={panelId} className="px-3 pb-4 pt-4 border-t border-border/20">
-                    <DestinationEditor
-                      slug={endpoint.slug}
-                      destination={destination}
-                      signingConfigured={signingConfigured}
-                      emailFieldNames={emailFieldNames}
-                      onSaved={(saved) => {
-                        setDestinations(
-                          (prev) =>
-                            prev?.map((d) =>
-                              d.id === saved.id ? { ...saved, summary: d.summary } : d
-                            ) ?? prev
-                        );
-                        confirmSaved(saved, false);
-                        changed();
-                      }}
-                      onDeleted={() => {
-                        setOpen((prev) => {
-                          const next = new Set(prev);
-                          next.delete(destination.id);
-                          return next;
-                        });
-                        changed();
-                      }}
-                    />
-                    {count > 1 && (
-                      <div className="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-border/20">
-                        <span className="text-xs text-muted-foreground">Place in the list</span>
-                        <button
-                          type="button"
-                          onClick={() => void move(index, -1)}
-                          disabled={index === 0}
-                          className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <ArrowUp className="h-3 w-3" /> Up
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void move(index, 1)}
-                          disabled={index === count - 1}
-                          className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <ArrowDown className="h-3 w-3" /> Down
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
+                <CollapsiblePanel id={panelId} className="px-3 pb-4 pt-4 border-t border-border/20">
+                  <DestinationEditor
+                    slug={endpoint.slug}
+                    destination={destination}
+                    signingConfigured={signingConfigured}
+                    emailFieldNames={emailFieldNames}
+                    onSaved={(saved) => {
+                      setDestinations(
+                        (prev) =>
+                          prev?.map((d) =>
+                            d.id === saved.id ? { ...saved, summary: d.summary } : d
+                          ) ?? prev
+                      );
+                      confirmSaved(saved, false);
+                      changed();
+                    }}
+                    onDeleted={() => {
+                      setOpen((prev) => {
+                        const next = new Set(prev);
+                        next.delete(destination.id);
+                        return next;
+                      });
+                      changed();
+                    }}
+                  />
+                  {count > 1 && (
+                    <div className="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-border/20">
+                      <span className="text-xs text-muted-foreground">Place in the list</span>
+                      <button
+                        type="button"
+                        onClick={() => void move(index, -1)}
+                        disabled={index === 0}
+                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <ArrowUp className="h-3 w-3" /> Up
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void move(index, 1)}
+                        disabled={index === count - 1}
+                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <ArrowDown className="h-3 w-3" /> Down
+                      </button>
+                    </div>
+                  )}
+                </CollapsiblePanel>
+              </Collapsible>
             );
           })}
         </ul>

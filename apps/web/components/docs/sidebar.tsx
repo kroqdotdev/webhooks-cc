@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { SiteLink } from "@/components/nav/site-link";
 import { useSitePathname } from "@/lib/site-pathname";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BookOpen, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS, type NavSection } from "@/lib/docs-nav";
 import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
@@ -48,8 +49,7 @@ function SidebarContent({
 
   const isOpen = (section: NavSection) => open[section.id] ?? sectionHasPage(section, pathname);
 
-  const toggle = (section: NavSection) => {
-    const next = !isOpen(section);
+  const setSectionOpen = (section: NavSection, next: boolean) => {
     setToggled((prev) => ({
       path: pathname,
       open: { ...(prev.path === pathname ? prev.open : {}), [section.id]: next },
@@ -75,52 +75,48 @@ function SidebarContent({
         const showItems = isOpen(section);
 
         return (
-          <div key={section.id} className="mb-2">
-            <button
-              onClick={() => toggle(section)}
-              type="button"
-              aria-expanded={showItems}
-              className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
-            >
+          <Collapsible
+            key={section.id}
+            open={showItems}
+            onOpenChange={(next) => setSectionOpen(section, next)}
+            className="mb-2"
+          >
+            <CollapsibleTrigger className="group flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer">
               {section.title}
-              <ChevronDown
-                className={cn("h-3.5 w-3.5 transition-transform", !showItems && "-rotate-90")}
-              />
-            </button>
-            {showItems && (
-              <ul className="space-y-0.5 mt-0.5">
-                {section.items.map((item) => {
-                  const isActive =
-                    pathname === item.href ||
-                    (!item.depth && item.href !== "/docs" && pathname.startsWith(`${item.href}/`));
+              <ChevronDown className="h-3.5 w-3.5 transition-transform -rotate-90 group-data-panel-open:rotate-0" />
+            </CollapsibleTrigger>
+            <CollapsiblePanel render={<ul className="space-y-0.5 mt-0.5" />}>
+              {section.items.map((item) => {
+                const isActive =
+                  pathname === item.href ||
+                  (!item.depth && item.href !== "/docs" && pathname.startsWith(`${item.href}/`));
 
-                  return (
-                    <li key={item.href}>
-                      <SiteLink
-                        href={item.href}
-                        onClick={onNavigate}
-                        aria-current={isActive ? "page" : undefined}
-                        className={cn(
-                          "flex items-center gap-2 py-1.5 text-sm font-medium border-l-4 transition-colors",
-                          item.depth ? "pl-6 pr-3" : "px-3",
-                          isActive
-                            ? "bg-selected text-selected-foreground border-l-primary font-bold"
-                            : "border-l-transparent text-muted-foreground hover:text-foreground hover:bg-muted"
-                        )}
-                      >
-                        {item.title}
-                        {item.isNew && (
-                          <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-sm border border-border normal-case">
-                            New
-                          </span>
-                        )}
-                      </SiteLink>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+                return (
+                  <li key={item.href}>
+                    <SiteLink
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={isActive ? "page" : undefined}
+                      className={cn(
+                        "flex items-center gap-2 py-1.5 text-sm font-medium border-l-4 transition-colors",
+                        item.depth ? "pl-6 pr-3" : "px-3",
+                        isActive
+                          ? "bg-selected text-selected-foreground border-l-primary font-bold"
+                          : "border-l-transparent text-muted-foreground hover:text-foreground hover:bg-muted"
+                      )}
+                    >
+                      {item.title}
+                      {item.isNew && (
+                        <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-sm border border-border normal-case">
+                          New
+                        </span>
+                      )}
+                    </SiteLink>
+                  </li>
+                );
+              })}
+            </CollapsiblePanel>
+          </Collapsible>
         );
       })}
     </nav>

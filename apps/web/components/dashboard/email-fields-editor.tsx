@@ -9,6 +9,7 @@ import {
   type EmailFieldSource,
 } from "@webhooks-cc/sdk/email";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { previewEmailFields, type EmailFieldsPreview } from "@/lib/dashboard-api";
 import {
@@ -174,7 +175,14 @@ export function EmailFieldsEditor({
             const patternId = `${baseId}-pattern-${index}`;
             const label = field.name || `field ${n}`;
             return (
-              <li key={index} className="border border-border rounded-md bg-card p-2.5">
+              <Collapsible
+                key={index}
+                open={open}
+                onOpenChange={(next) =>
+                  setPatternOpen((current) => ({ ...current, [index]: next }))
+                }
+                render={<li className="border border-border rounded-md bg-card p-2.5" />}
+              >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                   <input
                     aria-label={`Field ${n}: name`}
@@ -233,20 +241,7 @@ export function EmailFieldsEditor({
                     )}
                   </span>
                   <div className="ml-auto flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setPatternOpen((current) => ({ ...current, [index]: !open }))}
-                      aria-expanded={open}
-                      aria-controls={patternId}
-                      aria-label={`Edit pattern for ${label}`}
-                      className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-                    >
-                      Edit pattern
-                      <ChevronDown
-                        className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
-                        aria-hidden
-                      />
-                    </button>
+                    <EditPatternTrigger aria-label={`Edit pattern for ${label}`} />
                     <button
                       type="button"
                       onClick={() => remove(index)}
@@ -258,7 +253,7 @@ export function EmailFieldsEditor({
                     </button>
                   </div>
                 </div>
-                <div id={patternId} hidden={!open} className="pt-2 space-y-1">
+                <CollapsiblePanel keepMounted className="pt-2 space-y-1">
                   <label
                     htmlFor={`${patternId}-input`}
                     className="block text-xs font-medium text-muted-foreground"
@@ -277,14 +272,14 @@ export function EmailFieldsEditor({
                     disabled={disabled}
                     className={cn(inputClass, "w-full")}
                   />
-                </div>
+                </CollapsiblePanel>
                 <p
                   className={cn("text-xs text-destructive-ink", problem && "pt-1.5")}
                   aria-live="polite"
                 >
                   {problem}
                 </p>
-              </li>
+              </Collapsible>
             );
           })}
         </ul>
@@ -315,5 +310,30 @@ export function EmailFieldsEditor({
           ) : null)}
       </div>
     </div>
+  );
+}
+
+/** "Edit pattern", its chevron turned while the pattern shows. Inside a Collapsible. */
+export function EditPatternTrigger({
+  className,
+  ...props
+}: {
+  "aria-label": string;
+  className?: string;
+}) {
+  return (
+    <CollapsibleTrigger
+      {...props}
+      className={cn(
+        "group inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer",
+        className
+      )}
+    >
+      Edit pattern
+      <ChevronDown
+        className="h-3 w-3 transition-transform group-data-panel-open:rotate-180"
+        aria-hidden
+      />
+    </CollapsibleTrigger>
   );
 }

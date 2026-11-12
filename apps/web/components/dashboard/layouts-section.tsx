@@ -24,6 +24,7 @@ import {
 } from "@webhooks-cc/sdk/email";
 import { mergeEdits } from "@/lib/merge-edits";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { LAYOUT_TEMPLATES, layoutTemplate, type LayoutTemplate } from "@/lib/layout-templates";
 import { groupedTemplates } from "@/lib/layout-template-groups";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -56,7 +57,7 @@ import {
 } from "@/lib/dashboard-api";
 import { AiAssistPanel } from "./ai-assist-panel";
 import { ConditionList } from "./condition-list";
-import { EmailFieldsEditor } from "./email-fields-editor";
+import { EditPatternTrigger, EmailFieldsEditor } from "./email-fields-editor";
 import { SaveFooter, Section, Segmented, SwitchRow, useSave } from "./settings-primitives";
 import { stableStringify } from "@/lib/stable-json";
 import { describeCondition, takesValue } from "@/lib/condition-labels";
@@ -562,7 +563,7 @@ function LineItemsEditor({
         ]}
       />
       {spec && spec.from !== "attachment" && (
-        <div className="space-y-1.5">
+        <Collapsible open={open} onOpenChange={setPatternOpen} className="space-y-1.5">
           {spec.pattern && found?.kind === "rows" && (
             <LineItemsTable
               rows={found.rows}
@@ -580,25 +581,14 @@ function LineItemsEditor({
                   : `This layout does not match ${where}, so there are no rows to show.`
                 : null}
             </p>
-            <button
-              type="button"
-              onClick={() => setPatternOpen(!open)}
-              aria-expanded={open}
-              aria-controls={patternId}
+            <EditPatternTrigger
               aria-label={`Layout ${n}: edit line item pattern`}
-              className="ml-auto inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              Edit pattern
-              <ChevronDown
-                className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
-                aria-hidden
-              />
-            </button>
+              className="ml-auto"
+            />
           </div>
           {/* Typing keeps it open, even once the pattern finds rows. */}
-          <div
-            id={patternId}
-            hidden={!open}
+          <CollapsiblePanel
+            keepMounted
             className="space-y-1.5"
             onFocus={() => setPatternOpen(true)}
           >
@@ -647,8 +637,8 @@ function LineItemsEditor({
               An RE2 pattern found again and again; each match is a row, its named groups the
               columns.
             </p>
-          </div>
-        </div>
+          </CollapsiblePanel>
+        </Collapsible>
       )}
       {spec?.from === "attachment" && (
         <div className="space-y-1.5">
@@ -1078,20 +1068,20 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             const summaryTemplate =
               !expanded && summarized.has(layout.id) ? templateFor(layout) : null;
             return (
-              <li key={layout.id} className="border border-border rounded-md bg-card">
+              <Collapsible
+                key={layout.id}
+                open={expanded}
+                onOpenChange={(next) => (next ? openEditor(index, layout.id) : setOpen(null))}
+                render={<li className="border border-border rounded-md bg-card" />}
+              >
                 <div
                   id={`layout-${layout.id}-header`}
                   className="flex flex-wrap items-center gap-2 p-2.5 scroll-mt-4"
                 >
                   <span className="text-xs text-muted-foreground w-5">{n}.</span>
-                  <button
-                    type="button"
-                    onClick={() => (expanded ? setOpen(null) : openEditor(index, layout.id))}
-                    aria-expanded={expanded}
-                    className="text-sm font-semibold text-left cursor-pointer hover:underline"
-                  >
+                  <CollapsibleTrigger className="text-sm font-semibold text-left cursor-pointer hover:underline">
                     {layout.name || `Layout ${n}`}
-                  </button>
+                  </CollapsibleTrigger>
                   {layout.enabled === false && (
                     <span className="text-xs text-muted-foreground">off</span>
                   )}
@@ -1160,139 +1150,134 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                           saveFirst={dirty}
                         />
                       )}
-                      <button
-                        type="button"
+                      <CollapsibleTrigger
                         id={`layout-${layout.id}-edit`}
-                        onClick={() => openEditor(index, layout.id)}
-                        aria-expanded={false}
                         aria-label={`Edit layout ${n}`}
                         className="ml-auto ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1"
                       >
                         Edit layout
                         <ChevronDown className="h-3 w-3" aria-hidden />
-                      </button>
+                      </CollapsibleTrigger>
                     </div>
                   </div>
                 )}
-                {expanded && (
-                  <div className="border-t border-border/20 p-3 space-y-4">
-                    {noEmail && (
-                      <div className="space-y-1.5">
-                        <p className="text-sm text-muted-foreground">
-                          No emails yet. Add the fields now; the preview runs on your first email.
-                        </p>
-                        {openTemplate && (
-                          <SampleEmailButton
-                            template={openTemplate}
-                            state={sampleSend}
-                            onSend={sendSample}
-                            saveFirst={dirty}
-                          />
-                        )}
-                      </div>
-                    )}
-                    {offerSample && openTemplate && (
-                      <div className="space-y-1.5">
-                        <p className="text-sm text-muted-foreground">
-                          The email tried is not from {openTemplate.sender}. Send the{" "}
-                          {openTemplate.sender} sample email, or pick another email under Tried on.
-                        </p>
+                <CollapsiblePanel className="border-t border-border/20 p-3 space-y-4">
+                  {noEmail && (
+                    <div className="space-y-1.5">
+                      <p className="text-sm text-muted-foreground">
+                        No emails yet. Add the fields now; the preview runs on your first email.
+                      </p>
+                      {openTemplate && (
                         <SampleEmailButton
                           template={openTemplate}
                           state={sampleSend}
                           onSend={sendSample}
                           saveFirst={dirty}
                         />
-                      </div>
-                    )}
-                    <div className="flex flex-wrap items-center gap-3">
-                      <input
-                        id={`layout-${layout.id}-name`}
-                        aria-label={`Layout ${n}: name`}
-                        value={layout.name}
-                        onChange={(e) => update(index, { name: e.target.value })}
-                        maxLength={100}
-                        className="ui-input text-sm py-1.5! px-2! w-64"
-                      />
-                      <SwitchRow
-                        id={`layout-${layout.id}-enabled`}
-                        label="On"
-                        checked={layout.enabled !== false}
-                        onChange={(next) => update(index, { enabled: next })}
-                      />
+                      )}
                     </div>
+                  )}
+                  {offerSample && openTemplate && (
                     <div className="space-y-1.5">
-                      <h4 className="text-sm font-semibold">When it applies</h4>
-                      <ConditionList
-                        conditions={layout.match?.conditions ?? []}
-                        logic={layout.match?.logic ?? "and"}
-                        use="filter"
-                        idPrefix={`layout-${layout.id}`}
-                        showRequired={triedSave}
-                        emailFieldNames={(endpoint.emailFields ?? []).map((field) => field.name)}
-                        emptyLabel="Every email (add a condition, such as the sender, to tell layouts apart)."
-                        lead={false}
-                        onChange={(next) => update(index, { match: next })}
+                      <p className="text-sm text-muted-foreground">
+                        The email tried is not from {openTemplate.sender}. Send the{" "}
+                        {openTemplate.sender} sample email, or pick another email under Tried on.
+                      </p>
+                      <SampleEmailButton
+                        template={openTemplate}
+                        state={sampleSend}
+                        onSend={sendSample}
+                        saveFirst={dirty}
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <h4 className="text-sm font-semibold">Fields for this layout</h4>
-                      <EmailFieldsEditor
-                        slug={endpoint.slug}
-                        fields={layout.fields ?? []}
-                        onChange={(fields) => update(index, { fields })}
-                        showRequired={triedSave}
-                        emailAddress={endpoint.emailAddress ?? ""}
-                        requestId={sampleId || undefined}
-                        refreshKey={reloadKey}
-                        layoutUnmatched={rowsFound(layout)?.kind === "unmatched"}
-                      />
-                      {aiOffered &&
-                        (assist?.kind === "field" && assist.layoutId === layout.id ? (
-                          <AiAssistPanel
-                            slug={endpoint.slug}
-                            samples={samples}
-                            mode={{ kind: "field" }}
-                            onAddField={(field) =>
-                              update(index, {
-                                fields: [
-                                  ...(layout.fields ?? []).filter((f) => f.name !== field.name),
-                                  field,
-                                ],
-                              })
-                            }
-                            onClose={() => setAssist(null)}
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setAssist({ kind: "field", layoutId: layout.id })}
-                            className="text-xs text-muted-foreground underline inline-flex items-center gap-1"
-                          >
-                            <Sparkles className="h-3 w-3" /> Find a field with AI
-                          </button>
-                        ))}
-                    </div>
-                    <div className="space-y-1.5">
-                      <h4 className="text-sm font-semibold">Line items</h4>
-                      <LineItemsEditor
-                        layout={layout}
-                        index={index}
-                        found={rowsFound(layout)}
-                        where={where}
-                        onChange={(lineItems) => update(index, { lineItems })}
-                      />
-                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      id={`layout-${layout.id}-name`}
+                      aria-label={`Layout ${n}: name`}
+                      value={layout.name}
+                      onChange={(e) => update(index, { name: e.target.value })}
+                      maxLength={100}
+                      className="ui-input text-sm py-1.5! px-2! w-64"
+                    />
                     <SwitchRow
-                      id={`layout-${layout.id}-attachments`}
-                      label="Parse attachments"
-                      help="CSV, TSV, XLSX, XLS, ODS, PDF text and plain text files become rows and text in the JSON. Each started 1,000 rows of a sheet, PDF page or text file is a parsed page."
-                      checked={layout.parseAttachments === true}
-                      onChange={(next) => update(index, { parseAttachments: next })}
+                      id={`layout-${layout.id}-enabled`}
+                      label="On"
+                      checked={layout.enabled !== false}
+                      onChange={(next) => update(index, { enabled: next })}
                     />
                   </div>
-                )}
-              </li>
+                  <div className="space-y-1.5">
+                    <h4 className="text-sm font-semibold">When it applies</h4>
+                    <ConditionList
+                      conditions={layout.match?.conditions ?? []}
+                      logic={layout.match?.logic ?? "and"}
+                      use="filter"
+                      idPrefix={`layout-${layout.id}`}
+                      showRequired={triedSave}
+                      emailFieldNames={(endpoint.emailFields ?? []).map((field) => field.name)}
+                      emptyLabel="Every email (add a condition, such as the sender, to tell layouts apart)."
+                      lead={false}
+                      onChange={(next) => update(index, { match: next })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <h4 className="text-sm font-semibold">Fields for this layout</h4>
+                    <EmailFieldsEditor
+                      slug={endpoint.slug}
+                      fields={layout.fields ?? []}
+                      onChange={(fields) => update(index, { fields })}
+                      showRequired={triedSave}
+                      emailAddress={endpoint.emailAddress ?? ""}
+                      requestId={sampleId || undefined}
+                      refreshKey={reloadKey}
+                      layoutUnmatched={rowsFound(layout)?.kind === "unmatched"}
+                    />
+                    {aiOffered &&
+                      (assist?.kind === "field" && assist.layoutId === layout.id ? (
+                        <AiAssistPanel
+                          slug={endpoint.slug}
+                          samples={samples}
+                          mode={{ kind: "field" }}
+                          onAddField={(field) =>
+                            update(index, {
+                              fields: [
+                                ...(layout.fields ?? []).filter((f) => f.name !== field.name),
+                                field,
+                              ],
+                            })
+                          }
+                          onClose={() => setAssist(null)}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setAssist({ kind: "field", layoutId: layout.id })}
+                          className="text-xs text-muted-foreground underline inline-flex items-center gap-1"
+                        >
+                          <Sparkles className="h-3 w-3" /> Find a field with AI
+                        </button>
+                      ))}
+                  </div>
+                  <div className="space-y-1.5">
+                    <h4 className="text-sm font-semibold">Line items</h4>
+                    <LineItemsEditor
+                      layout={layout}
+                      index={index}
+                      found={rowsFound(layout)}
+                      where={where}
+                      onChange={(lineItems) => update(index, { lineItems })}
+                    />
+                  </div>
+                  <SwitchRow
+                    id={`layout-${layout.id}-attachments`}
+                    label="Parse attachments"
+                    help="CSV, TSV, XLSX, XLS, ODS, PDF text and plain text files become rows and text in the JSON. Each started 1,000 rows of a sheet, PDF page or text file is a parsed page."
+                    checked={layout.parseAttachments === true}
+                    onChange={(next) => update(index, { parseAttachments: next })}
+                  />
+                </CollapsiblePanel>
+              </Collapsible>
             );
           })}
         </ol>

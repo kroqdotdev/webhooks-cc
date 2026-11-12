@@ -1,0 +1,7 @@
+{
+  "title": "Tabs and expanding sections on Base UI",
+  "items": [
+    "Tab bars, the FAQ and the sections that open and close run on Base UI; they look and work as before, and the browser's find-in-page now opens the FAQ answer it finds",
+    "The tabs over a request or an email share one bar; on a phone the email's tab bar keeps its bottom line to the edge, as the request's always has"
+  ]
+}

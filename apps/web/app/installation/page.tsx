@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
 import { CopyButton } from "@/components/ui/copy-button";
 import { SiteHeader } from "@/components/nav/site-header";
 import { DocsSidebar } from "@/components/docs/sidebar";
@@ -10,8 +10,7 @@ import { DocsBreadcrumbs } from "@/components/docs/breadcrumbs";
 import { SearchModal } from "@/components/docs/search-modal";
 import { AgentSkillInstall } from "@/components/docs/agent-skill-install";
 
-type Tab = "cli" | "sdk" | "mcp";
-const TABS: Tab[] = ["cli", "sdk", "mcp"];
+const TABS = ["cli", "sdk", "mcp"] as const;
 
 const REMOTE_MCP_URL = "https://webhooks.cc/mcp";
 const KEY_PLACEHOLDER = "whcc_...";
@@ -43,7 +42,6 @@ function CodeBlock({ children, copyText }: { children: string; copyText?: string
 }
 
 export default function InstallationPage() {
-  const [tab, setTab] = useState<Tab>("cli");
   const [apiKey, setApiKey] = useState("");
   const trimmed = apiKey.trim();
   const key = trimmed && KEY_REGEX.test(trimmed) ? trimmed : KEY_PLACEHOLDER;
@@ -58,61 +56,28 @@ export default function InstallationPage() {
           <DocsSidebar />
           <main className="flex-1 min-w-0 px-6 py-10 md:px-10">
             <DocsBreadcrumbs />
-            <article className="max-w-3xl">
+            <Tabs defaultValue="cli" render={<article className="max-w-3xl" />}>
               <h1 className="text-3xl md:text-4xl font-bold mb-4">Installation</h1>
               <p className="text-lg text-muted-foreground mb-8">
                 Install the CLI, the SDKs for TypeScript, Python and Go, or the MCP server for your
                 AI coding agent.
               </p>
 
-              {/* Tab switcher */}
-              <div
-                role="tablist"
-                className="border border-border rounded-md overflow-hidden flex mb-8"
-              >
+              <TabsList className="border border-border rounded-md overflow-hidden flex mb-8">
                 {TABS.map((t) => (
-                  <button
+                  <TabsTab
                     key={t}
-                    role="tab"
-                    aria-selected={tab === t}
-                    aria-controls={`tabpanel-${t}`}
-                    id={`tab-${t}`}
-                    tabIndex={tab === t ? 0 : -1}
-                    onClick={() => setTab(t)}
-                    onKeyDown={(e) => {
-                      const idx = TABS.indexOf(t);
-                      let next: number | null = null;
-                      if (e.key === "ArrowRight") next = (idx + 1) % TABS.length;
-                      else if (e.key === "ArrowLeft") next = (idx - 1 + TABS.length) % TABS.length;
-                      else if (e.key === "Home") next = 0;
-                      else if (e.key === "End") next = TABS.length - 1;
-                      if (next !== null) {
-                        e.preventDefault();
-                        setTab(TABS[next]);
-                        document.getElementById(`tab-${TABS[next]}`)?.focus();
-                      }
-                    }}
-                    className={cn(
-                      "flex-1 px-4 py-2.5 text-sm font-bold cursor-pointer transition-colors border-r border-border last:border-r-0 uppercase",
-                      tab === t
-                        ? "bg-selected text-selected-foreground"
-                        : "bg-background hover:bg-muted"
-                    )}
+                    value={t}
+                    className="flex-1 px-4 py-2.5 text-sm font-bold cursor-pointer transition-colors border-r border-border last:border-r-0 uppercase bg-background not-data-active:hover:bg-muted data-active:bg-selected data-active:text-selected-foreground"
                   >
                     {t}
-                  </button>
+                  </TabsTab>
                 ))}
-              </div>
+              </TabsList>
 
               {/* Every panel is rendered, so the page's HTML carries all three for
                   readers that do not run scripts; the inactive ones are hidden. */}
-              <div
-                role="tabpanel"
-                hidden={tab !== "cli"}
-                id="tabpanel-cli"
-                aria-labelledby="tab-cli"
-                className="space-y-6"
-              >
+              <TabsPanel value="cli" keepMounted className="space-y-6">
                 <section>
                   <h2 className="text-lg font-bold mb-3">Homebrew (macOS / Linux)</h2>
                   <CodeBlock>{`brew install kroqdotdev/tap/whk`}</CodeBlock>
@@ -173,15 +138,9 @@ whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
                     for the full command reference.
                   </p>
                 </section>
-              </div>
+              </TabsPanel>
 
-              <div
-                role="tabpanel"
-                hidden={tab !== "sdk"}
-                id="tabpanel-sdk"
-                aria-labelledby="tab-sdk"
-                className="space-y-6"
-              >
+              <TabsPanel value="sdk" keepMounted className="space-y-6">
                 <section>
                   <h2 className="text-lg font-bold mb-3">npm</h2>
                   <CodeBlock>{`npm install @webhooks-cc/sdk`}</CodeBlock>
@@ -257,15 +216,9 @@ console.log(endpoint.url);`}
                     .
                   </p>
                 </section>
-              </div>
+              </TabsPanel>
 
-              <div
-                role="tabpanel"
-                hidden={tab !== "mcp"}
-                id="tabpanel-mcp"
-                aria-labelledby="tab-mcp"
-                className="space-y-10"
-              >
+              <TabsPanel value="mcp" keepMounted className="space-y-10">
                 <div className="space-y-6">
                   <div>
                     <h2 className="text-2xl font-bold mb-2">Remote server (recommended)</h2>
@@ -471,8 +424,8 @@ console.log(endpoint.url);`}
                     for the full tool reference.
                   </p>
                 </div>
-              </div>
-            </article>
+              </TabsPanel>
+            </Tabs>
           </main>
         </div>
       </div>
