@@ -238,6 +238,24 @@ test.describe("Discord webhook tester", () => {
     await expect(page.getByRole("status")).toContainText("Message posted");
     expect(sent).toHaveLength(1);
   });
+
+  test("left without a page load, the next page loads itself and drops discord.com", async ({
+    page,
+  }) => {
+    await page.goto("/tools/discord-webhook-tester");
+    await page.waitForLoadState("networkidle");
+    // The breadcrumb is a client-side link; the index must not inherit this
+    // document's connect-src, which allows discord.com.
+    const loaded = page.waitForEvent("load");
+    await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link").click();
+    await loaded;
+    await expect(page).toHaveURL(/\/tools$/);
+    expect(
+      await page.evaluate(
+        () => new URL(performance.getEntriesByType("navigation")[0].name).pathname
+      )
+    ).toBe("/tools");
+  });
 });
 
 test.describe("Slack webhook tester", () => {

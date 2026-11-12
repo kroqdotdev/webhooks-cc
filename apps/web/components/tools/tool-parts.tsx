@@ -54,11 +54,15 @@ export function Field({ id, label, hint, error, aside, children, className }: Fi
       </div>
       {children}
       {error ? (
-        <p id={fieldNote(id)} role="alert" className="text-sm text-destructive-ink">
+        <p
+          id={fieldNote(id)}
+          role="alert"
+          className={cn(PRIVATE_INPUT, "text-sm text-destructive-ink")}
+        >
           {error}
         </p>
       ) : hint ? (
-        <p id={fieldNote(id)} className="text-sm text-muted-foreground">
+        <p id={fieldNote(id)} className={cn(PRIVATE_INPUT, "text-sm text-muted-foreground")}>
           {hint}
         </p>
       ) : null}

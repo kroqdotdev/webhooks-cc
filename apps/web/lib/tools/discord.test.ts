@@ -271,7 +271,12 @@ describe("explainDiscordAnswer", () => {
   });
 
   it("says when nothing came back", () => {
-    expect(explainDiscordFailure().outcome).toBe("unreadable");
+    expect(explainDiscordFailure(true).outcome).toBe("unreadable");
+  });
+
+  it("points to the curl command only when one is shown", () => {
+    expect(explainDiscordFailure(true).detail).toContain("curl command below");
+    expect(explainDiscordFailure(false).detail).not.toContain("curl");
   });
 });
 

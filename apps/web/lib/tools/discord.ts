@@ -399,12 +399,15 @@ export function explainDiscordAnswer(
 }
 
 /** No answer at all: the request failed before the browser could read one. */
-export function explainDiscordFailure(): AnswerExplanation {
+export function explainDiscordFailure(withCurl: boolean): AnswerExplanation {
+  const blocked =
+    "The request did not get through: you may be offline, or a browser extension, firewall or network filter is blocking discord.com. Nothing here was sent to webhooks.cc either.";
   return {
     outcome: "unreadable",
     title: "No answer from Discord",
-    detail:
-      "The request did not get through: you may be offline, or a browser extension, firewall or network filter is blocking discord.com. Nothing here was sent to webhooks.cc either. The curl command below makes the same request from a terminal.",
+    detail: withCurl
+      ? `${blocked} The curl command below makes the same request from a terminal.`
+      : blocked,
   };
 }
 

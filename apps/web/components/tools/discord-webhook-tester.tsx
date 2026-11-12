@@ -102,7 +102,12 @@ export function DiscordWebhookTester() {
       });
       trackToolUsed(SLUG, action, String(response.status));
     } catch {
-      setResult({ explanation: explainDiscordFailure(), status: null, body: "", curl });
+      setResult({
+        explanation: explainDiscordFailure(curl !== null),
+        status: null,
+        body: "",
+        curl,
+      });
       trackToolUsed(SLUG, action, "unreadable");
     } finally {
       setBusy(null);
@@ -296,7 +301,7 @@ export function DiscordWebhookTester() {
       </div>
 
       {problems.length > 0 && (
-        <ul role="alert" className="space-y-1 text-sm text-destructive-ink">
+        <ul role="alert" className={`${PRIVATE_INPUT} space-y-1 text-sm text-destructive-ink`}>
           {problems.map((problem) => (
             <li key={problem}>{problem}</li>
           ))}

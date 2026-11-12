@@ -138,6 +138,9 @@ export function SignatureChecker() {
         },
       });
       trackToolUsed(SLUG, action, "signed");
+    } catch {
+      // The SDK calls report their own problems; this is WebCrypto refusing a key or input.
+      setProblem("Your browser could not compute this signature. Check the secret and try again.");
     } finally {
       setBusy(false);
     }
@@ -369,7 +372,7 @@ export function SignatureChecker() {
       )}
 
       {problem && (
-        <p role="alert" className="text-sm text-destructive-ink">
+        <p role="alert" className={`${PRIVATE_INPUT} text-sm text-destructive-ink`}>
           {problem}
         </p>
       )}
