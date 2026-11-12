@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
-import { CodeBox } from "@/components/ui/code";
+import { ComparisonTable } from "@/components/compare/comparison-table";
 import { Card } from "@/components/ui/card";
 import {
   COMPARE_PAIRS,
@@ -85,32 +85,11 @@ export function PairComparisonPage({ pair }: { pair: ComparePair }) {
 
         {/* Feature and price table */}
         <h2 className="text-2xl font-bold mb-4">Features and pricing</h2>
-        <CodeBox className="overflow-x-auto mb-3">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b">
-                <th scope="col" className="text-left py-2.5 pr-4 font-bold">
-                  Feature
-                </th>
-                <th scope="col" className="text-left py-2.5 pr-4 font-bold">
-                  {pair.a.name}
-                </th>
-                <th scope="col" className="text-left py-2.5 font-bold">
-                  {pair.b.name}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {pair.rows.map(([label, left, right]) => (
-                <tr key={label} className="border-b border-foreground/20 last:border-0">
-                  <td className="py-2.5 pr-4 font-medium">{label}</td>
-                  <td className="py-2.5 pr-4">{left}</td>
-                  <td className="py-2.5">{right}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CodeBox>
+        <ComparisonTable
+          tools={[{ name: pair.a.name }, { name: pair.b.name }]}
+          rows={pair.rows}
+          className="mb-3"
+        />
         <p className="text-sm text-muted-foreground mb-10">
           {pair.sources}, in {PAIR_FACTS_CHECKED}; &quot;not documented&quot; means we did not find
           it there. Check their pricing before you buy.

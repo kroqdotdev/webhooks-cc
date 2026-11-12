@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
-import { CodeBox } from "@/components/ui/code";
+import { ComparisonTable } from "@/components/compare/comparison-table";
 import { Card } from "@/components/ui/card";
 import { COMPARE_PAIRS, comparePairName } from "@/lib/compare-pairs";
 
@@ -108,7 +108,7 @@ const TUNNEL_COMPARISONS = [
 ] as const;
 
 const TUNNEL_TOOLS = [
-  { name: "webhooks.cc", href: null },
+  { name: "webhooks.cc", href: null, ours: true },
   { name: "ngrok", href: "/compare/ngrok" },
   { name: "Cloudflare Tunnel", href: "/compare/cloudflare-tunnel" },
   { name: "Pinggy", href: "/compare/pinggy" },
@@ -185,7 +185,7 @@ const EMAIL_COMPARISONS = [
 ] as const;
 
 const TOOLS = [
-  { name: "webhooks.cc", href: null },
+  { name: "webhooks.cc", href: null, ours: true },
   { name: "Webhook.site", href: "/compare/webhook-site" },
   { name: "RequestBin", href: "/compare/requestbin" },
   { name: "Beeceptor", href: "/compare/beeceptor" },
@@ -320,7 +320,7 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
 ];
 
 const EMAIL_TOOLS = [
-  { name: "webhooks.cc", href: null },
+  { name: "webhooks.cc", href: null, ours: true },
   { name: "Mailtrap", href: "/compare/mailtrap" },
   { name: "Mailosaur", href: "/compare/mailosaur" },
   { name: "MailSlurp", href: "/compare/mailslurp" },
@@ -411,57 +411,6 @@ const FAQ_ITEMS: FAQItem[] = [
   },
 ];
 
-function Checklist({
-  tools,
-  matrix,
-}: {
-  tools: readonly { name: string; href: string | null }[];
-  matrix: readonly (readonly [string, ...string[]])[];
-}) {
-  return (
-    <CodeBox className="overflow-x-auto mb-3">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b">
-            <th scope="col" className="text-left py-2.5 pr-4 font-bold">
-              Feature
-            </th>
-            {tools.map((tool) => (
-              <th
-                key={tool.name}
-                scope="col"
-                className="text-left py-2.5 pr-4 font-bold whitespace-nowrap"
-              >
-                {tool.href ? (
-                  <Link href={tool.href} className="hover:text-primary transition-colors">
-                    {tool.name}
-                  </Link>
-                ) : (
-                  tool.name
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {matrix.map(([feature, ...cells]) => (
-            <tr key={feature} className="border-b border-foreground/20 last:border-0">
-              <th scope="row" className="text-left py-2.5 pr-4 font-medium whitespace-nowrap">
-                {feature}
-              </th>
-              {cells.map((cell, i) => (
-                <td key={tools[i].name} className="py-2.5 pr-4">
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </CodeBox>
-  );
-}
-
 export default function CompareIndexPage() {
   return (
     <main className="min-h-screen pt-12 pb-20 px-4">
@@ -491,7 +440,7 @@ export default function CompareIndexPage() {
         </p>
 
         <h2 className="text-2xl font-bold mb-4">Feature checklist</h2>
-        <Checklist tools={TOOLS} matrix={MATRIX} />
+        <ComparisonTable tools={TOOLS} rows={MATRIX} dense className="mb-3" />
         <p className="text-sm text-muted-foreground mb-10">
           Other tools as listed on their own sites when we compared in November 2026; check pricing
           before you buy. RequestBin lives on Pipedream Workflows, which takes no new signups and
@@ -528,7 +477,7 @@ export default function CompareIndexPage() {
           ) and answers webhook senders with your local app&apos;s response. This is how it sits
           next to the tunnels developers reach for.
         </p>
-        <Checklist tools={TUNNEL_TOOLS} matrix={TUNNEL_MATRIX} />
+        <ComparisonTable tools={TUNNEL_TOOLS} rows={TUNNEL_MATRIX} dense className="mb-3" />
         <p className="text-sm text-muted-foreground mb-6">
           Other tools as listed on their own sites when we compared in November 2026; &quot;not
           documented&quot; means we did not find it there.
@@ -557,7 +506,7 @@ export default function CompareIndexPage() {
           : signup, magic link and password reset emails in Playwright, Cypress and CI. This is how
           it compares with the tools built for that alone.
         </p>
-        <Checklist tools={EMAIL_TOOLS} matrix={EMAIL_MATRIX} />
+        <ComparisonTable tools={EMAIL_TOOLS} rows={EMAIL_MATRIX} dense className="mb-3" />
         <p className="text-sm text-muted-foreground mb-6">
           Other tools as listed on their own sites when we compared in November 2026; &quot;not
           documented&quot; means we did not find it there.

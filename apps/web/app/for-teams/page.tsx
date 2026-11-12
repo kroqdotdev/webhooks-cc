@@ -24,6 +24,8 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { TeamsCTA } from "@/components/landing/teams-cta";
 import { Card } from "@/components/ui/card";
 import { CodeBox } from "@/components/ui/code";
+import { OUR_TINT } from "@/components/compare/comparison-table";
+import { cn } from "@/lib/utils";
 
 const PATH = "/for-teams";
 
@@ -99,7 +101,7 @@ const PRICE_EXAMPLES = [
 
 // Team pricing as each compare page lists it; keep the two in sync.
 const TEAM_PRICING = [
-  { tool: "webhooks.cc", team: "From $12/seat/mo, pooled quota", href: null },
+  { tool: "webhooks.cc", team: "From $12/seat/mo, pooled quota", href: null, ours: true },
   { tool: "Webhook.site", team: "Enterprise only, from $69/mo", href: "/compare/webhook-site" },
   { tool: "Beeceptor", team: "Team ($25/mo), unlimited members", href: "/compare/beeceptor" },
   { tool: "Hookdeck", team: "Team (from $39/mo), unlimited seats", href: "/compare/hookdeck" },
@@ -319,22 +321,38 @@ export default function ForTeamsPage() {
           </p>
           <h3 className="text-lg font-bold mb-3">Team plans compared</h3>
           <Card className="overflow-x-auto">
-            <table className="w-full text-sm">
+            {/* Separate borders so our row's tint can round its ends. */}
+            <table className="w-full text-sm border-separate border-spacing-0">
               <tbody>
-                {TEAM_PRICING.map((row) => (
-                  <tr key={row.tool} className="border-b border-foreground/10 last:border-0">
-                    <th scope="row" className="text-left py-2 pr-6 font-bold whitespace-nowrap">
-                      {row.href ? (
-                        <Link href={row.href} className="hover:text-primary transition-colors">
-                          {row.tool}
-                        </Link>
-                      ) : (
-                        row.tool
-                      )}
-                    </th>
-                    <td className="py-2">{row.team}</td>
-                  </tr>
-                ))}
+                {TEAM_PRICING.map((row, i) => {
+                  // No rule under our row: its tint already sets it apart, and a rule would bend at its rounded ends.
+                  const rule = i < TEAM_PRICING.length - 1 && !row.ours && "border-b";
+                  return (
+                    <tr key={row.tool}>
+                      <th
+                        scope="row"
+                        className={cn(
+                          "text-left py-2 px-3 font-bold whitespace-nowrap",
+                          rule,
+                          row.ours && cn(OUR_TINT, "text-selected-foreground rounded-l-md")
+                        )}
+                      >
+                        {row.href ? (
+                          <Link href={row.href} className="hover:text-primary transition-colors">
+                            {row.tool}
+                          </Link>
+                        ) : (
+                          row.tool
+                        )}
+                      </th>
+                      <td
+                        className={cn("py-2 px-3", rule, row.ours && cn(OUR_TINT, "rounded-r-md"))}
+                      >
+                        {row.team}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </Card>
