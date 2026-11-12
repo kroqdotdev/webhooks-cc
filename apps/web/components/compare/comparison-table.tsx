@@ -71,7 +71,7 @@ export function ComparisonTable({
                 scope="row"
                 className={cn(
                   "text-left align-top py-2.5 pr-3 font-medium",
-                  r !== last && "border-b",
+                  r !== last && "border-b border-foreground/20",
                   dense && "whitespace-nowrap"
                 )}
               >
@@ -82,7 +82,7 @@ export function ComparisonTable({
                   key={tool.name}
                   className={cn(
                     "align-top py-2.5 px-3",
-                    r !== last && "border-b",
+                    r !== last && "border-b border-foreground/20",
                     tool.ours && "bg-selected dark:bg-selected/60",
                     tool.ours && r === last && "rounded-b-md"
                   )}

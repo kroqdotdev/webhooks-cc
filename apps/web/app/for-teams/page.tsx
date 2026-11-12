@@ -324,7 +324,8 @@ export default function ForTeamsPage() {
             <table className="w-full text-sm border-separate border-spacing-0">
               <tbody>
                 {TEAM_PRICING.map((row, i) => {
-                  const rule = i < TEAM_PRICING.length - 1 && "border-b";
+                  // No rule under our row: its tint already sets it apart, and a rule would bend at its rounded ends.
+                  const rule = i < TEAM_PRICING.length - 1 && !row.ours && "border-b";
                   return (
                     <tr key={row.tool}>
                       <th
