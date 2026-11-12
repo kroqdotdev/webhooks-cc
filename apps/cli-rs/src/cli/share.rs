@@ -91,7 +91,10 @@ async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
             let reason = result?;
             stopped(json, &reason);
         }
-        _ = shutdown_signal() => stopped(json, "you stopped it on this computer"),
+        _ = shutdown_signal() => {
+            stopped(json, "you stopped it on this computer");
+            crate::util::star::maybe_show(json);
+        }
     }
     Ok(())
 }

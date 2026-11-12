@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWelcomeEmail } from "./welcome-email";
+import { buildWelcomeEmail, REPO_URL } from "./welcome-email";
 
 const webhooks = buildWelcomeEmail({
   to: "dev@example.com",
@@ -29,9 +29,20 @@ describe("buildWelcomeEmail", () => {
   });
 
   it("keeps every page link of a mailhooks.cc account on mailhooks.cc", () => {
-    const hrefs = [...(mailhooks.html ?? "").matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
+    const hrefs = [...(mailhooks.html ?? "").matchAll(/href="([^"]+)"/g)]
+      .map((match) => match[1])
+      .filter((href) => href !== REPO_URL);
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) expect(href.startsWith("https://mailhooks.cc/")).toBe(true);
+  });
+
+  it("asks for a star on GitHub, naming the account's site", () => {
+    expect(webhooks.text).toContain("webhooks.cc is open source.");
+    expect(mailhooks.text).toContain("mailhooks.cc is open source.");
+    for (const message of [webhooks, mailhooks]) {
+      expect(message.text).toContain(`${REPO_URL}\n`);
+      expect(message.html).toContain(`href="${REPO_URL}">Star it on GitHub</a>`);
+    }
   });
 
   it("gives the commands as the docs have them, on either site", () => {
