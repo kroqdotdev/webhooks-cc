@@ -10,6 +10,7 @@ import { apiFetch, shortDateTime, waitLabel } from "@/lib/support/client";
 import type { HeldRefund } from "@/lib/ops/refunds";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
+import { Card } from "@/components/ui/card";
 
 const REASONS: Record<string, string> = {
   duplicate_plan: "A second plan subscription",
@@ -95,10 +96,10 @@ export function OpsRefunds() {
       {!data ? (
         <Skeleton className="h-32 w-full rounded-md" />
       ) : !data.installed ? (
-        <p className="ui-card ui-card-static text-sm text-muted-foreground">
+        <Card className="text-sm text-muted-foreground" render={<p />}>
           The refund queue is not in this database yet. It arrives with the automatic refunds
           migration.
-        </p>
+        </Card>
       ) : data.refunds.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {view === "held" ? "No refund is waiting for a decision." : "No decided refunds yet."}
@@ -106,7 +107,7 @@ export function OpsRefunds() {
       ) : (
         <ul className="space-y-3">
           {data.refunds.map((refund) => (
-            <li key={refund.id} className="ui-card ui-card-static space-y-3">
+            <Card key={refund.id} className="space-y-3" render={<li />}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="font-medium">
                   {dollars(refund.plannedCents)}{" "}
@@ -185,7 +186,7 @@ export function OpsRefunds() {
                   </Button>
                 </div>
               )}
-            </li>
+            </Card>
           ))}
         </ul>
       )}
@@ -269,7 +270,7 @@ export function SavedReplies() {
       </p>
       {error && <p className="text-sm text-destructive-ink">{error}</p>}
       {editing && (
-        <div className="ui-card ui-card-static space-y-3">
+        <Card className="space-y-3">
           <label htmlFor="reply-title" className="text-sm font-medium">
             Title
           </label>
@@ -296,18 +297,18 @@ export function SavedReplies() {
               Cancel
             </Button>
           </div>
-        </div>
+        </Card>
       )}
       {replies === null ? (
         <Skeleton className="h-24 w-full rounded-md" />
       ) : replies.length === 0 ? (
         <p className="text-sm text-muted-foreground">No saved replies yet.</p>
       ) : (
-        <ul className="ui-card ui-card-static p-0! overflow-hidden">
+        <Card className="p-0! overflow-hidden" render={<ul />}>
           {replies.map((reply) => (
             <li
               key={reply.id}
-              className="flex items-start justify-between gap-4 border-t border-border px-4 py-3 first:border-t-0"
+              className="flex items-start justify-between gap-4 border-t px-4 py-3 first:border-t-0"
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium">{reply.title}</p>
@@ -323,7 +324,7 @@ export function SavedReplies() {
               </div>
             </li>
           ))}
-        </ul>
+        </Card>
       )}
     </div>
   );

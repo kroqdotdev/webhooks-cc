@@ -9,6 +9,7 @@ import {
   type EmailFieldSource,
 } from "@webhooks-cc/sdk/email";
 import { cn } from "@/lib/utils";
+import { FieldControl } from "@/components/ui/field";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { previewEmailFields, type EmailFieldsPreview } from "@/lib/dashboard-api";
@@ -19,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 
 /**
  * Named fields an endpoint picks out of every email: a name, the part of the
@@ -40,8 +42,7 @@ const SOURCES: { value: EmailFieldSource; label: string }[] = [
 const selectClass =
   "h-auto w-32 min-w-0 gap-1.5 text-[13px] rounded-md border border-border bg-background px-2 py-1.5 text-left cursor-pointer focus:ring-offset-0";
 // No ligatures: a pattern's "<=" must not read as "≤".
-const inputClass =
-  "ui-input text-[13px] font-mono [font-variant-ligatures:none] py-1.5! px-2! min-w-0";
+const inputClass = "text-[13px] font-mono [font-variant-ligatures:none] py-1.5! px-2! min-w-0";
 
 /** The problems of one row ("field 2: ..." becomes "..."), for showing beside it. */
 function problemsByRow(problems: string[]): Map<number, string> {
@@ -181,10 +182,10 @@ export function EmailFieldsEditor({
                 onOpenChange={(next) =>
                   setPatternOpen((current) => ({ ...current, [index]: next }))
                 }
-                render={<li className="border border-border rounded-md bg-card p-2.5" />}
+                render={<li className="border rounded-md bg-card p-2.5" />}
               >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <input
+                  <FieldControl
                     aria-label={`Field ${n}: name`}
                     value={field.name}
                     onChange={(e) => update(index, { name: e.target.value })}
@@ -207,7 +208,7 @@ export function EmailFieldsEditor({
                     <SelectTrigger aria-label={`Field ${n}: what it reads`} className={selectClass}>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="border border-border shadow-float">
+                    <SelectContent className="border shadow-float">
                       {SOURCES.map((source) => (
                         <SelectItem key={source.value} value={source.value} className="text-[13px]">
                           {source.label}
@@ -216,7 +217,7 @@ export function EmailFieldsEditor({
                     </SelectContent>
                   </Select>
                   {field.from === "header" && (
-                    <input
+                    <FieldControl
                       aria-label={`Field ${n}: header name`}
                       value={field.header ?? ""}
                       onChange={(e) => update(index, { header: e.target.value })}
@@ -260,7 +261,7 @@ export function EmailFieldsEditor({
                   >
                     Pattern (RE2)
                   </label>
-                  <input
+                  <FieldControl
                     id={`${patternId}-input`}
                     aria-label={`Field ${n}: pattern (RE2)`}
                     value={field.pattern}
@@ -285,17 +286,18 @@ export function EmailFieldsEditor({
         </ul>
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <button
+        <Button
+          variant="outlined"
+          className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
           type="button"
           onClick={() =>
             onChange([...fields, { name: freeName(fields), from: "subject", pattern: "" }])
           }
           disabled={disabled || fields.length >= MAX_EMAIL_FIELDS}
-          className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
         >
           <Plus className="h-3 w-3" />
           Add field
-        </button>
+        </Button>
         {fields.length > 0 &&
           (preview?.request ? (
             <span className="text-xs text-muted-foreground">

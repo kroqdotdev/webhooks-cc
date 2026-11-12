@@ -41,6 +41,7 @@ import {
 import type { AnyRequestSummary, KindFilter } from "@/types/request";
 import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 import { ResponseAnswerCompact } from "./response-answer";
+import { Button } from "@/components/ui/button";
 
 const TS_PREF_KEY = "request_list_relative_time";
 
@@ -330,13 +331,14 @@ export function RequestList({
 
   const loadMore = hasMore ? (
     <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
-      <button
-        onClick={onLoadMore}
-        disabled={loadingMore}
+      <Button
+        variant="outlined"
         className={cn(
-          "ui-btn-outline py-1.5! px-4! text-xs flex items-center gap-2",
+          "py-1.5! px-4! text-xs flex items-center gap-2",
           loadingMore && "opacity-60 cursor-not-allowed"
         )}
+        onClick={onLoadMore}
+        disabled={loadingMore}
       >
         {loadingMore ? (
           <>
@@ -346,19 +348,19 @@ export function RequestList({
         ) : (
           "Load More"
         )}
-      </button>
+      </Button>
     </div>
   ) : null;
 
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Toolbar */}
-      <div className="@container border-b border-border px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+      <div className="@container border-b px-3 py-2 flex items-center justify-between gap-2 shrink-0">
         {onKindFilterChange ? (
           <div
             role="radiogroup"
             aria-label="Show"
-            className="flex min-w-0 overflow-hidden rounded-md border border-border"
+            className="flex min-w-0 overflow-hidden rounded-md border"
           >
             {kinds.map((kind, index) => (
               <button
@@ -418,7 +420,7 @@ export function RequestList({
           {onViewModeChange && (
             <button
               onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
-              className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border border-border"
+              className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border"
               title={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-label={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-pressed={viewMode === "timeline"}
@@ -432,7 +434,7 @@ export function RequestList({
           )}
           <button
             onClick={onToggleSort}
-            className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border border-border"
+            className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border"
             title={sortNewest ? "Showing newest first" : "Showing oldest first"}
             aria-label={
               sortNewest
@@ -446,7 +448,7 @@ export function RequestList({
             onClick={onToggleLiveMode}
             aria-pressed={liveMode}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 max-md:py-2 text-xs font-bold rounded-md border border-border cursor-pointer transition-colors",
+              "flex items-center gap-1.5 px-2 py-1 max-md:py-2 text-xs font-bold rounded-md border cursor-pointer transition-colors",
               liveMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
             )}
             title={
@@ -467,7 +469,7 @@ export function RequestList({
       </div>
 
       {/* Filter bar */}
-      <div className="border-b border-border px-3 py-2 flex items-center gap-2 shrink-0">
+      <div className="border-b px-3 py-2 flex items-center gap-2 shrink-0">
         {kindFilter !== "email" && (
           <Select value={methodFilter} onValueChange={onMethodFilterChange}>
             <SelectTrigger
@@ -485,7 +487,7 @@ export function RequestList({
             </SelectContent>
           </Select>
         )}
-        <div className="ui-control flex-1 flex items-center gap-1 rounded-md border border-border px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
+        <div className="ui-control flex-1 flex items-center gap-1 rounded-md border px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
@@ -524,7 +526,7 @@ export function RequestList({
 
       {/* Compare hint */}
       {compareId && (
-        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b border-border">
+        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b">
           Shift-click another request to compare
         </div>
       )}
@@ -613,7 +615,7 @@ export function RequestList({
       {ctxMenu && (
         <div
           ref={ctxRef}
-          className="fixed z-50 overflow-hidden rounded-lg border border-border bg-background shadow-float min-w-[160px]"
+          className="fixed z-50 overflow-hidden rounded-lg border bg-background shadow-float min-w-[160px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
           {onTogglePin && (
@@ -622,7 +624,7 @@ export function RequestList({
                 onTogglePin(ctxMenu.id);
                 setCtxMenu(null);
               }}
-              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b border-border flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b flex items-center gap-2"
             >
               <Star className={cn("h-3 w-3", pinnedIds?.has(ctxMenu.id) && "fill-current")} />
               {pinnedIds?.has(ctxMenu.id) ? "Unpin" : "Pin"}
@@ -634,7 +636,7 @@ export function RequestList({
                 onCompareSelect(ctxMenu.id);
                 setCtxMenu(null);
               }}
-              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b border-border flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b flex items-center gap-2"
             >
               <GitCompareArrows className="h-3 w-3" />
               Compare
@@ -645,7 +647,7 @@ export function RequestList({
               void copyToClipboard(ctxMenu.id);
               setCtxMenu(null);
             }}
-            className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b border-border flex items-center gap-2"
+            className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b flex items-center gap-2"
           >
             <Clipboard className="h-3 w-3" />
             Copy ID
@@ -863,7 +865,7 @@ function NoEmailsYet({ address }: { address: string }) {
   return (
     <div className="px-4 py-8 text-center space-y-3">
       <p className="text-sm font-semibold">No emails yet.</p>
-      <div className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-background pl-2.5 pr-1 py-1">
+      <div className="inline-flex max-w-full items-center gap-1 rounded-md border bg-background pl-2.5 pr-1 py-1">
         <span className="font-mono text-xs truncate">{address}</span>
         <button
           type="button"

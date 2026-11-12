@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { AiAssistPanel } from "./ai-assist-panel";
 import { Field, SaveFooter, Section, SwitchRow } from "./settings-primitives";
 import { stableStringify } from "@/lib/stable-json";
+import { Button } from "@/components/ui/button";
+import { FieldControl } from "@/components/ui/field";
 
 /** A field to repair and where it is defined: the endpoint's own fields (null), or a layout. */
 type FieldAt = { field: EmailField; layoutId: string | null };
@@ -344,16 +346,17 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         // The settings load after the section renders; nothing to change
         // before then, so an early change is never overwritten by the load.
         error ? (
-          <button
+          <Button
+            variant="outlined"
+            className="py-1! px-2.5! text-xs"
             type="button"
             onClick={() => {
               setError(null);
               setLoadAttempt((attempt) => attempt + 1);
             }}
-            className="ui-btn-outline py-1! px-2.5! text-xs"
           >
             Try again
-          </button>
+          </Button>
         ) : (
           <p className="text-sm text-muted-foreground">Loading alerts...</p>
         )
@@ -375,14 +378,14 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   help="Emails in a row missing a field. Empty: off."
                   error={invalid(draft.failures, 1, 100) ? "1 to 100" : undefined}
                 >
-                  <input
+                  <FieldControl
+                    className="w-full text-sm font-mono py-2!"
                     id="alerts-failures"
                     inputMode="numeric"
                     value={draft.failures}
                     onChange={(e) =>
                       setDraft({ ...draft, failures: e.target.value.replace(/[^\d]/g, "") })
                     }
-                    className="ui-input w-full text-sm font-mono py-2!"
                     placeholder="off"
                   />
                 </Field>
@@ -392,14 +395,14 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   help="Of the last 20 emails. Empty: off."
                   error={invalid(draft.share, 1, 100) ? "1 to 100" : undefined}
                 >
-                  <input
+                  <FieldControl
+                    className="w-full text-sm font-mono py-2!"
                     id="alerts-share"
                     inputMode="numeric"
                     value={draft.share}
                     onChange={(e) =>
                       setDraft({ ...draft, share: e.target.value.replace(/[^\d]/g, "") })
                     }
-                    className="ui-input w-full text-sm font-mono py-2!"
                     placeholder="off"
                   />
                 </Field>
@@ -409,14 +412,14 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   help="No email at all for this long. Empty: off."
                   error={invalid(draft.silence, 1, 720) ? "1 to 720" : undefined}
                 >
-                  <input
+                  <FieldControl
+                    className="w-full text-sm font-mono py-2!"
                     id="alerts-silence"
                     inputMode="numeric"
                     value={draft.silence}
                     onChange={(e) =>
                       setDraft({ ...draft, silence: e.target.value.replace(/[^\d]/g, "") })
                     }
-                    className="ui-input w-full text-sm font-mono py-2!"
                     placeholder="off"
                   />
                 </Field>
@@ -512,24 +515,26 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         .filter((found): found is FieldAt => found !== null)
                         .slice(0, 3)
                         .map((found) => (
-                          <button
+                          <Button
+                            variant="outlined"
                             key={found.field.name}
+                            className="py-1! px-2! text-xs"
                             type="button"
                             onClick={() =>
                               void startRepair(found.field.name, event.details ?? null)
                             }
-                            className="ui-btn-outline py-1! px-2! text-xs"
                           >
                             Fix {found.field.name} with AI
-                          </button>
+                          </Button>
                         ))}
-                    <button
+                    <Button
+                      variant="outlined"
+                      className="py-1! px-2! text-xs"
                       type="button"
                       onClick={() => void replaySince(event)}
-                      className="ui-btn-outline py-1! px-2! text-xs"
                     >
                       Replay these emails
-                    </button>
+                    </Button>
                   </span>
                 )}
               </li>

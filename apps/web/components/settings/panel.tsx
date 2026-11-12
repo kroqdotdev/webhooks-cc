@@ -1,5 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
 
 /** Inline links in settings copy: foreground with an underline. */
 export const settingsLink =
@@ -65,15 +66,13 @@ export function Panel({
   const titleId = id ? `${id}-title` : undefined;
   const hasBody = children !== undefined && children !== null && children !== false;
   return (
-    <section
-      id={id}
-      aria-labelledby={titleId}
-      data-testid={testId}
+    <Card
       className={cn(
-        "ui-card ui-card-static p-0! overflow-hidden scroll-mt-20",
+        "p-0! overflow-hidden scroll-mt-20",
         tone === "danger" && "border-destructive",
         className
       )}
+      render={<section id={id} aria-labelledby={titleId} data-testid={testId} />}
     >
       {(title || actions) && (
         <div
@@ -103,11 +102,11 @@ export function Panel({
       )}
       {hasBody && <div className={flush ? "" : "p-5"}>{children}</div>}
       {footer && (
-        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-border bg-muted/40">
+        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t bg-muted/40">
           {footer}
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -212,11 +211,11 @@ export function SettingsPageSkeleton({ label, panels = 2 }: { label: string; pan
       </div>
       <div className="space-y-6">
         {Array.from({ length: panels }, (_, index) => (
-          <div key={index} className="ui-card ui-card-static space-y-4 p-5!">
+          <Card key={index} className="space-y-4 p-5!">
             <Skeleton className="h-5 w-40 rounded-md" />
             <Skeleton className="h-4 w-full rounded-md" />
             <Skeleton className="h-4 w-2/3 rounded-md" />
-          </div>
+          </Card>
         ))}
       </div>
     </div>

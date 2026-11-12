@@ -7,6 +7,7 @@ import { PricingPlans } from "@/components/landing/pricing-plans";
 import { PRICING_FAQ } from "@/lib/pricing-faq";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
+import { Card } from "@/components/ui/card";
 
 // On mailhooks.cc, /pricing is app/mailhooks/pricing (a host rewrite in next.config.ts).
 const PATH = "/pricing";
@@ -81,7 +82,7 @@ export default function PricingPage() {
             </p>
             <div className="grid md:grid-cols-2 gap-6">
               {EXTRAS.map((extra) => (
-                <div key={extra.title} className="ui-card ui-card-static">
+                <Card key={extra.title}>
                   <h3 className="font-bold text-xl mb-1">{extra.title}</h3>
                   <p className="text-sm text-muted-foreground mb-4">{extra.who}</p>
                   <ul className="space-y-2">
@@ -89,7 +90,7 @@ export default function PricingPage() {
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
-                </div>
+                </Card>
               ))}
             </div>
             <p className="mt-6">
@@ -108,7 +109,7 @@ export default function PricingPage() {
             <FAQAccordion items={PRICING_FAQ} />
           </section>
 
-          <div className="ui-card bg-foreground text-background text-center py-16 mt-20">
+          <Card interactive className="bg-foreground text-background text-center py-16 mt-20">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
               Start free, upgrade when you need to
             </h2>
@@ -125,7 +126,7 @@ export default function PricingPage() {
               </Link>
               , no account needed
             </p>
-          </div>
+          </Card>
         </div>
       </main>
     </>

@@ -107,7 +107,7 @@ function Screenshot({ id, token }: { id: string; token: string | null }) {
       <img
         src={url}
         alt="Screenshot"
-        className="h-20 w-28 rounded-md border border-border object-cover hover:border-foreground/40"
+        className="h-20 w-28 rounded-md border object-cover hover:border-foreground/40"
       />
     </a>
   );
@@ -132,7 +132,7 @@ export function Conversation({
           return (
             <li
               key={message.id}
-              className="border-t border-border py-2.5 pl-11 text-xs text-muted-foreground first:border-t-0"
+              className="border-t py-2.5 pl-11 text-xs text-muted-foreground first:border-t-0"
             >
               {eventText(message.event, audience, userName)}{" "}
               <time dateTime={message.createdAt} className="opacity-70">
@@ -147,7 +147,7 @@ export function Conversation({
           <li
             key={message.id}
             className={cn(
-              "grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-t border-border py-4",
+              "grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-t py-4",
               index === 0 && "border-t-0 pt-0",
               isNote && "my-2 rounded-md border border-staff-line bg-staff-wash px-3 py-3"
             )}
@@ -260,15 +260,11 @@ export function ImagePicker({
         {previews.map((url, index) => (
           <span key={url} className="relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={url}
-              alt=""
-              className="h-14 w-20 rounded-md border border-border object-cover"
-            />
+            <img src={url} alt="" className="h-14 w-20 rounded-md border object-cover" />
             <button
               type="button"
               onClick={() => onChange(files.filter((_, i) => i !== index))}
-              className="absolute -right-2 -top-2 rounded-full border border-border bg-background p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute -right-2 -top-2 rounded-full border bg-background p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`Remove ${files[index]?.name ?? "image"}`}
             >
               <X className="h-3 w-3" />

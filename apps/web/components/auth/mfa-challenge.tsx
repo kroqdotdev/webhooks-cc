@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
+import { Card } from "@/components/ui/card";
 
 /**
  * Whether the signed-in session still owes its second factor: the account
@@ -140,7 +141,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
   if (recovered) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center px-6">
-        <div className="ui-card ui-card-static w-full max-w-sm space-y-4">
+        <Card className="w-full max-w-sm space-y-4">
           <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
           <h1 className="text-xl font-semibold">You are signed in</h1>
           <p className="text-sm text-muted-foreground">
@@ -160,14 +161,14 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
               Later
             </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-6">
-      <form onSubmit={verify} className="ui-card ui-card-static w-full max-w-sm space-y-4">
+      <Card className="w-full max-w-sm space-y-4" render={<form onSubmit={verify} />}>
         <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">Two-factor sign-in</h1>
@@ -224,7 +225,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
           </button>
           .
         </p>
-      </form>
+      </Card>
     </div>
   );
 }

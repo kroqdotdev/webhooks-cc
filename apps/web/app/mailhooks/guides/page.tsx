@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
+import { Card } from "@/components/ui/card";
 
 export const metadata = mailhooksMetadata({
   title: "Guides",
@@ -67,14 +68,14 @@ export default function MailhooksGuides() {
           <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {GUIDES.map((guide) => (
               <li key={guide.path}>
-                <Link href={guide.path} className="ui-card block h-full">
+                <Card interactive className="block h-full" render={<Link href={guide.path} />}>
                   <p className="font-bold text-lg mb-2">{guide.title}</p>
                   <p className="text-muted-foreground mb-4">{guide.summary}</p>
                   <span className="inline-flex items-center gap-1 text-sm font-bold text-primary">
                     Read the guide
                     <ArrowRight aria-hidden className="h-4 w-4" />
                   </span>
-                </Link>
+                </Card>
               </li>
             ))}
           </ul>

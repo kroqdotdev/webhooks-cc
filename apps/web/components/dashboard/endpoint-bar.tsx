@@ -35,6 +35,7 @@ import { DashboardGuideDialog } from "./dashboard-guide-dialog";
 import { Segmented } from "./settings-primitives";
 import { useGettingStarted, type SetupState } from "./getting-started";
 import type { SettingsSection } from "./settings-primitives";
+import { Button } from "@/components/ui/button";
 
 export type EndpointTab = "requests" | "settings";
 
@@ -97,13 +98,13 @@ export function AddressPill({
     <span
       className={cn(
         // On a phone the value wraps rather than losing its end to an ellipsis.
-        "inline-flex items-stretch h-9 max-sm:h-auto max-sm:min-h-9 min-w-0 border border-border rounded-md bg-background shadow-surface overflow-hidden",
+        "inline-flex items-stretch h-9 max-sm:h-auto max-sm:min-h-9 min-w-0 border rounded-md bg-background shadow-surface overflow-hidden",
         className
       )}
     >
       <span
         className={cn(
-          "flex items-center gap-1.5 px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r border-border shrink-0",
+          "flex items-center gap-1.5 px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r shrink-0",
           hideLabelBelowXl && "max-xl:hidden"
         )}
       >
@@ -121,7 +122,7 @@ export function AddressPill({
       <button
         type="button"
         onClick={copy}
-        className="flex items-center justify-center w-9 shrink-0 border-l border-border text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+        className="flex items-center justify-center w-9 shrink-0 border-l text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
         aria-label={`Copy ${label === "HTTP" ? "webhook URL" : "email address"}`}
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -228,13 +229,11 @@ function SetupMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <button
+          <Button
+            variant="outlined"
+            className={cn("py-1.5! px-3! text-xs flex items-center gap-1.5", className)}
             type="button"
             aria-label={label}
-            className={cn(
-              "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
-              className
-            )}
           />
         }
       >
@@ -245,7 +244,7 @@ function SetupMenu({
         )}
         {label}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64 border border-border shadow-float">
+      <DropdownMenuContent align="end" className="w-64 border shadow-float">
         <SetupItems
           setup={setup}
           slug={slug}
@@ -349,29 +348,38 @@ function SendMenu({
   mailFirst: boolean;
   className?: string;
 }) {
-  const buttonClass = cn(
-    "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
-    className
-  );
+  const buttonClass = cn("py-1.5! px-3! text-xs flex items-center gap-1.5", className);
   if (!canEmail) {
     // Only the request to send: the button opens its dialog directly.
     return (
-      <button type="button" onClick={() => send.setRequestOpen(true)} className={buttonClass}>
+      <Button
+        variant="outlined"
+        type="button"
+        onClick={() => send.setRequestOpen(true)}
+        className={buttonClass}
+      >
         <Send className="h-3.5 w-3.5" />
         Send
-      </button>
+      </Button>
     );
   }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<button type="button" className={buttonClass} disabled={send.sending} />}
+        render={
+          <Button
+            variant="outlined"
+            type="button"
+            className={buttonClass}
+            disabled={send.sending}
+          />
+        }
       >
         <Send className="h-3.5 w-3.5" />
         Send
         <ChevronDown className="h-3 w-3" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72 border border-border shadow-float">
+      <DropdownMenuContent align="end" className="w-72 border shadow-float">
         <SendItems send={send} canEmail={canEmail} mailFirst={mailFirst} />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -461,9 +469,10 @@ function ActionsMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <button
+          <Button
+            variant="outlined"
+            className="py-1.5! px-3! text-xs flex items-center gap-1.5 max-md:min-h-9"
             type="button"
-            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 max-md:min-h-9"
           />
         }
       >
@@ -473,7 +482,7 @@ function ActionsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="w-72 max-w-[calc(100vw-2rem)] border border-border shadow-float"
+        className="w-72 max-w-[calc(100vw-2rem)] border shadow-float"
       >
         {copyItems.length > 0 && (
           <>
@@ -599,7 +608,7 @@ function EndpointAddresses({
             copyValue={url}
             className="min-w-0 flex-1 md:flex-none md:w-auto md:max-w-[44%]"
           />
-          <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border border-border border-dashed rounded-md">
+          <span className="max-md:hidden inline-flex items-center gap-2 h-9 px-3 text-xs text-muted-foreground border border-dashed rounded-md">
             <Lock className="h-3 w-3" />
             Endpoints on an account also receive email
           </span>
@@ -650,7 +659,7 @@ export function EndpointBar({
   };
 
   return (
-    <div className="border-b border-border bg-card px-4 pt-3 max-md:pt-2 shrink-0">
+    <div className="border-b bg-card px-4 pt-3 max-md:pt-2 shrink-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {/* On a phone the header's endpoint switcher already shows the name. */}
         <h1 className="font-bold text-sm tracking-normal shrink-0 order-1 max-md:sr-only">

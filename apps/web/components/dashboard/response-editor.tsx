@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { parseStatusCode } from "@/lib/http";
 import { StatusCodePicker } from "./status-code-picker";
 import { PlaceholderMenu, REQUEST_PLACEHOLDERS, insertAtCursor } from "./placeholder-menu";
+import { FieldControl } from "@/components/ui/field";
 
 /**
  * One response: status, delay, body and headers. Every answer in the
@@ -170,14 +171,14 @@ export function ResponseEditor({
             Delay
           </Label>
           <div className="flex items-center gap-1.5">
-            <input
+            <FieldControl
+              className="w-full text-sm font-mono py-2!"
               id={`${idPrefix}-delay`}
               inputMode="numeric"
               value={draft.delay}
               onChange={(e) => set({ delay: e.target.value.replace(/[^\d]/g, "").slice(0, 5) })}
               placeholder="0"
               aria-describedby={`${idPrefix}-delay-unit`}
-              className="ui-input w-full text-sm font-mono py-2!"
             />
             <span id={`${idPrefix}-delay-unit`} className="text-xs text-muted-foreground">
               ms
@@ -221,7 +222,8 @@ export function ResponseEditor({
                 key={row.key}
                 className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto] gap-1.5 items-center"
               >
-                <input
+                <FieldControl
+                  className="text-[13px] font-mono py-1.5! px-2! min-w-0"
                   aria-label={`Header ${index + 1} name`}
                   value={row.name}
                   onChange={(e) =>
@@ -233,9 +235,9 @@ export function ResponseEditor({
                   }
                   placeholder="Content-Type"
                   spellCheck={false}
-                  className="ui-input text-[13px] font-mono py-1.5! px-2! min-w-0"
                 />
-                <input
+                <FieldControl
+                  className="text-[13px] font-mono py-1.5! px-2! min-w-0"
                   aria-label={`Header ${index + 1} value`}
                   value={row.value}
                   onChange={(e) =>
@@ -247,7 +249,6 @@ export function ResponseEditor({
                   }
                   placeholder="application/json"
                   spellCheck={false}
-                  className="ui-input text-[13px] font-mono py-1.5! px-2! min-w-0"
                 />
                 <button
                   type="button"

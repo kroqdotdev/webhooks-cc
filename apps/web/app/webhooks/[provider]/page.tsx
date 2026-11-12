@@ -19,6 +19,8 @@ import {
   WEBHOOK_PROVIDER_SLUGS,
   type WebhookProviderPage,
 } from "@/lib/webhook-provider-pages";
+import { Card } from "@/components/ui/card";
+import { CodeBox } from "@/components/ui/code";
 
 interface PageProps {
   params: Promise<{ provider: string }>;
@@ -231,10 +233,10 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <section key={reference.heading} className="mb-12">
             <h2 className="text-2xl md:text-3xl font-bold mb-4">{reference.heading}</h2>
             <p className="text-muted-foreground mb-6">{reference.intro}</p>
-            <div className="ui-card ui-card-static overflow-x-auto">
+            <Card className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border">
+                  <tr className="border-b">
                     {reference.columns.map((column) => (
                       <th key={column} scope="col" className="text-left py-2 pr-6 font-bold">
                         {column}
@@ -257,7 +259,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </Card>
             <p className="text-sm text-muted-foreground mt-3">
               Source:{" "}
               <a
@@ -278,7 +280,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <ol className="space-y-4">
             {howToSteps.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
+                <span className="w-9 h-9 border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                   {i + 1}
                 </span>
                 <div>
@@ -295,7 +297,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <h2 className="text-2xl md:text-3xl font-bold mb-6">
             {page.label} webhook {page.inSdk ? "signature" : "authentication"}
           </h2>
-          <div className="ui-card ui-card-static overflow-x-auto">
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
                 {page.signatureHeader && (
@@ -330,7 +332,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                 </tr>
               </tbody>
             </table>
-          </div>
+          </Card>
           {page.signatureNote ? (
             <p className="text-sm text-muted-foreground mt-3">{page.signatureNote}</p>
           ) : (
@@ -367,13 +369,13 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               {page.templates.map((template) => (
                 <code
                   key={template}
-                  className="text-sm border border-border rounded-md bg-muted px-2 py-1 font-mono"
+                  className="text-sm border rounded-md bg-muted px-2 py-1 font-mono"
                 >
                   {template}
                 </code>
               ))}
             </div>
-            <div className="ui-code overflow-x-auto">
+            <CodeBox className="overflow-x-auto">
               <pre className="text-sm">
                 <code>
                   <span className="text-muted-foreground">
@@ -396,7 +398,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                   {"}"});
                 </code>
               </pre>
-            </div>
+            </CodeBox>
           </section>
         )}
 
@@ -415,12 +417,12 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             </p>
             <div className="relative">
               <CopyButton text={testSnippet} />
-              <pre className="ui-code syntax-highlight overflow-x-auto text-sm pr-10">
+              <CodeBox className="syntax-highlight overflow-x-auto text-sm pr-10" render={<pre />}>
                 {/* Safe: highlightCode returns Prism-encoded tokens for a snippet built from static provider metadata. */}
                 <code
                   dangerouslySetInnerHTML={{ __html: highlightCode(testSnippet, "typescript") }}
                 />
-              </pre>
+              </CodeBox>
             </div>
             <p className="text-sm text-muted-foreground mt-3">
               Let your coding agent write and run it: the{" "}
@@ -469,12 +471,17 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <h2 className="text-2xl font-bold mb-6">More providers</h2>
           <div className="grid sm:grid-cols-3 gap-4">
             {related.map((p) => (
-              <Link key={p.slug} href={`/webhooks/${p.slug}`} className="ui-card block group">
+              <Card
+                interactive
+                key={p.slug}
+                className="block group"
+                render={<Link href={`/webhooks/${p.slug}`} />}
+              >
                 <h3 className="font-bold group-hover:text-primary transition-colors">
                   {p.label} webhooks
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">{p.category}</p>
-              </Link>
+              </Card>
             ))}
           </div>
           <p className="mt-4 text-sm">
@@ -486,7 +493,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
         </section>
 
         {/* CTA */}
-        <div className="ui-card bg-foreground text-background text-center py-12">
+        <Card interactive className="bg-foreground text-background text-center py-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-3">
             Your {page.label} webhook URL is seconds away
           </h2>
@@ -502,7 +509,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               try without an account
             </Link>
           </p>
-        </div>
+        </Card>
       </div>
     </main>
   );

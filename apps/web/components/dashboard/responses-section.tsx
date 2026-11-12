@@ -35,6 +35,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CodeBox } from "@/components/ui/code";
+import { FieldControl } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
 
 /**
  * What senders get back. The rules and the default response are one list
@@ -106,7 +109,7 @@ function StatusChip({ status }: { status: number }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center min-w-11 px-1.5 py-0.5 text-xs font-mono font-bold border border-border rounded-sm",
+        "inline-flex items-center justify-center min-w-11 px-1.5 py-0.5 text-xs font-mono font-bold border rounded-sm",
         statusTone(status)
       )}
     >
@@ -271,7 +274,8 @@ function PreviewPanel({
         >
           <SelectTrigger
             id={`responses-preview-${slug}`}
-            className="ui-input h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[28rem]"
+            field
+            className="h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[28rem]"
           >
             <SelectValue />
           </SelectTrigger>
@@ -311,7 +315,10 @@ function PreviewPanel({
               )}
               .
             </p>
-            <pre className="ui-code text-xs! leading-[18px] p-3! whitespace-pre-wrap break-all max-h-72 overflow-auto">
+            <CodeBox
+              className="text-xs! leading-[18px] p-3! whitespace-pre-wrap break-all max-h-72 overflow-auto"
+              render={<pre />}
+            >
               <span className="font-bold">{statusLine(result.response?.status ?? 200)}</span>
               {Object.entries(result.response?.headers ?? {}).map(([name, value]) => (
                 <span key={name}>
@@ -322,7 +329,7 @@ function PreviewPanel({
               ))}
               {"\n\n"}
               {result.response ? result.response.body || "(empty body)" : "OK"}
-            </pre>
+            </CodeBox>
             {result.unknownPlaceholders.length > 0 && (
               <p className="text-xs text-muted-foreground max-w-[62ch]">
                 {result.unknownPlaceholders.join(", ")}{" "}
@@ -508,7 +515,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
       <ol
         ref={listRef}
         aria-label="Responses in the order they are checked"
-        className="border border-border rounded-md divide-y divide-border/30 overflow-hidden"
+        className="border rounded-md divide-y divide-border/30 overflow-hidden"
       >
         {rules.map((rule, index) => {
           const isOpen = open.has(rule.key);
@@ -569,13 +576,13 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                   <label htmlFor={`${panelId}-name`} className="block text-xs font-bold">
                     Name
                   </label>
-                  <input
+                  <FieldControl
+                    className="w-full text-sm py-1.5!"
                     id={`${panelId}-name`}
                     value={rule.name}
                     onChange={(e) => updateRule(rule.key, { name: e.target.value })}
                     placeholder="Optional, for example Payment failed"
                     maxLength={200}
-                    className="ui-input w-full text-sm py-1.5!"
                   />
                 </div>
                 <ConditionList
@@ -598,31 +605,34 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                 <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border/20">
                   {rules.length > 1 && (
                     <>
-                      <button
+                      <Button
+                        variant="outlined"
+                        className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => move(index, -1)}
                         disabled={index === 0}
-                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <ArrowUp className="h-3 w-3" /> Check earlier
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => move(index, 1)}
                         disabled={index === rules.length - 1}
-                        className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <ArrowDown className="h-3 w-3" /> Check later
-                      </button>
+                      </Button>
                     </>
                   )}
-                  <button
+                  <Button
+                    variant="outlined"
+                    className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive-ink"
                     type="button"
                     onClick={() => setRules((prev) => prev.filter((r) => r.key !== rule.key))}
-                    className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive-ink"
                   >
                     <Trash2 className="h-3 w-3" /> Delete rule
-                  </button>
+                  </Button>
                 </div>
               </CollapsiblePanel>
             </Collapsible>
@@ -668,13 +678,14 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
       </ol>
 
       {rules.length < MAX_RULES && (
-        <button
+        <Button
+          variant="outlined"
+          className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
           type="button"
           onClick={addRule}
-          className="ui-btn-outline py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
         >
           <Plus className="h-3.5 w-3.5" /> Add rule
-        </button>
+        </Button>
       )}
 
       <PreviewPanel

@@ -195,7 +195,7 @@ export function EmailPasswordForm({
   if (done) {
     return (
       <div className="space-y-4" role="status" aria-live="polite">
-        <div className="rounded-lg border border-border bg-background p-4 text-sm">{done}</div>
+        <div className="rounded-lg border bg-background p-4 text-sm">{done}</div>
         <button
           type="button"
           onClick={() => switchMode("sign-in")}
@@ -213,7 +213,7 @@ export function EmailPasswordForm({
       {mode === "forgot" ? <h2 className="text-base font-semibold">Reset your password</h2> : null}
 
       {notice ? (
-        <div className="text-sm rounded-lg border border-border bg-background p-3" role="status">
+        <div className="text-sm rounded-lg border bg-background p-3" role="status">
           {notice}
         </div>
       ) : null}

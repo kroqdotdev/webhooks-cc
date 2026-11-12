@@ -6,6 +6,8 @@ import { JsonLd, breadcrumbSchema, faqSchema, howToSchema, type FAQItem } from "
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import { PricingCTA } from "@/components/landing/pricing-cta";
+import { CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const PATH = "/email-to-webhook";
 
@@ -210,7 +212,7 @@ export default function EmailToWebhookPage() {
           <ol className="space-y-4">
             {STEPS.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
+                <span className="w-9 h-9 border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                   {i + 1}
                 </span>
                 <div>
@@ -230,11 +232,11 @@ export default function EmailToWebhookPage() {
             email carries the same <code className="font-mono text-sm">webhook-id</code>, so a
             handler can skip a retry it already processed.
           </p>
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{REQUEST_SAMPLE}</code>
             </pre>
-          </div>
+          </CodeBox>
           <p className="text-sm text-muted-foreground mt-3">
             Shortened. The full JSON also carries the endpoint, cc and reply-to addresses, the date,
             the message id, the size and which parts were cut.{" "}
@@ -252,11 +254,11 @@ export default function EmailToWebhookPage() {
             <code className="font-mono text-sm">verifyForwardedEmail</code> checks it and the
             timestamp, then hands you the parsed email:
           </p>
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{VERIFY_SAMPLE}</code>
             </pre>
-          </div>
+          </CodeBox>
           <p className="text-sm text-muted-foreground mt-3">
             The official{" "}
             <a
@@ -282,10 +284,10 @@ export default function EmailToWebhookPage() {
           <h2 className="text-2xl md:text-3xl font-bold mb-6">What people build with it</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             {USE_CASES.map((useCase) => (
-              <div key={useCase.title} className="ui-card ui-card-static">
+              <Card key={useCase.title}>
                 <h3 className="font-bold mb-1.5">{useCase.title}</h3>
                 <p className="text-sm text-muted-foreground">{useCase.text}</p>
-              </div>
+              </Card>
             ))}
           </div>
         </section>
@@ -331,7 +333,7 @@ export default function EmailToWebhookPage() {
           <FAQAccordion items={FAQ_ITEMS} />
         </section>
 
-        <div className="ui-card bg-foreground text-background text-center py-12">
+        <Card interactive className="bg-foreground text-background text-center py-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-3">Your first forwarded email</h2>
           <p className="opacity-80 mb-6 max-w-md mx-auto">
             Sign up free, create an endpoint, add your URL and send it an email.
@@ -340,7 +342,7 @@ export default function EmailToWebhookPage() {
             <PricingCTA inverted />
           </div>
           <p className="text-sm opacity-80 mt-6">No credit card</p>
-        </div>
+        </Card>
       </div>
     </main>
   );

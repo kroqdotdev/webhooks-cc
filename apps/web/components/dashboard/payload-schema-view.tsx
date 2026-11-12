@@ -16,6 +16,8 @@ import {
   type PayloadSchemaFormat,
   type SchemaSource,
 } from "@/lib/payload-schema";
+import { Button } from "@/components/ui/button";
+import { CodeBox } from "@/components/ui/code";
 
 const LANGUAGE: Record<PayloadSchemaFormat, "typescript" | "python" | "json"> = {
   typescript: "typescript",
@@ -91,16 +93,17 @@ export function PayloadSchemaView({ request, candidates, onCopy, copied }: Paylo
           onChange={chooseFormat}
           options={SCHEMA_FORMATS}
         />
-        <button
+        <Button
+          variant="outlined"
+          className="py-1! px-2! text-xs flex items-center gap-1"
           onClick={() => {
             onCopy(result.code, copyKey);
             trackPayloadSchemaCopied(format, result.samples);
           }}
-          className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1"
         >
           {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {isCopied ? "Copied!" : "Copy"}
-        </button>
+        </Button>
       </div>
 
       {peers && (
@@ -125,10 +128,10 @@ export function PayloadSchemaView({ request, candidates, onCopy, copied }: Paylo
           : "Learned from this request. Capture a few more of the same event to find optional and nullable fields."}
       </p>
 
-      <pre className="ui-code syntax-highlight overflow-x-auto text-sm">
+      <CodeBox className="syntax-highlight overflow-x-auto text-sm" render={<pre />}>
         {/* Safe: highlightCode returns Prism-encoded tokens or escaped text. */}
         <code dangerouslySetInnerHTML={{ __html: highlighted }} />
-      </pre>
+      </CodeBox>
     </div>
   );
 }

@@ -28,6 +28,8 @@ import {
   type DomainRoute,
   type InboundDomain,
 } from "@/lib/domains-api";
+import { CodeBox } from "@/components/ui/code";
+import { FieldControl } from "@/components/ui/field";
 
 export interface RoutableEndpoint {
   id: string;
@@ -43,7 +45,9 @@ function CopyValue({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <span className="inline-flex items-center gap-2 min-w-0">
-      <code className="ui-code text-xs px-2 py-1 break-all shadow-none!">{value}</code>
+      <CodeBox className="text-xs px-2 py-1 break-all shadow-none!" render={<code />}>
+        {value}
+      </CodeBox>
       <button
         type="button"
         aria-label={`Copy ${label}`}
@@ -259,7 +263,8 @@ function DomainCard({
             <ul className="space-y-2" aria-label={`Addresses at ${domain.domain}`}>
               {routes.map((route, index) => (
                 <li key={index} className="flex flex-wrap items-center gap-2">
-                  <input
+                  <FieldControl
+                    className="w-36 text-sm py-1.5!"
                     aria-label="Address name"
                     value={route.localPart}
                     onChange={(event) =>
@@ -270,27 +275,30 @@ function DomainCard({
                       )
                     }
                     placeholder="orders"
-                    className="ui-input w-36 text-sm py-1.5!"
                   />
                   <span className="text-sm text-muted-foreground">@{domain.domain} to</span>
-                  <select
-                    aria-label="Endpoint"
-                    value={route.endpointId}
-                    onChange={(event) =>
-                      setRoutes((current) =>
-                        current.map((item, i) =>
-                          i === index ? { ...item, endpointId: event.target.value } : item
-                        )
-                      )
+                  <FieldControl
+                    className="text-sm py-1.5!"
+                    render={
+                      <select
+                        aria-label="Endpoint"
+                        value={route.endpointId}
+                        onChange={(event) =>
+                          setRoutes((current) =>
+                            current.map((item, i) =>
+                              i === index ? { ...item, endpointId: event.target.value } : item
+                            )
+                          )
+                        }
+                      />
                     }
-                    className="ui-input text-sm py-1.5!"
                   >
                     {endpoints.map((endpoint) => (
                       <option key={endpoint.id} value={endpoint.id}>
                         {endpointLabel(endpoint)}
                       </option>
                     ))}
-                  </select>
+                  </FieldControl>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -314,10 +322,11 @@ function DomainCard({
             </Button>
             <label className="flex flex-wrap items-center gap-2 text-sm">
               <span>Any other address to</span>
-              <select
-                value={catchAll}
-                onChange={(event) => setCatchAll(event.target.value)}
-                className="ui-input text-sm py-1.5!"
+              <FieldControl
+                className="text-sm py-1.5!"
+                render={
+                  <select value={catchAll} onChange={(event) => setCatchAll(event.target.value)} />
+                }
               >
                 <option value="">Refuse it</option>
                 {endpoints.map((endpoint) => (
@@ -325,7 +334,7 @@ function DomainCard({
                     {endpointLabel(endpoint)}
                   </option>
                 ))}
-              </select>
+              </FieldControl>
             </label>
             <div>
               <Button size="sm" disabled={!dirty || busy !== null} onClick={() => void save()}>
@@ -515,7 +524,8 @@ function ExtraDomains({
           hint={`${formatCents(MONTHLY_DOMAIN_CENTS)} per domain a month, renewed with your plan. Adding domains charges them in full now; fewer apply at the renewal.`}
         >
           <div className="flex flex-wrap items-center gap-2">
-            <input
+            <FieldControl
+              className="w-24 text-sm py-1.5!"
               id="extra-domain-count"
               type="number"
               min={0}
@@ -525,7 +535,6 @@ function ExtraDomains({
                 edited.current = true;
                 setCount(event.target.value);
               }}
-              className="ui-input w-24 text-sm py-1.5!"
             />
             <span className="text-sm text-muted-foreground">
               ({formatCents(MONTHLY_DOMAIN_CENTS * (valid ? units : 0))} a month)
@@ -674,7 +683,8 @@ export function DomainsPanel({
         {canAdd ? (
           <PanelRow label="Add a domain" htmlFor="add-domain">
             <div className="flex flex-wrap items-center gap-2">
-              <input
+              <FieldControl
+                className="w-64 text-sm py-1.5!"
                 id="add-domain"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -682,7 +692,6 @@ export function DomainsPanel({
                   if (event.key === "Enter") void add();
                 }}
                 placeholder="inbound.acme.com"
-                className="ui-input w-64 text-sm py-1.5!"
               />
               <Button size="sm" disabled={busy || !draft.trim()} onClick={() => void add()}>
                 {busy ? "Adding..." : "Add"}

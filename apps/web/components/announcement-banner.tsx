@@ -75,7 +75,7 @@ export function AnnouncementBanner() {
         style={{ top: maintenanceActive ? BANNER_HEIGHT : 0 }}
       >
         <div
-          className="flex items-center justify-center bg-primary border-b border-border text-primary-foreground px-4 text-center text-sm font-medium"
+          className="flex items-center justify-center bg-primary border-b text-primary-foreground px-4 text-center text-sm font-medium"
           style={{ height: BANNER_HEIGHT }}
         >
           <div className="flex items-center justify-center gap-2">

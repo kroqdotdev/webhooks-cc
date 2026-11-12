@@ -19,6 +19,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { DisplayableRequest } from "./request-detail";
+import { CodeBox } from "@/components/ui/code";
+import { Button } from "@/components/ui/button";
+import { FieldControl } from "@/components/ui/field";
 
 /**
  * Providers whose signature is computed over the request URL (and, for HubSpot,
@@ -147,7 +150,7 @@ function ServerSideResult({
             <span className="text-xs font-mono text-muted-foreground">{providerInfo.label}</span>
           )}
         </div>
-        <div className="ui-code p-3 text-sm">
+        <CodeBox className="p-3 text-sm">
           <table className="font-mono w-full">
             <tbody>
               <Row label="Provider" value={providerInfo?.label ?? provider ?? "Unknown"} />
@@ -155,7 +158,7 @@ function ServerSideResult({
               {providerInfo?.header && <Row label="Header" value={providerInfo.header} />}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
       </div>
     );
   }
@@ -195,7 +198,7 @@ function ServerSideResult({
       </div>
 
       {(errorData?.expected || errorData?.received) && (
-        <div className="ui-code p-3 text-sm space-y-1">
+        <CodeBox className="p-3 text-sm space-y-1">
           <table className="font-mono w-full">
             <tbody>
               {errorData?.expected && <CopyableRow label="Expected" value={errorData.expected} />}
@@ -208,7 +211,7 @@ function ServerSideResult({
               )}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
       )}
 
       {errorData?.message && !errorData.expected && (
@@ -319,9 +322,13 @@ function ClientSideVerification({
     return (
       <div className="space-y-4">
         <ServerSideResult verified={result.verified} error={result.error} provider={provider} />
-        <button onClick={() => setResult(null)} className="ui-btn-outline py-1.5! px-3! text-xs">
+        <Button
+          variant="outlined"
+          className="py-1.5! px-3! text-xs"
+          onClick={() => setResult(null)}
+        >
           Verify Again
-        </button>
+        </Button>
       </div>
     );
   }
@@ -355,7 +362,7 @@ function ClientSideVerification({
               setResult(null);
             }}
           >
-            <SelectTrigger id="sig-provider" className="ui-input w-full text-sm h-auto">
+            <SelectTrigger id="sig-provider" field className="w-full text-sm h-auto">
               <SelectValue placeholder="Select provider..." />
             </SelectTrigger>
             <SelectContent className="max-h-80">
@@ -373,13 +380,13 @@ function ClientSideVerification({
             <label htmlFor="sig-secret" className="font-bold text-xs">
               {getWebProviderCredentialLabel(provider)}
             </label>
-            <input
+            <FieldControl
+              className="w-full text-sm font-mono"
               id="sig-secret"
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               placeholder={providerInfo?.secretPlaceholder ?? "your secret"}
-              className="ui-input w-full text-sm font-mono"
               disabled={verifying}
             />
           </div>
@@ -390,13 +397,13 @@ function ClientSideVerification({
             <label htmlFor="sig-url" className="font-bold text-xs">
               Request URL
             </label>
-            <input
+            <FieldControl
+              className="w-full text-sm font-mono"
               id="sig-url"
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://go.webhooks.cc/w/your-slug"
-              className="ui-input w-full text-sm font-mono"
               disabled={verifying}
             />
             <p className="text-xs text-muted-foreground">
@@ -410,13 +417,13 @@ function ClientSideVerification({
             <label htmlFor="sig-method" className="font-bold text-xs">
               HTTP Method
             </label>
-            <input
+            <FieldControl
+              className="w-full text-sm font-mono"
               id="sig-method"
               type="text"
               value={method}
               onChange={(e) => setMethod(e.target.value.toUpperCase())}
               placeholder="POST"
-              className="ui-input w-full text-sm font-mono"
               disabled={verifying}
             />
           </div>
@@ -431,10 +438,11 @@ function ClientSideVerification({
         )}
 
         {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
-          <button
+          <Button
+            variant="primary"
+            className="py-1.5! px-4! text-xs flex items-center gap-1.5"
             onClick={handleVerify}
             disabled={verifying || !secret || (needsUrl && !url)}
-            className="ui-btn-primary py-1.5! px-4! text-xs flex items-center gap-1.5"
           >
             {verifying ? (
               <>
@@ -444,7 +452,7 @@ function ClientSideVerification({
             ) : (
               "Verify"
             )}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -455,9 +463,9 @@ function ClientSideVerification({
             <p className="text-xs text-muted-foreground">
               Want automatic verification on every request?
             </p>
-            <button onClick={onOpenSettings} className="ui-btn-outline py-1.5! px-3! text-xs">
+            <Button variant="outlined" className="py-1.5! px-3! text-xs" onClick={onOpenSettings}>
               Set up in endpoint settings
-            </button>
+            </Button>
           </div>
         </>
       )}

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { CodeBox, InlineCode } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -142,10 +144,10 @@ export default function CompareMailosaurPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-3">
+        <CodeBox className="overflow-x-auto mb-3">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -167,7 +169,7 @@ export default function CompareMailosaurPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
         <p className="text-sm text-muted-foreground mb-10">
           Mailosaur as listed on mailosaur.com and in its docs in November 2026; &quot;not
           documented&quot; means we did not find it there. Check its pricing before you buy.
@@ -178,25 +180,21 @@ export default function CompareMailosaurPage() {
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">The same test, written almost the same way</h3>
             <p className="text-muted-foreground">
               In Mailosaur a test sends to any address at its inbox&apos;s domain, calls{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">messages.get()</code>,
-              which waits for the message, and reads{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">html.codes</code> or{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">html.links</code>. In
+              <InlineCode>messages.get()</InlineCode>, which waits for the message, and reads{" "}
+              <InlineCode>html.codes</InlineCode> or <InlineCode>html.links</InlineCode>. In
               webhooks.cc it sends to the endpoint&apos;s address with a tag for the run, calls{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">emails.waitFor()</code>,
-              and reads{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">extractCode()</code> or{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">extractLink()</code>.
+              <InlineCode>emails.waitFor()</InlineCode>, and reads{" "}
+              <InlineCode>extractCode()</InlineCode> or <InlineCode>extractLink()</InlineCode>.
               Mailosaur has client libraries for more languages and an official Cypress plugin;
               webhooks.cc has SDKs for TypeScript, Python and Go and a REST API for the rest.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Free plan and price</h3>
             <p className="text-muted-foreground">
               Mailosaur has a 14-day trial and no free plan; Personal starts at $20 a month and Core
@@ -205,9 +203,9 @@ export default function CompareMailosaurPage() {
               emails or webhooks a month. A small project&apos;s signup and login tests fit in the
               free plan.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Where Mailosaur does more</h3>
             <p className="text-muted-foreground">
               Mailosaur tests more than email. It rents dedicated phone numbers for SMS tests,
@@ -217,25 +215,24 @@ export default function CompareMailosaurPage() {
               SSO and SCIM on Enterprise. webhooks.cc has none of those: it receives email and
               webhooks, and never sends.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Where webhooks.cc does more</h3>
             <p className="text-muted-foreground">
               The same endpoint captures the webhooks your app fires, so a signup that sends an
               email and a webhook is checked in one place. Each endpoint can send what it receives
               to up to 10 destinations: your server as signed JSON with retries, Slack, Discord,
-              Google Sheets, Zapier or Make. The{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">whk</code> CLI tunnels
-              captured mail to a handler on localhost, the MCP server is on every plan, and the code
-              is open source.
+              Google Sheets, Zapier or Make. The <InlineCode>whk</InlineCode> CLI tunnels captured
+              mail to a handler on localhost, the MCP server is on every plan, and the code is open
+              source.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Signup, magic link and password reset tests without a paid plan</li>
@@ -245,8 +242,8 @@ export default function CompareMailosaurPage() {
               <li>Monthly billing from $8</li>
               <li>Open-source code you can inspect</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose Mailosaur when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>SMS testing on dedicated phone numbers</li>
@@ -256,17 +253,17 @@ export default function CompareMailosaurPage() {
               <li>An inbox that sends and replies</li>
               <li>SSO, SCIM and per-team permissions</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

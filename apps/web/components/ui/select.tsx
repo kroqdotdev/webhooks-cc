@@ -49,11 +49,18 @@ const SelectGroup = SelectPrimitive.Group;
 
 const SelectValue = SelectPrimitive.Value;
 
-function SelectTrigger({ className, children, ...props }: Styled<SelectPrimitive.Trigger.Props>) {
+/** `field` draws the trigger in the field look (`FieldControl`'s) instead of its own. */
+function SelectTrigger({
+  className,
+  children,
+  field = false,
+  ...props
+}: Styled<SelectPrimitive.Trigger.Props> & { field?: boolean }) {
   return (
     <SelectPrimitive.Trigger
       className={cn(
         "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground [&>span]:line-clamp-1",
+        field && "ui-input",
         className
       )}
       {...props}

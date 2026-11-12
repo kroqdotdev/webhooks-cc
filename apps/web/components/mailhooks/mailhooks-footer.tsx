@@ -44,7 +44,7 @@ export function MailhooksFooter() {
     },
   ];
   return (
-    <footer className="border-t border-border py-12 px-4">
+    <footer className="border-t py-12 px-4">
       <div className="max-w-6xl mx-auto grid md:grid-cols-3 lg:grid-cols-5 gap-8">
         <div>
           <p className="font-bold text-lg mb-4">mailhooks.cc</p>

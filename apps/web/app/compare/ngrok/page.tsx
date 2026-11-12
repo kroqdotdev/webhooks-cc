@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { CodeBox, InlineCode } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -158,10 +160,10 @@ export default function CompareNgrokPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -183,14 +185,14 @@ export default function CompareNgrokPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
 
         <ComparisonCTA compact />
 
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Webhook history and inspection</h3>
             <p className="text-muted-foreground">
               ngrok tunnels traffic to your local server and shows it in a local inspector at
@@ -200,21 +202,20 @@ export default function CompareNgrokPage() {
               IP, timing) and makes it searchable, exportable, and replayable from the dashboard,
               CLI, or SDK.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Testing and CI integration</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides SDKs for TypeScript, Python and Go with{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code>: create
-              an endpoint, trigger your integration, and assert on the captured webhook in your test
-              suite. This works in CI without opening any tunnels. ngrok is designed for runtime
-              tunneling, not test-time assertions; its MCP server manages endpoints, traffic and
-              policies rather than tests.
+              <InlineCode>waitFor()</InlineCode>: create an endpoint, trigger your integration, and
+              assert on the captured webhook in your test suite. This works in CI without opening
+              any tunnels. ngrok is designed for runtime tunneling, not test-time assertions; its
+              MCP server manages endpoints, traffic and policies rather than tests.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Sharing a local site</h3>
             <p className="text-muted-foreground">
               Both put a local web app at a public HTTPS link. ngrok&apos;s free plan gives one
@@ -229,9 +230,9 @@ export default function CompareNgrokPage() {
               passwords and 25 GB a month, with no extra subscription. Previews serve web pages
               only: no downloads, video or TCP.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Scope and complexity</h3>
             <p className="text-muted-foreground">
               ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and
@@ -241,12 +242,12 @@ export default function CompareNgrokPage() {
               costs $12/seat/month, while ngrok&apos;s pay-as-you-go plan starts at $20/month with 3
               seats included and $5 per additional seat, plus metered usage.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Full webhook request history with search and replay</li>
@@ -257,8 +258,8 @@ export default function CompareNgrokPage() {
               <li>Email captured at its own address next to your webhooks</li>
               <li>A quick link to your local site, included in the plan you have</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose ngrok when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>General-purpose tunneling for any protocol (HTTP, TCP, TLS)</li>
@@ -266,17 +267,17 @@ export default function CompareNgrokPage() {
               <li>Traffic policies, IP restrictions, or edge compute</li>
               <li>Broad infrastructure tunneling beyond webhook testing</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { DashboardEndpoint } from "@/lib/dashboard-api";
 import { useSite } from "@/components/providers/site-provider";
 import { Field, SaveFooter, Section, Segmented, useSave } from "./settings-primitives";
+import { FieldControl } from "@/components/ui/field";
 
 type Mode = "plan" | "shorter" | "delivered";
 
@@ -89,7 +90,8 @@ export function RetentionSection({ endpoint }: { endpoint: DashboardEndpoint }) 
           error={days !== "" && !daysValid ? `From 1 to ${cap} days.` : undefined}
           help="Requests older than this are deleted within minutes, with their attachments."
         >
-          <input
+          <FieldControl
+            className="w-28 text-sm py-2!"
             id="settings-retention-days"
             type="number"
             inputMode="numeric"
@@ -97,7 +99,6 @@ export function RetentionSection({ endpoint }: { endpoint: DashboardEndpoint }) 
             max={cap}
             value={days}
             onChange={(event) => setDays(event.target.value)}
-            className="ui-input w-28 text-sm py-2!"
           />
         </Field>
       )}

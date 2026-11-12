@@ -16,6 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 import { SettingsDataProvider } from "@/components/settings/settings-data";
 import { SettingsShell } from "@/components/settings/settings-shell";
+import { Button } from "@/components/ui/button";
 
 /**
  * Account and team settings share one frame, so moving between them keeps the
@@ -27,13 +28,14 @@ export default async function SettingsLayout({ children }: { children: React.Rea
       <RequireAuth>
         <div className="min-h-screen">
           <SiteHeader>
-            <Link
-              href="/dashboard"
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            <Button
+              variant="outlined"
+              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
+              render={<Link href="/dashboard" />}
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Dashboard
-            </Link>
+            </Button>
           </SiteHeader>
           <SettingsDataProvider>
             <SettingsShell sharing={tunnelConfig() !== null}>

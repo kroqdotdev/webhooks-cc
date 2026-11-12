@@ -9,6 +9,7 @@ import {
   type ConditionOp,
 } from "@webhooks-cc/sdk";
 import { cn } from "@/lib/utils";
+import { FieldControl } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -36,7 +37,7 @@ import {
 
 const triggerClass =
   "h-8 min-w-0 gap-1.5 text-[13px] rounded-md border border-border bg-background px-2 py-0 text-left cursor-pointer focus:ring-offset-0";
-const inputClass = "ui-input h-8 text-[13px] font-mono py-0! px-2! min-w-0";
+const inputClass = "h-8 text-[13px] font-mono py-0! px-2! min-w-0";
 
 /**
  * The rows' picker: the shared select at the rows' size. An unset value shows
@@ -66,7 +67,7 @@ function ChoiceSelect({
       <SelectTrigger aria-label={label} className={cn(triggerClass, className)}>
         <SelectValue placeholder="Choose" />
       </SelectTrigger>
-      <SelectContent className="border border-border shadow-float max-h-80">
+      <SelectContent className="border shadow-float max-h-80">
         {listed.map((choice) => (
           <SelectItem key={choice.value} value={choice.value} className="text-[13px]">
             {choice.label}
@@ -156,7 +157,7 @@ function ConditionRow({
               className="w-32"
             />
           ) : (
-            <input
+            <FieldControl
               aria-label={`Condition ${n}: ${labels.keyLabel}`}
               value={(key === "name" ? condition.name : condition.path) ?? ""}
               onChange={(e) =>
@@ -194,7 +195,7 @@ function ConditionRow({
               className="w-32"
             />
           ) : (
-            <input
+            <FieldControl
               aria-label={`Condition ${n}: value`}
               value={condition.value ?? ""}
               onChange={(e) => onChange({ ...condition, value: e.target.value })}

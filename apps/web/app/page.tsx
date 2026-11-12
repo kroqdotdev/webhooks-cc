@@ -33,6 +33,8 @@ import {
   type FAQItem,
 } from "@/lib/schemas";
 import { createClient } from "@supabase/supabase-js";
+import { Card } from "@/components/ui/card";
+import { CodeBox } from "@/components/ui/code";
 
 export const revalidate = 600; // re-render landing page every 10 min to pick up fresh site_stats
 
@@ -266,7 +268,7 @@ export default async function Home() {
       {/* A signed-in visitor gets a compact band instead of the full-height frame. */}
       <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] has-[[data-landing-signed-in]]:h-auto flex flex-col">
         {/* Title strip inside the app chrome: the page's H1 lives here */}
-        <div className="shrink-0 border-b border-border bg-muted px-4 py-3 md:py-5 text-center">
+        <div className="shrink-0 border-b bg-muted px-4 py-3 md:py-5 text-center">
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
             The fastest way to <span className="text-primary">test webhooks</span>
           </h1>
@@ -301,7 +303,7 @@ export default async function Home() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
-            <div className="ui-card ui-card-static">
+            <Card>
               <p className="text-xs font-bold text-muted-foreground mb-3">
                 Guest URL: what you have now
               </p>
@@ -317,10 +319,10 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </Card>
 
-            <div className="ui-card ui-card-static border-primary relative">
-              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border border-border rounded-md shadow-surface">
+            <Card className="border-primary relative">
+              <div className="absolute -top-3 right-4 md:-right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border rounded-md shadow-surface">
                 1 click away
               </div>
               <p className="text-xs font-bold text-muted-foreground mb-3">
@@ -342,7 +344,7 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </Card>
           </div>
 
           <StartFreeCTA size="lg" align="center" goCta={null} />
@@ -410,7 +412,7 @@ export default async function Home() {
               },
             ].map((item) => (
               <div key={item.step} className="flex gap-4">
-                <div className="w-10 h-10 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-surface">
+                <div className="w-10 h-10 border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-surface">
                   {item.step}
                 </div>
                 <div>
@@ -435,8 +437,8 @@ export default async function Home() {
 
           {/* Phones show the titles only, two to a row, to keep the page short. */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 max-md:[&_.ui-card>p]:hidden max-md:[&_h3]:text-base max-md:[&_h3]:mb-0">
-            <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
+            <Card interactive>
+              <div className="w-12 h-12 border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Eye className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">See requests the moment they arrive</h3>
@@ -444,10 +446,10 @@ export default async function Home() {
                 Headers, body, query params: formatted, searchable, and exportable as JSON or CSV.
                 Live updates, no refresh needed.
               </p>
-            </div>
+            </Card>
 
-            <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
+            <Card interactive>
+              <div className="w-12 h-12 border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Zap className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Send signed provider test webhooks</h3>
@@ -470,10 +472,10 @@ export default async function Home() {
                 </Link>
                 . Test your verification code end-to-end.
               </p>
-            </div>
+            </Card>
 
-            <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md bg-muted flex items-center justify-center mb-4 shadow-surface">
+            <Card interactive>
+              <div className="w-12 h-12 border rounded-md bg-muted flex items-center justify-center mb-4 shadow-surface">
                 <Reply className="h-6 w-6" />
               </div>
               <h3 className="font-bold text-xl mb-2">Return custom mock responses</h3>
@@ -482,10 +484,10 @@ export default async function Home() {
                 <code className="font-mono font-bold">{"{{ placeholders }}"}</code> from the
                 request. Changes take effect instantly, with no deploy and no restart.
               </p>
-            </div>
+            </Card>
 
-            <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
+            <Card interactive>
+              <div className="w-12 h-12 border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Terminal className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Forward to localhost. Assert in CI.</h3>
@@ -494,10 +496,10 @@ export default async function Home() {
                 local port. The TypeScript, Python and Go SDKs wait for events and assert payload
                 shape in your test suite.
               </p>
-            </div>
+            </Card>
 
-            <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
+            <Card interactive>
+              <div className="w-12 h-12 border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Bot className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Let your AI agent debug webhooks</h3>
@@ -506,15 +508,15 @@ export default async function Home() {
                 server with one approval. Your agent creates endpoints, sends tests, and inspects
                 requests through natural language.
               </p>
-            </div>
+            </Card>
 
-            <div className="ui-card">
-              <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
+            <Card interactive>
+              <div className="w-12 h-12 border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                 <Users className="h-6 w-6 text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">
                 Collaborate with your team{" "}
-                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border border-border rounded-md align-middle shadow-surface">
+                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border rounded-md align-middle shadow-surface">
                   Teams
                 </span>
               </h3>
@@ -522,7 +524,7 @@ export default async function Home() {
                 Invite members, share endpoints, and debug webhooks together. Create teams with
                 scoped roles and a shared endpoint view.
               </p>
-            </div>
+            </Card>
           </div>
           <div className="mt-16">
             <h3 className="text-2xl md:text-3xl font-bold mb-3">Catch the emails too</h3>
@@ -537,8 +539,8 @@ export default async function Home() {
             </p>
 
             <div className="grid md:grid-cols-2 gap-6">
-              <Link href="/email-testing" className="ui-card block group">
-                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
+              <Card interactive className="block group" render={<Link href="/email-testing" />}>
+                <div className="w-12 h-12 border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                   <Mail className="h-6 w-6 text-foreground" />
                 </div>
                 <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
@@ -552,10 +554,10 @@ export default async function Home() {
                   Email testing
                   <ArrowRight className="inline-block ml-1 h-4 w-4" />
                 </span>
-              </Link>
+              </Card>
 
-              <Link href="/email-to-webhook" className="ui-card block group">
-                <div className="w-12 h-12 border border-border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
+              <Card interactive className="block group" render={<Link href="/email-to-webhook" />}>
+                <div className="w-12 h-12 border rounded-md flex items-center justify-center mb-4 shadow-surface bg-muted">
                   <Webhook className="h-6 w-6 text-foreground" />
                 </div>
                 <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
@@ -569,7 +571,7 @@ export default async function Home() {
                   Email to webhook
                   <ArrowRight className="inline-block ml-1 h-4 w-4" />
                 </span>
-              </Link>
+              </Card>
             </div>
           </div>
         </div>
@@ -589,7 +591,7 @@ export default async function Home() {
 
           <InstallCards />
 
-          <div className="mt-6 ui-code overflow-x-auto">
+          <CodeBox className="mt-6 overflow-x-auto">
             <pre className="text-sm md:text-base">
               <code>
                 <span className="text-muted-foreground"># Send manually with curl</span>
@@ -631,7 +633,7 @@ export default async function Home() {
                 {"}"});
               </code>
             </pre>
-          </div>
+          </CodeBox>
         </div>
       </section>
 
@@ -717,10 +719,11 @@ export default async function Home() {
                 summary: "One tool for webhooks and email vs an inbox API with SMS and IMAP.",
               },
             ].map((item) => (
-              <Link
+              <Card
+                interactive
                 key={item.href}
-                href={item.href}
-                className="ui-card block transition-colors hover:bg-muted group"
+                className="block transition-colors hover:bg-muted group"
+                render={<Link href={item.href} />}
               >
                 <h3 className="font-bold text-xl mb-2">{item.title}</h3>
                 <p className="text-muted-foreground mb-4">{item.summary}</p>
@@ -728,7 +731,7 @@ export default async function Home() {
                   Read comparison
                   <ArrowRight className="ml-1 h-4 w-4" />
                 </span>
-              </Link>
+              </Card>
             ))}
           </div>
           <Link
@@ -755,7 +758,7 @@ export default async function Home() {
       {/* CTA */}
       <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto">
-          <div className="ui-card bg-foreground text-background text-center py-16">
+          <Card interactive className="bg-foreground text-background text-center py-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
               Your next webhook is one URL away
             </h2>
@@ -768,12 +771,12 @@ export default async function Home() {
             <p className="text-sm opacity-80 mt-6">
               No credit card &middot; or scroll up for a guest URL, no account needed
             </p>
-          </div>
+          </Card>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border py-12 px-4">
+      <footer className="border-t py-12 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-8">
             <div>
@@ -970,7 +973,7 @@ export default async function Home() {
               </ul>
             </div>
           </div>
-          <div className="border-t border-border mt-12 pt-8 text-center text-muted-foreground text-sm">
+          <div className="border-t mt-12 pt-8 text-center text-muted-foreground text-sm">
             <p>&copy; {new Date().getFullYear()} webhooks.cc. All rights reserved.</p>
           </div>
         </div>

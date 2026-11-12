@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { addLayoutTemplate, type DashboardEndpoint } from "@/lib/dashboard-api";
 import { layoutTemplate } from "@/lib/layout-templates";
+import { FieldControl } from "@/components/ui/field";
 
 /**
  * Adds a ready-made layout from a mailhooks.cc sender page
@@ -41,7 +42,7 @@ export function TemplateImportDialog({
     // takes the template out of the URL).
     return (
       <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="border border-border shadow-float">
+        <DialogContent className="border shadow-float">
           <DialogHeader>
             <DialogTitle className="font-bold">That layout is not available</DialogTitle>
             <DialogDescription>
@@ -49,7 +50,7 @@ export function TemplateImportDialog({
               instead.
             </DialogDescription>
           </DialogHeader>
-          <Button type="button" variant="outline" className="ui-btn-outline" onClick={onClose}>
+          <Button type="button" variant="outline" raised onClick={onClose}>
             Close
           </Button>
         </DialogContent>
@@ -73,7 +74,7 @@ export function TemplateImportDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="border border-border shadow-float">
+      <DialogContent className="border shadow-float">
         <DialogHeader>
           <DialogTitle className="font-bold">Add the {template.layout.name} layout</DialogTitle>
           <DialogDescription>
@@ -90,11 +91,15 @@ export function TemplateImportDialog({
             <Label htmlFor="template-endpoint" className="font-bold text-xs">
               Endpoint
             </Label>
-            <select
-              id="template-endpoint"
-              value={slug}
-              onChange={(event) => setSlug(event.target.value)}
-              className="ui-input w-full text-sm"
+            <FieldControl
+              className="w-full text-sm"
+              render={
+                <select
+                  id="template-endpoint"
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value)}
+                />
+              }
             >
               {endpoints.map((endpoint) => (
                 <option key={endpoint.slug} value={endpoint.slug}>
@@ -103,7 +108,7 @@ export function TemplateImportDialog({
                     : endpoint.emailAddress}
                 </option>
               ))}
-            </select>
+            </FieldControl>
           </div>
         )}
         {error && (
@@ -114,19 +119,14 @@ export function TemplateImportDialog({
         <div className="flex gap-3">
           <Button
             type="button"
-            className="ui-btn-primary flex-1"
+            raised
+            className="flex-1"
             disabled={busy || !slug || !accessToken}
             onClick={() => void add()}
           >
             {busy ? "Adding..." : "Add layout"}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="ui-btn-outline"
-            disabled={busy}
-            onClick={onClose}
-          >
+          <Button type="button" variant="outline" raised disabled={busy} onClick={onClose}>
             Cancel
           </Button>
         </div>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DashboardLinkIfSignedIn } from "@/components/nav/dashboard-link-if-signed-in";
 import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: { absolute: "Page not found | mailhooks.cc" } };
 
@@ -21,15 +22,15 @@ export default function MailhooksNotFound() {
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
             <DashboardLinkIfSignedIn />
-            <Link href="/" className="ui-btn-primary">
+            <Button variant="primary" render={<Link href="/" />}>
               Home
-            </Link>
-            <Link href="/parse" className="ui-btn-outline">
+            </Button>
+            <Button variant="outlined" render={<Link href="/parse" />}>
               Layout gallery
-            </Link>
-            <Link href="/guides" className="ui-btn-outline">
+            </Button>
+            <Button variant="outlined" render={<Link href="/guides" />}>
               Guides
-            </Link>
+            </Button>
           </nav>
         </div>
       </main>

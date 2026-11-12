@@ -29,7 +29,7 @@ export default function AppearancePage() {
         <div
           role="radiogroup"
           aria-label="Theme"
-          className="inline-flex overflow-hidden rounded-md border border-border"
+          className="inline-flex overflow-hidden rounded-md border"
         >
           {THEMES.map((option, index) => {
             const Icon = option.icon;

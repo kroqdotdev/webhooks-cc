@@ -1,4 +1,5 @@
 import type { LayoutTemplate } from "@/lib/layout-templates";
+import { Card } from "@/components/ui/card";
 
 /**
  * A sender page's picture of the idea: the email as it arrives, and what its
@@ -16,8 +17,8 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
   };
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[repeat(2,minmax(0,1fr))] gap-6 items-stretch">
-      <figure className="ui-card ui-card-static p-0! overflow-hidden flex flex-col">
-        <figcaption className="px-5 py-3 border-b border-border text-xs font-bold text-muted-foreground">
+      <Card className="p-0! overflow-hidden flex flex-col" render={<figure />}>
+        <figcaption className="px-5 py-3 border-b text-xs font-bold text-muted-foreground">
           The email
         </figcaption>
         <dl className="px-5 pt-4 text-sm grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
@@ -37,9 +38,9 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
         <pre className="flex-1 px-5 py-4 text-sm whitespace-pre-wrap font-sans leading-relaxed">
           {sample.text}
         </pre>
-      </figure>
-      <figure className="ui-card ui-card-static p-0! overflow-hidden flex flex-col">
-        <figcaption className="px-5 py-3 border-b border-border text-xs font-bold text-muted-foreground">
+      </Card>
+      <Card className="p-0! overflow-hidden flex flex-col" render={<figure />}>
+        <figcaption className="px-5 py-3 border-b text-xs font-bold text-muted-foreground">
           What your endpoint delivers
         </figcaption>
         {/* On phones the JSON scrolls in a shorter box, so the page reaches "How it works" sooner. */}
@@ -56,7 +57,7 @@ export function EmailToJson({ template }: { template: LayoutTemplate }) {
             {sample.attachment}.
           </p>
         )}
-      </figure>
+      </Card>
     </div>
   );
 }

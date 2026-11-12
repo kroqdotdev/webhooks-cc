@@ -145,85 +145,89 @@ export function SearchModal() {
           className="fixed left-1/2 top-[15vh] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border border-border bg-background shadow-float"
         >
           <DialogPrimitive.Title className="sr-only">Search documentation</DialogPrimitive.Title>
-        {/* Input */}
-        <div className="flex items-center border-b border-border px-4">
-          <Search className="h-5 w-5 text-muted-foreground shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => handleInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Search docs..."
-            aria-label="Search docs"
-            className="flex-1 px-3 py-3 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground"
-          />
-          <button
-            onClick={() => setOpen(false)}
-            type="button"
-            aria-label="Close search"
-            className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Results */}
-        {results.length > 0 && (
-          <ul className="max-h-80 overflow-y-auto py-2">
-            {results.map((result, i) => (
-              <li key={result.url}>
-                <button
-                  onClick={() => navigate(result.url)}
-                  type="button"
-                  className={cn(
-                    "w-full text-left px-4 py-3 cursor-pointer transition-colors",
-                    i === activeIndex ? "bg-muted border-l-4 border-l-primary" : "hover:bg-muted/50"
-                  )}
-                >
-                  <p className="font-bold text-sm">{result.title}</p>
-                  {result.section && (
-                    <p className="text-xs text-muted-foreground">{result.section}</p>
-                  )}
-                  <p
-                    className="text-sm text-muted-foreground mt-1 line-clamp-2 [&>mark]:bg-primary/20 [&>mark]:text-foreground"
-                    dangerouslySetInnerHTML={{ __html: result.excerpt }}
-                  />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Empty state */}
-        {query.length >= 2 && results.length === 0 && pagefind && (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No results for &ldquo;{query}&rdquo;
+          {/* Input */}
+          <div className="flex items-center border-b px-4">
+            <Search className="h-5 w-5 text-muted-foreground shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => handleInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Search docs..."
+              aria-label="Search docs"
+              className="flex-1 px-3 py-3 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground"
+            />
+            <button
+              onClick={() => setOpen(false)}
+              type="button"
+              aria-label="Close search"
+              className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-        )}
 
-        {/* Pagefind not loaded */}
-        {query.length >= 2 && !pagefind && (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            Search is available in production builds.
+          {/* Results */}
+          {results.length > 0 && (
+            <ul className="max-h-80 overflow-y-auto py-2">
+              {results.map((result, i) => (
+                <li key={result.url}>
+                  <button
+                    onClick={() => navigate(result.url)}
+                    type="button"
+                    className={cn(
+                      "w-full text-left px-4 py-3 cursor-pointer transition-colors",
+                      i === activeIndex
+                        ? "bg-muted border-l-4 border-l-primary"
+                        : "hover:bg-muted/50"
+                    )}
+                  >
+                    <p className="font-bold text-sm">{result.title}</p>
+                    {result.section && (
+                      <p className="text-xs text-muted-foreground">{result.section}</p>
+                    )}
+                    <p
+                      className="text-sm text-muted-foreground mt-1 line-clamp-2 [&>mark]:bg-primary/20 [&>mark]:text-foreground"
+                      dangerouslySetInnerHTML={{ __html: result.excerpt }}
+                    />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Empty state */}
+          {query.length >= 2 && results.length === 0 && pagefind && (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No results for &ldquo;{query}&rdquo;
+            </div>
+          )}
+
+          {/* Pagefind not loaded */}
+          {query.length >= 2 && !pagefind && (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              Search is available in production builds.
+            </div>
+          )}
+
+          {/* Footer hint */}
+          <div className="flex items-center gap-4 px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>
+              <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">↑↓</kbd>{" "}
+              navigate
+            </span>
+            <span>
+              <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">↵</kbd>{" "}
+              open
+            </span>
+            <span>
+              <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">
+                esc
+              </kbd>{" "}
+              close
+            </span>
           </div>
-        )}
-
-        {/* Footer hint */}
-        <div className="flex items-center gap-4 px-4 py-2 border-t border-border text-xs text-muted-foreground">
-          <span>
-            <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">↑↓</kbd>{" "}
-            navigate
-          </span>
-          <span>
-            <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">↵</kbd>{" "}
-            open
-          </span>
-          <span>
-            <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">esc</kbd>{" "}
-            close
-          </span>
-        </div>
         </DialogPrimitive.Popup>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

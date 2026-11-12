@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { useSite } from "@/components/providers/site-provider";
 import { NewEndpointForm, newEndpointDescription } from "@/components/dashboard/new-endpoint-form";
+import { Card } from "@/components/ui/card";
 
 export default function NewEndpointPage() {
   return (
@@ -23,7 +24,7 @@ function NewEndpoint() {
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 py-8 max-w-xl">
-        <div className="ui-card ui-card-static space-y-4">
+        <Card className="space-y-4">
           <div className="space-y-1.5">
             <h1 className="text-lg font-bold tracking-normal">Create endpoint</h1>
             <p className="text-sm text-muted-foreground">{newEndpointDescription(mailFirst)}</p>
@@ -31,17 +32,12 @@ function NewEndpoint() {
           <NewEndpointForm
             onCreated={(slug) => router.push(`/dashboard?endpoint=${slug}`)}
             cancel={
-              <Button
-                type="button"
-                variant="outline"
-                className="ui-btn-outline"
-                render={<Link href="/dashboard" />}
-              >
+              <Button type="button" variant="outline" raised render={<Link href="/dashboard" />}>
                 Cancel
               </Button>
             }
           />
-        </div>
+        </Card>
       </main>
     </div>
   );

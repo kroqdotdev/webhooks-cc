@@ -35,6 +35,8 @@ import { ShareRequestDialog } from "./share-request-dialog";
 import { ResponseAnswer } from "./response-answer";
 import { LiveResponseView } from "./live-response";
 import { readLiveResponse } from "@/lib/live-response";
+import { Button } from "@/components/ui/button";
+import { CodeBox } from "@/components/ui/code";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -269,7 +271,7 @@ export function RequestDetail({
     >
       {/* Summary bar */}
       {/* Sized by the pane, not the window: beside the list the pane can be narrow. */}
-      <div className="@container border-b border-border px-4 py-3 shrink-0">
+      <div className="@container border-b px-4 py-3 shrink-0">
         <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-4">
           <div className="min-w-0">
             <div className="font-mono font-bold text-sm break-all @xl:truncate">
@@ -296,10 +298,11 @@ export function RequestDetail({
           </div>
           {/* On phones every action is at least 36px tall (Share and Replay render their own buttons). */}
           <div className="flex items-center gap-2 shrink-0 max-md:[&_button]:min-h-9">
-            <button
+            <Button
+              variant="outlined"
+              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               ref={curlBtnRef}
               onClick={() => handleCopy(curlCommand, "curl")}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               {copied === "curl" ? (
                 <>
@@ -312,7 +315,7 @@ export function RequestDetail({
                   cURL
                 </>
               )}
-            </button>
+            </Button>
             {share && request.kind !== "email" && (
               <ShareRequestDialog
                 requestId={requestId}
@@ -353,7 +356,7 @@ export function RequestDetail({
                 {getFormatLabel(bodyFormat)}
               </span>
               {bodyViews.length > 1 && (
-                <div className="flex items-center overflow-hidden rounded-sm border border-border">
+                <div className="flex items-center overflow-hidden rounded-sm border">
                   {bodyViews.map((view, i) => (
                     <button
                       key={view}
@@ -393,23 +396,26 @@ export function RequestDetail({
                 copied={copied}
               />
             ) : parsedJson !== null && bodyView === "tree" ? (
-              <div className="ui-code overflow-x-auto p-3">
+              <CodeBox className="overflow-x-auto p-3">
                 <JsonTree data={parsedJson} />
-              </div>
+              </CodeBox>
             ) : (
-              <pre className="ui-code syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words">
+              <CodeBox
+                className="syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words"
+                render={<pre />}
+              >
                 {/* Safe: highlightBody escapes plain/form/text/binary output and Prism.highlight encodes token text for json/xml. */}
                 <code
                   className={`language-${highlightLanguage}`}
                   dangerouslySetInnerHTML={{ __html: highlightedBody }}
                 />
-              </pre>
+              </CodeBox>
             )}
           </div>
         )}
 
         {tab === "headers" && (
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <table className="text-sm font-mono w-full">
               <tbody>
                 {Object.entries(request.headers).map(([key, value]) => (
@@ -422,13 +428,13 @@ export function RequestDetail({
                 ))}
               </tbody>
             </table>
-          </div>
+          </CodeBox>
         )}
 
         {tab === "query" && (
           <div>
             {Object.keys(request.queryParams).length > 0 ? (
-              <div className="ui-code overflow-x-auto">
+              <CodeBox className="overflow-x-auto">
                 <table className="text-sm font-mono w-full">
                   <tbody>
                     {Object.entries(request.queryParams).map(([key, value]) => (
@@ -441,7 +447,7 @@ export function RequestDetail({
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </CodeBox>
             ) : (
               <p className="text-sm text-muted-foreground">This request had no query string.</p>
             )}
@@ -455,10 +461,11 @@ export function RequestDetail({
                 Raw body, {formatBytes(request.size)}
               </span>
               {request.body && (
-                <button
+                <Button
+                  variant="outlined"
+                  className="py-1! max-md:min-h-9 px-2.5! text-xs flex items-center gap-1.5"
                   type="button"
                   onClick={() => handleCopy(request.body ?? "", "raw")}
-                  className="ui-btn-outline py-1! max-md:min-h-9 px-2.5! text-xs flex items-center gap-1.5"
                 >
                   {copied === "raw" ? (
                     <Check className="h-3.5 w-3.5" />
@@ -466,12 +473,15 @@ export function RequestDetail({
                     <Copy className="h-3.5 w-3.5" />
                   )}
                   {copied === "raw" ? "Copied" : "Copy"}
-                </button>
+                </Button>
               )}
             </div>
-            <pre className="ui-code overflow-x-auto text-sm whitespace-pre-wrap break-all">
+            <CodeBox
+              className="overflow-x-auto text-sm whitespace-pre-wrap break-all"
+              render={<pre />}
+            >
               {request.body || "(empty body)"}
-            </pre>
+            </CodeBox>
           </div>
         )}
 
@@ -597,16 +607,17 @@ function BodyCopyDropdown({
 
   return (
     <div className="absolute top-0 right-0" ref={ref}>
-      <button
+      <Button
+        variant="outlined"
+        className="py-1! max-md:min-h-9 px-2! text-xs flex items-center gap-1"
         onClick={() => setOpen(!open)}
-        className="ui-btn-outline py-1! max-md:min-h-9 px-2! text-xs flex items-center gap-1"
       >
         {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         {isCopied ? "Copied!" : "Copy"}
         <ChevronDown className="h-3 w-3" />
-      </button>
+      </Button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border border-border bg-background shadow-float z-50 min-w-[180px]">
+        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border bg-background shadow-float z-50 min-w-[180px]">
           {options.map((opt, i) => (
             <button
               key={opt.key}
@@ -661,7 +672,7 @@ export function NoteBar({
     return (
       <button
         onClick={() => setEditing(true)}
-        className="border-b border-border px-4 py-1.5 max-md:py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
+        className="border-b px-4 py-1.5 max-md:py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
       >
         <StickyNote className="h-3 w-3" />
         Add note...
@@ -671,7 +682,7 @@ export function NoteBar({
 
   if (editing) {
     return (
-      <div className="border-b border-border px-4 py-1.5 max-md:min-h-9 flex items-center gap-2 shrink-0">
+      <div className="border-b px-4 py-1.5 max-md:min-h-9 flex items-center gap-2 shrink-0">
         <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
         <input
           ref={inputRef}
@@ -697,7 +708,7 @@ export function NoteBar({
   }
 
   return (
-    <div className="border-b border-border px-4 py-1.5 max-md:py-0 flex items-center gap-2 shrink-0 group">
+    <div className="border-b px-4 py-1.5 max-md:py-0 flex items-center gap-2 shrink-0 group">
       <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
       <button
         type="button"
@@ -755,31 +766,34 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
         {/* Quick actions */}
         <div className="flex items-center justify-center gap-2 flex-wrap">
           {onSendTest && (
-            <button
+            <Button
+              variant="outlined"
+              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               onClick={onSendTest}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               <Send className="h-3 w-3" />
               Send Test
-            </button>
+            </Button>
           )}
           {url && (
-            <button
+            <Button
+              variant="outlined"
+              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               onClick={handleCopy}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               {copied ? <Check className="h-3 w-3" /> : <LinkIcon className="h-3 w-3" />}
               {copied ? "Copied!" : "Copy URL"}
-            </button>
+            </Button>
           )}
           {onOpenSettings && (
-            <button
+            <Button
+              variant="outlined"
+              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               onClick={onOpenSettings}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               <Settings className="h-3 w-3" />
               Settings
-            </button>
+            </Button>
           )}
         </div>
 
@@ -815,18 +829,19 @@ function BinaryBody({ bytes, id }: { bytes: Uint8Array<ArrayBuffer>; id: string 
           Binary body, {formatBytes(bytes.length)}.
           {bytes.length > HEX_PREVIEW_BYTES ? ` Showing the first ${HEX_PREVIEW_BYTES} bytes.` : ""}
         </span>
-        <button
+        <Button
+          variant="outlined"
+          className="py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={download}
-          className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
         >
           <Download className="h-3.5 w-3.5" />
           Download body
-        </button>
+        </Button>
       </div>
-      <pre className="ui-code overflow-x-auto text-xs leading-relaxed">
+      <CodeBox className="overflow-x-auto text-xs leading-relaxed" render={<pre />}>
         {hexDump(bytes, HEX_PREVIEW_BYTES)}
-      </pre>
+      </CodeBox>
     </div>
   );
 }

@@ -53,6 +53,8 @@ import {
   WEB_VERIFICATION_PROVIDER_OPTIONS,
 } from "@/lib/provider-catalog";
 import { stableStringify } from "@/lib/stable-json";
+import { FieldControl } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
 
 export type { SettingsSection } from "./settings-primitives";
 
@@ -209,13 +211,13 @@ function ReceivingSection({
       }
     >
       <Field id="settings-name" label="Name">
-        <input
+        <FieldControl
+          className="w-full text-sm py-2!"
           id="settings-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={endpoint.slug}
           maxLength={100}
-          className="ui-input w-full text-sm py-2!"
         />
       </Field>
       {twoSites() &&
@@ -416,7 +418,7 @@ function SharingSection({ endpointId }: { endpointId: string }) {
                 onClick={() => void toggle(team.id, isShared)}
                 disabled={toggling === team.id}
                 className={cn(
-                  "text-xs px-2.5 py-1 border border-border rounded-md transition-colors cursor-pointer",
+                  "text-xs px-2.5 py-1 border rounded-md transition-colors cursor-pointer",
                   isShared ? "bg-selected text-selected-foreground" : "hover:bg-muted"
                 )}
               >
@@ -530,7 +532,8 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         >
           <SelectTrigger
             id="settings-signing-provider"
-            className="ui-input w-full text-sm h-auto py-2!"
+            field
+            className="w-full text-sm h-auto py-2!"
           >
             <SelectValue />
           </SelectTrigger>
@@ -555,7 +558,8 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
           }
         >
           <div className="flex gap-2">
-            <input
+            <FieldControl
+              className="flex-1 text-sm font-mono py-2!"
               id="settings-signing-secret"
               type="password"
               value={secret}
@@ -565,32 +569,32 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
                   ? "Enter a new secret to replace it"
                   : (info?.secretPlaceholder ?? "Paste the secret here")
               }
-              className="ui-input flex-1 text-sm font-mono py-2!"
             />
             {hasSecret && (
-              <button
+              <Button
+                variant="outlined"
+                className="py-1.5! px-3! text-xs shrink-0"
                 type="button"
                 onClick={() => {
                   setProvider("");
                   setSecret("");
                   setHasSecret(false);
                 }}
-                className="ui-btn-outline py-1.5! px-3! text-xs shrink-0"
               >
                 Clear
-              </button>
+              </Button>
             )}
           </div>
         </Field>
       )}
       {provider === "generic-hmac" && (
         <Field id="settings-signing-header" label="Signature header">
-          <input
+          <FieldControl
+            className="w-full text-sm font-mono py-2!"
             id="settings-signing-header"
             value={header}
             onChange={(e) => setHeader(e.target.value)}
             placeholder="x-my-signature"
-            className="ui-input w-full text-sm font-mono py-2!"
           />
         </Field>
       )}
@@ -673,35 +677,38 @@ function DeleteSection({
               the first one landed cannot delete. */}
           {confirmArmed ? (
             <>
-              <button
+              <Button
+                variant="outlined"
                 key="confirm"
+                className="py-1.5! px-3! text-xs bg-destructive! text-destructive-foreground! border-destructive!"
                 type="button"
                 onClick={() => void onDelete()}
                 disabled={deleting}
-                className="ui-btn-outline py-1.5! px-3! text-xs bg-destructive! text-destructive-foreground! border-destructive!"
               >
                 {deleting ? "Deleting..." : "Delete for good"}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outlined"
                 key="cancel"
+                className="py-1.5! px-3! text-xs min-w-30"
                 ref={keepRef}
                 type="button"
                 onClick={cancelConfirm}
                 disabled={deleting}
-                className="ui-btn-outline py-1.5! px-3! text-xs min-w-30"
               >
                 Cancel
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
+              variant="outlined"
               key="arm"
+              className="py-1.5! px-3! text-xs text-destructive-ink"
               type="button"
               onClick={armConfirm}
-              className="ui-btn-outline py-1.5! px-3! text-xs text-destructive-ink"
             >
               Delete endpoint
-            </button>
+            </Button>
           )}
         </>
       }
@@ -946,7 +953,7 @@ export function EndpointSettingsPanel({
     <div className="flex-1 flex flex-col md:flex-row min-h-0">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 md:w-56 md:border-r md:border-border border-b border-border md:border-b-0 px-4 py-2 md:p-3"
+        className="shrink-0 md:w-56 md:border-r md:border-border border-b md:border-b-0 px-4 py-2 md:p-3"
       >
         {/* Ten sections do not fit a phone's width, and wrapped they take four
             rows, so phones pick the section from a list instead. */}
@@ -1054,27 +1061,29 @@ export function EndpointSettingsPanel({
                   ? `Unsaved changes in ${dirty[0].title}`
                   : `Unsaved changes in ${dirty.length} sections`}
               </p>
-              <button
+              <Button
+                variant="outlined"
+                className="py-1.5! px-3! text-xs"
                 type="button"
                 onClick={() => jump(dirty[0].id as SettingsSection)}
                 aria-label="Review unsaved changes"
-                className="ui-btn-outline py-1.5! px-3! text-xs"
               >
                 Review
-              </button>
+              </Button>
               {dirty.length === 1 && dirty[0].save && (
-                <button
+                <Button
+                  variant="primary"
+                  className={cn(
+                    "py-1.5! px-3! text-xs",
+                    barSaving && "opacity-50 cursor-not-allowed"
+                  )}
                   type="button"
                   onClick={() => void saveFromBar()}
                   disabled={barSaving}
                   aria-label={`Save ${dirty[0].title}`}
-                  className={cn(
-                    "ui-btn-primary py-1.5! px-3! text-xs",
-                    barSaving && "opacity-50 cursor-not-allowed"
-                  )}
                 >
                   {barSaving ? "Saving..." : "Save"}
-                </button>
+                </Button>
               )}
             </div>
           )}

@@ -12,6 +12,9 @@ import {
   type AiAssistInfo,
   type AiAssistResult,
 } from "@/lib/dashboard-api";
+import { FieldControl } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
+import { CodeBox } from "@/components/ui/code";
 
 /** At most this many emails go to the model in one ask. */
 const MAX_SAMPLES = 5;
@@ -152,11 +155,7 @@ export function AiAssistPanel({
         : `Fix ${mode.field.name} with AI`;
 
   return (
-    <div
-      className="border border-border rounded-md p-3 space-y-3 bg-card"
-      role="region"
-      aria-label={title}
-    >
+    <div className="border rounded-md p-3 space-y-3 bg-card" role="region" aria-label={title}>
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-semibold inline-flex items-center gap-1.5">
           <Sparkles className="h-4 w-4" /> {title}
@@ -176,31 +175,31 @@ export function AiAssistPanel({
         <>
           {mode.kind === "field" && (
             <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
-              <input
+              <FieldControl
+                className="text-sm py-1.5! font-mono"
                 aria-label="Field name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="order"
-                className="ui-input text-sm py-1.5! font-mono"
               />
-              <input
+              <FieldControl
+                className="text-sm py-1.5!"
                 aria-label="What it is"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="The order number, after Order #"
                 maxLength={500}
-                className="ui-input text-sm py-1.5!"
               />
             </div>
           )}
           {mode.kind === "layout" && (
-            <input
+            <FieldControl
+              className="w-full text-sm py-1.5!"
               aria-label="What to read"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional: what you need from them, such as order, total and tracking number"
               maxLength={500}
-              className="ui-input w-full text-sm py-1.5!"
             />
           )}
 
@@ -245,14 +244,15 @@ export function AiAssistPanel({
           </label>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            <Button
+              variant="primary"
+              className="py-1.5! px-3! text-xs"
               type="button"
               disabled={busy || adding !== null || !consent || picked.length === 0 || left === 0}
               onClick={() => void ask()}
-              className="ui-btn-primary py-1.5! px-3! text-xs"
             >
               {busy ? "Asking..." : "Propose"}
-            </button>
+            </Button>
             {info && <span className="text-xs text-muted-foreground">{assistsLeftText(info)}</span>}
           </div>
         </>
@@ -296,11 +296,16 @@ export function AiAssistPanel({
                       <span className="text-xs text-muted-foreground">
                         from {field.from === "header" ? `header ${field.header}` : field.from}
                       </span>
-                      <code className="ui-code text-xs px-1.5 py-0.5 shadow-none! break-all">
+                      <CodeBox
+                        className="text-xs px-1.5 py-0.5 shadow-none! break-all"
+                        render={<code />}
+                      >
                         {field.pattern}
-                      </code>
+                      </CodeBox>
                       {mode.kind !== "layout" && onAddField && (
-                        <button
+                        <Button
+                          variant="outlined"
+                          className="py-0.5! px-2! text-xs ml-auto"
                           type="button"
                           disabled={added.has(field.name) || adding === field.name}
                           onClick={async () => {
@@ -314,14 +319,13 @@ export function AiAssistPanel({
                               setAdding(null);
                             }
                           }}
-                          className="ui-btn-outline py-0.5! px-2! text-xs ml-auto"
                         >
                           {added.has(field.name)
                             ? "Added"
                             : mode.kind === "repair"
                               ? "Use this pattern"
                               : "Add field"}
-                        </button>
+                        </Button>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -337,7 +341,9 @@ export function AiAssistPanel({
                 ))}
               </ul>
               {mode.kind === "layout" && onUseLayout && result.match && (
-                <button
+                <Button
+                  variant="outlined"
+                  className="py-1! px-2.5! text-xs"
                   type="button"
                   onClick={() => {
                     onUseLayout({
@@ -347,10 +353,9 @@ export function AiAssistPanel({
                     });
                     onClose();
                   }}
-                  className="ui-btn-outline py-1! px-2.5! text-xs"
                 >
                   Add this layout
-                </button>
+                </Button>
               )}
             </>
           )}

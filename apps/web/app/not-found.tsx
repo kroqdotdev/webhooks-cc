@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DashboardLinkIfSignedIn } from "@/components/nav/dashboard-link-if-signed-in";
 import { SiteHeader } from "@/components/nav/site-header";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   // Absolute: this page serves both sites, so no site name is appended.
@@ -21,15 +22,15 @@ export default function NotFound() {
           </p>
           <nav className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <DashboardLinkIfSignedIn />
-            <Link href="/" className="ui-btn-primary">
+            <Button variant="primary" render={<Link href="/" />}>
               Home
-            </Link>
-            <Link href="/docs" className="ui-btn">
+            </Button>
+            <Button variant="hairline" render={<Link href="/docs" />}>
               Docs
-            </Link>
-            <Link href="/blog" className="ui-btn">
+            </Button>
+            <Button variant="hairline" render={<Link href="/blog" />}>
               Blog
-            </Link>
+            </Button>
           </nav>
         </div>
       </main>

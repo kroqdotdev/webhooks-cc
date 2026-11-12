@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { groupedTemplates } from "@/lib/layout-template-groups";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
+import { Card } from "@/components/ui/card";
 
 export const metadata = mailhooksMetadata({
   title: "Parse emails from the senders you use",
@@ -35,7 +36,11 @@ export default function SendersIndex() {
                   <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {group.templates.map((template) => (
                       <li key={template.id}>
-                        <Link href={`/parse/${template.id}`} className="ui-card block h-full">
+                        <Card
+                          interactive
+                          className="block h-full"
+                          render={<Link href={`/parse/${template.id}`} />}
+                        >
                           <p className="text-xs font-bold text-muted-foreground mb-2">
                             {template.sender}
                           </p>
@@ -45,7 +50,7 @@ export default function SendersIndex() {
                             See the layout
                             <ArrowRight className="h-4 w-4" aria-hidden />
                           </span>
-                        </Link>
+                        </Card>
                       </li>
                     ))}
                   </ul>

@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/dashboard-api";
 import { SectionIdentityContext, useReportDirty } from "./dirty-sections";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 /**
  * The building blocks every section of the endpoint settings shares: the
@@ -53,15 +55,16 @@ export function Section({
   const identity = useMemo(() => ({ id, title }), [id, title]);
   return (
     <SectionIdentityContext.Provider value={identity}>
-      <section
-        ref={sectionRef}
-        id={`settings-${id}`}
-        aria-labelledby={`settings-${id}-title`}
-        data-settings-section={id}
-        className={cn(
-          "ui-card ui-card-static p-0! scroll-mt-4 overflow-hidden",
-          danger && "border-destructive"
-        )}
+      <Card
+        className={cn("p-0! scroll-mt-4 overflow-hidden", danger && "border-destructive")}
+        render={
+          <section
+            ref={sectionRef}
+            id={`settings-${id}`}
+            aria-labelledby={`settings-${id}-title`}
+            data-settings-section={id}
+          />
+        }
       >
         <div className="p-5 space-y-4">
           <div>
@@ -82,12 +85,12 @@ export function Section({
           // data-section-footer lets the panel tell when this save is in view.
           <div
             data-section-footer={id}
-            className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-border bg-muted/40 has-[[data-save-idle]]:hidden"
+            className="flex flex-wrap items-center gap-3 px-5 py-3 border-t bg-muted/40 has-[[data-save-idle]]:hidden"
           >
             {footer}
           </div>
         )}
-      </section>
+      </Card>
     </SectionIdentityContext.Provider>
   );
 }
@@ -211,22 +214,28 @@ export function SaveFooter({
         {error ?? (dirty ? hint : saved ? "Saved." : "")}
       </p>
       {dirty && (
-        <button type="button" onClick={onReset} className="ui-btn-outline py-1.5! px-3! text-xs">
+        <Button
+          variant="outlined"
+          className="py-1.5! px-3! text-xs"
+          type="button"
+          onClick={onReset}
+        >
           Cancel
-        </button>
+        </Button>
       )}
       {showSave && (
-        <button
+        <Button
+          variant="primary"
+          className={cn(
+            "py-1.5! px-3! text-xs",
+            (!dirty || saving) && "opacity-50 cursor-not-allowed"
+          )}
           type="button"
           onClick={onSave}
           disabled={!dirty || saving}
-          className={cn(
-            "ui-btn-primary py-1.5! px-3! text-xs",
-            (!dirty || saving) && "opacity-50 cursor-not-allowed"
-          )}
         >
           {saving ? "Saving..." : "Save changes"}
-        </button>
+        </Button>
       )}
     </>
   );
@@ -258,7 +267,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center border border-border rounded-full cursor-pointer transition-colors motion-reduce:transition-none",
+        "relative inline-flex h-6 w-11 shrink-0 items-center border rounded-full cursor-pointer transition-colors motion-reduce:transition-none",
         "disabled:cursor-not-allowed disabled:opacity-60",
         // Off, the track takes the control boundary colour so it reads at 3:1.
         checked ? "bg-primary" : "bg-muted border-input"
@@ -266,7 +275,7 @@ export function Switch({
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 border border-border transition-transform motion-reduce:transition-none rounded-full",
+          "inline-block h-4 w-4 border transition-transform motion-reduce:transition-none rounded-full",
           checked ? "translate-x-5.5 bg-card" : "translate-x-0.5 bg-muted-foreground/70"
         )}
       />
@@ -365,7 +374,7 @@ export function Segmented<T extends string>({
       role="radiogroup"
       aria-label={name}
       className={cn(
-        "inline-flex max-w-full overflow-x-auto [scrollbar-width:none] rounded-sm border border-border bg-background",
+        "inline-flex max-w-full overflow-x-auto [scrollbar-width:none] rounded-sm border bg-background",
         stack && "max-sm:flex max-sm:flex-col max-sm:w-full",
         className
       )}

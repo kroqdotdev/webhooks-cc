@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
+import { Button } from "@/components/ui/button";
 
 // An unknown, revoked or expired share link. The page's metadata (robots
 // noindex) covers this segment, and Next adds noindex to every 404 as well;
@@ -15,9 +16,9 @@ export default function SharedRequestNotFound() {
           <p className="text-muted-foreground mb-8">
             It expired, or the person who shared it revoked it. Ask them for a new link.
           </p>
-          <Link href="/" className="ui-btn-primary">
+          <Button variant="primary" render={<Link href="/" />}>
             Home
-          </Link>
+          </Button>
         </div>
       </main>
     </div>

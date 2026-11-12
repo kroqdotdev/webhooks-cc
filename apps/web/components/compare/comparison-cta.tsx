@@ -7,6 +7,8 @@ import {
   SupabaseAuthProvider,
   useIsAuthenticated,
 } from "@/components/providers/supabase-auth-provider";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const DEFAULT_HEADING = "Start testing webhooks in under a minute";
 
@@ -32,19 +34,20 @@ function ComparisonCTAInner({ compact, heading }: { compact: boolean; heading: s
   // HTML; authenticated visitors see it swap to the dashboard link.
   if (compact) {
     return (
-      <div className="ui-card ui-card-static bg-card mb-10 flex flex-col sm:flex-row sm:items-center gap-4">
+      <Card className="bg-card mb-10 flex flex-col sm:flex-row sm:items-center gap-4">
         <p className="font-bold shrink-0">Try it yourself</p>
         {isAuthenticated ? (
-          <Link href="/dashboard" className="ui-btn-primary text-sm">
+          <Button variant="primary" className="text-sm" render={<Link href="/dashboard" />}>
             Go to Dashboard
             <ArrowRight className="inline-block ml-1.5 h-4 w-4" />
-          </Link>
+          </Button>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <OAuthSignInButtons
               redirectTo="/dashboard"
               layout="horizontal"
-              buttonClassName="h-10 text-sm px-4 ui-btn-outline cursor-pointer"
+              raised
+              buttonClassName="h-10 text-sm px-4"
             />
             <span className="text-sm text-muted-foreground">
               or{" "}
@@ -57,28 +60,29 @@ function ComparisonCTAInner({ compact, heading }: { compact: boolean; heading: s
             </span>
           </div>
         )}
-      </div>
+      </Card>
     );
   }
 
   return (
-    <section className="ui-card ui-card-static bg-card mt-12">
+    <Card className="bg-card mt-12" render={<section />}>
       <h2 className="text-2xl font-bold mb-2">{heading}</h2>
       <p className="text-muted-foreground mb-5">
         Sign up with one click. No credit card, no setup wizard, no trial limits on core features.
       </p>
 
       {isAuthenticated ? (
-        <Link href="/dashboard" className="ui-btn-primary">
+        <Button variant="primary" render={<Link href="/dashboard" />}>
           Go to Dashboard
           <ArrowRight className="inline-block ml-2 h-5 w-5" />
-        </Link>
+        </Button>
       ) : (
         <div className="space-y-4">
           <OAuthSignInButtons
             redirectTo="/dashboard"
             layout="horizontal"
-            buttonClassName="h-11 text-base px-5 ui-btn-outline cursor-pointer"
+            raised
+            buttonClassName="h-11 text-base px-5"
           />
           <p className="text-sm text-muted-foreground">
             or{" "}
@@ -92,6 +96,6 @@ function ComparisonCTAInner({ compact, heading }: { compact: boolean; heading: s
           </p>
         </div>
       )}
-    </section>
+    </Card>
   );
 }

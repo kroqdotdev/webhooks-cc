@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
+import { CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 export const metadata = createPageMetadata({
   title: "Webhook Testing Tools Compared: Features & Pricing (2026)",
@@ -342,10 +344,10 @@ function Checklist({
   matrix: readonly (readonly [string, ...string[]])[];
 }) {
   return (
-    <div className="ui-code overflow-x-auto mb-3">
+    <CodeBox className="overflow-x-auto mb-3">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border">
+          <tr className="border-b">
             <th scope="col" className="text-left py-2.5 pr-4 font-bold">
               Feature
             </th>
@@ -381,7 +383,7 @@ function Checklist({
           ))}
         </tbody>
       </table>
-    </div>
+    </CodeBox>
   );
 }
 
@@ -424,14 +426,14 @@ export default function CompareIndexPage() {
 
         <div className="space-y-4">
           {COMPARISONS.map((item) => (
-            <Link
+            <Card
               key={item.href}
-              href={item.href}
-              className="ui-card ui-card-static block transition-colors hover:bg-muted"
+              className="block transition-colors hover:bg-muted"
+              render={<Link href={item.href} />}
             >
               <h2 className="text-xl font-bold mb-2">{item.title}</h2>
               <p className="text-muted-foreground">{item.summary}</p>
-            </Link>
+            </Card>
           ))}
         </div>
 
@@ -453,14 +455,14 @@ export default function CompareIndexPage() {
         </p>
         <div className="space-y-4">
           {EMAIL_COMPARISONS.map((item) => (
-            <Link
+            <Card
               key={item.href}
-              href={item.href}
-              className="ui-card ui-card-static block transition-colors hover:bg-muted"
+              className="block transition-colors hover:bg-muted"
+              render={<Link href={item.href} />}
             >
               <h3 className="text-xl font-bold mb-2">{item.title}</h3>
               <p className="text-muted-foreground">{item.summary}</p>
-            </Link>
+            </Card>
           ))}
         </div>
 

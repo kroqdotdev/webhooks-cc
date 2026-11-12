@@ -622,7 +622,7 @@ function TeamDetailContent() {
               <table className="w-full text-sm">
                 <caption className="sr-only">Members and pending invites</caption>
                 <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <tr className="border-b text-left text-xs text-muted-foreground">
                     <th scope="col" className="px-5 py-2.5 font-medium">
                       Person
                     </th>
@@ -754,7 +754,7 @@ function TeamDetailContent() {
             </div>
           )}
           {membersError && (
-            <div className="border-t border-border px-5 py-3">
+            <div className="border-t px-5 py-3">
               <InlineMessage tone="error">{membersError}</InlineMessage>
             </div>
           )}
@@ -860,7 +860,7 @@ function TeamDetailContent() {
             </ul>
           )}
           {endpointsError && (
-            <div className="border-t border-border px-5 py-3">
+            <div className="border-t px-5 py-3">
               <InlineMessage tone="error">{endpointsError}</InlineMessage>
             </div>
           )}

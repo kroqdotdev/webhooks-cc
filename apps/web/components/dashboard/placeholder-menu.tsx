@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 
 /**
  * "Insert field": a menu of `{{ ... }}` placeholders for a template input,
@@ -135,16 +136,17 @@ export function PlaceholderMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <button
+          <Button
+            variant="outlined"
+            className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
             type="button"
-            className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
           />
         }
       >
         <Braces className="h-3 w-3" />
         {label}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 border border-border shadow-float">
+      <DropdownMenuContent align="start" className="w-64 border shadow-float">
         {groups.map((group, index) => (
           <div key={group.label}>
             {index > 0 && <DropdownMenuSeparator />}

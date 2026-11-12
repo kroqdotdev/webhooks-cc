@@ -1,6 +1,8 @@
 import { FeaturePage } from "@/components/mailhooks/feature-page";
 import { mailhooksFeature } from "@/lib/mailhooks-features";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
+import { Card } from "@/components/ui/card";
+import { CodeBox } from "@/components/ui/code";
 
 const feature = mailhooksFeature("/file-drops");
 
@@ -53,10 +55,10 @@ export default function FileDropsPage() {
         <h2 className="text-2xl md:text-3xl font-bold mb-6">Where the files go</h2>
         <div className="grid md:grid-cols-3 gap-4">
           {SERVERS.map((server) => (
-            <div key={server.name} className="ui-card ui-card-static">
+            <Card key={server.name}>
               <h3 className="font-bold mb-1.5">{server.name}</h3>
               <p className="text-sm text-muted-foreground">{server.text}</p>
-            </div>
+            </Card>
           ))}
         </div>
         <p className="text-sm text-muted-foreground mt-4">
@@ -76,16 +78,16 @@ export default function FileDropsPage() {
         </p>
         <p className="font-mono text-sm mb-3 break-all">orders-20261029-173326-3f2a9c1e.csv</p>
         <div className="grid md:grid-cols-2 gap-4">
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{CSV_SAMPLE}</code>
             </pre>
-          </div>
-          <div className="ui-code overflow-x-auto">
+          </CodeBox>
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{XML_SAMPLE}</code>
             </pre>
-          </div>
+          </CodeBox>
         </div>
         <p className="text-sm text-muted-foreground mt-4">
           A CSV cell that a spreadsheet would read as a formula is written as text. JSON files hold

@@ -245,7 +245,7 @@ export function SharesPage({ accessToken }: { accessToken: string | null }) {
           </ul>
         )}
         {live.length > 0 && (
-          <div className="border-t border-border px-5 py-3">
+          <div className="border-t px-5 py-3">
             <p className="mb-1 text-xs text-muted-foreground">Share another port:</p>
             <CommandBlock command="whk share 3000" />
           </div>

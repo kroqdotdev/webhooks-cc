@@ -7,6 +7,8 @@ import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { mailhooksMetadata } from "@/lib/mailhooks-seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 import { webhooksOrigin } from "@/lib/site";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export const metadata = mailhooksMetadata({
   title: "Pricing",
@@ -115,12 +117,13 @@ export default function MailhooksPricing() {
           {/* Equal-height cards: the buttons line up along the bottom. */}
           <div className="grid md:grid-cols-3 gap-6">
             {PLANS.map((plan) => (
-              <div
+              <Card
                 key={plan.name}
-                className={`ui-card relative flex flex-col ${plan.name === "Business" ? "border-primary" : ""}`}
+                interactive
+                className={`relative flex flex-col ${plan.name === "Business" ? "border-primary" : ""}`}
               >
                 {plan.name === "Business" && (
-                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border border-border rounded-sm shadow-surface">
+                  <span className="absolute -top-3 right-4 bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-bold border rounded-sm shadow-surface">
                     Best for parsing
                   </span>
                 )}
@@ -148,11 +151,11 @@ export default function MailhooksPricing() {
                     primary={plan.name === "Business"}
                   />
                 )}
-              </div>
+              </Card>
             ))}
           </div>
 
-          <div className="ui-card ui-card-static mt-8">
+          <Card className="mt-8">
             <h2 className="font-bold text-xl mb-2">Teams</h2>
             <p className="text-muted-foreground mb-4">
               Share endpoints with the people you work with. From 2 seats, billed per team.
@@ -176,10 +179,14 @@ export default function MailhooksPricing() {
                 </span>
               </li>
             </ul>
-            <Link href={`${webhooksOrigin()}/for-teams`} className="ui-btn-outline inline-block">
+            <Button
+              variant="outlined"
+              className="inline-block"
+              render={<Link href={`${webhooksOrigin()}/for-teams`} />}
+            >
               About teams
-            </Link>
-          </div>
+            </Button>
+          </Card>
 
           <section className="mt-20 max-w-3xl mx-auto">
             <h2 className="text-3xl font-bold mb-8 text-center">Questions</h2>

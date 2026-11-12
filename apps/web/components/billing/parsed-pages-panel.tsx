@@ -16,6 +16,7 @@ import { changeCapacity, fetchCapacity } from "@/lib/capacity-api";
 import type { CapacityAction } from "@/lib/capacity-route";
 import type { CapacityState } from "@/lib/supabase/capacity-billing";
 import { formatCents } from "@/lib/team-pricing";
+import { FieldControl } from "@/components/ui/field";
 
 /** Page overage maximums offered, in thousands of pages ($10 each). */
 const OVERAGE_MAX_OPTIONS = [2, 5, 10, 25, 50, 100];
@@ -202,7 +203,8 @@ export function ParsedPagesPanel({
             hint={`${formatCents(MONTHLY_PAGE_BLOCK_CENTS)} per 1,000 pages a month, renewed with your plan. Adding blocks charges them in full now; fewer apply at the renewal.`}
           >
             <div className="flex flex-wrap items-center gap-2">
-              <input
+              <FieldControl
+                className="w-24 text-sm py-1.5!"
                 id="monthly-page-blocks"
                 type="number"
                 min={0}
@@ -212,7 +214,6 @@ export function ParsedPagesPanel({
                   monthlyEdited.current = true;
                   setMonthly(e.target.value);
                 }}
-                className="ui-input w-24 text-sm py-1.5!"
               />
               <span className="text-sm text-muted-foreground">
                 x 1,000 pages (
@@ -249,14 +250,14 @@ export function ParsedPagesPanel({
             hint={`${formatCents(ONE_TIME_PAGE_BLOCK_CENTS)} per 1,000 pages. Used after your monthly pages, and kept until used.`}
           >
             <div className="flex flex-wrap items-center gap-2">
-              <input
+              <FieldControl
+                className="w-24 text-sm py-1.5!"
                 id="one-time-page-blocks"
                 type="number"
                 min={1}
                 max={MAX_PAGE_BLOCKS}
                 value={oneTime}
                 onChange={(e) => setOneTime(e.target.value)}
-                className="ui-input w-24 text-sm py-1.5!"
               />
               <span className="text-sm text-muted-foreground">x 1,000 pages</span>
               <Button
@@ -276,11 +277,15 @@ export function ParsedPagesPanel({
             hint="Pages past everything else, at $0.01 each, billed at the end of the period, up to the most you set."
           >
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                id="page-overage-max"
-                value={overageMax}
-                onChange={(e) => setOverageMax(e.target.value)}
-                className="ui-input text-sm py-1.5!"
+              <FieldControl
+                className="text-sm py-1.5!"
+                render={
+                  <select
+                    id="page-overage-max"
+                    value={overageMax}
+                    onChange={(e) => setOverageMax(e.target.value)}
+                  />
+                }
               >
                 {OVERAGE_MAX_OPTIONS.map((thousands) => (
                   <option key={thousands} value={String(thousands)}>
@@ -288,7 +293,7 @@ export function ParsedPagesPanel({
                     {formatCents(thousands * BLOCK_PAGES * PAGE_OVERAGE_CENTS)})
                   </option>
                 ))}
-              </select>
+              </FieldControl>
               <Button
                 size="sm"
                 variant={

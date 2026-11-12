@@ -11,6 +11,7 @@ import type { AccountDetail, AccountSummary } from "@/lib/ops/accounts";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
 import { AccountSharingPanel } from "./sharing";
+import { Card } from "@/components/ui/card";
 
 const count = new Intl.NumberFormat("en-US");
 
@@ -60,9 +61,9 @@ export function AccountSearch() {
       ) : results.length === 0 ? (
         <p className="text-sm text-muted-foreground">No account matches.</p>
       ) : (
-        <ul className="ui-card ui-card-static p-0! overflow-hidden ph-no-capture">
+        <Card className="p-0! overflow-hidden ph-no-capture" render={<ul />}>
           {results.map((account) => (
-            <li key={account.id} className="border-t border-border first:border-t-0">
+            <li key={account.id} className="border-t first:border-t-0">
               <Link
                 href={`/ops/accounts/${account.id}`}
                 className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 px-4 py-2.5 text-sm hover:bg-muted/60"
@@ -78,7 +79,7 @@ export function AccountSearch() {
               </Link>
             </li>
           ))}
-        </ul>
+        </Card>
       )}
     </div>
   );
@@ -196,7 +197,7 @@ export function AccountInspector({ id }: { id: string }) {
         {/* The tab's own column; the aside is the whole account's. */}
         <TabsPanel value={tab} className="min-w-0 space-y-4">
           {(tab === "overview" || tab === "endpoints") && (
-            <div className="ui-card ui-card-static p-0! overflow-x-auto">
+            <Card className="p-0! overflow-x-auto">
               {account.endpoints.length === 0 ? (
                 <p className="p-4 text-sm text-muted-foreground">No endpoints.</p>
               ) : (
@@ -223,7 +224,7 @@ export function AccountInspector({ id }: { id: string }) {
                   <tbody className="ph-no-capture">
                     {(tab === "overview" ? account.endpoints.slice(0, 8) : account.endpoints).map(
                       (endpoint) => (
-                        <tr key={endpoint.id} className="border-t border-border">
+                        <tr key={endpoint.id} className="border-t">
                           <th scope="row" className="px-3 py-2 text-left font-normal">
                             <span className="font-mono text-xs">{endpoint.slug}</span>
                             {endpoint.name && (
@@ -256,7 +257,7 @@ export function AccountInspector({ id }: { id: string }) {
                   </tbody>
                 </table>
               )}
-            </div>
+            </Card>
           )}
 
           {tab === "overview" && !account.activeGrant && (
@@ -268,7 +269,7 @@ export function AccountInspector({ id }: { id: string }) {
           )}
 
           {tab === "billing" && (
-            <dl className="ui-card ui-card-static grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+            <Card className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm" render={<dl />}>
               <dt className="text-muted-foreground">Plan</dt>
               <dd>
                 {planName(account.plan)}
@@ -295,18 +296,18 @@ export function AccountInspector({ id }: { id: string }) {
               <dd className="tabular-nums">{quota}</dd>
               <dt className="text-muted-foreground">Overage</dt>
               <dd>{account.billing.overageActive ? "On" : "Off"}</dd>
-            </dl>
+            </Card>
           )}
 
           {tab === "activity" && (
-            <ul className="ui-card ui-card-static p-0! overflow-hidden text-sm">
+            <Card className="p-0! overflow-hidden text-sm" render={<ul />}>
               {account.activity.length === 0 ? (
                 <li className="p-4 text-muted-foreground">No recorded actions.</li>
               ) : (
                 account.activity.map((entry, index) => (
                   <li
                     key={index}
-                    className="flex justify-between gap-4 border-t border-border px-4 py-2 first:border-t-0"
+                    className="flex justify-between gap-4 border-t px-4 py-2 first:border-t-0"
                   >
                     <span className="font-mono text-xs">
                       {entry.action}
@@ -321,16 +322,16 @@ export function AccountInspector({ id }: { id: string }) {
                   </li>
                 ))
               )}
-            </ul>
+            </Card>
           )}
 
           {tab === "tickets" && (
-            <ul className="ui-card ui-card-static p-0! overflow-hidden text-sm ph-no-capture">
+            <Card className="p-0! overflow-hidden text-sm ph-no-capture" render={<ul />}>
               {account.tickets.length === 0 ? (
                 <li className="p-4 text-muted-foreground">No tickets.</li>
               ) : (
                 account.tickets.map((ticket) => (
-                  <li key={ticket.id} className="border-t border-border first:border-t-0">
+                  <li key={ticket.id} className="border-t first:border-t-0">
                     <Link
                       href={`/ops/tickets/${ticket.number}`}
                       className="flex justify-between gap-4 px-4 py-2 hover:bg-muted/60"
@@ -348,12 +349,12 @@ export function AccountInspector({ id }: { id: string }) {
                   </li>
                 ))
               )}
-            </ul>
+            </Card>
           )}
         </TabsPanel>
 
         <aside className="space-y-4">
-          <dl className="ui-card ui-card-static grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+          <Card className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm" render={<dl />}>
             <dt className="text-muted-foreground">Plan</dt>
             <dd>{planName(account.plan)}</dd>
             <dt className="text-muted-foreground">Requests</dt>
@@ -370,9 +371,9 @@ export function AccountInspector({ id }: { id: string }) {
             <dd>{account.agents}</dd>
             <dt className="text-muted-foreground">Two-factor</dt>
             <dd>{account.twoFactor ? "On" : "Off"}</dd>
-          </dl>
+          </Card>
           {account.twoFactor && !account.staff && (
-            <div className="ui-card ui-card-static space-y-2 text-sm">
+            <Card className="space-y-2 text-sm">
               <h2 className="font-semibold">Lost authenticator</h2>
               <p className="text-muted-foreground">
                 Only after they proved who they are, for example by writing from the account&rsquo;s
@@ -381,9 +382,9 @@ export function AccountInspector({ id }: { id: string }) {
               <Button size="sm" variant="outline" onClick={() => void resetTwoFactor()}>
                 Turn off two-factor sign-in
               </Button>
-            </div>
+            </Card>
           )}
-          <div className="ui-card ui-card-static space-y-2 text-sm">
+          <Card className="space-y-2 text-sm">
             <h2 className="font-semibold">View as {firstName}</h2>
             {account.activeGrant ? (
               <>
@@ -403,8 +404,8 @@ export function AccountInspector({ id }: { id: string }) {
                 Available once {firstName} gives access on a ticket.
               </p>
             )}
-          </div>
-          <div className="ui-card ui-card-static space-y-2 text-sm">
+          </Card>
+          <Card className="space-y-2 text-sm">
             <h2 className="font-semibold">Metrics</h2>
             <p className="text-muted-foreground">
               {account.internal
@@ -419,7 +420,7 @@ export function AccountInspector({ id }: { id: string }) {
             >
               {account.internal ? "Count it again" : "Mark internal"}
             </Button>
-          </div>
+          </Card>
           <AccountSharingPanel userId={id} />
           {error && <p className="text-sm text-destructive-ink">{error}</p>}
         </aside>

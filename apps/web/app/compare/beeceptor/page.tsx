@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -101,10 +103,10 @@ export default function CompareBeeceptorPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -126,14 +128,14 @@ export default function CompareBeeceptorPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
 
         <ComparisonCTA compact />
 
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">API mocking vs webhook inspection</h3>
             <p className="text-muted-foreground">
               Beeceptor&apos;s strength is simulating APIs you depend on: define URL patterns, set
@@ -143,9 +145,9 @@ export default function CompareBeeceptorPage() {
               and assert on those payloads. Its response rules answer the sender, but it does not
               proxy traffic to a backend.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Developer tooling depth</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides three integration layers beyond the dashboard: a CLI for
@@ -156,21 +158,21 @@ export default function CompareBeeceptorPage() {
               $12/seat/month, with each seat adding 100,000 pooled requests, while Beeceptor&apos;s
               Team plan costs $25/month.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Request replay</h3>
             <p className="text-muted-foreground">
               webhooks.cc lets you replay any captured request to a target URL, useful for
               re-triggering webhook handlers during debugging without asking the sender to resend.
               Beeceptor focuses on request logging (exported as HAR) rather than replay workflows.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Capture and inspect real webhook payloads from live services</li>
@@ -180,8 +182,8 @@ export default function CompareBeeceptorPage() {
               <li>CLI tunnel that captures + forwards in one step</li>
               <li>Email capture alongside webhooks, parsed and forwarded as JSON</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose Beeceptor when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Full API mocking with routing rules and conditions</li>
@@ -189,17 +191,17 @@ export default function CompareBeeceptorPage() {
               <li>CORS proxy for frontend development</li>
               <li>Simulating APIs that don&apos;t exist yet</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

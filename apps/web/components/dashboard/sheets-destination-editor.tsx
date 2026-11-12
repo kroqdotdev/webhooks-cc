@@ -20,6 +20,8 @@ import {
 import { ConditionList } from "./condition-list";
 import { Field, Segmented, SwitchRow } from "./settings-primitives";
 import { useReportDirty } from "./dirty-sections";
+import { Button } from "@/components/ui/button";
+import { FieldControl } from "@/components/ui/field";
 
 type Column = { header: string; value: string };
 
@@ -338,9 +340,14 @@ export function SheetsDestinationEditor({
           Google Sheets is not set up on this server yet.
         </p>
         {onCancel && (
-          <button type="button" onClick={onCancel} className="ui-btn-outline py-1.5! px-3! text-xs">
+          <Button
+            variant="outlined"
+            className="py-1.5! px-3! text-xs"
+            type="button"
+            onClick={onCancel}
+          >
             Cancel
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -349,13 +356,13 @@ export function SheetsDestinationEditor({
   return (
     <div className="space-y-5">
       <Field id={`${idPrefix}-name`} label="Name">
-        <input
+        <FieldControl
+          className="w-full text-sm py-2!"
           id={`${idPrefix}-name`}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Orders sheet"
           maxLength={100}
-          className="ui-input w-full text-sm py-2!"
         />
       </Field>
 
@@ -364,26 +371,31 @@ export function SheetsDestinationEditor({
         <Field label="Google account">
           <div className="flex flex-wrap items-center gap-2">
             {google && google.connections.length > 0 && (
-              <select
-                aria-label="Google account"
-                value={connectionId}
-                onChange={(e) => setConnectionId(e.target.value)}
-                className="ui-input text-sm py-1.5! px-2! w-72"
+              <FieldControl
+                className="text-sm py-1.5! px-2! w-72"
+                render={
+                  <select
+                    aria-label="Google account"
+                    value={connectionId}
+                    onChange={(e) => setConnectionId(e.target.value)}
+                  />
+                }
               >
                 {google.connections.map((connection) => (
                   <option key={connection.id} value={connection.id}>
                     {connection.email ?? "Google account"}
                   </option>
                 ))}
-              </select>
+              </FieldControl>
             )}
-            <button
+            <Button
+              variant="outlined"
+              className="py-1.5! px-3! text-xs"
               type="button"
               onClick={() => void connect()}
-              className="ui-btn-outline py-1.5! px-3! text-xs"
             >
               {google?.connections.length ? "Connect another account" : "Connect a Google account"}
-            </button>
+            </Button>
           </div>
         </Field>
         {connectionId && (
@@ -409,29 +421,31 @@ export function SheetsDestinationEditor({
             ) : (
               <div className="flex flex-wrap items-end gap-2">
                 <Field id={`${idPrefix}-title`} label="New spreadsheet" className="flex-1 min-w-56">
-                  <input
+                  <FieldControl
+                    className="w-full text-sm py-2!"
                     id={`${idPrefix}-title`}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     maxLength={200}
-                    className="ui-input w-full text-sm py-2!"
                   />
                 </Field>
-                <button
+                <Button
+                  variant="outlined"
+                  className="py-2! px-3! text-xs"
                   type="button"
                   disabled={!!busy}
                   onClick={() => void create()}
-                  className="ui-btn-outline py-2! px-3! text-xs"
                 >
                   Create it
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outlined"
+                  className="py-2! px-3! text-xs"
                   type="button"
                   onClick={() => void pick()}
-                  className="ui-btn-outline py-2! px-3! text-xs"
                 >
                   Choose from Drive
-                </button>
+                </Button>
               </div>
             )}
             <Field
@@ -440,25 +454,29 @@ export function SheetsDestinationEditor({
               help="The sheet the rows go to; it must exist in the spreadsheet."
             >
               {tabs && tabs.length > 0 ? (
-                <select
-                  id={`${idPrefix}-sheet`}
-                  value={sheet}
-                  onChange={(e) => setSheet(e.target.value)}
-                  className="ui-input w-56 text-sm py-2! px-2!"
+                <FieldControl
+                  className="w-56 text-sm py-2! px-2!"
+                  render={
+                    <select
+                      id={`${idPrefix}-sheet`}
+                      value={sheet}
+                      onChange={(e) => setSheet(e.target.value)}
+                    />
+                  }
                 >
                   {tabs.map((tab) => (
                     <option key={tab} value={tab}>
                       {tab}
                     </option>
                   ))}
-                </select>
+                </FieldControl>
               ) : (
-                <input
+                <FieldControl
+                  className="w-56 text-sm py-2!"
                   id={`${idPrefix}-sheet`}
                   value={sheet}
                   onChange={(e) => setSheet(e.target.value)}
                   maxLength={100}
-                  className="ui-input w-56 text-sm py-2!"
                 />
               )}
             </Field>
@@ -485,7 +503,8 @@ export function SheetsDestinationEditor({
         <div className="space-y-2">
           {columns.map((column, index) => (
             <div key={index} className="flex items-center gap-2">
-              <input
+              <FieldControl
+                className="w-40 text-sm py-1.5!"
                 aria-label={`Column ${index + 1} header`}
                 value={column.header}
                 onChange={(e) =>
@@ -494,9 +513,9 @@ export function SheetsDestinationEditor({
                   )
                 }
                 placeholder="Header"
-                className="ui-input w-40 text-sm py-1.5!"
               />
-              <input
+              <FieldControl
+                className="flex-1 text-sm font-mono py-1.5!"
                 aria-label={`Column ${index + 1} value`}
                 value={column.value}
                 onChange={(e) =>
@@ -505,7 +524,6 @@ export function SheetsDestinationEditor({
                   )
                 }
                 placeholder="{{ subject }}"
-                className="ui-input flex-1 text-sm font-mono py-1.5!"
               />
               <button
                 type="button"
@@ -518,13 +536,14 @@ export function SheetsDestinationEditor({
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
+              variant="outlined"
+              className="py-1! px-2! text-xs inline-flex items-center gap-1"
               type="button"
               onClick={() => setColumns([...columns, { header: "", value: "" }])}
-              className="ui-btn-outline py-1! px-2! text-xs inline-flex items-center gap-1"
             >
               <Plus className="h-3 w-3" /> Column
-            </button>
+            </Button>
             <button
               type="button"
               onClick={() => setColumns(defaultColumns(emailFieldNames))}
@@ -589,14 +608,15 @@ export function SheetsDestinationEditor({
       </div>
 
       <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border/20">
-        <button
+        <Button
+          variant="primary"
+          className="py-1.5! px-3! text-xs"
           type="button"
           disabled={!!busy || tabsPending}
           onClick={() => void save()}
-          className="ui-btn-primary py-1.5! px-3! text-xs"
         >
           {busy ?? (destination ? "Save destination" : "Add destination")}
-        </button>
+        </Button>
         {onCancel && (
           <button type="button" onClick={onCancel} className="text-sm text-muted-foreground">
             Cancel

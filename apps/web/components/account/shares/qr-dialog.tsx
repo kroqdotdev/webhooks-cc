@@ -26,7 +26,7 @@ export function QrDialog({ url, label }: { url: string; label: string }) {
       >
         <QrCode className="h-4 w-4" />
       </DialogTrigger>
-      <DialogContent className="ph-no-capture max-w-sm border border-border shadow-float">
+      <DialogContent className="ph-no-capture max-w-sm border shadow-float">
         <DialogHeader>
           <DialogTitle>Open on a phone</DialogTitle>
           <DialogDescription>Point the phone&apos;s camera at the code.</DialogDescription>

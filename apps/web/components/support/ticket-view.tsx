@@ -12,6 +12,7 @@ import { BODY_MAX, categoryLabel, type SupportTicketDetail } from "@/lib/support
 import { subscribeToSupportTickets } from "@/lib/supabase/realtime";
 import { cn } from "@/lib/utils";
 import { CheckRow, Conversation, ImagePicker, supportBody, TurnLine } from "./thread";
+import { Card } from "@/components/ui/card";
 
 function turnSentence(ticket: SupportTicketDetail): string {
   if (ticket.status === "closed") {
@@ -262,7 +263,7 @@ export function TicketView({ number }: { number: string }) {
           {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
 
           {canReply && (
-            <div className="ui-card ui-card-static space-y-3 p-3!">
+            <Card className="space-y-3 p-3!">
               <label htmlFor="reply" className="sr-only">
                 Your reply
               </label>
@@ -281,7 +282,7 @@ export function TicketView({ number }: { number: string }) {
               {attachments && (
                 <ImagePicker files={images} onChange={setImages} disabled={sending} />
               )}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
                 <span className="text-xs text-muted-foreground">Markdown works.</span>
                 <div className="flex gap-2">
                   {!closed && (
@@ -298,7 +299,7 @@ export function TicketView({ number }: { number: string }) {
                   </Button>
                 </div>
               </div>
-            </div>
+            </Card>
           )}
 
           {error && (
@@ -308,18 +309,18 @@ export function TicketView({ number }: { number: string }) {
           )}
 
           {closed && (
-            <div className="ui-card ui-card-static">
+            <Card>
               <Rating
                 ticket={ticket}
                 initial={initialRating}
                 onRate={(rating, comment) => patch({ rating, ratingComment: comment })}
               />
-            </div>
+            </Card>
           )}
         </div>
 
         <aside className="space-y-4">
-          <section className="ui-card ui-card-static space-y-2">
+          <Card className="space-y-2" render={<section />}>
             <h2 className="text-sm font-semibold">Email updates</h2>
             <CheckRow
               id="notify-email"
@@ -327,9 +328,9 @@ export function TicketView({ number }: { number: string }) {
               onChange={(value) => void patch({ notifyEmail: value })}
               title="Email me on replies and when it closes"
             />
-          </section>
+          </Card>
 
-          <section className="ui-card ui-card-static space-y-2">
+          <Card className="space-y-2" render={<section />}>
             <h2 className="text-sm font-semibold">Support access</h2>
             {ticket.accessActive ? (
               <>
@@ -369,9 +370,9 @@ export function TicketView({ number }: { number: string }) {
                 See when support looked
               </Link>
             </p>
-          </section>
+          </Card>
 
-          <section className="ui-card ui-card-static">
+          <Card render={<section />}>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-muted-foreground">Topic</dt>
               <dd>{categoryLabel(ticket.category)}</dd>
@@ -386,7 +387,7 @@ export function TicketView({ number }: { number: string }) {
               <dt className="text-muted-foreground">Opened</dt>
               <dd>{shortDateTime(ticket.createdAt)}</dd>
             </dl>
-          </section>
+          </Card>
         </aside>
       </div>
     </main>

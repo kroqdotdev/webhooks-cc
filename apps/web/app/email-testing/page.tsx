@@ -14,6 +14,8 @@ import { JsonLd, breadcrumbSchema, faqSchema, howToSchema, type FAQItem } from "
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import { PricingCTA } from "@/components/landing/pricing-cta";
+import { CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const PATH = "/email-testing";
 
@@ -265,7 +267,7 @@ export default function EmailTestingPage() {
             with it, the SDK waits for the email your app sends, and hands back the one-time code or
             the link inside.
           </p>
-          <div className="ui-code mb-6 overflow-x-auto">
+          <CodeBox className="mb-6 overflow-x-auto">
             <pre className="text-sm md:text-base">
               <code>
                 <span className="text-muted-foreground"># Your endpoint&apos;s address</span>
@@ -276,7 +278,7 @@ export default function EmailTestingPage() {
                 {"\n"}my-app+run-42@mailhooks.cc
               </code>
             </pre>
-          </div>
+          </CodeBox>
           <StartFreeCTA goCta={null} />
           <p className="text-sm text-muted-foreground mt-4">
             Free for 50 emails a day, no credit card. Read the{" "}
@@ -304,11 +306,11 @@ export default function EmailTestingPage() {
             <code className="font-mono">actionOnly</code> makes a template without a sign-in link
             fail the test.
           </p>
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{TEST_SAMPLE}</code>
             </pre>
-          </div>
+          </CodeBox>
           <p className="text-sm text-muted-foreground mt-3">
             Install with <code className="font-mono">npm install --save-dev @webhooks-cc/sdk</code>{" "}
             and create the API key on your account page. Step by step, with a fixture per test,
@@ -327,10 +329,10 @@ export default function EmailTestingPage() {
           <h2 className="text-2xl md:text-3xl font-bold mb-6">The email flows it covers</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             {FLOWS.map((flow) => (
-              <div key={flow.title} className="ui-card ui-card-static">
+              <Card key={flow.title}>
                 <h3 className="font-bold mb-1.5">{flow.title}</h3>
                 <p className="text-sm text-muted-foreground">{flow.text}</p>
-              </div>
+              </Card>
             ))}
           </div>
         </section>
@@ -343,20 +345,20 @@ export default function EmailTestingPage() {
             For a verification code, wait the same way and read it with{" "}
             <code className="font-mono">extractCode()</code>:
           </p>
-          <div className="ui-code overflow-x-auto mb-6">
+          <CodeBox className="overflow-x-auto mb-6">
             <pre className="text-sm">
               <code>{CODE_SAMPLE}</code>
             </pre>
-          </div>
+          </CodeBox>
           <p className="text-muted-foreground mb-4">
             In Cypress the SDK runs in Node, so put the wait in a task and hand the link to the
             test:
           </p>
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{CYPRESS_SAMPLE}</code>
             </pre>
-          </div>
+          </CodeBox>
           <p className="text-sm text-muted-foreground mt-3">
             The{" "}
             <Link href="/docs/sdk/python" className="text-primary font-bold hover:underline">
@@ -393,7 +395,7 @@ export default function EmailTestingPage() {
           <ol className="space-y-4">
             {STEPS.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
+                <span className="w-9 h-9 border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                   {i + 1}
                 </span>
                 <div>
@@ -414,11 +416,11 @@ export default function EmailTestingPage() {
           </p>
           <div className="grid sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
-              <div key={feature.title} className="ui-card ui-card-static">
+              <Card key={feature.title}>
                 <feature.icon className="h-5 w-5 text-primary mb-3" aria-hidden="true" />
                 <h3 className="font-bold mb-1.5">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground">{feature.text}</p>
-              </div>
+              </Card>
             ))}
           </div>
         </section>
@@ -432,20 +434,20 @@ export default function EmailTestingPage() {
           </p>
           <div className="grid sm:grid-cols-3 gap-4">
             {ALTERNATIVES.map((tool) => (
-              <Link
+              <Card
                 key={tool.href}
-                href={tool.href}
-                className="ui-card ui-card-static block transition-colors hover:bg-muted"
+                className="block transition-colors hover:bg-muted"
+                render={<Link href={tool.href} />}
               >
                 <h3 className="font-bold mb-1.5">webhooks.cc vs {tool.name}</h3>
                 <p className="text-sm text-muted-foreground">{tool.text}</p>
-              </Link>
+              </Card>
             ))}
           </div>
         </section>
 
         <section className="mb-12">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl md:text-2xl font-bold mb-2">Need the email in your own app?</h2>
             <p className="text-muted-foreground mb-4">
               Add a destination and every email the endpoint receives is posted to your server as
@@ -456,7 +458,7 @@ export default function EmailTestingPage() {
               Email to webhook
               <ArrowRight className="inline-block ml-1 h-4 w-4" />
             </Link>
-          </div>
+          </Card>
         </section>
 
         <section className="mb-12">
@@ -483,7 +485,7 @@ export default function EmailTestingPage() {
           <FAQAccordion items={FAQ_ITEMS} />
         </section>
 
-        <div className="ui-card bg-foreground text-background text-center py-12">
+        <Card interactive className="bg-foreground text-background text-center py-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-3">
             Your test inbox is one signup away
           </h2>
@@ -494,7 +496,7 @@ export default function EmailTestingPage() {
             <PricingCTA inverted />
           </div>
           <p className="text-sm opacity-80 mt-6">No credit card</p>
-        </div>
+        </Card>
       </div>
     </main>
   );

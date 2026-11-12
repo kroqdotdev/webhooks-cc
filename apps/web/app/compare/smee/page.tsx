@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { InlineCode, CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -173,8 +175,7 @@ export default function CompareSmeePage() {
             You start a channel on smee.io and get a unique URL. The webhook sender posts to that
             URL, and smee.io passes each payload over Server-Sent Events to every client connected
             to the channel at that moment: the channel page in your browser, and{" "}
-            <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">smee-client</code>, which
-            posts it on to your local server.
+            <InlineCode>smee-client</InlineCode>, which posts it on to your local server.
           </p>
           <p>Its limits, as its README states them:</p>
           <ul className="list-disc list-inside space-y-1.5">
@@ -202,21 +203,17 @@ export default function CompareSmeePage() {
             the webhook URL at the sender. Then install the client and point it at your local
             server:
           </p>
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{SMEE_USAGE}</code>
             </pre>
-          </div>
+          </CodeBox>
           <p>
-            <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">--target</code> takes a full
-            local URL instead of a port and path; without options the client forwards to{" "}
-            <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
-              http://127.0.0.1:3000/
-            </code>
-            . The client posts each payload to your server as JSON with the sender&apos;s headers.
-            Probot apps need no client: set{" "}
-            <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">WEBHOOK_PROXY_URL</code> to
-            the channel URL.
+            <InlineCode>--target</InlineCode> takes a full local URL instead of a port and path;
+            without options the client forwards to <InlineCode>http://127.0.0.1:3000/</InlineCode>.
+            The client posts each payload to your server as JSON with the sender&apos;s headers.
+            Probot apps need no client: set <InlineCode>WEBHOOK_PROXY_URL</InlineCode> to the
+            channel URL.
           </p>
         </div>
 
@@ -227,11 +224,11 @@ export default function CompareSmeePage() {
             For GitHub webhooks, the GitHub CLI has an extension that forwards deliveries to a local
             URL without a channel or a webhook URL to configure:
           </p>
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{GH_USAGE}</code>
             </pre>
-          </div>
+          </CodeBox>
           <p>
             <a
               href="https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/using-the-github-cli-to-forward-webhooks-for-testing"
@@ -241,12 +238,10 @@ export default function CompareSmeePage() {
               GitHub&apos;s docs
             </a>{" "}
             list its limits: it only works with repository and organization webhooks (use{" "}
-            <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">--org</code>, with the{" "}
-            <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">admin:org_hook</code> scope,
+            <InlineCode>--org</InlineCode>, with the <InlineCode>admin:org_hook</InlineCode> scope,
             for an organization), not with other kinds such as a GitHub App&apos;s; it is for
             testing and development only; and only one person can forward for a repository or
-            organization at a time (a second gets{" "}
-            <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">Hook already exists</code>).
+            organization at a time (a second gets <InlineCode>Hook already exists</InlineCode>).
           </p>
         </div>
 
@@ -262,19 +257,19 @@ export default function CompareSmeePage() {
             webhook that arrives while your laptop is closed is in the dashboard when you come back,
             and you can search it, replay it to any URL, or assert on it in a test.
           </p>
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <pre className="text-sm">
               <code>{WHK_USAGE}</code>
             </pre>
-          </div>
+          </CodeBox>
         </div>
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -296,14 +291,14 @@ export default function CompareSmeePage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
 
         <ComparisonCTA compact />
 
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Proxy vs platform</h3>
             <p className="text-muted-foreground">
               Smee.io does one thing: pass incoming webhooks to connected clients via SSE. Its
@@ -312,21 +307,20 @@ export default function CompareSmeePage() {
               stores every request with full headers, body, and metadata: searchable, exportable,
               and replayable to any URL from the dashboard, CLI, or SDK.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides SDKs for TypeScript, Python and Go for programmatic access and CI
               test assertions, a native CLI with built-in tunneling, and an MCP server for AI coding
               agents. For teams, webhooks.cc shares endpoints across a team at $12/seat/month;
               Smee.io has no team or collaboration features. Smee.io provides a small npm client (
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">smee-client</code>) for
-              forwarding: no SDK, no test helpers, no MCP.
+              <InlineCode>smee-client</InlineCode>) for forwarding: no SDK, no test helpers, no MCP.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">GitHub App development</h3>
             <p className="text-muted-foreground">
               Smee.io comes from the Probot team and is the proxy GitHub&apos;s own webhook and
@@ -335,12 +329,12 @@ export default function CompareSmeePage() {
               deliveries, or assert on GitHub event payloads in tests), webhooks.cc covers the
               broader workflow.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Persistent request history with search and export</li>
@@ -350,8 +344,8 @@ export default function CompareSmeePage() {
               <li>MCP integration for AI-assisted development</li>
               <li>Multiple webhook sources beyond GitHub</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose Smee.io when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>The simplest possible localhost forwarding</li>
@@ -359,17 +353,17 @@ export default function CompareSmeePage() {
               <li>No account, no auth: just a URL and a client</li>
               <li>Open-source proxy you can self-host</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

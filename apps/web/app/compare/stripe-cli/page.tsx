@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
+import { InlineCode, CodeBox } from "@/components/ui/code";
+import { Card } from "@/components/ui/card";
 
 const FAQ_ITEMS = [
   {
@@ -112,24 +114,21 @@ export default function CompareStripeCliPage() {
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Stripe CLI</h1>
         <p className="text-lg text-muted-foreground mb-10">
-          The Stripe CLI (
-          <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe listen</code> and{" "}
-          <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe trigger</code>) set the
-          standard for local Stripe webhook testing. webhooks.cc brings that same workflow to every
-          webhook and email provider in your stack: a fast Rust CLI tunnel (
-          <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">whk tunnel</code>), a hosted
-          request and email inbox that captures deliveries even when your terminal is closed, and a
-          TypeScript SDK that sends genuine{" "}
-          <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe-signature</code>{" "}
-          payloads in CI without a background daemon.
+          The Stripe CLI (<InlineCode>stripe listen</InlineCode> and{" "}
+          <InlineCode>stripe trigger</InlineCode>) set the standard for local Stripe webhook
+          testing. webhooks.cc brings that same workflow to every webhook and email provider in your
+          stack: a fast Rust CLI tunnel (<InlineCode>whk tunnel</InlineCode>), a hosted request and
+          email inbox that captures deliveries even when your terminal is closed, and a TypeScript
+          SDK that sends genuine <InlineCode>stripe-signature</InlineCode> payloads in CI without a
+          background daemon.
         </p>
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="ui-code overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -151,14 +150,14 @@ export default function CompareStripeCliPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CodeBox>
 
         <ComparisonCTA compact />
 
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">
               One platform for Stripe, GitHub, Clerk, Shopify, and inbound email
             </h3>
@@ -166,62 +165,48 @@ export default function CompareStripeCliPage() {
               Modern apps rarely receive webhooks from Stripe alone; they also handle Clerk or
               WorkOS auth hooks, GitHub or Vercel deploy hooks, and Resend or Postmark email events.
               Instead of juggling separate tunnels and provider CLIs,{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">whk tunnel 3000</code>{" "}
-              forwards any provider&apos;s HTTP webhooks to your local server with automatic
-              signature verification, while inbound emails sent to{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
-                {"{slug}"}@mailhooks.cc
-              </code>{" "}
-              are captured with OTP extraction and can be forwarded to your server as signed JSON or
-              asserted in tests via the SDK.
+              <InlineCode>whk tunnel 3000</InlineCode> forwards any provider&apos;s HTTP webhooks to
+              your local server with automatic signature verification, while inbound emails sent to{" "}
+              <InlineCode>{"{slug}"}@mailhooks.cc</InlineCode> are captured with OTP extraction and
+              can be forwarded to your server as signed JSON or asserted in tests via the SDK.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">
               Deterministic CI tests without a background CLI daemon
             </h3>
             <p className="text-muted-foreground">
-              Running{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe listen</code>{" "}
-              inside GitHub Actions requires Stripe API keys, a background WebSocket process, and
-              network round-trips. With{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/sdk</code>,
-              your Vitest or Playwright test calls{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
+              Running <InlineCode>stripe listen</InlineCode> inside GitHub Actions requires Stripe
+              API keys, a background WebSocket process, and network round-trips. With{" "}
+              <InlineCode>@webhooks-cc/sdk</InlineCode>, your Vitest or Playwright test calls{" "}
+              <InlineCode>
                 {
                   "client.sendTo(url, { provider: 'stripe', template: 'checkout.session.completed', secret })"
                 }
-              </code>{" "}
-              to post a payload signed with the exact{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">t=...,v1=...</code>{" "}
-              HMAC-SHA256 format that{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
-                stripe.webhooks.constructEvent()
-              </code>{" "}
+              </InlineCode>{" "}
+              to post a payload signed with the exact <InlineCode>t=...,v1=...</InlineCode>{" "}
+              HMAC-SHA256 format that <InlineCode>stripe.webhooks.constructEvent()</InlineCode>{" "}
               expects.
             </p>
-          </div>
+          </Card>
 
-          <div className="ui-card ui-card-static">
+          <Card>
             <h3 className="text-lg font-bold mb-2">
               Persistent capture when your laptop is closed
             </h3>
             <p className="text-muted-foreground">
-              When you stop{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe listen</code>,
-              local forwarding stops. A webhooks.cc endpoint URL stays live 24/7 for your staging or
-              sandbox environment, captures every delivery with headers and timing, and lets any
-              teammate inspect or replay a payload to their own{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">localhost</code> with one
-              click.
+              When you stop <InlineCode>stripe listen</InlineCode>, local forwarding stops. A
+              webhooks.cc endpoint URL stays live 24/7 for your staging or sandbox environment,
+              captures every delivery with headers and timing, and lets any teammate inspect or
+              replay a payload to their own <InlineCode>localhost</InlineCode> with one click.
             </p>
-          </div>
+          </Card>
         </div>
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="ui-card ui-card-static">
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>A Stripe-CLI-style workflow across 32+ webhook providers and email</li>
@@ -230,8 +215,8 @@ export default function CompareStripeCliPage() {
               <li>Shared staging endpoints for your team (from $12/seat/mo)</li>
               <li>MCP tools so Claude Code or Cursor can trigger and inspect webhooks</li>
             </ul>
-          </div>
-          <div className="ui-card ui-card-static">
+          </Card>
+          <Card>
             <h2 className="text-xl font-bold mb-3">Choose Stripe CLI when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Direct WebSocket streaming from your Stripe account with zero URL setup</li>
@@ -239,17 +224,17 @@ export default function CompareStripeCliPage() {
               <li>Stripe-only local development where no other webhook providers are used</li>
               <li>Managing Stripe resources and logs from the terminal</li>
             </ul>
-          </div>
+          </Card>
         </div>
 
         {/* FAQ */}
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="ui-card ui-card-static">
+            <Card key={item.question}>
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
-            </div>
+            </Card>
           ))}
         </div>
 

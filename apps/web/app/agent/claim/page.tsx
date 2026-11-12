@@ -8,6 +8,8 @@ import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { MfaGate } from "@/components/auth/mfa-challenge";
 import { createClient } from "@/lib/supabase/client";
+import { Card } from "@/components/ui/card";
+import { FieldControl } from "@/components/ui/field";
 
 /**
  * Where an agent sends its human to connect it to their account (auth.md
@@ -208,12 +210,20 @@ function AgentClaimContent() {
                 </p>
               )}
               <div className="flex justify-center gap-3">
-                <Link href="/dashboard" className="ui-btn-outline text-sm py-2 px-4">
+                <Button
+                  variant="outlined"
+                  className="text-sm py-2 px-4"
+                  render={<Link href="/dashboard" />}
+                >
                   Dashboard
-                </Link>
-                <Link href="/account/agents" className="ui-btn-outline text-sm py-2 px-4">
+                </Button>
+                <Button
+                  variant="outlined"
+                  className="text-sm py-2 px-4"
+                  render={<Link href="/account/agents" />}
+                >
                   Connected agents
-                </Link>
+                </Button>
               </div>
             </div>
           )}
@@ -241,9 +251,13 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
     <div className="text-center">
       <h1 className="text-2xl font-bold mb-3">{title}</h1>
       <p className="text-muted-foreground mb-6">{children}</p>
-      <Link href="/docs/agents" className="ui-btn-outline text-sm py-2 px-4 inline-block">
+      <Button
+        variant="outlined"
+        className="text-sm py-2 px-4 inline-block"
+        render={<Link href="/docs/agents" />}
+      >
         How agents use webhooks.cc
-      </Link>
+      </Button>
     </div>
   );
 }
@@ -309,7 +323,7 @@ function AttemptPanel(props: {
         </p>
       )}
 
-      <dl className="ui-card ui-card-static p-4 mb-6 space-y-2 text-sm">
+      <Card className="p-4 mb-6 space-y-2 text-sm" render={<dl />}>
         {view.provider ? (
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Identity provider</dt>
@@ -344,7 +358,7 @@ function AttemptPanel(props: {
             </dd>
           </div>
         )}
-      </dl>
+      </Card>
 
       {view.firstAgent && (
         <p className="text-sm text-muted-foreground mb-4">
@@ -368,7 +382,8 @@ function AttemptPanel(props: {
       <form onSubmit={props.onConnect} className="space-y-3">
         <label className="block">
           <span className="text-sm font-medium">Code from the agent</span>
-          <input
+          <FieldControl
+            className="mt-1 w-full text-center text-2xl tracking-[0.3em] font-mono px-4 py-3"
             type="text"
             inputMode="numeric"
             autoComplete="one-time-code"
@@ -380,7 +395,6 @@ function AttemptPanel(props: {
             maxLength={6}
             autoFocus
             disabled={props.submitting}
-            className="ui-input mt-1 w-full text-center text-2xl tracking-[0.3em] font-mono px-4 py-3"
           />
         </label>
         <Button

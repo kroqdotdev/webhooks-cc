@@ -8,6 +8,8 @@ import {
   type HowToStep,
 } from "@/lib/schemas";
 import type { TocItem } from "@/components/docs/toc";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export interface BlogPostData {
   slug: string;
@@ -98,16 +100,16 @@ export function BlogPostShell({
           Back to blog
         </Link>
 
-        <header className="ui-card ui-card-static p-0 overflow-hidden mb-8">
+        <Card className="p-0 overflow-hidden mb-8" render={<header />}>
           <div className="p-6 md:p-8">
             <div className="flex flex-wrap items-center gap-2 mb-4">
-              <span className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
+              <span className="text-xs font-bold border rounded-md px-2 py-1 bg-secondary text-secondary-foreground">
                 {post.category}
               </span>
               {post.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="text-xs font-bold border border-border rounded-md px-2 py-1 bg-background"
+                  className="text-xs font-bold border rounded-md px-2 py-1 bg-background"
                 >
                   {tag}
                 </span>
@@ -128,17 +130,17 @@ export function BlogPostShell({
               </span>
             </div>
           </div>
-        </header>
+        </Card>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <article className="ui-card ui-card-static p-0 overflow-hidden min-w-0">
+          <Card className="p-0 overflow-hidden min-w-0" render={<article />}>
             <div className="p-6 md:p-10">
               <div className="docs-content">{children}</div>
             </div>
-          </article>
+          </Card>
 
           <aside className="space-y-4 lg:sticky lg:top-28 self-start">
-            <div className="ui-card ui-card-static p-4">
+            <Card className="p-4">
               <p className="text-xs font-bold text-muted-foreground mb-3">On this page</p>
               <ul className="space-y-2">
                 {headings.map((heading) => (
@@ -152,10 +154,10 @@ export function BlogPostShell({
                   </li>
                 ))}
               </ul>
-            </div>
+            </Card>
 
             {relatedPosts.length > 0 && (
-              <div className="ui-card ui-card-static p-4">
+              <Card className="p-4">
                 <p className="text-xs font-bold text-muted-foreground mb-3">More guides</p>
                 <div className="space-y-3">
                   {relatedPosts.map((related) => (
@@ -169,13 +171,17 @@ export function BlogPostShell({
                     </Link>
                   ))}
                 </div>
-              </div>
+              </Card>
             )}
 
-            <Link href="/" className="ui-btn-primary w-full text-center block">
+            <Button
+              variant="primary"
+              className="w-full text-center block"
+              render={<Link href="/" />}
+            >
               Try webhooks.cc
               <ArrowRight className="inline-block ml-2 h-4 w-4" />
-            </Link>
+            </Button>
           </aside>
         </div>
       </div>

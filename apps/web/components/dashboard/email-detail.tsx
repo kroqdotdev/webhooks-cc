@@ -50,6 +50,9 @@ import { NoteBar, type DisplayableRequest } from "./request-detail";
 import { SectionTabList } from "./section-tabs";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 import { ParsedResult } from "./layouts-section";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { CodeBox } from "@/components/ui/code";
 
 type EmailTab =
   | "parsed"
@@ -345,7 +348,7 @@ function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
   const fails = count("fail");
   const warnings = count("warn");
   return (
-    <section className="ui-card ui-card-static p-4!">
+    <Card className="p-4!" render={<section />}>
       <h3 className="text-sm font-bold mb-1 tracking-normal">Deliverability</h3>
       <p className="text-sm py-2">
         {fails + warnings === 0
@@ -386,7 +389,7 @@ function DeliverabilitySection({ report }: { report: DeliverabilityReport }) {
           </div>
         );
       })}
-    </section>
+    </Card>
   );
 }
 
@@ -408,13 +411,13 @@ function Pick({
   return (
     <span
       className={cn(
-        "inline-flex items-stretch h-8 min-w-0 max-w-full border border-border rounded-md bg-card shadow-surface overflow-hidden",
+        "inline-flex items-stretch h-8 min-w-0 max-w-full border rounded-md bg-card shadow-surface overflow-hidden",
         wide && "md:max-w-[460px]"
       )}
     >
       <span
         className={cn(
-          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r border-border shrink-0 max-w-[220px] max-sm:max-w-[120px] max-sm:px-2",
+          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r shrink-0 max-w-[220px] max-sm:max-w-[120px] max-sm:px-2",
           exactLabel && "font-mono"
         )}
         title={label}
@@ -609,19 +612,20 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
   return (
     <div>
       {remoteImages > 0 && !imagesLoaded && (
-        <div className="flex flex-wrap items-center gap-3 px-3 py-2 mb-4 text-sm bg-muted border border-border rounded-md">
+        <div className="flex flex-wrap items-center gap-3 px-3 py-2 mb-4 text-sm bg-muted border rounded-md">
           <ImageOff className="h-4 w-4 shrink-0" />
           <span className="flex-1 min-w-[200px]">
             {remoteImages === 1 ? "1 remote image is" : `${remoteImages} remote images are`}{" "}
             blocked. Loading them tells the sender you opened this email.
           </span>
-          <button
+          <Button
+            variant="outlined"
+            className="py-1! px-3! text-xs"
             type="button"
             onClick={() => setImagesLoaded(true)}
-            className="ui-btn-outline py-1! px-3! text-xs"
           >
             Load images
-          </button>
+          </Button>
         </div>
       )}
       {inlineImages > 0 && (
@@ -634,7 +638,7 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
       )}
       <div className="grid justify-items-center grid-cols-[minmax(0,1fr)] bg-muted/60 rounded-lg py-8 px-4">
         <div
-          className="w-full bg-white border border-border rounded-md shadow-float-lg overflow-hidden"
+          className="w-full bg-white border rounded-md shadow-float-lg overflow-hidden"
           style={{ maxWidth: width === "mobile" ? 390 : 680 }}
         >
           <iframe
@@ -678,7 +682,7 @@ function CheckRow({
 function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
   const scored = spam.score !== null && spam.required !== null && spam.action !== null;
   return (
-    <section className="ui-card ui-card-static p-4!">
+    <Card className="p-4!" render={<section />}>
       <h3 className="text-sm font-bold mb-1 tracking-normal">Spam score</h3>
       {!scored ? (
         <p className="text-sm text-muted-foreground py-2">
@@ -730,7 +734,7 @@ function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
           )}
         </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -759,7 +763,7 @@ function AuthenticationPane({
 
   return (
     <div className="grid gap-4 max-w-[860px]">
-      <section className="ui-card ui-card-static p-4!">
+      <Card className="p-4!" render={<section />}>
         <h3 className="text-sm font-bold mb-1 tracking-normal">Sender checks</h3>
         {isTest ? (
           <p className="text-sm text-muted-foreground py-2">
@@ -842,16 +846,19 @@ function AuthenticationPane({
               </CheckRow>
             )}
             {auth.authenticationResults && (
-              <pre className="ui-code text-xs! whitespace-pre-wrap break-all mt-3 shadow-none!">
+              <CodeBox
+                className="text-xs! whitespace-pre-wrap break-all mt-3 shadow-none!"
+                render={<pre />}
+              >
                 Authentication-Results: {auth.authenticationResults}
-              </pre>
+              </CodeBox>
             )}
           </>
         )}
-      </section>
+      </Card>
       {report && <DeliverabilitySection report={report} />}
       {email.spam && <SpamSection spam={email.spam} />}
-      <section className="ui-card ui-card-static p-4!">
+      <Card className="p-4!" render={<section />}>
         <h3 className="text-sm font-bold mb-1 tracking-normal">Delivery</h3>
         {/* Two columns from sm up; on a phone each value goes under its label. */}
         <dl className="grid grid-cols-1 sm:grid-cols-[minmax(120px,200px)_1fr] text-sm">
@@ -902,7 +909,7 @@ function AuthenticationPane({
               </div>
             ))}
         </dl>
-      </section>
+      </Card>
     </div>
   );
 }
@@ -966,7 +973,7 @@ function EmailJsonPane({
         )}
       </p>
       <div className="flex items-center gap-2">
-        <div className="flex overflow-hidden rounded-sm border border-border">
+        <div className="flex overflow-hidden rounded-sm border">
           {(["formatted", "tree"] as const).map((mode) => (
             <button
               key={mode}
@@ -984,24 +991,28 @@ function EmailJsonPane({
             </button>
           ))}
         </div>
-        <button
+        <Button
+          variant="outlined"
+          className="ml-auto py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={() => copy(text, "json")}
-          className="ml-auto ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
         >
           {copied === "json" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {copied === "json" ? "Copied" : "Copy JSON"}
-        </button>
+        </Button>
       </div>
       {view === "tree" ? (
-        <div className="ui-code overflow-x-auto p-3">
+        <CodeBox className="overflow-x-auto p-3">
           <JsonTree data={json} />
-        </div>
+        </CodeBox>
       ) : (
-        <pre className="ui-code syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words">
+        <CodeBox
+          className="syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words"
+          render={<pre />}
+        >
           {/* Safe: Prism.highlight encodes token text for json. */}
           <code className="language-json" dangerouslySetInnerHTML={{ __html: highlighted }} />
-        </pre>
+        </CodeBox>
       )}
     </div>
   );
@@ -1318,9 +1329,9 @@ export function EmailDetail({
     return (
       <div className="p-6 text-sm text-muted-foreground">
         This email could not be read. The raw message is below.
-        <pre className="ui-code mt-4 whitespace-pre-wrap break-all text-foreground">
+        <CodeBox className="mt-4 whitespace-pre-wrap break-all text-foreground" render={<pre />}>
           {request.body || "(empty)"}
-        </pre>
+        </CodeBox>
       </div>
     );
   }
@@ -1364,7 +1375,7 @@ export function EmailDetail({
       className="ph-no-capture flex flex-col h-full"
     >
       {/* Envelope */}
-      <div className="@container border-b border-border px-4 pt-3 pb-3 shrink-0 bg-card">
+      <div className="@container border-b px-4 pt-3 pb-3 shrink-0 bg-card">
         {/* In a narrow pane the buttons go under the subject, which keeps the full width. */}
         <div className="flex flex-col gap-2 @xl:flex-row @xl:items-start @xl:gap-3">
           <div className="@xl:flex-1 min-w-0 flex items-start gap-2">
@@ -1380,7 +1391,7 @@ export function EmailDetail({
             {isTest && (
               <span
                 title="Test email sent from the dashboard"
-                className="mt-0.5 shrink-0 px-1.5 py-0.5 text-xs font-bold leading-none rounded-sm border border-border bg-muted text-muted-foreground"
+                className="mt-0.5 shrink-0 px-1.5 py-0.5 text-xs font-bold leading-none rounded-sm border bg-muted text-muted-foreground"
               >
                 Test
               </span>
@@ -1389,25 +1400,27 @@ export function EmailDetail({
           {(canReadAgain || rawAvailable) && (
             <div className="flex flex-wrap gap-2 @xl:justify-end @xl:shrink-0">
               {canReadAgain && (
-                <button
+                <Button
+                  variant="outlined"
+                  className="py-1! px-3! text-xs flex items-center gap-1.5"
                   type="button"
                   onClick={() => void readAgain("header")}
                   disabled={replayHere?.state.kind === "sending"}
-                  className="ui-btn-outline py-1! px-3! text-xs flex items-center gap-1.5"
                 >
                   <RotateCcw className="h-3 w-3" aria-hidden />
                   Read again
-                </button>
+                </Button>
               )}
               {rawAvailable && (
-                <button
+                <Button
+                  variant="outlined"
+                  className="py-1! px-3! text-xs flex items-center gap-1.5"
                   type="button"
                   onClick={downloadEml}
-                  className="ui-btn-outline py-1! px-3! text-xs flex items-center gap-1.5"
                 >
                   <FileDown className="h-3 w-3" aria-hidden />
                   Download .eml
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -1518,28 +1531,33 @@ export function EmailDetail({
           ) : !parsed && listParsed ? (
             <p className="text-sm text-muted-foreground">Loading the parsed result...</p>
           ) : !hasLayouts ? (
-            <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
+            <Card className="p-4! space-y-3 max-w-[640px]" render={<section />}>
               <h3 className="text-sm font-semibold">No layout reads this sender yet.</h3>
               <p className="text-sm text-muted-foreground">
                 A layout picks out the values you need and sends them on as JSON.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 {onOpenLayouts && (
-                  <button
+                  <Button
+                    variant="primary"
+                    className="py-1.5! px-3! text-xs"
                     type="button"
                     onClick={onOpenLayouts}
-                    className="ui-btn-primary py-1.5! px-3! text-xs"
                   >
                     Add a layout
-                  </button>
+                  </Button>
                 )}
-                <Link href="/parse" className="ui-btn-outline py-1.5! px-3! text-xs">
+                <Button
+                  variant="outlined"
+                  className="py-1.5! px-3! text-xs"
+                  render={<Link href="/parse" />}
+                >
                   Browse ready-made layouts
-                </Link>
+                </Button>
               </div>
-            </section>
+            </Card>
           ) : (
-            <section className="ui-card ui-card-static p-4! space-y-3 max-w-[640px]">
+            <Card className="p-4! space-y-3 max-w-[640px]" render={<section />}>
               <h3 className="text-sm font-semibold">No layout applied to this email.</h3>
               <p className="text-sm text-muted-foreground">
                 {canManageForwarding
@@ -1548,23 +1566,25 @@ export function EmailDetail({
               </p>
               {canManageForwarding && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
+                  <Button
+                    variant="primary"
+                    className="py-1.5! px-3! text-xs flex items-center gap-1.5"
                     type="button"
                     onClick={() => void readAgain("parsed")}
                     disabled={replayHere?.state.kind === "sending"}
-                    className="ui-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5"
                   >
                     <RotateCcw className="h-3 w-3" aria-hidden />
                     Read again
-                  </button>
+                  </Button>
                   {onOpenLayouts && (
-                    <button
+                    <Button
+                      variant="outlined"
+                      className="py-1.5! px-3! text-xs"
                       type="button"
                       onClick={onOpenLayouts}
-                      className="ui-btn-outline py-1.5! px-3! text-xs"
                     >
                       Open Layouts
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -1580,7 +1600,7 @@ export function EmailDetail({
                   {replayMessage("parsed")}
                 </p>
               )}
-            </section>
+            </Card>
           ))}
 
         {activeTab === "json" && json && (
@@ -1611,7 +1631,7 @@ export function EmailDetail({
               <div
                 role="group"
                 aria-label="Preview width"
-                className="flex overflow-hidden rounded-sm border border-border"
+                className="flex overflow-hidden rounded-sm border"
               >
                 {(["desktop", "mobile"] as const).map((mode) => (
                   <button
@@ -1650,7 +1670,7 @@ export function EmailDetail({
             {reply && (
               <div className="flex items-center justify-end gap-2 mb-3">
                 <div
-                  className="flex overflow-hidden rounded-sm border border-border"
+                  className="flex overflow-hidden rounded-sm border"
                   role="group"
                   aria-label="Text to show"
                 >
@@ -1691,7 +1711,7 @@ export function EmailDetail({
               </p>
             )}
             {email.text ? (
-              <div className="relative ui-code font-sans! text-sm leading-relaxed whitespace-pre-wrap break-words">
+              <CodeBox className="relative font-sans! text-sm leading-relaxed whitespace-pre-wrap break-words">
                 <button
                   type="button"
                   onClick={() =>
@@ -1705,7 +1725,7 @@ export function EmailDetail({
                 <div className="max-w-[760px]">
                   {reply && textView === "reply" ? reply : email.text}
                 </div>
-              </div>
+              </CodeBox>
             ) : (
               <p className="text-sm text-muted-foreground">This email has no text.</p>
             )}
@@ -1718,7 +1738,7 @@ export function EmailDetail({
         )}
 
         {activeTab === "headers" && (
-          <div className="ui-code overflow-x-auto">
+          <CodeBox className="overflow-x-auto">
             <table className="text-sm font-mono w-full">
               <tbody>
                 {Object.entries(request.headers).map(([key, value]) => (
@@ -1736,12 +1756,12 @@ export function EmailDetail({
                 Some headers were too large to keep.
               </p>
             )}
-          </div>
+          </CodeBox>
         )}
 
         {activeTab === "attachments" && (
           <div className="max-w-[760px]">
-            <ul className="ui-card ui-card-static p-0! divide-y divide-border/20">
+            <Card className="p-0! divide-y divide-border/20" render={<ul />}>
               {attachments.map((attachment, index) => (
                 <li
                   key={`${attachment.filename}-${index}`}
@@ -1761,19 +1781,20 @@ export function EmailDetail({
                     {formatBytes(attachment.size)}
                   </span>
                   {stored && (
-                    <button
+                    <Button
+                      variant="outlined"
+                      className="py-1! px-2! text-xs flex items-center gap-1.5 shrink-0"
                       type="button"
                       onClick={() => void downloadAttachment(index)}
-                      className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1.5 shrink-0"
                       aria-label={`Download ${attachment.filename ?? `attachment ${index + 1}`}`}
                     >
                       <FileDown className="h-3 w-3" />
                       Download
-                    </button>
+                    </Button>
                   )}
                 </li>
               ))}
-            </ul>
+            </Card>
             {attachmentError && (
               <p className="text-xs text-destructive-ink mt-3">{attachmentError}</p>
             )}
@@ -1804,15 +1825,21 @@ export function EmailDetail({
                     {formatBytes(storedRawHere.bytes.length)}. Download the .eml for all of it.
                   </p>
                 )}
-                <pre className="ui-code overflow-x-auto text-xs whitespace-pre-wrap break-all">
+                <CodeBox
+                  className="overflow-x-auto text-xs whitespace-pre-wrap break-all"
+                  render={<pre />}
+                >
                   {storedRawHere.text}
-                </pre>
+                </CodeBox>
               </>
             )
           ) : rawAvailable ? (
-            <pre className="ui-code overflow-x-auto text-xs whitespace-pre-wrap break-all">
+            <CodeBox
+              className="overflow-x-auto text-xs whitespace-pre-wrap break-all"
+              render={<pre />}
+            >
               {raw!.text}
-            </pre>
+            </CodeBox>
           ) : (
             <p className="text-sm text-muted-foreground max-w-[60ch]">
               This email was larger than 1 MiB, so the full message was not kept. Its headers, text

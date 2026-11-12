@@ -7,6 +7,7 @@ import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { MAILHOOKS_FEATURES, type MailhooksFeature } from "@/lib/mailhooks-features";
 import { JsonLd, faqSchema, howToSchema } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
 
 /** A small table for a feature page's examples; `note` is a mono line under a header. */
 export function FeatureTable({
@@ -19,11 +20,11 @@ export function FeatureTable({
   rows: string[][];
 }) {
   return (
-    <div className="ui-card ui-card-static overflow-x-auto">
+    <Card className="overflow-x-auto">
       <table className="w-full text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="border-b border-border">
+          <tr className="border-b">
             {columns.map((column) => (
               <th key={column.header} scope="col" className="text-left py-2 pr-6 last:pr-0">
                 <span className="font-bold">{column.header}</span>
@@ -51,7 +52,7 @@ export function FeatureTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }
 
@@ -97,7 +98,7 @@ export function FeaturePage({
             <ol className="space-y-4">
               {feature.steps.map((step, i) => (
                 <li key={step.name} className="flex gap-4">
-                  <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
+                  <span className="w-9 h-9 border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                     {i + 1}
                   </span>
                   <div>
@@ -146,19 +147,19 @@ export function FeaturePage({
             <ul className="grid sm:grid-cols-2 gap-4">
               {others.map((other) => (
                 <li key={other.path}>
-                  <Link href={other.path} className="ui-card block h-full">
+                  <Card interactive className="block h-full" render={<Link href={other.path} />}>
                     <p className="font-bold mb-1">{other.name}</p>
                     <p className="text-sm text-muted-foreground">{other.summary}</p>
-                  </Link>
+                  </Card>
                 </li>
               ))}
               <li>
-                <Link href="/parse" className="ui-card block h-full">
+                <Card interactive className="block h-full" render={<Link href="/parse" />}>
                   <p className="font-bold mb-1">Ready-made layouts</p>
                   <p className="text-sm text-muted-foreground">
                     Orders, bookings, receipts and reports from the senders you already use.
                   </p>
-                </Link>
+                </Card>
               </li>
             </ul>
           </section>

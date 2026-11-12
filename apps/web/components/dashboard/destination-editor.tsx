@@ -54,6 +54,9 @@ import { Field, Segmented, Switch, SwitchRow, useConfirmStep } from "./settings-
 import { useReportDirty } from "./dirty-sections";
 import { SheetsDestinationEditor } from "./sheets-destination-editor";
 import { FileDropDestinationEditor } from "./file-drop-destination-editor";
+import { CodeBox } from "@/components/ui/code";
+import { FieldControl } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
 
 /**
  * One destination's settings, grouped by the questions they answer: where
@@ -371,7 +374,8 @@ function DeliveryPreview({
         >
           <SelectTrigger
             id={`preview-${destinationId ?? "new"}`}
-            className="ui-input h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[30rem]"
+            field
+            className="h-auto text-[13px] font-mono py-1.5! px-2! min-w-0 flex-1 max-w-[30rem]"
           >
             <SelectValue />
           </SelectTrigger>
@@ -398,7 +402,10 @@ function DeliveryPreview({
           <>
             {verdict}
             {delivery && (
-              <pre className="ui-code text-xs! leading-[18px] p-3! whitespace-pre-wrap break-all max-h-80 overflow-auto">
+              <CodeBox
+                className="text-xs! leading-[18px] p-3! whitespace-pre-wrap break-all max-h-80 overflow-auto"
+                render={<pre />}
+              >
                 <span className="font-bold">
                   {delivery.method} {delivery.url}
                 </span>
@@ -411,7 +418,7 @@ function DeliveryPreview({
                 ))}
                 {"\n\n"}
                 {prettyBody(delivery.body, delivery.headers["content-type"])}
-              </pre>
+              </CodeBox>
             )}
           </>
         ) : (
@@ -807,7 +814,8 @@ function GenericDestinationEditor({
           error={showUrlError ? urlError : null}
           errorId={`${idPrefix}-url-error`}
         >
-          <input
+          <FieldControl
+            className="w-full text-sm font-mono py-2!"
             ref={urlRef}
             id={`${idPrefix}-url`}
             type="url"
@@ -824,17 +832,16 @@ function GenericDestinationEditor({
             }}
             placeholder="https://api.example.com/hooks/inbound"
             spellCheck={false}
-            className="ui-input w-full text-sm font-mono py-2!"
           />
         </Field>
         <Field id={`${idPrefix}-name`} label="Name" help="Optional, for the list and the log.">
-          <input
+          <FieldControl
+            className="w-full text-sm py-2!"
             id={`${idPrefix}-name`}
             value={draft.name}
             onChange={(e) => set({ name: e.target.value })}
             placeholder={chatUrl ? `${service} channel` : "Staging API"}
             maxLength={100}
-            className="ui-input w-full text-sm py-2!"
           />
         </Field>
       </div>
@@ -916,7 +923,8 @@ function GenericDestinationEditor({
               >
                 <SelectTrigger
                   id={`${idPrefix}-provider`}
-                  className="ui-input h-auto text-[13px] py-1.5! px-2! w-56"
+                  field
+                  className="h-auto text-[13px] py-1.5! px-2! w-56"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -947,7 +955,8 @@ function GenericDestinationEditor({
             label="Mailgun signing key"
             help="Your HTTP webhook signing key (Mailgun, Settings, API Security), so the signature field verifies in your handler. Stored encrypted, never shown again."
           >
-            <input
+            <FieldControl
+              className="w-full text-sm font-mono py-2!"
               id={`${idPrefix}-mailgun-key`}
               type="password"
               autoComplete="off"
@@ -958,7 +967,6 @@ function GenericDestinationEditor({
                   ? "Saved. Type a new one to replace it."
                   : "Optional: without it, the signature field is empty"
               }
-              className="ui-input w-full text-sm font-mono py-2!"
             />
           </Field>
         )}
@@ -1138,7 +1146,8 @@ function GenericDestinationEditor({
               error={throttleError}
             >
               <div className="flex items-center gap-1.5">
-                <input
+                <FieldControl
+                  className="w-full text-sm font-mono py-2!"
                   id={`${idPrefix}-throttle`}
                   inputMode="numeric"
                   value={draft.throttle}
@@ -1146,7 +1155,6 @@ function GenericDestinationEditor({
                     set({ throttle: e.target.value.replace(/[^\d]/g, "").slice(0, 4) })
                   }
                   placeholder="0"
-                  className="ui-input w-full text-sm font-mono py-2!"
                 />
                 <span className="text-xs text-muted-foreground">s</span>
               </div>
@@ -1158,13 +1166,13 @@ function GenericDestinationEditor({
               error={delayError}
             >
               <div className="flex items-center gap-1.5">
-                <input
+                <FieldControl
+                  className="w-full text-sm font-mono py-2!"
                   id={`${idPrefix}-delay`}
                   inputMode="numeric"
                   value={draft.delay}
                   onChange={(e) => set({ delay: e.target.value.replace(/[^\d]/g, "").slice(0, 4) })}
                   placeholder="0"
-                  className="ui-input w-full text-sm font-mono py-2!"
                 />
                 <span className="text-xs text-muted-foreground">s</span>
               </div>
@@ -1176,12 +1184,12 @@ function GenericDestinationEditor({
             help="A field in the JSON body that holds when the sender sent the request, such as data.publishedAt. The log then shows how long each request took to reach webhooks.cc. Without one, standard timestamp headers are read where a sender has them."
             error={sentFieldError}
           >
-            <input
+            <FieldControl
+              className="w-full text-sm font-mono py-2!"
               id={`${idPrefix}-sent-field`}
               value={draft.sentField}
               onChange={(e) => set({ sentField: e.target.value })}
               placeholder="publishedAt"
-              className="ui-input w-full text-sm font-mono py-2!"
             />
           </Field>
         </div>
@@ -1202,18 +1210,19 @@ function GenericDestinationEditor({
       {destination && (
         <div className="pt-4 border-t border-border/20 space-y-2">
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            <Button
+              variant="outlined"
+              className={cn(
+                "py-1.5! px-3! text-xs flex items-center gap-1.5",
+                (testing || dirty) && "opacity-50 cursor-not-allowed"
+              )}
               type="button"
               onClick={() => void sendTest()}
               disabled={testing || dirty}
-              className={cn(
-                "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
-                (testing || dirty) && "opacity-50 cursor-not-allowed"
-              )}
             >
               <Send className="h-3 w-3" />
               {testing ? "Sending..." : "Send test delivery"}
-            </button>
+            </Button>
             <span className="text-xs text-muted-foreground">
               {dirty
                 ? "Save first: the test uses the saved settings."
@@ -1266,38 +1275,43 @@ function GenericDestinationEditor({
         {destination &&
           (confirmArmed ? (
             <>
-              <button
+              <Button
+                variant="outlined"
                 key="confirm"
+                className="py-1.5! px-3! text-xs text-destructive-ink"
                 type="button"
                 onClick={() => {
                   if (confirmSettled()) void remove();
                 }}
-                className="ui-btn-outline py-1.5! px-3! text-xs text-destructive-ink"
               >
                 Remove destination
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outlined"
                 key="cancel"
+                className="py-1.5! px-3! text-xs min-w-24"
                 ref={keepRef}
                 type="button"
                 onClick={cancelConfirm}
-                className="ui-btn-outline py-1.5! px-3! text-xs min-w-24"
               >
                 Keep it
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
+              variant="outlined"
               key="arm"
+              className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
               type="button"
               onClick={armConfirm}
-              className="ui-btn-outline py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
             >
               <Trash2 className="h-3 w-3" /> Remove
-            </button>
+            </Button>
           ))}
         {(dirty || !destination) && (
-          <button
+          <Button
+            variant="outlined"
+            className="py-1.5! px-3! text-xs"
             type="button"
             onClick={() => {
               if (!destination) onCancel?.();
@@ -1307,22 +1321,22 @@ function GenericDestinationEditor({
                 setError(null);
               }
             }}
-            className="ui-btn-outline py-1.5! px-3! text-xs"
           >
             Cancel
-          </button>
+          </Button>
         )}
-        <button
+        <Button
+          variant="primary"
+          className={cn(
+            "py-1.5! px-3! text-xs",
+            ((!dirty && !!destination) || saving) && "opacity-50 cursor-not-allowed"
+          )}
           type="button"
           onClick={() => void save()}
           disabled={(!dirty && !!destination) || saving}
-          className={cn(
-            "ui-btn-primary py-1.5! px-3! text-xs",
-            ((!dirty && !!destination) || saving) && "opacity-50 cursor-not-allowed"
-          )}
         >
           {saving ? "Saving..." : destination ? "Save destination" : "Add destination"}
-        </button>
+        </Button>
       </div>
       {confirmArmed && (
         <p className="text-xs text-muted-foreground -mt-2">

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import {
   SupabaseAuthProvider,
@@ -40,16 +41,14 @@ function PricingCTAInner({
   // HTML; authenticated visitors see it swap to the dashboard link.
   if (isAuthenticated) {
     return (
-      <Link
-        href="/dashboard"
-        className={cn(
-          quietWhenSignedIn ? "ui-btn-outline" : "ui-btn-primary",
-          "w-full text-center block"
-        )}
+      <Button
+        variant={quietWhenSignedIn ? "outlined" : "primary"}
+        className="w-full text-center block"
+        render={<Link href="/dashboard" />}
       >
         Go to Dashboard
         <ArrowRight className="inline-block ml-2 h-5 w-5" />
-      </Link>
+      </Button>
     );
   }
 
@@ -59,14 +58,13 @@ function PricingCTAInner({
         redirectTo="/dashboard"
         layout="horizontal"
         verb="Sign up with"
+        raised
         buttonClassName={cn(
-          "text-sm px-4 ui-btn-outline cursor-pointer flex-1 whitespace-nowrap normal-case tracking-normal",
+          "text-sm px-4 flex-1 whitespace-nowrap normal-case tracking-normal",
           inverted && "text-foreground"
         )}
         firstButtonClassName={
-          primary
-            ? "text-sm px-4 ui-btn-primary cursor-pointer flex-1 whitespace-nowrap normal-case tracking-normal"
-            : undefined
+          primary ? "text-sm px-4 flex-1 whitespace-nowrap normal-case tracking-normal" : undefined
         }
       />
       <Link
@@ -107,11 +105,16 @@ export function PaidPlanCTA({
 function PaidPlanCTAInner({ plan, primary }: { plan: "Pro" | "Business"; primary: boolean }) {
   const isAuthenticated = useIsAuthenticated();
   return (
-    <Link
-      href={isAuthenticated ? "/account/plan" : "/login?mode=sign-up&redirect=/account/plan"}
-      className={cn(primary ? "ui-btn-primary" : "ui-btn-outline", "mt-auto block text-center")}
+    <Button
+      variant={primary ? "primary" : "outlined"}
+      className="mt-auto block text-center"
+      render={
+        <Link
+          href={isAuthenticated ? "/account/plan" : "/login?mode=sign-up&redirect=/account/plan"}
+        />
+      }
     >
       {isAuthenticated ? `Upgrade to ${plan}` : `Start free, then go ${plan}`}
-    </Link>
+    </Button>
   );
 }

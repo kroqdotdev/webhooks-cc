@@ -6,6 +6,8 @@ import { X } from "lucide-react";
 import { formatBytes, formatTimestamp } from "@/types/request";
 import type { DisplayableRequest } from "./request-detail";
 import { computeJsonDiff, computeMapDiff, type DiffType } from "@/lib/json-diff";
+import { Button } from "@/components/ui/button";
+import { CodeBox } from "@/components/ui/code";
 
 interface RequestDiffProps {
   left: DisplayableRequest;
@@ -68,24 +70,25 @@ export function RequestDiff({ left, right, onExit }: RequestDiffProps) {
   return (
     <div className="ph-no-capture flex flex-col h-full">
       {/* Header */}
-      <div className="border-b border-border px-4 py-3 shrink-0">
+      <div className="border-b px-4 py-3 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-xs font-bold">Comparing</span>
             <span className="font-mono text-xs text-muted-foreground">#{leftId.slice(-6)}</span>
             <span className="text-xs text-muted-foreground">vs</span>
             <span className="font-mono text-xs text-muted-foreground">#{rightId.slice(-6)}</span>
-            <span className="px-2 py-0.5 text-[11px] font-bold rounded-sm border border-border bg-muted">
+            <span className="px-2 py-0.5 text-[11px] font-bold rounded-sm border bg-muted">
               {changedCount} difference{changedCount !== 1 ? "s" : ""}
             </span>
           </div>
-          <button
+          <Button
+            variant="outlined"
+            className="py-1! px-2! text-xs flex items-center gap-1"
             onClick={onExit}
-            className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1"
           >
             <X className="h-3 w-3" />
             Exit
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -198,7 +201,7 @@ function DiffSection({ title, children }: { title: string; children: React.React
   return (
     <div>
       <h3 className="text-xs font-bold text-muted-foreground mb-2 tracking-normal">{title}</h3>
-      <div className="ui-code p-3 space-y-0.5">{children}</div>
+      <CodeBox className="p-3 space-y-0.5">{children}</CodeBox>
     </div>
   );
 }

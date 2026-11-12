@@ -9,6 +9,7 @@ import {
   type LiveResponse,
 } from "@/lib/live-response";
 import { formatBytes } from "@/types/request";
+import { CodeBox } from "@/components/ui/code";
 
 /**
  * The Response tab of a live capture (`whk tunnel --live`): what the app
@@ -46,7 +47,7 @@ export function LiveResponseView({ response }: { response: LiveResponse }) {
             {headers.length === 0 ? (
               <p className="text-sm text-muted-foreground">No headers.</p>
             ) : (
-              <div className="ui-code overflow-x-auto p-3">
+              <CodeBox className="overflow-x-auto p-3">
                 <table className="ph-no-capture w-full font-mono text-xs">
                   <tbody>
                     {headers.map(([name, value]) => (
@@ -57,7 +58,7 @@ export function LiveResponseView({ response }: { response: LiveResponse }) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </CodeBox>
             )}
           </section>
           <section className="space-y-2">
@@ -71,9 +72,12 @@ export function LiveResponseView({ response }: { response: LiveResponse }) {
                 {formatBytes(liveResponseBytes(response))} of binary data.
               </p>
             ) : (
-              <pre className="ph-no-capture ui-code overflow-x-auto whitespace-pre-wrap break-all text-sm">
+              <CodeBox
+                className="ph-no-capture overflow-x-auto whitespace-pre-wrap break-all text-sm"
+                render={<pre />}
+              >
                 {text}
-              </pre>
+              </CodeBox>
             )}
             {response.bodyTruncated && (
               <p className="text-xs text-muted-foreground">

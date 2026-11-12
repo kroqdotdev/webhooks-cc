@@ -22,6 +22,9 @@ import { buildTemplateRequest } from "@/lib/template-send";
 import type { Request, RequestSummary } from "@/types/request";
 import { trackCTAClick, trackGuestEndpointCreated } from "@/lib/analytics";
 import { ArrowRight, Check, Circle, Copy, Mail, Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { CodeBox } from "@/components/ui/code";
 
 const REQUEST_LIMIT = 25;
 const DEMO_ENDPOINT_STORAGE_KEY = "demo_endpoint";
@@ -446,7 +449,7 @@ function LandingDashboardInner() {
   // data-landing-signed-in lets the hero wrapper drop its viewport height (:has()).
   if (isAuthenticated) {
     return (
-      <div data-landing-signed-in className="border-b border-border bg-background px-4 py-10">
+      <div data-landing-signed-in className="border-b bg-background px-4 py-10">
         <div className="max-w-3xl mx-auto flex flex-col items-center gap-4 text-center md:flex-row md:justify-between md:text-left">
           <div className="space-y-1">
             <p className="text-lg font-bold">You&apos;re signed in</p>
@@ -455,10 +458,14 @@ function LandingDashboardInner() {
               visitors.
             </p>
           </div>
-          <Link href="/dashboard" className="ui-btn-primary inline-block shrink-0">
+          <Button
+            variant="primary"
+            className="inline-block shrink-0"
+            render={<Link href="/dashboard" />}
+          >
             Go to Dashboard
             <ArrowRight className="inline-block ml-2 h-4 w-4" />
-          </Link>
+          </Button>
         </div>
       </div>
     );
@@ -471,16 +478,16 @@ function LandingDashboardInner() {
           <p className="text-lg font-bold">Couldn&apos;t create your webhook URL</p>
           <p className="text-sm text-muted-foreground max-w-sm">{createError}</p>
           <div className="flex items-center gap-3">
-            <button
+            <Button
+              variant="primary"
               onClick={() => void handleCreateEndpoint()}
               disabled={isCreating}
-              className="ui-btn-primary"
             >
               {isCreating ? "Creating..." : "Try again"}
-            </button>
-            <Link href="/login" className="ui-btn-secondary">
+            </Button>
+            <Button variant="soft" render={<Link href="/login" />}>
               Sign up free instead
-            </Link>
+            </Button>
           </div>
         </div>
       </DashboardFrame>
@@ -524,16 +531,16 @@ function LandingDashboardInner() {
                 <div className="bg-muted rounded-sm h-40 w-full" />
               </div>
             </div>
-            <div className="relative my-auto mx-4 sm:mx-auto ui-card ui-card-static max-w-sm p-6! text-center space-y-4">
+            <Card className="relative my-auto mx-4 sm:mx-auto max-w-sm p-6! text-center space-y-4">
               <p className="text-sm text-muted-foreground">
                 {humanSignal === "automated"
                   ? "Your guest URL is one click away: no account, 12 hours of captures."
                   : "Your free guest URL is created the moment you interact with the page, or right now:"}
               </p>
-              <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
+              <Button variant="primary" onClick={() => void handleCreateEndpoint()}>
                 Get your webhook URL
-              </button>
-            </div>
+              </Button>
+            </Card>
           </div>
         </DashboardFrame>
       );
@@ -543,7 +550,7 @@ function LandingDashboardInner() {
       <DashboardFrame>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
           <span
-            className="h-3 w-3 bg-primary border border-border animate-pulse motion-reduce:animate-none"
+            className="h-3 w-3 bg-primary border animate-pulse motion-reduce:animate-none"
             aria-hidden
           />
           <p className="text-sm font-bold text-muted-foreground">Creating your webhook URL...</p>
@@ -556,7 +563,7 @@ function LandingDashboardInner() {
     <DashboardFrame>
       <ErrorBoundary resetKey={endpoint?.id}>
         {/* URL bar: same layout as the real dashboard */}
-        <div className="shrink-0 border-b border-border bg-card px-4 py-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5">
+        <div className="shrink-0 border-b bg-card px-4 py-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5">
           <span className="font-bold text-sm shrink-0 hidden sm:inline">Your endpoint</span>
           <UrlCopy url={endpointUrl} />
           {/* Email capture needs an account: guest captures are readable by anyone with the slug. */}
@@ -591,7 +598,7 @@ function LandingDashboardInner() {
 
         {/* Registration push: appears once the first webhook lands */}
         {hasRequests && !upgradeDismissed ? (
-          <div className="shrink-0 border-b border-border bg-primary/10 px-4 py-2.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="shrink-0 border-b bg-primary/10 px-4 py-2.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="text-sm font-medium">
               <span className="sm:hidden">Webhook received! Keep this endpoint free:</span>
               <span className="max-sm:hidden">
@@ -621,7 +628,7 @@ function LandingDashboardInner() {
           {hasRequests ? (
             <>
               <div className="hidden md:flex h-full overflow-hidden">
-                <div className="w-80 shrink-0 border-r border-border overflow-hidden">
+                <div className="w-80 shrink-0 border-r overflow-hidden">
                   <RequestList
                     requests={filteredSummaries}
                     selectedId={selectedId}
@@ -655,7 +662,7 @@ function LandingDashboardInner() {
                   <div className="flex-1 flex flex-col overflow-hidden">
                     <button
                       onClick={() => setMobileDetail(false)}
-                      className="border-b border-border px-4 py-2 text-sm font-bold hover:bg-muted cursor-pointer transition-colors shrink-0"
+                      className="border-b px-4 py-2 text-sm font-bold hover:bg-muted cursor-pointer transition-colors shrink-0"
                     >
                       &larr; Back to list
                     </button>
@@ -696,7 +703,7 @@ function LandingDashboardInner() {
         </div>
 
         {/* Frame footer */}
-        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 bg-muted">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2 bg-muted">
           <p className="text-xs text-muted-foreground font-bold">
             Guest endpoint &middot; no account needed &middot; {REQUEST_LIMIT} requests, 12 hours
           </p>
@@ -743,7 +750,7 @@ function UrlCopy({ url }: { url: string }) {
       </code>
       <button
         onClick={handleCopy}
-        className="p-1.5 hover:bg-muted transition-colors cursor-pointer border border-border rounded-md shrink-0"
+        className="p-1.5 hover:bg-muted transition-colors cursor-pointer border rounded-md shrink-0"
         title="Copy URL"
         aria-label="Copy webhook URL"
       >
@@ -845,14 +852,15 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
             <p className="font-bold">Waiting for the first request</p>
           </div>
 
-          <button
+          <Button
+            variant="primary"
+            className="w-full py-4 text-lg flex items-center justify-center gap-2"
             onClick={() => void handleSendTest()}
             disabled={sending}
-            className="ui-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
           >
             <Send className="h-5 w-5" />
             {sending ? "Sending..." : sent ? "Sent!" : "Send your first webhook"}
-          </button>
+          </Button>
 
           <div className="space-y-2">
             <p className="text-xs font-bold text-muted-foreground">
@@ -860,18 +868,19 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
             </p>
             <div className="flex items-center justify-center gap-2">
               {(["Stripe", "GitHub", "Shopify"] as const).map((provider) => (
-                <button
+                <Button
+                  variant="outlined"
                   key={provider}
+                  className="text-sm py-2 px-4 cursor-pointer"
                   onClick={() =>
                     void handleSendProvider(
                       provider.toLowerCase() as "stripe" | "github" | "shopify"
                     )
                   }
                   disabled={sending}
-                  className="ui-btn-outline text-sm py-2 px-4 cursor-pointer"
                 >
                   {provider}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -895,13 +904,12 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
               </button>
             </div>
             {/* Focusable, so the keyboard can scroll a line that does not fit. */}
-            <pre
-              tabIndex={0}
-              aria-label="curl command"
-              className="ui-code text-sm whitespace-pre overflow-x-auto text-left"
+            <CodeBox
+              className="text-sm whitespace-pre overflow-x-auto text-left"
+              render={<pre tabIndex={0} aria-label="curl command" />}
             >
               {curlCmd}
-            </pre>
+            </CodeBox>
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -918,8 +926,6 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
  *  Top edge is provided by the title strip above it. */
 function DashboardFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full border-b border-border bg-background flex flex-col overflow-hidden">
-      {children}
-    </div>
+    <div className="h-full border-b bg-background flex flex-col overflow-hidden">{children}</div>
   );
 }

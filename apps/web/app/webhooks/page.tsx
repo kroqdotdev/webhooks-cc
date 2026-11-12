@@ -8,6 +8,7 @@ import {
   getAllWebhookProviderPages,
   WEBHOOK_PROVIDER_CATEGORIES,
 } from "@/lib/webhook-provider-pages";
+import { Card } from "@/components/ui/card";
 
 export const metadata = createPageMetadata({
   title: "Test Webhooks From 50+ Providers: Stripe, GitHub, Shopify & More",
@@ -69,10 +70,11 @@ export default function WebhooksHubPage() {
                 {group.map((provider) => {
                   const icon = getWebProviderInfo(provider.slug)?.icon;
                   return (
-                    <Link
+                    <Card
+                      interactive
                       key={provider.slug}
-                      href={`/webhooks/${provider.slug}`}
-                      className="ui-card block group"
+                      className="block group"
+                      render={<Link href={`/webhooks/${provider.slug}`} />}
                     >
                       <div className="flex items-center gap-3 mb-2">
                         {icon && (
@@ -96,7 +98,7 @@ export default function WebhooksHubPage() {
                         </h3>
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2">{provider.blurb}</p>
-                    </Link>
+                    </Card>
                   );
                 })}
               </div>
@@ -104,7 +106,7 @@ export default function WebhooksHubPage() {
           );
         })}
 
-        <div className="ui-card ui-card-static bg-muted mt-4">
+        <Card className="bg-muted mt-4">
           <h2 className="font-bold text-xl mb-2">Using a provider we don&apos;t list?</h2>
           <p className="text-muted-foreground">
             Every webhooks.cc endpoint accepts any HTTP webhook; the provider pages just add signed
@@ -121,7 +123,7 @@ export default function WebhooksHubPage() {
             </Link>{" "}
             for custom senders.
           </p>
-        </div>
+        </Card>
       </div>
     </main>
   );

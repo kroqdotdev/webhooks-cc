@@ -34,6 +34,7 @@ import {
   isSecretRequired,
   type TemplateProvider,
 } from "@/lib/template-send";
+import { CodeBox } from "@/components/ui/code";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type SendMode = "manual" | TemplateProvider;
@@ -256,14 +257,17 @@ export function SendWebhookDialog({
       {!controlled && (
         <DialogTrigger
           render={
-            <button className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5" />
+            <Button
+              variant="outlined"
+              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
+            />
           }
         >
           <Send className="h-3.5 w-3.5" />
           Send
         </DialogTrigger>
       )}
-      <DialogContent className="border border-border shadow-float max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="border shadow-float max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-bold tracking-normal">Send a test request</DialogTitle>
           <DialogDescription className="sr-only">
@@ -278,7 +282,7 @@ export function SendWebhookDialog({
                 Mode
               </label>
               <Select value={mode} onValueChange={(value) => handleModeChange(value as SendMode)}>
-                <SelectTrigger id="send-mode" className="ui-input text-sm w-full h-auto">
+                <SelectTrigger id="send-mode" field className="text-sm w-full h-auto">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-80">
@@ -314,7 +318,7 @@ export function SendWebhookDialog({
                   value={selectedTemplateId}
                   onValueChange={(value) => handleTemplateChange(mode, value)}
                 >
-                  <SelectTrigger id="send-template" className="ui-input text-sm w-full h-auto">
+                  <SelectTrigger id="send-template" field className="text-sm w-full h-auto">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -341,7 +345,8 @@ export function SendWebhookDialog({
                     aria-describedby="send-secret-help"
                     value={mockWebhookSecret}
                     onChange={(e) => setMockWebhookSecret(e.target.value)}
-                    className="ui-input text-sm"
+                    field
+                    className="text-sm"
                     placeholder={mode === "gitlab" ? "gl_token_..." : "whsec_..."}
                   />
                   <p id="send-secret-help" className="mt-2 text-xs text-muted-foreground">
@@ -360,12 +365,13 @@ export function SendWebhookDialog({
                   id="send-event"
                   value={templateEventOverride}
                   onChange={(e) => setTemplateEventOverride(e.target.value)}
-                  className="ui-input text-sm"
+                  field
+                  className="text-sm"
                   placeholder={selectedTemplate?.event ?? "event.name"}
                 />
               </div>
 
-              <div className="ui-code p-3! text-xs space-y-1">
+              <CodeBox className="p-3! text-xs space-y-1">
                 <p>
                   <span className="font-bold">Template:</span> {selectedTemplate?.description}
                 </p>
@@ -381,7 +387,7 @@ export function SendWebhookDialog({
                     Open dashboard test webhook docs
                   </Link>
                 </p>
-              </div>
+              </CodeBox>
             </>
           )}
 
@@ -395,7 +401,7 @@ export function SendWebhookDialog({
                 onValueChange={(value) => setMethod(value as HttpMethod)}
                 disabled={isTemplateMode}
               >
-                <SelectTrigger id="send-method" className="ui-input text-sm w-full h-auto">
+                <SelectTrigger id="send-method" field className="text-sm w-full h-auto">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -416,14 +422,17 @@ export function SendWebhookDialog({
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="/"
-                className="ui-input text-sm"
+                field
+                className="text-sm"
               />
             </div>
           </div>
 
           <div>
             <p className="text-xs font-bold mb-2">Endpoint</p>
-            <pre className="ui-code text-xs overflow-x-auto">{endpointUrl}</pre>
+            <CodeBox className="text-xs overflow-x-auto" render={<pre />}>
+              {endpointUrl}
+            </CodeBox>
           </div>
 
           <div>
@@ -434,7 +443,8 @@ export function SendWebhookDialog({
               id="send-headers"
               value={headersInput}
               onChange={(e) => setHeadersInput(e.target.value)}
-              className="ui-input min-h-24 font-mono text-sm"
+              field
+              className="min-h-24 font-mono text-sm"
             />
           </div>
 
@@ -446,29 +456,24 @@ export function SendWebhookDialog({
               id="send-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="ui-input min-h-28 font-mono text-sm"
+              field
+              className="min-h-28 font-mono text-sm"
               placeholder='{"event":"test"}'
               disabled={method === "GET" || isTemplateMode}
             />
           </div>
 
-          {status !== "idle" && (
-            <div
-              className={
-                status === "error"
-                  ? "border border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink"
-                  : "ui-code p-3! text-sm"
-              }
-            >
-              {status === "sending" ? "Sending..." : statusText || "Sent"}
+          {status === "error" ? (
+            <div className="border border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive-ink">
+              {statusText || "Sent"}
             </div>
-          )}
+          ) : status !== "idle" ? (
+            <CodeBox className="p-3! text-sm">
+              {status === "sending" ? "Sending..." : statusText || "Sent"}
+            </CodeBox>
+          ) : null}
 
-          <Button
-            onClick={handleSend}
-            disabled={status === "sending"}
-            className="w-full ui-btn-primary"
-          >
+          <Button onClick={handleSend} disabled={status === "sending"} raised className="w-full">
             {status === "sending" ? "Sending..." : "Send request"}
           </Button>
         </div>

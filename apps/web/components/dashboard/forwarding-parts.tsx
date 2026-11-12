@@ -18,6 +18,9 @@ import {
   isConnectionError,
   isTimeoutError,
 } from "@/lib/forwarding/display";
+import { FieldControl } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
+import { CodeBox } from "@/components/ui/code";
 
 /**
  * Pieces of a destination's editor: the owner's header rows, the signing
@@ -199,7 +202,11 @@ export function HeaderRowsEditor({
                 aria-label={`Header ${n}`}
                 className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(140px,1fr)_minmax(0,2fr)_auto] gap-2 items-center"
               >
-                <input
+                <FieldControl
+                  className={cn(
+                    "w-full text-[13px] font-mono py-1.5! min-w-0",
+                    nameShown && "border-destructive!"
+                  )}
                   ref={(el) => {
                     nameRefs.current.set(row.id, el);
                   }}
@@ -210,10 +217,6 @@ export function HeaderRowsEditor({
                   placeholder="Authorization"
                   aria-invalid={nameShown}
                   aria-describedby={nameShown ? nameErrorId : undefined}
-                  className={cn(
-                    "ui-input w-full text-[13px] font-mono py-1.5! min-w-0",
-                    nameShown && "border-destructive!"
-                  )}
                 />
                 <button
                   type="button"
@@ -226,25 +229,30 @@ export function HeaderRowsEditor({
                 <div className="col-span-2 md:col-span-1 flex items-center gap-2 min-w-0">
                   {row.value === null && row.masked !== null ? (
                     <>
-                      <input
+                      <FieldControl
+                        className="flex-1 min-w-0 text-[13px] font-mono py-1.5! bg-muted/50 shadow-none!"
                         aria-label={`Header ${n} value, hidden after saving`}
                         value={row.masked}
                         readOnly
-                        className="ui-input flex-1 min-w-0 text-[13px] font-mono py-1.5! bg-muted/50 shadow-none!"
                       />
-                      <button
+                      <Button
+                        variant="outlined"
+                        className="py-1! px-2.5! text-xs shrink-0"
                         type="button"
                         onClick={() => {
                           updateRow(row.id, { value: "" });
                           setAnnounce(`${row.name.trim() || "Header"} value replaced`);
                         }}
-                        className="ui-btn-outline py-1! px-2.5! text-xs shrink-0"
                       >
                         Replace
-                      </button>
+                      </Button>
                     </>
                   ) : (
-                    <input
+                    <FieldControl
+                      className={cn(
+                        "flex-1 min-w-0 text-[13px] font-mono py-1.5!",
+                        valueShown && "border-destructive!"
+                      )}
                       aria-label={`Header ${n} value`}
                       value={row.value ?? ""}
                       onChange={(e) => updateRow(row.id, { value: e.target.value })}
@@ -258,10 +266,6 @@ export function HeaderRowsEditor({
                       placeholder="Bearer ..."
                       aria-invalid={valueShown}
                       aria-describedby={valueShown ? valueErrorId : undefined}
-                      className={cn(
-                        "ui-input flex-1 min-w-0 text-[13px] font-mono py-1.5!",
-                        valueShown && "border-destructive!"
-                      )}
                     />
                   )}
                 </div>
@@ -281,19 +285,20 @@ export function HeaderRowsEditor({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <button
+        <Button
+          variant="outlined"
+          className={cn(
+            "py-1.5! px-3! text-xs flex items-center gap-1.5",
+            liveRows.length >= MAX_OWNER_HEADERS && "opacity-50 cursor-not-allowed"
+          )}
           ref={addRef}
           type="button"
           onClick={addRow}
           disabled={liveRows.length >= MAX_OWNER_HEADERS}
-          className={cn(
-            "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
-            liveRows.length >= MAX_OWNER_HEADERS && "opacity-50 cursor-not-allowed"
-          )}
         >
           <Plus className="h-3 w-3" />
           Add header
-        </button>
+        </Button>
         {(liveRows.length >= MAX_OWNER_HEADERS || tooMany) && (
           <span
             className={cn("text-xs", tooMany ? "text-destructive-ink" : "text-muted-foreground")}
@@ -335,7 +340,10 @@ export function AlwaysAddedHeaders({ relay, slug }: { relay: boolean; slug: stri
   const rows = relay ? RELAY_HEADERS : JSON_HEADERS;
   return (
     <div className="space-y-1.5">
-      <pre className="ui-code text-xs! leading-[18px] p-3! whitespace-pre-wrap break-all">
+      <CodeBox
+        className="text-xs! leading-[18px] p-3! whitespace-pre-wrap break-all"
+        render={<pre />}
+      >
         {rows.map(([name, value], index) => (
           <span key={name}>
             {index > 0 && "\n"}
@@ -343,7 +351,7 @@ export function AlwaysAddedHeaders({ relay, slug }: { relay: boolean; slug: stri
             <span className="text-muted-foreground">: {value.replace("{slug}", slug)}</span>
           </span>
         ))}
-      </pre>
+      </CodeBox>
       <p className="text-xs text-muted-foreground max-w-[62ch]">
         {relay ? (
           "Added to every as-received delivery, so your server can tell a relay from the original, measure the delay, and check it came from here. The body is never changed."
@@ -394,20 +402,26 @@ export function SecretField({
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-2">
-        <code className="ui-input flex-1 min-w-[220px] text-sm font-mono py-2! truncate">
+        <FieldControl
+          className="flex-1 min-w-[220px] text-sm font-mono py-2! truncate"
+          render={<code />}
+        >
           {secret ?? "whsec_" + "•".repeat(24)}
-        </code>
-        <button
+        </FieldControl>
+        <Button
+          variant="outlined"
+          className="py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={() =>
             secret ? setSecret(null) : void run(load, "The secret could not be loaded.")
           }
-          className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
         >
           {secret ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
           {secret ? "Hide" : "Reveal"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outlined"
+          className="py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={() =>
             void (async () => {
@@ -418,41 +432,43 @@ export function SecretField({
               }
             })()
           }
-          className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {copied ? "Copied" : "Copy"}
-        </button>
+        </Button>
         {confirmRotate ? (
           <>
-            <button
+            <Button
+              variant="outlined"
+              className="py-1! px-2.5! text-xs text-destructive-ink"
               type="button"
               onClick={() =>
                 void run(rotate, "The secret could not be replaced.").then(
                   (value) => value && setConfirmRotate(false)
                 )
               }
-              className="ui-btn-outline py-1! px-2.5! text-xs text-destructive-ink"
             >
               Replace secret
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outlined"
+              className="py-1! px-2.5! text-xs"
               type="button"
               onClick={() => setConfirmRotate(false)}
-              className="ui-btn-outline py-1! px-2.5! text-xs"
             >
               Keep it
-            </button>
+            </Button>
           </>
         ) : (
-          <button
+          <Button
+            variant="outlined"
+            className="py-1! px-2.5! text-xs flex items-center gap-1.5"
             type="button"
             onClick={() => setConfirmRotate(true)}
-            className="ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
           >
             <RefreshCw className="h-3 w-3" />
             Rotate
-          </button>
+          </Button>
         )}
       </div>
       <p className="text-xs text-muted-foreground max-w-[62ch]">
@@ -558,7 +574,9 @@ export function TestResult({ test }: { test: ForwardTestResult }) {
           <span className="font-mono">{formatDuration(test.durationMs)}</span>. {what}
         </p>
         {test.excerpt && (
-          <pre className="ui-code text-xs! p-3! whitespace-pre-wrap break-all">{test.excerpt}</pre>
+          <CodeBox className="text-xs! p-3! whitespace-pre-wrap break-all" render={<pre />}>
+            {test.excerpt}
+          </CodeBox>
         )}
       </>
     );
@@ -590,7 +608,9 @@ export function TestResult({ test }: { test: ForwardTestResult }) {
         </p>
       )}
       {test.excerpt && (
-        <pre className="ui-code text-xs! p-3! whitespace-pre-wrap break-all">{test.excerpt}</pre>
+        <CodeBox className="text-xs! p-3! whitespace-pre-wrap break-all" render={<pre />}>
+          {test.excerpt}
+        </CodeBox>
       )}
     </>
   );
