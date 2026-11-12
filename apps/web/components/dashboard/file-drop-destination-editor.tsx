@@ -533,7 +533,7 @@ export function FileDropDestinationEditor({
               ))}
               <div className="flex flex-wrap gap-2">
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-1! px-2! text-xs inline-flex items-center gap-1"
                   type="button"
                   onClick={() => setColumns([...columns, { header: "", value: "" }])}
@@ -647,7 +647,7 @@ export function FileDropDestinationEditor({
         </Button>
         {destination && (
           <Button
-            variant="outlined"
+            variant="surface"
             className={cn("py-1.5! px-3! text-xs", dirty && "opacity-50 cursor-not-allowed")}
             type="button"
             disabled={!!busy || dirty}

@@ -187,7 +187,7 @@ function SampleEmailButton({
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
       <Button
-        variant="outlined"
+        variant="surface"
         className="py-1! px-2.5! text-xs"
         type="button"
         onClick={() => onSend(template)}
@@ -704,7 +704,7 @@ function LineItemsEditor({
             </div>
           ))}
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1! px-2! text-xs inline-flex items-center gap-1"
             type="button"
             onClick={() => onChange({ ...spec, columns: [...columns, { name: "", column: "" }] })}
@@ -1029,7 +1029,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
               {replay?.kind !== "done" && (
                 <>
                   <Button
-                    variant="outlined"
+                    variant="surface"
                     className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
                     type="button"
                     onClick={() => void readRecentAgain()}
@@ -1158,7 +1158,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         id={`layout-${layout.id}-edit`}
                         aria-label={`Edit layout ${n}`}
                         className="ml-auto py-1! px-2.5! text-xs inline-flex items-center gap-1"
-                        render={<Button variant="outlined" />}
+                        render={<Button variant="surface" />}
                       >
                         Edit layout
                         <ChevronDown className="h-3 w-3" aria-hidden />
@@ -1303,7 +1303,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
           <DropdownMenuTrigger
             render={
               <Button
-                variant={layouts.length === 0 ? "primary" : "outlined"}
+                variant={layouts.length === 0 ? "primary" : "surface"}
                 type="button"
                 disabled={layouts.length >= MAX_LAYOUTS}
                 className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5"

@@ -140,11 +140,7 @@ export function PricingPlans({ headingLevel = "h3" }: PricingPlansProps) {
             </li>
           </ul>
         </div>
-        <Button
-          variant="outlined"
-          className="text-center block"
-          render={<Link href="/for-teams" />}
-        >
+        <Button variant="surface" className="text-center block" render={<Link href="/for-teams" />}>
           How Teams works
           <ArrowRight className="inline-block ml-2 h-5 w-5" aria-hidden />
         </Button>

@@ -154,7 +154,7 @@ export function SiteHeader({
         // Sign-up is the goal, so it is always one click away, not only in the hero.
         <span className="flex items-center gap-2">
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1.5! px-3.5! text-sm"
             render={<Link href="/login" />}
           >
@@ -338,7 +338,7 @@ export function SiteHeader({
                 !onAuthPage && (
                   <div className="pt-3 border-t border-foreground/20">
                     <Button
-                      variant="outlined"
+                      variant="surface"
                       className="inline-block text-sm"
                       render={<Link href="/login" onClick={() => setOpen(false)} />}
                     >

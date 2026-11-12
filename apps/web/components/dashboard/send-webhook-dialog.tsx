@@ -257,10 +257,7 @@ export function SendWebhookDialog({
       {!controlled && (
         <DialogTrigger
           render={
-            <Button
-              variant="outlined"
-              className="py-1.5! px-3! text-xs flex items-center gap-1.5"
-            />
+            <Button variant="surface" className="py-1.5! px-3! text-xs flex items-center gap-1.5" />
           }
         >
           <Send className="h-3.5 w-3.5" />

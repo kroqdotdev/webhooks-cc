@@ -231,7 +231,7 @@ function SetupMenu({
       <DropdownMenuTrigger
         render={
           <Button
-            variant="outlined"
+            variant="surface"
             className={cn("py-1.5! px-3! text-xs flex items-center gap-1.5", className)}
             type="button"
             aria-label={label}
@@ -354,7 +354,7 @@ function SendMenu({
     // Only the request to send: the button opens its dialog directly.
     return (
       <Button
-        variant="outlined"
+        variant="surface"
         type="button"
         onClick={() => send.setRequestOpen(true)}
         className={buttonClass}
@@ -368,12 +368,7 @@ function SendMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button
-            variant="outlined"
-            type="button"
-            className={buttonClass}
-            disabled={send.sending}
-          />
+          <Button variant="surface" type="button" className={buttonClass} disabled={send.sending} />
         }
       >
         <Send className="h-3.5 w-3.5" />
@@ -387,7 +382,6 @@ function SendMenu({
   );
 }
 
-/** The test email's result. Always in the accessibility tree so it is announced. */
 const WIDE = "(min-width: 1024px)";
 const subscribeWide = (onChange: () => void) => {
   const query = window.matchMedia(WIDE);
@@ -395,6 +389,7 @@ const subscribeWide = (onChange: () => void) => {
   return () => query.removeEventListener("change", onChange);
 };
 
+/** The test email's result. Always in the accessibility tree so it is announced. */
 function SendStatus({ status }: { status: SendActions["status"] }) {
   // Below the wide layout, Send sits in the Actions menu, so the result is a
   // toast at the foot of the screen, announced by Sonner's own live region; on
@@ -508,7 +503,7 @@ function ActionsMenu({
       <DropdownMenuTrigger
         render={
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1.5! px-3! text-xs flex items-center gap-1.5 max-md:min-h-9"
             type="button"
           />

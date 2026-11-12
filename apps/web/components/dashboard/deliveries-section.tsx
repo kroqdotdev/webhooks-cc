@@ -306,7 +306,7 @@ export function DeliveriesSection({
                 {queuing ? "Queuing..." : "Send them again"}
               </Button>
               <Button
-                variant="outlined"
+                variant="surface"
                 className="py-1! px-2.5! text-xs"
                 type="button"
                 onClick={() => setConfirming(false)}
@@ -316,7 +316,7 @@ export function DeliveriesSection({
             </>
           ) : (
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1.5! px-3! text-xs"
               type="button"
               onClick={() => {
@@ -505,7 +505,7 @@ export function DeliveriesSection({
             </span>
             {!exhausted && (
               <Button
-                variant="outlined"
+                variant="surface"
                 className={cn(
                   "py-1! px-2.5! text-xs",
                   loadingOlder && "opacity-50 cursor-not-allowed"

@@ -302,7 +302,7 @@ export function RequestDetail({
           {/* On phones every action is at least 36px tall (Share and Replay render their own buttons). */}
           <div className="flex items-center gap-2 shrink-0 max-md:[&_button]:min-h-9">
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               ref={curlBtnRef}
               onClick={() => handleCopy(curlCommand, "curl")}
@@ -465,7 +465,7 @@ export function RequestDetail({
               </span>
               {request.body && (
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-1! max-md:min-h-9 px-2.5! text-xs flex items-center gap-1.5"
                   type="button"
                   onClick={() => handleCopy(request.body ?? "", "raw")}
@@ -611,7 +611,7 @@ function BodyCopyDropdown({
   return (
     <div className="absolute top-0 right-0" ref={ref}>
       <Button
-        variant="outlined"
+        variant="surface"
         className="py-1! max-md:min-h-9 px-2! text-xs flex items-center gap-1"
         onClick={() => setOpen(!open)}
       >
@@ -770,7 +770,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
         <div className="flex items-center justify-center gap-2 flex-wrap">
           {onSendTest && (
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               onClick={onSendTest}
             >
@@ -780,7 +780,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
           )}
           {url && (
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               onClick={handleCopy}
             >
@@ -790,7 +790,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
           )}
           {onOpenSettings && (
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               onClick={onOpenSettings}
             >
@@ -833,7 +833,7 @@ function BinaryBody({ bytes, id }: { bytes: Uint8Array<ArrayBuffer>; id: string 
           {bytes.length > HEX_PREVIEW_BYTES ? ` Showing the first ${HEX_PREVIEW_BYTES} bytes.` : ""}
         </span>
         <Button
-          variant="outlined"
+          variant="surface"
           className="py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={download}

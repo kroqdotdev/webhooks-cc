@@ -42,7 +42,7 @@ function PricingCTAInner({
   if (isAuthenticated) {
     return (
       <Button
-        variant={quietWhenSignedIn ? "outlined" : "primary"}
+        variant={quietWhenSignedIn ? "surface" : "primary"}
         className="w-full text-center block"
         render={<Link href="/dashboard" />}
       >
@@ -106,7 +106,7 @@ function PaidPlanCTAInner({ plan, primary }: { plan: "Pro" | "Business"; primary
   const isAuthenticated = useIsAuthenticated();
   return (
     <Button
-      variant={primary ? "primary" : "outlined"}
+      variant={primary ? "primary" : "surface"}
       className="mt-auto block text-center"
       render={
         <Link

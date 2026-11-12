@@ -82,7 +82,7 @@ export function RequestDiff({ left, right, onExit }: RequestDiffProps) {
             </span>
           </div>
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1! px-2! text-xs flex items-center gap-1"
             onClick={onExit}
           >

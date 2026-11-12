@@ -322,11 +322,7 @@ function ClientSideVerification({
     return (
       <div className="space-y-4">
         <ServerSideResult verified={result.verified} error={result.error} provider={provider} />
-        <Button
-          variant="outlined"
-          className="py-1.5! px-3! text-xs"
-          onClick={() => setResult(null)}
-        >
+        <Button variant="surface" className="py-1.5! px-3! text-xs" onClick={() => setResult(null)}>
           Verify Again
         </Button>
       </div>
@@ -463,7 +459,7 @@ function ClientSideVerification({
             <p className="text-xs text-muted-foreground">
               Want automatic verification on every request?
             </p>
-            <Button variant="outlined" className="py-1.5! px-3! text-xs" onClick={onOpenSettings}>
+            <Button variant="surface" className="py-1.5! px-3! text-xs" onClick={onOpenSettings}>
               Set up in endpoint settings
             </Button>
           </div>

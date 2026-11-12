@@ -49,7 +49,11 @@ const SelectGroup = SelectPrimitive.Group;
 
 const SelectValue = SelectPrimitive.Value;
 
-/** `field` draws the trigger in the field look (`FieldControl`'s) instead of its own. */
+/**
+ * `field` adds the field class (`ui-input`) under the trigger's own utilities,
+ * which win everywhere they overlap: it brings only the field's 150ms border
+ * and ring transition.
+ */
 function SelectTrigger({
   className,
   children,

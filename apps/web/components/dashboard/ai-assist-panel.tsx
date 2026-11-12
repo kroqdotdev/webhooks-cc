@@ -304,7 +304,7 @@ export function AiAssistPanel({
                       </CodeBox>
                       {mode.kind !== "layout" && onAddField && (
                         <Button
-                          variant="outlined"
+                          variant="surface"
                           className="py-0.5! px-2! text-xs ml-auto"
                           type="button"
                           disabled={added.has(field.name) || adding === field.name}
@@ -342,7 +342,7 @@ export function AiAssistPanel({
               </ul>
               {mode.kind === "layout" && onUseLayout && result.match && (
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-1! px-2.5! text-xs"
                   type="button"
                   onClick={() => {

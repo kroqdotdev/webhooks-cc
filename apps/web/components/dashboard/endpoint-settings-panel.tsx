@@ -572,7 +572,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
             />
             {hasSecret && (
               <Button
-                variant="outlined"
+                variant="surface"
                 className="py-1.5! px-3! text-xs shrink-0"
                 type="button"
                 onClick={() => {
@@ -678,7 +678,7 @@ function DeleteSection({
           {confirmArmed ? (
             <>
               <Button
-                variant="outlined"
+                variant="surface"
                 key="confirm"
                 className="py-1.5! px-3! text-xs bg-destructive! text-destructive-foreground! border-destructive!"
                 type="button"
@@ -688,7 +688,7 @@ function DeleteSection({
                 {deleting ? "Deleting..." : "Delete for good"}
               </Button>
               <Button
-                variant="outlined"
+                variant="surface"
                 key="cancel"
                 className="py-1.5! px-3! text-xs min-w-30"
                 ref={keepRef}
@@ -701,7 +701,7 @@ function DeleteSection({
             </>
           ) : (
             <Button
-              variant="outlined"
+              variant="surface"
               key="arm"
               className="py-1.5! px-3! text-xs text-destructive-ink"
               type="button"
@@ -1062,7 +1062,7 @@ export function EndpointSettingsPanel({
                   : `Unsaved changes in ${dirty.length} sections`}
               </p>
               <Button
-                variant="outlined"
+                variant="surface"
                 className="py-1.5! px-3! text-xs"
                 type="button"
                 onClick={() => jump(dirty[0].id as SettingsSection)}

@@ -180,7 +180,7 @@ export default function MailhooksPricing() {
               </li>
             </ul>
             <Button
-              variant="outlined"
+              variant="surface"
               className="inline-block"
               render={<Link href={`${webhooksOrigin()}/for-teams`} />}
             >

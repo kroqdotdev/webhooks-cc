@@ -181,7 +181,7 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
       <h1 className="text-2xl font-bold mb-3">{title}</h1>
       <p className="text-muted-foreground mb-6">{children}</p>
       <Button
-        variant="outlined"
+        variant="surface"
         className="text-sm py-2 px-4 inline-block"
         render={<Link href="/docs/mcp" />}
       >

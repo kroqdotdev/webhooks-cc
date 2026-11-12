@@ -37,7 +37,7 @@ export function GitHubCard({ stars }: GitHubCardProps) {
       </p>
       <div className="flex flex-col gap-3 w-full">
         <Button
-          variant="outlined"
+          variant="surface"
           className="text-sm py-2 text-center flex items-center justify-center gap-2"
           render={
             <a
@@ -67,7 +67,7 @@ export function GitHubCard({ stars }: GitHubCardProps) {
           Star on GitHub
         </Button>
         <Button
-          variant="outlined"
+          variant="surface"
           className="text-sm py-2 text-center flex items-center justify-center gap-2"
           render={<Link href="/changelog" />}
         >

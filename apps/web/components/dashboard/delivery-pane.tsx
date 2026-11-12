@@ -759,7 +759,7 @@ export function DeliveriesPane({
               </p>
               {canSend && (takes || group.deliveries.length > 0) && (
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className={cn(
                     "py-1! px-2.5! text-xs flex items-center gap-1.5 shrink-0",
                     (queuing !== null || !takes) && "opacity-50 cursor-not-allowed"

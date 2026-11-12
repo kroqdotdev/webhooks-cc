@@ -532,7 +532,7 @@ export function DashboardGuideDialog({
         <DialogTrigger
           render={
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1.5! px-3! text-xs flex items-center gap-1.5"
               data-shortcut="guide"
             />

@@ -236,7 +236,7 @@ export function HeaderRowsEditor({
                         readOnly
                       />
                       <Button
-                        variant="outlined"
+                        variant="surface"
                         className="py-1! px-2.5! text-xs shrink-0"
                         type="button"
                         onClick={() => {
@@ -286,7 +286,7 @@ export function HeaderRowsEditor({
       )}
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          variant="outlined"
+          variant="surface"
           className={cn(
             "py-1.5! px-3! text-xs flex items-center gap-1.5",
             liveRows.length >= MAX_OWNER_HEADERS && "opacity-50 cursor-not-allowed"
@@ -409,7 +409,7 @@ export function SecretField({
           {secret ?? "whsec_" + "•".repeat(24)}
         </FieldControl>
         <Button
-          variant="outlined"
+          variant="surface"
           className="py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={() =>
@@ -420,7 +420,7 @@ export function SecretField({
           {secret ? "Hide" : "Reveal"}
         </Button>
         <Button
-          variant="outlined"
+          variant="surface"
           className="py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={() =>
@@ -439,7 +439,7 @@ export function SecretField({
         {confirmRotate ? (
           <>
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1! px-2.5! text-xs text-destructive-ink"
               type="button"
               onClick={() =>
@@ -451,7 +451,7 @@ export function SecretField({
               Replace secret
             </Button>
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1! px-2.5! text-xs"
               type="button"
               onClick={() => setConfirmRotate(false)}
@@ -461,7 +461,7 @@ export function SecretField({
           </>
         ) : (
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1! px-2.5! text-xs flex items-center gap-1.5"
             type="button"
             onClick={() => setConfirmRotate(true)}

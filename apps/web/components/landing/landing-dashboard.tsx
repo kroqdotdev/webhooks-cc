@@ -869,7 +869,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
             <div className="flex items-center justify-center gap-2">
               {(["Stripe", "GitHub", "Shopify"] as const).map((provider) => (
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   key={provider}
                   className="text-sm py-2 px-4 cursor-pointer"
                   onClick={() =>

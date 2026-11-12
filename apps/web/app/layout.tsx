@@ -11,7 +11,6 @@ import {
 } from "@/lib/seo";
 import { JsonLd, organizationSchema } from "@/lib/schemas";
 import { ThemeProvider } from "@/components/providers/theme-provider";
-import { Toaster } from "@/components/ui/toaster";
 import { PostHogProvider } from "@/components/providers/posthog-provider";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
@@ -171,7 +170,6 @@ export default function RootLayout({
             <AnnouncementBanner />
             {/* The skip link's target is rendered right after the site header (SiteHeader). */}
             {children}
-            <Toaster />
           </ThemeProvider>
         </PostHogProvider>
       </body>

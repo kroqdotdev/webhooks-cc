@@ -68,7 +68,7 @@ export default async function SharedRequestPage({ params }: PageProps) {
             </p>
           </div>
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
             render={<Link href="/" />}
           >

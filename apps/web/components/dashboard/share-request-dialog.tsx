@@ -130,7 +130,7 @@ export function ShareRequestDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button variant="outlined" className="py-1.5! px-3! text-xs flex items-center gap-1.5" />
+          <Button variant="surface" className="py-1.5! px-3! text-xs flex items-center gap-1.5" />
         }
       >
         <Link2 className="h-3 w-3" />

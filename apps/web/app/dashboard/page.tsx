@@ -2185,7 +2185,7 @@ function ExportDropdown({
       <DropdownMenuTrigger
         render={
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
             type="button"
             aria-label="Export"
@@ -2282,12 +2282,7 @@ function NoMatchingRequest({
             ? `No ${noun} matches this search. Clear the search to see all ${noun}s.`
             : `The ${noun} that was open does not match this search. Pick one from the list, or clear the search to see all ${noun}s.`}
         </p>
-        <Button
-          variant="outlined"
-          className="py-1.5! px-3! text-xs"
-          type="button"
-          onClick={onClear}
-        >
+        <Button variant="surface" className="py-1.5! px-3! text-xs" type="button" onClick={onClear}>
           Clear
         </Button>
       </div>
@@ -2387,7 +2382,7 @@ function WaitingForRequests({
 
   const emailButton = (primary: boolean) => (
     <Button
-      variant={primary ? "primary" : "outlined"}
+      variant={primary ? "primary" : "surface"}
       onClick={() => void handleSendEmail()}
       disabled={sending === "email"}
       className="self-start flex items-center gap-2 py-2! px-4! text-sm"

@@ -619,7 +619,7 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
             blocked. Loading them tells the sender you opened this email.
           </span>
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1! px-3! text-xs"
             type="button"
             onClick={() => setImagesLoaded(true)}
@@ -992,7 +992,7 @@ function EmailJsonPane({
           ))}
         </div>
         <Button
-          variant="outlined"
+          variant="surface"
           className="ml-auto py-1! px-2.5! text-xs flex items-center gap-1.5"
           type="button"
           onClick={() => copy(text, "json")}
@@ -1401,7 +1401,7 @@ export function EmailDetail({
             <div className="flex flex-wrap gap-2 @xl:justify-end @xl:shrink-0">
               {canReadAgain && (
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-1! px-3! text-xs flex items-center gap-1.5"
                   type="button"
                   onClick={() => void readAgain("header")}
@@ -1413,7 +1413,7 @@ export function EmailDetail({
               )}
               {rawAvailable && (
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-1! px-3! text-xs flex items-center gap-1.5"
                   type="button"
                   onClick={downloadEml}
@@ -1548,7 +1548,7 @@ export function EmailDetail({
                   </Button>
                 )}
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-1.5! px-3! text-xs"
                   render={<Link href="/parse" />}
                 >
@@ -1578,7 +1578,7 @@ export function EmailDetail({
                   </Button>
                   {onOpenLayouts && (
                     <Button
-                      variant="outlined"
+                      variant="surface"
                       className="py-1.5! px-3! text-xs"
                       type="button"
                       onClick={onOpenLayouts}
@@ -1782,7 +1782,7 @@ export function EmailDetail({
                   </span>
                   {stored && (
                     <Button
-                      variant="outlined"
+                      variant="surface"
                       className="py-1! px-2! text-xs flex items-center gap-1.5 shrink-0"
                       type="button"
                       onClick={() => void downloadAttachment(index)}

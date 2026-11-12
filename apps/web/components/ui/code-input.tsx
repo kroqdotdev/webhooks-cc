@@ -79,7 +79,13 @@ export function CodeInput({
         <span aria-hidden className="flex items-center whitespace-pre">
           {slots.map((slot, index) =>
             slot.char ? (
-              <span key={index}>{slot.char}</span>
+              // The digit the next key replaces (input-otp selects one), shown as selected text.
+              <span
+                key={index}
+                className={slot.isActive ? "bg-selected text-selected-foreground" : undefined}
+              >
+                {slot.char}
+              </span>
             ) : (
               <React.Fragment key={index}>
                 {slot.hasFakeCaret && (

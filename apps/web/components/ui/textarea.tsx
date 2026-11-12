@@ -2,7 +2,11 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-/** `field` adds the field look (`FieldControl`'s) over the control's own. */
+/**
+ * `field` adds the field class (`ui-input`) under the control's own utilities,
+ * which win everywhere they overlap: it brings only the field's 150ms border
+ * and ring transition, and the box keeps the control look.
+ */
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.ComponentProps<"textarea"> & { field?: boolean }

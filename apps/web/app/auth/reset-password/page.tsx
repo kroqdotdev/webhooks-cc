@@ -97,7 +97,7 @@ function ResetPasswordContent() {
             Request a new one from the sign-in page with &ldquo;Forgot password?&rdquo;.
           </p>
           <Button
-            variant="outlined"
+            variant="surface"
             className="inline-block text-sm py-2 px-4"
             render={<Link href="/login" />}
           >

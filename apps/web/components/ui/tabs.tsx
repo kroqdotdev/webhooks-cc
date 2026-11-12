@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 
 /**
@@ -22,7 +22,11 @@ const FOCUSABLE =
 
 /** A panel that overflows with nothing focusable inside: the keyboard could not reach it. */
 function needsStop(panel: HTMLElement): boolean {
-  return panel.scrollHeight > panel.clientHeight && !panel.querySelector(FOCUSABLE);
+  if (panel.scrollHeight <= panel.clientHeight) return false;
+  // Only controls that are shown count: a hidden one (display: none) cannot take focus.
+  return !Array.from(panel.querySelectorAll(FOCUSABLE)).some(
+    (element) => element.getClientRects().length > 0
+  );
 }
 
 /**
@@ -55,19 +59,26 @@ function TabsPanel({
       characterData: true,
       attributes: true,
     });
+    // An image that loads grows the content without a mutation.
+    panel.addEventListener("load", check, true);
     return () => {
       resize.disconnect();
       content.disconnect();
+      panel.removeEventListener("load", check, true);
     };
   }, [scroller]);
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      own.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref]
+  );
   return (
     <TabsPrimitive.Panel
       {...props}
-      ref={(node: HTMLDivElement | null) => {
-        own.current = node;
-        if (typeof ref === "function") ref(node);
-        else if (ref) ref.current = node;
-      }}
+      ref={setRef}
       tabIndex={stop ? 0 : undefined}
       onPointerDown={(event) => {
         onPointerDown?.(event);

@@ -1211,7 +1211,7 @@ function GenericDestinationEditor({
         <div className="pt-4 border-t border-border/20 space-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <Button
-              variant="outlined"
+              variant="surface"
               className={cn(
                 "py-1.5! px-3! text-xs flex items-center gap-1.5",
                 (testing || dirty) && "opacity-50 cursor-not-allowed"
@@ -1276,7 +1276,7 @@ function GenericDestinationEditor({
           (confirmArmed ? (
             <>
               <Button
-                variant="outlined"
+                variant="surface"
                 key="confirm"
                 className="py-1.5! px-3! text-xs text-destructive-ink"
                 type="button"
@@ -1287,7 +1287,7 @@ function GenericDestinationEditor({
                 Remove destination
               </Button>
               <Button
-                variant="outlined"
+                variant="surface"
                 key="cancel"
                 className="py-1.5! px-3! text-xs min-w-24"
                 ref={keepRef}
@@ -1299,7 +1299,7 @@ function GenericDestinationEditor({
             </>
           ) : (
             <Button
-              variant="outlined"
+              variant="surface"
               key="arm"
               className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
               type="button"
@@ -1310,7 +1310,7 @@ function GenericDestinationEditor({
           ))}
         {(dirty || !destination) && (
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1.5! px-3! text-xs"
             type="button"
             onClick={() => {

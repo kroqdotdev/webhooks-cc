@@ -606,7 +606,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                   {rules.length > 1 && (
                     <>
                       <Button
-                        variant="outlined"
+                        variant="surface"
                         className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => move(index, -1)}
@@ -615,7 +615,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                         <ArrowUp className="h-3 w-3" /> Check earlier
                       </Button>
                       <Button
-                        variant="outlined"
+                        variant="surface"
                         className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => move(index, 1)}
@@ -626,7 +626,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
                     </>
                   )}
                   <Button
-                    variant="outlined"
+                    variant="surface"
                     className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 ml-auto text-destructive-ink"
                     type="button"
                     onClick={() => setRules((prev) => prev.filter((r) => r.key !== rule.key))}
@@ -679,7 +679,7 @@ export function ResponsesSection({ endpoint }: { endpoint: DashboardEndpoint }) 
 
       {rules.length < MAX_RULES && (
         <Button
-          variant="outlined"
+          variant="surface"
           className="py-1.5! px-3! text-xs inline-flex items-center gap-1.5"
           type="button"
           onClick={addRule}

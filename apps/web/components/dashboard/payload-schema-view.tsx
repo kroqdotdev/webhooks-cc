@@ -94,7 +94,7 @@ export function PayloadSchemaView({ request, candidates, onCopy, copied }: Paylo
           options={SCHEMA_FORMATS}
         />
         <Button
-          variant="outlined"
+          variant="surface"
           className="py-1! px-2! text-xs flex items-center gap-1"
           onClick={() => {
             onCopy(result.code, copyKey);

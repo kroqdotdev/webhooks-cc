@@ -214,12 +214,7 @@ export function SaveFooter({
         {error ?? (dirty ? hint : saved ? "Saved." : "")}
       </p>
       {dirty && (
-        <Button
-          variant="outlined"
-          className="py-1.5! px-3! text-xs"
-          type="button"
-          onClick={onReset}
-        >
+        <Button variant="surface" className="py-1.5! px-3! text-xs" type="button" onClick={onReset}>
           Cancel
         </Button>
       )}

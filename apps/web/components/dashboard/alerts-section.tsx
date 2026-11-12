@@ -347,7 +347,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         // before then, so an early change is never overwritten by the load.
         error ? (
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1! px-2.5! text-xs"
             type="button"
             onClick={() => {
@@ -516,7 +516,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                         .slice(0, 3)
                         .map((found) => (
                           <Button
-                            variant="outlined"
+                            variant="surface"
                             key={found.field.name}
                             className="py-1! px-2! text-xs"
                             type="button"
@@ -528,7 +528,7 @@ export function AlertsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                           </Button>
                         ))}
                     <Button
-                      variant="outlined"
+                      variant="surface"
                       className="py-1! px-2! text-xs"
                       type="button"
                       onClick={() => void replaySince(event)}

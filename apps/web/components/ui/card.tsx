@@ -4,7 +4,7 @@ import { joinClasses, renderAs } from "./render-as";
 type CardProps = React.ComponentPropsWithRef<"div"> & {
   /** Draws the card as this element instead of a div: `render={<Link href="/" />}`. */
   render?: React.ReactElement<{ className?: string }>;
-  /** A card that is itself clickable darkens its hairline under the pointer. */
+  /** Darkens its hairline under the pointer, as a card that is itself a link does. */
   interactive?: boolean;
 };
 

@@ -505,7 +505,7 @@ export function DestinationsSection({
                     <div className="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-border/20">
                       <span className="text-xs text-muted-foreground">Place in the list</span>
                       <Button
-                        variant="outlined"
+                        variant="surface"
                         className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => void move(index, -1)}
@@ -514,7 +514,7 @@ export function DestinationsSection({
                         <ArrowUp className="h-3 w-3" /> Up
                       </Button>
                       <Button
-                        variant="outlined"
+                        variant="surface"
                         className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                         type="button"
                         onClick={() => void move(index, 1)}
@@ -579,7 +579,7 @@ export function DestinationsSection({
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <Button
-                variant="outlined"
+                variant="surface"
                 className={cn(
                   "py-1.5! px-3! text-xs",
                   count >= 10 && "opacity-50 cursor-not-allowed"

@@ -18,7 +18,7 @@ export default function SupportPage() {
       {/* The same header as the account pages (and their way back), so support reads as part of the app. */}
       <SiteHeader>
         <Button
-          variant="outlined"
+          variant="surface"
           className="py-1.5! px-3! text-xs flex items-center gap-1.5"
           render={<Link href="/dashboard" />}
         >

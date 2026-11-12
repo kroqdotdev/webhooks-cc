@@ -44,7 +44,7 @@ export default async function SenderPage({ params }: { params: Promise<{ sender:
     <>
       <SiteHeader>
         <Button
-          variant="outlined"
+          variant="surface"
           className="py-1.5! px-3! text-xs flex items-center gap-1.5"
           render={<Link href="/parse" />}
         >

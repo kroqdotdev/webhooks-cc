@@ -137,7 +137,7 @@ export function PlaceholderMenu({
       <DropdownMenuTrigger
         render={
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
             type="button"
           />

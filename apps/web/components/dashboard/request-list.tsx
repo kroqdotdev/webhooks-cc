@@ -332,7 +332,7 @@ export function RequestList({
   const loadMore = hasMore ? (
     <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
       <Button
-        variant="outlined"
+        variant="surface"
         className={cn(
           "py-1.5! px-4! text-xs flex items-center gap-2",
           loadingMore && "opacity-60 cursor-not-allowed"

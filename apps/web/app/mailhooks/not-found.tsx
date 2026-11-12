@@ -25,10 +25,10 @@ export default function MailhooksNotFound() {
             <Button variant="primary" render={<Link href="/" />}>
               Home
             </Button>
-            <Button variant="outlined" render={<Link href="/parse" />}>
+            <Button variant="surface" render={<Link href="/parse" />}>
               Layout gallery
             </Button>
-            <Button variant="outlined" render={<Link href="/guides" />}>
+            <Button variant="surface" render={<Link href="/guides" />}>
               Guides
             </Button>
           </nav>

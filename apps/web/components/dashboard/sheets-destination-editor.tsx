@@ -341,7 +341,7 @@ export function SheetsDestinationEditor({
         </p>
         {onCancel && (
           <Button
-            variant="outlined"
+            variant="surface"
             className="py-1.5! px-3! text-xs"
             type="button"
             onClick={onCancel}
@@ -389,7 +389,7 @@ export function SheetsDestinationEditor({
               </FieldControl>
             )}
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1.5! px-3! text-xs"
               type="button"
               onClick={() => void connect()}
@@ -430,7 +430,7 @@ export function SheetsDestinationEditor({
                   />
                 </Field>
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-2! px-3! text-xs"
                   type="button"
                   disabled={!!busy}
@@ -439,7 +439,7 @@ export function SheetsDestinationEditor({
                   Create it
                 </Button>
                 <Button
-                  variant="outlined"
+                  variant="surface"
                   className="py-2! px-3! text-xs"
                   type="button"
                   onClick={() => void pick()}
@@ -537,7 +537,7 @@ export function SheetsDestinationEditor({
           ))}
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="outlined"
+              variant="surface"
               className="py-1! px-2! text-xs inline-flex items-center gap-1"
               type="button"
               onClick={() => setColumns([...columns, { header: "", value: "" }])}
