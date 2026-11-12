@@ -4,6 +4,10 @@ import { LAYOUT_TEMPLATES } from "@/lib/layout-templates";
 import { MAILHOOKS_FEATURES } from "@/lib/mailhooks-features";
 import { mailhooksUrl } from "@/lib/mailhooks-seo";
 import { LAST_CONTENT_UPDATE, PUBLIC_SITEMAP_PAGES, SITE_URL } from "@/lib/seo";
+import {
+  getAllShareFrameworkPages,
+  getShareFrameworksLastModified,
+} from "@/lib/share-framework-pages";
 import { listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
 import {
   getAllWebhookProviderPages,
@@ -27,12 +31,13 @@ export interface SitemapEntry {
 export type SitemapFormat = "xml" | "txt" | "rss";
 
 // lastmod must reflect real content changes: Google stops trusting it on a site
-// whose dates are visibly wrong. Provider pages carry their own dates, the
-// /webhooks hub changes whenever one of them does, and /changelog with its
-// newest entry.
+// whose dates are visibly wrong. Provider and framework pages carry their own
+// dates, the /webhooks and /share hubs change whenever one of theirs does, and
+// /changelog with its newest entry.
 export async function webhooksSitemapEntries(): Promise<SitemapEntry[]> {
   const derivedLastModified: Record<string, Date> = {
     "/webhooks": getWebhookProvidersLastModified(),
+    "/share": getShareFrameworksLastModified(),
     "/changelog": newestChangelogDate(),
   };
   const pages: SitemapEntry[] = PUBLIC_SITEMAP_PAGES.map((page) => ({
@@ -44,6 +49,13 @@ export async function webhooksSitemapEntries(): Promise<SitemapEntry[]> {
 
   const providers: SitemapEntry[] = getAllWebhookProviderPages().map((page) => ({
     url: `${SITE_URL}/webhooks/${page.slug}`,
+    lastModified: page.lastModified,
+    changeFrequency: "monthly",
+    priority: 0.7,
+  }));
+
+  const frameworks: SitemapEntry[] = getAllShareFrameworkPages().map((page) => ({
+    url: `${SITE_URL}/share/${page.slug}`,
     lastModified: page.lastModified,
     changeFrequency: "monthly",
     priority: 0.7,
@@ -96,7 +108,7 @@ export async function webhooksSitemapEntries(): Promise<SitemapEntry[]> {
     })),
   ];
 
-  return [...pages, ...providers, ...docs, ...blog];
+  return [...pages, ...providers, ...frameworks, ...docs, ...blog];
 }
 
 /** When the sender pages last changed. */

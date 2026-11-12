@@ -3,7 +3,7 @@ title: "Share localhost"
 description: "Share the site running on your machine at a public HTTPS link with whk share: random or reserved names on sharehooks.cc, passwords, plan limits, and what previews refuse to serve."
 section: cli
 order: 4
-lastUpdated: 2026-11-11
+lastUpdated: 2026-11-12
 schema: howto
 keywords:
   [
@@ -56,6 +56,27 @@ The CLI prints the link and, in a terminal, draws it as a QR code for opening on
 The target is a port on this machine: `3000`, `localhost:3000`, `127.0.0.1:3000`, `[::1]:3000` or `http://localhost:3000`. `localhost` tries IPv4, then IPv6; `127.0.0.1` and `[::1]` connect to exactly that address. A share is a whole port, so a path is refused: share the port and add the path to the link. Your dev server must speak plain HTTP; a local HTTPS server (`https://localhost:3000`) is refused, because the tunnel copies bytes to the port and cannot speak TLS to it. If nothing answers on the port when you start, the CLI says so once and keeps running; visitors see a waiting page until your server is up.
 
 You need an account with a confirmed email address. Guest and unclaimed agent sessions cannot share.
+
+## Frameworks
+
+Your dev server gets each request as if it came from your own machine: `Host: localhost:<port>`, with the public name in `X-Forwarded-Host`, `X-Forwarded-Proto: https` and the visitor's address in `X-Forwarded-For`. A WebSocket's `Origin` is sent as your local origin, and a redirect your app sends to `http://localhost:<port>/...` comes back as the link. So the host checks dev servers make (Vite's `server.allowedHosts`, webpack-dev-server's `Invalid Host header`) pass with no configuration. What can still want a setting is a framework that reads `X-Forwarded-Host`, compares a form's origin, or builds absolute URLs. The [framework guides](/share#frameworks) cover each one:
+
+| Framework                                  | Command          | What to know                                                                               |
+| ------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------ |
+| [Next.js](/share/nextjs)                   | `whk share 3000` | Nothing to add; redirect with paths rather than URLs built from `request.url`              |
+| [Vite](/share/vite) (React, Vue, Svelte)   | `whk share 5173` | Nothing to add; HMR connects through the link                                              |
+| [Nuxt](/share/nuxt)                        | `whk share 3000` | Nothing to add; `useRequestURL()` needs `xForwardedHost` on the server                     |
+| [SvelteKit](/share/sveltekit)              | `whk share 5173` | Nothing in dev; a shared production preview needs `csrf.trustedOrigins`                    |
+| [Astro](/share/astro)                      | `whk share 4321` | Nothing to add; `security.allowedDomains` makes `Astro.url` the public address             |
+| [Angular](/share/angular)                  | `whk share 4200` | Nothing to add; SSR apps log a notice about proxy headers                                  |
+| [Express](/share/express)                  | `whk share 3000` | `app.set('trust proxy', 'loopback')` for the protocol, hostname and secure cookies         |
+| [webpack-dev-server](/share/webpack)       | `whk share 8080` | `client.webSocketURL: 'auto://0.0.0.0:0/ws'` for hot reload                                |
+| [Ruby on Rails](/share/rails)              | `whk share 3000` | `config.hosts << ".sharehooks.cc"`, or the page is `Blocked hosts`                         |
+| [Laravel](/share/laravel)                  | `whk share 8000` | `trustProxies`, and `npm run build` in place of the Vite dev server                        |
+| [Django](/share/django)                    | `whk share 8000` | `CSRF_TRUSTED_ORIGINS = ["https://*.sharehooks.cc"]` for forms                             |
+| [Flask](/share/flask)                      | `whk share 5000` | Nothing to add; `ProxyFix` for external URLs                                               |
+| [FastAPI](/share/fastapi)                  | `whk share 8000` | Start with `--no-proxy-headers` so redirects come back to the link                         |
+| [Phoenix](/share/phoenix)                  | `whk share 4000` | Nothing to add; LiveView and live reload share the port                                    |
 
 ## Names
 

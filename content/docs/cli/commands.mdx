@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-11
+lastUpdated: 2026-11-12
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -183,7 +183,7 @@ Your local server can use these headers to skip its own verification during deve
 
 ## share
 
-Share a local port at a public link, `https://<name>.sharehooks.cc`, until you press Ctrl-C (or the process gets `SIGTERM`). The target is a port on this machine: `3000`, `localhost:3000`, `127.0.0.1:3000` or `http://localhost:3000`; paths and local HTTPS servers are refused. See [Share localhost](/docs/share).
+Share a local port at a public link, `https://<name>.sharehooks.cc`, until you press Ctrl-C (or the process gets `SIGTERM`). The target is a port on this machine: `3000`, `localhost:3000`, `127.0.0.1:3000` or `http://localhost:3000`; paths and local HTTPS servers are refused. See [Share localhost](/docs/share); the [framework guides](/share#frameworks) list each dev server's default port and the settings that matter behind a public link.
 
 ```bash
 whk share <port>

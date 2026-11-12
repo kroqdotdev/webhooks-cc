@@ -43,6 +43,9 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   // /go permanently redirects to / (the landing page is the guest dashboard now)
   // Individual /webhooks/[provider] pages are appended in app/sitemap.xml/route.ts
   { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
+  // Individual /share/[framework] pages are appended in lib/sitemap.ts, which
+  // also dates this page by the newest of them.
+  { path: "/share", changeFrequency: "monthly", priority: 0.8 },
   {
     path: "/email-testing",
     changeFrequency: "monthly",
@@ -193,17 +196,21 @@ export const COMPARE_PAGE_SLUGS: readonly string[] = PUBLIC_SITEMAP_PAGES.flatMa
 /**
  * The path of a page's generated Open Graph image, or null for a page that
  * shares the static one. Each path is answered by an `opengraph-image` route
- * beside the page (app/compare, app/webhooks, app/blog/[slug]).
+ * beside the page (app/compare, app/webhooks, app/share, app/blog/[slug]).
  */
 export function generatedOgImagePath(path: string): string | null {
-  if (path === "/compare" || path === "/webhooks") return `${path}/opengraph-image`;
+  if (path === "/compare" || path === "/webhooks" || path === "/share") {
+    return `${path}/opengraph-image`;
+  }
   const [, section, slug, ...rest] = path.split("/");
   if (!slug || rest.length > 0) return null;
   if (section === "compare") {
     return COMPARE_PAGE_SLUGS.includes(slug) ? `${path}/opengraph-image` : null;
   }
-  // Provider pages and blog posts only ask for metadata once they exist.
-  if (section === "webhooks" || section === "blog") return `${path}/opengraph-image`;
+  // Provider pages, framework pages and blog posts only ask for metadata once they exist.
+  if (section === "webhooks" || section === "share" || section === "blog") {
+    return `${path}/opengraph-image`;
+  }
   return null;
 }
 
