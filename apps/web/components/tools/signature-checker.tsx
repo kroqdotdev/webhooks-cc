@@ -35,6 +35,7 @@ import {
 } from "@/lib/tools/signature";
 import { cn } from "@/lib/utils";
 import { CodeSample, Field, NO_MEMORY, PRIVATE_INPUT, Verdict, fieldNote } from "./tool-parts";
+import { Card } from "@/components/ui/card";
 
 const SLUG = "webhook-signature-checker";
 
@@ -147,13 +148,17 @@ export function SignatureChecker() {
   }
 
   return (
-    <form
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        void run(preset ? "check" : "compute");
-      }}
-      className="ui-card ui-card-static space-y-5"
+    <Card
+      className="space-y-5"
+      render={
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run(preset ? "check" : "compute");
+          }}
+        />
+      }
     >
       <Field
         id="signature-scheme"
@@ -417,6 +422,6 @@ export function SignatureChecker() {
           )}
         </div>
       )}
-    </form>
+    </Card>
   );
 }

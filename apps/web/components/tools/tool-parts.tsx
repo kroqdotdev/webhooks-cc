@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { TabsList, TabsTab } from "@/components/ui/tabs";
 import type { AnswerExplanation } from "@/lib/tools/answer";
 import { cn } from "@/lib/utils";
+import { CodeBox } from "@/components/ui/code";
 
 /**
  * The parts the free tools share (lib/tools). What a person types into a tool
@@ -138,12 +139,12 @@ export function CodeSample({ label, code, aside, testId }: CodeSampleProps) {
       </div>
       <div className={cn("relative", PRIVATE_INPUT)}>
         <CopyButton text={code} />
-        <pre
-          data-testid={testId}
-          className="ui-code max-h-80 overflow-auto whitespace-pre-wrap break-all pr-10"
+        <CodeBox
+          render={<pre data-testid={testId} />}
+          className="max-h-80 overflow-auto whitespace-pre-wrap break-all pr-10"
         >
           {code}
-        </pre>
+        </CodeBox>
       </div>
     </div>
   );

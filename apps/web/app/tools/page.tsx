@@ -4,6 +4,7 @@ import { ToolLink } from "@/components/tools/tool-page";
 import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 import { SITE_URL, createPageMetadata } from "@/lib/seo";
 import { TOOLS, TOOLS_PATH, toolPath } from "@/lib/tools/catalog";
+import { Card } from "@/components/ui/card";
 
 export const metadata = createPageMetadata({
   title: "Free Webhook Tools: Discord & Slack Testers, Signature Checker",
@@ -55,20 +56,19 @@ export default function ToolsPage() {
         <ul className="mb-14 space-y-4">
           {TOOLS.map((tool) => (
             <li key={tool.slug}>
-              <ToolLink
-                slug={tool.slug}
-                className="ui-card group flex items-center justify-between gap-6"
-              >
-                <span>
-                  <span className="block text-lg font-bold transition-colors group-hover:text-primary">
-                    {tool.name}
+              <ToolLink slug={tool.slug} className="group block">
+                <Card interactive className="flex items-center justify-between gap-6">
+                  <span>
+                    <span className="block text-lg font-bold transition-colors group-hover:text-primary">
+                      {tool.name}
+                    </span>
+                    <span className="mt-1 block text-muted-foreground">{tool.summary}</span>
                   </span>
-                  <span className="mt-1 block text-muted-foreground">{tool.summary}</span>
-                </span>
-                <ArrowRight
-                  aria-hidden
-                  className="h-5 w-5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary"
-                />
+                  <ArrowRight
+                    aria-hidden
+                    className="h-5 w-5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary"
+                  />
+                </Card>
               </ToolLink>
             </li>
           ))}
@@ -86,7 +86,7 @@ export default function ToolsPage() {
           </div>
         </section>
 
-        <section className="ui-card ui-card-static">
+        <Card render={<section />}>
           <h2 className="mb-2 text-2xl font-bold">When one test is not enough</h2>
           <p className="mb-5 max-w-2xl leading-relaxed text-muted-foreground">
             webhooks.cc gives you a URL that captures every webhook sent to it: headers, body and
@@ -108,7 +108,7 @@ export default function ToolsPage() {
               </li>
             ))}
           </ul>
-        </section>
+        </Card>
       </div>
     </main>
   );

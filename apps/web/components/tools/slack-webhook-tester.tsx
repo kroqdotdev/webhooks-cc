@@ -30,6 +30,7 @@ import {
   Verdict,
   fieldNote,
 } from "./tool-parts";
+import { Card } from "@/components/ui/card";
 
 const SLUG = "slack-webhook-tester";
 
@@ -116,13 +117,17 @@ export function SlackWebhookTester() {
   }
 
   return (
-    <form
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-      className="ui-card ui-card-static space-y-5"
+    <Card
+      className="space-y-5"
+      render={
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send();
+          }}
+        />
+      }
     >
       <Field
         id="slack-url"
@@ -230,6 +235,6 @@ export function SlackWebhookTester() {
           <CodeSample label="The same message with curl" code={result.curl} testId="tool-curl" />
         </div>
       )}
-    </form>
+    </Card>
   );
 }

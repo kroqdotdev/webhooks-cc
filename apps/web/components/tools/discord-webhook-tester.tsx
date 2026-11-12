@@ -30,6 +30,7 @@ import {
   Verdict,
   fieldNote,
 } from "./tool-parts";
+import { Card } from "@/components/ui/card";
 
 const SLUG = "discord-webhook-tester";
 
@@ -146,13 +147,17 @@ export function DiscordWebhookTester() {
   }
 
   return (
-    <form
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-      className="ui-card ui-card-static space-y-5"
+    <Card
+      className="space-y-5"
+      render={
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send();
+          }}
+        />
+      }
     >
       <Field
         id="discord-url"
@@ -339,6 +344,6 @@ export function DiscordWebhookTester() {
           )}
         </div>
       )}
-    </form>
+    </Card>
   );
 }

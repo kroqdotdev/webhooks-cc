@@ -5,6 +5,7 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { JsonLd, breadcrumbSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 import { SITE_URL } from "@/lib/seo";
 import { TOOLS, TOOLS_PATH, toolPath, type ToolPage } from "@/lib/tools/catalog";
+import { Card } from "@/components/ui/card";
 
 /**
  * The frame every tool page shares: breadcrumb, heading, the tool itself with
@@ -137,7 +138,7 @@ interface ReferenceTableProps {
 export function ReferenceTable({ columns, rows, codeColumn, source }: ReferenceTableProps) {
   return (
     <div>
-      <div className="ui-card ui-card-static overflow-x-auto">
+      <Card className="overflow-x-auto">
         {/* On a phone the table keeps a readable width and the card scrolls sideways. */}
         <table className="w-full min-w-[30rem] text-sm text-foreground">
           <thead>
@@ -164,7 +165,7 @@ export function ReferenceTable({ columns, rows, codeColumn, source }: ReferenceT
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
       {source && source.length > 0 && (
         <p className="mt-3 text-sm text-muted-foreground">
           Source:{" "}
@@ -201,7 +202,7 @@ interface NextStepProps {
 /** The closing block: what webhooks.cc itself does for the same job. */
 export function NextStep({ title, children, links }: NextStepProps) {
   return (
-    <section className="ui-card ui-card-static mb-12">
+    <Card className="mb-12" render={<section />}>
       <h2 className="mb-2 text-2xl font-bold">{title}</h2>
       <p className="mb-5 max-w-2xl leading-relaxed text-muted-foreground">{children}</p>
       <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -214,7 +215,7 @@ export function NextStep({ title, children, links }: NextStepProps) {
           </li>
         ))}
       </ul>
-    </section>
+    </Card>
   );
 }
 
@@ -248,9 +249,13 @@ function OtherTools({ current }: { current: string }) {
       <ul className="grid gap-4 sm:grid-cols-2">
         {others.map((tool) => (
           <li key={tool.slug}>
-            <ToolLink slug={tool.slug} className="ui-card group block h-full">
-              <h3 className="font-bold transition-colors group-hover:text-primary">{tool.name}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{tool.summary}</p>
+            <ToolLink slug={tool.slug} className="group block h-full">
+              <Card interactive className="h-full">
+                <h3 className="font-bold transition-colors group-hover:text-primary">
+                  {tool.name}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">{tool.summary}</p>
+              </Card>
             </ToolLink>
           </li>
         ))}
