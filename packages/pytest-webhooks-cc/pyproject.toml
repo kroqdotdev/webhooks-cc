@@ -1,0 +1,64 @@
+[project]
+name = "pytest-webhooks-cc"
+version = "0.1.0"
+description = "pytest fixtures for testing webhooks and emails with webhooks.cc: capture what your app sends and assert on it"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "webhooks.cc" }]
+keywords = ["pytest", "webhooks", "testing", "email", "fixtures", "stripe", "github"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: Pytest",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Testing",
+  "Typing :: Typed",
+]
+# The fixtures themselves live in webhooks-cc, which registers them through its
+# own pytest11 entry point; this package brings it in and adds what belongs to
+# pytest alone. pytest is named so the plugin list on docs.pytest.org, which
+# reads it from here, shows the version the plugin needs.
+dependencies = ["pytest>=8", "webhooks-cc>=0.7.0"]
+
+[project.urls]
+Homepage = "https://webhooks.cc"
+Documentation = "https://webhooks.cc/docs/sdk/testing/pytest"
+Repository = "https://github.com/kroqdotdev/webhooks-cc"
+
+[project.entry-points.pytest11]
+pytest_webhooks_cc = "pytest_webhooks_cc.plugin"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.13",
+  "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pytest_webhooks_cc"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src"]

@@ -1,11 +1,11 @@
 ---
 title: "Python + pytest"
-description: "Test webhooks and emails in pytest with the webhooks-cc package: assert on the webhooks your app sends, test your handler with signed requests without a network, check your retries, and read codes out of test emails."
+description: "Test webhooks and emails in pytest with the pytest-webhooks-cc plugin: assert on the webhooks your app sends, test your handler with signed requests without a network, check your retries, and read codes out of test emails."
 section: sdk
 order: 10
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-12
 schema: none
-keywords: ["pytest webhooks", "test webhooks python", "pytest webhook testing", "fastapi webhook test", "django webhook test", "stripe webhook pytest"]
+keywords: ["pytest webhooks", "test webhooks python", "pytest webhook testing", "pytest-webhooks-cc", "pytest plugin webhooks", "fastapi webhook test", "django webhook test", "stripe webhook pytest"]
 seo:
   ogTitle: "Webhook Testing with pytest"
   ogDescription: "pytest fixtures for webhooks and email: capture what your app sends, test your handler with Stripe-signed requests in-process, check retries, and read one-time codes."
@@ -13,13 +13,20 @@ seo:
 
 This guide tests a Python app from both sides: the webhooks it sends out and the webhooks it receives. The examples use FastAPI, but nothing in them depends on it: the same calls work with Django, Flask or a plain function. The [Python SDK reference](/docs/sdk/python) lists every method.
 
-## Install the package
+## Install the plugin
 
 ```bash
-pip install webhooks-cc pytest
+pip install pytest-webhooks-cc
 ```
 
-Installing `webhooks-cc` registers its pytest plugin, so the `webhooks_cc` and `webhooks_cc_endpoint` fixtures are available in every test without an import. Create an API key on your [API keys page](/account/api-keys) and set it as `WHK_API_KEY`. Tests that use the fixtures are skipped when the variable is not set, so the suite still passes on a machine without a key.
+[`pytest-webhooks-cc`](https://pypi.org/project/pytest-webhooks-cc/) is the pytest plugin. It installs the `webhooks-cc` SDK with it, and the `webhooks_cc` and `webhooks_cc_endpoint` fixtures are then available in every test without an import or a conftest. Create an API key on your [API keys page](/account/api-keys) and set it as `WHK_API_KEY`. Tests that use the fixtures are skipped when the variable is not set, so the suite still passes on a machine without a key, and the plugin says how many under pytest's "collected" line:
+
+```text
+collected 14 items
+webhooks.cc: WHK_API_KEY is not set, so 3 tests that use the webhooks.cc fixtures will be skipped
+```
+
+The fixtures themselves ship with the SDK, so a project that already installs `webhooks-cc` has them too, and installing both registers them once. `-p no:webhooks_cc` turns them off for a run.
 
 ## Test the webhooks your app sends
 
@@ -192,7 +199,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -e . webhooks-cc pytest
+      - run: pip install -e . pytest-webhooks-cc
       - run: pytest
 ```
 

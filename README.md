@@ -26,6 +26,7 @@ Get a unique URL, point your webhook there, and see every request in real time. 
 - **Share localhost**: put the site on your machine at a public link on sharehooks.cc with `whk share`
 - **CLI with interactive TUI**: manage endpoints, tunnel and stream requests from your terminal
 - **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI, and share a local port from code
+- **pytest plugin**: `pip install pytest-webhooks-cc` gives every test a capture URL and an email address as fixtures
 - **MCP server**: connect AI coding agents (Claude Code, Cursor, VS Code, Codex) to your webhooks
 
 ## Use Cases
@@ -173,6 +174,6 @@ webhooks.cc is built and run by one developer. The hosted service at [webhooks.c
 This project uses a split license:
 
 - **AGPL-3.0**: the web app, receiver, email-capture SMTP host, tunnel edge, attachment parser and database schema (`apps/web/`, `apps/receiver-rs/`, `apps/mx-rs/`, `apps/edge-rs/`, `apps/parser-rs/`, `supabase/`). See [LICENSE](LICENSE).
-- **MIT**: the CLI and its tunnel protocol crate, the TypeScript, Python and Go SDKs, the MCP server, the Zapier and Make apps, and the Claude Code plugin (`apps/cli-rs/`, `crates/tunnel/`, `packages/sdk/`, `packages/sdk-python/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/`, `plugins/`). See the `LICENSE` file in each directory.
+- **MIT**: the CLI and its tunnel protocol crate, the TypeScript, Python and Go SDKs, the pytest plugin, the MCP server, the Zapier and Make apps, and the Claude Code plugin (`apps/cli-rs/`, `crates/tunnel/`, `packages/sdk/`, `packages/sdk-python/`, `packages/pytest-webhooks-cc/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/`, `plugins/`). See the `LICENSE` file in each directory.
 
 The CLI, SDKs and MCP server are MIT so you can use them freely in your own projects, open or closed.

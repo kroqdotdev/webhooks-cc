@@ -44,6 +44,6 @@ Commit messages follow the conventional commit format (`feat(sdk): ...`, `fix(re
 By contributing you agree to the terms of the [CLA](CLA.md). Your contribution is published under the license of the component you change:
 
 - **AGPL-3.0** for `apps/web/`, `apps/receiver-rs/`, `apps/mx-rs/`, `apps/parser-rs/` and `supabase/`
-- **MIT** for `apps/cli-rs/`, `packages/sdk/`, `packages/sdk-python/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/` and `plugins/`
+- **MIT** for `apps/cli-rs/`, `packages/sdk/`, `packages/sdk-python/`, `packages/pytest-webhooks-cc/`, `packages/sdk-go/`, `packages/mcp/`, `packages/zapier-app/`, `packages/make-app/` and `plugins/`
 
 See the root [LICENSE](LICENSE) and each component's `LICENSE` file.
