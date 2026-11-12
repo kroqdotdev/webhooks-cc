@@ -8,11 +8,11 @@
 //! | 0      |                         | Success                                         |
 //! | 1      | `error`, `bad_request`  | Any other failure, or the server refused input   |
 //! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
-//! | 3      | `not_logged_in`, `unauthorized` | No credentials, or they were refused     |
+//! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team or share         |
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
-//! | 7      | `server_error`, `network_error` | Our side or the network failed; retry    |
+//! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
 //! | 8      | `timeout`               | `whk wait` (or another wait) ran out of time     |
 //! | 9      | `confirmation_required`, `cancelled` | A destructive command was not confirmed |
 
@@ -105,13 +105,16 @@ fn from_status(status: u16, retry_after: Option<u64>) -> Classified {
         401 => Classified::new("unauthorized", 3).hint(LOGIN_HINT),
         402 | 403 => Classified::new("forbidden", 5),
         404 | 410 => Classified::new("not_found", 4),
+        408 => Classified::new("request_timeout", 7).hint("Retry in a little while."),
         429 => Classified::new("rate_limited", 6).hint("Wait, then retry."),
         500..=599 => Classified::new("server_error", 7).hint("Retry in a little while."),
         _ => Classified::new("bad_request", 1),
     };
     c.status = Some(status);
     c.retry_after = retry_after;
-    if let (Some(seconds), "rate_limited" | "server_error") = (retry_after, c.code) {
+    if let (Some(seconds), "rate_limited" | "server_error" | "request_timeout") =
+        (retry_after, c.code)
+    {
         c.hint = Some(format!("Retry after {seconds} s."));
     }
     c
@@ -142,6 +145,15 @@ pub fn classify(error: &anyhow::Error) -> Classified {
             return from_status(e.status, e.retry_after);
         }
         if let Some(e) = cause.downcast_ref::<AgentError>() {
+            // The human disconnected the agent, or its registration ended:
+            // the saved connection is gone, which no retry fixes.
+            if e.code == "invalid_grant" {
+                let mut c = Classified::new("connection_revoked", 3).hint(
+                    "The agent connection was revoked or has ended. Connect again with `whk sandbox connect --email <address>`, or run `whk auth login`.",
+                );
+                c.status = Some(e.status);
+                return c;
+            }
             return from_status(e.status, e.retry_after);
         }
         if let Some(e) = cause.downcast_ref::<reqwest::Error>() {
@@ -198,6 +210,7 @@ mod tests {
             (401, "unauthorized", 3),
             (403, "forbidden", 5),
             (404, "not_found", 4),
+            (408, "request_timeout", 7),
             (409, "bad_request", 1),
             (429, "rate_limited", 6),
             (503, "server_error", 7),
@@ -228,6 +241,17 @@ mod tests {
         let c = classify(&anyhow::Error::new(CliError::Timeout("x".into())));
         assert_eq!((c.code, c.exit), ("timeout", 8));
         assert_eq!(classify(&anyhow::anyhow!("plain")).code, "error");
+    }
+
+    #[test]
+    fn a_revoked_agent_connection_says_so() {
+        let error = anyhow::Error::new(AgentError::new("invalid_grant", 400, "revoked"));
+        let c = classify(&error);
+        assert_eq!(
+            (c.code, c.exit, c.status),
+            ("connection_revoked", 3, Some(400))
+        );
+        assert!(c.hint.unwrap().contains("sandbox connect"));
     }
 
     #[test]

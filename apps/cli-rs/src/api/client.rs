@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, RETRY_AFTER};
+use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Method, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -129,32 +129,21 @@ impl ApiClient {
 
     /// Sends any request to an API path and returns the answer whatever its
     /// status (`whk api`). `extra` headers are added after the defaults, so
-    /// they can replace `Content-Type`; `Authorization` and `User-Agent`
-    /// always stay the CLI's own.
+    /// they can replace `Content-Type`; the caller keeps `Authorization` and
+    /// `User-Agent` out of them.
     pub async fn send_raw(
         &self,
         method: Method,
         path: &str,
         body: Option<Vec<u8>>,
-        extra: &[(String, String)],
+        extra_headers: &HeaderMap,
     ) -> Result<RawResponse> {
-        let mut extra_headers = HeaderMap::new();
-        for (name, value) in extra {
-            let name = HeaderName::from_bytes(name.trim().as_bytes())
-                .with_context(|| format!("invalid header name: {name}"))?;
-            if name == reqwest::header::AUTHORIZATION || name == reqwest::header::USER_AGENT {
-                anyhow::bail!("whk sets the {name} header itself");
-            }
-            let value = HeaderValue::from_str(value.trim())
-                .with_context(|| format!("invalid value for header {name}"))?;
-            extra_headers.insert(name, value);
-        }
         let mut resp = self
-            .send_once_with(&method, path, &body, false, &extra_headers)
+            .send_once_with(&method, path, &body, false, extra_headers)
             .await?;
         if resp.status() == StatusCode::UNAUTHORIZED && self.can_refresh() {
             resp = self
-                .send_once_with(&method, path, &body, true, &extra_headers)
+                .send_once_with(&method, path, &body, true, extra_headers)
                 .await?;
         }
         let status = resp.status();

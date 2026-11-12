@@ -2,10 +2,11 @@
 //! It covers whatever has no command of its own yet, so an agent is never
 //! sent to the dashboard for something the API can do.
 
-use std::io::{Read, Write};
+use std::io::{IsTerminal, Read, Write};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use reqwest::Method;
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue, USER_AGENT};
 
 use crate::api::ApiClient;
 use crate::api::client::{api_error, retry_after};
@@ -28,16 +29,7 @@ pub async fn run(
         None if body.is_some() => Method::POST,
         None => Method::GET,
     };
-    let headers = headers
-        .iter()
-        .map(|h| {
-            h.split_once(':')
-                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-                .ok_or_else(|| {
-                    CliError::Usage(format!("invalid header: {h} (expected Key:Value)")).into()
-                })
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let headers = header_map(headers)?;
 
     let resp = client.send_raw(method, &path, body, &headers).await?;
 
@@ -52,7 +44,9 @@ pub async fn run(
 
     let mut out = std::io::stdout().lock();
     out.write_all(&resp.body)?;
-    if !resp.body.is_empty() && !resp.body.ends_with(b"\n") {
+    // The body goes out byte for byte; only a terminal gets a line end, so
+    // the prompt does not land after the JSON.
+    if out.is_terminal() && !resp.body.is_empty() && !resp.body.ends_with(b"\n") {
         out.write_all(b"\n")?;
     }
     out.flush()?;
@@ -86,6 +80,27 @@ fn api_path(path: &str) -> Result<String> {
     }
 }
 
+/// `-H Key:Value` flags as headers. Malformed ones, and `Authorization` or
+/// `User-Agent` (whk sends its own), are usage errors.
+fn header_map(headers: &[String]) -> Result<HeaderMap> {
+    let mut map = HeaderMap::new();
+    for h in headers {
+        let usage = |why: String| -> anyhow::Error { CliError::Usage(why).into() };
+        let (name, value) = h
+            .split_once(':')
+            .ok_or_else(|| usage(format!("invalid header: {h} (expected Key:Value)")))?;
+        let name = HeaderName::from_bytes(name.trim().as_bytes())
+            .map_err(|_| usage(format!("invalid header name: {}", name.trim())))?;
+        if name == AUTHORIZATION || name == USER_AGENT {
+            return Err(usage(format!("whk sets the {name} header itself")));
+        }
+        let value = HeaderValue::from_str(value.trim())
+            .map_err(|_| usage(format!("invalid value for header {name}")))?;
+        map.insert(name, value);
+    }
+    Ok(map)
+}
+
 /// `-d`: the text itself, `@file`, or `@-` for stdin.
 fn read_data(data: &str) -> Result<Vec<u8>> {
     match data.strip_prefix('@') {
@@ -98,7 +113,9 @@ fn read_data(data: &str) -> Result<Vec<u8>> {
         }
         Some(file) => {
             if file.is_empty() {
-                bail!("-d @ needs a file name, or @- for stdin");
+                return Err(
+                    CliError::Usage("-d @ needs a file name, or @- for stdin".into()).into(),
+                );
             }
             std::fs::read(file).with_context(|| format!("failed to read {file}"))
         }
@@ -139,6 +156,24 @@ mod tests {
         std::fs::write(&file, b"{}").unwrap();
         assert_eq!(read_data(&format!("@{}", file.display())).unwrap(), b"{}");
         std::fs::remove_dir_all(&dir).unwrap();
-        assert!(read_data("@").is_err());
+        let error = read_data("@").unwrap_err();
+        assert_eq!(crate::error::classify(&error).code, "usage");
+    }
+
+    #[test]
+    fn bad_headers_are_usage_errors() {
+        let ok = header_map(&["Content-Type: text/plain".into()]).unwrap();
+        assert_eq!(ok["content-type"], "text/plain");
+        for bad in [
+            "no-colon",
+            "Bad Header: x",
+            "X-Ok: a\nb",
+            "Authorization: Bearer x",
+            "user-agent: me",
+        ] {
+            let error = header_map(&[bad.to_string()]).unwrap_err();
+            let c = crate::error::classify(&error);
+            assert_eq!((c.code, c.exit), ("usage", 2), "{bad}");
+        }
     }
 }

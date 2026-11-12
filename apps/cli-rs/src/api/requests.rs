@@ -43,21 +43,41 @@ impl ApiClient {
         })
     }
 
-    /// The requests received since `since` (ms), as the server sent them.
-    pub async fn list_requests_raw(
+    /// One page of an endpoint's requests, newest first, as the server sent
+    /// them, and the cursor for the next (older) page.
+    pub async fn requests_page_raw(
         &self,
         slug: &str,
         limit: u32,
-        since: i64,
-    ) -> Result<Vec<serde_json::Value>> {
+        cursor: Option<&str>,
+        kind: Option<&str>,
+    ) -> Result<(Vec<serde_json::Value>, Option<String>)> {
         self.require_auth()?;
+        let mut params = vec![format!("limit={limit}")];
+        if let Some(c) = cursor {
+            params.push(format!("cursor={}", encode(c)));
+        }
+        if let Some(k) = kind {
+            params.push(format!("kind={}", encode(k)));
+        }
         let resp = self
             .get(&format!(
-                "/api/endpoints/{}/requests?limit={limit}&since={since}",
-                encode(slug)
+                "/api/endpoints/{}/requests/paginated?{}",
+                encode(slug),
+                params.join("&")
             ))
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse request list")
+        let mut page: serde_json::Value =
+            serde_json::from_str(&resp.body).context("failed to parse request page")?;
+        let items = match page.get_mut("requests").map(serde_json::Value::take) {
+            Some(serde_json::Value::Array(items)) => items,
+            _ => Vec::new(),
+        };
+        let next = page
+            .get("nextCursor")
+            .and_then(serde_json::Value::as_str)
+            .map(String::from);
+        Ok((items, next))
     }
 
     pub async fn list_requests_paginated(

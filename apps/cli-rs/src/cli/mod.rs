@@ -58,11 +58,12 @@ Exit status:
   0  success
   1  any other failure, or the server refused the input (bad_request)
   2  bad arguments (usage)
-  3  not logged in, or the credentials were refused (not_logged_in, unauthorized)
+  3  not logged in, or the credentials were refused (not_logged_in, unauthorized,
+     connection_revoked)
   4  not found (not_found)
   5  not allowed by the plan, a limit or a permission (forbidden)
   6  rate limited; wait and retry (rate_limited)
-  7  server or network failure; retry (server_error, network_error)
+  7  server or network failure; retry (server_error, network_error, request_timeout)
   8  a wait ran out of time (timeout)
   9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled)
 

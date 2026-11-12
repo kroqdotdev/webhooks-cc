@@ -49,10 +49,10 @@ Add `--live` when the sender needs your app's response: each webhook is relayed 
 
 ```bash
 whk listen <slug>          # one line per request or email as it arrives
-whk wait <slug> --json     # block until the next one arrives, print it, exit
+whk wait <slug> --since now --json   # block until the next one arrives, print it, exit
 ```
 
-`whk wait` exits as soon as a matching request arrives, so a script or an agent can start it, trigger the sender, and pick up the result. Filter with `--method`, `--kind email` or `--path`, wait for several with `--count`, and set the limit with `--timeout` (30 seconds by default).
+`whk wait` exits as soon as a matching request arrives, so a script or an agent can start it, trigger the sender, and pick up the result. Started before the sender, give it `--since now` so only a new request counts; without it, one from the last 5 minutes counts too, which suits starting it after the sender ran. Filter with `--method`, `--kind email` or `--path`, wait for several with `--count`, and set the limit with `--timeout` (30 seconds by default).
 
 ### Share a site
 
@@ -74,11 +74,11 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | 0 | | Success |
 | 1 | `error`, `bad_request` | Any other failure, or the server refused the input |
 | 2 | `usage` | Bad arguments |
-| 3 | `not_logged_in`, `unauthorized` | No credentials, or they were refused |
+| 3 | `not_logged_in`, `unauthorized`, `connection_revoked` | No credentials, they were refused, or an agent's connection was revoked |
 | 4 | `not_found` | No such endpoint, request, team or share |
 | 5 | `forbidden` | Not allowed by the plan, a limit or a permission |
 | 6 | `rate_limited` | Too many requests: wait and retry |
-| 7 | `server_error`, `network_error` | Our side or the network failed: retry |
+| 7 | `server_error`, `network_error`, `request_timeout` | Our side or the network failed: retry |
 | 8 | `timeout` | A wait ran out of time |
 | 9 | `confirmation_required`, `cancelled` | A destructive command was not confirmed |
 

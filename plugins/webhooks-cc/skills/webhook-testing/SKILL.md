@@ -27,9 +27,11 @@ check stays switched on.
    while the developer clicks through a provider dashboard, `whk tunnel
 <port> --live` makes the sender get the local app's real answer, and
    `whk sandbox create --json` captures without an account. Pass `--json`
-   to every command. From whk 1.12: `whk wait <slug> --json` blocks until
-   the next request arrives and prints it (run it in the background, trigger
-   the sender, and its exit is your signal; exit 8 is a timeout), failures
+   to every command. From whk 1.12: `whk wait <slug> --since now --json`
+   blocks until the next request arrives and prints it (run it in the
+   background, trigger the sender, and its exit is your signal; exit 8 is a
+   timeout; without `--since now` a request from the last 5 minutes also
+   counts, which suits waiting after the sender already ran), failures
    come as `{"error": {"code", "message", "hint"}}` on stderr with the exit
    statuses in `whk --help`, destructive commands need `--yes`, and
    `whk api <path>` calls any API route the commands do not cover yet.

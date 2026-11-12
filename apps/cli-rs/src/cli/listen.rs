@@ -82,15 +82,19 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
 /// (for `whk requests get`).
 fn listen_line(req: &CapturedRequest) -> String {
     let time = chrono::Local::now().format("%H:%M:%S").to_string();
-    let what = match req.email.as_ref().filter(|_| req.is_email()) {
-        Some(email) => format!(
+    // The stream sends an email's headers, not its parsed summary, so the
+    // subject comes from either (`email_subject`).
+    let what = if req.is_email() {
+        let subject = req
+            .email_subject()
+            .unwrap_or_else(|| "(no subject)".to_string());
+        format!(
             "{} {}",
             sanitize_line(&req.path),
-            bold(&sanitize_line(
-                email.subject.as_deref().unwrap_or("(no subject)")
-            ))
-        ),
-        None => sanitize(&req.path),
+            bold(&sanitize_line(&subject))
+        )
+    } else {
+        sanitize(&req.path)
     };
     let signature = match req.signature_verified {
         Some(ok) => {

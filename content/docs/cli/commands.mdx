@@ -231,11 +231,11 @@ Each line has the time, the method, the path (for an email, the address and the 
 
 ## wait
 
-Wait for the next request or email at an endpoint, print it, and exit. Start it before or after triggering the sender: requests from the last 5 minutes count unless `--since` says otherwise. When nothing matching arrives in time it exits with `timeout` (exit 8).
+Wait for the next request or email at an endpoint, print it, and exit. Started before the sender, pass `--since now` so only a new request counts. Without it, requests from the last 5 minutes count too, which suits starting it after the sender ran, but can return an earlier delivery. When nothing matching arrives in time it exits with `timeout` (exit 8).
 
 ```bash
-whk wait <slug> --json
-whk wait <slug> --kind email --timeout 2m --json
+whk wait <slug> --since now --json
+whk wait <slug> --kind email --since now --timeout 2m --json
 whk wait <slug> --method POST --path /stripe --count 3 --json
 ```
 

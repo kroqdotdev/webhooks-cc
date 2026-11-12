@@ -25,6 +25,9 @@ const LOOKBACK_MS: i64 = 5 * 60 * 1000;
 const OVERLAP_MS: i64 = 30 * 1000;
 const POLL: Duration = Duration::from_secs(1);
 const PAGE: u32 = 100;
+/// Pages one poll follows back at most (newest first), so a burst of more
+/// than a page between polls is still read in full, within reason.
+const MAX_PAGES: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Kind {
@@ -126,7 +129,7 @@ fn now_ms() -> i64 {
 fn transient(error: &anyhow::Error) -> bool {
     matches!(
         classify(error).code,
-        "rate_limited" | "server_error" | "network_error"
+        "rate_limited" | "server_error" | "network_error" | "request_timeout"
     )
 }
 
@@ -169,7 +172,21 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
 
     loop {
         let mut pause = POLL;
-        match client.list_requests_raw(slug, PAGE, last_checked).await {
+        let kind = filter.kind.map(|k| match k {
+            Kind::Http => "http",
+            Kind::Email => "email",
+        });
+        let fetched = poll_since(
+            |cursor| async move {
+                client
+                    .requests_page_raw(slug, PAGE, cursor.as_deref(), kind)
+                    .await
+            },
+            last_checked,
+            MAX_PAGES,
+        )
+        .await;
+        match fetched {
             Ok(mut items) => {
                 items.sort_by_key(|r| received_at(r).unwrap_or(0));
                 for item in &items {
@@ -209,6 +226,34 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
         }
         tokio::time::sleep(left.min(pause)).await;
     }
+}
+
+/// The requests received at or after `since`: the newest page, then older
+/// pages until one reaches back past `since` (or the pages run out), so
+/// nothing between the last poll and this one is skipped however many
+/// arrived. Stops after `max_pages`.
+async fn poll_since<F, Fut>(mut fetch: F, since: i64, max_pages: usize) -> Result<Vec<Value>>
+where
+    F: FnMut(Option<String>) -> Fut,
+    Fut: std::future::Future<Output = Result<(Vec<Value>, Option<String>)>>,
+{
+    let mut out = Vec::new();
+    let mut cursor = None;
+    for _ in 0..max_pages.max(1) {
+        let (items, next) = fetch(cursor.take()).await?;
+        let mut reached = items.is_empty();
+        for item in items {
+            match received_at(&item) {
+                Some(at) if at < since => reached = true,
+                _ => out.push(item),
+            }
+        }
+        match next {
+            Some(next) if !reached => cursor = Some(next),
+            _ => break,
+        }
+    }
+    Ok(out)
 }
 
 fn print(collected: &[Value], count: usize, json: bool) -> Result<()> {
@@ -258,6 +303,36 @@ mod tests {
         );
         let error = parse_since(Some("soon"), now).unwrap_err();
         assert_eq!(classify(&error).code, "usage");
+    }
+
+    #[tokio::test]
+    async fn a_poll_pages_back_to_where_the_last_one_stopped() {
+        // 250 requests since the last poll, newest first, in pages of 100.
+        let all: Vec<Value> = (0..300)
+            .rev()
+            .map(|i| json!({"id": format!("r{i}"), "receivedAt": 1_000 + i}))
+            .collect();
+        let calls = std::cell::Cell::new(0);
+        let fetch = |cursor: Option<String>| {
+            calls.set(calls.get() + 1);
+            let start: usize = cursor.map(|c| c.parse().unwrap()).unwrap_or(0);
+            let page = all[start..(start + 100).min(all.len())].to_vec();
+            let next = (start + 100 < all.len()).then(|| (start + 100).to_string());
+            async move { Ok((page, next)) }
+        };
+        let items = poll_since(fetch, 1_050, 20).await.unwrap();
+        assert_eq!(items.len(), 250);
+        assert_eq!(calls.get(), 3, "stops once a page reaches back past since");
+        assert!(items.iter().all(|r| received_at(r).unwrap() >= 1_050));
+
+        // One page that does not fill is one call.
+        calls.set(0);
+        let fetch = |_: Option<String>| {
+            calls.set(calls.get() + 1);
+            async { Ok((vec![json!({"id":"a","receivedAt":5})], None)) }
+        };
+        assert_eq!(poll_since(fetch, 0, 20).await.unwrap().len(), 1);
+        assert_eq!(calls.get(), 1);
     }
 
     #[test]
