@@ -399,10 +399,11 @@ export function AccountInspector({ id }: { id: string }) {
                   Access given on ticket{" "}
                   <span className="font-mono">#{account.activeGrant.number}</span>.
                 </p>
-                <Button size="sm" asChild>
-                  <Link href={`/ops/tickets/${account.activeGrant.number}`}>
-                    Open from the ticket
-                  </Link>
+                <Button
+                  size="sm"
+                  render={<Link href={`/ops/tickets/${account.activeGrant.number}`} />}
+                >
+                  Open from the ticket
                 </Button>
               </>
             ) : (

@@ -2165,24 +2165,26 @@ function ExportDropdown({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Export"
-          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
-        >
-          <Download className="h-3.5 w-3.5" />
-          {/* Icon only on phones, where the endpoint bar is narrow. */}
-          <span className="hidden sm:inline">Export</span>
-          <ChevronDown className="h-3 w-3 hidden sm:block" />
-        </button>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Export"
+            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
+          />
+        }
+      >
+        <Download className="h-3.5 w-3.5" />
+        {/* Icon only on phones, where the endpoint bar is narrow. */}
+        <span className="hidden sm:inline">Export</span>
+        <ChevronDown className="h-3 w-3 hidden sm:block" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="border border-border shadow-float">
-        <DropdownMenuItem onSelect={onExportJson}>
+        <DropdownMenuItem onClick={onExportJson}>
           <Download className="h-3.5 w-3.5" />
           Export JSON
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onExportCsv}>
+        <DropdownMenuItem onClick={onExportCsv}>
           <Download className="h-3.5 w-3.5" />
           Export CSV
         </DropdownMenuItem>

@@ -344,7 +344,7 @@ function ClientSideVerification({
       )}
 
       <div className="space-y-3 max-w-xl">
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <label htmlFor="sig-provider" className="font-bold text-xs">
             Provider
           </label>

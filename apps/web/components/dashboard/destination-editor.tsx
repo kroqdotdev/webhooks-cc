@@ -70,7 +70,7 @@ export type DestinationPreset = "server" | "chat" | "template" | "inbound" | "sh
 /** "provider" stands for the four inbound shapes, chosen below it. */
 type FormatChoice = Exclude<DestinationFormatSetting, InboundEmailFormat> | "provider";
 
-/** The preview choice that means the newest request (Radix items need a value). */
+/** The preview choice that means the newest request (every Select item needs a value). */
 const NEWEST_REQUEST = "__newest__";
 
 const FORMAT_OPTIONS: { value: FormatChoice; label: string }[] = [
@@ -364,7 +364,7 @@ function DeliveryPreview({
         <label htmlFor={`preview-${destinationId ?? "new"}`} className="text-sm font-semibold">
           Preview with
         </label>
-        {/* Radix items cannot carry an empty value, so the newest has its own. */}
+        {/* Every Select item needs a value, so the newest has its own. */}
         <Select
           value={requestId || NEWEST_REQUEST}
           onValueChange={(value) => setRequestId(value === NEWEST_REQUEST ? "" : value)}

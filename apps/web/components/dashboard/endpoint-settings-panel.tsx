@@ -56,7 +56,7 @@ import { stableStringify } from "@/lib/stable-json";
 
 export type { SettingsSection } from "./settings-primitives";
 
-/** The verification provider choice that means none (Radix items need a value). */
+/** The verification provider choice that means none (every Select item needs a value). */
 const NO_PROVIDER = "__none__";
 
 interface EndpointSettingsPanelProps {
@@ -515,7 +515,7 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         label="Provider"
         help="Pick the provider that signs this endpoint's webhooks, and paste its secret."
       >
-        {/* Radix items cannot carry an empty value, so None has its own. */}
+        {/* Every Select item needs a value, so None has its own. */}
         <Select
           value={provider || NO_PROVIDER}
           onValueChange={(value) => {
@@ -959,7 +959,7 @@ export function EndpointSettingsPanel({
             <SelectValue />
           </SelectTrigger>
           {/* The jump focuses the section's heading; keep it there on close. */}
-          <SelectContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <SelectContent finalFocus={false}>
             {sections.map((section) => (
               <SelectItem key={section.id} value={section.id}>
                 {section.label}

@@ -29,7 +29,7 @@ interface Endpoint {
 
 const DRAFT_KEY = "whk-support-draft";
 
-/** The endpoint choice that means none (Radix items cannot carry an empty value). */
+/** The endpoint choice that means none (every Select item needs a value). */
 const NO_ENDPOINT = "__none__";
 
 /** Up to three docs pages for what the subject says, from the site's Pagefind index. */

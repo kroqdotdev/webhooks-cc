@@ -233,7 +233,7 @@ test("the preview marks the rule that answers a captured request", async ({ page
   // Pick the matching request: Rule 1 answers, with its placeholders filled in.
   await preview.click();
   await page
-    .locator('[role="listbox"][data-state="open"]')
+    .getByRole("listbox")
     .getByRole("option")
     .filter({ hasText: "/billing" })
     .first()

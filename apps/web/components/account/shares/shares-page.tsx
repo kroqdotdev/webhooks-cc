@@ -432,16 +432,20 @@ function LiveShareRow({
               >
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
-              <Button variant="ghost" size="icon" asChild>
-                <a
-                  href={share.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open"
-                  aria-label={`Open ${label}`}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </a>
+              <Button
+                variant="ghost"
+                size="icon"
+                render={
+                  <a
+                    href={share.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open"
+                    aria-label={`Open ${label}`}
+                  />
+                }
+              >
+                <ExternalLink className="h-4 w-4" />
               </Button>
               {share.kind === "share" && <QrDialog url={share.url} label={label} />}
             </>

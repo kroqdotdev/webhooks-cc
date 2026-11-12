@@ -31,11 +31,7 @@ export function SupportHome() {
               : "Questions about webhooks.cc or mailhooks.cc, billing, or your account. Signed in, you can open a ticket and follow it here."}
           </p>
         </div>
-        {isAuthenticated && (
-          <Button asChild>
-            <Link href="/support/new">New ticket</Link>
-          </Button>
-        )}
+        {isAuthenticated && <Button render={<Link href="/support/new" />}>New ticket</Button>}
       </div>
 
       {isLoading ? (
@@ -164,11 +160,11 @@ function TicketList({ token, userId }: { token: string | null; userId: string | 
           answers arrive within a working day.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm">
-            <Link href="/support/new">New ticket</Link>
+          <Button size="sm" render={<Link href="/support/new" />}>
+            New ticket
           </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link href="/docs">Read the docs</Link>
+          <Button size="sm" variant="outline" render={<Link href="/docs" />}>
+            Read the docs
           </Button>
         </div>
       </div>
@@ -197,8 +193,8 @@ function SignedOut() {
           Sign in to open a ticket about your account. You can follow the answer here, get it by
           email, and let support look at your account while the ticket is open.
         </p>
-        <Button asChild>
-          <Link href="/login?redirect=/support/new">Sign in to open a ticket</Link>
+        <Button render={<Link href="/login?redirect=/support/new" />}>
+          Sign in to open a ticket
         </Button>
       </div>
 

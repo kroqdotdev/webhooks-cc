@@ -56,10 +56,10 @@ export function DeleteAccountDialog({ accessToken }: { accessToken: string | nul
   return (
     <div className="space-y-3">
       <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="destructive" disabled={deleting || !accessToken}>
-            {deleting ? "Deleting..." : "Delete account"}
-          </Button>
+        <AlertDialogTrigger
+          render={<Button variant="destructive" disabled={deleting || !accessToken} />}
+        >
+          {deleting ? "Deleting..." : "Delete account"}
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -1,0 +1,6 @@
+{
+  "title": "New component foundation",
+  "items": [
+    "Dialogs, menus, pickers and the slider run on Base UI instead of Radix; they look and work as before"
+  ]
+}

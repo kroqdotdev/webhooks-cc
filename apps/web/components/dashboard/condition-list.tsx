@@ -40,7 +40,7 @@ const inputClass = "ui-input h-8 text-[13px] font-mono py-0! px-2! min-w-0";
 
 /**
  * The rows' picker: the shared select at the rows' size. An unset value shows
- * the placeholder (Radix items cannot carry an empty value), and a value the
+ * the placeholder (every Select item needs a value), and a value the
  * choices do not hold, such as an older condition's, is still listed so the
  * row shows what is saved.
  */

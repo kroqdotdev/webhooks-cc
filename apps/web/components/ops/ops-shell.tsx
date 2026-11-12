@@ -33,8 +33,8 @@ function NotFound() {
     <main className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
       <h1 className="text-2xl font-semibold">Page not found</h1>
       <p className="text-sm text-muted-foreground">The page you are looking for does not exist.</p>
-      <Button asChild variant="outline">
-        <Link href="/dashboard">Go to the dashboard</Link>
+      <Button variant="outline" render={<Link href="/dashboard" />}>
+        Go to the dashboard
       </Button>
     </main>
   );
@@ -49,8 +49,8 @@ function NeedsTwoFactor() {
         Operations shows other people&rsquo;s accounts, so it needs a session that signed in with an
         authenticator app. Set it up under Security, then come back.
       </p>
-      <Button asChild className="self-start">
-        <Link href="/account/security">Set up two-factor sign-in</Link>
+      <Button className="self-start" render={<Link href="/account/security" />}>
+        Set up two-factor sign-in
       </Button>
     </main>
   );

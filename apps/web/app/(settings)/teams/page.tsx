@@ -106,9 +106,7 @@ function NewTeamDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>New team</Button>
-      </DialogTrigger>
+      <DialogTrigger render={<Button />}>New team</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create a team</DialogTitle>

@@ -80,11 +80,11 @@ export function BlockAmountPicker({
   return (
     <div className="space-y-2">
       <Slider
-        value={[sliderValue]}
+        value={sliderValue}
         min={minBlocks * BLOCK_REQUESTS}
         max={SLIDER_MAX_REQUESTS}
         step={BLOCK_REQUESTS}
-        onValueChange={([value]) => {
+        onValueChange={(value) => {
           setNote(null);
           onBlocksChange(Math.round(value / BLOCK_REQUESTS));
         }}

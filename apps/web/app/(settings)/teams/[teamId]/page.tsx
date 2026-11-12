@@ -680,16 +680,18 @@ function TeamDetailContent() {
                         <td className="px-3 py-2 text-right">
                           {isOwner && member.role !== "owner" && !isYou && (
                             <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive-ink hover:bg-destructive/10 hover:text-destructive-ink"
-                                  disabled={removingId === member.userId}
-                                  aria-label={`Remove ${label}`}
-                                >
-                                  {removingId === member.userId ? "Removing..." : "Remove"}
-                                </Button>
+                              <AlertDialogTrigger
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive-ink hover:bg-destructive/10 hover:text-destructive-ink"
+                                    disabled={removingId === member.userId}
+                                    aria-label={`Remove ${label}`}
+                                  />
+                                }
+                              >
+                                {removingId === member.userId ? "Removing..." : "Remove"}
                               </AlertDialogTrigger>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
@@ -911,10 +913,8 @@ function TeamDetailContent() {
             footer={
               <>
                 <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" disabled={deleting}>
-                      {deleting ? "Deleting..." : "Delete team"}
-                    </Button>
+                  <AlertDialogTrigger render={<Button variant="destructive" disabled={deleting} />}>
+                    {deleting ? "Deleting..." : "Delete team"}
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -948,10 +948,8 @@ function TeamDetailContent() {
             footer={
               <>
                 <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" disabled={leaving}>
-                      {leaving ? "Leaving..." : "Leave team"}
-                    </Button>
+                  <AlertDialogTrigger render={<Button variant="destructive" disabled={leaving} />}>
+                    {leaving ? "Leaving..." : "Leave team"}
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>

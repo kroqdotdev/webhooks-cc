@@ -611,8 +611,12 @@ function TicketPane({
             View as {account?.name?.trim().split(/\s+/)[0] || "user"}
           </Button>
           {account && (
-            <Button size="sm" variant="outline" asChild>
-              <Link href={`/ops/accounts/${account.id}`}>Open account</Link>
+            <Button
+              size="sm"
+              variant="outline"
+              render={<Link href={`/ops/accounts/${account.id}`} />}
+            >
+              Open account
             </Button>
           )}
         </div>

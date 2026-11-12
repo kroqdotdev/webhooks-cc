@@ -165,3 +165,23 @@ test("a new email is parsed and opens on the Parsed tab", async ({ page }) => {
   await expect(shown(page.getByText("Acme orders", { exact: true }))).toBeVisible();
   await expect(shown(page.getByRole("cell", { name: "A-1" }))).toBeVisible();
 });
+
+test("typing in the Add layout menu filters the senders", async ({ page }) => {
+  const layouts = await openLayouts(page);
+  await layouts.getByRole("button", { name: /Add layout/ }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  const filter = menu.getByLabel("Filter senders");
+
+  // From an item, a letter goes to the filter, not to the menu's jump-to-item.
+  await menu.getByRole("menuitem", { name: /Blank layout/ }).focus();
+  await page.keyboard.type("sho");
+  await expect(filter).toBeFocused();
+  await expect(filter).toHaveValue("sho");
+  await expect(menu.getByRole("menuitem", { name: /Shopify/ }).first()).toBeVisible();
+
+  // Typing on in the filter keeps going there.
+  await page.keyboard.type("pify");
+  await expect(filter).toHaveValue("shopify");
+  await expect(filter).toBeFocused();
+});

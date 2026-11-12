@@ -45,7 +45,7 @@ import {
  */
 
 const MAX_RULES = 50;
-/** The "Preview with" choice that means the newest request (Radix items need a value). */
+/** The "Preview with" choice that means the newest request (every Select item needs a value). */
 const NEWEST_REQUEST = "__newest__";
 
 interface RuleDraft {
@@ -273,7 +273,7 @@ function PreviewPanel({
         <label htmlFor={`responses-preview-${slug}`} className="text-sm font-semibold">
           Preview with
         </label>
-        {/* Radix items cannot carry an empty value, so the newest request has its own. */}
+        {/* Every Select item needs a value, so the newest request has its own. */}
         <Select
           value={requestId || NEWEST_REQUEST}
           onValueChange={(value) => setRequestId(value === NEWEST_REQUEST ? "" : value)}

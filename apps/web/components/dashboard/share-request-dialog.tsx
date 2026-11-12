@@ -128,11 +128,13 @@ export function ShareRequestDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
-          <Link2 className="h-3 w-3" />
-          Share
-        </button>
+      <DialogTrigger
+        render={
+          <button className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5" />
+        }
+      >
+        <Link2 className="h-3 w-3" />
+        Share
       </DialogTrigger>
       <DialogContent className="border border-border shadow-float">
         <DialogHeader>

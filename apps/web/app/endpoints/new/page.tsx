@@ -31,8 +31,13 @@ function NewEndpoint() {
           <NewEndpointForm
             onCreated={(slug) => router.push(`/dashboard?endpoint=${slug}`)}
             cancel={
-              <Button type="button" variant="outline" asChild className="ui-btn-outline">
-                <Link href="/dashboard">Cancel</Link>
+              <Button
+                type="button"
+                variant="outline"
+                className="ui-btn-outline"
+                render={<Link href="/dashboard" />}
+              >
+                Cancel
               </Button>
             }
           />
