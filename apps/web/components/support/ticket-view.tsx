@@ -215,8 +215,8 @@ export function TicketView({ number }: { number: string }) {
         <p className="mb-4 text-sm text-muted-foreground">
           Ticket #{number} is not one of yours. It may belong to another account you use.
         </p>
-        <Button asChild variant="outline">
-          <Link href="/support">See your tickets</Link>
+        <Button variant="outline" render={<Link href="/support" />}>
+          See your tickets
         </Button>
       </main>
     );

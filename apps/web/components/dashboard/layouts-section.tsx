@@ -1310,29 +1310,31 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             if (!next) setMenuFilter("");
           }}
         >
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              disabled={layouts.length >= MAX_LAYOUTS}
-              className={cn(
-                layouts.length === 0 ? "ui-btn-primary" : "ui-btn-outline",
-                "py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
-              )}
-            >
-              <Plus className="h-3 w-3" />
-              Add layout
-              <ChevronDown className="h-3 w-3" aria-hidden />
-            </button>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                disabled={layouts.length >= MAX_LAYOUTS}
+                className={cn(
+                  layouts.length === 0 ? "ui-btn-primary" : "ui-btn-outline",
+                  "py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
+                )}
+              />
+            }
+          >
+            <Plus className="h-3 w-3" />
+            Add layout
+            <ChevronDown className="h-3 w-3" aria-hidden />
           </DropdownMenuTrigger>
           <DropdownMenuContent
             ref={menuRef}
             align="start"
             // Always below the button: flipped up, it would cover the endpoint bar.
             side="bottom"
-            avoidCollisions={false}
+            collisionAvoidance={{ side: "none", align: "none", fallbackAxisSide: "none" }}
             // Focus goes to the added layout's name, not back to the trigger below it.
-            onCloseAutoFocus={(e) => e.preventDefault()}
-            className="w-72 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto! border border-border shadow-float"
+            finalFocus={false}
+            className="w-72 max-h-[min(24rem,var(--available-height))] overflow-y-auto! border border-border shadow-float"
             onKeyDown={(e) => {
               // Typing anywhere in the menu filters the senders (instead of
               // the menu's own jump to the item starting with that letter).
@@ -1353,12 +1355,12 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
               input.focus();
             }}
           >
-            <DropdownMenuItem onSelect={addBlank}>
+            <DropdownMenuItem onClick={addBlank}>
               <Plus className="h-3.5 w-3.5" />
               Blank layout
             </DropdownMenuItem>
             {canDraft && (
-              <DropdownMenuItem onSelect={() => setAssist({ kind: "layout" })}>
+              <DropdownMenuItem onClick={() => setAssist({ kind: "layout" })}>
                 <Sparkles className="h-3.5 w-3.5" />
                 Draft with AI
               </DropdownMenuItem>
@@ -1410,7 +1412,7 @@ export function LayoutsSection({ endpoint }: { endpoint: DashboardEndpoint }) {
                   <DropdownMenuItem
                     key={template.id}
                     data-template-item=""
-                    onSelect={() => addTemplate(template)}
+                    onClick={() => addTemplate(template)}
                     className="flex-wrap gap-x-1.5 gap-y-0"
                   >
                     <span className="font-semibold">{template.sender}</span>

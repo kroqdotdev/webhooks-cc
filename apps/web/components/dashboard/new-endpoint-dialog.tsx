@@ -41,14 +41,16 @@ export function NewEndpointDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {!controlled && (
-        <DialogTrigger asChild>
-          <button
-            data-shortcut="new-endpoint"
-            className="ui-btn-primary py-1.5! px-3! text-xs max-md:min-h-9 flex shrink-0 items-center gap-1.5 whitespace-nowrap"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New endpoint
-          </button>
+        <DialogTrigger
+          render={
+            <button
+              data-shortcut="new-endpoint"
+              className="ui-btn-primary py-1.5! px-3! text-xs max-md:min-h-9 flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+            />
+          }
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New endpoint
         </DialogTrigger>
       )}
       <DialogContent className="border border-border shadow-float">

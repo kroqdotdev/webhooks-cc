@@ -528,14 +528,16 @@ export function DashboardGuideDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open === undefined && (
-        <DialogTrigger asChild>
-          <button
-            data-shortcut="guide"
-            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
-          >
-            <HelpCircle className="h-3.5 w-3.5" />
-            Guide
-          </button>
+        <DialogTrigger
+          render={
+            <button
+              data-shortcut="guide"
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            />
+          }
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+          Guide
         </DialogTrigger>
       )}
       {/* As tall as the longer of the two columns, up to 85vh; each column scrolls past that. */}

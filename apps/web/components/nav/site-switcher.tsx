@@ -81,7 +81,7 @@ export function SiteSwitcher() {
               key={key}
               className="cursor-pointer items-start gap-2 py-2"
               aria-current={current ? "page" : undefined}
-              onSelect={() => {
+              onClick={() => {
                 if (!current) switchFromHere(key, session?.access_token);
               }}
             >

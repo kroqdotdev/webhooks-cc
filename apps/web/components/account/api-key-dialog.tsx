@@ -91,9 +91,7 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => (isOpen ? setOpen(true) : handleClose())}>
-      <DialogTrigger asChild>
-        <Button>Create key</Button>
-      </DialogTrigger>
+      <DialogTrigger render={<Button />}>Create key</DialogTrigger>
       <DialogContent>
         {!createdKey ? (
           <>

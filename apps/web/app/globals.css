@@ -210,17 +210,6 @@ body {
     scrollbar-gutter: stable;
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
-  /* Radix menus and dialogs lock scrolling with react-remove-scroll, which
-     makes up for the hidden scrollbar with a margin on body. The stable
-     gutter above already keeps that space, so the margin would shift the
-     page left by a scrollbar's width. An !important in a layer beats the
-     library's unlayered one. Browsers without the gutter (Safari before
-     18.2) keep the margin, which is then all that holds the page still. */
-  @supports (scrollbar-gutter: stable) {
-    body[data-scroll-locked] {
-      margin-right: 0 !important;
-    }
-  }
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;

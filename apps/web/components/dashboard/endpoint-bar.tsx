@@ -163,12 +163,16 @@ function SetupItems({
           );
           const section = item.section;
           return item.href ? (
-            <DropdownMenuItem key={item.id} asChild onSelect={() => setup.markVisited(item.id)}>
-              <Link href={item.href}>{body}</Link>
+            <DropdownMenuItem
+              key={item.id}
+              onClick={() => setup.markVisited(item.id)}
+              render={<Link href={item.href} />}
+            >
+              {body}
             </DropdownMenuItem>
           ) : section && onOpenSettings && !done ? (
             // Done in Settings: the item opens the section that does it.
-            <DropdownMenuItem key={item.id} onSelect={() => onOpenSettings(section)}>
+            <DropdownMenuItem key={item.id} onClick={() => onOpenSettings(section)}>
               {body}
             </DropdownMenuItem>
           ) : (
@@ -178,20 +182,22 @@ function SetupItems({
           );
         })}
       {setup.open && <DropdownMenuSeparator />}
-      <DropdownMenuItem onSelect={onOpenGuide}>
+      <DropdownMenuItem onClick={onOpenGuide}>
         <HelpCircle className="h-3.5 w-3.5" />
         Dashboard guide
       </DropdownMenuItem>
-      <DropdownMenuItem asChild>
-        <Link
-          href={`/support/new?endpoint=${encodeURIComponent(slug)}&from=${encodeURIComponent("/dashboard")}`}
-        >
-          <LifeBuoy className="h-3.5 w-3.5" />
-          Get support
-        </Link>
+      <DropdownMenuItem
+        render={
+          <Link
+            href={`/support/new?endpoint=${encodeURIComponent(slug)}&from=${encodeURIComponent("/dashboard")}`}
+          />
+        }
+      >
+        <LifeBuoy className="h-3.5 w-3.5" />
+        Get support
       </DropdownMenuItem>
       {setup.open && (
-        <DropdownMenuItem onSelect={setup.dismiss} className="text-muted-foreground">
+        <DropdownMenuItem onClick={setup.dismiss} className="text-muted-foreground">
           Hide the setup list
         </DropdownMenuItem>
       )}
@@ -220,22 +226,24 @@ function SetupMenu({
   const label = setupLabel(setup);
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          className={cn(
-            "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
-            className
-          )}
-        >
-          {setup.open ? (
-            <ListChecks className="h-3.5 w-3.5" />
-          ) : (
-            <HelpCircle className="h-3.5 w-3.5" />
-          )}
-          {label}
-        </button>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            className={cn(
+              "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
+              className
+            )}
+          />
+        }
+      >
+        {setup.open ? (
+          <ListChecks className="h-3.5 w-3.5" />
+        ) : (
+          <HelpCircle className="h-3.5 w-3.5" />
+        )}
+        {label}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64 border border-border shadow-float">
         <SetupItems
@@ -297,7 +305,7 @@ function SendItems({
   const request = (
     <DropdownMenuItem
       key="request"
-      onSelect={() => send.setRequestOpen(true)}
+      onClick={() => send.setRequestOpen(true)}
       className="items-start"
     >
       <Globe className="h-4 w-4 mt-0.5" />
@@ -313,7 +321,7 @@ function SendItems({
   const email = (
     <DropdownMenuItem
       key="email"
-      onSelect={send.sendEmail}
+      onClick={send.sendEmail}
       disabled={send.sending}
       className="items-start"
     >
@@ -356,12 +364,12 @@ function SendMenu({
   }
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button type="button" className={buttonClass} disabled={send.sending}>
-          <Send className="h-3.5 w-3.5" />
-          Send
-          <ChevronDown className="h-3 w-3" />
-        </button>
+      <DropdownMenuTrigger
+        render={<button type="button" className={buttonClass} disabled={send.sending} />}
+      >
+        <Send className="h-3.5 w-3.5" />
+        Send
+        <ChevronDown className="h-3 w-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72 border border-border shadow-float">
         <SendItems send={send} canEmail={canEmail} mailFirst={mailFirst} />
@@ -430,7 +438,7 @@ function ActionsMenu({
         <DropdownMenuItem
           key="url"
           className="md:hidden"
-          onSelect={() => void copyAddress(copyAddresses.url, "Webhook URL")}
+          onClick={() => void copyAddress(copyAddresses.url, "Webhook URL")}
         >
           <Globe className="h-3.5 w-3.5" />
           Copy webhook URL
@@ -440,7 +448,7 @@ function ActionsMenu({
               <DropdownMenuItem
                 key="email"
                 className="md:hidden"
-                onSelect={() => void copyAddress(email, "Email address")}
+                onClick={() => void copyAddress(email, "Email address")}
               >
                 <Mail className="h-3.5 w-3.5" />
                 Copy email address
@@ -451,15 +459,17 @@ function ActionsMenu({
     : [];
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 max-md:min-h-9"
-        >
-          <Ellipsis className="h-3.5 w-3.5" />
-          Actions
-          <ChevronDown className="h-3 w-3" />
-        </button>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 max-md:min-h-9"
+          />
+        }
+      >
+        <Ellipsis className="h-3.5 w-3.5" />
+        Actions
+        <ChevronDown className="h-3 w-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
@@ -481,11 +491,11 @@ function ActionsMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground">Export</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => onExport("json")}>
+            <DropdownMenuItem onClick={() => onExport("json")}>
               <Download className="h-3.5 w-3.5" />
               Export JSON
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onExport("csv")}>
+            <DropdownMenuItem onClick={() => onExport("csv")}>
               <Download className="h-3.5 w-3.5" />
               Export CSV
             </DropdownMenuItem>

@@ -117,9 +117,7 @@ export function ManageSubscriptionDialog({
         if (!canceling && !resubscribing) setOpen(isOpen);
       }}
     >
-      <DialogTrigger asChild>
-        <Button variant="outline">Manage subscription</Button>
-      </DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>Manage subscription</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Manage subscription</DialogTitle>

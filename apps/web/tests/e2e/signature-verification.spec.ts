@@ -63,17 +63,14 @@ test.afterAll(async () => {
   }
 });
 
-/** Picks an option from a dropdown (a Radix Select): opens the trigger, then clicks the option. */
+/** Picks an option from a dropdown (a base-ui Select): opens the trigger, then clicks the option. */
 async function pickOption(
   page: import("@playwright/test").Page,
   trigger: import("@playwright/test").Locator,
   name: string
 ) {
   await trigger.click();
-  await page
-    .locator('[role="listbox"][data-state="open"]')
-    .getByRole("option", { name, exact: true })
-    .click();
+  await page.getByRole("listbox").getByRole("option", { name, exact: true }).click();
 }
 
 async function openDashboard(page: import("@playwright/test").Page) {
@@ -260,9 +257,9 @@ test("signing config section is visible in endpoint settings", async ({ page }) 
 test("provider dropdown lists providers", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
-  // A Radix Select: its options exist only while the list is open.
+  // A base-ui Select: its options exist only while the list is open.
   await page.locator("#settings-signing-provider").click();
-  const options = page.locator('[role="listbox"][data-state="open"]').getByRole("option");
+  const options = page.getByRole("listbox").getByRole("option");
   // None + 32 verifiable named providers + generic-hmac.
   // SendGrid and Plaid are excluded from endpoint signing configuration.
   await expect(options).toHaveCount(34);

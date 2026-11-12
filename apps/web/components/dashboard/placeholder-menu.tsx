@@ -133,14 +133,16 @@ export function PlaceholderMenu({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
-        >
-          <Braces className="h-3 w-3" />
-          {label}
-        </button>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            className="ui-btn-outline py-1! px-2.5! text-xs inline-flex items-center gap-1.5"
+          />
+        }
+      >
+        <Braces className="h-3 w-3" />
+        {label}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64 border border-border shadow-float">
         {groups.map((group, index) => (
@@ -152,7 +154,7 @@ export function PlaceholderMenu({
             {group.choices.map((choice) => (
               <DropdownMenuItem
                 key={choice.text}
-                onSelect={() => onInsert(choice.text)}
+                onClick={() => onInsert(choice.text)}
                 className="flex items-baseline justify-between gap-3 cursor-pointer"
               >
                 <span className="text-sm">{choice.label}</span>

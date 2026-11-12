@@ -195,16 +195,18 @@ export default function ApiKeysPage() {
                       </td>
                       <td className="px-3 py-2 text-right">
                         <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={deletingId === key.id}
-                              title="Delete key"
-                              aria-label={`Delete key ${key.name}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive-ink" />
-                            </Button>
+                          <AlertDialogTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                disabled={deletingId === key.id}
+                                title="Delete key"
+                                aria-label={`Delete key ${key.name}`}
+                              />
+                            }
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive-ink" />
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>

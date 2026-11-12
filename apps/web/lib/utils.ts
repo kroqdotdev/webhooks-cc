@@ -15,3 +15,9 @@ const twMerge = extendTailwindMerge({
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
+
+/**
+ * A base-ui part's props with a plain class name: base-ui also takes a
+ * function of the part's state, which cn() cannot merge.
+ */
+export type Styled<P> = Omit<P, "className"> & { className?: string };

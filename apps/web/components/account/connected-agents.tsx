@@ -133,16 +133,18 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
                   </dl>
                 </div>
                 <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={revoking === agent.id}
-                      title="Disconnect agent"
-                      aria-label={`Disconnect agent ${name}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive-ink" />
-                    </Button>
+                  <AlertDialogTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={revoking === agent.id}
+                        title="Disconnect agent"
+                        aria-label={`Disconnect agent ${name}`}
+                      />
+                    }
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive-ink" />
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>

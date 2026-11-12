@@ -174,8 +174,11 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
         <div className="mx-auto max-w-md space-y-3 p-10 text-center">
           <p className="text-sm">{ended}</p>
           {session && (
-            <Button asChild variant="outline">
-              <Link href={`/ops/tickets/${session.ticketNumber}`}>Back to the ticket</Link>
+            <Button
+              variant="outline"
+              render={<Link href={`/ops/tickets/${session.ticketNumber}`} />}
+            >
+              Back to the ticket
             </Button>
           )}
         </div>

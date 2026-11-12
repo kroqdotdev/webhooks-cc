@@ -173,16 +173,20 @@ export function NamesPanel({
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {entry.url && (
-                  <Button variant="ghost" size="icon" asChild>
-                    <a
-                      href={entry.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Open"
-                      aria-label={`Open ${entry.name}`}
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    render={
+                      <a
+                        href={entry.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open"
+                        aria-label={`Open ${entry.name}`}
+                      />
+                    }
+                  >
+                    <ExternalLink className="h-4 w-4" />
                   </Button>
                 )}
                 {passwords &&

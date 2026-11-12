@@ -19,10 +19,12 @@ export function QrDialog({ url, label }: { url: string; label: string }) {
   const code = useMemo(() => (open ? qrPath(url) : null), [open, url]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" title="QR code" aria-label={`QR code for ${label}`}>
-          <QrCode className="h-4 w-4" />
-        </Button>
+      <DialogTrigger
+        render={
+          <Button variant="ghost" size="icon" title="QR code" aria-label={`QR code for ${label}`} />
+        }
+      >
+        <QrCode className="h-4 w-4" />
       </DialogTrigger>
       <DialogContent className="ph-no-capture max-w-sm border border-border shadow-float">
         <DialogHeader>
