@@ -389,7 +389,7 @@ const subscribeWide = (onChange: () => void) => {
   return () => query.removeEventListener("change", onChange);
 };
 
-/** The test email's result. Always in the accessibility tree so it is announced. */
+/** The result of a send or copy in the bar. Always in the accessibility tree so it is announced. */
 function SendStatus({ status }: { status: SendActions["status"] }) {
   // Below the wide layout, Send sits in the Actions menu, so the result is a
   // toast at the foot of the screen, announced by Sonner's own live region; on
@@ -399,13 +399,16 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
     () => window.matchMedia(WIDE).matches,
     () => true
   );
+  // The result last toasted: a resize never toasts the same one again.
+  const toasted = useRef<SendActions["status"]>(null);
   useEffect(() => {
-    if (wide) {
-      // Widened past the bar's own status line: that line shows it now.
+    // Wide (the bar's own status line shows it) or gone with its status.
+    if (wide || !status) {
       toast.dismiss(SEND_TOAST);
       return;
     }
-    if (!status) return;
+    if (toasted.current === status) return;
+    toasted.current = status;
     toast.custom(
       () => (
         <div

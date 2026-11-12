@@ -82,7 +82,11 @@ export function CodeInput({
               // The digit the next key replaces (input-otp selects one), shown as selected text.
               <span
                 key={index}
-                className={slot.isActive ? "bg-selected text-selected-foreground" : undefined}
+                className={
+                  slot.isActive
+                    ? "bg-selected text-selected-foreground forced-colors:forced-color-adjust-none forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]"
+                    : undefined
+                }
               >
                 {slot.char}
               </span>
@@ -91,7 +95,7 @@ export function CodeInput({
                 {slot.hasFakeCaret && (
                   // No width of its own, like a text field's caret: the digits do not move.
                   <span aria-hidden data-caret className="relative w-0 self-stretch">
-                    <span className="absolute left-0 top-1/2 h-[1.15em] w-px -translate-y-1/2 animate-caret-blink motion-reduce:animate-none bg-foreground forced-colors:bg-[CanvasText]" />
+                    <span className="absolute left-0 top-1/2 h-[1.15em] w-px -translate-y-1/2 animate-caret-blink motion-reduce:animate-none bg-foreground forced-colors:forced-color-adjust-none forced-colors:bg-[CanvasText]" />
                   </span>
                 )}
                 {slot.placeholderChar && (

@@ -42,7 +42,7 @@ const buttonVariants = cva(
 const SURFACES = {
   /** Pine fill: the one main action. */
   primary: "ui-btn-primary",
-  /** White with the control edge (3:1 against the page). Not the control `outline`, which has a fixed height. */
+  /** White with the control edge (3:1 against the page). Not the control `outline` variant, which takes a fixed-height `size`. */
   surface: "ui-btn-outline",
   /** White with the light hairline. */
   hairline: "ui-btn",
