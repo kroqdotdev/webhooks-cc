@@ -189,6 +189,7 @@ export async function tellStaffOfReport(
     const { SUPPORT_ALERT_EMAIL } = serverEnv();
     await sendEmail({
       to: SUPPORT_ALERT_EMAIL,
+      kind: "report_staff_alert",
       subject: urgent ? "URGENT: a preview was reported" : ALERT_SUBJECTS[source],
       text:
         `Report ${id} is waiting in the operations center:\n` +
@@ -227,6 +228,7 @@ export async function confirmReceived(report: ReportRow): Promise<boolean> {
   try {
     await sendEmail({
       to: report.reporter_email,
+      kind: "report_received",
       subject: "We got your report",
       text:
         `Thank you for reporting ${reported(report)}. Someone at webhooks.cc will look at it, ` +
@@ -257,6 +259,7 @@ export async function tellDecision(report: ReportRow): Promise<void> {
   try {
     await sendEmail({
       to: report.reporter_email,
+      kind: "report_decision",
       subject: "About your report",
       text:
         (outcome === "removed"
@@ -299,6 +302,7 @@ export async function sendStatementOfReasons(
   try {
     await sendEmail({
       to: owner.email,
+      kind: "preview_removed",
       subject: "We took your preview down",
       text:
         `Your preview ${reported(report)} broke the webhooks.cc terms: ` +

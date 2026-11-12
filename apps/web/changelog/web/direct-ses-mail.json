@@ -1,0 +1,6 @@
+{
+  "title": "Account email sent directly through Amazon SES",
+  "items": [
+    "Sign-up, password, verification code and notification emails leave through Amazon SES directly instead of a relay, with bounces and complaints reported back"
+  ]
+}

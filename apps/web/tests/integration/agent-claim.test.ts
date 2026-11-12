@@ -28,7 +28,6 @@ import {
   type AgentRoutes,
 } from "./agent-helpers";
 
-delete process.env.RESEND_API_KEY;
 configureAgentEnv();
 
 const admin = adminClient();

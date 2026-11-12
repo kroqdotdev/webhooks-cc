@@ -1,25 +1,18 @@
 import { serverEnv } from "@/lib/env";
 
 /**
- * Minimal email abstraction for the verified_email OTP flow.
+ * The one way the web app sends email.
  *
- * Transport is selected at call time, and real delivery only happens in
- * production. Production fails closed — it never falls back to the dev/test
- * transport. The selection order in production is:
- *   - SMTP (real delivery) when `SMTP_HOST` is set. The `nodemailer` dependency
- *     is dynamic-imported so it only loads when used. If an SMTP send fails and
- *     `RESEND_API_KEY` is set, it falls back to Resend; otherwise it throws.
- *   - Resend (real delivery) when `RESEND_API_KEY` is set (and SMTP_HOST is
- *     unset). The `resend` dependency is dynamic-imported so it only loads when
- *     used.
- *   - When neither is configured (or both fail), it throws.
+ * In production every message goes over SMTP (`SMTP_HOST`, in production
+ * Amazon SES's SMTP endpoint) and a failure throws: there is no fallback and
+ * no queue, so each caller decides whether to retry (see the pollers), show
+ * the error, or report it. Production never falls back to the dev transport.
+ * The `nodemailer` dependency is dynamic-imported so it only loads there.
  *
- * In non-production (NODE_ENV !== "production", i.e. tests and local dev) the
- * dev/test transport is ALWAYS used even when SMTP_HOST / RESEND_API_KEY are
- * set in .env.local: it logs the message (incl. OTP) and records it for the
- * integration test to read via `getLastOtpForEmail` — never sends. Use the
- * directly-importable `sendViaSmtp` / `verifySmtp` for real SMTP delivery in
- * any environment (e.g. the deliverability test).
+ * Everywhere else (NODE_ENV !== "production", i.e. tests and local dev) the
+ * dev transport is used even when SMTP_HOST is set in .env.local: it logs the
+ * message (incl. any code) and records it for the integration tests to read
+ * via `getLastOtpForEmail`, and never sends.
  */
 
 export interface EmailMessage {
@@ -29,38 +22,24 @@ export interface EmailMessage {
   html?: string;
   /** Extra headers, such as Auto-Submitted on automatic notices. */
   headers?: Record<string, string>;
+  /**
+   * Which mail this is, as a short tag (letters, digits, `_`, `-`). It goes
+   * to SES as a message tag, so a bounce or complaint event names the kind of
+   * mail it was about, and into the log line of the send. Never a value that
+   * identifies a person.
+   */
+  kind: string;
 }
 
 export async function sendEmail(message: EmailMessage): Promise<void> {
-  const { SMTP_HOST, RESEND_API_KEY } = serverEnv();
-
   if (process.env.NODE_ENV === "production") {
-    // Production never falls back to the dev transport: it fails closed.
-    if (SMTP_HOST) {
-      const { sendViaSmtp } = await import("./smtp-transport");
-      try {
-        await sendViaSmtp(message);
-        return;
-      } catch (error) {
-        // SMTP is primary; fall back to Resend if available, otherwise rethrow.
-        if (!RESEND_API_KEY) {
-          throw error;
-        }
-        const { sendViaResend } = await import("./resend-transport");
-        await sendViaResend(message, RESEND_API_KEY);
-        return;
-      }
+    if (!serverEnv().SMTP_HOST) {
+      throw new Error("Email delivery is not configured: set SMTP_HOST in production");
     }
-
-    if (RESEND_API_KEY) {
-      const { sendViaResend } = await import("./resend-transport");
-      await sendViaResend(message, RESEND_API_KEY);
-      return;
-    }
-
-    throw new Error(
-      "Email delivery is not configured: set SMTP_HOST or RESEND_API_KEY in production"
-    );
+    const { sendViaSmtp } = await import("./smtp-transport");
+    const { messageId } = await sendViaSmtp(message);
+    console.info(`[email] sent kind=${message.kind} id=${messageId}`);
+    return;
   }
 
   const { sendViaDevTransport } = await import("./dev-transport");

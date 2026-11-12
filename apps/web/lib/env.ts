@@ -204,11 +204,9 @@ const serverEnvSchema = z
     // Without both, Sheets is not offered.
     GOOGLE_OAUTH_CLIENT_ID: blankToUndefined(z.string().optional()),
     GOOGLE_OAUTH_CLIENT_SECRET: blankToUndefined(z.string().optional()),
-    // Agent auth (auth.md) — all optional with defaults so existing deploys are unaffected.
-    RESEND_API_KEY: z.string().optional(),
-    // SMTP transport for agent OTP email (used in production when SMTP_HOST is set;
-    // selection order: SMTP -> Resend -> dev-capture). Non-production always uses the
-    // dev-capture transport regardless of these values.
+    // Outbound email (lib/email/mailer.ts): required in production, where it is
+    // Amazon SES's SMTP endpoint. Non-production always uses the dev transport
+    // regardless of these values.
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
     // STARTTLS on 587 -> false; implicit TLS on 465 -> true.
@@ -218,6 +216,9 @@ const serverEnvSchema = z
       .default(false),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
+    // The SES configuration set each message names, with its kind as a message
+    // tag (lib/email/smtp-transport.ts). Unset sends neither header.
+    SES_CONFIGURATION_SET: blankToUndefined(z.string().optional()),
     // Shared from-address for all outbound email; AGENT_EMAIL_FROM is the
     // legacy name and remains the fallback so existing deployments keep working.
     // Blank values normalize to undefined: the transports fall back with ??,
@@ -289,14 +290,12 @@ const serverEnvSchema = z
     AGENT_MAX_PENDING_OTP_PER_EMAIL: z.coerce.number().int().min(1).default(3),
   })
   .superRefine((env, ctx) => {
-    // Fail closed in production: a real email transport MUST be configured.
-    // Otherwise sendEmail() silently falls back to the dev-capture transport
-    // (which only logs the OTP and never delivers), breaking verified_email.
-    if (process.env.NODE_ENV === "production" && !env.SMTP_HOST && !env.RESEND_API_KEY) {
+    // Fail closed in production: a real email transport MUST be configured,
+    // or every email (sign-in codes included) would fail to send.
+    if (process.env.NODE_ENV === "production" && !env.SMTP_HOST) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "Production requires an email transport: set SMTP_HOST (+ SMTP_USER/SMTP_PASS) or RESEND_API_KEY.",
+        message: "Production requires an email transport: set SMTP_HOST (+ SMTP_USER/SMTP_PASS).",
         path: ["SMTP_HOST"],
       });
     }
@@ -381,12 +380,12 @@ export function serverEnv() {
       OBJECT_STORAGE_SECRET_ACCESS_KEY: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
       GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
       GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
-      RESEND_API_KEY: process.env.RESEND_API_KEY,
       SMTP_HOST: process.env.SMTP_HOST,
       SMTP_PORT: process.env.SMTP_PORT,
       SMTP_SECURE: process.env.SMTP_SECURE,
       SMTP_USER: process.env.SMTP_USER,
       SMTP_PASS: process.env.SMTP_PASS,
+      SES_CONFIGURATION_SET: process.env.SES_CONFIGURATION_SET,
       EMAIL_FROM: process.env.EMAIL_FROM,
       AGENT_EMAIL_FROM: process.env.AGENT_EMAIL_FROM,
       SUPPORT_ALERT_EMAIL: process.env.SUPPORT_ALERT_EMAIL || undefined,

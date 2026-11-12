@@ -234,6 +234,7 @@ async function notifyOne(event: AlertEventRow): Promise<boolean> {
     try {
       await sendEmail({
         to: context.ownerEmail,
+        kind: "alert",
         subject: `${event.resolved_at ? "Resolved" : "Alert"}: ${summary}`,
         text: `${text}\n\nYou get this because alerts are on for this endpoint. Change them in its settings.\n`,
       });

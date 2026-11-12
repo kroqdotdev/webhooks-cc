@@ -26,6 +26,7 @@ export function buildTeamInviteEmail(params: {
 
   return {
     to: invitedEmail,
+    kind: "team_invite",
     subject: `${inviterEmail} invited you to ${teamName} on webhooks.cc`,
     text: [
       `${inviterEmail} invited you to join the team "${teamName}" on webhooks.cc,`,
