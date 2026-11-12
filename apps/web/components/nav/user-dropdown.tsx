@@ -145,7 +145,7 @@ export function UserDropdown() {
         {staff?.staff && (
           <DropdownMenuItem
             onClick={() => go("/ops")}
-            className="cursor-pointer text-staff focus:text-staff"
+            className="cursor-pointer text-staff data-highlighted:text-staff"
           >
             <Gauge className="h-4 w-4 mr-2" />
             Operations
