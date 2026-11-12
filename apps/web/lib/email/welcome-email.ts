@@ -1,5 +1,6 @@
 import { SITES, type SiteKey } from "@/lib/site";
 import type { EmailMessage } from "./mailer";
+import { GITHUB_REPO_URL } from "@/lib/github";
 
 /** No reply is read at the sending address, so auto-responders stay quiet. */
 const AUTOMATIC = { "Auto-Submitted": "auto-generated", "X-Auto-Response-Suppress": "All" };
@@ -36,7 +37,8 @@ function link(href: string, label: string): string {
 
 /**
  * Builds the one email a new account gets: its dashboard, the three ways in
- * (CLI, MCP server, SDK) with the commands from the docs, and where to ask.
+ * (CLI, MCP server, SDK) with the commands from the docs, a link to the
+ * repository (the one link that leaves the account's site), and where to ask.
  * An account whose site is mailhooks.cc reads about email first. Pure (no
  * I/O) so it is unit-testable; the caller sends it through sendEmail(). The
  * commands must match /installation and the docs: change them together.
@@ -93,6 +95,10 @@ export function buildWelcomeEmail(params: {
     : "Create an endpoint, trigger your code, and wait for the webhook to arrive. Python " +
       "(pip install webhooks-cc) and Go (go get webhooks.cc/go) work the same way.";
 
+  const star =
+    `${name} is open source. If it saves you time, a star on GitHub helps other ` +
+    "developers find it.";
+
   const help =
     "Stuck? Open a ticket and we will help. Replies to this email are not read, because it " +
     "is sent from an address without an inbox.";
@@ -138,6 +144,9 @@ export function buildWelcomeEmail(params: {
       `Docs:`,
       docs,
       ``,
+      star,
+      GITHUB_REPO_URL,
+      ``,
       help,
       support,
       ``,
@@ -160,6 +169,7 @@ export function buildWelcomeEmail(params: {
       pre([SDK_INSTALL]),
       `<p>${escapeHtml(sdkNote)} ${link(sdkDoc, "Testing with the SDK")}</p>`,
       `<p>${link(docs, "Read the docs")}</p>`,
+      `<p>${escapeHtml(star)} ${link(GITHUB_REPO_URL, "Star it on GitHub")}</p>`,
       `<p>${escapeHtml(help)} ${link(support, "Open a ticket")}</p>`,
       `<p style="color:#666;font-size:12px">${escapeHtml(footer)}</p>`,
     ].join("\n"),

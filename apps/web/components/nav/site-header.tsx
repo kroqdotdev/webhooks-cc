@@ -15,6 +15,8 @@ import { resetUser, trackSignOut } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { GitHubIcon } from "@/components/ui/icons";
+import { GITHUB_REPO_URL } from "@/lib/github";
 
 interface NavLink {
   href: string;
@@ -125,10 +127,10 @@ export function SiteHeader({
   const { onAuthPage, inApp } = headerPlace(navPath);
   // Every signed-in app page (dashboard, account, teams) gets the same short set,
   // so the header does not change as people move around the app.
-  const links =
-    compact || (isAuthenticated && inApp)
-      ? siteLinks.filter((link) => !["/blog", "/integrations", "/pricing"].includes(link.href))
-      : siteLinks;
+  const appLinks = compact || (isAuthenticated && inApp);
+  const links = appLinks
+    ? siteLinks.filter((link) => !["/blog", "/integrations", "/pricing"].includes(link.href))
+    : siteLinks;
 
   const handleSignOut = async () => {
     setOpen(false);
@@ -232,6 +234,20 @@ export function SiteHeader({
                 )}
               </Link>
             ))}
+            {/* The repository, on the public pages only. */}
+            {!appLinks && (
+              <a
+                href={GITHUB_REPO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium py-1 -my-1 text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5 max-xl:hidden"
+              >
+                <GitHubIcon aria-hidden className="h-4 w-4" />
+                GitHub
+                <ArrowUpRight aria-hidden className="h-3.5 w-3.5 -ml-1" />
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            )}
             {authAction}
             {isAuthenticated && <UserDropdown />}
           </nav>
@@ -294,6 +310,20 @@ export function SiteHeader({
                   )}
                 </Link>
               ))}
+              {!appLinks && (
+                <a
+                  href={GITHUB_REPO_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-foreground font-medium text-lg flex items-center gap-2"
+                  onClick={() => setOpen(false)}
+                >
+                  <GitHubIcon aria-hidden className="h-4.5 w-4.5" />
+                  GitHub
+                  <ArrowUpRight aria-hidden className="h-3.5 w-3.5 -ml-1" />
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              )}
               {isAuthenticated ? (
                 <>
                   <Link

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Star } from "lucide-react";
+import { GITHUB_REPO_URL } from "@/lib/github";
 import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
 
 export interface TocItem {
@@ -70,6 +71,15 @@ export function TableOfContents({ headings }: { headings: TocItem[] }) {
             ))}
           </ul>
         </nav>
+        <a
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-6 pt-4 border-t flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Star aria-hidden className="h-3.5 w-3.5" />
+          Star on GitHub
+        </a>
       </aside>
 
       {/* Mobile: collapsible dropdown above content */}

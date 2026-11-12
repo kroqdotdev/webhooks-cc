@@ -1,19 +1,64 @@
 # webhooks.cc
 
-Inspect and debug webhooks and email without deploying to production.
+Capture webhooks and email, forward them to localhost, and put the site on your machine at a public link. A hosted service with an open source CLI (`whk`), SDKs for TypeScript, Python and Go, and an MCP server for AI coding agents.
 
-Get a unique URL, point your webhook there, and see every request in real time. No signup required. Every endpoint also has an email address at `mailhooks.cc` that captures mail the same way.
+[![CI](https://github.com/kroqdotdev/webhooks-cc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kroqdotdev/webhooks-cc/actions/workflows/ci.yml)
+[![whk](https://img.shields.io/github/v/release/kroqdotdev/webhooks-cc?filter=v*&label=whk)](https://github.com/kroqdotdev/webhooks-cc/releases/latest)
+[![Homebrew](https://img.shields.io/badge/homebrew-kroqdotdev%2Ftap%2Fwhk-FBB040?logo=homebrew&logoColor=white)](https://github.com/kroqdotdev/homebrew-tap)
+[![GitHub Action](https://img.shields.io/badge/GitHub%20Action-setup--whk-2088FF?logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-whk)
+[![License](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20MIT-blue)](#license)
+<br>
+[![@webhooks-cc/sdk](https://img.shields.io/npm/v/@webhooks-cc/sdk?label=%40webhooks-cc%2Fsdk)](https://www.npmjs.com/package/@webhooks-cc/sdk)
+[![SDK downloads](https://img.shields.io/npm/dm/@webhooks-cc/sdk?label=sdk%20downloads)](https://www.npmjs.com/package/@webhooks-cc/sdk)
+[![PyPI](https://img.shields.io/pypi/v/webhooks-cc)](https://pypi.org/project/webhooks-cc/)
+[![pytest-webhooks-cc](https://img.shields.io/pypi/v/pytest-webhooks-cc?label=pytest-webhooks-cc)](https://pypi.org/project/pytest-webhooks-cc/)
+[![Go Reference](https://pkg.go.dev/badge/webhooks.cc/go.svg)](https://pkg.go.dev/webhooks.cc/go)
+<br>
+[![@webhooks-cc/mcp](https://img.shields.io/npm/v/@webhooks-cc/mcp?label=%40webhooks-cc%2Fmcp)](https://www.npmjs.com/package/@webhooks-cc/mcp)
+[![MCP downloads](https://img.shields.io/npm/dm/@webhooks-cc/mcp?label=mcp%20downloads)](https://www.npmjs.com/package/@webhooks-cc/mcp)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.kroqdotdev%2Fwebhooks--cc-6E56CF)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.kroqdotdev/webhooks-cc)
+[![Glama](https://glama.ai/mcp/servers/kroqdotdev/webhooks-cc/badges/score.svg)](https://glama.ai/mcp/servers/kroqdotdev/webhooks-cc)
 
-**[Try it now →](https://webhooks.cc)**
+![whk tunnel forwarding three webhooks to localhost:3000, then whk share putting localhost:3000 at a public sharehooks.cc link with a QR code and three visitors](.github/assets/whk-demo.gif)
+
+No account needed to try it: open [webhooks.cc](https://webhooks.cc) for a capture URL, send it a request, and watch it arrive.
 
 [![A Stripe test webhook captured on webhooks.cc: the request list, the event's parsed JSON body, and tabs for headers, raw body and signature](.github/assets/dashboard.png)](https://webhooks.cc)
 
-## Getting Started
+If webhooks.cc saves you time, a star on this repository helps other developers find it.
 
-1. Visit [webhooks.cc](https://webhooks.cc)
-2. Copy your unique webhook URL
-3. Send a test request: `curl -X POST https://go.webhooks.cc/w/<slug> -d '{"test": true}'`
-4. Watch it appear in the dashboard
+## Quick start
+
+Pick where you work.
+
+**In the terminal.** Install `whk`, sign in once, and forward a capture URL to your app, or share the app itself:
+
+```bash
+curl -fsSL https://webhooks.cc/install.sh | sh   # or: brew install kroqdotdev/tap/whk
+whk auth login
+whk tunnel 3000   # a webhook URL whose requests reach localhost:3000
+whk share 3000    # https://<name>.sharehooks.cc, served from localhost:3000
+```
+
+**In your coding agent.** Add the remote MCP server; you approve the connection once in your browser, with no key to paste:
+
+```bash
+claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp
+```
+
+**In your tests.** Wait for the webhook or email your code sends, then assert on it:
+
+```bash
+npm install @webhooks-cc/sdk      # TypeScript
+pip install pytest-webhooks-cc    # pytest fixtures, on the Python SDK
+go get webhooks.cc/go             # Go
+```
+
+**In the browser.** Visit [webhooks.cc](https://webhooks.cc), copy your URL, and send it a request:
+
+```bash
+curl -X POST https://go.webhooks.cc/w/<slug> -d '{"test": true}'
+```
 
 ## Features
 
@@ -27,9 +72,10 @@ Get a unique URL, point your webhook there, and see every request in real time. 
 - **CLI with interactive TUI**: manage endpoints, tunnel and stream requests from your terminal
 - **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI, and share a local port from code
 - **pytest plugin**: `pip install pytest-webhooks-cc` gives every test a capture URL and an email address as fixtures
+- **GitHub Action**: [`setup-whk`](https://github.com/marketplace/actions/setup-whk) installs the CLI in a workflow
 - **MCP server**: connect AI coding agents (Claude Code, Cursor, VS Code, Codex) to your webhooks
 
-## Use Cases
+## Use cases
 
 **Testing payment integrations**: point Stripe's test webhooks at your endpoint. Inspect the payload structure before writing handlers.
 
@@ -37,17 +83,9 @@ Get a unique URL, point your webhook there, and see every request in real time. 
 
 **Developing locally**: forward production-like webhooks to localhost without exposing your machine to the internet.
 
+**Showing work in progress**: send a teammate or client a link to the app running on your laptop.
+
 **Mocking failure scenarios**: configure your endpoint to return 500 errors and test your retry logic.
-
-## Pricing
-
-**Free**: 50 requests a day, 7-day retention. Enough for development and testing.
-
-**Pro ($8/month)**: 100,000 requests a month, 31-day retention.
-
-**Business ($29/month)**: 250,000 requests a month, 90-day retention, attachment parsing, custom inbound domains and file drops.
-
-Teams share endpoints under a per-seat subscription. See [plans and limits](https://webhooks.cc/docs/plans-limits) for details.
 
 ## Install
 
@@ -63,12 +101,6 @@ curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" s
 
 With `WHK_INSTALL_DIR`, put that directory on your `PATH` (the installer prints the line to add) before running `whk`.
 
-Then launch interactive terminal:
-
-```bash
-whk
-```
-
 ### SDK
 
 ```bash
@@ -78,7 +110,10 @@ npm install @webhooks-cc/sdk
 ### MCP server
 
 ```bash
-# Claude Code
+# Claude Code, remote (sign in once in the browser)
+claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp
+
+# Claude Code, local, with an API key
 claude mcp add -s user webhooks-cc -e WHK_API_KEY=whcc_... -- npx -y @webhooks-cc/mcp
 
 # Cursor, VS Code, Devin Desktop (formerly Windsurf), Claude Desktop
@@ -155,6 +190,10 @@ Agent: Replayed to http://localhost:3000/webhooks: 200 OK
 ```
 
 See [`packages/mcp/README.md`](packages/mcp/README.md) for full setup and tool reference.
+
+## Pricing
+
+The free plan has 50 requests a day and 7 days of history, which is enough for development and testing. Pro ($8/month) and Business ($29/month) raise the limits, and teams share endpoints under a per-seat subscription. See [pricing](https://webhooks.cc/pricing) and [plans and limits](https://webhooks.cc/docs/plans-limits).
 
 ## Why the code is public
 

@@ -1,4 +1,5 @@
-import { STARS_FLOOR } from "@/components/landing/github-card";
+import { GITHUB_REPO_URL, STARS_FLOOR } from "@/lib/github";
+import { GitHubIcon } from "@/components/ui/icons";
 import Link from "next/link";
 import { CookieSettingsLink } from "@/components/providers/cookie-consent";
 import { SiteHeader } from "@/components/nav/site-header";
@@ -368,11 +369,12 @@ export default async function Home() {
               </span>
             ) : null}
             <a
-              href="https://github.com/kroqdotdev/webhooks-cc"
+              href={GITHUB_REPO_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="font-semibold hover:text-foreground"
             >
+              <GitHubIcon aria-hidden className="inline-block h-3.5 w-3.5 -mt-0.5 mr-1.5" />
               Open source
               {typeof stars === "number" && stars >= STARS_FLOOR ? (
                 <>
@@ -380,7 +382,9 @@ export default async function Home() {
                   &middot; <Star className="inline-block h-3.5 w-3.5 -mt-0.5" />{" "}
                   <span className="text-foreground">{stars.toLocaleString()}</span> on GitHub
                 </>
-              ) : null}
+              ) : (
+                <>: star it on GitHub</>
+              )}
             </a>
           </div>
         </div>

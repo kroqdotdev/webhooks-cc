@@ -38,6 +38,8 @@ These work with every subcommand.
 | `--webhook-url` | Use another webhook receiver URL (also: `WHK_WEBHOOK_URL`)          |
 | `--no-color`    | Disable colored output                                              |
 
+The first time you stop a tunnel or a share with Ctrl+C, `whk` prints a link to its GitHub repository, once per machine. It never prints with `--json`, in CI, or when the output is piped; set `WHK_NO_STAR_HINT=1` to turn it off everywhere.
+
 ## auth login
 
 Log in to webhooks.cc. Opens your browser to verify a device code. Credentials are stored at `~/.config/whk/token.json`.

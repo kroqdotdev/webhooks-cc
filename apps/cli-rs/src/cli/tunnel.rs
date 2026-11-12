@@ -349,6 +349,12 @@ pub async fn run(
     if let Some(message) = live_refused {
         anyhow::bail!(message);
     }
+    if interrupted
+        && stream_result.is_ok()
+        && let Some(hint) = crate::util::star::take(json)
+    {
+        println!("{hint}");
+    }
     stream_result
 }
 
