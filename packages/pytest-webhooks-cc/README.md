@@ -113,6 +113,8 @@ collected 14 items
 webhooks.cc: WHK_API_KEY is not set, so 3 tests that use the webhooks.cc fixtures will be skipped
 ```
 
+Under pytest-xdist the workers collect and the main process does not, so the line is not shown there; `-rs` still lists the skipped tests.
+
 ## In CI
 
 Add the key as a secret and pass it to the test step. On GitHub Actions:

@@ -103,6 +103,30 @@ def test_the_fixtures_are_there_when_only_this_plugin_is_loaded(
     assert fixture_definitions(result.stdout.str()) == dict.fromkeys(FIXTURES, 1)
 
 
+@pytest.mark.parametrize(
+    "plugins",
+    [
+        ("-p", "pytest_webhooks_cc", "-p", "webhooks_cc"),
+        ("-p", "webhooks_cc", "-p", "pytest_webhooks_cc"),
+    ],
+)
+def test_naming_both_plugins_starts_cleanly_with_warnings_as_errors(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, plugins: tuple[str, ...]
+) -> None:
+    """In either order, the SDK module is not imported before pytest can rewrite it.
+
+    Importing it when this plugin is imported made pytest warn that it could not
+    rewrite ``webhooks_cc``, which ``filterwarnings = error`` turns into a crash.
+    """
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    pytester.makeini("[pytest]\nfilterwarnings = error\n")
+    pytester.makepyfile("def test_plain():\n    pass\n")
+
+    result = pytester.runpytest_subprocess(*plugins, "-W", "error")
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str() + result.stderr.str()
+    assert "PytestAssertRewriteWarning" not in result.stdout.str() + result.stderr.str()
+
+
 def test_blocking_the_sdk_plugin_keeps_the_fixtures_off(pytester: pytest.Pytester) -> None:
     """``-p no:webhooks_cc`` means no fixtures; this plugin does not bring them back."""
     result = pytester.runpytest_subprocess("-p", "no:webhooks_cc", "--fixtures", "-v")
