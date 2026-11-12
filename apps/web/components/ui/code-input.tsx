@@ -81,7 +81,10 @@ export function CodeInput({
             ) : (
               <React.Fragment key={index}>
                 {slot.hasFakeCaret && (
-                  <span aria-hidden className="h-[1.15em] w-px animate-caret-blink bg-foreground" />
+                  // No width of its own, like a text field's caret: the digits do not move.
+                  <span aria-hidden data-caret className="relative w-0 self-stretch">
+                    <span className="absolute left-0 top-1/2 h-[1.15em] w-px -translate-y-1/2 animate-caret-blink bg-foreground" />
+                  </span>
                 )}
                 {slot.placeholderChar && (
                   <span className="text-muted-foreground">{slot.placeholderChar}</span>
