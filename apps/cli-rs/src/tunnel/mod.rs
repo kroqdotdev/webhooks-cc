@@ -265,10 +265,7 @@ fn should_filter_header(lower: &str) -> bool {
         }
     }
     // Also filter cf-* headers
-    if lower.starts_with("cf-") {
-        return true;
-    }
-    false
+    lower.starts_with("cf-")
 }
 
 fn build_target_url(base: &str, path: &str, query_params: &HashMap<String, String>) -> String {
