@@ -4,12 +4,13 @@ import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
 import { CodeBox } from "@/components/ui/code";
 import { Card } from "@/components/ui/card";
+import { PairLinks } from "@/components/compare/pair-links";
 
 const FAQ_ITEMS = [
   {
     question: "What are the best LocalTunnel alternatives in 2026?",
     answer:
-      "webhooks.cc is a strong LocalTunnel alternative if you need webhook-specific tooling: it tunnels to localhost and also captures, inspects, replays, and tests every request. Other alternatives include ngrok (general-purpose tunnel with paid features), Smee.io (GitHub's webhook proxy), and Cloudflare Tunnel (production-grade zero-trust tunnel).",
+      "webhooks.cc is a strong LocalTunnel alternative if you need webhook-specific tooling: it tunnels to localhost and also captures, inspects, replays, and tests every request, and whk share puts a local site at a public link. Other alternatives include ngrok (general-purpose tunnel with paid plans), Pinggy (tunnels over SSH), Smee.io (GitHub's webhook proxy), and Cloudflare Tunnel (tunnels to your own domain on Cloudflare).",
   },
   {
     question: "What is LocalTunnel?",
@@ -19,22 +20,22 @@ const FAQ_ITEMS = [
   {
     question: "What is the difference between webhooks.cc and LocalTunnel?",
     answer:
-      "LocalTunnel is a generic tunnel: it forwards traffic to localhost but does not capture, store, or inspect requests. webhooks.cc is a webhook testing platform: it captures every incoming request with headers, body, and metadata, stores them for inspection, and provides replay, SDK assertions, and MCP tooling. If you only need to forward traffic, LocalTunnel works. If you need to see, search, and test what arrived, webhooks.cc is the better fit.",
+      "LocalTunnel is a generic tunnel: it forwards traffic to localhost but does not capture, store, or inspect requests. webhooks.cc is a webhook testing platform: it captures every incoming request with headers, body, and metadata, stores them for inspection, and provides replay, SDK assertions, and MCP tooling, and its CLI shares a local site too. If you only need to forward traffic with no account, LocalTunnel works. If you need to see, search, and test what arrived, webhooks.cc is the better fit.",
   },
   {
-    question: "Is LocalTunnel reliable?",
+    question: "Is LocalTunnel still maintained?",
     answer:
-      "LocalTunnel is free, but it is effectively unmaintained: the client's last release was in 2021 and its code last changed in 2022, though the public server still hands out URLs. The public server can be unreliable during high-traffic periods, and URLs change on each restart. For consistent development workflows, self-hosting the LocalTunnel server or using a tool with managed infrastructure (like webhooks.cc) provides more stability.",
+      "The client's latest release on npm, 2.0.2, is from September 2021, and the most recent commit in its GitHub repository, a README update, is from August 2025. It is a free community project with no support plan, and its URL changes on each restart unless the subdomain you ask for is free. For a webhook URL that stays put, host the LocalTunnel server yourself or use a tool with fixed endpoint URLs, like webhooks.cc.",
   },
   {
     question: "Can I use webhooks.cc as a free ngrok/LocalTunnel alternative?",
     answer:
-      "Yes. The webhooks.cc CLI tunnel (whk tunnel) forwards webhooks to your local port, and the free tier includes this feature with no time limits. Unlike LocalTunnel, you also get persistent request history, inspection, replay, and test assertions included.",
+      "Yes. The webhooks.cc CLI tunnel (whk tunnel) forwards webhooks to your local port on the free plan with no time limit, and you also get persistent request history, inspection, replay, and test assertions. Sharing a local site with whk share is on the free plan too, within limits: one share at a time on a random name ending in -free, for 2 hours, with 1 GB a month.",
   },
   {
-    question: "LocalTunnel vs ngrok: which is better for webhooks?",
+    question: "Can webhooks.cc share a local website like lt --port?",
     answer:
-      "ngrok is more reliable and adds a local request inspector, stable domains on paid plans and TCP tunnels. LocalTunnel is free and open source but gives a new random URL each session, so you reconfigure the webhook sender every time. For webhooks specifically, webhooks.cc gives a stable URL that keeps history, and whk tunnel forwards each request to localhost.",
+      "Yes. whk share 3000 puts your local site at an HTTPS link on sharehooks.cc, with WebSockets and live reload passing through. It needs a free account and the whk CLI. Pro ($8/month) keeps 3 reserved names between sessions, adds passwords and 25 GB a month. Shares serve web pages only, with no downloads, video or TCP.",
   },
 ];
 
@@ -42,6 +43,17 @@ const ROWS = [
   ["Primary purpose", "Webhook testing platform", "Free localhost tunnel"],
   ["Tunnel to localhost", "Yes (whk tunnel)", "Yes (lt --port)"],
   ["Share a local site at a public link", "Yes (whk share, on sharehooks.cc)", "Yes (lt --port)"],
+  ["Account", "Yes, free", "None"],
+  [
+    "Free share link",
+    "A random -free name, 2-hour sessions, 1 GB a month",
+    "A random loca.lt name for as long as the command runs",
+  ],
+  [
+    "Webhook sender gets your local app's answer",
+    "Yes, with whk tunnel --live, and the request is kept",
+    "Yes, the tunnel proxies the response",
+  ],
   ["Webhook capture & history", "Yes, persistent, searchable", "No"],
   ["Request inspection", "Yes, dashboard + CLI + SDK", "No"],
   ["Mock responses", "Yes, rule-based per endpoint", "No"],
@@ -50,8 +62,13 @@ const ROWS = [
   ["SDKs", "TypeScript, Python and Go", "No"],
   ["CI test assertions", "Yes (waitFor + matchers)", "No"],
   ["MCP server for AI agents", "Yes, remote (OAuth) or local", "No"],
-  ["Stable URLs", "Yes, slug-based", "No, random per session"],
-  ["Custom subdomains", "No", "Yes (often unavailable)"],
+  ["Stable webhook URL", "Yes, slug-based", "No, random per session"],
+  [
+    "A share name you choose",
+    "Pro ($8/mo): 3 reserved names",
+    "--subdomain, when the name is free",
+  ],
+  ["Password on a shared link", "Pro and up", "Not documented"],
   ["Non-HTTP protocols", "Email capture (no TCP tunnels)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
   ["Maintenance", "Active", "Last client release 2021"],
@@ -60,9 +77,9 @@ const ROWS = [
 ] as const;
 
 export const metadata = createPageMetadata({
-  title: "LocalTunnel Alternative with Webhook Testing (2026)",
+  title: "LocalTunnel Alternative: Share Localhost, Test Webhooks (2026)",
   description:
-    "LocalTunnel alternative with webhook capture, inspection, and replay. Add SDK assertions and MCP for AI agents on top of localhost tunneling.",
+    "LocalTunnel alternative that keeps what arrives: webhook capture, inspection and replay, a CLI tunnel, share links for a local site, SDK assertions and an MCP server.",
   path: "/compare/localtunnel",
   keywords: [
     "localtunnel alternative",
@@ -74,6 +91,7 @@ export const metadata = createPageMetadata({
     "webhook tunnel free",
     "localtunnel webhook testing",
     "free webhook testing",
+    "share localhost",
   ],
 });
 
@@ -97,13 +115,18 @@ export default function CompareLocalTunnelPage() {
         <p className="text-lg text-muted-foreground mb-10">
           If you need a LocalTunnel alternative with webhook inspection built in, webhooks.cc gives
           you a free public URL that forwards traffic to localhost, and also captures every request,
-          stores it for inspection, and lets you replay, search, and assert on payloads. Same
-          starting point, different depth.
+          stores it for inspection, and lets you replay, search, and assert on payloads. Its CLI can
+          also{" "}
+          <Link href="/share" className="text-primary font-bold hover:underline">
+            share localhost
+          </Link>{" "}
+          at a public link, the job LocalTunnel is best known for. Same starting point, different
+          depth.
         </p>
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <CodeBox className="overflow-x-auto mb-10">
+        <CodeBox className="overflow-x-auto mb-3">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b">
@@ -129,6 +152,10 @@ export default function CompareLocalTunnelPage() {
             </tbody>
           </table>
         </CodeBox>
+        <p className="text-sm text-muted-foreground mb-10">
+          LocalTunnel as described on its site, its GitHub README and npm in November 2026;
+          &quot;not documented&quot; means we did not find it there.
+        </p>
 
         <ComparisonCTA compact />
 
@@ -146,13 +173,28 @@ export default function CompareLocalTunnelPage() {
           </Card>
 
           <Card>
-            <h3 className="text-lg font-bold mb-2">Reliability</h3>
+            <h3 className="text-lg font-bold mb-2">An address that lasts</h3>
             <p className="text-muted-foreground">
-              LocalTunnel&apos;s public server is community-run and can be unreliable, and the
-              project has had no client release since 2021. URLs change every session, and
-              connections sometimes drop. webhooks.cc endpoints use stable slug-based URLs and run
-              on managed infrastructure, so you can configure a webhook sender once and keep
-              receiving.
+              A LocalTunnel URL lives for one session: restart <code>lt</code> and the name changes,
+              unless the subdomain you ask for happens to be free, so a webhook sender has to be
+              pointed at the new one each time. The client has had no release since 2021.
+              webhooks.cc endpoints use stable slug-based URLs on managed infrastructure and keep
+              capturing while your machine is off, so you configure a webhook sender once.
+            </p>
+          </Card>
+
+          <Card>
+            <h3 className="text-lg font-bold mb-2">Sharing a local site</h3>
+            <p className="text-muted-foreground">
+              LocalTunnel does this with no account: one command, a random loca.lt name, and the
+              link works while the command runs. webhooks.cc includes{" "}
+              <Link href="/docs/share" className="font-semibold hover:text-primary">
+                whk share
+              </Link>{" "}
+              on every plan, behind a free account: Free shares get a random name ending in -free
+              and a short notice page, for 2 hours at a time with 1 GB a month; Pro ($8 a month)
+              keeps 3 reserved names, adds passwords and 25 GB a month. Shares serve web pages only:
+              no downloads, video or TCP.
             </p>
           </Card>
 
@@ -180,6 +222,7 @@ export default function CompareLocalTunnelPage() {
               <li>SDK assertions in CI test suites</li>
               <li>Stable endpoint URLs that persist across sessions</li>
               <li>MCP tooling for AI-assisted webhook workflows</li>
+              <li>A share name that stays yours, with a password on it</li>
             </ul>
           </Card>
           <Card>
@@ -188,7 +231,7 @@ export default function CompareLocalTunnelPage() {
               <li>The simplest, fastest localhost tunnel with no signup</li>
               <li>Throwaway URLs for quick demos or pairing sessions</li>
               <li>Zero-dependency, fully open-source MIT tunnel</li>
-              <li>Non-webhook use cases (sharing local web apps)</li>
+              <li>A quick share with no account and no session limit</li>
             </ul>
           </Card>
         </div>
@@ -205,6 +248,7 @@ export default function CompareLocalTunnelPage() {
         </div>
 
         {/* More comparisons */}
+        <PairLinks tool="/compare/localtunnel" />
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
           <Link
@@ -212,6 +256,20 @@ export default function CompareLocalTunnelPage() {
             className="font-semibold hover:text-primary transition-colors"
           >
             vs ngrok
+          </Link>
+          {" · "}
+          <Link
+            href="/compare/cloudflare-tunnel"
+            className="font-semibold hover:text-primary transition-colors"
+          >
+            vs Cloudflare Tunnel
+          </Link>
+          {" · "}
+          <Link
+            href="/compare/pinggy"
+            className="font-semibold hover:text-primary transition-colors"
+          >
+            vs Pinggy
           </Link>
           {" · "}
           <Link href="/compare/smee" className="font-semibold hover:text-primary transition-colors">

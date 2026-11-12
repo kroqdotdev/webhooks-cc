@@ -1,3 +1,4 @@
+import { comparePair, comparePairName } from "@/lib/compare-pairs";
 import { COMPARE_PAGE_SLUGS } from "@/lib/seo";
 
 /**
@@ -27,4 +28,23 @@ function nameFromSlug(slug: string): string {
 export function compareToolName(slug: string): string | null {
   if (!COMPARE_PAGE_SLUGS.includes(slug)) return null;
   return Object.hasOwn(TOOL_NAMES, slug) ? TOOL_NAMES[slug] : nameFromSlug(slug);
+}
+
+/**
+ * What a compare page's image says: "webhooks.cc vs <tool>" for a tool's page
+ * and "<a> vs <b>" for a pair page, or null when there is no such page.
+ */
+export function compareImageText(slug: string): { title: string; subtitle: string } | null {
+  if (!COMPARE_PAGE_SLUGS.includes(slug)) return null;
+  const pair = comparePair(slug);
+  if (pair) {
+    return {
+      title: comparePairName(pair),
+      subtitle: "Features and pricing, side by side",
+    };
+  }
+  return {
+    title: `webhooks.cc vs ${compareToolName(slug)}`,
+    subtitle: "Features, pricing and workflow, side by side",
+  };
 }

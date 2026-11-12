@@ -1,0 +1,9 @@
+{
+  "title": "Tunnel comparisons and tool against tool pages",
+  "items": [
+    "New comparisons with Cloudflare Tunnel and Pinggy, and a localhost tunnels checklist on the compare page",
+    "New pages that compare two other tools: ngrok vs Hookdeck, ngrok vs Webhook.site, Hookdeck vs Webhook.site, ngrok vs LocalTunnel, ngrok vs Cloudflare Tunnel, Webhook.site vs RequestBin and Mailtrap vs Mailosaur",
+    "The LocalTunnel comparison covers whk share and live tunnels, and the ngrok and Hookdeck comparisons link to the two-tool pages instead of answering them in their FAQs",
+    "The blog post on ngrok alternatives now leads to the ngrok comparison, which is kept up to date"
+  ]
+}

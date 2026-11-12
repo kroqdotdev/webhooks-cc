@@ -120,6 +120,12 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Webhook testing tools", href: "/compare" },
       { title: "ngrok vs webhooks.cc", href: "/compare/ngrok" },
       { title: "Webhook.site vs webhooks.cc", href: "/compare/webhook-site" },
+      {
+        title: "Cloudflare Tunnel vs webhooks.cc",
+        href: "/compare/cloudflare-tunnel",
+        isNew: true,
+      },
+      { title: "Pinggy vs webhooks.cc", href: "/compare/pinggy", isNew: true },
       { title: "Stripe CLI vs webhooks.cc", href: "/compare/stripe-cli", isNew: true },
       { title: "Svix vs webhooks.cc", href: "/compare/svix", isNew: true },
       { title: "Mailtrap vs webhooks.cc", href: "/compare/mailtrap", isNew: true },

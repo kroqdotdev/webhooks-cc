@@ -4,6 +4,7 @@ import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
 import { CodeBox, InlineCode } from "@/components/ui/code";
 import { Card } from "@/components/ui/card";
+import { PairLinks } from "@/components/compare/pair-links";
 
 const FAQ_ITEMS = [
   {
@@ -219,6 +220,7 @@ export default function CompareRequestBinPage() {
         </div>
 
         {/* More comparisons */}
+        <PairLinks tool="/compare/requestbin" />
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
           <Link
