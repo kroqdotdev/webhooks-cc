@@ -292,6 +292,14 @@ const nextConfig: NextConfig = {
         destination: "/docs/guides/test-stripe-webhooks",
         permanent: true,
       },
+      {
+        // Written before whk share and live tunnels, and aimed at the same
+        // search as /compare/ngrok, which is the page kept up to date. Its
+        // row is unpublished when this ships, like the two above.
+        source: "/blog/ngrok-alternative-webhook-testing-2026",
+        destination: "/compare/ngrok",
+        permanent: true,
+      },
     ];
   },
 };

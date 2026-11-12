@@ -4,6 +4,7 @@ import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
 import { CodeBox, InlineCode } from "@/components/ui/code";
 import { Card } from "@/components/ui/card";
+import { PairLinks } from "@/components/compare/pair-links";
 
 const FAQ_ITEMS = [
   {
@@ -88,7 +89,7 @@ const ROWS = [
   [
     "Email client screenshots",
     "No; desktop and mobile width preview",
-    "Device Previews, an add-on on Business and Enterprise, on request (100+ configurations)",
+    "Device Previews, an add-on on paid plans, on request (100+ configurations)",
   ],
   ["Forward test mail to a real inbox", "No", "Yes, Basic and up"],
   ["Webhook capture on the same endpoint", "Yes", "No"],
@@ -202,8 +203,8 @@ export default function CompareMailtrapPage() {
               <InlineCode>emails.waitFor()</InlineCode> in the TypeScript, Python and Go SDKs, and
               the code or the link already picked out. Mailtrap is stronger on the message itself:
               HTML Check lists the email clients that lack support for each element, the spam report
-              runs SpamAssassin and a blacklist lookup, and Device Previews (an add-on on Business
-              and Enterprise) screenshots the email in more than 100 client configurations.
+              runs SpamAssassin and a blacklist lookup, and Device Previews (an add-on on paid
+              plans, on request) screenshots the email in more than 100 client configurations.
               webhooks.cc has a spam score and a deliverability report, but no client support check
               and no screenshots.
             </p>
@@ -272,6 +273,7 @@ export default function CompareMailtrapPage() {
         </div>
 
         {/* More comparisons */}
+        <PairLinks tool="/compare/mailtrap" />
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
           <Link

@@ -4,17 +4,13 @@ import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
 import { CodeBox, InlineCode } from "@/components/ui/code";
 import { Card } from "@/components/ui/card";
+import { PairLinks } from "@/components/compare/pair-links";
 
 const FAQ_ITEMS = [
   {
     question: "What are the best ngrok alternatives for webhook testing in 2026?",
     answer:
-      "webhooks.cc is a strong ngrok alternative if your primary use case is webhook testing. It captures, inspects, and replays webhooks and email, with SDKs for CI assertions in TypeScript, Python and Go and an MCP server for AI agents. Other alternatives include LocalTunnel (free open-source tunnel), Smee.io (GitHub's webhook proxy), and Hookdeck (production webhook infrastructure).",
-  },
-  {
-    question: "ngrok vs Hookdeck: which is better for webhook testing?",
-    answer:
-      "ngrok is a general-purpose tunnel that exposes local ports over HTTP/TCP and inspects traffic only while the agent runs. Hookdeck is production webhook infrastructure with an event gateway, retries, and hookdeck listen for local forwarding. If your goal is testing webhooks in development and CI, webhooks.cc combines both strengths: a permanent capture URL, whk tunnel to localhost, 32-provider signature verification, SDKs for CI assertions, and an MCP server.",
+      "webhooks.cc is a strong ngrok alternative if you use ngrok for webhooks or to show a local site. It captures, inspects, and replays webhooks and email, forwards them to localhost, shares a local site at a public link, and has SDKs for CI assertions in TypeScript, Python and Go and an MCP server for AI agents. Other alternatives include Cloudflare Tunnel (tunnels to your own domain), Pinggy (tunnels over SSH), LocalTunnel (free open-source tunnel), Smee.io (GitHub's webhook proxy), and Hookdeck (production webhook infrastructure).",
   },
   {
     question: "Can I replace ngrok with webhooks.cc?",
@@ -42,14 +38,9 @@ const FAQ_ITEMS = [
       "ngrok provides client libraries for embedding tunnels into applications, but no SDK designed for webhook test assertions. webhooks.cc's TypeScript SDK includes waitFor() with request matchers (method, headers, body path) for use in Vitest or Jest integration tests, and its Python and Go SDKs do the same in pytest and go test.",
   },
   {
-    question: "ngrok vs Webhook.site for receiving webhooks on localhost?",
+    question: "What does webhooks.cc not do that ngrok does?",
     answer:
-      "ngrok forwards traffic to your local port and shows it in a local inspector at localhost:4040 while the agent runs. Webhook.site captures requests on a hosted URL and shows them in the browser; forwarding to localhost needs its CLI. webhooks.cc does both in one step: whk tunnel captures every webhook in a stored, searchable history and forwards it to localhost.",
-  },
-  {
-    question: "ngrok vs LocalTunnel: what is the difference?",
-    answer:
-      "Both expose a local port on a public URL. ngrok is a commercial service with a free tier, stable domains on paid plans, TCP tunnels and a local request inspector. LocalTunnel is free and open source, with a random URL per session and no inspector. For webhooks, webhooks.cc adds a stored, searchable history, replay to any URL and SDK assertions, and forwards to localhost too.",
+      "TCP and TLS tunnels, your own domain on a tunnel, and traffic policies. whk share also serves web pages only, up to 50 MB a response, with no downloads or video. ngrok's free domain stays the same across restarts, while a Free share gets a new random name each time; reserved names start on Pro.",
   },
 ];
 
@@ -107,18 +98,21 @@ const ROWS = [
   ["Edge computing / traffic policy", "Response rules for mock answers", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent SDKs)"],
   ["Team collaboration", "From $12/seat/mo, pooled quota", "$20/mo incl. 3 seats, then $5/seat"],
-  ["Free tier features", "Every Pro feature", "Limited connections + features"],
+  [
+    "Free tier features",
+    "Every webhook feature; share names and passwords need Pro",
+    "Limited connections + features",
+  ],
 ] as const;
 
 export const metadata = createPageMetadata({
-  title: "ngrok Alternative: vs Hookdeck & Webhook.site (2026)",
+  title: "ngrok Alternative for Webhooks and Sharing Localhost (2026)",
   description:
-    "Compare ngrok vs webhooks.cc, Hookdeck, and Webhook.site for webhook testing and sharing localhost: stored request history, CLI tunnel, live replies, public links, CI SDK, and MCP server.",
+    "An ngrok alternative for webhook testing and sharing localhost: stored request history, a CLI tunnel, live replies, public share links, SDKs for CI and an MCP server.",
   path: "/compare/ngrok",
   keywords: [
     "ngrok alternative",
     "ngrok alternatives",
-    "ngrok vs hookdeck",
     "best ngrok alternative",
     "ngrok alternative for webhooks",
     "ngrok webhook testing",
@@ -152,10 +146,14 @@ export default function CompareNgrokPage() {
           If you use ngrok mainly for webhook development, webhooks.cc is a purpose-built
           alternative that captures, inspects, replays, and forwards webhooks to localhost, with
           SDKs for TypeScript, Python and Go, a CLI tunnel, and an MCP server included. Its CLI also
-          shares a local site at a public link (<code>whk share</code>) and lets webhook senders get
-          your local app&apos;s answer (<code>whk tunnel --live</code>). ngrok is a general-purpose
-          tunnel for exposing any local service to the internet, with TCP, your own domains and
-          traffic policies. Different tools, different focus.
+          lets you{" "}
+          <Link href="/share" className="text-primary font-bold hover:underline">
+            share localhost
+          </Link>{" "}
+          at a public link (<code>whk share</code>) and lets webhook senders get your local
+          app&apos;s answer (<code>whk tunnel --live</code>). ngrok is a general-purpose tunnel for
+          exposing any local service to the internet, with TCP, your own domains and traffic
+          policies. Different tools, different focus.
         </p>
 
         {/* Feature table */}
@@ -282,6 +280,7 @@ export default function CompareNgrokPage() {
         </div>
 
         {/* More comparisons */}
+        <PairLinks tool="/compare/ngrok" />
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
           <Link
@@ -296,6 +295,20 @@ export default function CompareNgrokPage() {
             className="font-semibold hover:text-primary transition-colors"
           >
             vs LocalTunnel
+          </Link>
+          {" · "}
+          <Link
+            href="/compare/cloudflare-tunnel"
+            className="font-semibold hover:text-primary transition-colors"
+          >
+            vs Cloudflare Tunnel
+          </Link>
+          {" · "}
+          <Link
+            href="/compare/pinggy"
+            className="font-semibold hover:text-primary transition-colors"
+          >
+            vs Pinggy
           </Link>
           {" · "}
           <Link

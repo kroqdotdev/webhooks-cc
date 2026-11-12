@@ -4,11 +4,12 @@ import { JsonLd, breadcrumbSchema, faqSchema, type FAQItem } from "@/lib/schemas
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { CodeBox } from "@/components/ui/code";
 import { Card } from "@/components/ui/card";
+import { COMPARE_PAIRS, comparePairName } from "@/lib/compare-pairs";
 
 export const metadata = createPageMetadata({
   title: "Webhook Testing Tools Compared: Features & Pricing (2026)",
   description:
-    "Feature checklists for webhooks.cc against Webhook.site, RequestBin, Beeceptor, Hookdeck, ngrok, Svix, Stripe CLI, Smee.io and LocalTunnel, and against Mailtrap, Mailosaur and MailSlurp for email testing.",
+    "Feature checklists for webhooks.cc against Webhook.site, Hookdeck, ngrok and more, localhost tunnels side by side, and Mailtrap, Mailosaur and MailSlurp for email.",
   path: "/compare",
   keywords: [
     "webhook testing tool comparison",
@@ -23,6 +24,9 @@ export const metadata = createPageMetadata({
     "hookdeck alternative",
     "smee.io alternative",
     "localtunnel alternative",
+    "cloudflare tunnel alternative",
+    "pinggy alternative",
+    "localhost tunnels compared",
     "webhook inspection tools",
     "email testing tools",
     "mailtrap alternative",
@@ -87,6 +91,77 @@ const COMPARISONS = [
       "LocalTunnel is a free, simple tunnel that has had no release since 2021. webhooks.cc tunnels too, and also captures, inspects, replays, and tests every request.",
   },
 ] as const;
+
+const TUNNEL_COMPARISONS = [
+  {
+    href: "/compare/cloudflare-tunnel",
+    title: "webhooks.cc vs Cloudflare Tunnel",
+    summary:
+      "Cloudflare Tunnel publishes a service on your own domain, with no-account Quick Tunnels for testing. webhooks.cc keeps every webhook at a fixed URL and shares a local site with no domain to set up.",
+  },
+  {
+    href: "/compare/pinggy",
+    title: "webhooks.cc vs Pinggy",
+    summary:
+      "Pinggy opens HTTP, TCP and UDP tunnels from one ssh command, from $3 a month for a persistent address. webhooks.cc stores, replays and tests the webhooks, and its Pro plan keeps 3 share names.",
+  },
+] as const;
+
+const TUNNEL_TOOLS = [
+  { name: "webhooks.cc", href: null },
+  { name: "ngrok", href: "/compare/ngrok" },
+  { name: "Cloudflare Tunnel", href: "/compare/cloudflare-tunnel" },
+  { name: "Pinggy", href: "/compare/pinggy" },
+  { name: "LocalTunnel", href: "/compare/localtunnel" },
+] as const;
+
+// The same rule as MATRIX, for sharing a local port, in TUNNEL_TOOLS order.
+const TUNNEL_MATRIX: readonly (readonly [string, ...string[]])[] = [
+  ["Account needed", "Yes", "Yes", "No (Quick Tunnel)", "No", "No"],
+  [
+    "Free link",
+    "Random -free name",
+    "One assigned domain, kept across restarts",
+    "Random name, new every time",
+    "Random name, new on reconnect",
+    "Random name per session",
+  ],
+  [
+    "Free session",
+    "2 hours",
+    "No timeout",
+    "No uptime guarantee",
+    "60 minutes",
+    "While the command runs",
+  ],
+  [
+    "Free allowance",
+    "1 GB a month",
+    "1 GB and 20,000 HTTP requests a month",
+    "200 requests in flight",
+    "Unlimited data transfer",
+    "None stated",
+  ],
+  [
+    "A name that stays",
+    "Pro $8/mo, 3 reserved names",
+    "The free domain; more from $10/mo",
+    "Your own domain on Cloudflare",
+    "Pro $3/mo per seat",
+    "--subdomain, when free",
+  ],
+  [
+    "Request inspector",
+    "Stored, searchable history",
+    "Local and dashboard inspector",
+    "Not documented",
+    "Web Debugger, live",
+    "No",
+  ],
+  ["Stores webhooks", "Yes", "Opt-in Full Capture, 24 to 72 hours", "No", "No", "No"],
+  ["TCP tunnels", "No", "Yes", "Yes", "Yes, and UDP", "No"],
+  ["Your own domain", "No", "Pay-as-you-go", "Yes", "Pro", "Through your own server"],
+];
 
 const EMAIL_COMPARISONS = [
   {
@@ -289,7 +364,7 @@ const EMAIL_MATRIX: readonly (readonly [string, ...string[]])[] = [
   [
     "Email client screenshots",
     "No",
-    "Business and Enterprise add-on, on request",
+    "Add-on on paid plans, on request",
     "Add-on on Core",
     "1 to 200 a month by plan",
   ],
@@ -317,7 +392,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Which webhook tools have a CLI tunnel to localhost and a free tier?",
     answer:
-      "webhooks.cc (whk tunnel, free plan with 50 requests a day and every Pro feature), Webhook.site (whcli forward), Beeceptor (beeceptor-cli, with tunnels that end with the session on its free plan), Hookdeck (hookdeck listen, free for one user), ngrok (free tier), Stripe CLI (stripe listen, for Stripe events only), and the free, open-source Smee.io and LocalTunnel. Only webhooks.cc and Hookdeck also keep a stored cross-provider history of what arrived.",
+      "webhooks.cc (whk tunnel, free plan with 50 requests a day and every Pro feature), Webhook.site (whcli forward), Beeceptor (beeceptor-cli, with tunnels that end with the session on its free plan), Hookdeck (hookdeck listen, free for one user), ngrok (free tier), Cloudflare Tunnel (Quick Tunnels, no account), Pinggy (free tunnels of 60 minutes), Stripe CLI (stripe listen, for Stripe events only), and the free, open-source Smee.io and LocalTunnel. Only webhooks.cc and Hookdeck also keep a stored cross-provider history of what arrived.",
   },
   {
     question: "What should I compare when choosing a paid webhook testing tool?",
@@ -407,7 +482,12 @@ export default function CompareIndexPage() {
             email testing tools
           </a>{" "}
           developers weigh for signup and login tests. The checklists below put them side by side;
-          each page covers features, tradeoffs, and when to choose each tool.
+          each page covers features, tradeoffs, and when to choose each tool. Weighing two other
+          tools against each other? See{" "}
+          <a href="#tool-against-tool" className="text-primary font-bold hover:underline">
+            tool against tool
+          </a>
+          .
         </p>
 
         <h2 className="text-2xl font-bold mb-4">Feature checklist</h2>
@@ -432,6 +512,35 @@ export default function CompareIndexPage() {
               render={<Link href={item.href} />}
             >
               <h2 className="text-xl font-bold mb-2">{item.title}</h2>
+              <p className="text-muted-foreground">{item.summary}</p>
+            </Card>
+          ))}
+        </div>
+
+        <h2 id="localhost-tunnels" className="text-2xl font-bold mt-12 mb-4 scroll-mt-24">
+          Localhost tunnels compared
+        </h2>
+        <p className="text-muted-foreground mb-4">
+          The <code>whk</code> CLI also puts a local site at a public link (
+          <Link href="/share" className="text-primary font-bold hover:underline">
+            share localhost
+          </Link>
+          ) and answers webhook senders with your local app&apos;s response. This is how it sits
+          next to the tunnels developers reach for.
+        </p>
+        <Checklist tools={TUNNEL_TOOLS} matrix={TUNNEL_MATRIX} />
+        <p className="text-sm text-muted-foreground mb-6">
+          Other tools as listed on their own sites when we compared in November 2026; &quot;not
+          documented&quot; means we did not find it there.
+        </p>
+        <div className="space-y-4">
+          {TUNNEL_COMPARISONS.map((item) => (
+            <Card
+              key={item.href}
+              className="block transition-colors hover:bg-muted"
+              render={<Link href={item.href} />}
+            >
+              <h3 className="text-xl font-bold mb-2">{item.title}</h3>
               <p className="text-muted-foreground">{item.summary}</p>
             </Card>
           ))}
@@ -465,6 +574,26 @@ export default function CompareIndexPage() {
             </Card>
           ))}
         </div>
+
+        <h2 id="tool-against-tool" className="text-2xl font-bold mt-12 mb-4 scroll-mt-24">
+          Tool against tool
+        </h2>
+        <p className="text-muted-foreground mb-4">
+          Two other tools compared with each other: what each is for, a feature and price table, and
+          when to pick which, with a short note on where webhooks.cc fits.
+        </p>
+        <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-2">
+          {COMPARE_PAIRS.map((pair) => (
+            <li key={pair.slug}>
+              <Link
+                href={`/compare/${pair.slug}`}
+                className="font-semibold hover:text-primary transition-colors"
+              >
+                {comparePairName(pair)}
+              </Link>
+            </li>
+          ))}
+        </ul>
 
         <h2 className="text-2xl font-bold mt-12 mb-4">Frequently asked questions</h2>
         <FAQAccordion items={FAQ_ITEMS} />

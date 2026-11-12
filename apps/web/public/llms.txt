@@ -72,6 +72,8 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Playwright email testing guide: https://webhooks.cc/docs/guides/test-signup-emails-playwright
 - Email testing tools compared (Mailtrap, Mailosaur, MailSlurp): https://webhooks.cc/compare#email-testing-tools
 - Free browser tools (no account, nothing sent to webhooks.cc): https://webhooks.cc/tools, with a Discord webhook tester (https://webhooks.cc/tools/discord-webhook-tester), a Slack incoming webhook tester (https://webhooks.cc/tools/slack-webhook-tester) and a webhook signature checker with an HMAC calculator and provider presets (https://webhooks.cc/tools/webhook-signature-checker)
+- Localhost tunnels compared (ngrok, Cloudflare Tunnel, Pinggy, LocalTunnel): https://webhooks.cc/compare#localhost-tunnels
+- Two other tools compared with each other (ngrok vs Hookdeck, ngrok vs Webhook.site, Hookdeck vs Webhook.site, ngrok vs LocalTunnel, ngrok vs Cloudflare Tunnel, Webhook.site vs RequestBin, Mailtrap vs Mailosaur): https://webhooks.cc/compare#tool-against-tool
 - Email to webhook overview: https://webhooks.cc/email-to-webhook
 - mailhooks.cc, the mail-first site (same account, endpoints and plans): https://mailhooks.cc, with ready-made layouts at https://mailhooks.cc/parse
 - Email to Google Sheets (a row per email or per line item): https://mailhooks.cc/google-sheets

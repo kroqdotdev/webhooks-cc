@@ -1,6 +1,7 @@
 import type { Metadata, MetadataRoute } from "next";
 import type { BlogPostData } from "@/components/blog/blog-post-shell";
 import { TOOL_SLUGS } from "@/lib/tools/catalog";
+import { COMPARE_PAIRS } from "@/lib/compare-pairs";
 
 export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
@@ -21,9 +22,10 @@ const PRIVACY_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 const MARKETING_PASS_UPDATED = new Date("2026-11-03T00:00:00.000Z");
 // Compare pages and their checklist, rechecked against each tool's own site.
 const COMPARE_UPDATED = new Date("2026-11-03T00:00:00.000Z");
-// The ngrok page alone: whk share and live tunnels, checked against ngrok's
-// pricing and free plan limits pages on 2026-11-10.
-const COMPARE_NGROK_UPDATED = new Date("2026-11-10T00:00:00.000Z");
+// The tunnel comparisons (ngrok, LocalTunnel, Cloudflare Tunnel, Pinggy), the
+// "X vs Y" pair pages in lib/compare-pairs.ts, and the pages that link to
+// them: every other tool's facts read on its own site on 2026-11-12.
+const TUNNEL_COMPARE_UPDATED = new Date("2026-11-12T00:00:00.000Z");
 // /compare/smee: what smee.io is and how to use it, with gh webhook forward.
 const SMEE_COMPARE_UPDATED = new Date("2026-11-10T00:00:00.000Z");
 // The mail comparisons (Mailtrap, Mailosaur, MailSlurp), the compare index's
@@ -76,7 +78,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare",
     changeFrequency: "monthly",
     priority: 0.7,
-    lastModified: EMAIL_TESTING_UPDATED,
+    lastModified: TUNNEL_COMPARE_UPDATED,
   },
   {
     path: "/compare/webhook-site",
@@ -88,7 +90,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare/ngrok",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: COMPARE_NGROK_UPDATED,
+    lastModified: TUNNEL_COMPARE_UPDATED,
   },
   {
     path: "/compare/beeceptor",
@@ -106,7 +108,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare/hookdeck",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: COMPARE_UPDATED,
+    lastModified: TUNNEL_COMPARE_UPDATED,
   },
   {
     path: "/compare/svix",
@@ -130,7 +132,19 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     path: "/compare/localtunnel",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: COMPARE_UPDATED,
+    lastModified: TUNNEL_COMPARE_UPDATED,
+  },
+  {
+    path: "/compare/cloudflare-tunnel",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: TUNNEL_COMPARE_UPDATED,
+  },
+  {
+    path: "/compare/pinggy",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: TUNNEL_COMPARE_UPDATED,
   },
   {
     path: "/compare/mailtrap",
@@ -151,6 +165,13 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     lastModified: EMAIL_TESTING_UPDATED,
   },
   // /tools and each tool page are appended from lib/tools/catalog.ts in lib/sitemap.ts
+  // The "X vs Y" pages: two other tools compared (lib/compare-pairs.ts).
+  ...COMPARE_PAIRS.map((pair): SitemapPageDefinition => ({
+    path: `/compare/${pair.slug}`,
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: TUNNEL_COMPARE_UPDATED,
+  })),
   // Blog pages are dynamically generated from Supabase in app/sitemap.xml/route.ts
   // /api-explorer is noindexed - client-only Scalar viewer, /docs/api owns this query
   {

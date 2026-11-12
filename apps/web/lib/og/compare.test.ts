@@ -2,7 +2,7 @@ import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { COMPARE_PAGE_SLUGS, generatedOgImagePath } from "@/lib/seo";
-import { compareToolName } from "./compare";
+import { compareImageText, compareToolName } from "./compare";
 
 describe("compare page images", () => {
   it("names tools the way they write themselves", () => {
@@ -14,7 +14,22 @@ describe("compare page images", () => {
   it("has no image for a page that does not exist", () => {
     expect(compareToolName("no-such-tool")).toBeNull();
     expect(compareToolName("constructor")).toBeNull();
+    expect(compareImageText("no-such-tool")).toBeNull();
+    expect(compareImageText("ngrok-vs-no-such-tool")).toBeNull();
     expect(generatedOgImagePath("/compare/no-such-tool")).toBeNull();
+  });
+
+  it("puts webhooks.cc against the tool on a tool's page", () => {
+    expect(compareImageText("ngrok")?.title).toBe("webhooks.cc vs ngrok");
+    expect(compareImageText("cloudflare-tunnel")?.title).toBe("webhooks.cc vs Cloudflare Tunnel");
+    expect(compareImageText("pinggy")?.title).toBe("webhooks.cc vs Pinggy");
+  });
+
+  it("names the two tools on a pair page, without webhooks.cc", () => {
+    expect(compareImageText("ngrok-vs-hookdeck")?.title).toBe("ngrok vs Hookdeck");
+    expect(compareImageText("webhook-site-vs-requestbin")?.title).toBe(
+      "Webhook.site vs RequestBin"
+    );
   });
 
   it("covers every compare page in app/compare", () => {

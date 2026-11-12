@@ -4,6 +4,7 @@ import { JsonLd, breadcrumbSchema, faqSchema } from "@/lib/schemas";
 import { ComparisonCTA } from "@/components/compare/comparison-cta";
 import { CodeBox } from "@/components/ui/code";
 import { Card } from "@/components/ui/card";
+import { PairLinks } from "@/components/compare/pair-links";
 
 const FAQ_ITEMS = [
   {
@@ -35,16 +36,6 @@ const FAQ_ITEMS = [
     question: "Is Hookdeck good for testing webhooks in development?",
     answer:
       "It works: hookdeck listen forwards webhooks to localhost and the Hookdeck dashboard keeps an event log. Hookdeck is built first as production infrastructure (retries, routing, rate limits), so testing is one part of a larger product. If development is all you need (an instant URL, replay, mock responses, and assertions in CI), webhooks.cc is built for exactly that, and the two can be used together.",
-  },
-  {
-    question: "Hookdeck vs ngrok: which should I use for webhook forwarding?",
-    answer:
-      "ngrok is a general-purpose tunnel: it exposes any local port and shows traffic in a local inspector while the agent runs. Hookdeck receives webhooks on its own URL, logs them as events, and forwards them to localhost with hookdeck listen or to production with retries. For webhooks in development both work; webhooks.cc does the same with whk tunnel and adds stored history, replay to any URL, and SDK assertions.",
-  },
-  {
-    question: "Hookdeck vs Webhook.site for testing webhooks?",
-    answer:
-      "Webhook.site gives you a URL and a page that shows every request, which suits quick inspection. Hookdeck is delivery infrastructure with a CLI for local forwarding. webhooks.cc sits between them for testing: an instant URL and live inspector like Webhook.site, plus a CLI tunnel, a TypeScript SDK for CI and an MCP server.",
   },
 ];
 
@@ -80,7 +71,7 @@ const ROWS = [
 ] as const;
 
 export const metadata = createPageMetadata({
-  title: "Hookdeck Alternative: vs ngrok & Webhook.site (2026)",
+  title: "Hookdeck Alternative for Webhook Testing (2026)",
   description:
     "Hookdeck alternative for webhook development and testing. Inspect, replay, forward and assert on webhooks and email with SDKs, a CLI tunnel, and an MCP server.",
   path: "/compare/hookdeck",
@@ -233,6 +224,7 @@ export default function CompareHookdeckPage() {
         </div>
 
         {/* More comparisons */}
+        <PairLinks tool="/compare/hookdeck" />
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
           <Link
