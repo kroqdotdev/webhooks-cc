@@ -819,6 +819,14 @@ export default async function Home() {
                 </li>
                 <li>
                   <Link
+                    href="/share"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    Share localhost
+                  </Link>
+                </li>
+                <li>
+                  <Link
                     href="/pricing"
                     className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >

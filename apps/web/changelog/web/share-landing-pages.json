@@ -1,0 +1,8 @@
+{
+  "title": "Share localhost pages for every framework",
+  "items": [
+    "A new page, /share, explains whk share: install and first run, what your dev server sees through the link, what each plan allows, reserved names and passwords, and how it differs from whk tunnel --live",
+    "Fourteen framework guides under /share: Next.js, Vite, Nuxt, SvelteKit, Astro, Angular, Express, webpack-dev-server, Rails, Laravel, Django, Flask, FastAPI and Phoenix, each with its default port, the setting it needs behind a public link (or why it needs none), the error that setting prevents, and whether hot reload comes through",
+    "The Share localhost docs list every framework with its command and the one thing to know, and the CLI docs link to the guides"
+  ]
+}

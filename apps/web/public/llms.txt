@@ -51,6 +51,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - CLI tunneling: https://webhooks.cc/docs/cli/tunnel
 - Live tunnels: https://webhooks.cc/docs/live-tunnel
 - Share localhost: https://webhooks.cc/docs/share
+- Share localhost, with a guide per framework (Next.js, Vite, Nuxt, SvelteKit, Astro, Angular, Express, webpack-dev-server, Rails, Laravel, Django, Flask, FastAPI, Phoenix): https://webhooks.cc/share
 - CLI commands: https://webhooks.cc/docs/cli/commands
 - SDK docs: https://webhooks.cc/docs/sdk
 - SDK API reference: https://webhooks.cc/docs/sdk/api
