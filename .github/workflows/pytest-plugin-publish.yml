@@ -1,0 +1,92 @@
+name: pytest Plugin Publish
+
+# Publishes packages/pytest-webhooks-cc to PyPI as pytest-webhooks-cc when a
+# tag pytest-plugin-v<version> is pushed. PyPI trusts this workflow through
+# OIDC (trusted publishing), so there is no token to store or rotate: on
+# pypi.org the project's trusted publisher is kroqdotdev/webhooks-cc, workflow
+# pytest-plugin-publish.yml, environment pypi. Third-party actions are pinned
+# to commits because the publish job holds an OIDC token; Dependabot moves
+# the pins.
+#
+# The package depends on webhooks-cc from PyPI. When a release needs something
+# new from the SDK, raise the lower bound in its pyproject.toml and publish the
+# SDK (tag sdk-python-v*) first.
+
+on:
+  push:
+    tags:
+      - "pytest-plugin-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/pytest-webhooks-cc
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.14"
+
+      - name: Check the tag matches the package version
+        run: |
+          version="$(uv version --short)"
+          if [ "pytest-plugin-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $version in pyproject.toml"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint, typecheck and test
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+          uv run mypy
+          uv run pytest
+
+      - name: Build
+        run: uv build
+
+      # What users get: the built wheel with webhooks-cc from PyPI, not from
+      # this repository. The fixtures must be there, once each.
+      - name: Check the wheel against the published SDK
+        run: |
+          uv venv --python 3.14 "$RUNNER_TEMP/wheel-check"
+          uv pip install --python "$RUNNER_TEMP/wheel-check/bin/python" dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel-check/bin/pytest" --fixtures -v -p no:cacheprovider > fixtures.txt
+          for fixture in webhooks_cc webhooks_cc_endpoint; do
+            count="$(grep -c -E "^$fixture( \[[a-z]+ scope\])? -- " fixtures.txt || true)"
+            if [ "$count" != "1" ]; then
+              echo "Expected the $fixture fixture once, found it $count times"
+              exit 1
+            fi
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: packages/pytest-webhooks-cc/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

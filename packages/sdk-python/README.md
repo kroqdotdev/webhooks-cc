@@ -42,7 +42,7 @@ Both are idempotent and work on your own endpoints and those a team shares with 
 
 ## pytest
 
-Installing the package adds two fixtures. Tests that use them are skipped when `WHK_API_KEY` is not set.
+Installing the package adds two fixtures. Tests that use them are skipped when `WHK_API_KEY` is not set. The [`pytest-webhooks-cc`](https://pypi.org/project/pytest-webhooks-cc/) plugin brings this package and the same fixtures with `pip install pytest-webhooks-cc`, and says how many tests a missing key skips.
 
 ```python
 def test_sends_a_receipt_webhook(webhooks_cc, webhooks_cc_endpoint):

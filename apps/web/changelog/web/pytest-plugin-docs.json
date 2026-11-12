@@ -1,0 +1,6 @@
+{
+  "title": "pytest plugin in the docs",
+  "items": [
+    "The pytest guide installs the new pytest-webhooks-cc plugin, which brings the Python SDK's fixtures and says when tests are skipped for want of an API key"
+  ]
+}

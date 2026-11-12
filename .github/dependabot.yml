@@ -63,6 +63,25 @@ updates:
       - "release: none"
       - "python"
 
+  # pytest plugin (uv.lock); as for the Python SDK, only the lock moves. It
+  # holds webhooks-cc from PyPI, so this is also what moves the plugin's tests
+  # to each new SDK release.
+  - package-ecosystem: "uv"
+    directory: "/packages/pytest-webhooks-cc"
+    versioning-strategy: lockfile-only
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "release: none"
+      - "python"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

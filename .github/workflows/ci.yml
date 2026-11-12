@@ -161,6 +161,53 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+  test-pytest-plugin:
+    name: Test pytest plugin (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Python the package supports, and the newest.
+        python: ["3.10", "3.14"]
+    defaults:
+      run:
+        working-directory: packages/pytest-webhooks-cc
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Format
+        run: uv run ruff format --check src tests
+
+      - name: Typecheck
+        run: uv run mypy
+
+      # pytest runs inside pytest, in new processes, so the plugin is loaded
+      # through its entry point. Nothing reaches webhooks.cc. The lock holds
+      # the SDK as published on PyPI, which is what users get.
+      - name: Run tests
+        run: uv run pytest
+
+      # And with the SDK in this repository in its place, so a change there
+      # that breaks the plugin fails here, before the SDK is released.
+      - name: Run tests against packages/sdk-python
+        run: uv run --with-editable ../sdk-python pytest
+
+      # The oldest pytest the package says it works with.
+      - name: Run tests on pytest 8.0
+        if: matrix.python == '3.10'
+        run: uv run --isolated --with "pytest==8.0.0" pytest
+
   test-go:
     name: Test Go SDK (${{ matrix.go }})
     runs-on: ubuntu-latest
