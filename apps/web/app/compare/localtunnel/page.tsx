@@ -73,7 +73,7 @@ const ROWS = [
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
   ["Maintenance", "Active", "Last client release 2021"],
   ["Team collaboration", "From $12/seat/mo, pooled quota", "None"],
-  ["Free tier features", "Every Pro feature", "Fully free"],
+  ["Free tier features", "Every webhook feature; share names and passwords need Pro", "Fully free"],
 ] as const;
 
 export const metadata = createPageMetadata({

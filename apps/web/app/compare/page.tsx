@@ -158,7 +158,7 @@ const TUNNEL_MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Web Debugger, live",
     "No",
   ],
-  ["Stores webhooks", "Yes", "No", "No", "No", "No"],
+  ["Stores webhooks", "Yes", "Opt-in Full Capture, 24 to 72 hours", "No", "No", "No"],
   ["TCP tunnels", "No", "Yes", "Yes", "Yes, and UDP", "No"],
   ["Your own domain", "No", "Pay-as-you-go", "Yes", "Pro", "Through your own server"],
 ];

@@ -65,7 +65,7 @@ const ROWS = [
   [
     "Restricting who gets in",
     "Passwords on Pro and up (whk share --password)",
-    "Email one-time PIN on Quick Tunnels; Cloudflare Access on a tunnel",
+    "Email one-time PIN on Quick Tunnels, for browser visitors only; Cloudflare Access on a tunnel",
   ],
   ["Webhook capture & history", "Yes, stored and searchable", "Not documented"],
   [
@@ -89,7 +89,7 @@ const ROWS = [
   [
     "Protocols",
     "HTTP for webhooks and web pages, plus email; no TCP",
-    "HTTP, HTTPS, TCP, SSH, RDP and more",
+    "HTTP on Quick Tunnels; TCP, SSH and RDP on a tunnel, with cloudflared on the client too",
   ],
   [
     "Production traffic",

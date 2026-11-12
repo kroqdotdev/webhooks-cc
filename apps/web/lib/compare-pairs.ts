@@ -92,7 +92,7 @@ export const COMPARE_PAIRS: readonly ComparePair[] = [
       compareHref: "/compare/hookdeck",
       about: HOOKDECK_ABOUT,
       pick: [
-        "Webhooks should be kept while your machine is off and delivered later",
+        "Webhooks should be kept while your machine is off, for you to retry once it is back",
         "You want retries, queueing and rate limits between the sender and your server",
         "The setup you test with should carry on into production",
         "Several people need the event log: users are unlimited from the Team plan",
@@ -160,7 +160,7 @@ export const COMPARE_PAIRS: readonly ComparePair[] = [
       {
         question: "ngrok vs Hookdeck: which should I use for webhook forwarding?",
         answer:
-          "Use ngrok when the sender needs your app's response at once, or when you expose more than webhooks. Use Hookdeck when webhooks should be stored, retried and delivered later, in development and in production. ngrok passes each request straight to your local port; Hookdeck accepts it on its own URL and delivers it as an event.",
+          "Use ngrok when the sender needs your app's response at once, or when you expose more than webhooks. Use Hookdeck when webhooks should be stored and retried, in development and in production; what arrives while its CLI is not listening is kept, and you retry it yourself. ngrok passes each request straight to your local port; Hookdeck accepts it on its own URL and delivers it as an event.",
       },
       {
         question: "Is Hookdeck a replacement for ngrok?",
@@ -282,7 +282,7 @@ export const COMPARE_PAIRS: readonly ComparePair[] = [
       {
         question: "Which keeps webhook history longer?",
         answer:
-          "ngrok's Traffic Inspector keeps traffic for 24 hours on the free plan and 72 hours on paid plans. Webhook.site keeps the most recent requests per URL: 50 on a free URL, and 1,000, 10,000 or 100,000 on Basic, Pro and Enterprise. Figures from each site in November 2026.",
+          "ngrok's Traffic Inspector keeps traffic for 24 hours on the free plan and 72 hours on Hobbyist and Pay-as-you-go (metadata by default; bodies only with Full Capture turned on). Webhook.site keeps the most recent requests per URL: 50 on a free URL, and 1,000, 10,000 or 100,000 on Basic, Pro and Enterprise. Figures from each site in November 2026.",
       },
     ],
   },
@@ -555,12 +555,12 @@ export const COMPARE_PAIRS: readonly ComparePair[] = [
       [
         "Protocols",
         "HTTP; TCP with card verification on Free; TLS on Pay-as-you-go",
-        "HTTP, HTTPS, TCP, SSH, RDP and more",
+        "HTTP on Quick Tunnels; TCP, SSH and RDP on a tunnel, with cloudflared on the client too",
       ],
       [
         "Restricting who gets in",
         "OAuth, SAML or OIDC sign-in through Traffic Policy",
-        "Email one-time PIN on Quick Tunnels; Cloudflare Access on a tunnel",
+        "Email one-time PIN on Quick Tunnels, for browser visitors only; Cloudflare Access on a tunnel",
       ],
       [
         "In front of your service",

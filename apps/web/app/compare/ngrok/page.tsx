@@ -98,7 +98,11 @@ const ROWS = [
   ["Edge computing / traffic policy", "Response rules for mock answers", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent SDKs)"],
   ["Team collaboration", "From $12/seat/mo, pooled quota", "$20/mo incl. 3 seats, then $5/seat"],
-  ["Free tier features", "Every Pro feature", "Limited connections + features"],
+  [
+    "Free tier features",
+    "Every webhook feature; share names and passwords need Pro",
+    "Limited connections + features",
+  ],
 ] as const;
 
 export const metadata = createPageMetadata({
