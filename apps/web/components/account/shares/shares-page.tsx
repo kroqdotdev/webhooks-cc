@@ -50,6 +50,7 @@ import { CommandBlock } from "./command-block";
 import { NamesPanel } from "./names-panel";
 import { QrDialog } from "./qr-dialog";
 import { RequestLog } from "./request-log";
+import { Meter } from "@/components/ui/meter";
 
 const REFRESH_MS = 10_000;
 const INSTALL = "curl -fsSL https://webhooks.cc/install.sh | sh";
@@ -507,11 +508,8 @@ function DataMeter({
         </p>
         <p className="text-xs text-muted-foreground">Resets {longDate(resetsAt)}</p>
       </div>
-      <div
-        role="progressbar"
-        aria-valuenow={percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
+      <Meter
+        value={percent}
         aria-label={`${percent}% of this month's preview data used`}
         className="h-3 overflow-hidden rounded-sm bg-muted/60"
       >
@@ -519,7 +517,7 @@ function DataMeter({
           className={cn("h-full", near ? "bg-destructive" : "bg-primary")}
           style={{ width: `${Math.max(percent, bytes > 0 ? 1 : 0)}%` }}
         />
-      </div>
+      </Meter>
     </div>
   );
 }

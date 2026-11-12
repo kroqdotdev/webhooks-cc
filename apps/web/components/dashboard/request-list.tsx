@@ -21,6 +21,13 @@ import {
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -171,33 +178,21 @@ export function RequestList({
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
 
-  // Context menu
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: string } | null>(null);
-  const ctxRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!ctxMenu) return;
-    function close(e: MouseEvent) {
-      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
+  // Context menu: it acts on the row that was pressed (by a right click, the
+  // keyboard's menu key or a long press). Pressed anywhere else in the list,
+  // such as a group heading, it offers only what needs no row.
+  const [ctxId, setCtxId] = useState<string | null>(null);
+  const [ctxOpen, setCtxOpen] = useState(false);
+  const handleCtxOpenChange = useCallback((open: boolean, details: { event?: Event }) => {
+    if (open) {
+      const target = details.event?.target;
+      setCtxId(
+        (target instanceof Element
+          ? target.closest<HTMLElement>("[data-request-id]")?.dataset.requestId
+          : undefined) ?? null
+      );
     }
-    function esc(e: KeyboardEvent) {
-      if (e.key === "Escape") setCtxMenu(null);
-    }
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [ctxMenu]);
-
-  const handleContextMenu = useCallback((e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    // Clamp to viewport so the menu doesn't overflow off-screen
-    const menuW = 180;
-    const menuH = 160;
-    const x = Math.min(e.clientX, window.innerWidth - menuW - 8);
-    const y = Math.min(e.clientY, window.innerHeight - menuH - 8);
-    setCtxMenu({ x: Math.max(0, x), y: Math.max(0, y), id });
+    setCtxOpen(open);
   }, []);
 
   // Pin/unpin split
@@ -324,7 +319,6 @@ export function RequestList({
     tabIndex: tabStopId === id ? 0 : -1,
     "data-request-id": id,
     onClick: (e: React.MouseEvent) => handleRowClick(e, id),
-    onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, id),
     onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => handleRowKeyDown(e, id),
     className: rowClass(id, isComparing),
   });
@@ -353,318 +347,272 @@ export function RequestList({
   ) : null;
 
   return (
-    <div className="ph-no-capture flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="@container border-b px-3 py-2 flex items-center justify-between gap-2 shrink-0">
-        {onKindFilterChange ? (
-          <div
-            role="radiogroup"
-            aria-label="Show"
-            className="flex min-w-0 overflow-hidden rounded-md border"
-          >
-            {kinds.map((kind, index) => (
+    <ContextMenu open={ctxOpen} onOpenChange={handleCtxOpenChange}>
+      <div className="ph-no-capture flex flex-col h-full">
+        {/* Toolbar */}
+        <div className="@container border-b px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+          {onKindFilterChange ? (
+            <RadioGroup
+              value={kindFilter}
+              onValueChange={(next) => onKindFilterChange(next as KindFilter)}
+              aria-label="Show"
+              className="flex min-w-0 overflow-hidden rounded-md border"
+            >
+              {kinds.map((kind, index) => (
+                <Radio
+                  key={kind.id}
+                  value={kind.id}
+                  // The count is read as part of the name, not run into it ("Email1").
+                  aria-label={
+                    kindFilter === kind.id ? `${kind.label}, ${displayCount} shown` : kind.label
+                  }
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap",
+                    index > 0 && "border-l border-border",
+                    kindFilter === kind.id
+                      ? "bg-selected text-selected-foreground"
+                      : "bg-background hover:bg-muted"
+                  )}
+                >
+                  {kind.label}
+                  {/* The count of what is shown, from the server, so only the picked kind has one. */}
+                  {kindFilter === kind.id && (
+                    <span
+                      aria-hidden
+                      className="hidden @[300px]:inline font-mono font-normal opacity-90"
+                    >
+                      {displayCount}
+                    </span>
+                  )}
+                </Radio>
+              ))}
+            </RadioGroup>
+          ) : (
+            <span className="text-sm font-bold">
+              {displayCount} request{displayCount !== 1 ? "s" : ""}
+            </span>
+          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {onViewModeChange && (
               <button
-                key={kind.id}
-                type="button"
-                role="radio"
-                aria-checked={kindFilter === kind.id}
-                // The count is read as part of the name, not run into it ("Email1").
-                aria-label={
-                  kindFilter === kind.id ? `${kind.label}, ${displayCount} shown` : kind.label
-                }
-                // One tab stop for the group; arrow keys move the choice, as in a radio group.
-                tabIndex={kindFilter === kind.id ? 0 : -1}
-                onClick={() => onKindFilterChange(kind.id)}
-                onKeyDown={(event) => {
-                  const step =
-                    event.key === "ArrowRight" || event.key === "ArrowDown"
-                      ? 1
-                      : event.key === "ArrowLeft" || event.key === "ArrowUp"
-                        ? -1
-                        : 0;
-                  if (!step) return;
-                  event.preventDefault();
-                  const next = kinds[(index + step + kinds.length) % kinds.length];
-                  onKindFilterChange(next.id);
-                  event.currentTarget.parentElement
-                    ?.querySelectorAll<HTMLButtonElement>("[role=radio]")
-                    [(index + step + kinds.length) % kinds.length]?.focus();
-                }}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap",
-                  index > 0 && "border-l border-border",
-                  kindFilter === kind.id
-                    ? "bg-selected text-selected-foreground"
-                    : "bg-background hover:bg-muted"
-                )}
+                onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
+                className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border"
+                title={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
+                aria-label={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
+                aria-pressed={viewMode === "timeline"}
               >
-                {kind.label}
-                {/* The count of what is shown, from the server, so only the picked kind has one. */}
-                {kindFilter === kind.id && (
-                  <span
-                    aria-hidden
-                    className="hidden @[300px]:inline font-mono font-normal opacity-90"
-                  >
-                    {displayCount}
-                  </span>
+                {viewMode === "list" ? (
+                  <BarChart3 className="h-3.5 w-3.5" />
+                ) : (
+                  <List className="h-3.5 w-3.5" />
                 )}
               </button>
-            ))}
-          </div>
-        ) : (
-          <span className="text-sm font-bold">
-            {displayCount} request{displayCount !== 1 ? "s" : ""}
-          </span>
-        )}
-        <div className="flex items-center gap-2 shrink-0">
-          {onViewModeChange && (
-            <button
-              onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
-              className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border"
-              title={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
-              aria-label={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
-              aria-pressed={viewMode === "timeline"}
-            >
-              {viewMode === "list" ? (
-                <BarChart3 className="h-3.5 w-3.5" />
-              ) : (
-                <List className="h-3.5 w-3.5" />
-              )}
-            </button>
-          )}
-          <button
-            onClick={onToggleSort}
-            className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border"
-            title={sortNewest ? "Showing newest first" : "Showing oldest first"}
-            aria-label={
-              sortNewest
-                ? "Newest first. Switch to oldest first"
-                : "Oldest first. Switch to newest first"
-            }
-          >
-            <ArrowUpDown className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={onToggleLiveMode}
-            aria-pressed={liveMode}
-            className={cn(
-              "flex items-center gap-1.5 px-2 py-1 max-md:py-2 text-xs font-bold rounded-md border cursor-pointer transition-colors",
-              liveMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
             )}
-            title={
-              liveMode
-                ? "Live mode: auto-selects new requests"
-                : "Review mode: new requests won't interrupt"
-            }
-          >
-            <Circle
-              className={cn(
-                "h-2 w-2",
-                liveMode ? "fill-current" : "fill-muted-foreground text-muted-foreground"
-              )}
-            />
-            {liveMode ? "Live" : "Paused"}
-          </button>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <div className="border-b px-3 py-2 flex items-center gap-2 shrink-0">
-        {kindFilter !== "email" && (
-          <Select value={methodFilter} onValueChange={onMethodFilterChange}>
-            <SelectTrigger
-              aria-label="Method"
-              className="h-auto w-auto shrink-0 gap-1.5 text-xs font-bold rounded-md border border-border bg-background px-2 py-1 max-md:py-2 cursor-pointer focus:ring-offset-0"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {METHODS.map((m) => (
-                <SelectItem key={m} value={m} className="text-xs font-bold">
-                  {METHOD_LABELS[m]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <div className="ui-control flex-1 flex items-center gap-1 rounded-md border px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
-          <Search className="h-3 w-3 text-muted-foreground shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            aria-label="Search requests"
-            placeholder={onKindFilterChange ? "Search" : "Search..."}
-            className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground font-mono min-w-0"
-          />
-          {searchQuery && (
             <button
-              onClick={() => onSearchQueryChange("")}
-              aria-label="Clear search"
-              className="text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={onToggleSort}
+              className="p-1.5 max-md:p-2.5 hover:bg-muted transition-colors cursor-pointer rounded-md border"
+              title={sortNewest ? "Showing newest first" : "Showing oldest first"}
+              aria-label={
+                sortNewest
+                  ? "Newest first. Switch to oldest first"
+                  : "Oldest first. Switch to newest first"
+              }
             >
-              <X className="h-3 w-3" />
+              <ArrowUpDown className="h-3.5 w-3.5" />
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* New requests banner */}
-      {/* Screen readers hear the count change as requests arrive. */}
-      <p role="status" aria-live="polite" className="sr-only">
-        {displayCount} {displayCount === 1 ? itemNoun.slice(0, -1) : itemNoun}
-      </p>
-      {!liveMode && (newCount ?? 0) > 0 && onJumpToNew && (
-        <button
-          onClick={onJumpToNew}
-          className="bg-primary text-primary-foreground text-xs font-bold text-center py-1.5 cursor-pointer hover:bg-primary/90 transition-colors shrink-0"
-        >
-          {newCount ?? 0} new request{newCount !== 1 ? "s" : ""}
-        </button>
-      )}
-
-      {/* Compare hint */}
-      {compareId && (
-        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b">
-          Shift-click another request to compare
-        </div>
-      )}
-
-      {/* Request rows */}
-      <div className="flex-1 overflow-y-auto">
-        {viewMode === "timeline" && timelineSlot ? (
-          <>
-            {timelineSlot}
-            {/* The timeline pages like the list, so older matches stay reachable. */}
-            {loadMore}
-          </>
-        ) : searchLoading ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold flex items-center justify-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Searching...
-          </div>
-        ) : pinned.length === 0 &&
-          unpinned.length === 0 &&
-          talksEmail &&
-          emailAddress &&
-          kindFilter !== "http" &&
-          !searchQuery &&
-          methodFilter === "ALL" &&
-          !hasMore &&
-          !searchError ? (
-          // Nothing filtered away: no email has arrived yet.
-          <NoEmailsYet address={emailAddress} />
-        ) : pinned.length === 0 && unpinned.length === 0 ? (
-          <>
-            <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold">
-              {searchError
-                ? "Search unavailable"
-                : hasMore
-                  ? `None in the newest ${itemNoun}`
-                  : searchQuery
-                    ? // The detail pane explains an empty search and offers to clear it.
-                      "0 results"
-                    : `No matching ${itemNoun}`}
-            </div>
-            {/* A filter can match nothing loaded so far and still match older pages. */}
-            {loadMore}
-          </>
-        ) : (
-          <>
-            <div
-              ref={listboxRef}
-              role="listbox"
-              aria-label={kindFilter === "email" ? "Emails" : "Requests"}
+            <button
+              onClick={onToggleLiveMode}
+              aria-pressed={liveMode}
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-1 max-md:py-2 text-xs font-bold rounded-md border cursor-pointer transition-colors",
+                liveMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+              )}
+              title={
+                liveMode
+                  ? "Live mode: auto-selects new requests"
+                  : "Review mode: new requests won't interrupt"
+              }
             >
-              {pinned.length > 0 ? (
-                <>
-                  <div role="group" aria-label="Pinned">
-                    <div
-                      aria-hidden="true"
-                      className="px-3 py-1 text-xs font-bold text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1"
-                    >
-                      <Star className="h-2.5 w-2.5 fill-current" />
-                      Pinned
-                    </div>
-                    {pinned.map((request) => renderRow(request))}
-                  </div>
-                  {unpinned.length > 0 && (
-                    <div role="group" aria-label={`All ${itemNoun}`}>
+              <Circle
+                className={cn(
+                  "h-2 w-2",
+                  liveMode ? "fill-current" : "fill-muted-foreground text-muted-foreground"
+                )}
+              />
+              {liveMode ? "Live" : "Paused"}
+            </button>
+          </div>
+        </div>
+
+        {/* Filter bar */}
+        <div className="border-b px-3 py-2 flex items-center gap-2 shrink-0">
+          {kindFilter !== "email" && (
+            <Select value={methodFilter} onValueChange={onMethodFilterChange}>
+              <SelectTrigger
+                aria-label="Method"
+                className="h-auto w-auto shrink-0 gap-1.5 text-xs font-bold rounded-md border border-border bg-background px-2 py-1 max-md:py-2 cursor-pointer focus:ring-offset-0"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {METHODS.map((m) => (
+                  <SelectItem key={m} value={m} className="text-xs font-bold">
+                    {METHOD_LABELS[m]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="ui-control flex-1 flex items-center gap-1 rounded-md border px-2 py-1 bg-background focus-within:ring-2 focus-within:ring-ring">
+            <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+              aria-label="Search requests"
+              placeholder={onKindFilterChange ? "Search" : "Search..."}
+              className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground font-mono min-w-0"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => onSearchQueryChange("")}
+                aria-label="Clear search"
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* New requests banner */}
+        {/* Screen readers hear the count change as requests arrive. */}
+        <p role="status" aria-live="polite" className="sr-only">
+          {displayCount} {displayCount === 1 ? itemNoun.slice(0, -1) : itemNoun}
+        </p>
+        {!liveMode && (newCount ?? 0) > 0 && onJumpToNew && (
+          <button
+            onClick={onJumpToNew}
+            className="bg-primary text-primary-foreground text-xs font-bold text-center py-1.5 cursor-pointer hover:bg-primary/90 transition-colors shrink-0"
+          >
+            {newCount ?? 0} new request{newCount !== 1 ? "s" : ""}
+          </button>
+        )}
+
+        {/* Compare hint */}
+        {compareId && (
+          <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b">
+            Shift-click another request to compare
+          </div>
+        )}
+
+        {/* Request rows */}
+        <div className="flex-1 overflow-y-auto">
+          {viewMode === "timeline" && timelineSlot ? (
+            <>
+              {timelineSlot}
+              {/* The timeline pages like the list, so older matches stay reachable. */}
+              {loadMore}
+            </>
+          ) : searchLoading ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold flex items-center justify-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Searching...
+            </div>
+          ) : pinned.length === 0 &&
+            unpinned.length === 0 &&
+            talksEmail &&
+            emailAddress &&
+            kindFilter !== "http" &&
+            !searchQuery &&
+            methodFilter === "ALL" &&
+            !hasMore &&
+            !searchError ? (
+            // Nothing filtered away: no email has arrived yet.
+            <NoEmailsYet address={emailAddress} />
+          ) : pinned.length === 0 && unpinned.length === 0 ? (
+            <>
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold">
+                {searchError
+                  ? "Search unavailable"
+                  : hasMore
+                    ? `None in the newest ${itemNoun}`
+                    : searchQuery
+                      ? // The detail pane explains an empty search and offers to clear it.
+                        "0 results"
+                      : `No matching ${itemNoun}`}
+              </div>
+              {/* A filter can match nothing loaded so far and still match older pages. */}
+              {loadMore}
+            </>
+          ) : (
+            <>
+              <ContextMenuTrigger
+                ref={listboxRef}
+                role="listbox"
+                aria-label={kindFilter === "email" ? "Emails" : "Requests"}
+              >
+                {pinned.length > 0 ? (
+                  <>
+                    <div role="group" aria-label="Pinned">
                       <div
                         aria-hidden="true"
-                        className="px-3 py-1 text-xs font-bold text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10"
+                        className="px-3 py-1 text-xs font-bold text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1"
                       >
-                        All {itemNoun}
+                        <Star className="h-2.5 w-2.5 fill-current" />
+                        Pinned
                       </div>
-                      {unpinned.map((request) => renderRow(request))}
+                      {pinned.map((request) => renderRow(request))}
                     </div>
-                  )}
-                </>
-              ) : (
-                unpinned.map((request) => renderRow(request))
-              )}
-            </div>
+                    {unpinned.length > 0 && (
+                      <div role="group" aria-label={`All ${itemNoun}`}>
+                        <div
+                          aria-hidden="true"
+                          className="px-3 py-1 text-xs font-bold text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10"
+                        >
+                          All {itemNoun}
+                        </div>
+                        {unpinned.map((request) => renderRow(request))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  unpinned.map((request) => renderRow(request))
+                )}
+              </ContextMenuTrigger>
 
-            {loadMore}
-          </>
-        )}
-      </div>
-
-      {/* Context menu */}
-      {ctxMenu && (
-        <div
-          ref={ctxRef}
-          className="fixed z-50 overflow-hidden rounded-lg border bg-background shadow-float min-w-[160px]"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
-        >
-          {onTogglePin && (
-            <button
-              onClick={() => {
-                onTogglePin(ctxMenu.id);
-                setCtxMenu(null);
-              }}
-              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b flex items-center gap-2"
-            >
-              <Star className={cn("h-3 w-3", pinnedIds?.has(ctxMenu.id) && "fill-current")} />
-              {pinnedIds?.has(ctxMenu.id) ? "Unpin" : "Pin"}
-            </button>
+              {loadMore}
+            </>
           )}
-          {onCompareSelect && (
-            <button
-              onClick={() => {
-                onCompareSelect(ctxMenu.id);
-                setCtxMenu(null);
-              }}
-              className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b flex items-center gap-2"
-            >
+        </div>
+
+        <ContextMenuContent>
+          {ctxId && onTogglePin && (
+            <ContextMenuItem className="border-b" onClick={() => onTogglePin(ctxId)}>
+              <Star className={cn("h-3 w-3", pinnedIds?.has(ctxId) && "fill-current")} />
+              {pinnedIds?.has(ctxId) ? "Unpin" : "Pin"}
+            </ContextMenuItem>
+          )}
+          {ctxId && onCompareSelect && (
+            <ContextMenuItem className="border-b" onClick={() => onCompareSelect(ctxId)}>
               <GitCompareArrows className="h-3 w-3" />
               Compare
-            </button>
+            </ContextMenuItem>
           )}
-          <button
-            onClick={() => {
-              void copyToClipboard(ctxMenu.id);
-              setCtxMenu(null);
-            }}
-            className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors border-b flex items-center gap-2"
-          >
-            <Clipboard className="h-3 w-3" />
-            Copy ID
-          </button>
-          <button
-            onClick={() => {
-              toggleTimestampMode();
-              setCtxMenu(null);
-            }}
-            className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
-          >
+          {ctxId && (
+            <ContextMenuItem className="border-b" onClick={() => void copyToClipboard(ctxId)}>
+              <Clipboard className="h-3 w-3" />
+              Copy ID
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem onClick={toggleTimestampMode}>
             <Clock className="h-3 w-3" />
             {relativeTime ? "Show clock times" : "Show relative times"}
-          </button>
-        </div>
-      )}
-    </div>
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </div>
+    </ContextMenu>
   );
 
   function renderRow(request: AnyRequestSummary) {

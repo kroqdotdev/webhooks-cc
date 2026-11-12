@@ -53,6 +53,7 @@ import { ParsedResult } from "./layouts-section";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CodeBox } from "@/components/ui/code";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 
 type EmailTab =
   | "parsed"
@@ -973,12 +974,18 @@ function EmailJsonPane({
         )}
       </p>
       <div className="flex items-center gap-2">
-        <div className="flex overflow-hidden rounded-sm border">
+        <RadioGroup
+          value={view}
+          onValueChange={(next) => setView(next as typeof view)}
+          aria-label="JSON view"
+          // A view switch keeps the light hairline it had as plain buttons,
+          // not the darker control edge globals.css gives a radio group.
+          className="flex overflow-hidden rounded-sm border border-border!"
+        >
           {(["formatted", "tree"] as const).map((mode) => (
-            <button
+            <Radio
               key={mode}
-              type="button"
-              onClick={() => setView(mode)}
+              value={mode}
               className={cn(
                 "px-2 py-0.5 text-[11px] font-bold cursor-pointer transition-colors",
                 mode === "tree" && "border-l border-border",
@@ -988,9 +995,9 @@ function EmailJsonPane({
               )}
             >
               {mode === "formatted" ? "Formatted" : "Tree"}
-            </button>
+            </Radio>
           ))}
-        </div>
+        </RadioGroup>
         <Button
           variant="surface"
           className="ml-auto py-1! px-2.5! text-xs flex items-center gap-1.5"
@@ -1628,17 +1635,17 @@ export function EmailDetail({
           <>
             {/* The width toggle; a phone shows the mobile width anyway. */}
             <div className="hidden md:flex items-center justify-end gap-2 mb-3">
-              <div
-                role="group"
+              <RadioGroup
+                value={width}
+                onValueChange={(next) => setWidth(next as typeof width)}
                 aria-label="Preview width"
-                className="flex overflow-hidden rounded-sm border"
+                // A view switch keeps the light hairline it had as plain buttons.
+                className="flex overflow-hidden rounded-sm border border-border!"
               >
                 {(["desktop", "mobile"] as const).map((mode) => (
-                  <button
+                  <Radio
                     key={mode}
-                    type="button"
-                    aria-pressed={width === mode}
-                    onClick={() => setWidth(mode)}
+                    value={mode}
                     className={cn(
                       "px-2.5 py-1 text-[11px] font-bold cursor-pointer transition-colors capitalize",
                       mode === "mobile" && "border-l border-border",
@@ -1648,9 +1655,9 @@ export function EmailDetail({
                     )}
                   >
                     {mode}
-                  </button>
+                  </Radio>
                 ))}
-              </div>
+              </RadioGroup>
             </div>
             {email.truncated.html && (
               <p className="text-xs text-muted-foreground mb-3">
@@ -1669,9 +1676,11 @@ export function EmailDetail({
           <div>
             {reply && (
               <div className="flex items-center justify-end gap-2 mb-3">
-                <div
-                  className="flex overflow-hidden rounded-sm border"
-                  role="group"
+                <RadioGroup
+                  value={textView}
+                  onValueChange={(next) => setTextView(next as typeof textView)}
+                  // A view switch keeps the light hairline it had as plain buttons.
+                  className="flex overflow-hidden rounded-sm border border-border!"
                   aria-label="Text to show"
                 >
                   {(
@@ -1680,11 +1689,9 @@ export function EmailDetail({
                       ["reply", "Reply only"],
                     ] as const
                   ).map(([mode, label]) => (
-                    <button
+                    <Radio
                       key={mode}
-                      type="button"
-                      onClick={() => setTextView(mode)}
-                      aria-pressed={textView === mode}
+                      value={mode}
                       className={cn(
                         "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold cursor-pointer transition-colors whitespace-nowrap capitalize",
                         mode === "reply" && "border-l border-border",
@@ -1694,9 +1701,9 @@ export function EmailDetail({
                       )}
                     >
                       {label}
-                    </button>
+                    </Radio>
                   ))}
-                </div>
+                </RadioGroup>
               </div>
             )}
             {email.textFromHtml && (

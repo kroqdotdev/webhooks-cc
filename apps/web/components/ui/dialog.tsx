@@ -10,6 +10,15 @@ const Dialog = DialogPrimitive.Root;
 
 const DialogTrigger = DialogPrimitive.Trigger;
 
+/**
+ * The unstyled parts, for a dialog drawn its own way (a drawer, a search
+ * palette): wrap the Popup and Backdrop in a Portal.
+ */
+const DialogPortal = DialogPrimitive.Portal;
+const DialogBackdrop = DialogPrimitive.Backdrop;
+const DialogPopup = DialogPrimitive.Popup;
+const DialogClose = DialogPrimitive.Close;
+
 /** The panel, centred over a dimmed page, with a close button in its corner. */
 function DialogContent({ className, children, ...props }: Styled<DialogPrimitive.Popup.Props>) {
   return (
@@ -71,6 +80,10 @@ function DialogDescription({ className, ...props }: Styled<DialogPrimitive.Descr
 export {
   Dialog,
   DialogTrigger,
+  DialogPortal,
+  DialogBackdrop,
+  DialogPopup,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogFooter,

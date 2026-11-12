@@ -1,0 +1,10 @@
+{
+  "title": "Menus, choices and meters on Base UI",
+  "items": [
+    "The request list's menu (right click, the keyboard's menu key or a long press) and the body's Copy menu work from the keyboard: arrow keys move through them, Enter picks, Escape closes, and the dashboard's shortcut keys leave an open menu alone. Like the browser's own, the right-click menu closes on a click outside without acting on it",
+    "Pick-one choices (filters, body and preview views, theme, plan, ticket category and rating) are one stop for Tab, and the arrow keys move the choice",
+    "The dashboard guide's sections are tabs: the arrow keys move between them",
+    "On phones, the docs contents keep focus inside while open, and once closed no longer hold links Tab could reach",
+    "Usage bars are announced as meters"
+  ]
+}

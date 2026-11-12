@@ -96,6 +96,32 @@ describe("retired style classes", () => {
     expect(violations).toEqual([]);
   });
 
+  // Menus, dialogs, tabs, radio groups, switches and meters are Base UI parts
+  // (components/ui), which bring their keyboard, focus and dismiss rules; a
+  // widget role written by hand outside components/ui means one was rebuilt.
+  // The cookie banner is the one exception: a non-modal notice that must be
+  // answered, with no keyboard or dismiss behaviour of its own to replace.
+  it("builds its widgets on the Base UI parts", () => {
+    // role="menu", role={"menu"}, role={open ? "menu" : undefined} and a props
+    // object's role: "menu" alike.
+    const WIDGET =
+      /\brole(?:=|=\{[^}]*?|\s*:\s*)["'`](?:radio|radiogroup|switch|checkbox|progressbar|meter|slider|menu|menuitem(?:radio|checkbox)?|menubar|tab|tablist|tabpanel|dialog|alertdialog|tooltip|combobox)["'`]|aria-modal/;
+    const ALLOWED = new Set([path.join("components", "providers", "cookie-consent.tsx")]);
+    const violations = files
+      .filter((file) => !file.includes(`${path.sep}components${path.sep}ui${path.sep}`))
+      .filter((file) => !ALLOWED.has(path.relative(ROOT, file)))
+      .flatMap((file) =>
+        readFileSync(file, "utf8")
+          .split("\n")
+          .map((line, index) => ({ line, where: `${path.relative(ROOT, file)}:${index + 1}` }))
+          .filter(({ line }) => !COMMENT.test(line) && WIDGET.test(line))
+          .map(
+            ({ line, where }) => `${where} has ${line.match(WIDGET)![0]}; use a components/ui part`
+          )
+      );
+    expect(violations).toEqual([]);
+  });
+
   it("keeps globals.css free of the retired tokens", () => {
     const css = readFileSync(path.join(ROOT, "app", "globals.css"), "utf8");
     for (const token of [

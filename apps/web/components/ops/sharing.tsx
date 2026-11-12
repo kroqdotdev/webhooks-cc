@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
 import { Card } from "@/components/ui/card";
 import { FieldControl } from "@/components/ui/field";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 
 /*
  * Operations > Sharing: reports of shared previews (from the public form,
@@ -73,33 +75,32 @@ function Notice({ notice }: { notice: { ok: boolean; text: string } | null }) {
 export function OpsSharing() {
   const [tab, setTab] = useState<Tab>("reports");
   return (
-    <div className="max-w-5xl space-y-4 p-6 lg:p-8">
+    <Tabs
+      value={tab}
+      onValueChange={(next) => setTab(next as Tab)}
+      className="max-w-5xl space-y-4 p-6 lg:p-8"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">Sharing</h1>
-        <div className="flex gap-1 text-xs">
+        <TabsList className="flex gap-1 text-xs">
           {TABS.map((t) => (
-            <button
+            <TabsTab
               key={t.key}
-              type="button"
-              aria-pressed={tab === t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                "rounded-md px-2 py-1",
-                tab === t.key
-                  ? "bg-selected font-medium text-selected-foreground"
-                  : "text-muted-foreground hover:bg-muted"
-              )}
+              value={t.key}
+              className="rounded-md px-2 py-1 focus-visible:outline-offset-2 data-active:bg-selected data-active:font-medium data-active:text-selected-foreground not-data-active:text-muted-foreground not-data-active:hover:bg-muted"
             >
               {t.label}
-            </button>
+            </TabsTab>
           ))}
-        </div>
+        </TabsList>
       </div>
-      {tab === "reports" && <Reports />}
-      {tab === "live" && <LiveShares />}
-      {tab === "blocks" && <BlockedLists />}
-      {tab === "reputation" && <Reputation />}
-    </div>
+      <TabsPanel value={tab}>
+        {tab === "reports" && <Reports />}
+        {tab === "live" && <LiveShares />}
+        {tab === "blocks" && <BlockedLists />}
+        {tab === "reputation" && <Reputation />}
+      </TabsPanel>
+    </Tabs>
   );
 }
 
@@ -143,24 +144,27 @@ function Reports() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
+      <RadioGroup
+        value={view}
+        onValueChange={(next) => setView(next as typeof view)}
+        aria-label="Reports to show"
+        className="flex flex-wrap items-center gap-2 text-xs"
+      >
         {(["open", "resolved"] as const).map((v) => (
-          <button
+          <Radio
             key={v}
-            type="button"
-            aria-pressed={view === v}
-            onClick={() => setView(v)}
+            value={v}
             className={cn(
-              "rounded-md px-2 py-1",
+              "rounded-md px-2 py-1 focus-visible:outline-offset-2",
               view === v
                 ? "bg-selected font-medium text-selected-foreground"
                 : "text-muted-foreground hover:bg-muted"
             )}
           >
             {v === "open" ? "Open" : "Resolved"}
-          </button>
+          </Radio>
         ))}
-      </div>
+      </RadioGroup>
       <Notice notice={n.notice} />
       {!reports ? (
         <Skeleton className="h-32 w-full rounded-md" />

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +31,7 @@ import {
 import Link from "next/link";
 import { WEB_VERIFICATION_PROVIDER_OPTIONS } from "@/lib/provider-catalog";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 
 interface Section {
   id: string;
@@ -544,40 +544,40 @@ export function DashboardGuideDialog({
       )}
       {/* As tall as the longer of the two columns, up to 85vh; each column scrolls past that. */}
       <DialogContent className="max-w-3xl max-h-[85vh] p-0 overflow-hidden">
-        <div className="flex max-h-[85vh] min-h-0">
+        <Tabs
+          value={activeSection}
+          onValueChange={(next) => setActiveSection(next as string)}
+          orientation="vertical"
+          className="flex max-h-[85vh] min-h-0"
+        >
           {/* Sidebar */}
-          <nav className="w-52 shrink-0 border-r overflow-y-auto py-4">
+          <div className="w-52 shrink-0 border-r overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
               <DialogTitle className="text-sm tracking-normal">Dashboard guide</DialogTitle>
             </DialogHeader>
-            <div className="space-y-0.5">
+            <TabsList className="space-y-0.5">
               {SECTIONS.map((section) => (
-                <button
+                <TabsTab
                   key={section.id}
-                  onClick={() => setActiveSection(section.id)}
-                  className={cn(
-                    "w-full px-4 py-1.5 text-left text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors",
-                    activeSection === section.id
-                      ? "bg-selected text-selected-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
+                  value={section.id}
+                  className="w-full px-4 py-1.5 text-left text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors data-active:bg-selected data-active:text-selected-foreground not-data-active:text-muted-foreground not-data-active:hover:text-foreground not-data-active:hover:bg-muted"
                 >
                   {section.icon}
                   {section.title}
-                </button>
+                </TabsTab>
               ))}
-            </div>
-          </nav>
+            </TabsList>
+          </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <TabsPanel value={activeSection} scroller className="flex-1 overflow-y-auto p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2 tracking-normal">
               {current.icon}
               {current.title}
             </h2>
             <div className="text-sm leading-relaxed">{current.content}</div>
-          </div>
-        </div>
+          </TabsPanel>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

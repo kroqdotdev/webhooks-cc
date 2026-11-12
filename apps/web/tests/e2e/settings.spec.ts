@@ -168,9 +168,7 @@ test("an API key is created once, listed, and deleted", async ({ page }) => {
 test("the seat rail shows pooled usage and who holds each seat", async ({ page }) => {
   await openTeam(page, owner);
 
-  await expect(
-    page.getByRole("progressbar", { name: "120,000 of 300,000 requests used" })
-  ).toBeVisible();
+  await expect(page.getByRole("meter", { name: "120,000 of 300,000 requests used" })).toBeVisible();
   const seats = page.getByRole("list", { name: "Seats" });
   await expect(seats.getByRole("listitem")).toHaveCount(3);
   await expect(seats.getByText("You")).toBeVisible();

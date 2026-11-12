@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
 import { SiteLink } from "@/components/nav/site-link";
 import { useSitePathname } from "@/lib/site-pathname";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogClose,
+  DialogPopup,
+  DialogPortal,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { BookOpen, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS, type NavSection } from "@/lib/docs-nav";
 import { SITE_HEADER_HEIGHT, siteHeaderTop } from "@/lib/announcements";
@@ -138,13 +146,17 @@ export function DocsSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const s = useSidebarStyles();
 
+  // The contents are a phone's: once the page is wide enough for the sidebar
+  // (a rotated tablet, a widened window), close them so the dialog lets go.
   useEffect(() => {
     if (!mobileOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMobileOpen(false);
+    const wide = window.matchMedia("(min-width: 768px)");
+    const closeIfWide = () => {
+      if (wide.matches) setMobileOpen(false);
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    closeIfWide();
+    wide.addEventListener("change", closeIfWide);
+    return () => wide.removeEventListener("change", closeIfWide);
   }, [mobileOpen]);
 
   const handleSearchClick = useCallback(() => {
@@ -154,42 +166,39 @@ export function DocsSidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
-      <button
-        onClick={() => setMobileOpen(!mobileOpen)}
-        className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border bg-background shadow-surface cursor-pointer"
-        style={{ top: s.toggle }}
-        aria-expanded={mobileOpen}
-        aria-label={mobileOpen ? "Close docs contents" : "Open docs contents"}
-      >
-        {/* A word, not a second hamburger under the site menu's. */}
-        {mobileOpen ? <X className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
-        Contents
-      </button>
-
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="md:hidden fixed left-0 right-0 bottom-0 z-30 bg-background/80"
-          style={{ top: s.panel }}
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      {/* Mobile sidebar */}
-      <aside
-        role={mobileOpen ? "dialog" : undefined}
-        aria-modal={mobileOpen ? "true" : undefined}
-        aria-label="Documentation navigation"
-        aria-hidden={!mobileOpen}
-        className={cn(
-          "md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r shadow-float overflow-y-auto pt-16 pb-6 px-2 transition-transform bg-card",
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-        style={{ top: s.panel }}
-      >
-        <SidebarContent onNavigate={() => setMobileOpen(false)} onSearchClick={handleSearchClick} />
-      </aside>
+      {/* Phone: the contents slide in as a dialog under the header. */}
+      <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
+        <DialogTrigger
+          className="md:hidden fixed left-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-md border bg-background shadow-surface cursor-pointer"
+          style={{ top: s.toggle }}
+          aria-label={mobileOpen ? "Close docs contents" : "Open docs contents"}
+        >
+          {/* A word, not a second hamburger under the site menu's. */}
+          {mobileOpen ? <X className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+          Contents
+        </DialogTrigger>
+        <DialogPortal>
+          <DialogBackdrop
+            className="md:hidden fixed left-0 right-0 bottom-0 z-30 bg-background/80"
+            style={{ top: s.panel }}
+          />
+          <DialogPopup
+            aria-label="Documentation navigation"
+            className="md:hidden fixed left-0 bottom-0 z-[35] w-72 border-r shadow-float overflow-y-auto pt-16 pb-6 px-2 transition-transform bg-card outline-none data-starting-style:-translate-x-full data-ending-style:-translate-x-full"
+            style={{ top: s.panel }}
+          >
+            <SidebarContent
+              onNavigate={() => setMobileOpen(false)}
+              onSearchClick={handleSearchClick}
+            />
+            {/* The Contents button sits outside the dialog, out of reach of a
+              touch screen reader inside it; this one is seen only when focused. */}
+            <DialogClose className="sr-only focus-visible:not-sr-only focus-visible:mt-4 focus-visible:ml-2 focus-visible:text-xs focus-visible:font-bold">
+              Close docs contents
+            </DialogClose>
+          </DialogPopup>
+        </DialogPortal>
+      </Dialog>
 
       {/* Desktop sidebar */}
       <aside

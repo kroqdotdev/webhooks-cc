@@ -1713,6 +1713,10 @@ export default function DashboardPage() {
 
       // Don't intercept when typing in inputs
       if (isInput) return;
+      // An open menu or dialog has the keyboard: a letter there picks an item
+      // (a menu's type-ahead) or types, and must not act on the page behind it.
+      if ((e.target as HTMLElement)?.closest?.("[role=menu], [role=dialog], [role=alertdialog]"))
+        return;
       // Don't intercept when modifiers are held (allow browser shortcuts)
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 

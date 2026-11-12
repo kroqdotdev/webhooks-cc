@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
+import { Meter } from "@/components/ui/meter";
 
 /** Who holds a seat in a team's rail. */
 export type SeatSlot =
@@ -102,11 +103,8 @@ export function QuotaMeter({
         </div>
       )}
 
-      <div
-        role="progressbar"
-        aria-valuenow={Math.round(percent)}
-        aria-valuemin={0}
-        aria-valuemax={100}
+      <Meter
+        value={Math.round(percent)}
         aria-label={`${used.toLocaleString()} of ${safeLimit.toLocaleString()} ${what} used`}
         className={cn("flex", compact ? "gap-0.5" : "gap-1")}
       >
@@ -140,7 +138,7 @@ export function QuotaMeter({
             </div>
           );
         })}
-      </div>
+      </Meter>
 
       {labelled && seats && (
         <ul className="flex gap-1" aria-label="Seats">

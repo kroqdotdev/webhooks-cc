@@ -260,7 +260,7 @@ test("schema view and share page keep hostile JSON keys inert", async ({ page })
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
   await page.getByText(JSON_PATH).first().click();
   await page.getByRole("tab", { name: /^body$/i }).click();
-  await page.getByRole("button", { name: "Schema", exact: true }).click();
+  await page.getByRole("radio", { name: "Schema", exact: true }).click();
 
   for (const format of ["TypeScript", "Zod", "Pydantic", "JSON Schema"]) {
     await test.step(`${format} schema stays inert`, async () => {
@@ -281,9 +281,9 @@ test("schema view and share page keep hostile JSON keys inert", async ({ page })
   await test.step("the share page keeps the payload inert", async () => {
     await page.goto(`/s/${token}`);
     await expect(page.getByText("Shared request")).toBeVisible();
-    await page.getByRole("button", { name: "Formatted", exact: true }).click();
+    await page.getByRole("radio", { name: "Formatted", exact: true }).click();
     await expectInertCode(page, dialogs);
-    await page.getByRole("button", { name: "Schema", exact: true }).click();
+    await page.getByRole("radio", { name: "Schema", exact: true }).click();
     await expectInertCode(page, dialogs);
   });
 });

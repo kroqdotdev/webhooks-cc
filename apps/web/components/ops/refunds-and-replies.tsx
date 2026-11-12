@@ -11,6 +11,7 @@ import type { HeldRefund } from "@/lib/ops/refunds";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
 import { Card } from "@/components/ui/card";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 
 const REASONS: Record<string, string> = {
   duplicate_plan: "A second plan subscription",
@@ -69,24 +70,27 @@ export function OpsRefunds() {
     <div className="max-w-4xl space-y-4 p-6 lg:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">Refunds</h1>
-        <div className="flex gap-1 text-xs">
+        <RadioGroup
+          value={view}
+          onValueChange={(next) => setView(next as typeof view)}
+          aria-label="Refunds to show"
+          className="flex gap-1 text-xs"
+        >
           {(["held", "recent"] as const).map((value) => (
-            <button
+            <Radio
               key={value}
-              type="button"
-              aria-pressed={view === value}
-              onClick={() => setView(value)}
+              value={value}
               className={cn(
-                "rounded-md px-2 py-1",
+                "rounded-md px-2 py-1 focus-visible:outline-offset-2",
                 view === value
                   ? "bg-selected font-medium text-selected-foreground"
                   : "text-muted-foreground hover:bg-muted"
               )}
             >
               {value === "held" ? "Waiting for you" : "Decided"}
-            </button>
+            </Radio>
           ))}
-        </div>
+        </RadioGroup>
       </div>
       <p className="max-w-[70ch] text-sm text-muted-foreground">
         Approving hands a refund to the refund worker, which refunds exactly the orders listed,
