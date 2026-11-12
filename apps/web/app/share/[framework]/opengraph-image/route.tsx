@@ -18,7 +18,7 @@ export async function GET(
 
   return ogImageResponse({
     kind: "Share localhost",
-    title: `Share a ${page.label} dev server`,
+    title: page.h1.replace(/ at a public URL$/, ""),
     subtitle: `whk share ${page.port}: a public HTTPS link to localhost`,
     path: `/share/${page.slug}`,
   });

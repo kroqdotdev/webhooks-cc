@@ -473,17 +473,17 @@ const url = getRequestURL(event, { xForwardedHost: true, xForwardedProto: true }
     fromSource: true,
     port: 5173,
     devCommand: "npm run dev",
-    card: "Nothing to add in dev: the CSRF origin check only runs in production builds. Sharing npm run preview needs csrf.trustedOrigins.",
+    card: "Nothing to add in dev: the CSRF origin check only runs in production builds. Sharing npm run preview needs paths.origin.",
     title: "Share a SvelteKit Dev Server: Forms, CSRF and Port 5173",
     description:
-      "Run whk share 5173 to put a SvelteKit dev server at a public HTTPS link. Form actions work in dev, HMR comes through, and sharing a production preview needs csrf.trustedOrigins or paths.origin to avoid Cross-site POST form submissions are forbidden.",
+      "Run whk share 5173 to put a SvelteKit dev server at a public HTTPS link. Form actions work in dev, HMR comes through, and sharing a production preview needs paths.origin to avoid Cross-site POST form submissions are forbidden.",
     h1: "Share a SvelteKit dev server at a public URL",
     intro:
       "`npm run dev` serves a SvelteKit app on `localhost:5173` through Vite, and `whk share 5173` gives it an HTTPS link. In development everything works as it is, form actions included. The setting people look for belongs to production builds, and it matters here only if you share `npm run preview`.",
     hostSetting:
-      "None in dev. To share a production build (`npm run preview`), list the link in `csrf.trustedOrigins`, or set `paths.origin`.",
+      "None in dev. To share a production build (`npm run preview`), set `paths.origin` to the link. `csrf.trustedOrigins` covers form actions only, not remote functions.",
     withoutIt:
-      "In dev, nothing. A shared preview answers form posts with `403` and `Cross-site POST form submissions are forbidden`.",
+      "In dev, nothing. A shared preview answers form posts with `403` and `Cross-site POST form submissions are forbidden`, and remote function calls with `403` and `Cross-site remote requests are forbidden`.",
     hotReload:
       "Yes. It is Vite's HMR on the dev server's own port, and the client connects to the host the page came from.",
     urlsAndCookies:
@@ -500,7 +500,7 @@ const url = getRequestURL(event, { xForwardedHost: true, xForwardedProto: true }
         heading: "Sharing a production preview",
         body: [
           "`npm run build` and `npm run preview` serve the built app on port `4173`, and there the check is live. SvelteKit derives its own origin from the `Host` header, `http://localhost:4173`, while the browser sends `Origin: https://<name>.sharehooks.cc`. The post is refused with status `403` and `Cross-site POST form submissions are forbidden`. The response has no content type; the link shows it as plain text so you can read it.",
-          "Either name the link as a trusted origin, or tell SvelteKit the app's public origin. In SvelteKit 3 both are options of the `sveltekit()` plugin in `vite.config`:",
+          "Tell SvelteKit the app's public origin with `paths.origin`. That fixes both kinds of post. `csrf.trustedOrigins` also lets form actions through, but not remote `form` and `command` functions: a production build refuses those from any other origin with `403` and `Cross-site remote requests are forbidden`, whatever `trustedOrigins` says. In SvelteKit 3 both are options of the `sveltekit()` plugin in `vite.config`:",
         ],
         snippet: {
           file: "vite.config.ts",
@@ -510,16 +510,16 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [
     sveltekit({
-      // Either: accept form posts from the link
-      csrf: { trustedOrigins: ["https://acme.sharehooks.cc"] },
-      // Or: say where the app is served from
-      // paths: { origin: "https://acme.sharehooks.cc" },
+      // Say where the app is served from: covers form actions and remote functions
+      paths: { origin: "https://acme.sharehooks.cc" },
+      // Or, for form actions only (remote functions stay refused):
+      // csrf: { trustedOrigins: ["https://acme.sharehooks.cc"] },
     }),
   ],
 });`,
         },
         after:
-          "Each trusted origin is a complete origin and is matched exactly: `https://*.sharehooks.cc` does not work. A random name changes every session, so this is one place where a reserved name earns its keep (`whk share 4173 --name acme`). `trustedOrigins: ['*']` turns the check off for every site and is not something to leave in. Rebuild after changing either option.",
+          "Either value is a complete origin and is matched exactly: `https://*.sharehooks.cc` does not work. A random name changes every session, so this is one place where a reserved name earns its keep (`whk share 4173 --name acme`). `trustedOrigins: ['*']` turns the check off for every site and is not something to leave in. Rebuild after changing either option.",
       },
       {
         heading: "What the server believes about its URL",
@@ -533,7 +533,7 @@ export default defineConfig({
       {
         question: "How do I fix Cross-site POST form submissions are forbidden behind a tunnel?",
         answer:
-          "The built app thinks its origin is localhost while the form's Origin is the tunnel's address. Add the tunnel's full origin to csrf.trustedOrigins, for example [\"https://acme.sharehooks.cc\"], or set paths.origin to it; with adapter-node you can set the ORIGIN environment variable instead. Wildcards are not matched.",
+          "The built app thinks its origin is localhost while the form's Origin is the tunnel's address. Set paths.origin to the tunnel's full origin, for example \"https://acme.sharehooks.cc\"; with adapter-node you can set the ORIGIN environment variable instead. csrf.trustedOrigins also works for form actions, but remote functions ignore it and answer Cross-site remote requests are forbidden. Wildcards are not matched.",
       },
       {
         question: "Do SvelteKit form actions work through a tunnel in dev?",
@@ -1174,12 +1174,17 @@ end`,
         snippet: {
           file: "bootstrap/app.php",
           code: `->withMiddleware(function (Middleware $middleware): void {
-    // whk share connects from this machine
-    $middleware->trustProxies(at: ['127.0.0.1', '::1']);
+    // whk share connects from this machine, and sets only these headers
+    $middleware->trustProxies(
+        at: ['127.0.0.1', '::1'],
+        headers: Request::HEADER_X_FORWARDED_FOR
+            | Request::HEADER_X_FORWARDED_HOST
+            | Request::HEADER_X_FORWARDED_PROTO,
+    );
 })`,
         },
         after:
-          "With that, generated URLs read `https://<name>.sharehooks.cc/...`. The docs also allow `trustProxies(at: '*')`, which trusts whatever connects; naming loopback is enough here.",
+          "With that, generated URLs read `https://<name>.sharehooks.cc/...`. `Request` is `Illuminate\\Http\\Request`. Listing the headers matters because Laravel otherwise also trusts `X-Forwarded-Port` and `X-Forwarded-Prefix`, which the link passes through from the visitor unchanged. The docs also allow `trustProxies(at: '*')`, which trusts whatever connects; naming loopback is enough here.",
       },
       {
         heading: "Stop the Vite dev server and build",
