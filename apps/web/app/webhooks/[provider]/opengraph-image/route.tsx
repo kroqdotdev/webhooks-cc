@@ -18,7 +18,8 @@ export async function GET(
 
   return ogImageResponse({
     kind: "Webhooks",
-    title: `Test ${page.label} webhooks`,
+    // A page that leaves "test" to its tool under /tools says what it does instead.
+    title: (page.seo?.tool && page.seo.h1) || `Test ${page.label} webhooks`,
     subtitle: page.inSdk
       ? "Free endpoint, signed samples, signature checks"
       : "Free endpoint, live inspector, replay to localhost",

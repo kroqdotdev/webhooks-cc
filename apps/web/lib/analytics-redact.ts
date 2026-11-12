@@ -7,10 +7,12 @@
  * codes and tokens in the query or the fragment. So every string in an
  * event's properties is rewritten: share paths as StatOSS events are
  * (lib/observability-redact.ts), and every query parameter that is not on
- * the list below dropped, along with any fragment.
+ * the list below dropped, along with any fragment. A Discord or Slack webhook
+ * URL (the free tools under /tools call them from the browser) is a
+ * credential in a path, and loses it the same way.
  */
 
-import { REDACTED_SHARE_PATH, redactSharePaths } from "./observability-redact";
+import { REDACTED_SHARE_PATH, redactSharePaths, redactWebhookUrls } from "./observability-redact";
 
 export { REDACTED_SHARE_PATH };
 
@@ -32,6 +34,8 @@ const KEPT_PARAMS = new Set([
   "subscribed",
   "capacity",
   "template",
+  // The signature checker's preset, a provider id (/tools/webhook-signature-checker).
+  "scheme",
   "error",
   "error_code",
 ]);
@@ -54,9 +58,12 @@ function keptQuery(tail: string): string {
   return kept.length > 0 ? `?${kept.join("&")}` : "";
 }
 
-/** The text with share tokens, unlisted query parameters and fragments taken out of its URLs. */
+/**
+ * The text with share tokens, webhook URL secrets, unlisted query parameters
+ * and fragments taken out of its URLs.
+ */
 export function redactUrls(text: string): string {
-  return redactSharePaths(text).replace(
+  return redactWebhookUrls(redactSharePaths(text)).replace(
     URL_TAIL,
     (_match, base: string, tail: string) => base + keptQuery(tail)
   );

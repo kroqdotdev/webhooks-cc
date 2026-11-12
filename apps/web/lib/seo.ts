@@ -1,5 +1,6 @@
 import type { Metadata, MetadataRoute } from "next";
 import type { BlogPostData } from "@/components/blog/blog-post-shell";
+import { TOOL_SLUGS } from "@/lib/tools/catalog";
 
 export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
@@ -149,6 +150,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     priority: 0.6,
     lastModified: EMAIL_TESTING_UPDATED,
   },
+  // /tools and each tool page are appended from lib/tools/catalog.ts in lib/sitemap.ts
   // Blog pages are dynamically generated from Supabase in app/sitemap.xml/route.ts
   // /api-explorer is noindexed - client-only Scalar viewer, /docs/api owns this query
   {
@@ -196,16 +198,19 @@ export const COMPARE_PAGE_SLUGS: readonly string[] = PUBLIC_SITEMAP_PAGES.flatMa
 /**
  * The path of a page's generated Open Graph image, or null for a page that
  * shares the static one. Each path is answered by an `opengraph-image` route
- * beside the page (app/compare, app/webhooks, app/share, app/blog/[slug]).
+ * beside the page (app/compare, app/webhooks, app/share, app/tools, app/blog/[slug]).
  */
 export function generatedOgImagePath(path: string): string | null {
-  if (path === "/compare" || path === "/webhooks" || path === "/share") {
+  if (path === "/compare" || path === "/webhooks" || path === "/share" || path === "/tools") {
     return `${path}/opengraph-image`;
   }
   const [, section, slug, ...rest] = path.split("/");
   if (!slug || rest.length > 0) return null;
   if (section === "compare") {
     return COMPARE_PAGE_SLUGS.includes(slug) ? `${path}/opengraph-image` : null;
+  }
+  if (section === "tools") {
+    return TOOL_SLUGS.includes(slug) ? `${path}/opengraph-image` : null;
   }
   // Provider pages, framework pages and blog posts only ask for metadata once they exist.
   if (section === "webhooks" || section === "share" || section === "blog") {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TEMPLATE_PROVIDERS } from "@webhooks-cc/sdk";
+import { getTool } from "./tools/catalog";
+import { SIGNATURE_PRESETS } from "./tools/signature";
 import {
   getAllWebhookProviderPages,
   getRelatedProviderPages,
@@ -82,6 +84,28 @@ describe("webhook provider pages", () => {
     expect(getWebhookProvidersLastModified().getTime()).toBe(newest);
   });
 
+  it("leaves the tester searches to the free tools, and links to them", () => {
+    const withTool = pages.filter((page) => page.seo?.tool);
+    expect(withTool.map((page) => page.slug).sort()).toEqual(["discord", "slack"]);
+    for (const page of withTool) {
+      const seo = page.seo!;
+      // The tool page's title says "Tester"; this page's must not compete for it.
+      expect(getTool(seo.tool!.slug)?.title, page.slug).toMatch(
+        new RegExp(`^${page.label} Webhook Tester`)
+      );
+      expect(`${seo.title} ${seo.h1}`, page.slug).not.toMatch(/tester/i);
+      expect(seo.title, page.slug).toBeTruthy();
+      expect(seo.h1, page.slug).toBeTruthy();
+    }
+  });
+
+  it("links to the signature checker from the pages whose scheme it has", () => {
+    const linked = pages.filter((page) => page.signatureChecker).map((page) => page.slug);
+    expect(linked.sort()).toEqual(SIGNATURE_PRESETS.map((preset) => preset.id as string).sort());
+    expect(linked).toContain("docusign");
+    expect(linked).not.toContain("discord");
+  });
+
   it("keeps search-driven copy short, dash-free and tied to real pages", () => {
     const withSeo = pages.filter((page) => page.seo);
     expect(withSeo.map((page) => page.slug).sort()).toEqual([
@@ -99,6 +123,7 @@ describe("webhook provider pages", () => {
       "paddle",
       "razorpay",
       "sendgrid",
+      "slack",
       "square",
     ]);
     for (const page of withSeo) {
@@ -121,6 +146,7 @@ describe("webhook provider pages", () => {
           "2026-10-23T00:00:00.000Z",
           "2026-10-26T00:00:00.000Z",
           "2026-11-10T00:00:00.000Z",
+          "2026-11-12T00:00:00.000Z",
           `${SHARED_COPY_CHANGED}T00:00:00.000Z`,
         ],
         page.slug

@@ -854,6 +854,14 @@ export default async function Home() {
                 </li>
                 <li>
                   <Link
+                    href="/tools"
+                    className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    Free tools
+                  </Link>
+                </li>
+                <li>
+                  <Link
                     href="/login"
                     className="inline-block py-1.5 text-muted-foreground hover:text-foreground"
                   >

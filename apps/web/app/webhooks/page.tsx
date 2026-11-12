@@ -121,7 +121,12 @@ export default function WebhooksHubPage() {
             >
               generic HMAC verification
             </Link>{" "}
-            for custom senders.
+            for custom senders. To post a test message to a Discord or Slack webhook URL, or check
+            one signature by hand, see the{" "}
+            <Link href="/tools" className="text-primary font-bold hover:underline">
+              free webhook tools
+            </Link>
+            .
           </p>
         </Card>
       </div>

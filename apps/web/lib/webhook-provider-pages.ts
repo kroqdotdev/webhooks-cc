@@ -1,4 +1,5 @@
 import { TEMPLATE_METADATA, TEMPLATE_PROVIDERS, type TemplateProvider } from "@webhooks-cc/sdk";
+import { getSignaturePreset } from "@/lib/tools/signature";
 import { getWebProviderCredentialLabel, getWebProviderInfo } from "./provider-catalog";
 import { hasProviderTestSnippet, PROVIDER_TEST_SNIPPET_ADDED } from "./provider-test-snippet";
 
@@ -49,7 +50,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Slack sends webhooks for workspace events, slash commands, and interactive components via the Events API.",
     configHint: "Slack API dashboard → your app → Event Subscriptions → Request URL",
     category: "Communication",
-    updated: "2026-08-21",
+    updated: "2026-11-12",
   },
   paddle: {
     blurb:
@@ -84,7 +85,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
     configHint:
       "Discord Developer Portal → your app → General Information → Interactions Endpoint URL",
     category: "Communication",
-    updated: "2026-10-13",
+    updated: "2026-11-12",
   },
   vercel: {
     blurb:
@@ -733,6 +734,13 @@ export interface ProviderSeo {
   moreReferences?: readonly ProviderReference[];
   /** Questions added to the page FAQ and its FAQPage schema. */
   faq?: readonly { question: string; answer: string }[];
+  /**
+   * The free tool (lib/tools/catalog.ts) for the other direction: posting to
+   * this provider's webhook URL rather than capturing what it sends. The page
+   * links to it, and leaves the "tester" searches to the tool: its title, its
+   * keywords and its questions do not use the word.
+   */
+  tool?: { slug: string; label: string; pitch: string };
 }
 
 const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
@@ -795,9 +803,17 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
     ],
   },
   discord: {
-    title: "Discord Webhook Tester: Check URLs & Inspect Payloads",
+    // "Discord webhook tester" belongs to /tools/discord-webhook-tester, which
+    // posts to a webhook URL; this page is about capturing.
+    title: "Discord Webhooks: Inspect Payloads & Capture Interactions",
+    h1: "Capture and inspect Discord webhooks",
     description:
-      "Test Discord webhooks free: see the exact JSON your app sends before it reaches a channel, check whether a Discord webhook URL still works, and capture interaction webhooks.",
+      "See the exact JSON your app sends to a Discord webhook before it reaches a channel, and capture the interaction webhooks Discord sends to your app, on a free endpoint. No account required to start.",
+    tool: {
+      slug: "discord-webhook-tester",
+      label: "Discord webhook tester",
+      pitch: "Have a webhook URL and want to see whether a message posts to the channel?",
+    },
     faq: [
       {
         question: "How do I test what my app sends to a Discord webhook?",
@@ -807,12 +823,30 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I check if a Discord webhook URL is valid?",
         answer:
-          "Send a GET request to the webhook URL itself (https://discord.com/api/webhooks/{id}/{token}). Discord answers without any other authentication and returns the webhook object, with its name, channel and server ids, when the URL works. An error response means the webhook was deleted or the token is wrong.",
+          "Send a GET request to the webhook URL itself (https://discord.com/api/webhooks/{id}/{token}). Discord answers without any other authentication and returns the webhook object, with its name, channel and server ids, when the URL works. A 404 means the webhook was deleted and a 401 that the token is wrong. The free Discord webhook tester at webhooks.cc/tools/discord-webhook-tester does this from your browser with its Check URL button, and can post a test message too.",
       },
       {
         question: "What is the difference between a Discord webhook and an interactions endpoint?",
         answer:
           "A channel webhook is a URL you post messages to. An interactions endpoint is a URL on your server that Discord calls for slash commands and buttons, signed with Ed25519 in the x-signature-ed25519 header. webhooks.cc can capture both: the messages your app posts, and the interactions Discord sends.",
+      },
+    ],
+  },
+  slack: {
+    // "Slack webhook tester" belongs to /tools/slack-webhook-tester, which
+    // posts to an incoming webhook; this page is about the events Slack sends.
+    title: "Slack Webhooks: Capture Events, Signatures & Samples",
+    h1: "Capture and inspect Slack webhooks",
+    tool: {
+      slug: "slack-webhook-tester",
+      label: "Slack webhook tester",
+      pitch: "Have an incoming webhook URL and want to see whether a message posts to the channel?",
+    },
+    faq: [
+      {
+        question: "What is the difference between a Slack incoming webhook and the Events API?",
+        answer:
+          "An incoming webhook is a URL you post messages to, and Slack shows them in a channel. The Events API, slash commands and interactive components go the other way: Slack sends a request to a URL on your server, signed with your signing secret in the x-slack-signature header. This page is about capturing those requests; to post a test message to an incoming webhook URL, use the free Slack webhook tester at webhooks.cc/tools/slack-webhook-tester.",
       },
     ],
   },
@@ -1383,6 +1417,11 @@ export interface WebhookProviderPage {
   inSdk: boolean;
   /** True when deliveries only carry the signature or auth header once the user configures it. */
   signatureOptional: boolean;
+  /**
+   * True when the webhook signature checker (/tools/webhook-signature-checker)
+   * has this provider's scheme: the page links to it with the scheme chosen.
+   */
+  signatureChecker: boolean;
   /** When the page's content last changed; the sitemap lastmod. */
   lastModified: Date;
   seo: ProviderSeo | null;
@@ -1405,6 +1444,9 @@ let pagesBySlug: ReadonlyMap<string, WebhookProviderPage> | null = null;
  * Python and Go SDKs, destinations).
  */
 export const SHARED_COPY_CHANGED = "2026-11-03";
+
+/** The day pages whose scheme the signature checker has gained their link to it. */
+export const SIGNATURE_CHECKER_LINK_ADDED = "2026-11-12";
 
 /** The latest of several YYYY-MM-DD days. */
 function latestDay(...days: string[]): string {
@@ -1461,9 +1503,11 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     secretRequired: meta.secretRequired,
     defaultTemplate,
   });
+  const signatureChecker = getSignaturePreset(provider) !== null;
   const updated = latestDay(
     editorial.updated,
     showsSnippet ? PROVIDER_TEST_SNIPPET_ADDED : editorial.updated,
+    signatureChecker ? SIGNATURE_CHECKER_LINK_ADDED : editorial.updated,
     SHARED_COPY_CHANGED
   );
 
@@ -1484,6 +1528,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     signatureNote: null,
     inSdk: true,
     signatureOptional: false,
+    signatureChecker,
     lastModified: new Date(`${updated}T00:00:00.000Z`),
     seo: PROVIDER_SEO[provider] ?? null,
   };
@@ -1509,6 +1554,7 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
     signatureNote: provider.signatureNote,
     inSdk: false,
     signatureOptional: provider.signatureOptional ?? false,
+    signatureChecker: false,
     lastModified: new Date(`${latestDay(provider.updated, SHARED_COPY_CHANGED)}T00:00:00.000Z`),
     seo: PROVIDER_SEO[slug] ?? null,
   };

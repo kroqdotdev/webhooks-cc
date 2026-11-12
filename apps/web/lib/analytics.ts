@@ -133,6 +133,16 @@ export function trackTestWebhookSent(mode: string, responseStatus: number) {
   capture("test_webhook_sent", { mode, response_status: responseStatus });
 }
 
+// ── Free tools (/tools) ──────────────────────────────────────────
+/**
+ * A free tool was used. Only which tool, what was done and how it ended (an
+ * HTTP status or a verdict): never the webhook URL, the secret, the message
+ * or the provider's answer, which stay in the browser.
+ */
+export function trackToolUsed(tool: string, action: string, outcome: string) {
+  capture("tool_used", { tool, action, outcome });
+}
+
 // ── Teams ───────────────────────────────────────────────────────
 export function trackTeamCreated() {
   capture("team_created");

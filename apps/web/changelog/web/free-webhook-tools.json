@@ -1,0 +1,9 @@
+{
+  "title": "Free webhook tools",
+  "items": [
+    "A Discord webhook tester at /tools/discord-webhook-tester: paste a webhook URL, send a message or an embed from your browser, and read what Discord's answer means, or check that the URL still works without posting",
+    "A Slack webhook tester at /tools/slack-webhook-tester for incoming webhooks, with text or Block Kit JSON and the matching curl command",
+    "A webhook signature checker at /tools/webhook-signature-checker: an HMAC calculator, plus checks for a pasted request in the scheme of Stripe, GitHub, Shopify, Slack, DocuSign and 20 more providers",
+    "The tools run in your browser: a webhook URL or a signing secret typed into them is never sent to webhooks.cc or stored"
+  ]
+}

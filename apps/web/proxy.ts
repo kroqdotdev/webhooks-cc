@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { NAV_SECTIONS } from "@/lib/docs-nav";
 import { layoutTemplate } from "@/lib/layout-templates";
 import { imgSrcDirective } from "@/lib/csp-img-src";
+import { toolConnectSources } from "@/lib/tools/csp";
 import {
   MARKDOWN_TWIN_HEADER,
   isMarkdownTwinPath,
@@ -270,7 +271,12 @@ export async function proxy(request: NextRequest) {
     "style-src 'self' 'unsafe-inline'",
     imgSrcDirective(),
     "font-src 'self'",
-    `connect-src 'self' ${supabaseOrigin} ${supabaseWsOrigin} ${webhookOrigin} https://eu-assets.i.posthog.com https://f.webhooks.cc https://ingest.statoss.com`,
+    // The last part is empty except on the two free tools that call a provider
+    // from the browser, each allowed its one origin (lib/tools/csp.ts).
+    [
+      `connect-src 'self' ${supabaseOrigin} ${supabaseWsOrigin} ${webhookOrigin} https://eu-assets.i.posthog.com https://f.webhooks.cc https://ingest.statoss.com`,
+      ...(site === "webhooks" ? toolConnectSources(pathname) : []),
+    ].join(" "),
     "frame-src 'self' https://challenges.cloudflare.com",
     "object-src 'none'",
     "worker-src 'self'",
