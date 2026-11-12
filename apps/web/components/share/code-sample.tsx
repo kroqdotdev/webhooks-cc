@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { CopyButton } from "@/components/ui/copy-button";
+import { CodeBox } from "@/components/ui/code";
 
 /**
  * Prose from the share pages' data, where `backticks` mark code: a setting's
@@ -36,9 +37,9 @@ export function CodeSample({
       {file && <p className="font-mono text-xs text-muted-foreground mb-1.5">{file}</p>}
       <div className="relative">
         <CopyButton text={copy ?? code} />
-        <pre className="ui-code overflow-x-auto text-sm pr-10">
+        <CodeBox className="overflow-x-auto text-sm pr-10" render={<pre />}>
           <code>{code}</code>
-        </pre>
+        </CodeBox>
       </div>
     </div>
   );

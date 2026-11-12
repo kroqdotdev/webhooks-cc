@@ -13,6 +13,7 @@ import {
   SHARE_FRAMEWORK_GROUPS,
   shareCommand,
 } from "@/lib/share-framework-pages";
+import { Card } from "@/components/ui/card";
 
 const PATH = "/share";
 
@@ -241,7 +242,7 @@ export default function SharePage() {
           <ol className="space-y-6">
             {STEPS.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border border-border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
+                <span className="w-9 h-9 border rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-surface">
                   {i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -272,10 +273,10 @@ export default function SharePage() {
           </p>
           <div className="grid sm:grid-cols-2 gap-4">
             {SEEN.map((item) => (
-              <div key={item.title} className="ui-card ui-card-static">
+              <Card key={item.title}>
                 <h3 className="font-bold mb-1.5">{item.title}</h3>
                 <p className="text-sm text-muted-foreground">{item.text}</p>
-              </div>
+              </Card>
             ))}
           </div>
           <ul className="mt-6 space-y-2 text-sm text-muted-foreground list-disc pl-5">
@@ -299,10 +300,11 @@ export default function SharePage() {
                 {frameworks
                   .filter((framework) => framework.group === group)
                   .map((framework) => (
-                    <Link
+                    <Card
+                      interactive
                       key={framework.slug}
-                      href={`/share/${framework.slug}`}
-                      className="ui-card block group"
+                      className="block group"
+                      render={<Link href={`/share/${framework.slug}`} />}
                     >
                       <div className="flex items-baseline justify-between gap-3 mb-1.5">
                         <h4 className="font-bold text-lg group-hover:text-primary transition-colors">
@@ -313,7 +315,7 @@ export default function SharePage() {
                         </code>
                       </div>
                       <p className="text-sm text-muted-foreground">{framework.card}</p>
-                    </Link>
+                    </Card>
                   ))}
               </div>
             </div>
@@ -325,10 +327,10 @@ export default function SharePage() {
           <p className="text-muted-foreground mb-6">
             Sharing comes with every plan; there is no separate subscription for it.
           </p>
-          <div className="ui-card ui-card-static overflow-x-auto">
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border">
+                <tr className="border-b">
                   {[
                     "Plan",
                     "Shares at once",
@@ -355,7 +357,7 @@ export default function SharePage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
           <p className="text-sm text-muted-foreground mt-3">
             Data is what passes through your shares both ways, counted per calendar month. A Free
             link has a random name ending in <code className="font-mono">-free</code> and shows
@@ -409,10 +411,10 @@ export default function SharePage() {
             answers a webhook sender, such as a Slack slash command or Twilio, with your local
             app&apos;s response, and keeps the request.
           </p>
-          <div className="ui-card ui-card-static overflow-x-auto">
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border">
+                <tr className="border-b">
                   <th scope="col" className="text-left py-2 pr-6 font-bold">
                     <span className="sr-only">Difference</span>
                   </th>
@@ -436,7 +438,7 @@ export default function SharePage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
           <p className="text-sm text-muted-foreground mt-3">
             A plain <code className="font-mono">whk tunnel 3000</code> answers the sender at once
             and then replays each webhook to your port; see{" "}
@@ -450,7 +452,7 @@ export default function SharePage() {
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-6">Compared with other tunnels</h2>
           <div className="grid sm:grid-cols-2 gap-4">
-            <Link href="/compare/ngrok" className="ui-card block group">
+            <Card interactive className="block group" render={<Link href="/compare/ngrok" />}>
               <h3 className="font-bold text-lg mb-1.5 group-hover:text-primary transition-colors">
                 webhooks.cc vs ngrok
               </h3>
@@ -462,8 +464,8 @@ export default function SharePage() {
                 Read the comparison
                 <ArrowRight className="inline-block ml-1 h-4 w-4" />
               </span>
-            </Link>
-            <Link href="/compare/localtunnel" className="ui-card block group">
+            </Card>
+            <Card interactive className="block group" render={<Link href="/compare/localtunnel" />}>
               <h3 className="font-bold text-lg mb-1.5 group-hover:text-primary transition-colors">
                 webhooks.cc vs LocalTunnel
               </h3>
@@ -475,7 +477,7 @@ export default function SharePage() {
                 Read the comparison
                 <ArrowRight className="inline-block ml-1 h-4 w-4" />
               </span>
-            </Link>
+            </Card>
           </div>
         </section>
 
@@ -484,7 +486,7 @@ export default function SharePage() {
           <FAQAccordion items={FAQ_ITEMS} />
         </section>
 
-        <div className="ui-card bg-foreground text-background text-center py-12">
+        <Card interactive className="bg-foreground text-background text-center py-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-3">Your first link in two minutes</h2>
           <p className="opacity-80 mb-6 max-w-md mx-auto">
             Sign up free, install the CLI and run whk share with your port.
@@ -493,7 +495,7 @@ export default function SharePage() {
             <PricingCTA inverted />
           </div>
           <p className="text-sm opacity-80 mt-6">No credit card</p>
-        </div>
+        </Card>
       </div>
     </main>
   );
