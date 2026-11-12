@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.10.0";
+export const CLI_VERSION = "1.11.0";
 export const SDK_VERSION = "1.23.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
@@ -2144,6 +2144,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.11.0",
+    date: "2026-11-12",
+    title: "A Link to the Code",
+    track: "cli",
+    items: [
+      "The first time you stop a tunnel or a share with Ctrl+C, `whk` prints a link to its GitHub repository, once per machine; never with `--json`, in CI or when the output is piped, and `WHK_NO_STAR_HINT=1` turns it off",
+    ],
+  },
   {
     version: "1.10.0",
     date: "2026-11-11",
