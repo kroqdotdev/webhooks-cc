@@ -1476,7 +1476,14 @@ export function EmailDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* The same bar as the HTTP view */}
-      <SectionTabList label="Email sections" tabs={tabs} active={activeTab} trailingDivider />
+      <SectionTabList
+        label="Email sections"
+        tabs={tabs}
+        active={activeTab}
+        trailingDivider
+        // Raw again retries a stored message that failed to load.
+        onReselect={openTab}
+      />
 
       <TabsPanel value={activeTab} className="flex-1 overflow-auto p-4 md:p-5">
         {activeTab === "parsed" &&

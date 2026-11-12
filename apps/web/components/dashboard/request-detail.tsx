@@ -168,7 +168,16 @@ export function RequestDetail({
   const tabs = (deliveries ? TABS : TABS.filter((entry) => entry !== "deliveries")).flatMap(
     (entry): Tab[] => (entry === "body" && liveResponse ? ["body", "response"] : [entry])
   );
-  const requested = activeTab ?? internalTab;
+  // A tab picked here shows at once: the owner's value (the dashboard's URL)
+  // arrives a render later, and a tab bar that is told late selects twice.
+  // Any change of the owner's value takes over again.
+  const [picked, setPicked] = useState<Tab | null>(null);
+  const [ownerTab, setOwnerTab] = useState(activeTab);
+  if (ownerTab !== activeTab) {
+    setOwnerTab(activeTab);
+    setPicked(null);
+  }
+  const requested = picked ?? activeTab ?? internalTab;
   const tab = tabs.includes(requested) ? requested : "body";
 
   const [copied, setCopied] = useState<string | null>(null);
@@ -250,6 +259,7 @@ export function RequestDetail({
     <Tabs
       value={tab}
       onValueChange={(next: Tab) => {
+        setPicked(next);
         setTab(next);
         trackRequestDetailTabChanged(next);
       }}

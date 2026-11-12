@@ -48,14 +48,19 @@ export function SectionTabList<T extends string>({
   tabs,
   active,
   trailingDivider = false,
+  onReselect,
 }: {
   label: string;
   tabs: SectionTab<T>[];
   active: T;
   /** A divider after the last tab too. */
   trailingDivider?: boolean;
+  /** A click on the tab already shown, which Tabs itself ignores. */
+  onReselect?: (id: T) => void;
 }) {
   const stripRef = useRef<HTMLDivElement>(null);
+  // Whether the tab pressed was already shown: by the click, pressing has shown it.
+  const pressedShown = useRef(false);
   const [moreRef, more] = useMoreToRight<HTMLDivElement>();
   const ref = useCallback(
     (element: HTMLDivElement | null) => {
@@ -67,7 +72,12 @@ export function SectionTabList<T extends string>({
   useEffect(() => {
     const strip = stripRef.current;
     const tab = strip?.querySelector<HTMLElement>(`[data-tab="${active}"]`);
-    if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return;
+    if (!strip || !tab) return;
+    // Shown from elsewhere (a number key, a parse finishing) while the bar has
+    // focus: focus follows, so Shift+Tab back does not land on, and show, the old tab.
+    const focused = document.activeElement;
+    if (focused !== tab && focused instanceof HTMLElement && strip.contains(focused)) tab.focus();
+    if (strip.scrollWidth <= strip.clientWidth) return;
     const stripBox = strip.getBoundingClientRect();
     const box = tab.getBoundingClientRect();
     const fade = 32;
@@ -92,6 +102,15 @@ export function SectionTabList<T extends string>({
               key={tab.id}
               value={tab.id}
               data-tab={tab.id}
+              onPointerDown={() => {
+                pressedShown.current = tab.id === active;
+              }}
+              onClick={(event) => {
+                // Enter or Space (no pointer) clicks the focused tab, which is the one shown.
+                if (event.detail === 0 ? tab.id === active : pressedShown.current) {
+                  onReselect?.(tab.id);
+                }
+              }}
               className={cn(
                 "px-4 py-2 text-xs font-bold border-r border-border cursor-pointer transition-colors whitespace-nowrap capitalize",
                 "bg-background not-data-active:hover:bg-muted",
