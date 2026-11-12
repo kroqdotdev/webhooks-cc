@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-12
+lastUpdated: 2026-11-13
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -13,19 +13,7 @@ seo:
 
 All available commands for the `whk` CLI.
 
-Run `whk` with no arguments to launch the interactive TUI, or use the subcommands below for scriptable, plain-text output.
-
-## whk (interactive)
-
-Launch the interactive TUI. Provides a menu-driven interface for all CLI features with real-time request streaming, color-coded methods, and a request detail viewer.
-
-```bash
-whk
-```
-
-| Flag      | Description                                                  |
-| --------- | ------------------------------------------------------------ |
-| `--nogui` | Disable the TUI and print help instead (also: `WHK_NOGUI=1`) |
+Run `whk` with no arguments to print the list of commands. Every command prints plain text, or JSON with `--json`, and reports failures with the [exit statuses](/docs/cli#scripts-ci-and-ai-agents) listed in `whk --help`.
 
 ## Global flags
 
@@ -33,7 +21,7 @@ These work with every subcommand.
 
 | Flag            | Description                                                         |
 | --------------- | ------------------------------------------------------------------- |
-| `--json`        | Print JSON instead of plain text, where the command supports it     |
+| `--json`        | Print the API's answers as JSON (NDJSON for streams) and failures as `{"error": {...}}` on stderr |
 | `--api-url`     | Use another API base URL (also: `WHK_API_URL`)                      |
 | `--webhook-url` | Use another webhook receiver URL (also: `WHK_WEBHOOK_URL`)          |
 | `--no-color`    | Disable colored output                                              |
@@ -133,7 +121,7 @@ whk update-endpoint <slug> --mock-status 202 --mock-body '{"ok":true}'
 
 ## favorite
 
-Mark an endpoint as a favourite, or remove it again with `unfavorite`. Favourites come first in `whk list`, in the interactive TUI's endpoint lists, and in the dashboard's endpoint switcher. A favourite is yours alone: you can favourite an endpoint shared with you through a team without changing it for anyone else. Both commands are idempotent, and `favourite` and `unfavourite` work as aliases. They need an account, not an agent sandbox.
+Mark an endpoint as a favourite, or remove it again with `unfavorite`. Favourites come first in `whk list` and in the dashboard's endpoint switcher. A favourite is yours alone: you can favourite an endpoint shared with you through a team without changing it for anyone else. Both commands are idempotent, and `favourite` and `unfavourite` work as aliases. They need an account, not an agent sandbox.
 
 ```bash
 whk favorite <slug>
@@ -144,15 +132,16 @@ With `--json` they print `{ "slug": "<slug>", "favorite": true }` (or `false`).
 
 ## delete
 
-Delete an endpoint. Prompts for confirmation unless `--force` is set.
+Delete an endpoint. In a terminal it asks first; without one (a script, CI, an agent) it stops with `confirmation_required` (exit 9) unless `--yes` is set.
 
 ```bash
 whk delete <slug>
+whk delete <slug> --yes
 ```
 
-| Flag          | Description                  |
-| ------------- | ---------------------------- |
-| `--force, -f` | Skip the confirmation prompt |
+| Flag        | Description                                   |
+| ----------- | --------------------------------------------- |
+| `--yes, -y` | Delete without asking (`--force` still works) |
 
 ## tunnel
 
@@ -227,18 +216,37 @@ whk names password <name> --clear
 
 ## listen
 
-Stream incoming requests for an endpoint to the terminal without forwarding them.
+Stream incoming requests and emails for an endpoint without forwarding them: one line each, or one JSON object per line (NDJSON) with `--json`.
 
 ```bash
 whk listen <slug>
 ```
 
-When signature verification is configured, listen shows verification status inline:
+Each line has the time, the method, the path (for an email, the address and the subject), the signature check when verification is configured, the size and the request id for `whk requests get`:
 
 ```
-14:32:01 POST /webhook ✓ stripe  423 B
-14:32:05 POST /webhook ✗ stripe  423 B
+14:32:01 POST /webhook ✓ stripe  423 B  6f1c...
+14:32:05 POST /webhook ✗ stripe  423 B  9a2e...
 ```
+
+## wait
+
+Wait for the next request or email at an endpoint, print it, and exit. Start it before or after triggering the sender: requests from the last 5 minutes count unless `--since` says otherwise. When nothing matching arrives in time it exits with `timeout` (exit 8).
+
+```bash
+whk wait <slug> --json
+whk wait <slug> --kind email --timeout 2m --json
+whk wait <slug> --method POST --path /stripe --count 3 --json
+```
+
+| Flag | Description |
+| --- | --- |
+| `--timeout` | How long to wait (default `30s`) |
+| `--count` | How many matching requests to wait for (1 to 100); more than one prints a JSON array |
+| `--since` | `now` (only what arrives after the command starts), a duration back such as `2m`, or a timestamp in milliseconds |
+| `--method` | Only this HTTP method |
+| `--kind` | `http` or `email` |
+| `--path` | Only requests whose path (for an email, the recipient address) contains this text |
 
 ## requests
 
@@ -249,7 +257,7 @@ whk requests list <slug>          # newest first, --limit (default 25), --since,
 whk requests get <request-id>
 whk requests search -q invoice --slug <slug> --from 1h   # across retained requests: --method, --to, --limit, --offset, --order
 whk requests count --slug <slug> --method POST           # same filters as search
-whk requests clear <slug>         # --before <time or duration>, --force to skip the prompt
+whk requests clear <slug>         # --before <time or duration>, --yes to skip the prompt
 whk requests export <slug> --format har -o requests.har  # or --format curl; --limit (default 100), --since
 ```
 
@@ -263,7 +271,7 @@ Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the ad
 
 `whk requests get` on an email shows the sender, recipient, subject, tag, attachments, and text part instead of the raw message. Add `--json` for the headers and the raw message; the HTML and the sender checks are in the dashboard.
 
-On an endpoint with [layouts](/docs/layouts), it also shows what they found under **Parsed**: the layout, each field as `name: value`, the line items as a table in their columns' order (the first 50), and one line per parsed attachment. The TUI's request view shows the same, and `--json` returns the request's `parsed` as stored: a very large result is cut to fit the email's JSON (attachment rows and text first, then line items from the end), and `parsed.truncated` says so.
+On an endpoint with [layouts](/docs/layouts), it also shows what they found under **Parsed**: the layout, each field as `name: value`, the line items as a table in their columns' order (the first 50), and one line per parsed attachment. `--json` returns the request's `parsed` as stored: a very large result is cut to fit the email's JSON (attachment rows and text first, then line items from the end), and `parsed.truncated` says so.
 
 ## replay
 
@@ -379,6 +387,19 @@ Update whk to the latest version.
 ```bash
 whk update
 ```
+
+## api
+
+Call any [API route](/docs/api) with your credentials and print the answer as it arrives. It covers whatever has no command of its own yet.
+
+```bash
+whk api /api/endpoints
+whk api endpoints/<slug>/destinations
+whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'
+whk api -X POST endpoints/<slug>/destinations -d @destination.json
+```
+
+The path is relative to `/api` when it does not start with it, and only paths are accepted, so your credentials never go to another host. `-d` sends JSON text, `@file` or `@-` (stdin), with `POST` unless `-X` says otherwise. `-H Key:Value` adds a header and `-i` prints the status and headers to stderr. A failing status prints the body, then exits with the matching status (404 is `not_found`, exit 4). Routes that need a browser session, such as billing and account deletion, refuse API keys.
 
 ## completions
 

@@ -133,7 +133,7 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
     let teams = client.list_teams().await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&teams)?);
+        println!("{}", serde_json::to_string_pretty(&teams.raw)?);
         return Ok(());
     }
 
@@ -154,7 +154,7 @@ pub async fn members(client: &ApiClient, team: &str, json: bool) -> Result<()> {
     let result = client.list_team_members(&team.id).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&result)?);
+        println!("{}", serde_json::to_string_pretty(&result.raw)?);
         return Ok(());
     }
 
@@ -237,7 +237,7 @@ pub async fn invite(client: &ApiClient, team: &str, email: &str, json: bool) -> 
     let invite = client.invite_team_member(&team.id, email).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&invite)?);
+        println!("{}", serde_json::to_string_pretty(&invite.raw)?);
     } else {
         println!(
             "{} Invited {} to {}",
@@ -266,7 +266,7 @@ pub async fn invites(client: &ApiClient, json: bool) -> Result<()> {
     let invites = client.list_invites().await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&invites)?);
+        println!("{}", serde_json::to_string_pretty(&invites.raw)?);
         return Ok(());
     }
 

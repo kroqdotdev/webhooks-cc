@@ -1,4 +1,6 @@
+pub mod api;
 pub mod auth;
+pub mod confirm;
 pub mod endpoints;
 pub mod listen;
 pub mod output;
@@ -11,6 +13,7 @@ pub mod teams;
 pub mod tunnel;
 pub mod update;
 pub mod usage;
+pub mod wait;
 
 use clap::{Parser, Subcommand};
 
@@ -19,16 +22,17 @@ use crate::types::EmailFormat;
 #[derive(Parser, Debug)]
 #[command(
     name = "whk",
-    about = "webhooks.cc — inspect, forward, and replay webhooks",
+    about = "webhooks.cc: capture, inspect, forward and replay webhooks and email, and share localhost",
     version = env!("WHK_VERSION"),
     arg_required_else_help = false,
+    after_help = AFTER_HELP,
 )]
 pub struct Cli {
-    /// Disable TUI and show help
-    #[arg(long)]
+    /// Accepted for scripts written for older versions, which had a TUI; does nothing
+    #[arg(long, hide = true)]
     pub nogui: bool,
 
-    /// Output as JSON where supported
+    /// Print JSON: the API's own answers on stdout, NDJSON for streams, and failures as {"error":{...}} on stderr
     #[arg(long, global = true)]
     pub json: bool,
 
@@ -47,6 +51,27 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 }
+
+/// Printed under `whk --help`.
+pub const AFTER_HELP: &str = "\
+Exit status:
+  0  success
+  1  any other failure, or the server refused the input (bad_request)
+  2  bad arguments (usage)
+  3  not logged in, or the credentials were refused (not_logged_in, unauthorized)
+  4  not found (not_found)
+  5  not allowed by the plan, a limit or a permission (forbidden)
+  6  rate limited; wait and retry (rate_limited)
+  7  server or network failure; retry (server_error, network_error)
+  8  a wait ran out of time (timeout)
+  9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled)
+
+With --json, a failure is written to stderr as
+  {\"error\":{\"code\":\"not_found\",\"message\":\"...\",\"exit\":4,\"status\":404,\"hint\":\"...\"}}
+
+Agents: `whk wait <slug>` blocks until a request arrives and prints it, and
+`whk api <path>` calls any API route with your credentials.
+Docs: https://webhooks.cc/docs/cli";
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -149,8 +174,8 @@ pub enum Command {
         /// Endpoint slug
         slug: String,
 
-        /// Skip confirmation prompt
-        #[arg(short, long)]
+        /// Delete without asking (needed when no terminal is attached)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
         force: bool,
     },
 
@@ -231,10 +256,78 @@ pub enum Command {
         action: NamesAction,
     },
 
-    /// Stream incoming requests to terminal
+    /// Stream requests and emails as they arrive: one line each, or NDJSON with --json
     Listen {
         /// Endpoint slug to listen on
         slug: String,
+    },
+
+    /// Wait for the next request or email at an endpoint, print it and exit
+    #[command(after_help = "\
+Run it in the background before triggering the sender, or after: requests from
+the last 5 minutes count unless --since says otherwise. Exits 8 (timeout) when
+nothing matching arrived in time.")]
+    Wait {
+        /// Endpoint slug
+        slug: String,
+
+        /// How long to wait (e.g. "30s", "5m", "1h")
+        #[arg(long, default_value = "30s")]
+        timeout: String,
+
+        /// How many matching requests to wait for; more than one prints a JSON array with --json
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=100))]
+        count: u32,
+
+        /// Only requests received after this: "now", a duration back ("2m"), or a timestamp in milliseconds
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Only this HTTP method (e.g. POST)
+        #[arg(long)]
+        method: Option<String>,
+
+        /// Only HTTP requests or only emails
+        #[arg(long, value_enum)]
+        kind: Option<wait::Kind>,
+
+        /// Only requests whose path contains this text (for an email, the recipient address)
+        #[arg(long)]
+        path: Option<String>,
+    },
+
+    /// Call any webhooks.cc API route with your credentials and print the answer
+    #[command(after_help = "\
+Examples:
+  whk api /api/endpoints
+  whk api endpoints/acme-orders/destinations
+  whk api -X PATCH endpoints/acme-orders -d '{\"retentionDays\":7}'
+  whk api -X POST endpoints/acme-orders/destinations -d @destination.json
+
+The path is relative to /api when it does not start with it. Data given with
+-d is sent as JSON (POST unless -X says otherwise); @file reads a file and @-
+reads stdin. The body is printed as received; a failing status exits as
+described in `whk --help`. Routes that need a browser session (billing, account
+deletion) refuse API keys.")]
+    Api {
+        /// API path, e.g. "endpoints" or "/api/usage"
+        path: String,
+
+        /// HTTP method (default GET, or POST when -d is given)
+        #[arg(short = 'X', long)]
+        method: Option<String>,
+
+        /// Request body: JSON text, @file, or @- for stdin
+        #[arg(short = 'd', long)]
+        data: Option<String>,
+
+        /// Extra header (repeatable, format: Key:Value)
+        #[arg(short = 'H', long = "header")]
+        headers: Vec<String>,
+
+        /// Print the status line and headers before the body (to stderr)
+        #[arg(short = 'i', long)]
+        include: bool,
     },
 
     /// Replay a captured request
@@ -619,8 +712,8 @@ pub enum RequestsAction {
         #[arg(long)]
         before: Option<String>,
 
-        /// Skip confirmation
-        #[arg(short, long)]
+        /// Clear without asking (needed when no terminal is attached)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
         force: bool,
     },
 

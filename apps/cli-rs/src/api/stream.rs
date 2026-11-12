@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 
 use super::{ApiClient, extract_error};
 use crate::agent::AgentError;
-use crate::types::{CapturedRequest, SseEvent};
+use crate::types::{SseEvent, Streamed};
 
 const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MB
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -433,15 +433,12 @@ fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
             let _: serde_json::Value = serde_json::from_str(data).ok()?;
             Some(SseEvent::Connected)
         }
-        "request" => {
-            let req: CapturedRequest = serde_json::from_str(data).ok()?;
-            Some(SseEvent::Request(Box::new(req)))
-        }
+        "request" => Some(SseEvent::Request(Box::new(Streamed::parse(data)?))),
         "endpoint_deleted" => Some(SseEvent::EndpointDeleted),
         "timeout" => Some(SseEvent::Timeout),
         _ => {
             if !data.is_empty()
-                && let Ok(req) = serde_json::from_str::<CapturedRequest>(data)
+                && let Some(req) = Streamed::parse(data)
             {
                 return Some(SseEvent::Request(Box::new(req)));
             }

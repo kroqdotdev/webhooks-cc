@@ -69,7 +69,7 @@ curl -X POST https://go.webhooks.cc/w/<slug> -d '{"test": true}'
 - **Verify signatures**: check provider signatures (Stripe, GitHub, Shopify and more) on captured requests
 - **Forward**: tunnel webhooks to localhost during development (with `--live`, the sender gets your local app's answer), or forward them to other URLs, chat and file drops
 - **Share localhost**: put the site on your machine at a public link on sharehooks.cc with `whk share`
-- **CLI with interactive TUI**: manage endpoints, tunnel and stream requests from your terminal
+- **CLI for people and agents**: manage endpoints, tunnel, stream and wait for requests from your terminal, with JSON output and stable exit codes for scripts and coding agents
 - **SDKs for TypeScript, Python and Go**: wait for and assert on webhooks in tests and CI, and share a local port from code
 - **pytest plugin**: `pip install pytest-webhooks-cc` gives every test a capture URL and an email address as fixtures
 - **GitHub Action**: [`setup-whk`](https://github.com/marketplace/actions/setup-whk) installs the CLI in a workflow
@@ -124,35 +124,18 @@ See [webhooks.cc/installation](https://webhooks.cc/installation) for all install
 
 ## CLI
 
-Run `whk` to launch the interactive TUI:
-
-```
-$ whk
-
-  webhooks.cc
-
-  ● Logged in as you@example.com
-
-  ▸ Tunnel    Forward webhooks to localhost
-    Listen    Stream incoming requests
-    Create    Create a new endpoint
-    Endpoints Manage your endpoints
-    Auth      Login / logout
-    Update    Check for updates
-```
-
-All commands also work directly from the command line:
-
 ```bash
 whk tunnel 8080                       # Forward webhooks to localhost:8080
 whk share 3000                        # Share localhost:3000 at https://<name>.sharehooks.cc
-whk listen <slug>                     # Stream incoming requests
+whk listen <slug>                     # Stream incoming requests, one line each
+whk wait <slug> --json                # Block until the next request arrives, print it, exit
 whk create my-endpoint                # Create a new endpoint
 whk list                              # List your endpoints
 whk replay <request-id> --to :3000    # Replay a captured request
+whk api endpoints/<slug>/destinations # Call any API route with your credentials
 ```
 
-Pass `--nogui` or set `WHK_NOGUI=1` to skip the TUI and print help.
+Every command takes `--json` (the API's own answers, NDJSON for streams, failures as `{"error": {...}}` on stderr) and exits with a stable status that says what went wrong; see `whk --help`. Nothing waits for input without a terminal: destructive commands need `--yes` there.
 
 ## SDK
 

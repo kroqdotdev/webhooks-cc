@@ -29,12 +29,15 @@ pub async fn run(client: &ApiClient, options: ShareOptions) -> Result<()> {
     let json = options.json;
     let result = run_inner(client, options).await;
     if json && let Err(e) = &result {
-        Event::Error {
-            message: &format!("{e:#}"),
-        }
-        .print();
+        let c = crate::error::classify(e);
+        let message = match &c.hint {
+            Some(hint) => format!("{e:#} {hint}"),
+            None => format!("{e:#}"),
+        };
+        Event::Error { message: &message }.print();
         events::flush(events::FINAL_WAIT);
-        std::process::exit(1);
+        // The same exit status as any other failure (see `whk --help`).
+        std::process::exit(c.exit);
     }
     // What the share printed is out before the error, or the exit.
     events::flush(events::FINAL_WAIT);

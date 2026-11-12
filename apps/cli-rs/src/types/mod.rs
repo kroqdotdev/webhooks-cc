@@ -802,10 +802,33 @@ pub struct RenderedEmail {
 // SSE events
 // ---------------------------------------------------------------------------
 
+/// A request from the live stream, and the JSON it came in, which
+/// `whk listen --json` prints as is.
+#[derive(Debug, Clone)]
+pub struct Streamed {
+    pub request: CapturedRequest,
+    pub raw: serde_json::Value,
+}
+
+impl std::ops::Deref for Streamed {
+    type Target = CapturedRequest;
+    fn deref(&self) -> &CapturedRequest {
+        &self.request
+    }
+}
+
+impl Streamed {
+    pub fn parse(data: &str) -> Option<Self> {
+        let raw: serde_json::Value = serde_json::from_str(data).ok()?;
+        let request = serde_json::from_value(raw.clone()).ok()?;
+        Some(Self { request, raw })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SseEvent {
     Connected,
-    Request(Box<CapturedRequest>),
+    Request(Box<Streamed>),
     EndpointDeleted,
     /// The server rotated the stream (it closes every connection after 30 minutes).
     /// The stream layer reconnects transparently; consumers can ignore this.

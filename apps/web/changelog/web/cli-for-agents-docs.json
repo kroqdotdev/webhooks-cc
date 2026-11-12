@@ -1,0 +1,7 @@
+{
+  "title": "CLI docs for scripts and agents",
+  "items": [
+    "The CLI docs describe whk's JSON output, its exit statuses and error codes, whk wait and whk api",
+    "The interactive TUI is gone from the docs: whk prints its commands when run on its own"
+  ]
+}

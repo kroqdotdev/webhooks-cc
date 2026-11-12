@@ -66,7 +66,7 @@ pub async fn run(
                     .get_endpoint(s)
                     .await
                     .ok()
-                    .and_then(|ep| ep.email_address),
+                    .and_then(|ep| ep.value.email_address),
                 None => None,
             };
             (s.to_string(), address, false)
@@ -79,7 +79,7 @@ pub async fn run(
                 mock_response: None,
             };
             let ep = client.create_endpoint(&req).await?;
-            (ep.slug, ep.email_address, true)
+            (ep.value.slug, ep.value.email_address, true)
         }
     };
 
@@ -209,7 +209,7 @@ pub async fn run(
                         // forwarded from the stream like a plain tunnel's.
                         let req = if live && !req.is_email() {
                             let mut relay = lock(&relay);
-                            let Some(req) = relay.admit(*req, Instant::now()) else { continue };
+                            let Some(req) = relay.admit(req.request, Instant::now()) else { continue };
                             if relay.announce() {
                                 drop(relay);
                                 if json {
@@ -227,7 +227,7 @@ pub async fn run(
                             }
                             req
                         } else {
-                            *req
+                            req.request
                         };
                         // --no-email: the email is listed, not posted.
                         if req.is_email() && email_format.is_none() {
@@ -835,6 +835,7 @@ fn forwarded_event(
 ) -> serde_json::Value {
     let mut event = serde_json::json!({
         "event": "forwarded",
+        "id": req.id,
         "method": req.method,
         "path": req.path,
         "status": result.status_code,

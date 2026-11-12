@@ -26,7 +26,13 @@ check stays switched on.
 3. **CLI** (`whk`): `whk tunnel <port>` forwards live deliveries to localhost
    while the developer clicks through a provider dashboard, `whk tunnel
 <port> --live` makes the sender get the local app's real answer, and
-   `whk sandbox create --json` captures without an account.
+   `whk sandbox create --json` captures without an account. Pass `--json`
+   to every command. From whk 1.12: `whk wait <slug> --json` blocks until
+   the next request arrives and prints it (run it in the background, trigger
+   the sender, and its exit is your signal; exit 8 is a timeout), failures
+   come as `{"error": {"code", "message", "hint"}}` on stderr with the exit
+   statuses in `whk --help`, destructive commands need `--yes`, and
+   `whk api <path>` calls any API route the commands do not cover yet.
 
 Without an API key the local MCP server needs no setup. If the human
 connected you before, it starts with the full tools for their account (the

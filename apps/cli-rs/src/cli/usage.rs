@@ -13,7 +13,7 @@ pub async fn run(client: &ApiClient, json: bool) -> Result<()> {
     // as `teamsError` so an empty `teams` is never mistaken for "no teams".
     let mut teams_error: Option<String> = None;
     let teams: Vec<Team> = match teams_result {
-        Ok(teams) => teams.into_iter().filter(|t| !t.suspended).collect(),
+        Ok(teams) => teams.value.into_iter().filter(|t| !t.suspended).collect(),
         Err(e) => {
             if !json {
                 eprintln!("  {} {}", dim("Could not load team pools:"), e);

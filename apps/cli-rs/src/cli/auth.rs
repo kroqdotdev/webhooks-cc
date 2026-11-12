@@ -5,6 +5,7 @@ use crate::agent::CredentialStore;
 use crate::api::{ApiClient, AuthSource};
 use crate::auth;
 use crate::cli::output::{bold, dim, green, red};
+use crate::error::CliError;
 use crate::types::Token;
 
 pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
@@ -25,7 +26,20 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
     // Step 1: Create device code
     let device = client.create_device_code().await?;
 
-    if !json {
+    if json {
+        // One line per step (NDJSON), so an agent can show the human the
+        // code and the link while this keeps polling.
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "pending",
+                "user_code": device.user_code,
+                "verification_url": device.verification_url,
+                "expires_at": device.expires_at,
+                "message": "Open verification_url and enter user_code to approve this login.",
+            })
+        );
+    } else {
         println!("\n  {} {}\n", bold("Your code:"), green(&device.user_code));
         println!(
             "  Open {} and enter the code above.",
@@ -49,14 +63,7 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
         let poll = client.poll_device_code(&device.device_code).await?;
         match poll.status.as_str() {
             "authorized" => break,
-            "expired" => {
-                if json {
-                    println!("{}", serde_json::json!({ "status": "expired" }));
-                } else {
-                    println!("\n  {} Code expired. Please try again.", red("Error:"));
-                }
-                return Ok(());
-            }
+            "expired" => return Err(CliError::LoginExpired.into()),
             _ => continue, // "pending"
         }
     }

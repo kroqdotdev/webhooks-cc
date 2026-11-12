@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::io::{self, Write};
 
 use crate::api::ApiClient;
 use crate::cli::ExportFormat;
@@ -20,7 +19,7 @@ pub async fn list(
             .list_requests_paginated(slug, Some(limit), Some(c))
             .await?;
         if json {
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            println!("{}", serde_json::to_string_pretty(&result.raw)?);
             return Ok(());
         }
         if result.requests.is_empty() {
@@ -36,7 +35,7 @@ pub async fn list(
     } else {
         let result = client.list_requests(slug, Some(limit), since).await?;
         if json {
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            println!("{}", serde_json::to_string_pretty(&result.raw)?);
             return Ok(());
         }
         if result.requests.is_empty() {
@@ -59,7 +58,7 @@ pub async fn list(
 pub async fn get(client: &ApiClient, id: &str, json: bool) -> Result<()> {
     let req = client.get_request(id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&req)?);
+        println!("{}", serde_json::to_string_pretty(&req.raw)?);
     } else {
         print_request_detail(&req);
     }
@@ -96,7 +95,7 @@ pub async fn search(
         .await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&result)?);
+        println!("{}", serde_json::to_string_pretty(&result.raw)?);
         return Ok(());
     }
 
@@ -150,21 +149,11 @@ pub async fn clear(
     force: bool,
     json: bool,
 ) -> Result<()> {
-    if !force {
-        let msg = match before {
-            Some(b) => format!("Clear requests for {} before {}? [y/N] ", bold(slug), b),
-            None => format!("Clear ALL requests for {}? [y/N] ", bold(slug)),
-        };
-        print!("  {msg}");
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("  Cancelled.");
-            return Ok(());
-        }
-    }
+    let question = match before {
+        Some(b) => format!("Clear requests for {slug} before {b}?"),
+        None => format!("Clear ALL requests for {slug}?"),
+    };
+    crate::cli::confirm::confirm(&question, force)?;
 
     client.clear_requests(slug, before).await?;
 
