@@ -192,8 +192,9 @@ export function AccountInspector({ id }: { id: string }) {
         ))}
       </TabsList>
 
-      <TabsPanel value={tab} className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0 space-y-4">
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        {/* The tab's own column; the aside is the whole account's. */}
+        <TabsPanel value={tab} className="min-w-0 space-y-4">
           {(tab === "overview" || tab === "endpoints") && (
             <div className="ui-card ui-card-static p-0! overflow-x-auto">
               {account.endpoints.length === 0 ? (
@@ -349,7 +350,7 @@ export function AccountInspector({ id }: { id: string }) {
               )}
             </ul>
           )}
-        </div>
+        </TabsPanel>
 
         <aside className="space-y-4">
           <dl className="ui-card ui-card-static grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -422,7 +423,7 @@ export function AccountInspector({ id }: { id: string }) {
           <AccountSharingPanel userId={id} />
           {error && <p className="text-sm text-destructive-ink">{error}</p>}
         </aside>
-      </TabsPanel>
+      </div>
     </Tabs>
   );
 }
