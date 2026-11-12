@@ -36,7 +36,14 @@ import { ResponseAnswer } from "./response-answer";
 import { LiveResponseView } from "./live-response";
 import { readLiveResponse } from "@/lib/live-response";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { CodeBox } from "@/components/ui/code";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -359,13 +366,18 @@ export function RequestDetail({
                 {getFormatLabel(bodyFormat)}
               </span>
               {bodyViews.length > 1 && (
-                <div className="flex items-center overflow-hidden rounded-sm border">
+                <RadioGroup
+                  value={bodyView}
+                  onValueChange={(next) => setBodyView(next as typeof bodyView)}
+                  aria-label="Body view"
+                  // A view switch keeps the light hairline it had as plain buttons,
+                  // not the darker control edge globals.css gives a radio group.
+                  className="flex items-center overflow-hidden rounded-sm border border-border!"
+                >
                   {bodyViews.map((view, i) => (
-                    <button
+                    <Radio
                       key={view}
-                      type="button"
-                      aria-pressed={bodyView === view}
-                      onClick={() => setBodyView(view)}
+                      value={view}
                       className={cn(
                         "px-2.5 py-1 max-md:py-1.5 text-[11px] font-bold cursor-pointer transition-colors",
                         i > 0 && "border-l border-border",
@@ -375,9 +387,9 @@ export function RequestDetail({
                       )}
                     >
                       {BODY_VIEW_LABELS[view]}
-                    </button>
+                    </Radio>
                   ))}
-                </div>
+                </RadioGroup>
               )}
             </div>
             {request.body && bodyView !== "schema" && !bodyBytes && (
@@ -569,27 +581,6 @@ function BodyCopyDropdown({
   onCopy: (text: string, key: string) => void;
   copied: string | null;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [open]);
-
   const csvBody = useMemo(() => jsonToCsvValue(body), [body]);
   const isCopied =
     copied === "body" || copied === "body-formatted" || copied === "ts" || copied === "csv";
@@ -609,35 +600,34 @@ function BodyCopyDropdown({
   }, [body, formattedBody, tsInterface, csvBody]);
 
   return (
-    <div className="absolute top-0 right-0" ref={ref}>
-      <Button
-        variant="surface"
-        className="py-1! max-md:min-h-9 px-2! text-xs flex items-center gap-1"
-        onClick={() => setOpen(!open)}
-      >
-        {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        {isCopied ? "Copied!" : "Copy"}
-        <ChevronDown className="h-3 w-3" />
-      </Button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border bg-background shadow-float z-50 min-w-[180px]">
+    <div className="absolute top-0 right-0">
+      {/* Not modal: a click elsewhere closes it and still lands, as before. */}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="surface"
+              className="py-1! max-md:min-h-9 px-2! text-xs flex items-center gap-1"
+            />
+          }
+        >
+          {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {isCopied ? "Copied!" : "Copy"}
+          <ChevronDown className="h-3 w-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent look="list" align="end" className="min-w-[180px]">
           {options.map((opt, i) => (
-            <button
+            <DropdownMenuItem
               key={opt.key}
-              onClick={() => {
-                onCopy(opt.value, opt.key);
-                setOpen(false);
-              }}
-              className={cn(
-                "w-full px-3 py-2 text-left text-xs font-bold hover:bg-muted cursor-pointer transition-colors",
-                i < options.length - 1 && "border-b border-border"
-              )}
+              look="list"
+              onClick={() => onCopy(opt.value, opt.key)}
+              className={cn(i < options.length - 1 && "border-b")}
             >
               {opt.label}
-            </button>
+            </DropdownMenuItem>
           ))}
-        </div>
-      )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { isDocsSearchUrl, normalizePagefindUrl } from "@/lib/docs-search";
 import { BODY_MAX, SUBJECT_MAX, SUPPORT_CATEGORIES } from "@/lib/support/shared";
 import type { SupportCategory } from "@/lib/supabase/database";
 import { cn } from "@/lib/utils";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 import { CheckRow, ImagePicker, supportBody } from "./thread";
 import { Card } from "@/components/ui/card";
 
@@ -220,14 +221,15 @@ export function NewTicketForm() {
       <Card className="ph-no-capture space-y-6" render={<form onSubmit={submit} noValidate />}>
         <fieldset className="space-y-2">
           <legend className="mb-2 text-sm font-medium">What is it about?</legend>
-          <div className="flex flex-wrap gap-2" role="radiogroup">
+          <RadioGroup
+            value={category}
+            onValueChange={(next) => setCategory(next as typeof category)}
+            className="flex flex-wrap gap-2"
+          >
             {SUPPORT_CATEGORIES.map((entry) => (
-              <button
+              <Radio
                 key={entry.value}
-                type="button"
-                role="radio"
-                aria-checked={category === entry.value}
-                onClick={() => setCategory(entry.value)}
+                value={entry.value}
                 className={cn(
                   "rounded-md border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   category === entry.value
@@ -236,9 +238,9 @@ export function NewTicketForm() {
                 )}
               >
                 {entry.label}
-              </button>
+              </Radio>
             ))}
-          </div>
+          </RadioGroup>
         </fieldset>
 
         <div className="space-y-2">
@@ -314,17 +316,18 @@ export function NewTicketForm() {
           </div>
           <fieldset className="space-y-2">
             <legend className="mb-2 text-sm font-medium">Is this blocking you right now?</legend>
-            <div className="flex gap-2" role="radiogroup">
+            <RadioGroup
+              value={blocking}
+              onValueChange={(next) => setBlocking(next as boolean)}
+              className="flex gap-2"
+            >
               {[
                 { value: true, label: "Yes, it is" },
                 { value: false, label: "No" },
               ].map((option) => (
-                <button
+                <Radio
                   key={option.label}
-                  type="button"
-                  role="radio"
-                  aria-checked={blocking === option.value}
-                  onClick={() => setBlocking(option.value)}
+                  value={option.value}
                   className={cn(
                     "rounded-md border px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     blocking === option.value
@@ -333,9 +336,9 @@ export function NewTicketForm() {
                   )}
                 >
                   {option.label}
-                </button>
+                </Radio>
               ))}
-            </div>
+            </RadioGroup>
           </fieldset>
         </div>
 

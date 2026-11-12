@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GitHubIcon } from "@/components/ui/icons";
 import { GITHUB_REPO_URL } from "@/lib/github";
+import { Popover } from "@/components/ui/popover";
 
 interface NavLink {
   href: string;
@@ -105,18 +106,8 @@ export function SiteHeader({
   const isAuthenticated = useIsAuthenticated();
   const site = useSite();
   const [open, setOpen] = useState(false);
-  const toggleRef = useRef<HTMLButtonElement>(null);
-  // Escape closes the phone menu and hands focus back to its button.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      toggleRef.current?.focus();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
+  // The phone menu hangs under the header and stays in its stacking context.
+  const headerRef = useRef<HTMLElement>(null);
 
   // Close the phone menu on navigation, including browser back.
   useEffect(() => setOpen(false), [pathname]);
@@ -174,220 +165,229 @@ export function SiteHeader({
 
   return (
     <>
-      <header
-        className="sticky z-50 shrink-0 border-b bg-card"
-        style={{ top: top ?? siteHeaderTop() }}
-      >
-        <div
-          className={cn(
-            // The app pages under a compact header run full width, so the header
-            // does too, keeping the wordmark on the same left edge as the app.
-            "px-4 flex items-center justify-between gap-4",
-            compact
-              ? "min-h-14 flex-wrap gap-y-2 py-2 md:h-14 md:flex-nowrap md:py-0"
-              : "container mx-auto h-14"
-          )}
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <header
+          ref={headerRef}
+          className="sticky z-50 shrink-0 border-b bg-card"
+          style={{ top: top ?? siteHeaderTop() }}
         >
-          {/* In compact mode on phones this group dissolves (display: contents), so
-            the context can wrap onto its own full-width row under the wordmark. */}
-          <div className={cn("flex items-center gap-3 min-w-0", compact && "max-md:contents")}>
-            <div className="flex items-center gap-1 shrink-0">
-              <Link href="/" className="font-bold text-lg tracking-tight">
-                {site.name}
-              </Link>
-              <SiteSwitcher />
-            </div>
-            {compact && children ? (
-              <div className="flex items-center gap-3 min-w-0 max-md:order-last max-md:w-full">
-                {children}
-              </div>
-            ) : (
-              children
-            )}
-          </div>
-
-          {/* Desktop */}
-          <nav
-            aria-label="Site"
-            className="hidden md:flex items-center gap-4 lg:gap-5 whitespace-nowrap shrink-0"
-          >
-            {links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                aria-current={isActive(navPath, link.activeFor ?? link.href) ? "page" : undefined}
-                className={cn(
-                  // py-1 -my-1: a 24px hit area without moving the layout.
-                  "text-sm font-medium py-1 -my-1 transition-colors hover:text-foreground",
-                  link.wideOnly && "max-lg:hidden",
-                  isActive(navPath, link.activeFor ?? link.href)
-                    ? "text-foreground"
-                    : "text-muted-foreground"
-                )}
-              >
-                {link.label}
-                {link.external && (
-                  <>
-                    <ArrowUpRight aria-hidden className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5" />
-                    <span className="sr-only"> (on webhooks.cc)</span>
-                  </>
-                )}
-              </Link>
-            ))}
-            {/* The repository, on the public pages only. */}
-            {!appLinks && (
-              <a
-                href={GITHUB_REPO_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium py-1 -my-1 text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5 max-xl:hidden"
-              >
-                <GitHubIcon aria-hidden className="h-4 w-4" />
-                GitHub
-                <ArrowUpRight aria-hidden className="h-3.5 w-3.5 -ml-1" />
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
-            )}
-            {authAction}
-            {isAuthenticated && <UserDropdown />}
-          </nav>
-
-          {/* Phone */}
-          <button
-            ref={toggleRef}
-            type="button"
-            aria-controls={open ? "site-menu" : undefined}
-            onClick={() => setOpen((prev) => !prev)}
-            className="md:hidden p-2 rounded-md border hover:bg-muted transition-colors cursor-pointer"
-            aria-label={open ? "Close menu" : "Open menu"}
-            aria-expanded={open}
-          >
-            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-
-        {open && (
-          // Behind the header's own background (its stacking context is above the
-          // page), so it dims and blocks the page but never the menu button.
           <div
-            aria-hidden
-            className="md:hidden fixed inset-0 -z-10 bg-foreground/20"
-            onClick={() => setOpen(false)}
-          />
-        )}
-        {open && (
-          <nav
-            id="site-menu"
-            aria-label="Site"
-            // Tabbing out of the menu closes it, so focus never lands on the page hidden under it.
-            onBlur={(event) => {
-              const next = event.relatedTarget as Node | null;
-              if (next && !event.currentTarget.contains(next) && next !== toggleRef.current) {
-                setOpen(false);
-              }
-            }}
-            className="md:hidden absolute top-full left-0 right-0 border-t shadow-float bg-card"
+            className={cn(
+              // The app pages under a compact header run full width, so the header
+              // does too, keeping the wordmark on the same left edge as the app.
+              "px-4 flex items-center justify-between gap-4",
+              compact
+                ? "min-h-14 flex-wrap gap-y-2 py-2 md:h-14 md:flex-nowrap md:py-0"
+                : "container mx-auto h-14"
+            )}
           >
-            <div className="px-4 py-4 flex flex-col gap-3">
-              <SiteSwitchRow onNavigate={() => setOpen(false)} />
-              {[...mobileLinks, ...links].map((link) => (
+            {/* In compact mode on phones this group dissolves (display: contents), so
+            the context can wrap onto its own full-width row under the wordmark. */}
+            <div className={cn("flex items-center gap-3 min-w-0", compact && "max-md:contents")}>
+              <div className="flex items-center gap-1 shrink-0">
+                <Link href="/" className="font-bold text-lg tracking-tight">
+                  {site.name}
+                </Link>
+                <SiteSwitcher />
+              </div>
+              {compact && children ? (
+                <div className="flex items-center gap-3 min-w-0 max-md:order-last max-md:w-full">
+                  {children}
+                </div>
+              ) : (
+                children
+              )}
+            </div>
+
+            {/* Desktop */}
+            <nav
+              aria-label="Site"
+              className="hidden md:flex items-center gap-4 lg:gap-5 whitespace-nowrap shrink-0"
+            >
+              {links.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
                   aria-current={isActive(navPath, link.activeFor ?? link.href) ? "page" : undefined}
-                  className="text-foreground font-medium text-lg"
-                  onClick={() => setOpen(false)}
+                  className={cn(
+                    // py-1 -my-1: a 24px hit area without moving the layout.
+                    "text-sm font-medium py-1 -my-1 transition-colors hover:text-foreground",
+                    link.wideOnly && "max-lg:hidden",
+                    isActive(navPath, link.activeFor ?? link.href)
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  )}
                 >
                   {link.label}
                   {link.external && (
                     <>
                       <ArrowUpRight aria-hidden className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5" />
-                      <span className="text-sm font-normal text-muted-foreground">
-                        {" "}
-                        on webhooks.cc
-                      </span>
+                      <span className="sr-only"> (on webhooks.cc)</span>
                     </>
                   )}
                 </Link>
               ))}
+              {/* The repository, on the public pages only. */}
               {!appLinks && (
                 <a
                   href={GITHUB_REPO_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-foreground font-medium text-lg flex items-center gap-2"
-                  onClick={() => setOpen(false)}
+                  className="text-sm font-medium py-1 -my-1 text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5 max-xl:hidden"
                 >
-                  <GitHubIcon aria-hidden className="h-4.5 w-4.5" />
+                  <GitHubIcon aria-hidden className="h-4 w-4" />
                   GitHub
                   <ArrowUpRight aria-hidden className="h-3.5 w-3.5 -ml-1" />
                   <span className="sr-only"> (opens in a new tab)</span>
                 </a>
               )}
-              {isAuthenticated ? (
-                <>
-                  <Link
-                    href="/dashboard"
-                    className="text-foreground font-medium text-lg"
-                    onClick={() => setOpen(false)}
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    href="/account"
-                    className="text-foreground font-medium text-lg"
-                    onClick={() => setOpen(false)}
-                  >
-                    Account
-                  </Link>
-                  <Link
-                    href="/teams"
-                    className="text-foreground font-medium text-lg"
-                    onClick={() => setOpen(false)}
-                  >
-                    Teams
-                  </Link>
-                  <Link
-                    href="/support"
-                    className="text-foreground font-medium text-lg"
-                    onClick={() => setOpen(false)}
-                  >
-                    Support
-                  </Link>
-                  <div className="pt-3 border-t border-foreground/20">
-                    <button
-                      type="button"
-                      onClick={() => leaveThrough(() => void handleSignOut())}
-                      className="text-foreground font-medium text-lg cursor-pointer"
-                    >
-                      Sign out
-                    </button>
+              {authAction}
+              {isAuthenticated && <UserDropdown />}
+            </nav>
+
+            {/* Phone */}
+            <Popover.Trigger
+              className="md:hidden p-2 rounded-md border hover:bg-muted transition-colors cursor-pointer"
+              aria-label={open ? "Close menu" : "Open menu"}
+            >
+              {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Popover.Trigger>
+          </div>
+
+          {/* Escape, a press outside and tabbing out close the menu, so focus never
+          lands on the page hidden under it. */}
+          <Popover.Portal container={headerRef}>
+            {/* Behind the header's own background (its stacking context is above the
+            page), so it dims and blocks the page but never the menu button. */}
+            <Popover.Backdrop className="md:hidden fixed inset-0 -z-10 bg-foreground/20" />
+            <Popover.Positioner
+              anchor={headerRef}
+              side="bottom"
+              align="start"
+              // Over the header's bottom border, which the menu's own top border replaces.
+              sideOffset={-1}
+              // Always straight under the header, however long the menu runs.
+              collisionAvoidance={{ side: "none", align: "none", fallbackAxisSide: "none" }}
+              className="md:hidden w-(--anchor-width)"
+            >
+              <Popover.Popup
+                aria-label="Menu"
+                // A keyboard opens it on its first link; a tap or click leaves focus
+                // on the button, from where Tab goes on into the menu.
+                initialFocus={(type) => type === "keyboard"}
+                className="border-t shadow-float bg-card outline-none"
+              >
+                <nav aria-label="Site">
+                  <div className="px-4 py-4 flex flex-col gap-3">
+                    <SiteSwitchRow onNavigate={() => setOpen(false)} />
+                    {[...mobileLinks, ...links].map((link) => (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        aria-current={
+                          isActive(navPath, link.activeFor ?? link.href) ? "page" : undefined
+                        }
+                        className="text-foreground font-medium text-lg"
+                        onClick={() => setOpen(false)}
+                      >
+                        {link.label}
+                        {link.external && (
+                          <>
+                            <ArrowUpRight
+                              aria-hidden
+                              className="inline h-3.5 w-3.5 ml-0.5 -mt-0.5"
+                            />
+                            <span className="text-sm font-normal text-muted-foreground">
+                              {" "}
+                              on webhooks.cc
+                            </span>
+                          </>
+                        )}
+                      </Link>
+                    ))}
+                    {!appLinks && (
+                      <a
+                        href={GITHUB_REPO_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-foreground font-medium text-lg flex items-center gap-2"
+                        onClick={() => setOpen(false)}
+                      >
+                        <GitHubIcon aria-hidden className="h-4.5 w-4.5" />
+                        GitHub
+                        <ArrowUpRight aria-hidden className="h-3.5 w-3.5 -ml-1" />
+                        <span className="sr-only"> (opens in a new tab)</span>
+                      </a>
+                    )}
+                    {isAuthenticated ? (
+                      <>
+                        <Link
+                          href="/dashboard"
+                          className="text-foreground font-medium text-lg"
+                          onClick={() => setOpen(false)}
+                        >
+                          Dashboard
+                        </Link>
+                        <Link
+                          href="/account"
+                          className="text-foreground font-medium text-lg"
+                          onClick={() => setOpen(false)}
+                        >
+                          Account
+                        </Link>
+                        <Link
+                          href="/teams"
+                          className="text-foreground font-medium text-lg"
+                          onClick={() => setOpen(false)}
+                        >
+                          Teams
+                        </Link>
+                        <Link
+                          href="/support"
+                          className="text-foreground font-medium text-lg"
+                          onClick={() => setOpen(false)}
+                        >
+                          Support
+                        </Link>
+                        <div className="pt-3 border-t border-foreground/20">
+                          <button
+                            type="button"
+                            onClick={() => leaveThrough(() => void handleSignOut())}
+                            className="text-foreground font-medium text-lg cursor-pointer"
+                          >
+                            Sign out
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      !onAuthPage && (
+                        <div className="pt-3 border-t border-foreground/20">
+                          <Button
+                            variant="surface"
+                            className="inline-block text-sm"
+                            render={<Link href="/login" onClick={() => setOpen(false)} />}
+                          >
+                            Sign in
+                          </Button>
+                          <Button
+                            variant="primary"
+                            className="inline-block text-sm ml-2"
+                            render={
+                              <Link href="/login?mode=sign-up" onClick={() => setOpen(false)} />
+                            }
+                          >
+                            Sign up free
+                          </Button>
+                        </div>
+                      )
+                    )}
                   </div>
-                </>
-              ) : (
-                !onAuthPage && (
-                  <div className="pt-3 border-t border-foreground/20">
-                    <Button
-                      variant="surface"
-                      className="inline-block text-sm"
-                      render={<Link href="/login" onClick={() => setOpen(false)} />}
-                    >
-                      Sign in
-                    </Button>
-                    <Button
-                      variant="primary"
-                      className="inline-block text-sm ml-2"
-                      render={<Link href="/login?mode=sign-up" onClick={() => setOpen(false)} />}
-                    >
-                      Sign up free
-                    </Button>
-                  </div>
-                )
-              )}
-            </div>
-          </nav>
-        )}
-      </header>
+                </nav>
+              </Popover.Popup>
+            </Popover.Positioner>
+          </Popover.Portal>
+        </header>
+      </Popover.Root>
       {/* The "Skip to content" link (app/layout.tsx) lands here, past the header. */}
       <div id="main-content" tabIndex={-1} className="outline-none" />
     </>

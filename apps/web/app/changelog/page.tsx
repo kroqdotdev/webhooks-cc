@@ -12,6 +12,7 @@ import {
   TRACK_LABELS,
   type ChangelogTrack,
 } from "@/lib/changelog";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 
 const TRACKS: (ChangelogTrack | "all")[] = ["all", "web", "cli", "sdk", "python", "go", "mcp"];
 
@@ -59,21 +60,26 @@ export default function ChangelogPage() {
           </div>
         </div>
 
-        <div className="flex gap-2 mb-8 flex-wrap">
+        <RadioGroup
+          value={activeTrack}
+          onValueChange={(next) => setActiveTrack(next as typeof activeTrack)}
+          aria-label="Releases to show"
+          className="flex gap-2 mb-8 flex-wrap"
+        >
           {TRACKS.map((track) => (
-            <button
+            <Radio
               key={track}
-              onClick={() => setActiveTrack(track)}
-              className={`px-3 py-1.5 text-xs font-bold border border-border rounded-md transition-colors ${
+              value={track}
+              className={`px-3 py-1.5 text-xs font-bold border border-border rounded-md transition-colors focus-visible:outline-offset-2 ${
                 activeTrack === track
                   ? "bg-selected text-selected-foreground"
                   : "bg-background text-foreground hover:bg-muted"
               }`}
             >
               {track === "all" ? "All" : TRACK_LABELS[track]}
-            </button>
+            </Radio>
           ))}
-        </div>
+        </RadioGroup>
 
         <div className="space-y-8">
           {filtered.map((entry) => (

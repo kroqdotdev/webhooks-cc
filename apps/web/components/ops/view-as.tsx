@@ -9,6 +9,7 @@ import { apiFetch, ApiError, shortDateTime } from "@/lib/support/client";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
 import { CodeBox } from "@/components/ui/code";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 
 interface Session {
   id: string;
@@ -193,24 +194,27 @@ export function ViewAs({ sessionId }: { sessionId: string }) {
             {endpoints.length === 0 ? (
               <p className="p-2 text-sm text-muted-foreground">No endpoints.</p>
             ) : (
-              <ul className="ph-no-capture space-y-0.5">
+              <RadioGroup
+                value={endpointId}
+                onValueChange={(next) => setEndpointId(next as string)}
+                aria-label="Endpoint to view"
+                className="ph-no-capture flex flex-col gap-0.5"
+              >
                 {endpoints.map((endpoint) => (
-                  <li key={endpoint.id}>
-                    <button
-                      type="button"
-                      onClick={() => setEndpointId(endpoint.id)}
-                      className={cn(
-                        "w-full truncate rounded-md px-3 py-1.5 text-left text-sm",
-                        endpoint.id === endpointId
-                          ? "bg-selected font-medium text-selected-foreground"
-                          : "text-muted-foreground hover:bg-muted"
-                      )}
-                    >
-                      {endpoint.name || endpoint.slug}
-                    </button>
-                  </li>
+                  <Radio
+                    key={endpoint.id}
+                    value={endpoint.id}
+                    className={cn(
+                      "w-full truncate rounded-md px-3 py-1.5 text-left text-sm focus-visible:outline-offset-2",
+                      endpoint.id === endpointId
+                        ? "bg-selected font-medium text-selected-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    {endpoint.name || endpoint.slug}
+                  </Radio>
                 ))}
-              </ul>
+              </RadioGroup>
             )}
           </nav>
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { emitDashboardEndpointsChanged, updateDashboardEndpoint } from "@/lib/dashboard-api";
 import { SectionIdentityContext, useReportDirty } from "./dirty-sections";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
+import { SwitchRoot, SwitchThumb } from "@/components/ui/switch";
 
 /**
  * The building blocks every section of the endpoint settings shares: the
@@ -252,15 +254,15 @@ export function Switch({
   describedBy?: string;
 }) {
   return (
-    <button
+    <SwitchRoot
       id={id}
-      type="button"
-      role="switch"
-      aria-checked={checked}
+      nativeButton
+      render={<button type="button" />}
+      checked={checked}
+      onCheckedChange={(next) => onChange(next)}
       aria-label={label}
       aria-describedby={describedBy}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-6 w-11 shrink-0 items-center border rounded-full cursor-pointer transition-colors motion-reduce:transition-none",
         "disabled:cursor-not-allowed disabled:opacity-60",
@@ -268,13 +270,13 @@ export function Switch({
         checked ? "bg-primary" : "bg-muted border-input"
       )}
     >
-      <span
+      <SwitchThumb
         className={cn(
           "inline-block h-4 w-4 border transition-transform motion-reduce:transition-none rounded-full",
           checked ? "translate-x-5.5 bg-card" : "translate-x-0.5 bg-muted-foreground/70"
         )}
       />
-    </button>
+    </SwitchRoot>
   );
 }
 
@@ -327,7 +329,7 @@ export interface SegmentedOption<T extends string> {
 
 /**
  * The segmented control (the JSON pane's Formatted | Tree pattern) as a
- * radio group: one tab stop, arrow keys move the choice, Home and End jump.
+ * radio group: one tab stop, and the arrow keys move the choice.
  */
 export function Segmented<T extends string>({
   name,
@@ -344,29 +346,13 @@ export function Segmented<T extends string>({
   size?: "sm" | "xs";
   className?: string;
 }) {
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    let next: number | null = null;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-      next = (index + 1) % options.length;
-    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-      next = (index - 1 + options.length) % options.length;
-    } else if (event.key === "Home") {
-      next = 0;
-    } else if (event.key === "End") {
-      next = options.length - 1;
-    }
-    if (next === null) return;
-    event.preventDefault();
-    onChange(options[next].value);
-    const group = event.currentTarget.parentElement;
-    group?.querySelectorAll<HTMLButtonElement>("[role=radio]")[next]?.focus();
-  };
   // More than three choices do not fit a phone's width side by side, and a
   // scrolling strip hides some of them, so they stack there instead.
   const stack = options.length > 3;
   return (
-    <div
-      role="radiogroup"
+    <RadioGroup
+      value={value}
+      onValueChange={(next) => onChange(next as T)}
       aria-label={name}
       className={cn(
         "inline-flex max-w-full overflow-x-auto [scrollbar-width:none] rounded-sm border bg-background",
@@ -377,14 +363,12 @@ export function Segmented<T extends string>({
       {options.map((option, index) => {
         const checked = option.value === value;
         return (
-          <button
+          <Radio
             key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            tabIndex={checked ? 0 : -1}
-            onClick={() => onChange(option.value)}
-            onKeyDown={(event) => onKeyDown(event, index)}
+            value={option.value}
+            // Picking the option already picked still reports it, as before
+            // (a template choice refills an emptied body).
+            onClick={checked ? () => onChange(option.value) : undefined}
             className={cn(
               "font-bold whitespace-nowrap cursor-pointer transition-colors motion-reduce:transition-none",
               size === "sm" ? "px-3 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]",
@@ -408,10 +392,10 @@ export function Segmented<T extends string>({
                 <span className="ml-1 font-mono font-normal opacity-70">{option.count}</span>
               </>
             )}
-          </button>
+          </Radio>
         );
       })}
-    </div>
+    </RadioGroup>
   );
 }
 

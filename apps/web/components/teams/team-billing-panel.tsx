@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
@@ -40,6 +41,11 @@ import {
 } from "@/lib/team-pricing";
 import { longDate } from "@/components/settings/format";
 import { TeamPlanChooser, currentTeamPlan } from "@/components/teams/team-plan-chooser";
+
+/** A team plan option as one radio value. */
+function planKey(option: { plan: string; interval: string }) {
+  return `${option.plan}-${option.interval}`;
+}
 
 const SESSION_EXPIRED = "Your session expired. Please sign in again.";
 
@@ -339,26 +345,33 @@ export function TeamBillingPanel({
           </div>
         )}
         <PanelRow label="Plan">
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Plan">
-            {TEAM_PLAN_OPTIONS.map((option) => {
-              const selected =
-                option.plan === checkoutPlan.plan && option.interval === checkoutPlan.interval;
-              return (
-                <Button
-                  key={`${option.plan}-${option.interval}`}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  variant={selected ? "default" : "outline"}
-                  size="sm"
-                  disabled={subscribing}
-                  onClick={() => setCheckoutPlan(option)}
-                >
-                  {teamPlanLabel(option.plan, option.interval)}
-                </Button>
-              );
-            })}
-          </div>
+          <RadioGroup
+            value={planKey(checkoutPlan)}
+            onValueChange={(next) => {
+              const option = TEAM_PLAN_OPTIONS.find((entry) => planKey(entry) === next);
+              if (option) setCheckoutPlan(option);
+            }}
+            disabled={subscribing}
+            aria-label="Plan"
+            className="flex flex-wrap gap-2"
+          >
+            {TEAM_PLAN_OPTIONS.map((option) => (
+              <Radio
+                key={planKey(option)}
+                value={planKey(option)}
+                nativeButton
+                render={
+                  <Button
+                    type="button"
+                    variant={planKey(option) === planKey(checkoutPlan) ? "default" : "outline"}
+                    size="sm"
+                  />
+                }
+              >
+                {teamPlanLabel(option.plan, option.interval)}
+              </Radio>
+            ))}
+          </RadioGroup>
         </PanelRow>
         <PanelRow label="Seats" htmlFor="checkout-seats">
           <SeatStepper

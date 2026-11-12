@@ -164,7 +164,7 @@ test("the email shows the field and the reply on its own", async ({ page }) => {
   await expect(shown(page.getByRole("button", { name: "Copy invoice" }))).toBeVisible();
 
   await shown(page.getByRole("tab", { name: "Text", exact: true })).click();
-  await shown(page.getByRole("button", { name: "Reply only" })).click();
+  await shown(page.getByRole("radio", { name: "Reply only" })).click();
   await expect(shown(page.getByText("Paid this morning, thanks!", { exact: true }))).toBeVisible();
   await expect(shown(page.getByText("> Total: 42.00 EUR"))).toHaveCount(0);
 });

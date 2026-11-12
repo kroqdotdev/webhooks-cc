@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatBytes } from "@/types/request";
 import { longDate } from "./format";
 import { settingsLink } from "./panel";
+import { Meter } from "@/components/ui/meter";
 
 /** At or above this share of an allowance, the bar and its count turn to the warning colour. */
 const NEAR = 0.8;
@@ -61,11 +62,8 @@ function AllowanceRow({
         {when && <p className="text-xs text-muted-foreground">{when}</p>}
       </div>
       <div className="min-w-0 space-y-1.5">
-        <div
-          role="progressbar"
-          aria-valuenow={percent}
-          aria-valuemin={0}
-          aria-valuemax={100}
+        <Meter
+          value={percent}
           aria-label={`${name}: ${amount.used} of ${amount.of} used`}
           className="h-2 overflow-hidden rounded-sm bg-muted/60"
         >
@@ -75,7 +73,7 @@ function AllowanceRow({
             // A sliver for any use at all, so "1 of 2,000" never reads as none.
             style={{ width: `${Math.max(percent, used > 0 ? 1 : 0)}%` }}
           />
-        </div>
+        </Meter>
         <p className="text-xs text-muted-foreground tabular-nums">
           <span className={cn("font-medium", near ? "text-destructive-ink" : "text-foreground")}>
             {amount.used}

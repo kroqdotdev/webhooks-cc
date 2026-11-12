@@ -4,6 +4,7 @@ import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useTheme, type Theme } from "@/components/providers/theme-provider";
 import { Panel, SettingsPageHeader } from "@/components/settings/panel";
 import { cn } from "@/lib/utils";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 
 const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
   { value: "light", label: "Light", icon: Sun },
@@ -26,8 +27,9 @@ export default function AppearancePage() {
         title="Theme"
         description="Light and Dark stay as picked; System follows your operating system and changes with it."
       >
-        <div
-          role="radiogroup"
+        <RadioGroup
+          value={theme}
+          onValueChange={(next) => setTheme(next as Theme)}
           aria-label="Theme"
           className="inline-flex overflow-hidden rounded-md border"
         >
@@ -35,12 +37,9 @@ export default function AppearancePage() {
             const Icon = option.icon;
             const active = theme === option.value;
             return (
-              <button
+              <Radio
                 key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setTheme(option.value)}
+                value={option.value}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
                   index > 0 && "border-l border-border",
@@ -49,10 +48,10 @@ export default function AppearancePage() {
               >
                 <Icon className="h-4 w-4" />
                 {option.label}
-              </button>
+              </Radio>
             );
           })}
-        </div>
+        </RadioGroup>
       </Panel>
     </>
   );

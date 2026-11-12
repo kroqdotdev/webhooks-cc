@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Children, isValidElement, type ReactElement } from "react";
-import { cn } from "@/lib/utils";
+import { Tabs as TabsRoot, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 
 export function Tabs({ items, children }: { items?: string[]; children: React.ReactNode }) {
   const [active, setActive] = useState(0);
@@ -13,28 +13,29 @@ export function Tabs({ items, children }: { items?: string[]; children: React.Re
   const labels = items ?? tabs.map((tab, i) => tab.props.label ?? `Tab ${i + 1}`);
 
   return (
-    <div className="my-6 rounded-lg border border-border shadow-surface overflow-hidden">
-      <div className="flex border-b border-border overflow-x-auto">
+    <TabsRoot
+      value={active}
+      onValueChange={(next) => setActive(next as number)}
+      className="my-6 rounded-lg border border-border shadow-surface overflow-hidden"
+    >
+      <TabsList className="flex border-b border-border overflow-x-auto">
         {labels.map((label, i) => (
-          <button
+          <TabsTab
             key={label}
-            onClick={() => setActive(i)}
-            type="button"
-            className={cn(
-              "px-4 py-2 text-sm font-bold transition-colors cursor-pointer",
-              i === active
-                ? "bg-selected text-selected-foreground"
-                : "bg-background text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
+            value={i}
+            className="px-4 py-2 text-sm font-bold transition-colors cursor-pointer data-active:bg-selected data-active:text-selected-foreground not-data-active:bg-background not-data-active:text-muted-foreground not-data-active:hover:text-foreground not-data-active:hover:bg-muted"
           >
             {label}
-          </button>
+          </TabsTab>
         ))}
-      </div>
-      <div className="[&>div>pre]:my-0 [&>div>pre]:rounded-none [&>div>pre]:border-0 [&>div>pre]:shadow-none [&>div>div]:my-0 [&>div>div]:rounded-none [&>div>div]:border-0 [&>div>div]:shadow-none">
+      </TabsList>
+      <TabsPanel
+        value={active}
+        className="[&>div>pre]:my-0 [&>div>pre]:rounded-none [&>div>pre]:border-0 [&>div>pre]:shadow-none [&>div>div]:my-0 [&>div>div]:rounded-none [&>div>div]:border-0 [&>div>div]:shadow-none"
+      >
         {tabs[active]}
-      </div>
-    </div>
+      </TabsPanel>
+    </TabsRoot>
   );
 }
 

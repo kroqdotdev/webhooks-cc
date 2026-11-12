@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogPopup,
+  DialogPortal,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isDocsSearchUrl, normalizePagefindUrl } from "@/lib/docs-search";
@@ -137,14 +143,14 @@ export function SearchModal() {
   }
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
-        <DialogPrimitive.Popup
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogPortal>
+        <DialogBackdrop className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
+        <DialogPopup
           initialFocus={inputRef}
           className="fixed left-1/2 top-[15vh] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border border-border bg-background shadow-float"
         >
-          <DialogPrimitive.Title className="sr-only">Search documentation</DialogPrimitive.Title>
+          <DialogTitle className="sr-only">Search documentation</DialogTitle>
           {/* Input */}
           <div className="flex items-center border-b px-4">
             <Search className="h-5 w-5 text-muted-foreground shrink-0" />
@@ -228,8 +234,8 @@ export function SearchModal() {
               close
             </span>
           </div>
-        </DialogPrimitive.Popup>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+        </DialogPopup>
+      </DialogPortal>
+    </Dialog>
   );
 }

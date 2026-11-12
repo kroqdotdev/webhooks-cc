@@ -11,6 +11,7 @@ import { apiFetch, ApiError, shortDateTime, shortDay, timeAgo } from "@/lib/supp
 import { BODY_MAX, categoryLabel, type SupportTicketDetail } from "@/lib/support/shared";
 import { subscribeToSupportTickets } from "@/lib/supabase/realtime";
 import { cn } from "@/lib/utils";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
 import { CheckRow, Conversation, ImagePicker, supportBody, TurnLine } from "./thread";
 import { Card } from "@/components/ui/card";
 
@@ -54,18 +55,16 @@ function Rating({
   return (
     <div className="space-y-3">
       <p className="text-sm font-medium">How did we do?</p>
-      <div
+      <RadioGroup
+        value={rating}
+        onValueChange={(next) => setRating(next as number)}
         className="flex gap-1.5"
-        role="radiogroup"
         aria-label="Rating from 1 (poor) to 5 (great)"
       >
         {[1, 2, 3, 4, 5].map((value) => (
-          <button
+          <Radio
             key={value}
-            type="button"
-            role="radio"
-            aria-checked={rating === value}
-            onClick={() => setRating(value)}
+            value={value}
             className={cn(
               "h-9 w-9 rounded-md border text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               rating === value
@@ -74,9 +73,9 @@ function Rating({
             )}
           >
             {value}
-          </button>
+          </Radio>
         ))}
-      </div>
+      </RadioGroup>
       <p className="text-xs text-muted-foreground">1 is poor, 5 is great.</p>
       {rating !== null && (
         <>

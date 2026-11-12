@@ -13,6 +13,13 @@ import type { QueueItem, QueueView } from "@/lib/ops/tickets";
 import { cn } from "@/lib/utils";
 import { useOps } from "./ops-shell";
 import { Card } from "@/components/ui/card";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const VIEWS: { value: QueueView; label: string }[] = [
   { value: "waiting", label: "Waiting on you" },
@@ -160,16 +167,21 @@ export function OpsInbox({ number }: { number: string | null }) {
   return (
     <div className="lg:grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[17rem_minmax(0,1fr)]">
       <section aria-label="Tickets" className="border-b bg-card lg:border-b-0 lg:border-r">
-        <div className="flex flex-wrap gap-1 border-b p-2">
+        <RadioGroup
+          value={view}
+          onValueChange={(next) => {
+            setQueue(null);
+            setView(next as typeof view);
+          }}
+          aria-label="Tickets to show"
+          // Its bottom line divides the column, so it keeps the hairline rather
+          // than the darker control edge globals.css gives a radio group.
+          className="flex flex-wrap gap-1 border-b border-border! p-2"
+        >
           {VIEWS.map((entry) => (
-            <button
+            <Radio
               key={entry.value}
-              type="button"
-              onClick={() => {
-                setQueue(null);
-                setView(entry.value);
-              }}
-              aria-pressed={view === entry.value}
+              value={entry.value}
               className={cn(
                 "rounded-md px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 view === entry.value
@@ -178,9 +190,9 @@ export function OpsInbox({ number }: { number: string | null }) {
               )}
             >
               {entry.label}
-            </button>
+            </Radio>
           ))}
-        </div>
+        </RadioGroup>
         {queue === null ? (
           <div className="space-y-2 p-3" role="status" aria-label="Loading tickets">
             <Skeleton className="h-10 w-full rounded-md" />
@@ -283,6 +295,8 @@ function TicketPane({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedReply[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Whether the saved-replies menu last closed on a pick (focus then goes to the text).
+  const pickedRef = useRef(false);
   const [viewing, setViewing] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const userName = account?.name?.trim() || account?.email || "The user";
@@ -420,73 +434,83 @@ function TicketPane({
           className={cn("space-y-3 p-3!", mode === "note" && "border-staff-line bg-staff-wash")}
         >
           <div className="flex items-center gap-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setMode("message")}
-              aria-pressed={mode === "message"}
-              className={cn(
-                "rounded-md px-2 py-1",
-                mode === "message"
-                  ? "bg-selected font-medium text-selected-foreground"
-                  : "text-muted-foreground"
-              )}
+            <RadioGroup
+              value={mode}
+              onValueChange={(next) => setMode(next as typeof mode)}
+              aria-label="Write"
+              className="flex items-center gap-1"
             >
-              Reply
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("note")}
-              aria-pressed={mode === "note"}
-              className={cn(
-                "rounded-md px-2 py-1 text-staff",
-                mode === "note" && "bg-background font-medium"
-              )}
-            >
-              Note
-            </button>
-            <span className="flex-1" />
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setPickerOpen((open) => !open)}
-                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted"
+              <Radio
+                value="message"
+                className={cn(
+                  "rounded-md px-2 py-1 focus-visible:outline-offset-2",
+                  mode === "message"
+                    ? "bg-selected font-medium text-selected-foreground"
+                    : "text-muted-foreground"
+                )}
               >
+                Reply
+              </Radio>
+              <Radio
+                value="note"
+                className={cn(
+                  "rounded-md px-2 py-1 text-staff focus-visible:outline-offset-2",
+                  mode === "note" && "bg-background font-medium"
+                )}
+              >
+                Note
+              </Radio>
+            </RadioGroup>
+            <span className="flex-1" />
+            {/* Not modal, like the hand-built list it replaced: a click elsewhere still lands. */}
+            <DropdownMenu modal={false} open={pickerOpen} onOpenChange={setPickerOpen}>
+              <DropdownMenuTrigger className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted">
                 Saved replies <kbd className="font-mono">/</kbd>
-              </button>
-              {pickerOpen && (
-                <div className="absolute right-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border bg-popover p-1 shadow-float">
-                  {saved === null ? (
-                    <p className="p-2 text-xs text-muted-foreground">Loading...</p>
-                  ) : saved.length === 0 ? (
-                    <p className="p-2 text-xs text-muted-foreground">
-                      None yet.{" "}
-                      <Link href="/ops/saved-replies" className="underline">
-                        Add one
-                      </Link>
-                      .
-                    </p>
-                  ) : (
-                    saved.map((reply) => (
-                      <button
-                        key={reply.id}
-                        type="button"
-                        className="block w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
-                        onClick={() => {
-                          setBody(
-                            (current) =>
-                              (current ? `${current}\n\n` : "") + fillReply(reply.body, account)
-                          );
-                          setPickerOpen(false);
-                          textRef.current?.focus();
-                        }}
-                      >
-                        {reply.title}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                // A picked reply lands in the text, so focus goes there rather than back to the button.
+                // Otherwise back to the button only after a keyboard close: a click
+                // elsewhere (into the reply, say) keeps the focus it moved to.
+                finalFocus={(closeType) => {
+                  const picked = pickedRef.current;
+                  pickedRef.current = false;
+                  return picked ? textRef.current : closeType === "keyboard";
+                }}
+                className="max-h-72 w-72 overflow-y-auto shadow-float"
+              >
+                {saved === null ? (
+                  <p className="p-2 text-xs text-muted-foreground">Loading...</p>
+                ) : saved.length === 0 ? (
+                  <p className="p-2 text-xs text-muted-foreground">
+                    None yet. {/* A menu item, so the keyboard reaches it inside the menu. */}
+                    <DropdownMenuItem
+                      render={<Link href="/ops/saved-replies" />}
+                      className="inline rounded-none p-0 text-xs underline data-highlighted:bg-muted data-highlighted:text-foreground"
+                    >
+                      Add one
+                    </DropdownMenuItem>
+                    .
+                  </p>
+                ) : (
+                  saved.map((reply) => (
+                    <DropdownMenuItem
+                      key={reply.id}
+                      className="block w-full cursor-default text-left data-highlighted:bg-muted data-highlighted:text-foreground"
+                      onClick={() => {
+                        pickedRef.current = true;
+                        setBody(
+                          (current) =>
+                            (current ? `${current}\n\n` : "") + fillReply(reply.body, account)
+                        );
+                      }}
+                    >
+                      {reply.title}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <label htmlFor="staff-reply" className="sr-only">
             {mode === "note" ? "Note" : "Reply"}
