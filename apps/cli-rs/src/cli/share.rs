@@ -93,7 +93,12 @@ async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
         }
         _ = shutdown_signal() => {
             stopped(json, "you stopped it on this computer");
-            crate::util::star::maybe_show(json);
+            // Through the share's own queue, so a stalled terminal cannot
+            // hold the exit past FINAL_WAIT.
+            if let Some(hint) = crate::util::star::take(json) {
+                events::out(hint, false);
+                events::flush(events::FINAL_WAIT);
+            }
         }
     }
     Ok(())

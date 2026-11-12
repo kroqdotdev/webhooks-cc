@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildWelcomeEmail, REPO_URL } from "./welcome-email";
+import { GITHUB_REPO_URL as REPO_URL } from "@/lib/github";
+import { buildWelcomeEmail } from "./welcome-email";
 
 const webhooks = buildWelcomeEmail({
   to: "dev@example.com",

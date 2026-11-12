@@ -240,10 +240,12 @@ export function SiteHeader({
                 href={GITHUB_REPO_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-medium py-1 -my-1 text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5 max-lg:hidden"
+                className="text-sm font-medium py-1 -my-1 text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5 max-xl:hidden"
               >
                 <GitHubIcon aria-hidden className="h-4 w-4" />
                 GitHub
+                <ArrowUpRight aria-hidden className="h-3.5 w-3.5 -ml-1" />
+                <span className="sr-only"> (opens in a new tab)</span>
               </a>
             )}
             {authAction}
@@ -319,6 +321,7 @@ export function SiteHeader({
                   <GitHubIcon aria-hidden className="h-4.5 w-4.5" />
                   GitHub
                   <ArrowUpRight aria-hidden className="h-3.5 w-3.5 -ml-1" />
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </a>
               )}
               {isAuthenticated ? (

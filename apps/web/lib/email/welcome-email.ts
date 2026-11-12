@@ -1,5 +1,6 @@
 import { SITES, type SiteKey } from "@/lib/site";
 import type { EmailMessage } from "./mailer";
+import { GITHUB_REPO_URL } from "@/lib/github";
 
 /** No reply is read at the sending address, so auto-responders stay quiet. */
 const AUTOMATIC = { "Auto-Submitted": "auto-generated", "X-Auto-Response-Suppress": "All" };
@@ -13,8 +14,6 @@ const CLI_INSTALL = "curl -fsSL https://webhooks.cc/install.sh | sh";
 const CLAUDE_CODE_MCP = `claude mcp add -s user --transport http webhooks-cc ${MCP_URL}`;
 const CURSOR_MCP = `{ "mcpServers": { "webhooks-cc": { "url": "${MCP_URL}" } } }`;
 const SDK_INSTALL = "npm install @webhooks-cc/sdk";
-/** The code behind both sites lives in one repository. */
-export const REPO_URL = "https://github.com/kroqdotdev/webhooks-cc";
 
 function escapeHtml(value: string): string {
   return value
@@ -146,7 +145,7 @@ export function buildWelcomeEmail(params: {
       docs,
       ``,
       star,
-      REPO_URL,
+      GITHUB_REPO_URL,
       ``,
       help,
       support,
@@ -170,7 +169,7 @@ export function buildWelcomeEmail(params: {
       pre([SDK_INSTALL]),
       `<p>${escapeHtml(sdkNote)} ${link(sdkDoc, "Testing with the SDK")}</p>`,
       `<p>${link(docs, "Read the docs")}</p>`,
-      `<p>${escapeHtml(star)} ${link(REPO_URL, "Star it on GitHub")}</p>`,
+      `<p>${escapeHtml(star)} ${link(GITHUB_REPO_URL, "Star it on GitHub")}</p>`,
       `<p>${escapeHtml(help)} ${link(support, "Open a ticket")}</p>`,
       `<p style="color:#666;font-size:12px">${escapeHtml(footer)}</p>`,
     ].join("\n"),

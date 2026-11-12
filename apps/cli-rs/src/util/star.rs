@@ -42,19 +42,15 @@ fn text() -> String {
     )
 }
 
-/// Prints the hint the first time it is called on this machine, and never
-/// again.
-pub fn maybe_show(json: bool) {
+/// The hint the first time it is asked for on this machine, and never
+/// again: the caller prints it the way it prints everything else.
+pub fn take(json: bool) -> Option<String> {
     let set = |name: &str| std::env::var_os(name).is_some_and(|v| !v.is_empty());
     if !allowed(json, std::io::stdout().is_terminal(), set) {
-        return;
+        return None;
     }
-    let Ok(dir) = crate::auth::config_dir() else {
-        return;
-    };
-    if claim(&dir) {
-        println!("{}", text());
-    }
+    let dir = crate::auth::config_dir().ok()?;
+    claim(&dir).then(text)
 }
 
 #[cfg(test)]
