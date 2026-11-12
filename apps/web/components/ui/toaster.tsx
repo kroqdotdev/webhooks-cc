@@ -16,6 +16,9 @@ export function Toaster() {
       offset={16}
       mobileOffset={16}
       style={{ "--width": "320px", fontFamily: "inherit" } as React.CSSProperties}
+      // No Alt+T shortcut: the app's few toasts are announced and go by themselves.
+      hotkey={[]}
+      containerAriaLabel="Notifications"
     />
   );
 }

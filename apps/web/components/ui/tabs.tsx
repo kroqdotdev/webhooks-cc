@@ -49,7 +49,12 @@ function TabsPanel({
     const resize = new ResizeObserver(check);
     resize.observe(panel);
     const content = new MutationObserver(check);
-    content.observe(panel, { childList: true, subtree: true, characterData: true });
+    content.observe(panel, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+    });
     return () => {
       resize.disconnect();
       content.disconnect();
@@ -68,7 +73,8 @@ function TabsPanel({
         onPointerDown?.(event);
         // Not focusable for the press, so a click reads or selects without focusing it.
         const panel = event.currentTarget;
-        if (!stop) return;
+        // Someone who tabbed in keeps the focus they have.
+        if (!stop || document.activeElement === panel) return;
         panel.removeAttribute("tabindex");
         const restore = () => {
           if (needsStop(panel)) panel.setAttribute("tabindex", "0");

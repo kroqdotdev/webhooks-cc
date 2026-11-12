@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSite } from "@/components/providers/site-provider";
 import Link from "next/link";
 import {
@@ -388,16 +388,27 @@ function SendMenu({
 }
 
 /** The test email's result. Always in the accessibility tree so it is announced. */
+const WIDE = "(min-width: 1024px)";
+const subscribeWide = (onChange: () => void) => {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+};
+
 function SendStatus({ status }: { status: SendActions["status"] }) {
   // Below the wide layout, Send sits in the Actions menu, so the result is a
-  // toast at the foot of the screen; on wide screens it is this text next to Send.
+  // toast at the foot of the screen, announced by Sonner's own live region; on
+  // wide screens it is this text next to Send, announced by its status role.
+  const wide = useSyncExternalStore(
+    subscribeWide,
+    () => window.matchMedia(WIDE).matches,
+    () => true
+  );
   useEffect(() => {
-    if (!status || window.matchMedia("(min-width: 1024px)").matches) return;
+    if (!status || wide) return;
     toast.custom(
       () => (
-        // The status line below announces it; the toast is only seen.
         <div
-          aria-hidden
           className={cn(
             "w-full md:ml-auto md:w-fit max-w-full rounded-md border bg-card px-2.5 py-1.5 text-xs shadow-surface [overflow-wrap:normal]",
             status.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
@@ -408,7 +419,7 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
       ),
       { id: SEND_TOAST, duration: 6000 }
     );
-  }, [status]);
+  }, [status, wide]);
   useEffect(() => () => void toast.dismiss(SEND_TOAST), []);
 
   return (
@@ -416,12 +427,12 @@ function SendStatus({ status }: { status: SendActions["status"] }) {
       role="status"
       aria-live="polite"
       className={cn(
-        status ? "max-lg:sr-only text-xs max-w-[260px] truncate" : "sr-only",
+        status ? "text-xs max-w-[260px] truncate" : "sr-only",
         status?.kind === "error" ? "text-destructive-ink" : "text-muted-foreground"
       )}
       title={status?.text}
     >
-      {status?.text}
+      {wide ? status?.text : null}
     </span>
   );
 }
