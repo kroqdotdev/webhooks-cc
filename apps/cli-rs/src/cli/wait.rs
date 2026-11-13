@@ -178,6 +178,10 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
     };
     let mut seen: HashSet<String> = HashSet::new();
     let mut collected: Vec<Value> = Vec::new();
+    // A poll that stopped at MAX_PAGES goes on from here next time.
+    let mut resume: Option<String> = None;
+    // The newest request read since the start of the next poll last moved.
+    let mut newest = i64::MIN;
 
     if !json {
         let what = if count == 1 {
@@ -200,6 +204,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
             Kind::Http => "http",
             Kind::Email => "email",
         });
+        let start_at = resume.take();
         let fetched = poll_since(
             |cursor| async move {
                 client
@@ -208,10 +213,15 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
             },
             last_checked,
             MAX_PAGES,
+            start_at.clone(),
         )
         .await;
         match fetched {
-            Ok((mut items, server_time_ms)) => {
+            Ok(Polled {
+                mut items,
+                server_time_ms,
+                resume: more,
+            }) => {
                 if since == Since::Now && since_now.is_none() {
                     let elapsed = started.elapsed().as_millis() as i64;
                     // `Date` counts whole seconds, so this is at or before
@@ -226,11 +236,22 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
                     items.retain(|r| received_at(r).is_none_or(|at| at >= floor));
                 }
                 items.sort_by_key(|r| received_at(r).unwrap_or(0));
+                // The start of the next poll moves forward only once a poll
+                // (or a run of them, resumed page by page) has read back to
+                // where the last one stopped; until then older requests may
+                // still be unread.
                 for item in &items {
                     if let Some(at) = received_at(item) {
-                        last_checked = last_checked.max(at - OVERLAP_MS);
+                        newest = newest.max(at);
                     }
                 }
+                if more.is_none() && newest > i64::MIN {
+                    last_checked = last_checked.max(newest - OVERLAP_MS);
+                }
+                if more.is_some() {
+                    pause = Duration::ZERO;
+                }
+                resume = more;
                 for item in items {
                     let Some(id) = request_id(&item) else {
                         continue;
@@ -245,6 +266,8 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
                 }
             }
             Err(error) if transient(&error) => {
+                // A run of pages goes on where it was after a failed try.
+                resume = start_at;
                 if let Some(seconds) = classify(&error).retry_after {
                     pause = pause.max(Duration::from_secs(seconds));
                 }
@@ -268,17 +291,30 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
 /// pages until one reaches back past `since` (or the pages run out), so
 /// nothing between the last poll and this one is skipped however many
 /// arrived. Stops after `max_pages`.
+/// What one poll read.
+struct Polled {
+    items: Vec<Value>,
+    /// The first answer's clock (`Date`), in ms.
+    server_time_ms: Option<i64>,
+    /// Set when the poll stopped at `max_pages` before reaching back to
+    /// `since`: the cursor of the next older page, where the next poll goes
+    /// on (rather than starting from the newest again and never getting
+    /// further back).
+    resume: Option<String>,
+}
+
 async fn poll_since<F, Fut>(
     mut fetch: F,
     since: i64,
     max_pages: usize,
-) -> Result<(Vec<Value>, Option<i64>)>
+    start: Option<String>,
+) -> Result<Polled>
 where
     F: FnMut(Option<String>) -> Fut,
     Fut: std::future::Future<Output = Result<RawPage>>,
 {
     let mut out = Vec::new();
-    let mut cursor = None;
+    let mut cursor = start;
     let mut server_time = None;
     for _ in 0..max_pages.max(1) {
         let RawPage {
@@ -296,10 +332,20 @@ where
         }
         match next {
             Some(next) if !reached => cursor = Some(next),
-            _ => break,
+            _ => {
+                return Ok(Polled {
+                    items: out,
+                    server_time_ms: server_time,
+                    resume: None,
+                });
+            }
         }
     }
-    Ok((out, server_time))
+    Ok(Polled {
+        items: out,
+        server_time_ms: server_time,
+        resume: cursor,
+    })
 }
 
 fn print(collected: &[Value], count: usize, json: bool) -> Result<()> {
@@ -372,8 +418,13 @@ mod tests {
                 })
             }
         };
-        let (items, server_time) = poll_since(fetch, 1_050, 20).await.unwrap();
+        let Polled {
+            items,
+            server_time_ms: server_time,
+            resume,
+        } = poll_since(fetch, 1_050, 20, None).await.unwrap();
         assert_eq!(server_time, Some(42));
+        assert!(resume.is_none(), "read back to since");
         assert_eq!(items.len(), 250);
         assert_eq!(calls.get(), 3, "stops once a page reaches back past since");
         assert!(items.iter().all(|r| received_at(r).unwrap() >= 1_050));
@@ -389,8 +440,37 @@ mod tests {
                 })
             }
         };
-        assert_eq!(poll_since(fetch, 0, 20).await.unwrap().0.len(), 1);
+        assert_eq!(poll_since(fetch, 0, 20, None).await.unwrap().items.len(), 1);
         assert_eq!(calls.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_poll_that_hits_the_page_cap_goes_on_where_it_stopped() {
+        // 2,500 requests since the last poll, in pages of 100, 20 pages a poll.
+        let all: Vec<Value> = (0..2_500)
+            .rev()
+            .map(|i| json!({"id": format!("r{i}"), "receivedAt": 10_000 + i}))
+            .collect();
+        let fetch = |cursor: Option<String>| {
+            let start: usize = cursor.map(|c| c.parse().unwrap()).unwrap_or(0);
+            let page = all[start..(start + 100).min(all.len())].to_vec();
+            let next = (start + 100 < all.len()).then(|| (start + 100).to_string());
+            async move {
+                Ok(RawPage {
+                    items: page,
+                    next,
+                    server_time_ms: None,
+                })
+            }
+        };
+        let first = poll_since(fetch, 10_000, 20, None).await.unwrap();
+        assert_eq!(first.items.len(), 2_000);
+        let resume = first.resume.expect("stopped at the cap");
+        let second = poll_since(fetch, 10_000, 20, Some(resume)).await.unwrap();
+        assert_eq!(second.items.len(), 500);
+        assert!(second.resume.is_none());
+        let oldest = second.items.iter().filter_map(received_at).min();
+        assert_eq!(oldest, Some(10_000), "the oldest request is read too");
     }
 
     #[test]
