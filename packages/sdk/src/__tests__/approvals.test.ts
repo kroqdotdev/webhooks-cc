@@ -118,6 +118,19 @@ describe("apiKeys and approvals", () => {
     expect(calls).toBe(1);
   });
 
+  it("returns by its deadline even when the token never comes", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const agent = new WebhooksCC({
+      baseUrl: BASE_URL,
+      getAccessToken: () => new Promise<string>(() => {}),
+    });
+    const started = Date.now();
+    await expect(agent.approvals.wait(ID, { timeout: 60 })).rejects.toThrow("timed out");
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("refuses to hand over a result twice", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("completed") }));
     await expect(client().approvals.wait(ID)).rejects.toThrow("already collected");

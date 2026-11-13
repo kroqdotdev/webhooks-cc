@@ -982,7 +982,7 @@ export class WebhooksCC {
 
       try {
         const headers = {
-          ...this.apiHeaders(await this.bearer()),
+          ...this.apiHeaders(await withinDeadline(this.bearer(), deadline, timeoutMs)),
           "Content-Type": "application/json",
         };
         // Never start a request past the deadline (a slow token or renewal
@@ -1002,7 +1002,7 @@ export class WebhooksCC {
         // An expiring token: renew it once and retry right away.
         if (response.status === 401 && this.getAccessToken && !refreshed) {
           refreshed = true;
-          await this.bearer(true);
+          await withinDeadline(this.bearer(true), deadline, timeoutMs);
           attempt--;
           continue;
         }
@@ -3455,6 +3455,23 @@ export class WebhooksCC {
 }
 
 /** Returns a promise that resolves after the specified milliseconds. */
+/** `promise`, or a TimeoutError once `deadline` passes, whichever is first. */
+function withinDeadline<T>(
+  promise: Promise<T>,
+  deadline: number | undefined,
+  budgetMs: number | undefined
+): Promise<T> {
+  if (deadline === undefined) return promise;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new TimeoutError(budgetMs ?? 0)),
+      Math.max(0, deadline - Date.now())
+    );
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
