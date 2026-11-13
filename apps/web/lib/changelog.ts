@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.13.0";
-export const SDK_VERSION = "1.23.0";
+export const CLI_VERSION = "1.14.0";
+export const SDK_VERSION = "1.24.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
-export const MCP_VERSION = "1.19.0";
+export const MCP_VERSION = "1.20.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.14.0",
+    date: "2026-11-13",
+    title: "Keys by Approval",
+    track: "cli",
+    items: [
+      "`whk keys list` and `whk keys revoke <id>` manage the account's API keys",
+      "`whk keys create <name>` asks for a new key: it prints a link and a code, the account's owner approves on the page (comparing the code), and whk prints the key once. `--expires-in-days` sets its lifetime (1 to 365, default 90); `--remote`, `--no-browser` and `--no-wait` work as for `whk auth login`",
+      "`whk approvals wait <id>` collects an approval asked for with `--no-wait`",
+      "New error codes: `approval_denied` (exit status 9) when the owner refuses, `approval_expired` (exit status 8) when nobody answers in time",
+    ],
+  },
+  {
     version: "1.13.0",
     date: "2026-11-13",
     title: "Compare, Don't Type",
@@ -2442,6 +2454,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.24.0",
+    date: "2026-11-13",
+    title: "Keys by Approval",
+    track: "sdk",
+    items: [
+      "`client.apiKeys.list()` and `client.apiKeys.revoke(id)`",
+      "`client.apiKeys.create({ name, expiresInDays })` asks the account's owner for a new key and returns a pending approval: show the person its `url` (the page shows its `code`), then `await approval.wait()` for the key, which is shown once",
+      "`client.approvals.get(id)` and `client.approvals.wait(id)`, with `ApprovalDeniedError` and `ApprovalExpiredError`; a wait never starts a poll past its timeout",
+    ],
+  },
   {
     version: "1.23.0",
     date: "2026-11-11",
@@ -3033,6 +3056,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.20.0",
+    date: "2026-11-13",
+    title: "Keys by Approval",
+    track: "mcp",
+    items: [
+      "`list_api_keys` and `revoke_api_key` manage the account's API keys",
+      "`create_api_key` asks the account's owner for a new key and returns at once with the link and code to show them; `wait_for_approval` collects the key once they approve",
+    ],
+  },
   {
     version: "1.19.0",
     date: "2026-11-11",
