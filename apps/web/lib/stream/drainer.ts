@@ -16,8 +16,11 @@ import type { RequestCursor, RequestRecord } from "@/lib/supabase/requests";
  * 3. A look-back: the ids received in the last `lateWindowMs` up to the
  *    cursor, and the full rows of those not sent yet, for a capture behind
  *    the cursor whose signal Realtime dropped (at its rate limit) or this
- *    stream could not hold. It runs on every keepalive, and at most once per
- *    `recheckIntervalMs` for an overflow or a failed read.
+ *    stream could not hold. It runs on every `recheck()` (the stream's
+ *    look-back timer, every 10 s), and at most once per `recheckIntervalMs`
+ *    for an overflow or a failed read. A capture stamped further back than
+ *    the window (an email whose MX delivery was retried) relies on its
+ *    signal alone.
  *
  * Every row is sent once (by id), and only rows received from
  * `afterTimestamp` on (the stream's `since`, or its start). A failed read is
@@ -55,7 +58,7 @@ export interface StreamDrainerDeps {
 export interface StreamDrainer {
   /** A `request_created` signal (with its id, when it carried one). */
   signal(id: string | null): void;
-  /** Read again with the look-back (the keepalive). */
+  /** Read again with the look-back (the stream's look-back timer). */
   recheck(): void;
   /** Read now; resolves when this read (and any it folded in) is done. */
   drain(): Promise<void>;
@@ -78,7 +81,7 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
   // Ids to fetch and how many fetches of them failed.
   const pending = new Map<string, number>();
   let cursor: RequestCursor | null = null;
-  // The keepalive's look-back always runs; an overflow's or a failure's at
+  // A recheck()'s look-back always runs; an overflow's or a failure's at
   // most once per recheckIntervalMs.
   let recheckForced = false;
   let recheckWanted = false;

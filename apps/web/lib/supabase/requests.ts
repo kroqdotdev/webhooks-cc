@@ -597,7 +597,7 @@ export async function getStreamRequestsByIds(
 /**
  * The ids of an endpoint's retained requests received after `fromMs` and up
  * to `to` (a stored received_at, inclusive): the live stream's look-back for
- * a capture that committed behind its cursor. Ids only, at most `limit`.
+ * a capture that committed behind its cursor. Ids only, the newest `limit`.
  */
 export async function listStreamRequestIdsInWindow(
   endpointId: string,
@@ -612,8 +612,10 @@ export async function listStreamRequestIdsInWindow(
     .gt("received_at", new Date(fromMs).toISOString())
     .lte("received_at", to);
   await applyRequestRetention(query, endpointId);
+  // Newest first: a capture that committed late is most likely just behind
+  // the cursor, so the cap leaves out the oldest of the window.
   const { data, error } = await query
-    .order("received_at", { ascending: true })
+    .order("received_at", { ascending: false })
     .limit(limit)
     .returns<{ id: string }[]>();
   if (error) throw error;

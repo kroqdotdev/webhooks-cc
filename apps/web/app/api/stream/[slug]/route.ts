@@ -15,6 +15,10 @@ import { reportError } from "@/lib/observability";
 export const dynamic = "force-dynamic";
 
 const KEEPALIVE_INTERVAL_MS = 30_000;
+// How often the stream looks back for a capture that committed behind its
+// cursor and whose signal Realtime dropped: well inside a default 30 s
+// `whk wait`. It reads ids only (see lib/stream/drainer.ts).
+const LOOKBACK_INTERVAL_MS = 10_000;
 const MAX_CONNECTION_DURATION_MS = 30 * 60 * 1000;
 const BACKLOG_PAGE_SIZE = 100;
 
@@ -107,6 +111,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       const supabase = createRealtimeAdminClient();
       const afterTimestamp = since ?? connectionStart;
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+      let lookbackTimer: ReturnType<typeof setInterval> | null = null;
       let durationTimer: ReturnType<typeof setTimeout> | null = null;
       let closed = false;
       let channel: RealtimeChannel | null = null;
@@ -115,6 +120,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         if (keepaliveTimer) {
           clearInterval(keepaliveTimer);
           keepaliveTimer = null;
+        }
+        if (lookbackTimer) {
+          clearInterval(lookbackTimer);
+          lookbackTimer = null;
         }
         if (durationTimer) {
           clearTimeout(durationTimer);
@@ -177,13 +186,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         isClosed: () => closed,
         onError: (error) => reportError("Failed to read SSE stream backlog", error),
         pageSize: BACKLOG_PAGE_SIZE,
-        recheckIntervalMs: KEEPALIVE_INTERVAL_MS,
+        recheckIntervalMs: LOOKBACK_INTERVAL_MS,
       });
 
       abortSignal.addEventListener("abort", closeStream);
 
-      // The keepalive also catches up, looking back over the late window, in
-      // case Realtime dropped a signal.
+      // The keepalive keeps proxies from closing an idle stream; the
+      // look-back timer catches up in case Realtime dropped a signal.
       keepaliveTimer = setInterval(() => {
         if (closed || abortSignal.aborted) return;
         try {
@@ -192,8 +201,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
           closeStream();
           return;
         }
-        drainer.recheck();
       }, KEEPALIVE_INTERVAL_MS);
+      lookbackTimer = setInterval(() => {
+        if (closed || abortSignal.aborted) return;
+        drainer.recheck();
+      }, LOOKBACK_INTERVAL_MS);
 
       durationTimer = setTimeout(
         () => {

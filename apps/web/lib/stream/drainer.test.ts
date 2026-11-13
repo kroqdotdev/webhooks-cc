@@ -60,6 +60,7 @@ function fakeStore() {
           const until = Date.parse(to);
           return rows
             .filter((row) => row.at > from && row.at <= until)
+            .sort((a, b) => b.at - a.at)
             .slice(0, limit)
             .map((row) => row.id);
         },
