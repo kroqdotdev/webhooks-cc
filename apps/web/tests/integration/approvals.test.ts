@@ -282,6 +282,45 @@ describe("approvals", () => {
     await decideApproval(approval.code, owner, false);
   });
 
+  it("asks for a domain with a long name, its summary clipped", async () => {
+    // 248 characters: near the 253 a domain may have, past what fits in a summary.
+    const label = "a".repeat(63);
+    const name = `${label}.${label}.${label}.${"b".repeat(30)}.${Date.now()}.example.com`;
+    const { data: domain, error } = await admin
+      .from("inbound_domains")
+      .insert({ user_id: owner, domain: name })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const approval = await askFor("domains.remove", { domainId: domain.id });
+    expect(approval.summary.length).toBeLessThanOrEqual(300);
+    expect(approval.summary.endsWith("...")).toBe(true);
+    await decideApproval(approval.code, owner, false);
+    await admin.from("inbound_domains").delete().eq("id", domain.id);
+  });
+
+  it("withdraws nothing that runs on approval, and ends one whose result never came", async () => {
+    const waiting = await askFor("account.rename", { name: "Not yet" });
+    await expect(withdrawApproval(waiting.code, owner)).rejects.toMatchObject({ status: 400 });
+
+    // Ran, but its result was never recorded (a crash): "approved" until
+    // the row expires, then "expired", never stuck.
+    await admin
+      .from("approvals")
+      .update({ status: "completed", decided_at: new Date().toISOString() })
+      .eq("id", waiting.id);
+    expect((await pollApproval(waiting.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "approved"
+    );
+    await admin
+      .from("approvals")
+      .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", waiting.id);
+    expect((await pollApproval(waiting.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "expired"
+    );
+  });
+
   it("caps the approvals an account may have waiting", async () => {
     await admin.from("approvals").delete().eq("user_id", owner);
     for (let i = 0; i < MAX_PENDING_APPROVALS; i++) await ask();

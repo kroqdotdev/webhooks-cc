@@ -64,6 +64,13 @@ function appUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL || "https://webhooks.cc";
 }
 
+/** approvals.summary holds at most this many characters (migration 00097). */
+const MAX_SUMMARY = 300;
+
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 3)}...`;
+}
+
 function statusOf(row: Pick<Row, "status" | "expires_at">): ApprovalStatus {
   const expired = new Date(row.expires_at).getTime() <= Date.now();
   if ((row.status === "pending" || row.status === "approved") && expired) return "expired";
@@ -139,7 +146,7 @@ export async function createApproval(input: {
         user_id: input.asker.userId,
         action: input.action,
         params: input.params as Json,
-        summary: spec.summary(input.params),
+        summary: clip(spec.summary(input.params), MAX_SUMMARY),
         user_code: `${userCodePart()}-${userCodePart()}`,
         requested_by_key: input.asker.agentRegistrationId ? null : (input.asker.keyId ?? null),
         requested_by_agent: input.asker.agentRegistrationId ?? null,
@@ -231,7 +238,8 @@ export async function withdrawApproval(
   if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
   // An action that runs on approval is done once approved: nothing to take back.
   if (actionSpec(row.action).runAt === "approve") {
-    return { id: row.id, action: row.action, collected: true };
+    if (row.status === "completed") return { id: row.id, action: row.action, collected: true };
+    throw new ApprovalError(400, "Only an approved request can be withdrawn.");
   }
   // Collected for good once its result is recorded. A completed row
   // without one is still being collected: withdrawing it then makes that
@@ -301,14 +309,9 @@ export async function decideApproval(
   if (!data) throw new ApprovalError(400, "This code has expired or was already answered.");
   if (!runsNow) return { id: row.id, action: row.action, done: false };
 
+  let stored: Json;
   try {
-    const { stored } = await spec.run(row.user_id, row.params);
-    const { error: recordError } = await admin
-      .from("approvals")
-      .update({ result: stored })
-      .eq("id", row.id);
-    if (recordError) throw recordError;
-    return { id: row.id, action: row.action, done: true, result: stored, params: row.params };
+    ({ stored } = await spec.run(row.user_id, row.params));
   } catch (err) {
     await admin
       .from("approvals")
@@ -323,6 +326,20 @@ export async function decideApproval(
     if (err instanceof ActionError) throw new ApprovalError(err.status, err.message);
     throw err;
   }
+  // The action is done whatever happens next, so the row never goes back
+  // to pending from here: approving again would run it twice (a second
+  // share link). A result that cannot be recorded leaves the asker's poll
+  // at "approved" until the row expires, then "expired".
+  let recordError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    ({ error: recordError } = await admin
+      .from("approvals")
+      .update({ result: stored })
+      .eq("id", row.id));
+    if (!recordError) break;
+  }
+  if (recordError) throw recordError;
+  return { id: row.id, action: row.action, done: true, result: stored, params: row.params };
 }
 
 /**
@@ -353,9 +370,13 @@ export async function pollApproval(
   // An action that ran on approval: its result is kept, and read as often
   // as asked until the row expires.
   if (row.status === "completed" && actionSpec(row.action).runAt === "approve") {
-    return row.result === null
-      ? { approval: { ...view(row), status: "approved" } }
-      : { approval: view(row), result: row.result as Record<string, unknown> };
+    if (row.result !== null) {
+      return { approval: view(row), result: row.result as Record<string, unknown> };
+    }
+    // Still running, or it ran and its result was never recorded (a crash):
+    // the asker stops waiting when the row expires.
+    const expired = new Date(row.expires_at).getTime() <= Date.now();
+    return { approval: { ...view(row), status: expired ? "expired" : "approved" } };
   }
   if (statusOf(row) !== "approved") return { approval: view(row) };
 
