@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { MfaGate } from "@/components/auth/mfa-challenge";
 import { trackCliDeviceAuthorized } from "@/lib/analytics";
+import { networkNotice } from "@/lib/device-login-notice";
 
 // The page a device login is approved on. `whk auth login` opens it with the
 // code in the address (?code=), so nobody types it: the person compares it
@@ -45,7 +47,8 @@ type Phase =
   | { kind: "review"; login: LoginRequest }
   | { kind: "approved"; email: string | null }
   | { kind: "denied" }
-  | { kind: "gone"; message: string };
+  | { kind: "gone"; message: string }
+  | { kind: "failed"; message: string };
 
 const CODE_PATTERN = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
@@ -82,12 +85,13 @@ function CliVerifyContent() {
       if (response.status === 404) {
         setPhase({ kind: "gone", message: result.error ?? "This code has expired." });
       } else if (!response.ok) {
-        setPhase({ kind: "gone", message: result.error ?? "This login could not be loaded." });
+        // A rate limit or a failure on our side: the code may still be good.
+        setPhase({ kind: "failed", message: result.error ?? "This login could not be loaded." });
       } else {
         setPhase({ kind: "review", login: result });
       }
     } catch {
-      setPhase({ kind: "gone", message: "This login could not be loaded. Reload to try again." });
+      setPhase({ kind: "failed", message: "This login could not be loaded." });
     }
   }, []);
 
@@ -157,8 +161,23 @@ function CliVerifyContent() {
             <Notice title="Login approved">
               {phase.email
                 ? `The terminal is signed in as ${phase.email}. You can close this page.`
-                : "The terminal is signed in. You can close this page."}
+                : "The terminal is signed in. You can close this page."}{" "}
+              If that was a mistake, revoke its key under{" "}
+              <Link href="/account/api-keys" className="text-primary underline">
+                API keys
+              </Link>
+              .
             </Notice>
+          )}
+
+          {phase.kind === "failed" && (
+            <div className="text-center">
+              <h1 className="text-2xl font-bold mb-3">Something went wrong</h1>
+              <p className="text-muted-foreground mb-6">{phase.message} The code may still work.</p>
+              <Button variant="surface" onClick={() => code && void load(code)}>
+                Try again
+              </Button>
+            </div>
           )}
 
           {phase.kind === "denied" && (
@@ -263,9 +282,7 @@ function Review(props: {
   onDeny: () => void;
 }) {
   const { login } = props;
-  // The warning never depends on `remote`: the requester sets that flag, and
-  // a phisher would set it to make the warning go away. It only adds context.
-  const elsewhere = login.network === "different";
+  const notice = networkNotice(login.network, login.remote);
 
   return (
     <div>
@@ -291,6 +308,10 @@ function Review(props: {
         <p className="mt-3 text-sm text-muted-foreground">
           Is this the code in your terminal? Approve only if it matches.
         </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          If you did not just run <code className="font-mono">whk auth login</code> yourself, choose
+          This wasn&apos;t me.
+        </p>
       </div>
 
       <Card className="p-4 mb-4 space-y-2 text-sm" render={<dl />}>
@@ -311,17 +332,16 @@ function Review(props: {
         </div>
       </Card>
 
-      {elsewhere && (
+      {notice && (
         <div
-          className="text-sm text-destructive-ink bg-destructive/10 border border-destructive/40 rounded-md p-3 mb-4"
-          role="alert"
+          className={
+            notice.level === "warning"
+              ? "text-sm text-destructive-ink bg-destructive/10 border border-destructive/40 rounded-md p-3 mb-4"
+              : "text-sm border rounded-md p-3 mb-4"
+          }
+          role={notice.level === "warning" ? "alert" : "note"}
         >
-          This login was started on a different network from this browser.
-          {login.remote
-            ? " Its terminal says it runs on another machine, such as a server you reach over SSH. "
-            : " "}
-          Approve it only if you started it yourself, just now. If someone sent you this link,
-          choose This wasn&apos;t me.
+          {notice.text}
         </div>
       )}
 

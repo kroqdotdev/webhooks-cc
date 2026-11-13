@@ -3,10 +3,32 @@ import { createDeviceCodeRecord } from "@/lib/supabase/device-auth";
 import { deviceRequester } from "@/lib/device-requester";
 import { reportError } from "@/lib/observability";
 
+const MAX_BODY_BYTES = 2048;
+
+/** At most `max` bytes of the body; null when it is longer. */
+async function readCapped(request: Request, max: number): Promise<string | null> {
+  if (Number(request.headers.get("content-length") ?? 0) > max) return null;
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /** The optional body: what the client is and whether it runs on another machine. */
 async function readBody(request: Request): Promise<Record<string, unknown>> {
   try {
-    const text = (await request.text()).slice(0, 2048);
+    const text = (await readCapped(request, MAX_BODY_BYTES)) ?? "";
     const data: unknown = text.trim() ? JSON.parse(text) : {};
     return data && typeof data === "object" && !Array.isArray(data)
       ? (data as Record<string, unknown>)

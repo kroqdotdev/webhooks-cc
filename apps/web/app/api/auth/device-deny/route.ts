@@ -1,6 +1,6 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
-import { createClient } from "@/lib/supabase/server";
+import { deviceApprover } from "@/lib/device-session";
 import { denyDeviceCode } from "@/lib/supabase/device-auth";
 import { reportError } from "@/lib/observability";
 
@@ -20,13 +20,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const approver = await deviceApprover();
+    if ("error" in approver) return approver.error;
 
     await denyDeviceCode(body.userCode);
     return Response.json({ denied: true });

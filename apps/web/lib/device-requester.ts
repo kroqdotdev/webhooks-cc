@@ -19,7 +19,17 @@ export interface DeviceRequester {
   remote: boolean;
 }
 
-/** Printable text only, trimmed and cut to `max` characters. */
+/** Printable ASCII only (what whk and user agents send), trimmed and cut. */
+function cleanAscii(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const text = value
+    .replace(/[^\x20-\x7e]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? text.slice(0, max) : null;
+}
+
+/** Printable text, trimmed and cut to `max` characters (not halfway through one). */
 function clean(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
   // Control characters (a line break among them, so they become spaces) and
@@ -27,9 +37,10 @@ function clean(value: unknown, max: number): string | null {
   const text = value
     // eslint-disable-next-line no-control-regex -- removing them is the point
     .replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, " ")
+    .replace(/[\u061c\u200b-\u200d\u2060-\u2064\ufeff]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return text ? text.slice(0, max) : null;
+  return text ? Array.from(text).slice(0, max).join("") : null;
 }
 
 export function networkOf(request: Request): string | null {
@@ -49,7 +60,7 @@ export function deviceRequester(
   const country = request.headers.get("cf-ipcountry")?.trim().toUpperCase() ?? "";
   const cityHeader = serverEnv().LOCATION_CITY_HEADER;
   return {
-    client: clean(body.client, 120) ?? clean(request.headers.get("user-agent"), 120),
+    client: cleanAscii(body.client, 120) ?? cleanAscii(request.headers.get("user-agent"), 120),
     // XX is Cloudflare's "unknown".
     country: /^[A-Z][A-Z0-9]$/.test(country) && country !== "XX" ? country : null,
     city: cityHeader ? clean(request.headers.get(cityHeader), 80) : null,

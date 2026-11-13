@@ -171,11 +171,6 @@ const serverEnvSchema = z
         })
         .optional()
     ),
-    // Tunnels (lib/tunnels): the secret the edge (apps/edge-rs) and the web
-    // app share for /api/edge/* and the edge's control port, the control
-    // port's URL, and the origin previews are served under (a preview is
-    // that origin with its name before the host). Sharing is off unless the
-    // secret and the origin are set.
     // The name of a request header the edge sets (always overwriting it) to
     // the visitor's city, which the device login's approval page shows next
     // to the country (CF-IPCountry). Unset, the page shows the country only:
@@ -186,6 +181,11 @@ const serverEnvSchema = z
         .regex(/^[a-z0-9-]+$/i)
         .optional()
     ),
+    // Tunnels (lib/tunnels): the secret the edge (apps/edge-rs) and the web
+    // app share for /api/edge/* and the edge's control port, the control
+    // port's URL, and the origin previews are served under (a preview is
+    // that origin with its name before the host). Sharing is off unless the
+    // secret and the origin are set.
     EDGE_SECRET: blankToUndefined(z.string().min(32).optional()),
     EDGE_URL: blankToUndefined(z.string().url().default("http://127.0.0.1:4001")),
     SHARE_PREVIEW_ORIGIN: blankToUndefined(z.string().url().optional()),

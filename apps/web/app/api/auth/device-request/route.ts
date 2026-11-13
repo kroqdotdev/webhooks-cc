@@ -1,5 +1,5 @@
 import { checkRateLimit } from "@/lib/rate-limit";
-import { createClient } from "@/lib/supabase/server";
+import { deviceApprover } from "@/lib/device-session";
 import { describeDeviceCode } from "@/lib/supabase/device-auth";
 import { networkOf } from "@/lib/device-requester";
 import { reportError } from "@/lib/observability";
@@ -19,13 +19,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const approver = await deviceApprover();
+    if ("error" in approver) return approver.error;
 
     const login = await describeDeviceCode(code, networkOf(request));
     if (!login) {

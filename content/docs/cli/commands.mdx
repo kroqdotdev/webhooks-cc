@@ -38,7 +38,7 @@ whk auth login --remote      # on a server over SSH: print the link, open it in 
 whk auth login --no-browser  # print the link without opening a browser
 ```
 
-`--remote` is the default over SSH and on Linux without a display. The page then tells whoever approves that the terminal says it runs on another machine, alongside its warning that the login came from another network: the flag comes from the terminal, so it never hides the warning. Anyone who did not start the login can choose **This wasn't me** on the page, which ends it at once: `whk` stops with `login_denied` (exit status 3). With `--json`, the first line is `{"status":"pending","user_code":...,"verification_url_complete":...}` and the last `{"status":"success","email":...}`.
+`--remote` is the default over SSH and on Linux without a display (not in WSL, where the Windows browser opens). The page warns whoever approves when a login came from a different network than their browser, or one it could not compare, and `--remote` never hides that: any terminal can claim it. Anyone who did not start the login can choose **This wasn't me** on the page, which ends it at once: `whk` stops with `login_denied` (exit status 3). With `--json`, the first line is `{"status":"pending","user_code":...,"verification_url_complete":...}` and the last `{"status":"success","email":...}`.
 
 ## auth logout
 

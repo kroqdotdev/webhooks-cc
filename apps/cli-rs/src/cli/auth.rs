@@ -11,12 +11,17 @@ use crate::types::Token;
 /// Whether this machine is not the one with the person's browser: an SSH
 /// session, or Linux with no display (a server, a container). The link is
 /// then printed to be opened elsewhere, and no browser is started here.
+/// WSL counts as local even without a display: `open` reaches the Windows
+/// browser through wslview. A shell that only inherited `SSH_CONNECTION`
+/// (tmux started over SSH, attached locally) still counts as remote; the
+/// link is printed either way.
 pub fn remote_session(env: impl Fn(&str) -> Option<String>) -> bool {
     let set = |name: &str| env(name).is_some_and(|v| !v.trim().is_empty());
     if set("SSH_CONNECTION") || set("SSH_TTY") || set("SSH_CLIENT") {
         return true;
     }
-    cfg!(target_os = "linux") && !set("DISPLAY") && !set("WAYLAND_DISPLAY")
+    let wsl = set("WSL_DISTRO_NAME") || set("WSL_INTEROP");
+    cfg!(target_os = "linux") && !wsl && !set("DISPLAY") && !set("WAYLAND_DISPLAY")
 }
 
 pub async fn login(
@@ -62,7 +67,11 @@ pub async fn login(
                 "verification_url_complete": device.verification_url_complete,
                 "remote": remote,
                 "expires_at": device.expires_at,
-                "message": "Open verification_url_complete in a browser signed in to webhooks.cc, check that the page shows user_code, and approve.",
+                "message": if device.verification_url_complete.is_some() {
+                    "Open verification_url_complete in a browser signed in to webhooks.cc, check that the page shows user_code, and approve."
+                } else {
+                    "Open verification_url in a browser signed in to webhooks.cc, enter user_code, and approve."
+                },
             })
         );
     } else {
@@ -277,6 +286,15 @@ mod remote_tests {
         assert!(!remote_session(env(&[
             ("WAYLAND_DISPLAY", "wayland-0"),
             ("SSH_CONNECTION", " "),
+        ])));
+    }
+
+    #[test]
+    fn wsl_without_a_display_is_local() {
+        assert!(!remote_session(env(&[("WSL_DISTRO_NAME", "Ubuntu")])));
+        assert!(remote_session(env(&[
+            ("WSL_DISTRO_NAME", "Ubuntu"),
+            ("SSH_CONNECTION", "203.0.113.7 51000 10.0.0.2 22"),
         ])));
     }
 

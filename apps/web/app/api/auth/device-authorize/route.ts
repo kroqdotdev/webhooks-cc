@@ -1,9 +1,8 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
-import { createClient } from "@/lib/supabase/server";
+import { deviceApprover } from "@/lib/device-session";
 import { authorizeDeviceCodeForUser } from "@/lib/supabase/device-auth";
 import { reportError } from "@/lib/observability";
-import { owesSecondFactor } from "@/lib/mfa-session";
 
 export async function POST(request: Request) {
   const rateLimited = await checkRateLimit(request, "device-authorize", 10);
@@ -18,25 +17,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
     // The key this mints reads everything, so a session that skipped the
     // account's authenticator code cannot approve a device.
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session || (await owesSecondFactor(user, session.access_token))) {
-      return Response.json({ error: "Enter your two-factor code first." }, { status: 401 });
-    }
+    const approver = await deviceApprover();
+    if ("error" in approver) return approver.error;
 
-    const result = await authorizeDeviceCodeForUser(user.id, body.userCode);
+    const result = await authorizeDeviceCodeForUser(approver.userId, body.userCode);
     return Response.json(result);
   } catch (error) {
     if (
