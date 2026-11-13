@@ -3,8 +3,11 @@ import { createHmac } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  ApprovalDeniedError,
+  ApprovalExpiredError,
   NotFoundError,
   RateLimitError,
+  TimeoutError,
   WebhooksCC,
   WebhooksCCError,
   buildEmailJson,
@@ -64,6 +67,10 @@ const EXPECTED_TOOLS = [
   "test_forwarding",
   "list_deliveries",
   "redeliver",
+  "list_api_keys",
+  "create_api_key",
+  "wait_for_approval",
+  "revoke_api_key",
   "share_port",
   "list_shares",
   "stop_share",
@@ -257,7 +264,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(54);
+    expect(Object.keys(tools)).toHaveLength(58);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
     expect(tools).not.toHaveProperty("share_port");
@@ -312,7 +319,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(57);
+    expect(Object.keys(tools)).toHaveLength(61);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -2644,5 +2651,65 @@ describe("toolWords", () => {
     expect(toolWords("Run whk names ls, then whk share <port>.", true)).toBe(
       "Run list_names, then whk share <port>."
     );
+  });
+});
+
+describe("API keys and approvals", () => {
+  const pending = {
+    id: "appr_1",
+    status: "pending",
+    action: "api_keys.create",
+    summary: 'Create an API key named "CI" with full access to your account for 90 days.',
+    code: "ABCD-EFGH",
+    url: "https://webhooks.cc/approve?code=ABCD-EFGH",
+    expiresAt: "2026-11-13T12:15:00.000Z",
+    wait: vi.fn(),
+  };
+
+  it("create_api_key answers at once with the link, the code and what to call next", async () => {
+    const create = vi.fn().mockResolvedValue(pending);
+    const client = createMockClient({
+      apiKeys: { create } as unknown as WebhooksCC["apiKeys"],
+    });
+    const tools = getRegisteredTools(client);
+    const result = await tools.create_api_key.handler({ name: "CI" });
+    const text = result.content[0].text;
+    expect(create).toHaveBeenCalledWith({ name: "CI", expiresInDays: undefined });
+    expect(text).toContain(pending.url);
+    expect(text).toContain("ABCD-EFGH");
+    expect(text).toContain("wait_for_approval with id appr_1");
+    expect(pending.wait).not.toHaveBeenCalled();
+  });
+
+  it("wait_for_approval hands over the key once, or says why not", async () => {
+    const wait = vi
+      .fn()
+      .mockResolvedValueOnce({ key: "whcc_new", name: "CI", expiresAt: "2027-02-11" })
+      .mockRejectedValueOnce(new ApprovalDeniedError("appr_1"))
+      .mockRejectedValueOnce(new ApprovalExpiredError("appr_1"))
+      .mockRejectedValueOnce(new TimeoutError(45_000));
+    const client = createMockClient({
+      approvals: { wait } as unknown as WebhooksCC["approvals"],
+    });
+    const tools = getRegisteredTools(client);
+    const run = async () =>
+      (await tools.wait_for_approval.handler({ id: "appr_1", timeout: "45s" })).content[0].text;
+    const approved = await run();
+    expect(approved).toContain("whcc_new");
+    expect(approved).toContain("shown only this once");
+    expect(wait).toHaveBeenCalledWith("appr_1", { timeout: 45_000 });
+    expect(await run()).toContain("refused");
+    expect(await run()).toContain("expired");
+    expect(await run()).toContain("call wait_for_approval with id appr_1 again");
+  });
+
+  it("caps the wait on the hosted server", async () => {
+    const wait = vi.fn().mockResolvedValue({ key: "whcc_new" });
+    const client = createMockClient({
+      approvals: { wait } as unknown as WebhooksCC["approvals"],
+    });
+    const tools = getRegisteredTools(client, { remote: true });
+    await tools.wait_for_approval.handler({ id: "appr_1", timeout: "10m" });
+    expect(wait).toHaveBeenCalledWith("appr_1", { timeout: 50_000 });
   });
 });

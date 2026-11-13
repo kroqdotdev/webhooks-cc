@@ -4,6 +4,7 @@ import { loggablePolarError } from "@/lib/polar";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { AccountDeletionBillingError, deleteAccountForUser } from "@/lib/supabase/account";
 import { parseDisplayName, updateDisplayName } from "@/lib/supabase/profile";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
 
 const NAME_RATE_LIMIT_MAX = 20;
@@ -35,6 +36,14 @@ export async function PATCH(request: Request) {
     );
   }
 
+  if (body && typeof body === "object" && !Array.isArray(body) && "approvalEmails" in body) {
+    return setApprovalEmails(
+      request,
+      auth.userId,
+      (body as { approvalEmails: unknown }).approvalEmails,
+      rateLimit
+    );
+  }
   if (!body || typeof body !== "object" || Array.isArray(body) || !("name" in body)) {
     return applyRateLimitHeaders(
       Response.json({ error: "name is required (a string, or null to clear it)" }, { status: 400 }),
@@ -102,4 +111,36 @@ export async function DELETE(request: Request) {
     await auditUserAction(request, auth.userId, { action: "account.deleted", status: 500 });
     return Response.json({ error: "Failed to delete account" }, { status: 500 });
   }
+}
+
+/** The opt-in email for every approval asked for on the account (lib/approvals). */
+async function setApprovalEmails(
+  request: Request,
+  userId: string,
+  value: unknown,
+  rateLimit: Parameters<typeof applyRateLimitHeaders>[1]
+): Promise<Response> {
+  if (typeof value !== "boolean") {
+    return applyRateLimitHeaders(
+      Response.json({ error: "approvalEmails must be true or false" }, { status: 400 }),
+      rateLimit
+    );
+  }
+  const { error } = await createAdminClient()
+    .from("users")
+    .update({ approval_emails: value })
+    .eq("id", userId);
+  if (error) {
+    reportError("PATCH /api/account approvalEmails failed", error);
+    return applyRateLimitHeaders(
+      Response.json({ error: "Could not save that" }, { status: 500 }),
+      rateLimit
+    );
+  }
+  await auditUserAction(request, userId, {
+    action: "account.approval_emails_updated",
+    status: 200,
+    metadata: { enabled: value },
+  });
+  return applyRateLimitHeaders(Response.json({ approvalEmails: value }), rateLimit);
 }

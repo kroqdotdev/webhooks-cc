@@ -11,6 +11,8 @@ import {
   MAX_CONDITION_NAME_LEN,
   MAX_CONDITION_PATH_LEN,
   MAX_RULE_NAME_LEN,
+  ApprovalDeniedError,
+  ApprovalExpiredError,
   NotFoundError,
   RateLimitError,
   TEMPLATE_METADATA,
@@ -523,6 +525,17 @@ type TextContent = { type: "text"; text: string };
 export type ToolResult = { content: TextContent[]; isError?: boolean };
 
 /** Create a text content response for MCP tools. */
+/** A new API key as a tool answer: the key is shown once, so say so. */
+function keyText(key: { key?: string; name?: string; expiresAt?: string }): string {
+  return [
+    `Approved. The API key ${key.name ? `"${key.name}" ` : ""}is: ${key.key ?? "(not returned)"}`,
+    `It is shown only this once: store it now (for example as a CI secret), never in code.`,
+    key.expiresAt ? `It works until ${key.expiresAt}.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function textContent(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
 }
@@ -2675,6 +2688,96 @@ export function registerTools(
     },
     withErrorHandling(async ({ state }) => {
       return jsonContent(withShareHints(await client.shares.list(state ? { state } : {}), remote));
+    })
+  );
+
+  server.tool(
+    "list_api_keys",
+    "List the account's API keys: id, name, prefix, when they were made, when they expire and when they were last used. The keys themselves are never listed.",
+    {},
+    withErrorHandling(async () => jsonContent(await client.apiKeys.list()))
+  );
+
+  server.tool(
+    "create_api_key",
+    "Ask for a new API key for the account, for CI or another tool. The account's owner must approve it: this returns at once with a link and a code. Show the person the link and tell them to check that the page shows the same code, then call wait_for_approval with the approval id to get the key (shown once).",
+    {
+      name: z
+        .string()
+        .min(1)
+        .max(64)
+        .describe('A name that says where the key is used, such as "GitHub Actions"'),
+      expiresInDays: z
+        .number()
+        .int()
+        .min(1)
+        .max(365)
+        .optional()
+        .describe("How many days the key works, 1 to 365 (default 90)"),
+    },
+    withErrorHandling(async ({ name, expiresInDays }) => {
+      const pending = await client.apiKeys.create({ name, expiresInDays });
+      if (!pending.id) {
+        const key = await pending.wait();
+        return textContent(keyText(key));
+      }
+      return textContent(
+        [
+          `Asked for approval: ${pending.summary}`,
+          `Show the person this link: ${pending.url}`,
+          `The page shows the code ${pending.code}; ask them to approve only if it matches.`,
+          `Then call wait_for_approval with id ${pending.id}. The request expires at ${pending.expiresAt}.`,
+        ].join("\n")
+      );
+    })
+  );
+
+  server.tool(
+    "wait_for_approval",
+    "Wait for the account's owner to answer an approval (from create_api_key) and collect what it grants, such as the new API key. If they have not answered yet, call it again.",
+    {
+      id: z.string().describe("The approval id"),
+      timeout: durationOrTimestampSchema
+        .default("45s")
+        .describe('How long to wait for the person, for example "45s"'),
+    },
+    withErrorHandling(async ({ id, timeout }) => {
+      const ms = durationMs(timeout) ?? 45_000;
+      try {
+        const result = await client.approvals.wait<{
+          key?: string;
+          name?: string;
+          expiresAt?: string;
+        }>(id, { timeout: ms });
+        return textContent(keyText(result));
+      } catch (error) {
+        if (error instanceof ApprovalDeniedError) {
+          return textContent(
+            "The person refused it on the approval page. Do not ask again unless they tell you to."
+          );
+        }
+        if (error instanceof ApprovalExpiredError) {
+          return textContent("The approval expired. Ask again if the person still wants it.");
+        }
+        if (error instanceof TimeoutError) {
+          return textContent(
+            `Not answered yet. Remind the person of the link if needed, and call wait_for_approval with id ${id} again.`
+          );
+        }
+        throw error;
+      }
+    })
+  );
+
+  server.tool(
+    "revoke_api_key",
+    "Revoke one of the account's API keys by its id (from list_api_keys). Anything using it stops working at once.",
+    {
+      id: z.string().describe("The key's id, from list_api_keys"),
+    },
+    withErrorHandling(async ({ id }) => {
+      await client.apiKeys.revoke(id);
+      return textContent(`Revoked the API key ${id}, if the account had it.`);
     })
   );
 

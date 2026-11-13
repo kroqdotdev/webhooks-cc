@@ -19,4 +19,9 @@ describe("networkNotice", () => {
     expect(networkNotice("unknown", false)?.level).toBe("caution");
     expect(networkNotice("unknown", true)?.level).toBe("caution");
   });
+
+  it("names a request when it is not a login", () => {
+    expect(networkNotice("different", false, "request")?.text).toMatch(/^This request came/);
+    expect(networkNotice("unknown", false, "request")?.text).toContain("this request came");
+  });
 });

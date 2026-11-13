@@ -22,6 +22,7 @@ export type AuditAction =
   | "account.analytics_consent_updated"
   | "account.deleted"
   | "account.name_updated"
+  | "account.approval_emails_updated"
   | "account.site_switch"
   | "api_key.created"
   | "api_key.deleted"

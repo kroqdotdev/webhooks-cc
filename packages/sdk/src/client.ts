@@ -15,6 +15,11 @@
  */
 import { apiUserAgent } from "./user-agent";
 import type {
+  ApiKey,
+  Approval,
+  CreatedApiKey,
+  PendingApproval,
+  WaitForApprovalOptions,
   AlertEvent,
   AlertSettings,
   AttachmentDownload,
@@ -85,6 +90,8 @@ import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/add
 import { buildEmailJson } from "./email/json";
 import { isEmailRequest, matchEmail } from "./matchers";
 import {
+  ApprovalDeniedError,
+  ApprovalExpiredError,
   WebhooksCCError,
   UnauthorizedError,
   NotFoundError,
@@ -1615,6 +1622,27 @@ export class WebhooksCC {
           params: { inviteId: "string" },
         },
       },
+      apiKeys: {
+        list: { description: "List the account's API keys", params: {} },
+        create: {
+          description:
+            "Ask for a new API key; returns a pending approval (show the person its url, the page shows its code), and approval.wait() resolves with the key, shown once",
+          params: { name: "string", expiresInDays: "number? (1 to 365, default 90)" },
+        },
+        revoke: { description: "Revoke an API key by id", params: { id: "string" } },
+      },
+      approvals: {
+        get: {
+          description:
+            "An approval's status; once approved, the first call carries its result, once",
+          params: { id: "string" },
+        },
+        wait: {
+          description:
+            "Wait until the person answers and collect the result; throws ApprovalDeniedError or ApprovalExpiredError",
+          params: { id: "string", timeout: "number?", pollInterval: "number?" },
+        },
+      },
       shares: {
         list: {
           description:
@@ -1923,6 +1951,102 @@ export class WebhooksCC {
         validatePathSegment(inviteId, "inviteId");
         await this.request("POST", `/invites/${inviteId}/decline`);
       },
+    },
+  };
+
+  /**
+   * The account's API keys. Listing and revoking work with any key of the
+   * account. Creating one with an API key asks the account's owner first: it
+   * returns a pending approval whose `url` the person opens (the page shows
+   * `code` to compare); `wait()` resolves with the new key once they approve.
+   */
+  apiKeys = {
+    /** The account's API keys, newest first (agent tokens are not listed). */
+    list: async (): Promise<ApiKey[]> => {
+      return this.request<ApiKey[]>("GET", "/api-keys");
+    },
+
+    /**
+     * Ask for a new API key. `expiresInDays` is 1 to 365 (default 90). Show
+     * the person the returned `url`, then `await approval.wait()` for the key,
+     * which is never shown again.
+     */
+    create: async (options: {
+      name: string;
+      expiresInDays?: number;
+    }): Promise<PendingApproval<CreatedApiKey>> => {
+      const answer = await this.request<{ approval?: Approval } & Partial<CreatedApiKey>>(
+        "POST",
+        "/api-keys",
+        options,
+        { repeatable: false }
+      );
+      if (answer.approval) {
+        const approval = answer.approval;
+        return {
+          ...approval,
+          wait: (waitOptions) => this.approvals.wait<CreatedApiKey>(approval.id, waitOptions),
+        };
+      }
+      // A browser session creates the key at once.
+      const created = answer as CreatedApiKey;
+      return {
+        id: "",
+        status: "completed",
+        action: "api_keys.create",
+        summary: `Created the API key "${created.name}".`,
+        code: "",
+        url: "",
+        expiresAt: created.expiresAt,
+        wait: async () => created,
+      };
+    },
+
+    /** Revoke an API key by id (from `list()`). */
+    revoke: async (id: string): Promise<void> => {
+      validatePathSegment(id, "id");
+      await this.request("DELETE", `/api-keys?id=${encodeURIComponent(id)}`);
+    },
+  };
+
+  /** Approvals asked for by this key or agent (see `apiKeys.create`). */
+  approvals = {
+    /** The approval's state; once approved, the first call also carries `result`, once. */
+    get: async <T = Record<string, unknown>>(
+      id: string
+    ): Promise<{ approval: Approval; result?: T }> => {
+      validatePathSegment(id, "id");
+      return this.request<{ approval: Approval; result?: T }>("GET", `/approvals/${id}`);
+    },
+
+    /**
+     * Wait until the person answers and collect what the approval grants.
+     * Throws ApprovalDeniedError when they refuse, ApprovalExpiredError when
+     * it runs out, TimeoutError when `timeout` passes first.
+     */
+    wait: async <T = Record<string, unknown>>(
+      id: string,
+      options: WaitForApprovalOptions = {}
+    ): Promise<T> => {
+      const interval = Math.max(500, options.pollInterval ?? 2_000);
+      const start = Date.now();
+      for (;;) {
+        options.signal?.throwIfAborted();
+        const { approval, result } = await this.approvals.get<T>(id);
+        if (approval.status === "completed") {
+          if (result !== undefined) return result;
+          throw new WebhooksCCError(
+            409,
+            "This approval was already collected; what it granted is only handed over once."
+          );
+        }
+        if (approval.status === "denied") throw new ApprovalDeniedError(id);
+        if (approval.status === "expired") throw new ApprovalExpiredError(id);
+        if (options.timeout !== undefined && Date.now() - start >= options.timeout) {
+          throw new TimeoutError(options.timeout, "Timed out waiting for the approval");
+        }
+        await sleep(interval);
+      }
     },
   };
 

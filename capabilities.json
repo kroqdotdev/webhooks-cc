@@ -1,5 +1,5 @@
 {
-  "about": "What a user can do, and how each client reaches it. Every API route is a capability here or listed in internalRoutes; each surface names its calls (SDK methods, CLI commands, MCP tools), or says in a sentence why it has none, and mcpHosted says when the hosted MCP server lacks a tool the local one has. A capability counts as covered when its calls reach its routes; split one when a client reaches only some of them. Nobody should need the dashboard: a capability every client lacks is a gap to close, and sessionOnly says why a person still has to be in the loop. Checked by packages/sdk/src/__tests__/capabilities.test.ts, packages/mcp/src/__tests__/capabilities.test.ts and apps/cli-rs (cli::capabilities).",
+  "about": "What a user can do, and how each client reaches it. Every API route is a capability here or listed in internalRoutes; each surface names its calls (SDK methods, CLI commands, MCP tools), or says in a sentence why it has none, and mcpHosted says when the hosted MCP server lacks a tool the local one has. A capability counts as covered when its calls reach its routes; split one when a client reaches only some of them. Nobody should need the dashboard: a capability every client lacks is a gap to close, sessionOnly says why a person still has to be in the loop, and approval says what a person approves when an API key or agent asks (the route answers 202 with an approval). Checked by packages/sdk/src/__tests__/capabilities.test.ts, packages/mcp/src/__tests__/capabilities.test.ts and apps/cli-rs (cli::capabilities).",
   "capabilities": [
     {
       "id": "endpoint.create",
@@ -451,15 +451,45 @@
       "mcp": "session only"
     },
     {
-      "id": "account.api-keys",
-      "does": "List, create and revoke API keys",
-      "routes": ["GET /api/api-keys", "POST /api/api-keys", "DELETE /api/api-keys"],
-      "sessionOnly": "a key cannot mint keys; planned: the agent asks, a person approves",
-      "sdk": "session only",
-      "python": "session only",
-      "go": "session only",
-      "cli": "session only",
-      "mcp": "session only"
+      "id": "account.api-keys.list",
+      "does": "List the account's API keys",
+      "routes": ["GET /api/api-keys"],
+      "sdk": ["apiKeys.list"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["keys list"],
+      "mcp": ["list_api_keys"]
+    },
+    {
+      "id": "account.api-keys.create",
+      "does": "Create an API key",
+      "routes": ["POST /api/api-keys"],
+      "approval": "the account's owner approves each key an API key or agent asks for; the asker chooses its lifetime, at most a year",
+      "sdk": ["apiKeys.create"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["keys create"],
+      "mcp": ["create_api_key"]
+    },
+    {
+      "id": "account.api-keys.revoke",
+      "does": "Revoke an API key",
+      "routes": ["DELETE /api/api-keys"],
+      "sdk": ["apiKeys.revoke"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["keys revoke"],
+      "mcp": ["revoke_api_key"]
+    },
+    {
+      "id": "approval.status",
+      "does": "Follow an approval asked for, and collect what it grants once approved",
+      "routes": ["GET /api/approvals/[id]"],
+      "sdk": ["approvals.get", "approvals.wait"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["approvals wait"],
+      "mcp": ["wait_for_approval"]
     },
     {
       "id": "account.connected-agents",
@@ -840,7 +870,9 @@
     "/api/integrations/google/handoff": "the Google picker pop-up",
     "/api/integrations/google/picked": "the Google picker pop-up",
     "/api/account/analytics-consent": "the browser's cookie banner",
-    "/api/account/mfa/*": "two-factor sign-in, which belongs to the browser"
+    "/api/account/mfa/*": "two-factor sign-in, which belongs to the browser",
+    "/api/approvals/review": "the approval page, for the person answering it",
+    "/api/approvals/decide": "the approval page, for the person answering it"
   },
   "local": {
     "sdk": {

@@ -21,6 +21,8 @@ export type {
   RegistrationDescription,
 } from "./register";
 export {
+  ApprovalDeniedError,
+  ApprovalExpiredError,
   WebhooksCCError,
   UnauthorizedError,
   NotFoundError,
@@ -276,6 +278,12 @@ export type {
   Team,
   TeamMember,
   TeamInvite,
+  ApiKey,
+  Approval,
+  ApprovalStatus,
+  CreatedApiKey,
+  PendingApproval,
+  WaitForApprovalOptions,
   TeamMembers,
   LiveResponse,
   TunnelShare,

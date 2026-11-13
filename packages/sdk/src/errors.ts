@@ -40,6 +40,28 @@ export class TimeoutError extends WebhooksCCError {
   }
 }
 
+/** The account's owner refused the approval on its page ("This wasn't me"). */
+export class ApprovalDeniedError extends WebhooksCCError {
+  constructor(
+    public readonly approvalId: string,
+    message = "The approval was refused on its approval page."
+  ) {
+    super(0, message);
+    this.name = "ApprovalDeniedError";
+  }
+}
+
+/** Nobody answered the approval in time, or its result was not collected in time. Ask again. */
+export class ApprovalExpiredError extends WebhooksCCError {
+  constructor(
+    public readonly approvalId: string,
+    message = "The approval expired before it was answered and collected. Ask again."
+  ) {
+    super(0, message);
+    this.name = "ApprovalExpiredError";
+  }
+}
+
 /** Rate limit metadata from X-RateLimit-* response headers. */
 export interface RateLimitMeta {
   /** Maximum number of requests allowed in the current window. */
