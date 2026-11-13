@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.14.0";
-export const SDK_VERSION = "1.24.0";
+export const CLI_VERSION = "1.15.0";
+export const SDK_VERSION = "1.25.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
-export const MCP_VERSION = "1.20.0";
+export const MCP_VERSION = "1.21.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.15.0",
+    date: "2026-11-13",
+    title: "What You Pay For",
+    track: "cli",
+    items: [
+      "`whk billing` shows what the account pays for: the plan and its subscription (monthly or annual, its status, when it renews or ends, a change waiting for the renewal), the add-ons, and every team's seats, status and add-ons; `--json` prints the whole answer",
+    ],
+  },
+  {
     version: "1.14.0",
     date: "2026-11-13",
     title: "Keys by Approval",
@@ -2454,6 +2463,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.25.0",
+    date: "2026-11-13",
+    title: "What You Pay For",
+    track: "sdk",
+    items: [
+      "`client.billing.get()` returns what the account pays for (`BillingSummary`): the plan, its subscription, the add-ons, and every team's",
+      "`client.billing.capacity({ resource, teamId })` reads the add-ons of the account or a team, and `quoteTeamPlan()` and `quoteTeamSeats()` price a change to a team you own",
+      "`Team` declares the billing fields the server sends (`business`, `billingInterval`, `billingPeriodEnd`, `pendingPlan`, `pendingSeats` and more)",
+    ],
+  },
   {
     version: "1.24.0",
     date: "2026-11-13",
@@ -3056,6 +3076,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.21.0",
+    date: "2026-11-13",
+    title: "What You Pay For",
+    track: "mcp",
+    items: [
+      "`get_billing` says what the account pays for: the plan and its subscription, the add-ons, and every team's; read only",
+    ],
+  },
   {
     version: "1.20.0",
     date: "2026-11-13",
