@@ -176,6 +176,16 @@ const serverEnvSchema = z
     // port's URL, and the origin previews are served under (a preview is
     // that origin with its name before the host). Sharing is off unless the
     // secret and the origin are set.
+    // The name of a request header the edge sets (always overwriting it) to
+    // the visitor's city, which the device login's approval page shows next
+    // to the country (CF-IPCountry). Unset, the page shows the country only:
+    // a header nobody overwrites is whatever the client sent.
+    LOCATION_CITY_HEADER: blankToUndefined(
+      z
+        .string()
+        .regex(/^[a-z0-9-]+$/i)
+        .optional()
+    ),
     EDGE_SECRET: blankToUndefined(z.string().min(32).optional()),
     EDGE_URL: blankToUndefined(z.string().url().default("http://127.0.0.1:4001")),
     SHARE_PREVIEW_ORIGIN: blankToUndefined(z.string().url().optional()),
@@ -365,6 +375,7 @@ export function serverEnv() {
       POLAR_AUTO_REFUND_MAX_CENTS: process.env.POLAR_AUTO_REFUND_MAX_CENTS,
       DOMAIN_DNS_SERVERS: process.env.DOMAIN_DNS_SERVERS,
       FILE_DROP_PROXY_URL: process.env.FILE_DROP_PROXY_URL,
+      LOCATION_CITY_HEADER: process.env.LOCATION_CITY_HEADER,
       EDGE_SECRET: process.env.EDGE_SECRET,
       EDGE_URL: process.env.EDGE_URL,
       SHARE_PREVIEW_ORIGIN: process.env.SHARE_PREVIEW_ORIGIN,

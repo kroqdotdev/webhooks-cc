@@ -8,7 +8,23 @@ use crate::cli::output::{bold, dim, green, red};
 use crate::error::CliError;
 use crate::types::Token;
 
-pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
+/// Whether this machine is not the one with the person's browser: an SSH
+/// session, or Linux with no display (a server, a container). The link is
+/// then printed to be opened elsewhere, and no browser is started here.
+pub fn remote_session(env: impl Fn(&str) -> Option<String>) -> bool {
+    let set = |name: &str| env(name).is_some_and(|v| !v.trim().is_empty());
+    if set("SSH_CONNECTION") || set("SSH_TTY") || set("SSH_CLIENT") {
+        return true;
+    }
+    cfg!(target_os = "linux") && !set("DISPLAY") && !set("WAYLAND_DISPLAY")
+}
+
+pub async fn login(
+    client: &mut ApiClient,
+    json: bool,
+    remote_flag: bool,
+    no_browser: bool,
+) -> Result<()> {
     if auth::is_logged_in() {
         let token = auth::load_token()?.unwrap();
         if json {
@@ -23,37 +39,55 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
         return Ok(());
     }
 
+    let remote = remote_flag || remote_session(|name| std::env::var(name).ok());
+
     // Step 1: Create device code
-    let device = client.create_device_code().await?;
+    let device = client.create_device_code(remote).await?;
+    // The page with the code in it, so the person compares the code rather
+    // than typing it; older servers only send the bare page.
+    let link = device
+        .verification_url_complete
+        .clone()
+        .unwrap_or_else(|| device.verification_url.clone());
 
     if json {
         // One line per step (NDJSON), so an agent can show the human the
-        // code and the link while this keeps polling.
+        // link while this keeps polling.
         println!(
             "{}",
             serde_json::json!({
                 "status": "pending",
                 "user_code": device.user_code,
                 "verification_url": device.verification_url,
+                "verification_url_complete": device.verification_url_complete,
+                "remote": remote,
                 "expires_at": device.expires_at,
-                "message": "Open verification_url and enter user_code to approve this login.",
+                "message": "Open verification_url_complete in a browser signed in to webhooks.cc, check that the page shows user_code, and approve.",
             })
         );
     } else {
-        println!("\n  {} {}\n", bold("Your code:"), green(&device.user_code));
+        println!("\n  Open this link to approve the login:\n");
+        println!("    {}\n", bold(&link));
         println!(
-            "  Open {} and enter the code above.",
-            bold(&device.verification_url)
+            "  The page shows the code {}: approve only if it matches.",
+            green(&device.user_code)
         );
+        if remote {
+            println!(
+                "  {}",
+                dim("This looks like another machine: open the link in your own browser.")
+            );
+        }
     }
 
-    // Try to open browser (only if URL looks safe and not in JSON mode)
-    if !json && device.verification_url.starts_with("https://") {
-        let _ = open::that(&device.verification_url);
+    // Open the browser only on this machine's own desktop, and only for a
+    // link that looks right.
+    if !json && !remote && !no_browser && link.starts_with("https://") {
+        let _ = open::that(&link);
     }
 
     if !json {
-        println!("\n  Waiting for authorization...");
+        println!("\n  Waiting for approval...");
     }
 
     // Step 2: Poll until authorized or expired
@@ -63,6 +97,7 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
         let poll = client.poll_device_code(&device.device_code).await?;
         match poll.status.as_str() {
             "authorized" => break,
+            "denied" => return Err(CliError::LoginDenied.into()),
             "expired" => return Err(CliError::LoginExpired.into()),
             _ => continue, // "pending"
         }
@@ -210,4 +245,43 @@ pub async fn logout(client: &ApiClient, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod remote_tests {
+    use super::remote_session;
+
+    fn env(vars: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |name| {
+            vars.iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| v.to_string())
+        }
+    }
+
+    #[test]
+    fn ssh_is_remote() {
+        assert!(remote_session(env(&[
+            ("SSH_CONNECTION", "203.0.113.7 51000 10.0.0.2 22"),
+            ("DISPLAY", ":0"),
+        ])));
+        assert!(remote_session(env(&[
+            ("SSH_TTY", "/dev/pts/1"),
+            ("DISPLAY", ":0")
+        ])));
+    }
+
+    #[test]
+    fn a_desktop_is_not_remote() {
+        assert!(!remote_session(env(&[("DISPLAY", ":0")])));
+        assert!(!remote_session(env(&[
+            ("WAYLAND_DISPLAY", "wayland-0"),
+            ("SSH_CONNECTION", " "),
+        ])));
+    }
+
+    #[test]
+    fn linux_without_a_display_is_remote() {
+        assert_eq!(remote_session(env(&[])), cfg!(target_os = "linux"));
+    }
 }

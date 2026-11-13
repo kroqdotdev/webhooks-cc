@@ -140,7 +140,9 @@ async fn run(args: Cli) -> Result<()> {
         }
 
         Some(Command::Auth { action }) => match action {
-            AuthAction::Login => cli::auth::login(&mut client, args.json).await?,
+            AuthAction::Login { remote, no_browser } => {
+                cli::auth::login(&mut client, args.json, remote, no_browser).await?
+            }
             AuthAction::Status => cli::auth::status(&client, args.json).await?,
             AuthAction::Logout => cli::auth::logout(&client, args.json).await?,
         },

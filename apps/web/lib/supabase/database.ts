@@ -415,8 +415,13 @@ export interface Database {
           device_code: string;
           user_code: string;
           expires_at: string;
-          status: "pending" | "authorized";
+          status: "pending" | "authorized" | "denied";
           user_id: string | null;
+          client: string | null;
+          country: string | null;
+          city: string | null;
+          network: string | null;
+          remote: boolean;
           created_at: string;
         };
         Insert: {
@@ -424,8 +429,13 @@ export interface Database {
           device_code: string;
           user_code: string;
           expires_at: string;
-          status?: "pending" | "authorized";
+          status?: "pending" | "authorized" | "denied";
           user_id?: string | null;
+          client?: string | null;
+          country?: string | null;
+          city?: string | null;
+          network?: string | null;
+          remote?: boolean;
           created_at?: string;
         };
         Update: {
@@ -433,8 +443,13 @@ export interface Database {
           device_code?: string;
           user_code?: string;
           expires_at?: string;
-          status?: "pending" | "authorized";
+          status?: "pending" | "authorized" | "denied";
           user_id?: string | null;
+          client?: string | null;
+          country?: string | null;
+          city?: string | null;
+          network?: string | null;
+          remote?: boolean;
           created_at?: string;
         };
         Relationships: [];

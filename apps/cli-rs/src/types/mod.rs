@@ -639,6 +639,10 @@ pub struct DeviceCodeResponse {
     pub expires_at: i64,
     #[serde(rename = "verificationUrl")]
     pub verification_url: String,
+    /// The page with the code already in it (RFC 8628's
+    /// verification_uri_complete); servers before it send none.
+    #[serde(rename = "verificationUrlComplete", default)]
+    pub verification_url_complete: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

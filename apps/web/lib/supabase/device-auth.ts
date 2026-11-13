@@ -1,6 +1,7 @@
 import { customAlphabet } from "nanoid";
 import { createAdminClient } from "./admin";
 import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "./api-keys";
+import { compareNetworks, type DeviceRequester, type NetworkMatch } from "@/lib/device-requester";
 
 const DEVICE_CODE_TTL_MS = 15 * 60 * 1000;
 const API_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -20,7 +21,20 @@ export interface DeviceCodeRecord {
 }
 
 export interface DeviceCodeStatus {
-  status: "pending" | "authorized" | "expired";
+  status: "pending" | "authorized" | "denied" | "expired";
+}
+
+/** A pending login as its approval page shows it. */
+export interface DeviceLoginRequest {
+  userCode: string;
+  client: string | null;
+  country: string | null;
+  city: string | null;
+  remote: boolean;
+  /** The approving browser's network against the requester's. */
+  network: NetworkMatch;
+  createdAt: number;
+  expiresAt: number;
 }
 
 export interface AuthorizedDeviceCode {
@@ -39,9 +53,18 @@ type DeviceCodeRow = {
   device_code: string;
   user_code: string;
   expires_at: string;
-  status: "pending" | "authorized";
+  status: "pending" | "authorized" | "denied";
   user_id: string | null;
+  client: string | null;
+  country: string | null;
+  city: string | null;
+  network: string | null;
+  remote: boolean;
+  created_at: string;
 };
+
+const ROW_COLUMNS =
+  "id, device_code, user_code, expires_at, status, user_id, client, country, city, network, remote, created_at";
 
 function isExpired(timestamp: string): boolean {
   return new Date(timestamp).getTime() < Date.now();
@@ -51,7 +74,7 @@ async function findDeviceCodeByUserCode(userCode: string): Promise<DeviceCodeRow
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("device_codes")
-    .select("id, device_code, user_code, expires_at, status, user_id")
+    .select(ROW_COLUMNS)
     .eq("user_code", userCode.toUpperCase())
     .maybeSingle();
 
@@ -66,7 +89,7 @@ async function findDeviceCodeByCode(deviceCode: string): Promise<DeviceCodeRow |
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("device_codes")
-    .select("id, device_code, user_code, expires_at, status, user_id")
+    .select(ROW_COLUMNS)
     .eq("device_code", deviceCode)
     .maybeSingle();
 
@@ -77,7 +100,9 @@ async function findDeviceCodeByCode(deviceCode: string): Promise<DeviceCodeRow |
   return data;
 }
 
-export async function createDeviceCodeRecord(): Promise<DeviceCodeRecord> {
+export async function createDeviceCodeRecord(
+  requester?: DeviceRequester
+): Promise<DeviceCodeRecord> {
   const admin = createAdminClient();
   const { count, error: countError } = await admin
     .from("device_codes")
@@ -100,6 +125,11 @@ export async function createDeviceCodeRecord(): Promise<DeviceCodeRecord> {
     device_code: deviceCode,
     user_code: userCode,
     expires_at: new Date(expiresAt).toISOString(),
+    client: requester?.client ?? null,
+    country: requester?.country ?? null,
+    city: requester?.city ?? null,
+    network: requester?.network ?? null,
+    remote: requester?.remote ?? false,
   });
 
   if (error) {
@@ -136,7 +166,7 @@ export async function authorizeDeviceCodeForUser(
   if (isExpired(code.expires_at)) {
     throw new Error("Code expired");
   }
-  if (code.status === "authorized") {
+  if (code.status !== "pending") {
     throw new Error("Code already used");
   }
 
@@ -172,6 +202,48 @@ export async function authorizeDeviceCodeForUser(
     success: true,
     email: user?.email ?? null,
   };
+}
+
+/**
+ * The pending login behind a user code, for its approval page; null when
+ * there is none, it expired or it was answered already.
+ */
+export async function describeDeviceCode(
+  userCode: string,
+  approverNetwork: string | null
+): Promise<DeviceLoginRequest | null> {
+  const code = await findDeviceCodeByUserCode(userCode);
+  if (!code || code.status !== "pending" || isExpired(code.expires_at)) return null;
+  return {
+    userCode: code.user_code,
+    client: code.client,
+    country: code.country,
+    city: code.city,
+    remote: code.remote,
+    network: compareNetworks(code.network, approverNetwork),
+    createdAt: new Date(code.created_at).getTime(),
+    expiresAt: new Date(code.expires_at).getTime(),
+  };
+}
+
+/**
+ * Refuses a pending login ("This wasn't me"): the client's next poll
+ * answers denied and it stops, instead of waiting for the code to expire.
+ */
+export async function denyDeviceCode(userCode: string): Promise<void> {
+  const admin = createAdminClient();
+  const code = await findDeviceCodeByUserCode(userCode);
+  if (!code) throw new Error("Invalid code");
+  if (isExpired(code.expires_at)) throw new Error("Code expired");
+  const { data, error } = await admin
+    .from("device_codes")
+    .update({ status: "denied" })
+    .eq("id", code.id)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Code already used");
 }
 
 export async function claimDeviceCode(deviceCode: string): Promise<ClaimedDeviceCode> {
