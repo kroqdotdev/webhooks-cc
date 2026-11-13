@@ -27,7 +27,7 @@ mod tests {
             encode("a b+c/d?e&f=g#h%").to_string(),
             "a%20b%2Bc%2Fd%3Fe%26f%3Dg%23h%25"
         );
-        assert_eq!(encode("æ€").to_string(), "%C3%A6%E2%82%AC");
+        assert_eq!(encode("\u{e6}\u{20ac}").to_string(), "%C3%A6%E2%82%AC");
         assert_eq!(encode("").to_string(), "");
     }
 

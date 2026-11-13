@@ -46,7 +46,10 @@ export async function PATCH(request: Request) {
     return setApprovalEmails(request, auth.userId, read.data.approvalEmails, rateLimit);
   }
   if (!("name" in read.data)) {
-    return applyRateLimitHeaders(Response.json({ error: NAME_REQUIRED }, { status: 400 }), rateLimit);
+    return applyRateLimitHeaders(
+      Response.json({ error: NAME_REQUIRED }, { status: 400 }),
+      rateLimit
+    );
   }
 
   const parsed = parseDisplayName(read.data.name);

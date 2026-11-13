@@ -17,7 +17,7 @@ describe("parseFrontmatter", () => {
   });
 
   it("handles CRLF, a byte order mark and an empty block", () => {
-    expect(parseFrontmatter("﻿---\r\nname: x\r\n---\r\nbody").data).toEqual({ name: "x" });
+    expect(parseFrontmatter("\uFEFF---\r\nname: x\r\n---\r\nbody").data).toEqual({ name: "x" });
     expect(parseFrontmatter("---\n\n---\nbody")).toEqual({ data: {}, content: "body" });
     expect(parseFrontmatter("---\n---\nbody")).toEqual({ data: {}, content: "body" });
   });
