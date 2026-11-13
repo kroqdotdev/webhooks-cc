@@ -1328,3 +1328,43 @@ mod render_tests {
         assert!(rendered.body.starts_with("--xyz"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// API keys and approvals
+// ---------------------------------------------------------------------------
+
+/// One of the account's API keys, as `GET /api/api-keys` lists it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyInfo {
+    pub id: String,
+    pub name: String,
+    pub key_prefix: String,
+    pub created_at: String,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub last_used_at: Option<String>,
+}
+
+/// Something only the account's owner may allow, asked for with an API key
+/// or agent token: the person opens `url` and compares `code`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Approval {
+    pub id: String,
+    pub status: String,
+    pub action: String,
+    pub summary: String,
+    pub code: String,
+    pub url: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+}
+
+/// `GET /api/approvals/{id}`: the approval, and once (on the poll that
+/// collects it) what it granted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalAnswer {
+    pub approval: Approval,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
+}

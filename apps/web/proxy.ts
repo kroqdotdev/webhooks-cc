@@ -54,6 +54,7 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/api",
     "/auth",
     "/cli/verify",
+    "/approve",
     "/teams",
     "/agent/claim",
     "/blog/preview",

@@ -236,8 +236,10 @@ function RequestPanel(props: {
       </Card>
 
       <p className="text-sm text-muted-foreground mb-4">
-        It cannot change your API keys, billing or account. It stays connected until you disconnect
-        it under Connected agents in your account, or it goes unused for 90 days.
+        It cannot change your billing or account. It can list and revoke your API keys, so it can
+        stop an integration that uses one, and a new API key needs your approval. It stays connected
+        until you disconnect it under Connected agents in your account, or it goes unused for 90
+        days.
       </p>
 
       {atCap ? (

@@ -1,6 +1,7 @@
 pub mod client;
 pub mod device_auth;
 pub mod endpoints;
+pub mod keys;
 pub mod requests;
 pub mod send;
 pub mod shares;

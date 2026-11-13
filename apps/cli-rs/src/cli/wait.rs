@@ -186,7 +186,7 @@ where
 /// `--timeout`: a duration with a unit. A bare number would be milliseconds
 /// (as everywhere `parse_duration` reads one), which ends a wait at once, so
 /// it is refused here.
-fn parse_timeout(timeout: &str) -> Result<i64> {
+pub(crate) fn parse_timeout(timeout: &str) -> Result<i64> {
     if timeout.trim().parse::<i64>().is_ok() {
         return Err(CliError::Usage(format!(
             "--timeout needs a unit, such as {}s or {}m",

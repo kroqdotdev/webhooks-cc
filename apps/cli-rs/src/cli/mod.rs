@@ -4,6 +4,7 @@ pub mod auth;
 mod capabilities;
 pub mod confirm;
 pub mod endpoints;
+pub mod keys;
 pub mod listen;
 pub mod output;
 pub mod replay;
@@ -66,8 +67,9 @@ Exit status:
   5  not allowed by the plan, a limit or a permission (forbidden)
   6  rate limited; wait and retry (rate_limited)
   7  server or network failure; retry (server_error, network_error, request_timeout)
-  8  a wait ran out of time (timeout)
-  9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled)
+  8  a wait ran out of time, or an approval expired (timeout, approval_expired)
+  9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled),
+     or the account's owner refused an approval (approval_denied)
 
 With --json, a failure is written to stderr as
   {\"error\":{\"code\":\"not_found\",\"message\":\"...\",\"exit\":4,\"status\":404,\"hint\":\"...\"}}
@@ -392,6 +394,18 @@ deletion) refuse API keys.")]
         action: TeamsAction,
     },
 
+    /// Manage the account's API keys (a new one needs the account's owner to approve it)
+    Keys {
+        #[command(subcommand)]
+        action: KeysAction,
+    },
+
+    /// Follow an approval asked for with `whk keys create --no-wait`
+    Approvals {
+        #[command(subcommand)]
+        action: ApprovalsAction,
+    },
+
     /// Agent sandbox and account connection: capture webhooks without an
     /// account, then connect the agent to a human's account (non-interactive)
     #[command(long_about = SANDBOX_ABOUT)]
@@ -581,6 +595,61 @@ pub enum SandboxAction {
         /// Both
         #[arg(long)]
         all: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum KeysAction {
+    /// List the account's API keys (the keys themselves are never shown again)
+    List,
+
+    /// Ask for a new API key: prints a link for the account's owner to approve, waits, then prints the key once
+    Create {
+        /// What the key is for, such as "GitHub Actions"
+        name: String,
+
+        /// How many days the key works, 1 to 365 (default 90)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=365))]
+        expires_in_days: Option<u32>,
+
+        /// This machine is not the one with your browser: print the link, never open a browser
+        #[arg(long)]
+        remote: bool,
+
+        /// Print the link without opening a browser
+        #[arg(long)]
+        no_browser: bool,
+
+        /// Print the approval and exit; collect the key later with `whk approvals wait <id>`
+        #[arg(long)]
+        no_wait: bool,
+
+        /// How long to wait for the answer, such as 10m
+        #[arg(long, default_value = "16m")]
+        timeout: String,
+    },
+
+    /// Revoke an API key by its id (from `whk keys list`)
+    Revoke {
+        /// The key's id
+        id: String,
+
+        /// Revoke without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ApprovalsAction {
+    /// Wait for an approval to be answered, then print what it granted (once)
+    Wait {
+        /// The approval's id
+        id: String,
+
+        /// How long to wait, such as 10m
+        #[arg(long, default_value = "16m")]
+        timeout: String,
     },
 }
 

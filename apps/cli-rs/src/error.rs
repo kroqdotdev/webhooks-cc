@@ -13,8 +13,8 @@
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
 //! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
-//! | 8      | `timeout`               | `whk wait` (or another wait) ran out of time     |
-//! | 9      | `confirmation_required`, `cancelled` | A destructive command was not confirmed |
+//! | 8      | `timeout`, `approval_expired` | `whk wait` (or another wait) ran out of time, or an approval expired |
+//! | 9      | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or an approval was refused |
 
 use serde_json::{Value, json};
 
@@ -53,6 +53,10 @@ pub enum CliError {
     LoginExpired,
     /// The person refused the device login on its approval page.
     LoginDenied,
+    /// The account's owner refused an approval ("This wasn't me").
+    ApprovalDenied,
+    /// An approval was not answered, or not collected, in time.
+    ApprovalExpired,
     /// Arguments that parse but make no sense together.
     Usage(String),
 }
@@ -67,6 +71,12 @@ impl std::fmt::Display for CliError {
             CliError::Cancelled => f.write_str("Cancelled."),
             CliError::LoginExpired => f.write_str("The login code expired before it was approved."),
             CliError::LoginDenied => f.write_str("The login was refused on its approval page."),
+            CliError::ApprovalDenied => {
+                f.write_str("The request was refused on its approval page.")
+            }
+            CliError::ApprovalExpired => {
+                f.write_str("The approval expired before it was answered and collected.")
+            }
         }
     }
 }
@@ -141,6 +151,10 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 CliError::LoginExpired => {
                     Classified::new("login_expired", 3).hint("Run `whk auth login` again.")
                 }
+                CliError::ApprovalDenied => Classified::new("approval_denied", 9)
+                    .hint("The account's owner refused it. Ask again only if they tell you to."),
+                CliError::ApprovalExpired => Classified::new("approval_expired", 8)
+                    .hint("Nobody answered it in time. Ask again."),
                 CliError::LoginDenied => Classified::new("login_denied", 3).hint(
                     "Someone chose \"This wasn't me\". Run `whk auth login` again if it was you.",
                 ),
@@ -247,6 +261,10 @@ mod tests {
         let c = classify(&anyhow::Error::new(CliError::Timeout("x".into())));
         assert_eq!((c.code, c.exit), ("timeout", 8));
         assert_eq!(classify(&anyhow::anyhow!("plain")).code, "error");
+        let c = classify(&anyhow::Error::new(CliError::ApprovalDenied));
+        assert_eq!((c.code, c.exit), ("approval_denied", 9));
+        let c = classify(&anyhow::Error::new(CliError::ApprovalExpired));
+        assert_eq!((c.code, c.exit), ("approval_expired", 8));
         let c = classify(&anyhow::Error::new(CliError::LoginDenied));
         assert_eq!((c.code, c.exit), ("login_denied", 3));
     }

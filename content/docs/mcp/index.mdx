@@ -68,7 +68,7 @@ Tools from a server you add during a session appear once the client reconnects t
 
 ### Connecting
 
-The first time the client connects to the server, it opens webhooks.cc in your browser. Sign in, or sign up, check which app asks and where it will send you back to, and click **Connect**. There is no code to type. The app can then use your endpoints and what they capture, but never your API keys, billing or account settings. Its tokens renew themselves and stop working after 90 days unused; [Apps connected with OAuth](/docs/agents#apps-connected-with-oauth) has the details.
+The first time the client connects to the server, it opens webhooks.cc in your browser. Sign in, or sign up, check which app asks and where it will send you back to, and click **Connect**. There is no code to type. The app can then use your endpoints and what they capture and list or revoke your API keys, but never your billing or account settings, and a new API key only with your [approval](/docs/agents#approvals). Its tokens renew themselves and stop working after 90 days unused; [Apps connected with OAuth](/docs/agents#apps-connected-with-oauth) has the details.
 
 To disconnect, open [Account, Connected agents](/account/agents). The app is listed there as an app connected with OAuth, and its access stops as soon as you disconnect it. An account can connect up to 10 agents and apps.
 
@@ -118,18 +118,18 @@ The local server exposes 57 tools your AI agent can call, and the remote server 
 
 ### Endpoint management
 
-| Tool                | Description                                   |
-| ------------------- | --------------------------------------------- |
-| `create_endpoint`   | Create a new webhook endpoint                 |
-| `list_endpoints`    | List all your endpoints                       |
-| `get_endpoint`      | Get details for an endpoint by slug           |
-| `favorite_endpoint` | Mark or unmark an endpoint as a favourite     |
+| Tool                | Description                                                                |
+| ------------------- | -------------------------------------------------------------------------- |
+| `create_endpoint`   | Create a new webhook endpoint                                              |
+| `list_endpoints`    | List all your endpoints                                                    |
+| `get_endpoint`      | Get details for an endpoint by slug                                        |
+| `favorite_endpoint` | Mark or unmark an endpoint as a favourite                                  |
 | `update_endpoint`   | Update an endpoint's name, mock response, signing, email fields or layouts |
-| `preview_layouts`   | Dry-run the endpoint's layouts on a captured email |
-| `preview_response`  | Show what a request would get back, unsent    |
-| `delete_endpoint`   | Delete an endpoint and its requests           |
-| `create_endpoints`  | Create multiple endpoints in one call (1-20)  |
-| `delete_endpoints`  | Delete multiple endpoints in one call (1-100) |
+| `preview_layouts`   | Dry-run the endpoint's layouts on a captured email                         |
+| `preview_response`  | Show what a request would get back, unsent                                 |
+| `delete_endpoint`   | Delete an endpoint and its requests                                        |
+| `create_endpoints`  | Create multiple endpoints in one call (1-20)                               |
+| `delete_endpoints`  | Delete multiple endpoints in one call (1-100)                              |
 
 ### Sending and testing
 
@@ -154,40 +154,40 @@ The local server exposes 57 tools your AI agent can call, and the remote server 
 
 ### Request analysis
 
-| Tool                   | Description                                          |
-| ---------------------- | ---------------------------------------------------- |
-| `replay_request`       | Replay a captured request to a target URL            |
-| `compare_requests`     | Compare two requests and show structured differences |
+| Tool                      | Description                                                    |
+| ------------------------- | -------------------------------------------------------------- |
+| `replay_request`          | Replay a captured request to a target URL                      |
+| `compare_requests`        | Compare two requests and show structured differences           |
 | `generate_payload_schema` | TypeScript, Zod, Pydantic, or JSON Schema from captured bodies |
-| `extract_from_request` | Extract specific JSON fields from a request body     |
-| `verify_signature`     | Verify the webhook signature on a captured request   |
+| `extract_from_request`    | Extract specific JSON fields from a request body               |
+| `verify_signature`        | Verify the webhook signature on a captured request             |
 
 ### Emails
 
 Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mailhooks.cc` for any tag.
 
-| Tool              | Description                                                               |
-| ----------------- | ------------------------------------------------------------------------- |
-| `list_emails`     | List an endpoint's emails with subject, sender, tag, code and link        |
-| `get_email`       | Get one email by ID, or the newest at an endpoint, with its code and link |
-| `wait_for_email`  | Wait for an email to arrive (for example after a signup), then return it  |
-| `send_test_email` | Deliver a sample email with a code and a link, optionally to a `+tag`     |
+| Tool              | Description                                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `list_emails`     | List an endpoint's emails with subject, sender, tag, code and link                                    |
+| `get_email`       | Get one email by ID, or the newest at an endpoint, with its code and link                             |
+| `wait_for_email`  | Wait for an email to arrive (for example after a signup), then return it                              |
+| `send_test_email` | Deliver a sample email with a code and a link, optionally to a `+tag`                                 |
 | `render_email`    | An email in Postmark, SendGrid, Mailgun or CloudMailin shape, optionally posted to your local handler |
 
 ### Forwarding
 
-| Tool                    | Description                                                                            |
-| ----------------------- | -------------------------------------------------------------------------------------- |
-| `list_destinations`     | List an endpoint's forwarding destinations                                             |
+| Tool                    | Description                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| `list_destinations`     | List an endpoint's forwarding destinations                                                   |
 | `add_destination`       | Add a destination (up to 10 per endpoint) with its kinds, filter, format, throttle and delay |
-| `update_destination`    | Change a destination                                                                   |
-| `remove_destination`    | Remove a destination                                                                   |
-| `preview_destination`   | Dry run: whether the filter lets a request through, and the exact request it would send |
-| `configure_forwarding`  | Set where and how captured requests and emails are forwarded, and turn it on or off   |
-| `get_forwarding_secret` | Read or rotate the signing secret for forwarded deliveries                             |
-| `test_forwarding`       | Send the newest request (or a sample) to the forwarding URL once and report the answer |
-| `list_deliveries`       | The delivery log and its counts for an endpoint, or every try of one request           |
-| `redeliver`             | Forward one request again, or every failed one                                         |
+| `update_destination`    | Change a destination                                                                         |
+| `remove_destination`    | Remove a destination                                                                         |
+| `preview_destination`   | Dry run: whether the filter lets a request through, and the exact request it would send      |
+| `configure_forwarding`  | Set where and how captured requests and emails are forwarded, and turn it on or off          |
+| `get_forwarding_secret` | Read or rotate the signing secret for forwarded deliveries                                   |
+| `test_forwarding`       | Send the newest request (or a sample) to the forwarding URL once and report the answer       |
+| `list_deliveries`       | The delivery log and its counts for an endpoint, or every try of one request                 |
+| `redeliver`             | Forward one request again, or every failed one                                               |
 
 ### Teams
 

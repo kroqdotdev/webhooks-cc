@@ -1,0 +1,151 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WebhooksCC } from "../client";
+import { ApprovalDeniedError, ApprovalExpiredError } from "../errors";
+
+const API_KEY = "whcc_testkey123";
+const BASE_URL = "https://test.webhooks.cc";
+const ID = "0b8d6a5e-1c2f-4f3a-9d7e-2a1b3c4d5e6f";
+
+function client() {
+  return new WebhooksCC({ apiKey: API_KEY, baseUrl: BASE_URL });
+}
+
+function answer(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ "content-type": "application/json" }),
+    json: () => Promise.resolve(body),
+    text: () => Promise.resolve(JSON.stringify(body)),
+  };
+}
+
+function approval(status: string) {
+  return {
+    id: ID,
+    status,
+    action: "api_keys.create",
+    summary: 'Create an API key named "CI" with full access to your account for 30 days.',
+    code: "ABCD-EFGH",
+    url: "https://webhooks.cc/approve?code=ABCD-EFGH",
+    expiresAt: "2026-11-13T12:15:00.000Z",
+  };
+}
+
+const created = {
+  key: "whcc_new",
+  name: "CI",
+  keyPrefix: "whcc_new",
+  expiresAt: "2026-12-13T12:00:00.000Z",
+};
+
+describe("apiKeys and approvals", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("asks for a key, then collects it once the person approves", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer({ approval: approval("pending") }, 202))
+      .mockResolvedValueOnce(answer({ approval: approval("pending") }))
+      .mockResolvedValueOnce(answer({ approval: approval("completed"), result: created }));
+    globalThis.fetch = fetchMock;
+
+    const pending = await client().apiKeys.create({ name: "CI", expiresInDays: 30 });
+    expect(pending.url).toBe("https://webhooks.cc/approve?code=ABCD-EFGH");
+    expect(pending.code).toBe("ABCD-EFGH");
+    expect(await pending.wait({ pollInterval: 1_000 })).toEqual(created);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/api-keys`);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: "CI", expiresInDays: 30 });
+    expect(fetchMock.mock.calls[1][0]).toBe(`${BASE_URL}/api/approvals/${ID}`);
+  });
+
+  it("throws when the person refuses, or nobody answers in time", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("denied") }));
+    await expect(client().approvals.wait(ID)).rejects.toBeInstanceOf(ApprovalDeniedError);
+    globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("expired") }));
+    await expect(client().approvals.wait(ID)).rejects.toBeInstanceOf(ApprovalExpiredError);
+  });
+
+  it("gives up after its own timeout", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("pending") }));
+    await expect(client().approvals.wait(ID, { timeout: 0 })).rejects.toThrow(
+      "Timed out waiting for the approval"
+    );
+  });
+
+  it("never polls past its deadline, since a poll may collect the result", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(answer({ approval: approval("pending") }));
+    globalThis.fetch = fetchMock;
+    await expect(client().approvals.wait(ID, { timeout: 0 })).rejects.toThrow("Timed out");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not retry a poll that may have collected the result", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    globalThis.fetch = fetchMock;
+    await expect(client().approvals.get(ID)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a rate-limited poll inside a wait", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ...answer({ error: "slow down" }, 429),
+      headers: new Headers({ "content-type": "application/json", "retry-after": "30" }),
+    });
+    globalThis.fetch = fetchMock;
+    await expect(client().approvals.wait(ID, { timeout: 5_000 })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a poll after a token renewal used up its time", async () => {
+    let calls = 0;
+    const getAccessToken = vi.fn(async (options?: { forceRefresh?: boolean }) => {
+      // The renewal after the 401 takes longer than the budget left.
+      if (options?.forceRefresh) await new Promise((resolve) => setTimeout(resolve, 80));
+      return "whcc_token";
+    });
+    const fetchMock = vi.fn(async () => {
+      calls++;
+      return answer({ error: "expired" }, 401);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const agent = new WebhooksCC({ baseUrl: BASE_URL, getAccessToken });
+    await expect(agent.approvals.get(ID, { timeout: 50 })).rejects.toThrow("timed out");
+    expect(calls).toBe(1);
+  });
+
+  it("returns by its deadline even when the token never comes", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const agent = new WebhooksCC({
+      baseUrl: BASE_URL,
+      getAccessToken: () => new Promise<string>(() => {}),
+    });
+    const started = Date.now();
+    await expect(agent.approvals.wait(ID, { timeout: 60 })).rejects.toThrow("timed out");
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to hand over a result twice", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("completed") }));
+    await expect(client().approvals.wait(ID)).rejects.toThrow("already collected");
+  });
+
+  it("lists and revokes keys", async () => {
+    const list = [{ id: ID, name: "CI", key_prefix: "whcc_abc", created_at: "x" }];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer(list))
+      .mockResolvedValueOnce(answer({ success: true }));
+    globalThis.fetch = fetchMock;
+    expect(await client().apiKeys.list()).toEqual(list);
+    await client().apiKeys.revoke(ID);
+    expect(fetchMock.mock.calls[1][0]).toBe(`${BASE_URL}/api/api-keys?id=${ID}`);
+    expect(fetchMock.mock.calls[1][1].method).toBe("DELETE");
+  });
+});

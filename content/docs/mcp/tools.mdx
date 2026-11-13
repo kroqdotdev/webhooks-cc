@@ -645,6 +645,40 @@ Take the password off a name.
 | --------- | -------- | -------- | --------------------------- |
 | `name`    | `string` | yes      | The name, from `list_names` |
 
+## API keys
+
+A new API key needs the account's owner to approve it on a web page, so `create_api_key` answers at once with a link and a code for the person, and `wait_for_approval` collects the key. Listing and revoking act at once.
+
+### list_api_keys
+
+The account's API keys: id, name, prefix, when each was made, expires and was last used. The keys themselves are never listed.
+
+### create_api_key
+
+Ask for a new key. Returns the approval's link and code to show the person (the page shows the same code to compare) and its id for `wait_for_approval`.
+
+| Parameter       | Type     | Required | Description                                      |
+| --------------- | -------- | -------- | ------------------------------------------------ |
+| `name`          | `string` | yes      | What the key is for, such as `"GitHub Actions"`  |
+| `expiresInDays` | `number` | no       | How many days it works, 1 to 365 (default 90)    |
+
+### wait_for_approval
+
+Wait for the person to answer and collect what the approval grants: the new key, shown once. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
+
+| Parameter | Type     | Required | Description                                         |
+| --------- | -------- | -------- | --------------------------------------------------- |
+| `id`      | `string` | yes      | The approval id, from `create_api_key`              |
+| `timeout` | `string` | no       | How long to wait, such as `"45s"` (50 s at most on the remote server) |
+
+### revoke_api_key
+
+Revoke a key by its id, from `list_api_keys`. Anything using it stops working at once.
+
+| Parameter | Type     | Required | Description                     |
+| --------- | -------- | -------- | ------------------------------- |
+| `id`      | `string` | yes      | The key's id, from `list_api_keys` |
+
 ## Utilities
 
 ### get_usage

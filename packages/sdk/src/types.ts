@@ -1212,6 +1212,10 @@ export interface SDKDescription {
   destinations: Record<string, OperationDescription>;
   alerts: Record<string, OperationDescription>;
   teams: Record<string, OperationDescription>;
+  /** The account's API keys; creating one asks the owner first (an approval). */
+  apiKeys: Record<string, OperationDescription>;
+  /** Approvals asked for by this key or agent. */
+  approvals: Record<string, OperationDescription>;
   /** Public previews of local ports (`whk share`) and live tunnels. */
   shares: Record<string, OperationDescription>;
   /** Reserved preview names. */
@@ -1791,4 +1795,52 @@ export interface LayoutsPreview {
   layoutsCap: number;
   request: { id: string; subject: string | null; receivedAt: number } | null;
   parsed: ParsedEmail | null;
+}
+
+/** An API key of the account, as the API lists it (the key itself is never listed). */
+export interface ApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+}
+
+/** A new API key. `key` is shown once and never again. */
+export interface CreatedApiKey {
+  key: string;
+  name: string;
+  keyPrefix: string;
+  expiresAt: string;
+}
+
+export type ApprovalStatus = "pending" | "approved" | "denied" | "completed" | "expired";
+
+/**
+ * Something only the account's owner may allow, asked for by an API key or
+ * agent. Show the person `url` (the page shows `code` to compare) and wait.
+ */
+export interface Approval {
+  id: string;
+  status: ApprovalStatus;
+  action: string;
+  /** One sentence saying what the person is asked to allow. */
+  summary: string;
+  code: string;
+  url: string;
+  expiresAt: string;
+}
+
+/** An approval being waited on; `wait()` resolves with what it grants. */
+export interface PendingApproval<T> extends Approval {
+  wait(options?: WaitForApprovalOptions): Promise<T>;
+}
+
+export interface WaitForApprovalOptions {
+  /** Give up after this many milliseconds (default: until the approval expires). */
+  timeout?: number;
+  /** Milliseconds between polls (default 2000, at least 1000). */
+  pollInterval?: number;
+  signal?: AbortSignal;
 }

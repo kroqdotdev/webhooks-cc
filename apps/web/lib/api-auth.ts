@@ -212,7 +212,8 @@ export async function authenticateRequest(request: Request): Promise<AuthResult>
 export async function authenticateRequestRequireUser(
   request: Request
 ): Promise<
-  { success: true; userId: string; keyId?: string } | { success: false; response: Response }
+  | { success: true; userId: string; keyId?: string; agentRegistrationId?: string | null }
+  | { success: false; response: Response }
 > {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth;
@@ -230,8 +231,14 @@ export async function authenticateRequestRequireUser(
     };
   }
 
-  // keyId: set for an API key, absent for a browser session.
-  return { success: true, userId: auth.userId, keyId: auth.keyId };
+  // keyId: set for an API key (an agent token too), absent for a browser
+  // session; agentRegistrationId: set for an agent token.
+  return {
+    success: true,
+    userId: auth.userId,
+    keyId: auth.keyId,
+    agentRegistrationId: auth.agentRegistrationId ?? null,
+  };
 }
 
 /**

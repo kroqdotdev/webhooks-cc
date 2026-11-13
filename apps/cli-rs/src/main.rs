@@ -5,8 +5,8 @@ use clap::Parser;
 
 use whk::api::ApiClient;
 use whk::cli::{
-    self, AuthAction, Cli, Command, NamesAction, RequestsAction, SandboxAction, SharesAction,
-    TeamsAction,
+    self, ApprovalsAction, AuthAction, Cli, Command, KeysAction, NamesAction, RequestsAction,
+    SandboxAction, SharesAction, TeamsAction,
 };
 use whk::error::{classify, error_json};
 
@@ -390,6 +390,36 @@ async fn run(args: Cli) -> Result<()> {
                     args.json,
                 )
                 .await?;
+            }
+        },
+
+        Some(Command::Keys { action }) => match action {
+            KeysAction::List => cli::keys::list(&client, args.json).await?,
+            KeysAction::Create {
+                name,
+                expires_in_days,
+                remote,
+                no_browser,
+                no_wait,
+                timeout,
+            } => {
+                let opts = cli::keys::CreateOptions {
+                    expires_in_days,
+                    remote,
+                    no_browser,
+                    no_wait,
+                    timeout,
+                };
+                cli::keys::create(&client, &name, opts, args.json).await?
+            }
+            KeysAction::Revoke { id, yes } => {
+                cli::keys::revoke(&client, &id, yes, args.json).await?
+            }
+        },
+
+        Some(Command::Approvals { action }) => match action {
+            ApprovalsAction::Wait { id, timeout } => {
+                cli::keys::wait(&client, &id, &timeout, args.json).await?
             }
         },
 

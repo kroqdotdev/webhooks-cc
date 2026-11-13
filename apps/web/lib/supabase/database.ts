@@ -409,6 +409,69 @@ export interface Database {
         };
         Relationships: [];
       };
+      approvals: {
+        Row: {
+          id: string;
+          user_id: string;
+          action: "api_keys.create";
+          params: Json;
+          summary: string;
+          user_code: string;
+          status: "pending" | "approved" | "denied" | "completed";
+          requested_by_key: string | null;
+          requested_by_agent: string | null;
+          requester: string;
+          client: string | null;
+          country: string | null;
+          network: string | null;
+          result: Json | null;
+          created_at: string;
+          expires_at: string;
+          decided_at: string | null;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          action: "api_keys.create";
+          params?: Json;
+          summary: string;
+          user_code: string;
+          status?: "pending" | "approved" | "denied" | "completed";
+          requested_by_key?: string | null;
+          requested_by_agent?: string | null;
+          requester: string;
+          client?: string | null;
+          country?: string | null;
+          network?: string | null;
+          result?: Json | null;
+          created_at?: string;
+          expires_at: string;
+          decided_at?: string | null;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          action?: "api_keys.create";
+          params?: Json;
+          summary?: string;
+          user_code?: string;
+          status?: "pending" | "approved" | "denied" | "completed";
+          requested_by_key?: string | null;
+          requested_by_agent?: string | null;
+          requester?: string;
+          client?: string | null;
+          country?: string | null;
+          network?: string | null;
+          result?: Json | null;
+          created_at?: string;
+          expires_at?: string;
+          decided_at?: string | null;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
       device_codes: {
         Row: {
           id: string;
@@ -692,6 +755,7 @@ export interface Database {
           home_site: "webhooks" | "mailhooks";
           analytics_consent: "granted" | "denied" | null;
           analytics_consent_at: string | null;
+          approval_emails: boolean;
           retention_floor_days: number | null;
           retention_floor_until: string | null;
           pages_used: number;
@@ -756,6 +820,7 @@ export interface Database {
           home_site?: "webhooks" | "mailhooks";
           analytics_consent?: "granted" | "denied" | null;
           analytics_consent_at?: string | null;
+          approval_emails?: boolean;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;
@@ -815,6 +880,7 @@ export interface Database {
           home_site?: "webhooks" | "mailhooks";
           analytics_consent?: "granted" | "denied" | null;
           analytics_consent_at?: string | null;
+          approval_emails?: boolean;
           retention_floor_days?: number | null;
           retention_floor_until?: string | null;
           pages_used?: number;

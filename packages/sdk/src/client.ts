@@ -15,6 +15,11 @@
  */
 import { apiUserAgent } from "./user-agent";
 import type {
+  ApiKey,
+  Approval,
+  CreatedApiKey,
+  PendingApproval,
+  WaitForApprovalOptions,
   AlertEvent,
   AlertSettings,
   AttachmentDownload,
@@ -85,6 +90,8 @@ import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/add
 import { buildEmailJson } from "./email/json";
 import { isEmailRequest, matchEmail } from "./matchers";
 import {
+  ApprovalDeniedError,
+  ApprovalExpiredError,
   WebhooksCCError,
   UnauthorizedError,
   NotFoundError,
@@ -944,16 +951,27 @@ export class WebhooksCC {
     method: string,
     path: string,
     body?: unknown,
-    { repeatable = IDEMPOTENT_METHODS.has(method) }: { repeatable?: boolean } = {}
+    {
+      repeatable = IDEMPOTENT_METHODS.has(method),
+      timeoutMs,
+    }: { repeatable?: boolean; timeoutMs?: number } = {}
   ): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
     let attempt = 0;
     let refreshed = false;
+    // A call with a budget of its own has one deadline for all of it: the
+    // token, a renewal after a 401, every attempt and reading the body.
+    const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
 
     while (true) {
       attempt++;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        deadline === undefined
+          ? this.timeout
+          : Math.min(this.timeout, Math.max(0, deadline - Date.now()))
+      );
       const start = Date.now();
 
       try {
@@ -963,9 +981,18 @@ export class WebhooksCC {
       }
 
       try {
+        const headers = {
+          ...this.apiHeaders(await withinDeadline(this.bearer(), deadline, timeoutMs)),
+          "Content-Type": "application/json",
+        };
+        // Never start a request past the deadline (a slow token or renewal
+        // may have used it up).
+        if (deadline !== undefined && Date.now() >= deadline) {
+          throw new TimeoutError(timeoutMs ?? 0);
+        }
         const response = await this.fetchImpl(url, {
           method,
-          headers: { ...this.apiHeaders(await this.bearer()), "Content-Type": "application/json" },
+          headers,
           body: body ? JSON.stringify(body) : undefined,
           signal: controller.signal,
         });
@@ -975,7 +1002,7 @@ export class WebhooksCC {
         // An expiring token: renew it once and retry right away.
         if (response.status === 401 && this.getAccessToken && !refreshed) {
           refreshed = true;
-          await this.bearer(true);
+          await withinDeadline(this.bearer(true), deadline, timeoutMs);
           attempt--;
           continue;
         }
@@ -994,7 +1021,10 @@ export class WebhooksCC {
           if (
             attempt < this.retry.maxAttempts &&
             this.retry.retryOn.has(response.status) &&
-            (repeatable || response.status === 429)
+            (repeatable || response.status === 429) &&
+            // A call with its own time budget is not retried: a backoff would
+            // run past it.
+            timeoutMs === undefined
           ) {
             const retryDelayMs =
               response.status === 429 && parseRetryAfterHeader(response) !== undefined
@@ -1023,6 +1053,8 @@ export class WebhooksCC {
         if (contentType && !contentType.includes("application/json")) {
           throw new Error(`Unexpected content type: ${contentType}`);
         }
+        // With a budget of its own, reading the body counts against it too.
+        if (timeoutMs !== undefined) return (await response.json()) as T;
         return response.json() as Promise<T>;
       } catch (error) {
         if (error instanceof WebhooksCCError) {
@@ -1615,6 +1647,27 @@ export class WebhooksCC {
           params: { inviteId: "string" },
         },
       },
+      apiKeys: {
+        list: { description: "List the account's API keys", params: {} },
+        create: {
+          description:
+            "Ask for a new API key; returns a pending approval (show the person its url, the page shows its code), and approval.wait() resolves with the key, shown once",
+          params: { name: "string", expiresInDays: "number? (1 to 365, default 90)" },
+        },
+        revoke: { description: "Revoke an API key by id", params: { id: "string" } },
+      },
+      approvals: {
+        get: {
+          description:
+            "An approval's status; once approved, the first call carries its result, once",
+          params: { id: "string" },
+        },
+        wait: {
+          description:
+            "Wait until the person answers and collect the result; throws ApprovalDeniedError or ApprovalExpiredError (polls at least a second apart)",
+          params: { id: "string", timeout: "number?", pollInterval: "number?" },
+        },
+      },
       shares: {
         list: {
           description:
@@ -1923,6 +1976,122 @@ export class WebhooksCC {
         validatePathSegment(inviteId, "inviteId");
         await this.request("POST", `/invites/${inviteId}/decline`);
       },
+    },
+  };
+
+  /**
+   * The account's API keys. Listing and revoking work with any key of the
+   * account. Creating one with an API key asks the account's owner first: it
+   * returns a pending approval whose `url` the person opens (the page shows
+   * `code` to compare); `wait()` resolves with the new key once they approve.
+   */
+  apiKeys = {
+    /** The account's API keys, newest first (agent tokens are not listed). */
+    list: async (): Promise<ApiKey[]> => {
+      return this.request<ApiKey[]>("GET", "/api-keys");
+    },
+
+    /**
+     * Ask for a new API key. `expiresInDays` is 1 to 365 (default 90). Show
+     * the person the returned `url`, then `await approval.wait()` for the key,
+     * which is never shown again.
+     */
+    create: async (options: {
+      name: string;
+      expiresInDays?: number;
+    }): Promise<PendingApproval<CreatedApiKey>> => {
+      const answer = await this.request<{ approval?: Approval } & Partial<CreatedApiKey>>(
+        "POST",
+        "/api-keys",
+        options,
+        { repeatable: false }
+      );
+      if (answer.approval) {
+        const approval = answer.approval;
+        return {
+          ...approval,
+          wait: (waitOptions) => this.approvals.wait<CreatedApiKey>(approval.id, waitOptions),
+        };
+      }
+      // A browser session creates the key at once.
+      const created = answer as CreatedApiKey;
+      return {
+        id: "",
+        status: "completed",
+        action: "api_keys.create",
+        summary: `Created the API key "${created.name}".`,
+        code: "",
+        url: "",
+        expiresAt: created.expiresAt,
+        wait: async () => created,
+      };
+    },
+
+    /** Revoke an API key by id (from `list()`). */
+    revoke: async (id: string): Promise<void> => {
+      validatePathSegment(id, "id");
+      await this.request("DELETE", `/api-keys?id=${encodeURIComponent(id)}`);
+    },
+  };
+
+  /** Approvals asked for by this key or agent (see `apiKeys.create`). */
+  approvals = {
+    /** The approval's state; once approved, the first call also carries `result`, once. */
+    get: async <T = Record<string, unknown>>(
+      id: string,
+      options: { timeout?: number } = {}
+    ): Promise<{ approval: Approval; result?: T }> => {
+      validatePathSegment(id, "id");
+      // Never retried: a poll may collect the result, which is handed over
+      // once, so a retry after a lost answer would find it gone.
+      return this.request<{ approval: Approval; result?: T }>(
+        "GET",
+        `/approvals/${id}`,
+        undefined,
+        {
+          repeatable: false,
+          timeoutMs: options.timeout,
+        }
+      );
+    },
+
+    /**
+     * Wait until the person answers and collect what the approval grants.
+     * Throws ApprovalDeniedError when they refuse, ApprovalExpiredError when
+     * it runs out, TimeoutError when `timeout` passes first.
+     */
+    wait: async <T = Record<string, unknown>>(
+      id: string,
+      options: WaitForApprovalOptions = {}
+    ): Promise<T> => {
+      // At least a second apart: the poll route allows two a second.
+      const interval = Math.max(1_000, options.pollInterval ?? 2_000);
+      const deadline = options.timeout === undefined ? Infinity : Date.now() + options.timeout;
+      const timedOut = () =>
+        new TimeoutError(options.timeout ?? 0, "Timed out waiting for the approval");
+      for (;;) {
+        options.signal?.throwIfAborted();
+        // A poll can collect the result, which is handed over once: never
+        // start one past the deadline, and give it only the time left, so a
+        // late answer is not collected after the caller stopped listening.
+        const left = deadline - Date.now();
+        if (left <= 0) throw timedOut();
+        const { approval, result } = await this.approvals.get<T>(id, {
+          timeout: Number.isFinite(left) ? left : undefined,
+        });
+        if (approval.status === "completed") {
+          if (result !== undefined) return result;
+          throw new WebhooksCCError(
+            409,
+            "This approval was already collected; what it granted is only handed over once."
+          );
+        }
+        if (approval.status === "denied") throw new ApprovalDeniedError(id);
+        if (approval.status === "expired") throw new ApprovalExpiredError(id);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw timedOut();
+        await sleep(Math.min(interval, remaining));
+      }
     },
   };
 
@@ -3286,6 +3455,23 @@ export class WebhooksCC {
 }
 
 /** Returns a promise that resolves after the specified milliseconds. */
+/** `promise`, or a TimeoutError once `deadline` passes, whichever is first. */
+function withinDeadline<T>(
+  promise: Promise<T>,
+  deadline: number | undefined,
+  budgetMs: number | undefined
+): Promise<T> {
+  if (deadline === undefined) return promise;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new TimeoutError(budgetMs ?? 0)),
+      Math.max(0, deadline - Date.now())
+    );
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

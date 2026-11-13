@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { ApprovalEmails } from "@/components/account/approval-emails";
 import { ConnectedAgents } from "@/components/account/connected-agents";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { SettingsPageHeader, settingsLink } from "@/components/settings/panel";
 
 export default function AgentsPage() {
-  const { session } = useAuth();
+  const { session, user } = useAuth();
 
   return (
     <>
@@ -15,7 +16,8 @@ export default function AgentsPage() {
         description={
           <>
             AI agents you approved with a code, and apps you connected from their own connect
-            dialog. They use the API for you, but cannot change your API keys, billing or account.{" "}
+            dialog. They use the API for you, but cannot change your billing or account, and a new
+            API key needs your approval first.{" "}
             <Link href="/docs/agents" className={settingsLink}>
               How agents connect
             </Link>
@@ -23,6 +25,7 @@ export default function AgentsPage() {
         }
       />
       <ConnectedAgents accessToken={session?.access_token ?? null} />
+      <ApprovalEmails userId={user?.id ?? null} accessToken={session?.access_token ?? null} />
     </>
   );
 }

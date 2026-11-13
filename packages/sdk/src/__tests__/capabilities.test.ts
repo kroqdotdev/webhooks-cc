@@ -19,6 +19,8 @@ interface Capability extends Record<Surface, string[] | string> {
   does: string;
   routes: string[];
   sessionOnly?: string;
+  /** What a person approves when an API key or agent calls the route. */
+  approval?: string;
 }
 
 interface Manifest {
@@ -95,6 +97,18 @@ for (const file of routeFiles(apiDir)) {
 
 const pathOf = (route: string) => route.slice(route.indexOf(" ") + 1);
 
+/** The source of one handler: from its export to the next export. */
+function handlerSource(route: string): string {
+  const source = routes.get(route) ?? "";
+  const method = route.slice(0, route.indexOf(" "));
+  const start = source.search(
+    new RegExp(`export\\s+(?:async\\s+)?(?:function\\s+|const\\s+|let\\s+)${method}\\b`)
+  );
+  if (start < 0) return source;
+  const next = source.slice(start + 1).search(/\nexport\s/);
+  return next < 0 ? source.slice(start) : source.slice(start, start + 1 + next);
+}
+
 function internalEntry(route: string): string | undefined {
   const path = pathOf(route);
   return Object.keys(manifest.internalRoutes).find((key) =>
@@ -108,6 +122,8 @@ function internalEntry(route: string): string | undefined {
 // would need a smarter check, and the test below refuses one.
 const SESSION_AUTH = /authenticateSessionRequest\(|domainAccount\(/;
 const KEY_AUTH = /authenticateRequest(?:RequireUser)?\(/;
+// A route that answers an API key with an approval (lib/approvals/request.ts).
+const ASKS_APPROVAL = /requestApproval\(/;
 
 describe("capabilities.json", () => {
   it("has a description and every surface for each capability", () => {
@@ -150,6 +166,18 @@ describe("capabilities.json", () => {
         [...routes.keys()].some((route) => internalEntry(route) === key),
         `internalRoutes: ${key} matches no route`
       ).toBe(true);
+    }
+  });
+
+  it("says what a person approves wherever a route asks for approval", () => {
+    for (const c of capabilities) {
+      const asks = c.routes.some((route) => ASKS_APPROVAL.test(handlerSource(route)));
+      expect(
+        Boolean(c.approval),
+        asks
+          ? `${c.id}: a route asks for approval; say what the person approves in approval`
+          : `${c.id}: approval is set, but no route of it asks for one`
+      ).toBe(asks);
     }
   });
 

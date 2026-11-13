@@ -1,7 +1,13 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest, type SessionAuthResult } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { requestApproval } from "@/lib/approvals/request";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "@/lib/supabase/api-keys";
+import {
+  ApiKeyLimitError,
+  createApiKeyForUser,
+  MAX_KEY_TTL_DAYS,
+  parseKeyName,
+} from "@/lib/supabase/api-keys";
 import { reportError } from "@/lib/observability";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { tunnelConfig } from "@/lib/tunnels/config";
@@ -9,8 +15,16 @@ import { stopShares } from "@/lib/tunnels/stops";
 
 const DEFAULT_TTL_DAYS = 365;
 
+/*
+ * The account's API keys. Listing and revoking take a browser session or any
+ * key of the account (a read, and a revoke only ever takes access away).
+ * Creating one with a session creates it; with an API key or an agent token
+ * it answers 202 with an approval the account's owner must give
+ * (lib/approvals), and the key goes to the asker when it collects it.
+ */
+
 export async function GET(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const admin = createAdminClient();
@@ -32,71 +46,61 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
-  let body: { name?: string };
+  let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as { name?: string };
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+    body = parsed as Record<string, unknown>;
   } catch {
     return Response.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const name = (body.name ?? "").trim();
-  if (!name) {
-    return Response.json({ error: "Name is required" }, { status: 400 });
-  }
-
-  const admin = createAdminClient();
-
-  const { count, error: countError } = await admin
-    .from("api_keys")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", auth.userId)
-    .is("agent_registration_id", null);
-
-  if (countError) {
-    reportError("Failed to count API keys", countError);
-    return Response.json({ error: "Failed to create API key" }, { status: 500 });
-  }
-
-  if ((count ?? 0) >= MAX_KEYS_PER_USER) {
-    return Response.json(
-      { error: `Maximum of ${MAX_KEYS_PER_USER} API keys allowed` },
-      { status: 409 }
+  // An API key or an agent token: a person approves it first.
+  if (auth.keyId) {
+    return requestApproval(
+      request,
+      { userId: auth.userId, keyId: auth.keyId, agentRegistrationId: auth.agentRegistrationId },
+      "api_keys.create",
+      body
     );
   }
 
-  const rawKey = generateApiKey();
-  const keyHash = hashApiKey(rawKey);
-  const keyPrefix = rawKey.slice(0, 12);
-  const expiresAt = new Date(Date.now() + DEFAULT_TTL_DAYS * 86_400_000).toISOString();
+  const name = parseKeyName(body.name);
+  if (!name.ok) {
+    return Response.json({ error: name.error }, { status: 400 });
+  }
+  const days = body.expiresInDays ?? DEFAULT_TTL_DAYS;
+  if (!Number.isInteger(days) || (days as number) < 1 || (days as number) > MAX_KEY_TTL_DAYS) {
+    return Response.json(
+      { error: `expiresInDays must be a whole number of days from 1 to ${MAX_KEY_TTL_DAYS}` },
+      { status: 400 }
+    );
+  }
 
-  const { error: insertError } = await admin.from("api_keys").insert({
-    user_id: auth.userId,
-    name,
-    key_hash: keyHash,
-    key_prefix: keyPrefix,
-    expires_at: expiresAt,
-  });
-
-  if (insertError) {
-    reportError("Failed to insert API key", insertError);
+  try {
+    const created = await createApiKeyForUser(auth.userId, name.name, days as number);
+    await auditUserAction(request, auth.userId, {
+      action: "api_key.created",
+      status: 200,
+      targetId: created.keyPrefix,
+      metadata: { name: created.name },
+    });
+    return Response.json(created);
+  } catch (err) {
+    if (err instanceof ApiKeyLimitError) {
+      return Response.json({ error: err.message }, { status: 409 });
+    }
+    reportError("Failed to create API key", err);
     await auditUserAction(request, auth.userId, { action: "api_key.created", status: 500 });
     return Response.json({ error: "Failed to create API key" }, { status: 500 });
   }
-
-  await auditUserAction(request, auth.userId, {
-    action: "api_key.created",
-    status: 200,
-    targetId: keyPrefix,
-    metadata: { name },
-  });
-  return Response.json({ key: rawKey, name, keyPrefix, expiresAt });
 }
 
 export async function DELETE(request: Request) {
-  const auth: SessionAuthResult = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const url = new URL(request.url);
