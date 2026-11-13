@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use anyhow::Result;
 use clap::Parser;
 
@@ -6,26 +8,135 @@ use whk::cli::{
     self, AuthAction, Cli, Command, NamesAction, RequestsAction, SandboxAction, SharesAction,
     TeamsAction,
 };
-use whk::tui;
+use whk::error::{classify, error_json};
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let args = Cli::parse();
-
+async fn main() -> ExitCode {
+    let args = match Cli::try_parse() {
+        Ok(args) => args,
+        Err(error) => return argument_error(error),
+    };
+    let json = args.json;
     cli::output::set_no_color(args.no_color || std::env::var("NO_COLOR").is_ok());
+
+    match run(args).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            let c = classify(&error);
+            if json {
+                eprintln!("{}", error_json(&error, &c));
+            } else {
+                eprintln!("Error: {error:#}");
+                // A hint the message already gives is not repeated.
+                if let Some(hint) = c.hint.as_deref()
+                    && !format!("{error:#}").contains(hint)
+                {
+                    eprintln!("{hint}");
+                }
+            }
+            ExitCode::from(c.exit as u8)
+        }
+    }
+}
+
+/// A command line clap refused. Help and `--version` print as usual; under
+/// `--json` a real mistake comes as the same `{"error": ...}` as any other
+/// failure, with exit 2.
+fn argument_error(error: clap::Error) -> ExitCode {
+    use clap::error::ErrorKind;
+    let informational = matches!(
+        error.kind(),
+        ErrorKind::DisplayHelp
+            | ErrorKind::DisplayVersion
+            | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+    );
+    let json = std::env::args_os().skip(1).any(|a| a == "--json");
+    if informational || !json {
+        error.exit();
+    }
+    // clap's first line says what was wrong ("error: unexpected argument ...").
+    // What clap says before its usage line, on one line.
+    let text = error.to_string();
+    let message = text
+        .lines()
+        .take_while(|line| !line.starts_with("Usage:"))
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_start_matches("error: ")
+        .to_string();
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "error": {
+                "code": "usage",
+                "message": message,
+                "exit": 2,
+                "hint": "Run the command with --help for its arguments.",
+            }
+        })
+    );
+    ExitCode::from(2)
+}
+
+async fn run(args: Cli) -> Result<()> {
+    // A bare `whk` prints help, before any credentials are read, so a broken
+    // token file never hides it. It used to open a full-screen TUI, which
+    // hung any agent or script that ran it without a terminal.
+    if args.command.is_none() {
+        use clap::CommandFactory;
+        // A closed pipe (`whk | head`) is not a failure.
+        let _ = Cli::command().print_help();
+        return Ok(());
+    }
 
     let mut client = ApiClient::new(args.api_url.as_deref(), args.webhook_url.as_deref())?;
 
-    let nogui = args.nogui || std::env::var("WHK_NOGUI").is_ok();
-
     match args.command {
-        None => {
-            if nogui {
-                use clap::CommandFactory;
-                Cli::command().print_help()?;
-            } else {
-                tui::run(client).await?;
-            }
+        None => unreachable!("handled above"),
+
+        Some(Command::Wait {
+            slug,
+            timeout,
+            count,
+            since,
+            method,
+            kind,
+            path,
+        }) => {
+            cli::wait::run(
+                &client,
+                cli::wait::WaitOptions {
+                    slug,
+                    timeout,
+                    count,
+                    since,
+                    method,
+                    kind,
+                    path,
+                },
+                args.json,
+            )
+            .await?;
+        }
+
+        Some(Command::Api {
+            path,
+            method,
+            data,
+            headers,
+            include,
+        }) => {
+            cli::api::run(
+                &client,
+                &path,
+                method.as_deref(),
+                data.as_deref(),
+                &headers,
+                include,
+            )
+            .await?;
         }
 
         Some(Command::Auth { action }) => match action {

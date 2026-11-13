@@ -1,16 +1,17 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use super::ApiClient;
+use super::client::Fetched;
 use crate::types::{Team, TeamInvite, TeamMembersResponse};
 
 impl ApiClient {
-    pub async fn list_teams(&self) -> Result<Vec<Team>> {
+    pub async fn list_teams(&self) -> Result<Fetched<Vec<Team>>> {
         self.require_auth()?;
         let resp = self.get("/api/teams").await?;
-        serde_json::from_str(&resp.body).context("failed to parse team list")
+        resp.parse("team list")
     }
 
-    pub async fn list_team_members(&self, team_id: &str) -> Result<TeamMembersResponse> {
+    pub async fn list_team_members(&self, team_id: &str) -> Result<Fetched<TeamMembersResponse>> {
         self.require_auth()?;
         let resp = self
             .get(&format!(
@@ -18,7 +19,7 @@ impl ApiClient {
                 urlencoding::encode(team_id)
             ))
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse team members")
+        resp.parse("team members")
     }
 
     /// Share an endpoint the caller owns with a team. Takes the endpoint id;
@@ -45,7 +46,11 @@ impl ApiClient {
         Ok(())
     }
 
-    pub async fn invite_team_member(&self, team_id: &str, email: &str) -> Result<TeamInvite> {
+    pub async fn invite_team_member(
+        &self,
+        team_id: &str,
+        email: &str,
+    ) -> Result<Fetched<TeamInvite>> {
         self.require_auth()?;
         let body = serde_json::json!({ "email": email });
         let resp = self
@@ -54,13 +59,13 @@ impl ApiClient {
                 &body,
             )
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse invite")
+        resp.parse("invite")
     }
 
-    pub async fn list_invites(&self) -> Result<Vec<TeamInvite>> {
+    pub async fn list_invites(&self) -> Result<Fetched<Vec<TeamInvite>>> {
         self.require_auth()?;
         let resp = self.get("/api/invites").await?;
-        serde_json::from_str(&resp.body).context("failed to parse invite list")
+        resp.parse("invite list")
     }
 
     pub async fn accept_invite(&self, invite_id: &str) -> Result<()> {

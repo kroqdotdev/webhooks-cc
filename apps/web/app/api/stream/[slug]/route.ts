@@ -3,16 +3,22 @@ import { serverEnv } from "@/lib/env";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import type { Database } from "@/lib/supabase/database";
 import {
+  getStreamRequestsByIds,
   listRequestsAfterCursorForEndpointByUser,
-  type RequestCursor,
+  listStreamRequestIdsSince,
   type RequestRecord,
 } from "@/lib/supabase/requests";
+import { createStreamDrainer } from "@/lib/stream/drainer";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 import { reportError } from "@/lib/observability";
 
 export const dynamic = "force-dynamic";
 
 const KEEPALIVE_INTERVAL_MS = 30_000;
+// How often the stream looks back for a capture that committed behind its
+// cursor and whose signal Realtime dropped: well inside a default 30 s
+// `whk wait`. It reads ids only (see lib/stream/drainer.ts).
+const LOOKBACK_INTERVAL_MS = 10_000;
 const MAX_CONNECTION_DURATION_MS = 30 * 60 * 1000;
 const BACKLOG_PAGE_SIZE = 100;
 
@@ -103,21 +109,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
       const abortSignal = request.signal;
       const supabase = createRealtimeAdminClient();
-      const sentIds = new Set<string>();
       const afterTimestamp = since ?? connectionStart;
-      // Last streamed row; reads resume strictly after it.
-      let cursor: RequestCursor | null = null;
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+      let lookbackTimer: ReturnType<typeof setInterval> | null = null;
       let durationTimer: ReturnType<typeof setTimeout> | null = null;
       let closed = false;
       let channel: RealtimeChannel | null = null;
-      let draining = false;
-      let drainAgain = false;
 
       const cleanup = () => {
         if (keepaliveTimer) {
           clearInterval(keepaliveTimer);
           keepaliveTimer = null;
+        }
+        if (lookbackTimer) {
+          clearInterval(lookbackTimer);
+          lookbackTimer = null;
         }
         if (durationTimer) {
           clearTimeout(durationTimer);
@@ -142,11 +148,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       };
 
       const enqueueRequest = (record: RequestRecord) => {
-        if (closed || sentIds.has(record.id)) {
+        if (closed) {
           return;
         }
-
-        sentIds.add(record.id);
         controller.enqueue(
           encoder.encode(`event: request\ndata: ${JSON.stringify(toStreamRequest(record))}\n\n`)
         );
@@ -163,47 +167,31 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         closeStream();
       };
 
-      // Broadcast signals carry ids only, so every signal (and the initial
-      // backlog) reads the rows after the last one streamed. Signals that land
-      // while a read is running fold into one more read.
-      const drain = async () => {
-        if (draining) {
-          drainAgain = true;
-          return;
-        }
-        draining = true;
-        try {
-          do {
-            drainAgain = false;
-            while (!closed) {
-              const page = await listRequestsAfterCursorForEndpointByUser({
-                userId: auth.userId,
-                slug,
-                after: afterTimestamp,
-                cursor,
-                limit: BACKLOG_PAGE_SIZE,
-              });
-              if (page === null) {
-                sendEndpointDeleted();
-                return;
-              }
-              for (const record of page.records) {
-                enqueueRequest(record);
-              }
-              cursor = page.cursor;
-              if (page.records.length < BACKLOG_PAGE_SIZE) break;
-            }
-          } while (drainAgain && !closed);
-        } catch (error) {
-          reportError("Failed to read SSE stream backlog", error);
-        } finally {
-          draining = false;
-        }
-      };
+      // What to send and when: see lib/stream/drainer.ts.
+      const drainer = createStreamDrainer({
+        afterTimestamp,
+        readAfter: ({ after, cursor, limit }) =>
+          listRequestsAfterCursorForEndpointByUser({
+            userId: auth.userId,
+            slug,
+            after,
+            cursor,
+            limit,
+          }),
+        readByIds: (ids) => getStreamRequestsByIds(endpoint.id, ids),
+        readIdsSince: (from, limit) => listStreamRequestIdsSince(endpoint.id, from, limit),
+        send: enqueueRequest,
+        gone: sendEndpointDeleted,
+        isClosed: () => closed,
+        onError: (error) => reportError("Failed to read SSE stream backlog", error),
+        pageSize: BACKLOG_PAGE_SIZE,
+        recheckIntervalMs: LOOKBACK_INTERVAL_MS,
+      });
 
       abortSignal.addEventListener("abort", closeStream);
 
-      // The keepalive also catches up, in case a signal was dropped.
+      // The keepalive keeps proxies from closing an idle stream; the
+      // look-back timer catches up in case Realtime dropped a signal.
       keepaliveTimer = setInterval(() => {
         if (closed || abortSignal.aborted) return;
         try {
@@ -212,8 +200,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
           closeStream();
           return;
         }
-        void drain();
       }, KEEPALIVE_INTERVAL_MS);
+      lookbackTimer = setInterval(() => {
+        if (closed || abortSignal.aborted) return;
+        drainer.recheck();
+      }, LOOKBACK_INTERVAL_MS);
 
       durationTimer = setTimeout(
         () => {
@@ -236,9 +227,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       // endpoint was checked above.
       channel = supabase
         .channel(`endpoint:${endpoint.id}`, { config: { private: true } })
-        .on("broadcast", { event: "*" }, ({ event }) => {
+        .on("broadcast", { event: "*" }, ({ event, payload }) => {
           if (event === "request_created") {
-            void drain();
+            const id = (payload as { request_id?: unknown } | undefined)?.request_id;
+            drainer.signal(typeof id === "string" ? id : null);
           } else if (event === "endpoint_deleted") {
             sendEndpointDeleted();
           }
@@ -246,7 +238,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
       try {
         await waitForSubscribed(channel);
-        await drain();
+        await drainer.drain();
       } catch (error) {
         reportError("Failed to initialize SSE stream", error);
         closeStream();

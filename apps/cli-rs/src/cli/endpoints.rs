@@ -1,6 +1,5 @@
 use anyhow::Result;
 use std::collections::HashMap;
-use std::io::{self, Write};
 
 use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, print_endpoint_table, red, sanitize};
@@ -69,7 +68,7 @@ pub async fn create(
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint)?);
+        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
     } else {
         let url = client.webhook_url_for(&endpoint.slug);
         println!(
@@ -109,10 +108,26 @@ pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<
         };
         list.owned.retain(tied);
         list.shared.retain(tied);
+        // The printed JSON keeps the same endpoints.
+        let kept: std::collections::HashSet<String> = list
+            .owned
+            .iter()
+            .chain(list.shared.iter())
+            .map(|ep| ep.slug.clone())
+            .collect();
+        for key in ["owned", "shared"] {
+            if let Some(items) = list.raw.get_mut(key).and_then(|v| v.as_array_mut()) {
+                items.retain(|ep| {
+                    ep.get("slug")
+                        .and_then(|s| s.as_str())
+                        .is_some_and(|slug| kept.contains(slug))
+                });
+            }
+        }
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&list)?);
+        println!("{}", serde_json::to_string_pretty(&list.json())?);
         return Ok(());
     }
 
@@ -144,7 +159,7 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     let endpoint = client.get_endpoint(slug).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint)?);
+        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
         return Ok(());
     }
 
@@ -215,7 +230,7 @@ pub async fn update_endpoint(
     let endpoint = client.update_endpoint(slug, &req).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint)?);
+        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
     } else {
         println!("  {} Updated endpoint {}", green("✓"), bold(&endpoint.slug));
     }
@@ -256,20 +271,10 @@ pub async fn set_favorite(
 }
 
 pub async fn delete(client: &ApiClient, slug: &str, force: bool, json: bool) -> Result<()> {
-    if !force {
-        print!(
-            "  Delete endpoint {}? This cannot be undone. [y/N] ",
-            bold(slug)
-        );
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("  Cancelled.");
-            return Ok(());
-        }
-    }
+    crate::cli::confirm::confirm(
+        &format!("Delete endpoint {slug}? This cannot be undone."),
+        force,
+    )?;
 
     client.delete_endpoint(slug).await?;
 

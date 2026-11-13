@@ -124,7 +124,7 @@ async fn test_endpoint_update_mock_response() {
         .expect("update failed");
     assert_eq!(updated.name.as_deref(), Some("mock-test-updated"));
     assert!(updated.mock_response.is_some());
-    assert_eq!(updated.mock_response.unwrap().status, 201);
+    assert_eq!(updated.mock_response.as_ref().unwrap().status, 201);
 
     // Cleanup
     client.delete_endpoint(&ep.slug).await.ok();

@@ -298,12 +298,9 @@ impl ApiClient {
     /// Require auth or return a friendly error.
     pub fn require_auth(&self) -> Result<()> {
         if matches!(self.bearer, Bearer::None) {
-            match ignored_key_hint() {
-                Some(hint) => anyhow::bail!("Not logged in. {hint}"),
-                None => anyhow::bail!(
-                    "Not logged in. Run `whk auth login` first, or connect an agent with `whk sandbox connect --email <address>`."
-                ),
-            }
+            // The next step (log in, or why WHK_API_KEY was ignored) comes
+            // with the error's hint; see `error::classify`.
+            return Err(crate::error::CliError::NotLoggedIn("Not logged in.".into()).into());
         }
         Ok(())
     }

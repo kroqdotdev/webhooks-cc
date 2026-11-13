@@ -300,6 +300,61 @@ describe("Supabase Stream Route Integration", () => {
     await anonClient.auth.signOut();
   }, 30_000);
 
+  it("streams a request that commits after a newer one already went out", async () => {
+    const anonClient = createAnonClient();
+    const signIn = await anonClient.auth.signInWithPassword({
+      email: testUserEmail,
+      password: TEST_PASSWORD,
+    });
+    expect(signIn.error).toBeNull();
+
+    const controller = new AbortController();
+    const response = await streamRoute(
+      authRequest(
+        `/api/stream/${testEndpointSlug}`,
+        signIn.data.session!.access_token,
+        controller.signal
+      ),
+      { params: Promise.resolve({ slug: testEndpointSlug }) }
+    );
+    expect(response.status).toBe(200);
+
+    const eventsPromise = collectEvents(response.body!, "request", 2);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const row = (path: string, receivedAt?: string) => ({
+      endpoint_id: testEndpointId,
+      user_id: testUserId,
+      method: "POST",
+      path,
+      headers: {},
+      body: "{}",
+      query_params: {},
+      content_type: "application/json",
+      ip: "127.0.0.1",
+      size: 2,
+      ...(receivedAt ? { received_at: receivedAt } : {}),
+    });
+    // The receiver stamps received_at before the capture commits, so a
+    // capture that waited (for a slot, for an attachment upload) commits
+    // stamped earlier than one that already streamed.
+    const newer = await admin.from("requests").insert(row("/commit-order/newer"));
+    expect(newer.error).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const late = await admin
+      .from("requests")
+      .insert(row("/commit-order/late", new Date(Date.now() - 1500).toISOString()));
+    expect(late.error).toBeNull();
+
+    const events = (await eventsPromise).map((data) => JSON.parse(data) as { path: string });
+    expect(events.map((event) => event.path)).toEqual([
+      "/commit-order/newer",
+      "/commit-order/late",
+    ]);
+
+    controller.abort();
+    await anonClient.auth.signOut();
+  }, 30_000);
+
   it("streams every request when more than a page share one timestamp", async () => {
     // Rows tied on received_at, read by the initial backlog through the
     // (received_at, id) cursor. user_id is null so the rows send no broadcast

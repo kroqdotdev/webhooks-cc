@@ -2,7 +2,7 @@
 name = "whk"
 version = "0.1.0"
 edition = "2024"
-description = "CLI and TUI for webhooks.cc — inspect, forward, and replay webhooks"
+description = "The webhooks.cc CLI: capture, inspect, forward and replay webhooks and email, share localhost, for people and coding agents"
 license = "MIT"
 repository = "https://github.com/kroqdotdev/webhooks-cc"
 
@@ -15,8 +15,7 @@ path = "src/main.rs"
 clap = { version = "4", features = ["derive", "env", "string"] }
 clap_complete = "4"
 
-# TUI
-ratatui = "0.30"
+# Terminal width for wrapped output
 crossterm = "0.29"
 
 # Async

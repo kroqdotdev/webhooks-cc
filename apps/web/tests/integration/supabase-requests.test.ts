@@ -174,6 +174,79 @@ describe("Supabase Requests Integration", () => {
     expect(secondPage?.items[0]?.path).toBe("/three");
   });
 
+  it("keeps pages exact when requests arrive or are deleted between pages", async () => {
+    await clearRequestsForEndpointByUser({ userId: testUserId, slug: testEndpointSlug });
+    const now = Date.now();
+    const ids: Record<string, string> = {};
+    for (const [index, path] of ["/a", "/b", "/c", "/d", "/e"].entries()) {
+      ids[path] = await insertRequest(path, now - (index + 1) * 1_000);
+    }
+    const page = (cursor?: string) =>
+      listPaginatedRequestsForEndpointByUser({
+        userId: testUserId,
+        slug: testEndpointSlug,
+        limit: 2,
+        cursor,
+      });
+
+    const first = await page();
+    expect(first?.items.map((item) => item.path)).toEqual(["/a", "/b"]);
+
+    // A deletion above the cursor: an offset cursor would skip /c.
+    const { error } = await admin.from("requests").delete().eq("id", ids["/a"]);
+    expect(error).toBeNull();
+    const second = await page(first?.cursor);
+    expect(second?.items.map((item) => item.path)).toEqual(["/c", "/d"]);
+
+    // New requests at the top: an offset cursor would repeat /d.
+    await insertRequest("/new", now);
+    await insertRequest("/newer", now + 1_000);
+    const third = await page(second?.cursor);
+    expect(third?.items.map((item) => item.path)).toEqual(["/e"]);
+    expect(third?.hasMore).toBe(false);
+  });
+
+  it("still reads an offset cursor written before keyset cursors", async () => {
+    await clearRequestsForEndpointByUser({ userId: testUserId, slug: testEndpointSlug });
+    const now = Date.now();
+    await insertRequest("/x", now - 1_000);
+    await insertRequest("/y", now - 2_000);
+    await insertRequest("/z", now - 3_000);
+    const legacy = Buffer.from(JSON.stringify({ offset: 1, cutoff: 0 })).toString("base64url");
+    const result = await listPaginatedRequestsForEndpointByUser({
+      userId: testUserId,
+      slug: testEndpointSlug,
+      limit: 1,
+      cursor: legacy,
+    });
+    expect(result?.items.map((item) => item.path)).toEqual(["/y"]);
+    // The next cursor is a keyset one and carries on from there.
+    const next = await listPaginatedRequestsForEndpointByUser({
+      userId: testUserId,
+      slug: testEndpointSlug,
+      limit: 1,
+      cursor: result?.cursor,
+    });
+    expect(next?.items.map((item) => item.path)).toEqual(["/z"]);
+  });
+
+  it("refuses a cursor whose position is not a timestamp and a uuid", async () => {
+    const forged = Buffer.from(
+      JSON.stringify({
+        at: "2026-01-01T00:00:00Z,id.not.is.null",
+        id: "00000000-0000-0000-0000-000000000000",
+        cutoff: 0,
+      })
+    ).toString("base64url");
+    await expect(
+      listPaginatedRequestsForEndpointByUser({
+        userId: testUserId,
+        slug: testEndpointSlug,
+        cursor: forged,
+      })
+    ).rejects.toThrow("invalid_cursor");
+  });
+
   it("clears endpoint requests and reports the delete count", async () => {
     await clearRequestsForEndpointByUser({
       userId: testUserId,

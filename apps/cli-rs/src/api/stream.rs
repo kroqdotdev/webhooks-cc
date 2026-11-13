@@ -9,7 +9,8 @@ use tokio::task::JoinHandle;
 
 use super::{ApiClient, extract_error};
 use crate::agent::AgentError;
-use crate::types::{CapturedRequest, SseEvent};
+use crate::error::ApiError;
+use crate::types::{SseEvent, Streamed};
 
 const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MB
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -45,6 +46,9 @@ enum ConnectError {
     Transient(String),
     /// A 401: terminal, unless a new token can be exchanged.
     Unauthorized(String),
+    /// A refusal with its HTTP status (403, 404, ...), so the command exits
+    /// with the matching status.
+    Rejected(u16, String),
 }
 
 impl ApiClient {
@@ -61,6 +65,18 @@ impl ApiClient {
     /// connection the token endpoint refused). A token endpoint that cannot
     /// be reached or answers 408, 429 or 5xx goes through the backoff.
     pub async fn stream_requests(&self, slug: &str, tx: mpsc::Sender<SseEvent>) -> Result<()> {
+        self.stream_requests_from(slug, None, tx).await
+    }
+
+    /// [`Self::stream_requests`], starting from the requests received after
+    /// `since` (ms; the server sends those first, oldest first), or from the
+    /// stream's own start on the server's clock when `None`.
+    pub async fn stream_requests_from(
+        &self,
+        slug: &str,
+        since: Option<i64>,
+        tx: mpsc::Sender<SseEvent>,
+    ) -> Result<()> {
         self.require_auth()?;
 
         let sse_client = reqwest::Client::builder()
@@ -69,7 +85,10 @@ impl ApiClient {
             .context("failed to create SSE client")?;
 
         let base_url = self.url(&format!("/api/stream/{}", urlencoding::encode(slug)));
-        let mut cursor = ResumeCursor::default();
+        let mut cursor = ResumeCursor {
+            floor: since,
+            ..ResumeCursor::default()
+        };
         let mut attempt: u32 = 0;
         let mut rapid_rotations: u32 = 0;
         // An agent connection's token lives an hour, so each connection asks
@@ -108,8 +127,22 @@ impl ApiClient {
                         refresh = true;
                         continue;
                     }
-                    Err(ConnectError::Terminal(msg) | ConnectError::Unauthorized(msg)) => {
-                        anyhow::bail!(msg)
+                    Err(ConnectError::Terminal(msg)) => anyhow::bail!(msg),
+                    Err(ConnectError::Unauthorized(message)) => {
+                        return Err(ApiError {
+                            status: 401,
+                            message,
+                            retry_after: None,
+                        }
+                        .into());
+                    }
+                    Err(ConnectError::Rejected(status, message)) => {
+                        return Err(ApiError {
+                            status,
+                            message,
+                            retry_after: None,
+                        }
+                        .into());
                     }
                     Err(ConnectError::Transient(msg)) => StreamEnd::Failed(msg),
                 },
@@ -217,6 +250,7 @@ async fn connect(
         ConnectError::Terminal(msg) if status == StatusCode::UNAUTHORIZED => {
             Err(ConnectError::Unauthorized(msg))
         }
+        ConnectError::Terminal(msg) => Err(ConnectError::Rejected(status.as_u16(), msg)),
         other => Err(other),
     }
 }
@@ -433,15 +467,12 @@ fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
             let _: serde_json::Value = serde_json::from_str(data).ok()?;
             Some(SseEvent::Connected)
         }
-        "request" => {
-            let req: CapturedRequest = serde_json::from_str(data).ok()?;
-            Some(SseEvent::Request(Box::new(req)))
-        }
+        "request" => Some(SseEvent::Request(Box::new(Streamed::parse(data)?))),
         "endpoint_deleted" => Some(SseEvent::EndpointDeleted),
         "timeout" => Some(SseEvent::Timeout),
         _ => {
             if !data.is_empty()
-                && let Ok(req) = serde_json::from_str::<CapturedRequest>(data)
+                && let Some(req) = Streamed::parse(data)
             {
                 return Some(SseEvent::Request(Box::new(req)));
             }

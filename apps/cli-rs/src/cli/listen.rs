@@ -6,7 +6,8 @@ use crate::api::stream::join_stream;
 use crate::cli::output::{
     bold, dim, green, method_color, print_reconnected, print_reconnecting, red,
 };
-use crate::types::SseEvent;
+use crate::cli::output::{sanitize, sanitize_line};
+use crate::types::{CapturedRequest, SseEvent};
 use crate::util::format::format_bytes;
 
 pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
@@ -36,28 +37,9 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
                 match event {
                     SseEvent::Request(req) => {
                         if json {
-                            println!("{}", serde_json::to_string(&req).unwrap_or_default());
+                            println!("{}", serde_json::to_string(&req.json()).unwrap_or_default());
                         } else {
-                            let time = chrono::Local::now().format("%H:%M:%S");
-                            let sig_status = match req.signature_verified {
-                                Some(true) => {
-                                    let provider = req.signing_provider.as_deref().unwrap_or("?");
-                                    format!(" {} {}", green("✓"), provider)
-                                }
-                                Some(false) => {
-                                    let provider = req.signing_provider.as_deref().unwrap_or("?");
-                                    format!(" {} {}", red("✗"), provider)
-                                }
-                                None => String::new(),
-                            };
-                            println!(
-                                "  {} {} {}{}  {}",
-                                dim(&time.to_string()),
-                                method_color(&req.method),
-                                req.path,
-                                sig_status,
-                                dim(&format_bytes(req.size)),
-                            );
+                            println!("{}", listen_line(&req));
                         }
                     }
                     SseEvent::EndpointDeleted => {
@@ -93,4 +75,42 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     // Make any in-flight send in the stream task fail fast, then collect its result.
     drop(rx);
     join_stream(stream_handle, interrupted).await
+}
+
+/// One line per arrival: the time, the method, the path (for an email the
+/// recipient and the subject), the signature check, the size and the id
+/// (for `whk requests get`).
+fn listen_line(req: &CapturedRequest) -> String {
+    let time = chrono::Local::now().format("%H:%M:%S").to_string();
+    // The stream sends an email's headers, not its parsed summary, so the
+    // subject comes from either (`email_subject`).
+    let what = if req.is_email() {
+        let subject = req
+            .email_subject()
+            .unwrap_or_else(|| "(no subject)".to_string());
+        format!(
+            "{} {}",
+            sanitize_line(&req.path),
+            bold(&sanitize_line(&subject))
+        )
+    } else {
+        sanitize(&req.path)
+    };
+    let signature = match req.signature_verified {
+        Some(ok) => {
+            let provider = sanitize(req.signing_provider.as_deref().unwrap_or("?"));
+            let mark = if ok { green("✓") } else { red("✗") };
+            format!(" {mark} {provider}")
+        }
+        None => String::new(),
+    };
+    format!(
+        "  {} {} {}{}  {}  {}",
+        dim(&time),
+        method_color(&req.method),
+        what,
+        signature,
+        dim(&format_bytes(req.size)),
+        dim(&sanitize(&req.id)),
+    )
 }

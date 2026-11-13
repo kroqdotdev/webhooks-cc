@@ -1,14 +1,14 @@
 ---
 title: "CLI"
-description: "Install the webhooks.cc CLI (whk), log in, and use the interactive TUI or plain subcommands to tunnel webhooks to localhost, stream requests, and manage endpoints."
+description: "Install the webhooks.cc CLI (whk), log in, tunnel webhooks to localhost, stream and wait for requests, and script it from CI or a coding agent with JSON output and stable exit codes."
 section: cli
 order: 1
-lastUpdated: 2026-11-12
+lastUpdated: 2026-11-13
 schema: none
 keywords: ["webhook CLI", "whk", "webhook forward", "localhost webhook"]
 seo:
   ogTitle: "Webhook CLI Guide"
-  ogDescription: "Install the webhooks.cc CLI (whk), log in, and use the interactive TUI or plain subcommands to tunnel webhooks to localhost, stream requests, and manage endpoints."
+  ogDescription: "Install the webhooks.cc CLI (whk), log in, tunnel webhooks to localhost, stream and wait for requests, and script it from CI or a coding agent with JSON output and stable exit codes."
 ---
 
 ## Install
@@ -23,30 +23,9 @@ curl -fsSL https://webhooks.cc/install.sh | WHK_INSTALL_DIR="$HOME/.local/bin" s
 
 See [all installation options](/installation) (GitHub Releases too).
 
-## Interactive mode
+## Get started
 
-Run `whk` with no arguments to launch the interactive TUI:
-
-```bash
-whk
-```
-
-The main menu gives you access to every feature:
-
-- **Tunnel**: create an endpoint and forward webhooks to localhost
-- **Listen**: stream incoming requests in real time
-- **Endpoints**: create, list, and delete endpoints
-- **Send**: send a test webhook to an endpoint
-- **Search**: search captured requests
-- **Usage**: your plan, quota, and billing
-- **Auth**: log in and out
-- **Update**: check for new versions
-
-Requests are streamed in real time with color-coded HTTP methods, timestamps, and forward results. Press Enter on any request to inspect its headers and body. Navigation uses arrow keys or vim-style `j`/`k`.
-
-## Subcommand mode
-
-Every feature is also available as a direct subcommand, useful for scripting or when you prefer plain text output.
+Running `whk` on its own prints the list of commands. Every command is a plain subcommand that prints text for people, or JSON with `--json`.
 
 ### Authenticate
 
@@ -54,7 +33,7 @@ Every feature is also available as a direct subcommand, useful for scripting or 
 whk auth login
 ```
 
-Opens your browser to verify a device code. Credentials are stored at `~/.config/whk/token.json`.
+Opens your browser to verify a device code. Credentials are stored at `~/.config/whk/token.json`. With `--json`, the first line carries `user_code` and `verification_url`, so a program can show them to whoever approves the login.
 
 ### Forward to localhost
 
@@ -62,9 +41,18 @@ Opens your browser to verify a device code. Credentials are stored at `~/.config
 whk tunnel 3000
 ```
 
-Creates an endpoint, prints its URL, and forwards every incoming webhook to `localhost:3000` in real time.
+Creates an endpoint, prints its URL, and forwards every incoming webhook to `localhost:3000` in real time, one line per request.
 
 Add `--live` when the sender needs your app's response: each webhook is relayed while the sender waits ([live tunnels](/docs/live-tunnel)).
+
+### Watch and wait
+
+```bash
+whk listen <slug>          # one line per request or email as it arrives
+whk wait <slug> --since now --json   # block until the next one arrives, print it, exit
+```
+
+`whk wait` exits as soon as a matching request arrives, so a script or an agent can start it, trigger the sender, and pick up the result. Started before the sender, give it `--since now` so only a new request counts; without it, one from the last 5 minutes counts too, which suits starting it after the sender ran. Filter with `--method`, `--kind email` or `--path`, wait for several with `--count`, and set the limit with `--timeout` (30 seconds by default).
 
 ### Share a site
 
@@ -74,18 +62,37 @@ whk share 3000
 
 Puts your local site at a public link on sharehooks.cc, for showing work in progress in a browser. See [Share localhost](/docs/share), and the [framework guides](/share#frameworks) for what Next.js, Vite, Rails, Django and others need when opened from a public name.
 
-To disable the TUI entirely, pass `--nogui` or set `WHK_NOGUI=1`.
+## Scripts, CI and AI agents
 
-### For AI agents
+`whk` is built to be driven by programs as well as people:
 
-An agent can capture webhooks without an account, and without a browser:
+- `--json` prints the API's own answers unchanged (every field the server sends), NDJSON for streams such as `listen` and `tunnel`, and failures as one `{"error": {...}}` object on stderr with a `code`, the `message`, the HTTP `status` when there was one, and a `hint` with the next step.
+- Exit statuses are stable, so a script can branch on them without reading text:
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| 0 | | Success |
+| 1 | `error`, `bad_request` | Any other failure, or the server refused the input |
+| 2 | `usage` | Bad arguments |
+| 3 | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired` | No credentials, they were refused, an agent's connection was revoked, or a login code expired |
+| 4 | `not_found` | No such endpoint, request, team or share |
+| 5 | `forbidden` | Not allowed by the plan, a limit or a permission |
+| 6 | `rate_limited` | Too many requests: wait and retry |
+| 7 | `server_error`, `network_error`, `request_timeout` | Our side or the network failed: retry |
+| 8 | `timeout` | A wait ran out of time |
+| 9 | `confirmation_required`, `cancelled` | A destructive command was not confirmed |
+
+- Nothing waits for input without a terminal. `whk delete` and `whk requests clear` ask first in a terminal; anywhere else they stop with `confirmation_required` unless you pass `--yes`.
+- `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own yet: `whk api endpoints/<slug>/destinations`, or `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.
+
+An agent can also capture webhooks without an account, and without a browser:
 
 ```bash
 whk sandbox create --json
 whk sandbox wait <slug> --json
 ```
 
-`whk sandbox connect --email <address>` then prints a link and a code for its human; once they enter it, the regular commands act for their account. Every `whk sandbox` command is non-interactive and supports `--json`. See [sandbox](/docs/cli/commands#sandbox) for the limits and the shared credential file.
+`whk sandbox connect --email <address>` then prints a link and a code for its human; once they enter it, the regular commands act for their account. See [sandbox](/docs/cli/commands#sandbox) for the limits and the shared credential file.
 
 ## Learn more
 

@@ -1,36 +1,37 @@
 use anyhow::{Context, Result};
 
 use super::ApiClient;
+use super::client::Fetched;
 use crate::types::{
     CreateEndpointRequest, Endpoint, EndpointList, FavoriteState, UpdateEndpointRequest,
 };
 
 impl ApiClient {
-    pub async fn create_endpoint(&self, req: &CreateEndpointRequest) -> Result<Endpoint> {
+    pub async fn create_endpoint(&self, req: &CreateEndpointRequest) -> Result<Fetched<Endpoint>> {
         self.require_auth()?;
         let resp = self.post("/api/endpoints", req).await?;
-        serde_json::from_str(&resp.body).context("failed to parse endpoint")
+        resp.parse("endpoint")
     }
 
-    pub async fn list_endpoints(&self) -> Result<EndpointList> {
+    pub async fn list_endpoints(&self) -> Result<Fetched<EndpointList>> {
         self.require_auth()?;
         let resp = self.get("/api/endpoints").await?;
-        serde_json::from_str(&resp.body).context("failed to parse endpoint list")
+        resp.parse("endpoint list")
     }
 
-    pub async fn get_endpoint(&self, slug: &str) -> Result<Endpoint> {
+    pub async fn get_endpoint(&self, slug: &str) -> Result<Fetched<Endpoint>> {
         self.require_auth()?;
         let resp = self
             .get(&format!("/api/endpoints/{}", urlencoding::encode(slug)))
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse endpoint")
+        resp.parse("endpoint")
     }
 
     pub async fn update_endpoint(
         &self,
         slug: &str,
         req: &UpdateEndpointRequest,
-    ) -> Result<Endpoint> {
+    ) -> Result<Fetched<Endpoint>> {
         self.require_auth()?;
         let resp = self
             .patch(
@@ -38,7 +39,7 @@ impl ApiClient {
                 req,
             )
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse endpoint")
+        resp.parse("endpoint")
     }
 
     pub async fn delete_endpoint(&self, slug: &str) -> Result<()> {

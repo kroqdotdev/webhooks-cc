@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use urlencoding::encode;
 
 use super::ApiClient;
+use super::client::Fetched;
 use crate::types::{
     CapturedRequest, CountResult, EmailFormat, PaginatedRequestList, RenderedEmail, RequestList,
     SearchResult,
@@ -13,7 +14,7 @@ impl ApiClient {
         slug: &str,
         limit: Option<u32>,
         since: Option<i64>,
-    ) -> Result<RequestList> {
+    ) -> Result<Fetched<RequestList>> {
         self.require_auth()?;
         let mut params = vec![];
         if let Some(l) = limit {
@@ -30,12 +31,15 @@ impl ApiClient {
         let resp = self
             .get(&format!("/api/endpoints/{}/requests{qs}", encode(slug)))
             .await?;
-        // API returns a bare array
-        let requests: Vec<CapturedRequest> =
-            serde_json::from_str(&resp.body).context("failed to parse request list")?;
-        Ok(RequestList {
-            count: None,
-            requests,
+        // API returns a bare array; --json prints it as {"requests": [...]}
+        // as it always has.
+        let list = resp.parse::<Vec<CapturedRequest>>("request list")?;
+        Ok(Fetched {
+            value: RequestList {
+                count: None,
+                requests: list.value,
+            },
+            raw: serde_json::json!({ "requests": list.raw, "count": null }),
         })
     }
 
@@ -44,7 +48,7 @@ impl ApiClient {
         slug: &str,
         limit: Option<u32>,
         cursor: Option<&str>,
-    ) -> Result<PaginatedRequestList> {
+    ) -> Result<Fetched<PaginatedRequestList>> {
         self.require_auth()?;
         let mut params = vec![];
         if let Some(l) = limit {
@@ -64,15 +68,15 @@ impl ApiClient {
                 encode(slug)
             ))
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse paginated request list")
+        resp.parse("paginated request list")
     }
 
-    pub async fn get_request(&self, request_id: &str) -> Result<CapturedRequest> {
+    pub async fn get_request(&self, request_id: &str) -> Result<Fetched<CapturedRequest>> {
         self.require_auth()?;
         let resp = self
             .get(&format!("/api/requests/{}", encode(request_id)))
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse request")
+        resp.parse("request")
     }
 
     /// Render a captured email for a handler (`POST /api/requests/{id}/render`):
@@ -109,7 +113,7 @@ impl ApiClient {
         limit: Option<u32>,
         offset: Option<u32>,
         order: Option<&str>,
-    ) -> Result<SearchResult> {
+    ) -> Result<Fetched<SearchResult>> {
         self.require_auth()?;
         let mut params = vec![];
         if let Some(s) = slug {
@@ -142,7 +146,7 @@ impl ApiClient {
             format!("?{}", params.join("&"))
         };
         let resp = self.get(&format!("/api/search/requests{qs}")).await?;
-        serde_json::from_str(&resp.body).context("failed to parse search results")
+        resp.parse("search results")
     }
 
     pub async fn count_requests(
@@ -188,5 +192,21 @@ impl ApiClient {
         self.delete(&format!("/api/endpoints/{}/requests{qs}", encode(slug)))
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod page_tests {
+    use super::*;
+
+    #[test]
+    fn a_cursor_page_parses_as_the_typed_list() {
+        let list: PaginatedRequestList = serde_json::from_str(
+            r#"{"items":[{"id":"r1","endpointId":"e","method":"POST","path":"/","headers":{},"queryParams":{},"ip":"192.0.2.1","size":0,"receivedAt":1}],"cursor":"c","hasMore":true}"#,
+        )
+        .unwrap();
+        assert_eq!(list.requests.len(), 1);
+        assert_eq!(list.next_cursor.as_deref(), Some("c"));
+        assert_eq!(list.has_more, Some(true));
     }
 }
