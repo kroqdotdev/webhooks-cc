@@ -10,6 +10,10 @@ import { createClient } from "@supabase/supabase-js";
  * random. So before they start, one delivery is queued to an address nothing
  * answers, and if anyone claims it while no suite is running, the run stops
  * and says why, instead of failing somewhere else later.
+ *
+ * Best effort: it catches a worker that claims within the window. One busy
+ * with eight slow sends, or with a backlog of older due deliveries, may not
+ * get to the canary in time.
  */
 
 /** Three idle polls of the worker (IDLE_POLL_MS in lib/forwarding/worker.ts). */
@@ -93,8 +97,12 @@ export default async function setup(): Promise<void> {
     if (endpoint) {
       await admin.from("requests").delete().eq("endpoint_id", endpoint.id);
       await admin.from("endpoints").update({ request_count: 0 }).eq("id", endpoint.id);
-      await admin.from("endpoints").delete().eq("id", endpoint.id);
+      // The capture's daily count has no foreign key to the endpoint.
+      await admin.from("endpoint_daily_stats").delete().eq("endpoint_id", endpoint.id);
+      const { error } = await admin.from("endpoints").delete().eq("id", endpoint.id);
+      if (error) console.warn("forwarding canary: endpoint left behind:", error.message);
     }
-    await admin.auth.admin.deleteUser(userId);
+    const { error } = await admin.auth.admin.deleteUser(userId);
+    if (error) console.warn("forwarding canary: test user left behind:", error.message);
   }
 }
