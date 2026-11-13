@@ -1,5 +1,7 @@
 pub mod api;
 pub mod auth;
+#[cfg(test)]
+mod capabilities;
 pub mod confirm;
 pub mod endpoints;
 pub mod listen;
