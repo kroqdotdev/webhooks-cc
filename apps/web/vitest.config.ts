@@ -26,6 +26,7 @@ const FORWARDING_SUITES = [
   "tests/integration/attachments-alerts.test.ts",
   "tests/integration/sheets.test.ts",
   "tests/integration/parsing.test.ts",
+  "tests/integration/file-drops.test.ts",
 ];
 
 export default defineConfig({
@@ -47,6 +48,8 @@ export default defineConfig({
         test: {
           name: "forwarding",
           include: FORWARDING_SUITES,
+          // Stops the run when another process's worker drains the same queue.
+          globalSetup: ["tests/integration/forwarding-exclusive.ts"],
           fileParallelism: false,
           sequence: { groupOrder: 1 },
         },

@@ -1,0 +1,6 @@
+{
+  "title": "Batches in arrival order",
+  "items": [
+    "Google Sheets destinations and batched file drops list requests in the order they arrived; rows captured close together could come out of order"
+  ]
+}
