@@ -328,6 +328,21 @@ whk teams decline <invite-id>
 
 Sharing moves the endpoint's requests onto the team's pooled quota. Only the endpoint owner can share or unshare, and only the team owner can invite. Every subcommand supports `--json`.
 
+## keys
+
+The account's API keys. Listing and revoking act at once. A new key needs the account's owner to approve it, even when you are that owner: `whk keys create` prints a link and a code, the page shows the same code to compare, and once it is approved whk prints the key, the only time it is ever shown.
+
+```bash
+whk keys list                                   # name, prefix, created, expires, last used
+whk keys create "GitHub Actions"                # asks, waits for the approval, prints the key once
+whk keys create "Staging" --expires-in-days 30  # 1 to 365 days (default 90)
+whk keys create "CI" --no-wait                  # print the approval and exit
+whk approvals wait <approval-id>                # collect it later
+whk keys revoke <id> --yes
+```
+
+On another machine (a server over SSH), `--remote` prints the link without opening a browser, as `whk auth login` does; it is detected over SSH by itself. With `--json`, `keys create` prints `{"status":"pending","approval":{...}}` first and `{"status":"completed","approval":{...},"result":{"key":...}}` last. A refused approval exits with `approval_denied` (status 9), one nobody answered in time with `approval_expired` (status 8).
+
 ## usage
 
 Show your plan's request usage, then parsed pages, preview data and AI assists with when each resets, and below them the pooled quota of every subscribed team you belong to. With `--json` you get the whole `/api/usage` answer (`parsedPages`, `previewData`, `aiAssists`), and the team pools in a `teams` array.

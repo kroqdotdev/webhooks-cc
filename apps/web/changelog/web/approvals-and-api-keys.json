@@ -1,0 +1,9 @@
+{
+  "title": "Agents can ask for an API key, and you approve it",
+  "items": [
+    "An agent or API key that asks for a new API key gets a link and a code; you approve it on a page that shows the same code, who asked and from where, and the key goes only to whoever asked, once",
+    "API keys can be listed and revoked with an API key or a connected agent, not only from the dashboard",
+    "whk keys list, create and revoke, and whk approvals wait; client.apiKeys and client.approvals in the TypeScript SDK; list_api_keys, create_api_key, wait_for_approval and revoke_api_key in the MCP server",
+    "Under Connected agents, you can have every approval request emailed to you as well"
+  ]
+}

@@ -79,8 +79,8 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | 5 | `forbidden` | Not allowed by the plan, a limit or a permission |
 | 6 | `rate_limited` | Too many requests: wait and retry |
 | 7 | `server_error`, `network_error`, `request_timeout` | Our side or the network failed: retry |
-| 8 | `timeout` | A wait ran out of time |
-| 9 | `confirmation_required`, `cancelled` | A destructive command was not confirmed |
+| 8 | `timeout`, `approval_expired` | A wait ran out of time, or an approval was not answered in time |
+| 9 | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or the account's owner refused an approval |
 
 - Nothing waits for input without a terminal. `whk delete` and `whk requests clear` ask first in a terminal; anywhere else they stop with `confirmation_required` unless you pass `--yes`.
 - `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own yet: `whk api endpoints/<slug>/destinations`, or `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.

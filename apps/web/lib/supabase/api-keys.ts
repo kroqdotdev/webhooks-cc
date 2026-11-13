@@ -62,6 +62,7 @@ export function parseKeyName(
 ): { ok: true; name: string } | { ok: false; error: string } {
   if (typeof value !== "string" || !value.trim()) return { ok: false, error: "Name is required" };
   const name = value
+    // eslint-disable-next-line no-control-regex -- removing them is the point
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();

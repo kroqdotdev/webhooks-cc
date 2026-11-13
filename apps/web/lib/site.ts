@@ -191,6 +191,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "api",
   "api-explorer",
   "apple-touch-icon.png",
+  "approve",
   "auth",
   "auth.md",
   "blog",

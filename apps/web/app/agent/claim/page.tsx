@@ -363,7 +363,8 @@ function AttemptPanel(props: {
       {view.firstAgent && (
         <p className="text-sm text-muted-foreground mb-4">
           This is the first agent you connect. It can do what an API key can: manage your endpoints
-          and read what they capture. It cannot change your API keys, billing or account.
+          and read what they capture. It cannot change your billing or account, and a new API key
+          needs your approval.
         </p>
       )}
       <p className="text-sm font-medium mb-4">
