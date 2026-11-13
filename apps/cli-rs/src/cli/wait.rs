@@ -52,8 +52,8 @@ pub struct WaitOptions {
 /// Where the wait starts.
 #[derive(Debug, PartialEq)]
 enum Since {
-    /// Only what arrives after the first poll: what that poll finds is
-    /// skipped, so the local clock never matters.
+    /// Only what arrives after the command started, on the server's clock
+    /// (the first answer's `Date` less the time it took to come).
     Now,
     /// Requests received at or after this server time (ms).
     At(i64),
@@ -219,18 +219,23 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
         match fetched {
             Ok(Polled {
                 mut items,
-                server_time_ms,
+                server_time,
                 resume: more,
             }) => {
                 if since == Since::Now && since_now.is_none() {
-                    let elapsed = started.elapsed().as_millis() as i64;
+                    // The server's clock at the start: the first answer's
+                    // `Date` less the time from the start to that answer.
                     // `Date` counts whole seconds, so this is at or before
                     // the true start: nothing sent after it is missed, and
                     // at most a second before it can count.
-                    since_now = Some(match server_time_ms {
-                        Some(t) => t - elapsed,
+                    let floor = match server_time {
+                        Some((t, at)) => t - at.duration_since(started).as_millis() as i64,
                         None => started_ms - CLOCK_MARGIN_MS,
-                    });
+                    };
+                    since_now = Some(floor);
+                    // Nothing before the start counts, so later polls need
+                    // not read back past it.
+                    last_checked = last_checked.max(floor);
                 }
                 if let Some(floor) = since_now {
                     items.retain(|r| received_at(r).is_none_or(|at| at >= floor));
@@ -287,15 +292,11 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
     }
 }
 
-/// The requests received at or after `since`: the newest page, then older
-/// pages until one reaches back past `since` (or the pages run out), so
-/// nothing between the last poll and this one is skipped however many
-/// arrived. Stops after `max_pages`.
 /// What one poll read.
 struct Polled {
     items: Vec<Value>,
-    /// The first answer's clock (`Date`), in ms.
-    server_time_ms: Option<i64>,
+    /// The first answer's clock (`Date`), in ms, and when it came.
+    server_time: Option<(i64, Instant)>,
     /// Set when the poll stopped at `max_pages` before reaching back to
     /// `since`: the cursor of the next older page, where the next poll goes
     /// on (rather than starting from the newest again and never getting
@@ -303,6 +304,16 @@ struct Polled {
     resume: Option<String>,
 }
 
+/// The requests received at or after `since`: the newest page (or the page
+/// at `start`, to go on with a run that stopped), then older pages until one
+/// reaches back past `since` or the pages run out, so nothing between the
+/// last poll and this one is skipped however many arrived. Stops after
+/// `max_pages` and says where to go on.
+///
+/// The route's cursor is an offset: requests arriving meanwhile only repeat
+/// rows (skipped by id), but requests deleted during a long run (deliver,
+/// then delete) can move unread rows past it. That needs a burst of more
+/// than `max_pages` pages and a deletion inside it.
 async fn poll_since<F, Fut>(
     mut fetch: F,
     since: i64,
@@ -322,7 +333,9 @@ where
             next,
             server_time_ms,
         } = fetch(cursor.take()).await?;
-        server_time = server_time.or(server_time_ms);
+        if server_time.is_none() {
+            server_time = server_time_ms.map(|t| (t, Instant::now()));
+        }
         let mut reached = items.is_empty();
         for item in items {
             match received_at(&item) {
@@ -335,7 +348,7 @@ where
             _ => {
                 return Ok(Polled {
                     items: out,
-                    server_time_ms: server_time,
+                    server_time,
                     resume: None,
                 });
             }
@@ -343,7 +356,7 @@ where
     }
     Ok(Polled {
         items: out,
-        server_time_ms: server_time,
+        server_time,
         resume: cursor,
     })
 }
@@ -420,10 +433,10 @@ mod tests {
         };
         let Polled {
             items,
-            server_time_ms: server_time,
+            server_time,
             resume,
         } = poll_since(fetch, 1_050, 20, None).await.unwrap();
-        assert_eq!(server_time, Some(42));
+        assert_eq!(server_time.map(|(t, _)| t), Some(42));
         assert!(resume.is_none(), "read back to since");
         assert_eq!(items.len(), 250);
         assert_eq!(calls.get(), 3, "stops once a page reaches back past since");
