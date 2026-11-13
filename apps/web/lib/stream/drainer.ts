@@ -17,7 +17,9 @@ import type { RequestCursor, RequestRecord } from "@/lib/supabase/requests";
  *    on (from the start before anything was sent), newest first, and the
  *    full rows of those not sent yet. It finds a capture whose signal
  *    Realtime dropped (at its rate limit) or this stream could not hold,
- *    behind the cursor or ahead of it. `recheck()` (the stream's look-back
+ *    behind the cursor or ahead of it; when it finds one (or reads as many
+ *    ids as it may), the forward read runs too, uncapped, so a larger burst
+ *    of lost signals is read in full. `recheck()` (the stream's look-back
  *    timer, every 10 s) runs only this step, which reads ids, so an idle
  *    stream costs little; an overflow or a failure asks for it at most once
  *    per `recheckIntervalMs`. A capture stamped further back than the window
@@ -182,8 +184,19 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
       if (receivedAt < from) sent.delete(id);
     }
     const ids = await deps.readIdsSince(from, maxWindowIds);
+    let unsent = false;
     for (const id of ids) {
-      if (!sent.has(id) && !pending.has(id)) pending.set(id, 0);
+      if (!sent.has(id) && !pending.has(id)) {
+        pending.set(id, 0);
+        unsent = true;
+      }
+    }
+    // Signals were lost (or more arrived than the look-back reads): the
+    // forward read pages through everything after the cursor, uncapped,
+    // and moves it, so a burst larger than the cap is read in full too.
+    if (unsent || ids.length >= maxWindowIds) {
+      forwardWanted = true;
+      again = true;
     }
     await fetchPending();
   };

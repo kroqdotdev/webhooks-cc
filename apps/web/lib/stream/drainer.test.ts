@@ -320,6 +320,21 @@ describe("createStreamDrainer", () => {
     expect(delays.at(-1)).toBe(1_000);
   });
 
+  it("reads past the look-back's cap when many signals were lost", async () => {
+    const store = fakeStore();
+    store.insert("first", 1_000);
+    const { deps, sent } = store.deps({ maxWindowIds: 5 });
+    const drainer = createStreamDrainer(deps);
+    await drainer.drain();
+    // Twelve requests after the cursor, and not one signal for them.
+    const later = Array.from({ length: 12 }, (_, i) => `r${String(i).padStart(2, "0")}`);
+    later.forEach((id, i) => store.insert(id, 2_000 + i));
+    // The timer's recheck alone: no signal, no drain() that reads forward.
+    drainer.recheck();
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect([...sent].sort()).toEqual(["first", ...later].sort());
+  });
+
   it("leaves out rows from before the start", async () => {
     const store = fakeStore();
     store.insert("before", 500);
