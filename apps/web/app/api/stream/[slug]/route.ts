@@ -5,9 +5,9 @@ import type { Database } from "@/lib/supabase/database";
 import {
   getRetainedRequestsByIds,
   listRequestsAfterCursorForEndpointByUser,
-  type RequestCursor,
   type RequestRecord,
 } from "@/lib/supabase/requests";
+import { createStreamDrainer } from "@/lib/stream/drainer";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 import { reportError } from "@/lib/observability";
 
@@ -16,8 +16,6 @@ export const dynamic = "force-dynamic";
 const KEEPALIVE_INTERVAL_MS = 30_000;
 const MAX_CONNECTION_DURATION_MS = 30 * 60 * 1000;
 const BACKLOG_PAGE_SIZE = 100;
-/** Signalled request ids held for the next read, at most. */
-const MAX_PENDING_SIGNALS = 1000;
 
 function createRealtimeAdminClient() {
   const env = serverEnv();
@@ -106,21 +104,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
       const abortSignal = request.signal;
       const supabase = createRealtimeAdminClient();
-      const sentIds = new Set<string>();
-      // Request ids from signals. The receiver stamps received_at before the
-      // capture commits, so a request can commit after a newer one has
-      // already gone out, behind the cursor where the keyset read never
-      // looks; each read also fetches the signalled ids it did not send.
-      const signalled = new Set<string>();
       const afterTimestamp = since ?? connectionStart;
-      // Last streamed row; reads resume strictly after it.
-      let cursor: RequestCursor | null = null;
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
       let durationTimer: ReturnType<typeof setTimeout> | null = null;
       let closed = false;
       let channel: RealtimeChannel | null = null;
-      let draining = false;
-      let drainAgain = false;
 
       const cleanup = () => {
         if (keepaliveTimer) {
@@ -150,11 +138,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       };
 
       const enqueueRequest = (record: RequestRecord) => {
-        if (closed || sentIds.has(record.id)) {
+        if (closed) {
           return;
         }
-
-        sentIds.add(record.id);
         controller.enqueue(
           encoder.encode(`event: request\ndata: ${JSON.stringify(toStreamRequest(record))}\n\n`)
         );
@@ -171,56 +157,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         closeStream();
       };
 
-      // Broadcast signals carry ids only, so every signal (and the initial
-      // backlog) reads the rows after the last one streamed. Signals that land
-      // while a read is running fold into one more read.
-      const drain = async () => {
-        if (draining) {
-          drainAgain = true;
-          return;
-        }
-        draining = true;
-        try {
-          do {
-            drainAgain = false;
-            while (!closed) {
-              const page = await listRequestsAfterCursorForEndpointByUser({
-                userId: auth.userId,
-                slug,
-                after: afterTimestamp,
-                cursor,
-                limit: BACKLOG_PAGE_SIZE,
-              });
-              if (page === null) {
-                sendEndpointDeleted();
-                return;
-              }
-              for (const record of page.records) {
-                enqueueRequest(record);
-              }
-              cursor = page.cursor;
-              if (page.records.length < BACKLOG_PAGE_SIZE) break;
-            }
-            const late = [...signalled].filter((id) => !sentIds.has(id));
-            signalled.clear();
-            if (late.length > 0 && !closed) {
-              const records = await getRetainedRequestsByIds(endpoint.id, late);
-              records
-                .filter((record) => record.receivedAt > afterTimestamp)
-                .sort((a, b) => a.receivedAt - b.receivedAt)
-                .forEach(enqueueRequest);
-            }
-          } while (drainAgain && !closed);
-        } catch (error) {
-          reportError("Failed to read SSE stream backlog", error);
-        } finally {
-          draining = false;
-        }
-      };
+      // What to send and when: see lib/stream/drainer.ts.
+      const drainer = createStreamDrainer({
+        afterTimestamp,
+        readAfter: ({ after, cursor, limit }) =>
+          listRequestsAfterCursorForEndpointByUser({
+            userId: auth.userId,
+            slug,
+            after,
+            cursor,
+            limit,
+          }),
+        readByIds: (ids) => getRetainedRequestsByIds(endpoint.id, ids),
+        send: enqueueRequest,
+        gone: sendEndpointDeleted,
+        isClosed: () => closed,
+        onError: (error) => reportError("Failed to read SSE stream backlog", error),
+        pageSize: BACKLOG_PAGE_SIZE,
+      });
 
       abortSignal.addEventListener("abort", closeStream);
 
-      // The keepalive also catches up, in case a signal was dropped.
+      // The keepalive also catches up, looking back over the late window, in
+      // case Realtime dropped a signal.
       keepaliveTimer = setInterval(() => {
         if (closed || abortSignal.aborted) return;
         try {
@@ -229,7 +188,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
           closeStream();
           return;
         }
-        void drain();
+        drainer.recheck();
       }, KEEPALIVE_INTERVAL_MS);
 
       durationTimer = setTimeout(
@@ -256,10 +215,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         .on("broadcast", { event: "*" }, ({ event, payload }) => {
           if (event === "request_created") {
             const id = (payload as { request_id?: unknown } | undefined)?.request_id;
-            if (typeof id === "string" && signalled.size < MAX_PENDING_SIGNALS) {
-              signalled.add(id);
-            }
-            void drain();
+            drainer.signal(typeof id === "string" ? id : null);
           } else if (event === "endpoint_deleted") {
             sendEndpointDeleted();
           }
@@ -267,7 +223,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
       try {
         await waitForSubscribed(channel);
-        await drain();
+        await drainer.drain();
       } catch (error) {
         reportError("Failed to initialize SSE stream", error);
         closeStream();
