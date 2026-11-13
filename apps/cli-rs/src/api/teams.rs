@@ -16,7 +16,7 @@ impl ApiClient {
         let resp = self
             .get(&format!(
                 "/api/teams/{}/members",
-                urlencoding::encode(team_id)
+                crate::util::url::encode(team_id)
             ))
             .await?;
         resp.parse("team members")
@@ -28,7 +28,7 @@ impl ApiClient {
         self.require_auth()?;
         let body = serde_json::json!({ "endpointId": endpoint_id });
         self.post(
-            &format!("/api/teams/{}/endpoints", urlencoding::encode(team_id)),
+            &format!("/api/teams/{}/endpoints", crate::util::url::encode(team_id)),
             &body,
         )
         .await?;
@@ -39,8 +39,8 @@ impl ApiClient {
         self.require_auth()?;
         self.delete(&format!(
             "/api/teams/{}/endpoints/{}",
-            urlencoding::encode(team_id),
-            urlencoding::encode(endpoint_id)
+            crate::util::url::encode(team_id),
+            crate::util::url::encode(endpoint_id)
         ))
         .await?;
         Ok(())
@@ -55,7 +55,7 @@ impl ApiClient {
         let body = serde_json::json!({ "email": email });
         let resp = self
             .post(
-                &format!("/api/teams/{}/invite", urlencoding::encode(team_id)),
+                &format!("/api/teams/{}/invite", crate::util::url::encode(team_id)),
                 &body,
             )
             .await?;
@@ -72,7 +72,10 @@ impl ApiClient {
         self.require_auth()?;
         let body = serde_json::json!({});
         self.post(
-            &format!("/api/invites/{}/accept", urlencoding::encode(invite_id)),
+            &format!(
+                "/api/invites/{}/accept",
+                crate::util::url::encode(invite_id)
+            ),
             &body,
         )
         .await?;
@@ -83,7 +86,10 @@ impl ApiClient {
         self.require_auth()?;
         let body = serde_json::json!({});
         self.post(
-            &format!("/api/invites/{}/decline", urlencoding::encode(invite_id)),
+            &format!(
+                "/api/invites/{}/decline",
+                crate::util::url::encode(invite_id)
+            ),
             &body,
         )
         .await?;

@@ -16,6 +16,8 @@ import { tunnelPlanOf, type TunnelPlan } from "@/lib/tunnels/plan";
 import { openShare, runName, someoneElseSharing, stoppedRun } from "@/lib/tunnels/shares";
 import { tellFor } from "@/lib/tunnels/stops";
 import { overMessage, usageOf } from "@/lib/tunnels/usage";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 /**
  * The edge asks whether a CLI run may open: the key, the name it asked for,
@@ -31,20 +33,24 @@ import { overMessage, usageOf } from "@/lib/tunnels/usage";
  */
 const EDGE_CLIENT_AGENT = "whk-cli/edge";
 
+const openBody = z.object({
+  apiKey: z.unknown().optional(),
+  name: z.unknown().optional(),
+  client: z.unknown().optional(),
+  instance: z.unknown().optional(),
+  address: z.unknown().optional(),
+  password: z.unknown().optional(),
+  kind: z.unknown().optional(),
+  endpoint: z.unknown().optional(),
+});
+
 export async function POST(request: Request) {
   if (!fromEdge(request)) return notEdge();
   const config = tunnelConfig();
   if (!config) return notEdge();
-  const body = (await request.json().catch(() => ({}))) as {
-    apiKey?: unknown;
-    name?: unknown;
-    client?: unknown;
-    instance?: unknown;
-    address?: unknown;
-    password?: unknown;
-    kind?: unknown;
-    endpoint?: unknown;
-  };
+  // A body that cannot be read counts as an empty one.
+  const parsed = await parseJsonBodyWith(request, openBody);
+  const body: z.infer<typeof openBody> = "data" in parsed ? parsed.data : {};
 
   const account = await accountForKey(body.apiKey);
   if ("error" in account)

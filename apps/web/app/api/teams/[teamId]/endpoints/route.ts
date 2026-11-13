@@ -3,6 +3,8 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { listTeamEndpoints, shareEndpointWithTeam } from "@/lib/supabase/teams";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 /**
  * Lists every endpoint shared with the team. Any member may read it, also
@@ -26,6 +28,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
   }
 }
 
+const shareEndpointBody = z.object({ endpointId: z.unknown().optional() });
+
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
@@ -35,12 +39,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 
   const { teamId } = await params;
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, shareEndpointBody, {
+    message: "Invalid JSON body",
+  });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
 
   const endpointId = typeof body.endpointId === "string" ? body.endpointId : "";
   if (!endpointId) {

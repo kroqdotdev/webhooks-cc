@@ -8,11 +8,15 @@ import { apiNames } from "@/lib/tunnels/name-api";
 import { namesOf, namesView, reserveName } from "@/lib/tunnels/names";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tunnelPlanOf } from "@/lib/tunnels/plan";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 const READ_LIMIT = 120;
 const READ_WINDOW_MS = 60_000;
 const RESERVE_LIMIT = 30;
 const RESERVE_WINDOW_MS = 10 * 60_000;
+
+const reserveBody = z.object({ name: z.unknown().optional(), team: z.unknown().optional() });
 
 /** The preview names the account may use: its own and its teams'. */
 export async function GET(request: Request) {
@@ -82,12 +86,9 @@ export async function POST(request: Request) {
   );
   if (rateLimit.response) return rateLimit.response;
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, reserveBody, { message: "Invalid JSON body" });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
   if (typeof body.name !== "string" || !body.name.trim())
     return Response.json({ error: "name is required" }, { status: 400 });
   if (body.name.length > 100)

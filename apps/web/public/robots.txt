@@ -2,7 +2,7 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
-# Private app routes (/dashboard, /account, /endpoints, /teams, /api-explorer,
+# Private app routes (/dashboard, /account, /endpoints, /teams,
 # /cli/verify, /blog/preview, /agent/claim) intentionally remain crawlable here
 # so crawlers read their X-Robots-Tag: noindex, nofollow response headers and
 # <meta name="robots" content="noindex, nofollow"> tags instead of indexing the

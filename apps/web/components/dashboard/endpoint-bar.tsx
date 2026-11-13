@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { sendTestEmail } from "@/lib/dashboard-api";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -86,15 +87,9 @@ export function AddressPill({
    */
   hideLabelBelowXl?: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
-  const copy = async () => {
-    if (!(await copyToClipboard(copyValue ?? value))) return;
-    setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), 2000);
-  };
+  const { copy: copyText, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
+  const copy = () => void copyText(copyValue ?? value);
   return (
     <span
       className={cn(

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   class ApiKeyLimitError extends Error {}
@@ -72,6 +72,31 @@ describe("POST /api/api-keys", () => {
     mocks.authenticateRequestRequireUser.mockResolvedValue({ success: true, userId: "user-1" });
     expect((await POST(post({ name: "CI", expiresInDays: 400 }))).status).toBe(400);
     expect((await POST(post({ name: " " }))).status).toBe(400);
+  });
+
+  test.each(["null", "[]", '"text"', "5", "{", ""])(
+    "answers 400 to the malformed body %s",
+    async (raw) => {
+      mocks.authenticateRequestRequireUser.mockResolvedValue({ success: true, userId: "user-1" });
+      const response = await POST(
+        new Request("https://webhooks.cc/api/api-keys", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: raw,
+        })
+      );
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: "Invalid request body" });
+      expect(mocks.createApiKeyForUser).not.toHaveBeenCalled();
+      expect(mocks.requestApproval).not.toHaveBeenCalled();
+    }
+  );
+
+  it("asks for a name of the wrong type instead of failing", async () => {
+    mocks.authenticateRequestRequireUser.mockResolvedValue({ success: true, userId: "user-1" });
+    const response = await POST(post({ name: 1 }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Name is required" });
   });
 
   it("answers 409 at the key cap", async () => {

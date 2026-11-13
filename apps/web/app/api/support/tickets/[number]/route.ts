@@ -10,10 +10,20 @@ import {
   updateTicket,
   userTicketRow,
 } from "@/lib/support/tickets";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 function ticketNumber(value: string): number | null {
   return /^\d{1,12}$/.test(value) ? Number(value) : null;
 }
+
+const ticketChanges = z.object({
+  notifyEmail: z.unknown().optional(),
+  accessGranted: z.unknown().optional(),
+  close: z.unknown().optional(),
+  rating: z.unknown().optional(),
+  ratingComment: z.unknown().optional(),
+});
 
 const NOT_FOUND = () => Response.json({ error: "No such ticket." }, { status: 404 });
 
@@ -47,14 +57,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ nu
   const limited = await checkRateLimitByKey(`support:patch:${auth.userId}`, 60, 60_000);
   if (limited) return limited;
 
-  let body: Record<string, unknown>;
-  try {
-    const parsed: unknown = await request.json();
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
-    body = parsed as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "Invalid JSON." }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, ticketChanges, { message: "Invalid JSON." });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
 
   try {
     const row = await userTicketRow(auth.userId, number);

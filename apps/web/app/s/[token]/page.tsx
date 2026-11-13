@@ -9,6 +9,7 @@ import { snapshotToRequest } from "@/lib/request-share";
 import { getSharedRequest } from "@/lib/supabase/request-shares";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { shortDateUtc } from "@/lib/dates";
 
 // A revoked link must stop working at once, so nothing here is cached.
 export const dynamic = "force-dynamic";
@@ -28,15 +29,6 @@ export const metadata: Metadata = {
     description: "A captured webhook request, shared read-only from webhooks.cc.",
   },
 };
-
-function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 export default async function SharedRequestPage({ params }: PageProps) {
   const { token } = await params;
@@ -63,8 +55,8 @@ export default async function SharedRequestPage({ params }: PageProps) {
                 : "Captured webhook"}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              A read-only copy made on {formatDate(shared.createdAt)}. The link stops working on{" "}
-              {formatDate(shared.expiresAt)}, or sooner if its owner revokes it.
+              A read-only copy made on {shortDateUtc(shared.createdAt)}. The link stops working on{" "}
+              {shortDateUtc(shared.expiresAt)}, or sooner if its owner revokes it.
             </p>
           </div>
           <Button

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBase64Url } from "@/lib/ids";
 import { createAdminClient } from "./admin";
 import type { Json } from "./database";
 import { getRequestByIdForUser } from "./requests";
@@ -27,7 +27,7 @@ export type CreateShareResult =
 
 /** 128 random bits, URL-safe: 22 characters. */
 export function generateShareToken(): string {
-  return randomBytes(16).toString("base64url");
+  return randomBase64Url(16);
 }
 
 function toShare(row: {

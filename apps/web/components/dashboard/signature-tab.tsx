@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { ShieldCheck, ShieldAlert, Shield, Copy, Check, Loader2 } from "lucide-react";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import {
   getWebProviderCredentialLabel,
   getWebProviderInfo,
@@ -481,21 +481,9 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function CopyableRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-  const handleCopy = async () => {
-    const success = await copyToClipboard(value);
-    if (success) {
-      setCopied(true);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
-    }
-  };
+  const { copy, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
+  const handleCopy = () => void copy(value);
 
   return (
     <tr className="border-b border-foreground/10 last:border-0">

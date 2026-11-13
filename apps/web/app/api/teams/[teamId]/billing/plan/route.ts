@@ -10,6 +10,8 @@ import {
   TeamBillingError,
 } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS, isInterval, isTeamPlan } from "../shared";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 /**
  * Quotes a plan change for the confirmation dialog:
@@ -46,6 +48,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
   }
 }
 
+const planBody = z.object({
+  plan: z.unknown().optional(),
+  interval: z.unknown().optional(),
+  action: z.unknown().optional(),
+});
+
 /**
  * POST /api/teams/{teamId}/billing/plan
  * { plan: "team" | "team_business", interval: "month" | "year" } changes the
@@ -59,17 +67,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;
-  type Body = { plan?: unknown; interval?: unknown; action?: unknown };
-  let body: Body | null;
-  try {
-    body = (await request.json()) as Body | null;
-  } catch {
-    body = null;
-  }
+  // A body that cannot be read counts as an empty one.
+  const parsed = await parseJsonBodyWith(request, planBody);
+  const body: z.infer<typeof planBody> = "data" in parsed ? parsed.data : {};
 
-  const keep = body?.action === "keep";
-  const plan = body?.plan;
-  const interval = body?.interval ?? "month";
+  const keep = body.action === "keep";
+  const plan = body.plan;
+  const interval = body.interval ?? "month";
   if (!keep && (!isTeamPlan(plan) || !isInterval(interval))) {
     return Response.json({ error: "Unknown plan" }, { status: 400 });
   }

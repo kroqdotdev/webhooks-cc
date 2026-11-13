@@ -1,5 +1,6 @@
 import { compileMDX } from "next-mdx-remote/rsc";
 import rehypePrettyCode from "rehype-pretty-code";
+import { prettyCodeOptions } from "@/lib/code-highlight";
 import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
 import { mdxComponents } from "@/components/docs/mdx-components";
@@ -23,16 +24,7 @@ export async function compileBlogMDX(source: string): Promise<CompiledBlogPost> 
         rehypePlugins: [
           rehypeSlug,
           rehypeExtractHeadings(headings),
-          [
-            rehypePrettyCode,
-            {
-              theme: {
-                light: "github-light",
-                dark: "github-dark",
-              },
-              keepBackground: false,
-            },
-          ],
+          [rehypePrettyCode, prettyCodeOptions],
         ],
       },
     },

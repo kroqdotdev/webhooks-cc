@@ -10,11 +10,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 
-import * as dotenv from "dotenv";
+import { existsSync } from "node:fs";
 import * as path from "path";
 
 // Also load root .env.local for WHK_API_KEY
-dotenv.config({ path: path.resolve(__dirname, "../../../../.env.local") });
+const rootEnvFile = path.resolve(__dirname, "../../../../.env.local");
+if (existsSync(rootEnvFile)) process.loadEnvFile(rootEnvFile);
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -24,7 +25,7 @@ if (!SERVICE_ROLE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY env var requir
 const API_KEY = process.env.WHK_API_KEY ?? "";
 
 const RECEIVER_URL = "http://localhost:3001";
-const API_URL = "http://localhost:3000";
+const API_URL = process.env.WEB_URL ?? "http://localhost:3000";
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },

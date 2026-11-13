@@ -20,6 +20,7 @@ import {
   Clock,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -801,15 +802,9 @@ export function RequestList({
 
 /** The list's empty state while an endpoint has no email: where to send some. */
 function NoEmailsYet({ address }: { address: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
-  const copy = async () => {
-    if (!(await copyToClipboard(address))) return;
-    setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), 2000);
-  };
+  const { copy: copyText, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
+  const copy = () => void copyText(address);
   return (
     <div className="px-4 py-8 text-center space-y-3">
       <p className="text-sm font-semibold">No emails yet.</p>

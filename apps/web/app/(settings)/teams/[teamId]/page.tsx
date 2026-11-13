@@ -54,7 +54,7 @@ import type {
   TeamSharedEndpoint as TeamEndpoint,
 } from "@/lib/supabase/teams-types";
 import { ACTIVATION_POLL_INTERVAL_MS, hasActivationTimedOut } from "@/lib/team-activation";
-import { longDate, shortDate } from "@/components/settings/format";
+import { longDate, shortDate } from "@/lib/dates";
 
 interface OwnedEndpoint {
   id: string;

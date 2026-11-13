@@ -1,5 +1,5 @@
+use crate::util::url::encode;
 use anyhow::{Context, Result};
-use urlencoding::encode;
 
 use super::ApiClient;
 use super::client::Fetched;

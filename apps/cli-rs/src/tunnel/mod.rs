@@ -273,7 +273,13 @@ fn build_target_url(base: &str, path: &str, query_params: &HashMap<String, Strin
     if !query_params.is_empty() {
         let qs: Vec<String> = query_params
             .iter()
-            .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+            .map(|(k, v)| {
+                format!(
+                    "{}={}",
+                    crate::util::url::encode(k),
+                    crate::util::url::encode(v)
+                )
+            })
             .collect();
         url.push('?');
         url.push_str(&qs.join("&"));

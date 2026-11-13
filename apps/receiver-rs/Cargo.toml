@@ -6,7 +6,7 @@ license = "AGPL-3.0-only"
 
 [dependencies]
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
-axum = { version = "0.8", features = ["macros"] }
+axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -14,13 +14,11 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tower-http = { version = "0.7", features = ["cors", "limit", "trace"] }
-tower = "0.5"
 # Errors and log lines to StatOSS. ureq sends from a thread of its own, and
 # keeps a second reqwest major out of the build.
 statoss = { version = "0.1", default-features = false, features = ["ureq", "tracing"] }
 bytes = "1"
 http = "1"
-http-body-util = "0.1"
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "postgres", "json", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
@@ -29,17 +27,20 @@ url = "2"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
 # Signature verification
-aes-gcm = "0.11"
 hmac = "0.13"
 sha2 = "0.11"
-sha1 = "0.11"
 hex = "0.4"
 base64 = "0.23"
-ed25519-dalek = { version = "2", features = ["std"] }
-constant_time_eq = "0.6"
+subtle = "2"
+# AES-256-GCM (signing secrets), Ed25519, RSA and HMAC-SHA1; already in the
+# build through rustls.
 ring = "0.17"
 crc32fast = "1"
 mail-parser = "1.0.1"
+
+[dev-dependencies]
+# Drives the mail router in its tests (mail/handlers.rs).
+tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 opt-level = 3

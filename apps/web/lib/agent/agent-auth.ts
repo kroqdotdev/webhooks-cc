@@ -1,4 +1,5 @@
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
+import { safeEqual } from "@/lib/crypto";
 import { hasVerifiedFactor } from "@/lib/mfa";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { publicEnv, serverEnv } from "@/lib/env";
@@ -49,14 +50,6 @@ function db(): SupabaseClient {
 
 function hashOtp(otp: string): string {
   return createHash("sha256").update(otp).digest("hex");
-}
-
-/** Constant-time compare of two same-length hex digests. */
-function digestsEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
 }
 
 function claimUrl(): string {
@@ -236,7 +229,7 @@ export async function verifyVerifiedEmailOtp(args: {
     return { ok: false, error: "otp_expired" };
   }
 
-  if (!digestsEqual(hashOtp(args.otp), claim.otp_hash)) {
+  if (!safeEqual(hashOtp(args.otp), claim.otp_hash)) {
     // Atomic server-side increment so EVERY wrong guess counts. A compare-and-set
     // bump (`.eq("attempts", claim.attempts)`) loses the CAS under concurrent
     // wrong guesses that read the same value; those losers would return

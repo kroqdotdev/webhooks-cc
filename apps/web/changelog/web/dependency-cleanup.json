@@ -1,0 +1,9 @@
+{
+  "title": "Leaner dependencies",
+  "items": [
+    "Code in the docs and the blog is highlighted in the same colours as the dashboard, in light and dark mode",
+    "The interactive API explorer is retired; /api-explorer now opens the REST API docs, and the OpenAPI description stays at /openapi.yaml",
+    "API routes answer 400 instead of 500 when a request body is not the JSON object they expect",
+    "About 200 fewer packages in the web app's dependency tree, and fewer crates in the receiver and the CLI"
+  ]
+}

@@ -12,6 +12,8 @@ import { reportError } from "@/lib/observability";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { tunnelConfig } from "@/lib/tunnels/config";
 import { stopShares } from "@/lib/tunnels/stops";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 const DEFAULT_TTL_DAYS = 365;
 
@@ -49,14 +51,9 @@ export async function POST(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
-  let body: Record<string, unknown>;
-  try {
-    const parsed: unknown = await request.json();
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
-    body = parsed as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  const read = await parseJsonBodyWith(request, z.record(z.string(), z.unknown()));
+  if ("error" in read) return read.error;
+  const body = read.data;
 
   // An API key or an agent token: a person approves it first.
   if (auth.keyId) {

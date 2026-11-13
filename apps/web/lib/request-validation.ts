@@ -10,6 +10,7 @@ import {
   MAX_RESPONSE_RULES,
   MAX_RULE_NAME_LEN,
 } from "@webhooks-cc/sdk";
+import { z } from "zod";
 import { checkForwardUrl } from "./forwarding/target";
 import { conditionProblems } from "./rules";
 
@@ -258,6 +259,40 @@ export function isPlainEmailAddress(value: string): boolean {
   return value.length <= MAX_EMAIL_LENGTH && PLAIN_EMAIL_REGEX.test(value);
 }
 
+type JsonBodyResult = { data: unknown } | { problem: "too_large" | "unreadable" | "invalid_json" };
+
+/** Reads a body of at most `maxSize` bytes and parses it as JSON, of any type. */
+async function readJsonBody(request: Request, maxSize: number): Promise<JsonBodyResult> {
+  // Check Content-Length header if present (fast path)
+  const contentLength = request.headers.get("Content-Length");
+  if (contentLength) {
+    const size = parseInt(contentLength, 10);
+    if (!isNaN(size) && size > maxSize) return { problem: "too_large" };
+  }
+
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await request.arrayBuffer();
+  } catch (err) {
+    console.error("Failed to read request body:", err);
+    return { problem: "unreadable" };
+  }
+
+  // Check actual byte size (defense in depth against spoofed Content-Length)
+  if (buffer.byteLength > maxSize) return { problem: "too_large" };
+
+  try {
+    return { data: JSON.parse(new TextDecoder().decode(buffer)) as unknown };
+  } catch (err) {
+    console.error("Failed to parse JSON body:", err);
+    return { problem: "invalid_json" };
+  }
+}
+
+function tooLargeMessage(maxSize: number): string {
+  return `Request body too large (max ${maxSize} bytes)`;
+}
+
 /**
  * Parse a JSON request body with size limit enforcement.
  * Checks Content-Length header first (fast path), then actual byte size.
@@ -267,53 +302,17 @@ export async function parseJsonBody(
   request: Request,
   maxSize: number = DEFAULT_MAX_SIZE
 ): Promise<{ data: unknown } | { error: Response }> {
-  // Check Content-Length header if present (fast path)
-  const contentLength = request.headers.get("Content-Length");
-  if (contentLength) {
-    const size = parseInt(contentLength, 10);
-    if (!isNaN(size) && size > maxSize) {
-      return {
-        error: Response.json(
-          { error: `Request body too large (max ${maxSize} bytes)` },
-          { status: 413 }
-        ),
-      };
+  const read = await readJsonBody(request, maxSize);
+  if ("problem" in read) {
+    if (read.problem === "too_large") {
+      return { error: Response.json({ error: tooLargeMessage(maxSize) }, { status: 413 }) };
     }
-  }
-
-  let buffer: ArrayBuffer;
-  try {
-    buffer = await request.arrayBuffer();
-  } catch (err) {
-    console.error("Failed to read request body:", err);
-    return {
-      error: Response.json({ error: "Failed to read request body" }, { status: 400 }),
-    };
-  }
-
-  // Check actual byte size (defense in depth against spoofed Content-Length)
-  if (buffer.byteLength > maxSize) {
-    return {
-      error: Response.json(
-        { error: `Request body too large (max ${maxSize} bytes)` },
-        { status: 413 }
-      ),
-    };
-  }
-
-  const text = new TextDecoder().decode(buffer);
-
-  let data: unknown;
-  try {
-    data = JSON.parse(text);
-  } catch (err) {
-    console.error("Failed to parse JSON body:", err);
-    return {
-      error: Response.json({ error: "Invalid JSON" }, { status: 400 }),
-    };
+    const error = read.problem === "unreadable" ? "Failed to read request body" : "Invalid JSON";
+    return { error: Response.json({ error }, { status: 400 }) };
   }
 
   // Validate that the parsed result is a JSON object (not array, string, number, etc.)
+  const { data } = read;
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     return {
       error: Response.json({ error: "Expected JSON object" }, { status: 400 }),
@@ -321,4 +320,52 @@ export async function parseJsonBody(
   }
 
   return { data };
+}
+
+export interface ParseJsonBodyWithOptions {
+  /** The largest body read, in bytes (64 KB when left out); a larger one is answered 413. */
+  maxSize?: number;
+  /**
+   * The `error` of the 400 for a body the schema refuses: `null`, an array,
+   * a field of the wrong type. "Invalid request body" when left out.
+   */
+  message?: string;
+  /** The `error` of the 400 for a body that is not JSON at all; `message` when left out. */
+  invalidJson?: string;
+  /** Builds the error response, for routes whose answers carry headers of their own. */
+  respond?: (body: { error: string }, init: { status: number }) => Response;
+}
+
+/**
+ * The one way a route handler reads a JSON body: read it with the size
+ * limit, parse it, and check it against a zod schema. A route gets either
+ * data of the schema's type or the 4xx to return, so a malformed body (not
+ * JSON, `null`, an array, a field of the wrong type) can never reach code
+ * that would throw on it.
+ *
+ * The schema decides what is refused, so give it an object schema. Type
+ * only the fields the route would otherwise have to check before use, and
+ * leave a field `z.unknown()` where the route answers a wrong type with a
+ * message of its own.
+ */
+export async function parseJsonBodyWith<Schema extends z.ZodType>(
+  request: Request,
+  schema: Schema,
+  options: ParseJsonBodyWithOptions = {}
+): Promise<{ data: z.output<Schema> } | { error: Response }> {
+  const maxSize = options.maxSize ?? DEFAULT_MAX_SIZE;
+  const message = options.message ?? "Invalid request body";
+  const respond = options.respond ?? ((body, init) => Response.json(body, init));
+
+  const read = await readJsonBody(request, maxSize);
+  if ("problem" in read) {
+    if (read.problem === "too_large") {
+      return { error: respond({ error: tooLargeMessage(maxSize) }, { status: 413 }) };
+    }
+    return { error: respond({ error: options.invalidJson ?? message }, { status: 400 }) };
+  }
+
+  const parsed = schema.safeParse(read.data);
+  if (!parsed.success) return { error: respond({ error: message }, { status: 400 }) };
+  return { data: parsed.data };
 }

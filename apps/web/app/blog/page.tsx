@@ -4,6 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 import { listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
 import { Card } from "@/components/ui/card";
+import { shortDateUtc } from "@/lib/dates";
 
 export const revalidate = 3600;
 
@@ -13,15 +14,6 @@ export const metadata = createPageMetadata({
     "Practical webhook guides for local development, CI assertions, provider signature verification, and AI-assisted debugging workflows.",
   path: "/blog",
 });
-
-function formatBlogDate(timestamp: number): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(timestamp));
-}
 
 export default async function BlogIndexPage() {
   const posts = await listPublishedBlogPosts();
@@ -82,7 +74,7 @@ export default async function BlogIndexPage() {
                 {featured.publishedAt && (
                   <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
                     <CalendarDays className="h-4 w-4" />
-                    {formatBlogDate(featured.publishedAt)}
+                    {shortDateUtc(featured.publishedAt)}
                   </span>
                 )}
                 <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
@@ -121,7 +113,7 @@ export default async function BlogIndexPage() {
                       </span>
                       {post.publishedAt && (
                         <span className="text-xs text-muted-foreground">
-                          {formatBlogDate(post.publishedAt)}
+                          {shortDateUtc(post.publishedAt)}
                         </span>
                       )}
                       <span className="text-xs text-muted-foreground">{post.readMinutes} min</span>
@@ -165,7 +157,7 @@ export default async function BlogIndexPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0 md:ml-4">
-                      {post.publishedAt && <span>{formatBlogDate(post.publishedAt)}</span>}
+                      {post.publishedAt && <span>{shortDateUtc(post.publishedAt)}</span>}
                       <span>{post.readMinutes} min</span>
                     </div>
                   </div>

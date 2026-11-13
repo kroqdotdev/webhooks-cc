@@ -1,5 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
-import { customAlphabet } from "nanoid";
+import { alphanumericToken } from "@/lib/ids";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { isInboundDomainAddress } from "@/lib/supabase/inbound-domains";
@@ -37,17 +37,12 @@ import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
  * agent, and the email the agent named decides who may complete it.
  */
 
-const generateAttemptBody = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  32
-);
-
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
 export function generateAttemptToken(): string {
-  return `cat_${generateAttemptBody()}`;
+  return `cat_${alphanumericToken(32)}`;
 }
 
 export function hashAttemptToken(token: string): string {

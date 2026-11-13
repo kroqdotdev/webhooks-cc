@@ -1,5 +1,6 @@
 import posthog from "posthog-js";
 import { forgetIdentifiedUser, identifyPendingUser } from "./analytics";
+import { cookieValue } from "./cookies";
 
 /**
  * The visitor's analytics choice from the cookie banner, kept by posthog-js in
@@ -65,11 +66,7 @@ export function applyCarriedConsent() {
   if (typeof document === "undefined") return;
   const secure = window.location.protocol === "https:";
   const name = secure ? "__Host-whk_consent_carry" : "whk_consent_carry";
-  const carried = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${name}=`))
-    ?.slice(name.length + 1);
+  const carried = cookieValue(document.cookie, name);
   if (carried !== "granted" && carried !== "denied") return;
   const here = analyticsConsent();
   if (carried === "denied" && here !== "denied") declineAnalytics();

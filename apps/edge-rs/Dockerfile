@@ -10,7 +10,7 @@
 # the private network and TLS ends at Caddy, so the runtime needs only CA
 # certificates (for StatOSS).
 
-FROM rust:1.98-slim-trixie AS builder
+FROM rust:1.99-slim-trixie AS builder
 WORKDIR /src
 
 # Build the dependencies against a stub main first, so that layer survives

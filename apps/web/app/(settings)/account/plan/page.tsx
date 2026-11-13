@@ -32,7 +32,7 @@ import { Button } from "@/components/ui/button";
 import { trackUpgradeCompleted } from "@/lib/analytics";
 import { planEntitlements } from "@/lib/entitlements";
 import { cn } from "@/lib/utils";
-import { longDate } from "@/components/settings/format";
+import { longDate } from "@/lib/dates";
 import { useSite } from "@/components/providers/site-provider";
 import { shareComparisonRows } from "@/lib/tunnels/plan-text";
 

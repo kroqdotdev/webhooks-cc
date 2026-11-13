@@ -534,19 +534,18 @@ fn clerk_normalizes_svix_headers() {
 
 #[test]
 fn discord_valid() {
-    use ed25519_dalek::{Signer, SigningKey};
+    use ring::signature::{Ed25519KeyPair, KeyPair};
 
     // Generate a test keypair
-    let signing_key = SigningKey::from_bytes(&[42u8; 32]);
-    let verifying_key = signing_key.verifying_key();
-    let public_key_hex = hex::encode(verifying_key.as_bytes());
+    let signing_key = Ed25519KeyPair::from_seed_unchecked(&[42u8; 32]).unwrap();
+    let public_key_hex = hex::encode(signing_key.public_key().as_ref());
 
     let body = b"{\"type\":1}";
     let timestamp = "1712764800";
     let mut message = timestamp.as_bytes().to_vec();
     message.extend_from_slice(body);
     let signature = signing_key.sign(&message);
-    let sig_hex = hex::encode(signature.to_bytes());
+    let sig_hex = hex::encode(signature.as_ref());
 
     let h = headers(&[
         ("x-signature-ed25519", &sig_hex),
@@ -561,11 +560,11 @@ fn discord_valid() {
 
 #[test]
 fn discord_wrong_key() {
-    use ed25519_dalek::{Signer, SigningKey};
+    use ring::signature::{Ed25519KeyPair, KeyPair};
 
-    let signing_key = SigningKey::from_bytes(&[42u8; 32]);
-    let wrong_key = SigningKey::from_bytes(&[99u8; 32]);
-    let wrong_pk_hex = hex::encode(wrong_key.verifying_key().as_bytes());
+    let signing_key = Ed25519KeyPair::from_seed_unchecked(&[42u8; 32]).unwrap();
+    let wrong_key = Ed25519KeyPair::from_seed_unchecked(&[99u8; 32]).unwrap();
+    let wrong_pk_hex = hex::encode(wrong_key.public_key().as_ref());
 
     let body = b"{}";
     let ts = "123";
@@ -574,7 +573,7 @@ fn discord_wrong_key() {
     let sig = signing_key.sign(&msg);
 
     let h = headers(&[
-        ("x-signature-ed25519", &hex::encode(sig.to_bytes())),
+        ("x-signature-ed25519", &hex::encode(sig.as_ref())),
         ("x-signature-timestamp", ts),
     ]);
 
@@ -582,6 +581,41 @@ fn discord_wrong_key() {
         verify_discord(wrong_pk_hex.as_bytes(), &h, body),
         VerificationResult::Invalid(_)
     ));
+}
+
+#[test]
+fn discord_matches_the_sdk_vectors() {
+    // packages/sdk/conformance/verify.json: the SDK and every port agree on these.
+    let file: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../packages/sdk/conformance/verify.json"
+    ))
+    .unwrap();
+    let vectors: Vec<&serde_json::Value> = file["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["provider"] == "discord")
+        .collect();
+    assert!(vectors.len() >= 4, "the Discord vectors went missing");
+    for vector in vectors {
+        let h: HashMap<String, String> = vector["headers"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().unwrap().to_string()))
+            .collect();
+        let result = verify_discord(
+            vector["publicKey"].as_str().unwrap().as_bytes(),
+            &h,
+            vector["body"].as_str().unwrap().as_bytes(),
+        );
+        assert_eq!(
+            matches!(result, VerificationResult::Valid),
+            vector["expected"].as_bool().unwrap(),
+            "{}",
+            vector["name"]
+        );
+    }
 }
 
 // ── Typeform ──

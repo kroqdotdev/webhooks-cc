@@ -4,10 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Copy, Trash2 } from "lucide-react";
 import { InlineMessage, Panel } from "@/components/settings/panel";
-import { shortDate } from "@/components/settings/format";
+import { shortDate } from "@/lib/dates";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
 import { revokeRequestShare } from "@/lib/dashboard-api";
 
@@ -32,7 +32,7 @@ export function ShareLinks({ accessToken }: { accessToken: string | null }) {
   const [links, setLinks] = useState<ShareLink[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const { copy: copyText, copiedKey: copied } = useCopyWithFeedback();
 
   const refresh = useCallback(async () => {
     if (!accessToken) return;
@@ -56,10 +56,7 @@ export function ShareLinks({ accessToken }: { accessToken: string | null }) {
   }, [refresh]);
 
   const copy = async (link: ShareLink) => {
-    if (await copyToClipboard(`${window.location.origin}/s/${link.token}`)) {
-      setCopied(link.id);
-      setTimeout(() => setCopied((current) => (current === link.id ? null : current)), 2000);
-    }
+    await copyText(`${window.location.origin}/s/${link.token}`, link.id);
   };
 
   const revoke = async (link: ShareLink) => {

@@ -55,7 +55,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Copy, Check, Send, Download, ChevronDown, Mail, Inbox, X } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
 import { trackRequestExported } from "@/lib/analytics";
 import { subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
@@ -2319,16 +2319,14 @@ function WaitingForRequests({
   const mailFirst = useSite().key === "mailhooks" && !!emailAddress;
   const internalTestHeader = "X-Webhooks-CC-Test-Send";
   const { session } = useAuth();
-  const [copied, setCopied] = useState<"curl" | "email" | "url" | null>(null);
+  const { copy: handleCopy, copiedKey: copied } = useCopyWithFeedback();
   const [sending, setSending] = useState<"http" | "email" | null>(null);
   const [sent, setSent] = useState<"http" | "email" | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => {
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
       if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
     };
   }, []);
@@ -2337,13 +2335,6 @@ function WaitingForRequests({
   const curlCmd = `curl -X POST ${url} \\
   -H "Content-Type: application/json" \\
   -d '{"test": true}'`;
-
-  const handleCopy = async (text: string, key: "curl" | "email" | "url") => {
-    if (!(await copyToClipboard(text))) return;
-    setCopied(key);
-    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-    copyTimeoutRef.current = setTimeout(() => setCopied(null), 2000);
-  };
 
   const markSent = (kind: "http" | "email") => {
     setSent(kind);

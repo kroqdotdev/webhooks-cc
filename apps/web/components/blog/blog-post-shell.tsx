@@ -10,6 +10,7 @@ import {
 import type { TocItem } from "@/components/docs/toc";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { shortDateUtc } from "@/lib/dates";
 
 export interface BlogPostData {
   slug: string;
@@ -33,15 +34,6 @@ export interface RelatedPost {
   slug: string;
   title: string;
   description: string;
-}
-
-function formatBlogDate(timestamp: number): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(timestamp));
 }
 
 interface BlogPostShellProps {
@@ -121,7 +113,7 @@ export function BlogPostShell({
               {post.publishedAt && (
                 <span className="inline-flex items-center gap-1.5">
                   <CalendarDays className="h-4 w-4" />
-                  {formatBlogDate(post.publishedAt)}
+                  {shortDateUtc(post.publishedAt)}
                 </span>
               )}
               <span className="inline-flex items-center gap-1.5">

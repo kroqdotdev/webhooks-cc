@@ -1,9 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
-import dotenv from "dotenv";
+import { existsSync } from "node:fs";
 import path from "path";
 
 // Load .env.local from the monorepo root (symlinked into apps/web)
-dotenv.config({ path: path.resolve(__dirname, ".env.local") });
+const envFile = path.resolve(__dirname, ".env.local");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const useProductionServer = process.env.PLAYWRIGHT_USE_PROD_SERVER === "1";
 const port = Number(process.env.PLAYWRIGHT_PORT ?? (useProductionServer ? 3100 : 3000));

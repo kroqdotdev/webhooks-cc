@@ -15,3 +15,13 @@ export function longDate(value: string | number): string {
     year: "numeric",
   });
 }
+
+/** "Oct 14, 2026" in UTC: dates that must read the same on the server and in every browser. */
+export function shortDateUtc(value: string | number): string {
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}

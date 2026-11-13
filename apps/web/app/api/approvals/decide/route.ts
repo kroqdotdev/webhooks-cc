@@ -3,7 +3,13 @@ import { deviceApprover } from "@/lib/device-session";
 import { ApprovalError, decideApproval, withdrawApproval } from "@/lib/approvals/store";
 import { reportError } from "@/lib/observability";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { parseJsonBody } from "@/lib/request-validation";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
+
+const decideBody = z.object({
+  code: z.string(),
+  decision: z.enum(["approve", "deny", "withdraw"]),
+});
 
 /**
  * POST /api/approvals/decide { code, decision: "approve" | "deny" | "withdraw" }:
@@ -16,26 +22,20 @@ export async function POST(request: Request) {
   const rateLimited = await checkRateLimit(request, "approval-decide", 10);
   if (rateLimited) return rateLimited;
 
-  const parsed = await parseJsonBody(request, 1024);
+  const parsed = await parseJsonBodyWith(request, decideBody, {
+    maxSize: 1024,
+    message: 'Send { code, decision: "approve" | "deny" | "withdraw" }',
+    invalidJson: "Invalid JSON",
+  });
   if ("error" in parsed) return parsed.error;
-  const body = parsed.data as Record<string, unknown>;
-  const decision = body.decision;
-  if (
-    typeof body.code !== "string" ||
-    (decision !== "approve" && decision !== "deny" && decision !== "withdraw")
-  ) {
-    return Response.json(
-      { error: 'Send { code, decision: "approve" | "deny" | "withdraw" }' },
-      { status: 400 }
-    );
-  }
+  const { code, decision } = parsed.data;
 
   try {
     const approver = await deviceApprover();
     if ("error" in approver) return approver.error;
 
     if (decision === "withdraw") {
-      const withdrawn = await withdrawApproval(body.code, approver.userId);
+      const withdrawn = await withdrawApproval(code, approver.userId);
       if (!withdrawn.collected) {
         await auditUserAction(request, approver.userId, {
           action: "approval.denied",
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     }
 
     const approve = decision === "approve";
-    const decided = await decideApproval(body.code, approver.userId, approve);
+    const decided = await decideApproval(code, approver.userId, approve);
     await auditUserAction(request, approver.userId, {
       action: approve ? "approval.approved" : "approval.denied",
       status: 200,

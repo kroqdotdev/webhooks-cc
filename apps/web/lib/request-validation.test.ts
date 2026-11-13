@@ -1,6 +1,9 @@
-import { describe, expect, it, test } from "vitest";
+import { describe, expect, it, test, vi } from "vitest";
+import { z } from "zod";
 import {
   isPlainEmailAddress,
+  parseJsonBody,
+  parseJsonBodyWith,
   validateMockResponseField,
   validateNotificationUrl,
   validateResponseRules,
@@ -306,5 +309,114 @@ describe("validateResponseRules", () => {
     expect(
       await error(validateResponseRules([rule([{ field: "size", op: "gt", value: "lots" }])]))
     ).toMatch(/must be a number/);
+  });
+});
+
+function post(body: string, headers?: Record<string, string>) {
+  return new Request("https://webhooks.cc/api/test", { method: "POST", body, headers });
+}
+
+async function refusal(result: { data: unknown } | { error: Response }) {
+  if (!("error" in result)) throw new Error("expected the body to be refused");
+  return { status: result.error.status, body: await result.error.json() };
+}
+
+describe("parseJsonBody", () => {
+  test("returns a JSON object", async () => {
+    expect(await parseJsonBody(post('{"a":1}'))).toEqual({ data: { a: 1 } });
+  });
+
+  test("keeps its messages", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await refusal(await parseJsonBody(post("{")))).toEqual({
+      status: 400,
+      body: { error: "Invalid JSON" },
+    });
+    for (const body of ["null", "[]", '"text"', "5"]) {
+      expect(await refusal(await parseJsonBody(post(body)))).toEqual({
+        status: 400,
+        body: { error: "Expected JSON object" },
+      });
+    }
+    expect(await refusal(await parseJsonBody(post('{"a":"long"}'), 4))).toEqual({
+      status: 413,
+      body: { error: "Request body too large (max 4 bytes)" },
+    });
+    vi.restoreAllMocks();
+  });
+});
+
+describe("parseJsonBodyWith", () => {
+  const schema = z.object({ name: z.string().nullish(), other: z.unknown().optional() });
+
+  test("returns the data the schema describes, without unknown fields", async () => {
+    const result = await parseJsonBodyWith(post('{"name":"Acme","extra":true}'), schema);
+    expect(result).toEqual({ data: { name: "Acme" } });
+  });
+
+  test("leaves a field that was not sent out of the data", async () => {
+    const result = await parseJsonBodyWith(post("{}"), schema);
+    if (!("data" in result)) throw new Error("expected data");
+    expect("other" in result.data).toBe(false);
+    const sent = await parseJsonBodyWith(post('{"other":null}'), schema);
+    expect(sent).toEqual({ data: { other: null } });
+  });
+
+  test.each(["null", "[]", '"text"', "5", '{"name":1}', '{"name":{"a":1}}'])(
+    "refuses %s with a 400",
+    async (body) => {
+      expect(await refusal(await parseJsonBodyWith(post(body), schema))).toEqual({
+        status: 400,
+        body: { error: "Invalid request body" },
+      });
+    }
+  );
+
+  test("refuses a body that is not JSON, or empty", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const body of ["{", ""]) {
+      expect(await refusal(await parseJsonBodyWith(post(body), schema))).toEqual({
+        status: 400,
+        body: { error: "Invalid request body" },
+      });
+    }
+    vi.restoreAllMocks();
+  });
+
+  test("uses the route's own wording", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const options = { message: "invalid_body", invalidJson: "invalid_json" };
+    expect(await refusal(await parseJsonBodyWith(post("null"), schema, options))).toEqual({
+      status: 400,
+      body: { error: "invalid_body" },
+    });
+    expect(await refusal(await parseJsonBodyWith(post("{"), schema, options))).toEqual({
+      status: 400,
+      body: { error: "invalid_json" },
+    });
+    expect(
+      await refusal(await parseJsonBodyWith(post("{"), schema, { message: "Invalid JSON." }))
+    ).toEqual({ status: 400, body: { error: "Invalid JSON." } });
+    vi.restoreAllMocks();
+  });
+
+  test("answers 413 past the size limit, by header or by bytes", async () => {
+    const body = JSON.stringify({ name: "x".repeat(100) });
+    expect(await refusal(await parseJsonBodyWith(post(body), schema, { maxSize: 50 }))).toEqual({
+      status: 413,
+      body: { error: "Request body too large (max 50 bytes)" },
+    });
+    const claimed = post("{}", { "Content-Length": "100000" });
+    expect((await refusal(await parseJsonBodyWith(claimed, schema))).status).toBe(413);
+    expect(await parseJsonBodyWith(post(body), schema, { maxSize: 200 })).toHaveProperty("data");
+  });
+
+  test("builds its refusals with the route's response function", async () => {
+    const respond = (body: { error: string }, init: { status: number }) =>
+      Response.json(body, { ...init, headers: { "Cache-Control": "no-store" } });
+    const result = await parseJsonBodyWith(post("[]"), schema, { respond });
+    if (!("error" in result)) throw new Error("expected a refusal");
+    expect(result.error.status).toBe(400);
+    expect(result.error.headers.get("Cache-Control")).toBe("no-store");
   });
 });

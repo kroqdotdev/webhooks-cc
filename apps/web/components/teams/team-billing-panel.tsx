@@ -39,7 +39,7 @@ import {
   type TeamInterval,
   type TeamPlan,
 } from "@/lib/team-pricing";
-import { longDate } from "@/components/settings/format";
+import { longDate } from "@/lib/dates";
 import { TeamPlanChooser, currentTeamPlan } from "@/components/teams/team-plan-chooser";
 
 /** A team plan option as one radio value. */

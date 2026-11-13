@@ -3,10 +3,10 @@
 //! 100 in all, gone after 24 hours. Responses are passed on as the server's
 //! JSON, so `--json` shows every field.
 
+use crate::util::url::encode;
 use anyhow::Result;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use urlencoding::encode;
 
 use super::credentials::{CredentialStore, Slot, SlotKind};
 use super::pow::PowChallenge;

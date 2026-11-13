@@ -18,7 +18,7 @@ import {
 import Link from "next/link";
 import { Tabs, TabsPanel } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { formatBytes, formatFullTimestamp } from "@/types/request";
 import { useSite } from "@/components/providers/site-provider";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
@@ -109,19 +109,6 @@ type ParseWatch =
   | { id: string; state: "reading"; mode: "new" | "again"; until: number }
   /** `layout`: the name of the layout that read it, null when none did (or no answer came). */
   | { id: string; state: "done"; mode: "new" | "again"; layout: string | null };
-
-function useCopy() {
-  const [copied, setCopied] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
-  const copy = useCallback(async (text: string, key: string) => {
-    if (!(await copyToClipboard(text))) return;
-    setCopied(key);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(null), 2000);
-  }, []);
-  return { copied, copy };
-}
 
 /** The Raw tab shows at most this much of a stored message; the download has all of it. */
 const RAW_DISPLAY_BYTES = 1024 * 1024;
@@ -931,7 +918,7 @@ function EmailJsonPane({
   onOpenDeliveries: () => void;
 }) {
   const [view, setView] = useState<"formatted" | "tree">("formatted");
-  const { copied, copy } = useCopy();
+  const { copiedKey: copied, copy } = useCopyWithFeedback();
   const text = useMemo(() => JSON.stringify(json, null, 2), [json]);
   const highlighted = useMemo(() => highlightBody(text, "json"), [text]);
 
@@ -1062,7 +1049,7 @@ export function EmailDetail({
     setTab(id);
   }, []);
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
-  const { copied, copy } = useCopy();
+  const { copiedKey: copied, copy } = useCopyWithFeedback();
   const raw = useMemo(() => rawMessage(request), [request]);
   // From the receiver, not the message: any sender can write a header.
   const isTest = email?.smtp?.test === true;

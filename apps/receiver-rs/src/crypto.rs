@@ -1,10 +1,12 @@
-//! AES-256-GCM encryption and decryption for signing secrets.
+//! Signing secrets (AES-256-GCM, sealed by the web app's `lib/crypto.ts`)
+//! and the HMAC-SHA256 the receiver signs and checks with.
 //!
 //! Storage format: `[12-byte nonce][ciphertext][16-byte auth tag]`
 //! Stored as BYTEA in Postgres. Nonce generated randomly per encryption.
 
-use aes_gcm::Aes256Gcm;
-use aes_gcm::aead::{Aead, KeyInit, Nonce};
+use hmac::{Hmac, KeyInit, Mac};
+use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
+use sha2::Sha256;
 
 /// AES-256-GCM nonce size (96 bits).
 const NONCE_SIZE: usize = 12;
@@ -44,16 +46,23 @@ pub fn decrypt_secret(encrypted: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, Crypt
         return Err(CryptoError::TooShort);
     }
 
-    let nonce_bytes = &encrypted[..NONCE_SIZE];
-    let ciphertext_and_tag = &encrypted[NONCE_SIZE..];
+    let cipher = LessSafeKey::new(
+        UnboundKey::new(&AES_256_GCM, key).expect("an AES-256 key is always 32 bytes"),
+    );
+    let nonce = Nonce::try_assume_unique_for_key(&encrypted[..NONCE_SIZE])
+        .map_err(|_| CryptoError::DecryptionFailed)?;
+    let mut ciphertext_and_tag = encrypted[NONCE_SIZE..].to_vec();
+    let plaintext = cipher
+        .open_in_place(nonce, Aad::empty(), &mut ciphertext_and_tag)
+        .map_err(|_| CryptoError::DecryptionFailed)?;
+    Ok(plaintext.to_vec())
+}
 
-    let cipher = Aes256Gcm::new_from_slice(key).expect("key is always 32 bytes");
-    let nonce =
-        Nonce::<Aes256Gcm>::try_from(nonce_bytes).map_err(|_| CryptoError::DecryptionFailed)?;
-
-    cipher
-        .decrypt(&nonce, ciphertext_and_tag)
-        .map_err(|_| CryptoError::DecryptionFailed)
+/// HMAC-SHA256 of `data` under `key` (any length).
+pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts any key length");
+    mac.update(data);
+    mac.finalize().into_bytes().to_vec()
 }
 
 /// Decrypt a base64-encoded encrypted signing secret.

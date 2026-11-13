@@ -1,4 +1,4 @@
-import { customAlphabet } from "nanoid";
+import { alphanumericToken, userCodePart } from "@/lib/ids";
 import { createAdminClient } from "./admin";
 import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "./api-keys";
 import { compareNetworks, type DeviceRequester, type NetworkMatch } from "@/lib/device-requester";
@@ -7,12 +7,6 @@ const DEVICE_CODE_TTL_MS = 15 * 60 * 1000;
 const API_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_PENDING_CODES = 500;
 export const DEVICE_AUTH_KEY_NAME = "CLI (device auth)";
-
-const generateDeviceCode = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  32
-);
-const generateUserCodePart = customAlphabet("ABCDEFGHJKMNPQRSTUVWXYZ23456789", 4);
 
 export interface DeviceCodeRecord {
   deviceCode: string;
@@ -115,8 +109,8 @@ export async function createDeviceCodeRecord(
     throw new Error("Too many pending device codes, please try again later");
   }
 
-  const deviceCode = generateDeviceCode();
-  const userCode = `${generateUserCodePart()}-${generateUserCodePart()}`;
+  const deviceCode = alphanumericToken(32);
+  const userCode = `${userCodePart()}-${userCodePart()}`;
   const expiresAt = Date.now() + DEVICE_CODE_TTL_MS;
 
   const { error } = await admin.from("device_codes").insert({

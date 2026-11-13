@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { safeEqual } from "@/lib/crypto";
 import { reportError } from "@/lib/observability";
 
 function jsonError(error: string, status: number): Response {
@@ -15,10 +15,7 @@ export function verifyBlogSecret(request: Request): Response | null {
   }
 
   const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  const expected = Buffer.from(expectedSecret, "utf8");
-  const provided = Buffer.from(providedSecret, "utf8");
-
-  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+  if (!safeEqual(expectedSecret, providedSecret)) {
     return jsonError("unauthorized", 401);
   }
 

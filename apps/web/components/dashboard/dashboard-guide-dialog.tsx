@@ -464,23 +464,27 @@ const SECTIONS: Section[] = [
     ),
   },
   {
-    id: "api-explorer",
-    title: "API Explorer",
+    id: "api",
+    title: "REST API",
     icon: <Code2 className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
         <p>
-          The{" "}
-          <Link href="/api-explorer" className="text-primary hover:underline font-bold">
-            API Explorer
-          </Link>{" "}
-          is an interactive reference for the webhooks.cc REST API. Try endpoints directly from your
-          browser, inspect request/response schemas, and generate code snippets in 20+ languages.
+          Everything the dashboard does is in the{" "}
+          <Link href="/docs/api" className="text-primary hover:underline font-bold">
+            REST API
+          </Link>
+          , which the CLI, the SDKs and the MCP server use too.
         </p>
         <ul className="space-y-1.5 text-sm">
-          <li>Authenticate with your API key to test endpoints live</li>
-          <li>Generate code snippets in Shell, Node.js, Python, Go, Rust, and more</li>
-          <li>Browse all available endpoints, request parameters, and response schemas</li>
+          <li>Every route, with its parameters, answers and errors, in the API docs</li>
+          <li>
+            The whole API as OpenAPI 3.1 at{" "}
+            <a href="/openapi.yaml" className="text-primary hover:underline font-bold">
+              /openapi.yaml
+            </a>
+            , for Postman, Insomnia, code generators and agents
+          </li>
           <li>
             API keys can be created from{" "}
             <Link href="/account/api-keys" className="text-primary hover:underline font-bold">

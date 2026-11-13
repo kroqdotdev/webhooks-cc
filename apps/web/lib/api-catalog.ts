@@ -70,7 +70,6 @@ export function buildApiCatalog(appUrl = publicEnv().NEXT_PUBLIC_APP_URL): ApiCa
         ],
         "service-doc": [
           { href: `${appUrl}/docs/api`, type: "text/html", title: "REST API documentation" },
-          { href: `${appUrl}/api-explorer`, type: "text/html", title: "Interactive API reference" },
         ],
         "service-meta": [
           {

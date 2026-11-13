@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { customAlphabet } from "nanoid";
+import { alphanumericToken } from "@/lib/ids";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
@@ -19,10 +19,6 @@ import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
  * agent registration, so they are whcc_ keys every route already accepts.
  */
 
-const generateRefreshBody = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  48
-);
 const CODE_VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
 
 export function hashRefreshToken(token: string): string {
@@ -91,7 +87,7 @@ function refreshExpiry(): string {
 }
 
 function newRefreshToken(): string {
-  return `whrt_${generateRefreshBody()}`;
+  return `whrt_${alphanumericToken(48)}`;
 }
 
 /** The authorization_code grant. */

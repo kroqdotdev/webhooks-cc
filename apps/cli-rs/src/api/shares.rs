@@ -20,7 +20,7 @@ impl ApiClient {
     pub async fn stop_share(&self, id: &str) -> Result<()> {
         self.require_auth()?;
         self.post(
-            &format!("/api/shares/{}/stop", urlencoding::encode(id)),
+            &format!("/api/shares/{}/stop", crate::util::url::encode(id)),
             &serde_json::json!({}),
         )
         .await?;
@@ -31,7 +31,10 @@ impl ApiClient {
     pub async fn share_requests(&self, id: &str) -> Result<ShareRequestsResponse> {
         self.require_auth()?;
         let resp = self
-            .get(&format!("/api/shares/{}/requests", urlencoding::encode(id)))
+            .get(&format!(
+                "/api/shares/{}/requests",
+                crate::util::url::encode(id)
+            ))
             .await?;
         serde_json::from_str(&resp.body).context("failed to parse share requests")
     }
@@ -58,8 +61,11 @@ impl ApiClient {
     /// `DELETE /api/tunnel-names/{name}`.
     pub async fn release_name(&self, name: &str) -> Result<()> {
         self.require_auth()?;
-        self.delete(&format!("/api/tunnel-names/{}", urlencoding::encode(name)))
-            .await?;
+        self.delete(&format!(
+            "/api/tunnel-names/{}",
+            crate::util::url::encode(name)
+        ))
+        .await?;
         Ok(())
     }
 
@@ -71,7 +77,10 @@ impl ApiClient {
         password: Option<&str>,
     ) -> Result<NamePassword> {
         self.require_auth()?;
-        let path = format!("/api/tunnel-names/{}/password", urlencoding::encode(name));
+        let path = format!(
+            "/api/tunnel-names/{}/password",
+            crate::util::url::encode(name)
+        );
         let resp = match password {
             Some(password) => {
                 self.put_json(&path, &serde_json::json!({ "password": password }))

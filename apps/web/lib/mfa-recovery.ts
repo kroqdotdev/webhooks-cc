@@ -16,7 +16,7 @@ import { siteOrigin, type SiteKey } from "@/lib/site";
 
 export const RECOVERY_CODE_COUNT = 10;
 
-// No 0/O, 1/I/L: codes are read off paper. 32 symbols, 10 of them: 50 bits.
+// No 0/O, 1/I/L: codes are read off paper. 31 symbols, 10 of them: about 49.5 bits.
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 
 export function generateRecoveryCode(): string {

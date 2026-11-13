@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { AllowanceUsage } from "@/lib/supabase/allowance-usage";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "@/types/request";
-import { longDate } from "./format";
+import { longDate } from "@/lib/dates";
 import { settingsLink } from "./panel";
 import { Meter } from "@/components/ui/meter";
 

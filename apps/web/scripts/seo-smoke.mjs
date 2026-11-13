@@ -54,7 +54,7 @@ async function main() {
 
   const stripTrailing = (p) => (p !== "/" && p.endsWith("/") ? p.slice(0, -1) : p);
   const sitemapPathSet = new Set(sitemapUrls.map((url) => stripTrailing(normalizePath(url))));
-  for (const excludedPath of ["/login", "/api-explorer", "/teams"]) {
+  for (const excludedPath of ["/login", "/teams"]) {
     if (sitemapPathSet.has(stripTrailing(excludedPath))) {
       errors.push(`${excludedPath}: should not appear in public sitemap`);
     }

@@ -3,6 +3,8 @@ import { reportError } from "@/lib/observability";
 import { staffTicket } from "@/lib/ops/tickets";
 import { authenticateStaffRequest, opsJson } from "@/lib/staff";
 import { closeTicket, ticketRowByNumber, updateTicket } from "@/lib/support/tickets";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 function parseNumber(raw: string): number | null {
   return /^\d{1,12}$/.test(raw) ? Number(raw) : null;
@@ -23,18 +25,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ numb
   }
 }
 
+// A key left out stays out of the parsed body, so `"snoozeUntil" in body`
+// still tells "wake" (null) from "no change".
+const ticketChanges = z.object({
+  snoozeUntil: z.unknown().optional(),
+  spam: z.unknown().optional(),
+  close: z.unknown().optional(),
+});
+
 /** Snooze (until a time, or null to wake), mark spam, close. */
 export async function PATCH(request: Request, { params }: { params: Promise<{ number: string }> }) {
   const auth = await authenticateStaffRequest(request);
   if (!auth.success) return auth.response;
   const number = parseNumber((await params).number);
   if (number === null) return opsJson({ error: "No such ticket." }, { status: 404 });
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return opsJson({ error: "Invalid JSON." }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, ticketChanges, {
+    message: "Invalid JSON.",
+    respond: opsJson,
+  });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
   try {
     const row = await ticketRowByNumber(number);
     if (!row) return opsJson({ error: "No such ticket." }, { status: 404 });

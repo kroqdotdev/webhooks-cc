@@ -235,6 +235,8 @@ const nextConfig: NextConfig = {
       // Addresses people guess: sign-up opens the form, and the docs home is the quick start.
       { source: "/signup", destination: "/login?mode=sign-up", permanent: false },
       { source: "/docs/quickstart", destination: "/docs", permanent: true },
+      // The interactive API explorer was retired; the REST API docs cover it.
+      { source: "/api-explorer", destination: "/docs/api", permanent: true },
       {
         // The sitemap index and its child sitemaps were folded into one /sitemap.xml.
         source: "/sitemap-index.xml",

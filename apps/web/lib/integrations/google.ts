@@ -1,4 +1,8 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
+import { randomBase64Url } from "@/lib/ids";
+import { decodeJwt } from "jose";
+import { cookieValue } from "@/lib/cookies";
+import { openJson, purposeKey, sealJson } from "@/lib/crypto";
 import { publicEnv } from "@/lib/env";
 
 /**
@@ -65,10 +69,7 @@ export function callbackUrl(appUrl = publicEnv().NEXT_PUBLIC_APP_URL): string {
 function stateKey(): Buffer {
   const raw = process.env.SIGNING_SECRET_KEY;
   if (!raw) throw new GoogleError("SIGNING_SECRET_KEY is not configured");
-  return createHash("sha256")
-    .update(Buffer.from(raw, "base64"))
-    .update("google oauth state")
-    .digest();
+  return purposeKey(Buffer.from(raw, "base64"), "google oauth state");
 }
 
 export interface OAuthState {
@@ -99,34 +100,25 @@ export function browserHash(nonce: string): string {
 }
 
 export function sealState(state: OAuthState): string {
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", stateKey(), nonce);
-  const body = Buffer.concat([cipher.update(JSON.stringify(state), "utf8"), cipher.final()]);
-  return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString("base64url");
+  return sealJson(stateKey(), state);
 }
 
 export function openState(sealed: string, now = Date.now()): OAuthState | null {
+  let state: OAuthState | null;
   try {
-    const bytes = Buffer.from(sealed, "base64url");
-    if (bytes.length < 29) return null;
-    const decipher = createDecipheriv("aes-256-gcm", stateKey(), bytes.subarray(0, 12));
-    decipher.setAuthTag(bytes.subarray(bytes.length - 16));
-    const json = Buffer.concat([
-      decipher.update(bytes.subarray(12, bytes.length - 16)),
-      decipher.final(),
-    ]).toString("utf8");
-    const state = JSON.parse(json) as OAuthState;
-    if (
-      typeof state.userId !== "string" ||
-      typeof state.verifier !== "string" ||
-      typeof state.browser !== "string"
-    ) {
-      return null;
-    }
-    return state.expires > now ? state : null;
+    state = openJson(stateKey(), sealed) as OAuthState | null;
   } catch {
     return null;
   }
+  if (
+    !state ||
+    typeof state.userId !== "string" ||
+    typeof state.verifier !== "string" ||
+    typeof state.browser !== "string"
+  ) {
+    return null;
+  }
+  return state.expires > now ? state : null;
 }
 
 /**
@@ -157,12 +149,7 @@ export function clearHandoffCookie(secure: boolean): string {
 }
 
 export function handoffNonceOf(request: Request): string | null {
-  const header = request.headers.get("cookie") ?? "";
-  for (const part of header.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === HANDOFF_COOKIE) return rest.join("=") || null;
-  }
-  return null;
+  return cookieValue(request.headers.get("cookie"), HANDOFF_COOKIE);
 }
 
 export function handoffHash(nonce: string): string {
@@ -170,31 +157,21 @@ export function handoffHash(nonce: string): string {
 }
 const TICKET_LIFETIME_MS = 2 * 60 * 1000;
 
-function ticketKey(purpose = "google oauth begin ticket"): Buffer {
+const BEGIN = "google oauth begin ticket";
+
+function ticketKey(purpose: string): Buffer {
   const raw = process.env.SIGNING_SECRET_KEY;
   if (!raw) throw new GoogleError("SIGNING_SECRET_KEY is not configured");
-  return createHash("sha256").update(Buffer.from(raw, "base64")).update(purpose).digest();
+  return purposeKey(Buffer.from(raw, "base64"), purpose);
 }
 
 function sealWith(purpose: string, value: unknown): string {
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", ticketKey(purpose), nonce);
-  const body = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
-  return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString("base64url");
+  return sealJson(ticketKey(purpose), value);
 }
 
 function openWith(purpose: string, sealed: string): unknown {
   try {
-    const bytes = Buffer.from(sealed, "base64url");
-    if (bytes.length < 29) return null;
-    const decipher = createDecipheriv("aes-256-gcm", ticketKey(purpose), bytes.subarray(0, 12));
-    decipher.setAuthTag(bytes.subarray(bytes.length - 16));
-    return JSON.parse(
-      Buffer.concat([
-        decipher.update(bytes.subarray(12, bytes.length - 16)),
-        decipher.final(),
-      ]).toString("utf8")
-    );
+    return openJson(ticketKey(purpose), sealed);
   } catch {
     return null;
   }
@@ -237,16 +214,7 @@ export function sealBeginTicket(
   handoff: string,
   now = Date.now()
 ): string {
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", ticketKey(), nonce);
-  const body = Buffer.concat([
-    cipher.update(
-      JSON.stringify({ url, browserNonce, handoff, expires: now + TICKET_LIFETIME_MS }),
-      "utf8"
-    ),
-    cipher.final(),
-  ]);
-  return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString("base64url");
+  return sealWith(BEGIN, { url, browserNonce, handoff, expires: now + TICKET_LIFETIME_MS });
 }
 
 export function openBeginTicket(
@@ -254,16 +222,13 @@ export function openBeginTicket(
   now = Date.now()
 ): { url: string; browserNonce: string; handoff: string } | null {
   try {
-    const bytes = Buffer.from(sealed, "base64url");
-    if (bytes.length < 29) return null;
-    const decipher = createDecipheriv("aes-256-gcm", ticketKey(), bytes.subarray(0, 12));
-    decipher.setAuthTag(bytes.subarray(bytes.length - 16));
-    const ticket = JSON.parse(
-      Buffer.concat([
-        decipher.update(bytes.subarray(12, bytes.length - 16)),
-        decipher.final(),
-      ]).toString("utf8")
-    ) as { url?: unknown; browserNonce?: unknown; handoff?: unknown; expires?: unknown };
+    const ticket = openWith(BEGIN, sealed) as {
+      url?: unknown;
+      browserNonce?: unknown;
+      handoff?: unknown;
+      expires?: unknown;
+    } | null;
+    if (!ticket) return null;
     if (
       typeof ticket.url !== "string" ||
       typeof ticket.browserNonce !== "string" ||
@@ -299,9 +264,9 @@ export function authorizationUrl(
   site: "webhooks" | "mailhooks" = "webhooks",
   handoff?: string
 ): { url: string; browserNonce: string } {
-  const verifier = randomBytes(32).toString("base64url");
+  const verifier = randomBase64Url(32);
   const challenge = createHash("sha256").update(verifier).digest("base64url");
-  const browserNonce = randomBytes(24).toString("base64url");
+  const browserNonce = randomBase64Url(24);
   const state = sealState({
     userId,
     verifier,
@@ -432,12 +397,7 @@ export function clearBrowserCookie(secure: boolean): string {
 
 /** The nonce cookie of a request, if any. */
 export function browserNonceOf(request: Request): string | null {
-  const header = request.headers.get("cookie") ?? "";
-  for (const part of header.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === BROWSER_COOKIE) return rest.join("=") || null;
-  }
-  return null;
+  return cookieValue(request.headers.get("cookie"), BROWSER_COOKIE);
 }
 
 interface TokenResponse {
@@ -479,7 +439,7 @@ export interface ConnectedAccount {
 function idTokenClaims(idToken: string | undefined): { sub?: string; email?: string } {
   if (!idToken) return {};
   try {
-    return JSON.parse(Buffer.from(idToken.split(".")[1] ?? "", "base64url").toString("utf8"));
+    return decodeJwt(idToken) as { sub?: string; email?: string };
   } catch {
     return {};
   }

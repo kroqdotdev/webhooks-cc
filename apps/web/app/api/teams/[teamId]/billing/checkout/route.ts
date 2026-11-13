@@ -4,6 +4,14 @@ import { describePolarError, loggablePolarError, PolarConfigError } from "@/lib/
 import { createTeamCheckout, TeamBillingError } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS, isInterval, isTeamPlan } from "../shared";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
+
+const checkoutBody = z.object({
+  seats: z.unknown().optional(),
+  plan: z.unknown().optional(),
+  interval: z.unknown().optional(),
+});
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateSessionRequest(request);
@@ -14,19 +22,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   // A missing or non-numeric seat count becomes NaN, which createTeamCheckout
   // rejects as invalid_seats: one place owns the seat range. The plan
   // defaults to Teams, monthly, as before plans could be picked.
-  let seats: number;
-  let plan: unknown;
-  let interval: unknown;
-  try {
-    const body = (await request.json()) as { seats?: unknown; plan?: unknown; interval?: unknown };
-    seats = typeof body.seats === "number" ? body.seats : NaN;
-    plan = body.plan ?? "team";
-    interval = body.interval ?? "month";
-  } catch {
-    seats = NaN;
-    plan = "team";
-    interval = "month";
-  }
+  // A body that cannot be read counts as an empty one.
+  const parsed = await parseJsonBodyWith(request, checkoutBody);
+  const body: z.infer<typeof checkoutBody> = "data" in parsed ? parsed.data : {};
+  const seats = typeof body.seats === "number" ? body.seats : NaN;
+  const plan = body.plan ?? "team";
+  const interval = body.interval ?? "month";
   if (!isTeamPlan(plan) || !isInterval(interval)) {
     return Response.json({ error: "Unknown plan" }, { status: 400 });
   }

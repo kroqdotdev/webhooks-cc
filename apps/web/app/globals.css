@@ -439,6 +439,28 @@ body {
   color: hsl(var(--muted-foreground));
 }
 
+/*
+ * Docs and blog code: Shiki's CSS-variables theme (lib/code-highlight.ts)
+ * on the Prism palette above. Defined on the root, where `.dark` switches
+ * the colours they are built from.
+ */
+:root {
+  --code-foreground: hsl(var(--foreground));
+  --code-background: transparent;
+  --code-token-keyword: hsl(var(--syntax-number));
+  --code-token-constant: hsl(var(--syntax-number));
+  --code-token-string: hsl(var(--syntax-string));
+  --code-token-string-expression: hsl(var(--syntax-string));
+  --code-token-function: hsl(var(--syntax-key));
+  --code-token-parameter: hsl(var(--foreground));
+  --code-token-punctuation: hsl(var(--syntax-punctuation));
+  --code-token-comment: hsl(var(--muted-foreground));
+  --code-token-link: hsl(var(--syntax-string));
+  --code-token-inserted: hsl(var(--syntax-key));
+  --code-token-deleted: hsl(var(--destructive));
+  --code-token-changed: hsl(var(--syntax-number));
+}
+
 /* JSON tree syntax colors: reuse the Prism palette */
 .syntax-property {
   color: hsl(var(--syntax-key));

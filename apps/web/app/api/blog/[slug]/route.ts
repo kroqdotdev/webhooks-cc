@@ -8,6 +8,7 @@ import {
   updateBlogPostBySlug,
 } from "@/lib/supabase/blog-posts";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -34,6 +35,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   }
 }
 
+// A post's content is long: well past the default body limit.
+const MAX_POST_BYTES = 2 * 1024 * 1024;
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const authError = verifyBlogSecret(request);
   if (authError) return authError;
@@ -43,17 +47,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     return Response.json({ error: "missing_slug" }, { status: 400 });
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "invalid_json" }, { status: 400 });
-  }
-
-  const parsed = updateBlogPostSchema.safeParse(body);
-  if (!parsed.success) {
-    return Response.json({ error: "invalid_body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, updateBlogPostSchema, {
+    message: "invalid_body",
+    invalidJson: "invalid_json",
+    maxSize: MAX_POST_BYTES,
+  });
+  if ("error" in parsed) return parsed.error;
 
   try {
     const result = await updateBlogPostBySlug(slug, parsed.data);

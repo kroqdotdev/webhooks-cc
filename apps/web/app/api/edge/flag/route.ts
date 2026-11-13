@@ -1,8 +1,17 @@
 import { fromEdge, notEdge } from "@/lib/tunnels/edge-auth";
 import { later } from "@/lib/tunnels/later";
 import { createFlag, tellStaffOfReport } from "@/lib/tunnels/reports";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const flagBody = z.object({
+  shareId: z.unknown().optional(),
+  url: z.unknown().optional(),
+  signals: z.unknown().optional(),
+  seenIn: z.unknown().optional(),
+});
 
 /**
  * The edge saw a page that looks like phishing: a password or card field with
@@ -12,12 +21,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export async function POST(request: Request) {
   if (!fromEdge(request)) return notEdge();
-  const body = (await request.json().catch(() => ({}))) as {
-    shareId?: unknown;
-    url?: unknown;
-    signals?: unknown;
-    seenIn?: unknown;
-  };
+  // A body that cannot be read counts as an empty one.
+  const parsed = await parseJsonBodyWith(request, flagBody);
+  const body: z.infer<typeof flagBody> = "data" in parsed ? parsed.data : {};
   if (typeof body.shareId !== "string" || !UUID.test(body.shareId) || typeof body.url !== "string")
     return Response.json({ error: "Missing shareId or url." }, { status: 400 });
   const signals = Array.isArray(body.signals)

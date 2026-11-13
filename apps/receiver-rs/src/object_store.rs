@@ -10,8 +10,9 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
+
+use crate::crypto::hmac_sha256 as hmac;
 
 /// How long one upload or delete may take. The MX host waits up to two
 /// minutes for a delivery, which covers a few of these in a row.
@@ -213,12 +214,6 @@ fn authorization(input: &SigningInput<'_>, region: &str, access_key: &str, secre
     format!(
         "AWS4-HMAC-SHA256 Credential={access_key}/{scope}, SignedHeaders={signed_headers}, Signature={signature}"
     )
-}
-
-fn hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts any key length");
-    mac.update(data);
-    mac.finalize().into_bytes().to_vec()
 }
 
 /// RFC 3986 encoding as S3 wants it: unreserved characters stay, everything

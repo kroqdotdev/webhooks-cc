@@ -1,16 +1,11 @@
 import { createHash } from "node:crypto";
-import { customAlphabet } from "nanoid";
+import { alphanumericToken } from "@/lib/ids";
 import { createAdminClient } from "./admin";
 import { reportError } from "@/lib/observability";
 
 import { isUserPlan, type UserPlan } from "@/lib/entitlements";
 export type { UserPlan };
 export const MAX_KEYS_PER_USER = 10;
-
-const generateApiKeyBody = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  32
-);
 
 export interface ApiKeyValidationResult {
   /**
@@ -29,7 +24,7 @@ export interface ApiKeyValidationResult {
 }
 
 export function generateApiKey(): string {
-  return `whcc_${generateApiKeyBody()}`;
+  return `whcc_${alphanumericToken(32)}`;
 }
 
 /**

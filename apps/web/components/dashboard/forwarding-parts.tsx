@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Copy, Eye, EyeOff, Plus, RefreshCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import type { ForwardTestResult } from "@/lib/dashboard-api";
 import { formatDuration } from "@/lib/forwarding/timing";
 import {
@@ -387,7 +387,8 @@ export function SecretField({
   const [secret, setSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmRotate, setConfirmRotate] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
   const run = async (action: () => Promise<string>, failure: string) => {
     try {
       const value = await action();
@@ -426,10 +427,7 @@ export function SecretField({
           onClick={() =>
             void (async () => {
               const value = secret ?? (await run(load, "The secret could not be copied."));
-              if (value && (await copyToClipboard(value))) {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }
+              if (value) await copy(value);
             })()
           }
         >

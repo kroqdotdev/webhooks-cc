@@ -1,5 +1,6 @@
-import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, scrypt as scryptCb } from "node:crypto";
 import { promisify } from "node:util";
+import { safeEqual } from "@/lib/crypto";
 
 /*
  * Passwords on preview links, hashed with scrypt. Only the hash is kept:
@@ -55,7 +56,7 @@ export async function verifyPassword(stored: string, password: string): Promise<
     p,
     maxmem: MAXMEM,
   });
-  return timingSafeEqual(given, expected);
+  return safeEqual(given, expected);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { customAlphabet } from "nanoid";
+import { alphanumericToken } from "@/lib/ids";
 import { publicEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { OAUTH_CODE_TTL_SECONDS, POST_CLAIM_SCOPES } from "@/lib/agent/constants";
@@ -27,10 +27,6 @@ import {
 export const OAUTH_SCOPE = POST_CLAIM_SCOPES.join(" ");
 const MAX_STATE_LENGTH = 2048;
 const CODE_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
-const generateCodeBody = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  43
-);
 
 export interface AuthorizationRequest {
   clientId: string;
@@ -190,7 +186,7 @@ export async function approveAuthorization(
   client: OAuthClient,
   userId: string
 ): Promise<string> {
-  const code = `whac_${generateCodeBody()}`;
+  const code = `whac_${alphanumericToken(43)}`;
   const admin = createAdminClient();
   const { error } = await admin.from("oauth_authorization_codes").insert({
     code_hash: hashCode(code),
